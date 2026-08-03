@@ -1,0 +1,22 @@
+@if (Kind != EvidenceKind.Unavailable)
+{
+    <span class="evidence-badge @Kind.Css()" title="@AccessibleLabel" aria-label="@AccessibleLabel">@VisibleLabel</span>
+}
+
+@code {
+    [Parameter] public EvidenceKind Kind { get; set; }
+    private string VisibleLabel => Kind switch
+    {
+        EvidenceKind.Measured => "Measured",
+        EvidenceKind.Derived => "Calculated",
+        EvidenceKind.Inferred => "Coach estimate",
+        _ => "Approximate"
+    };
+    private string AccessibleLabel => Kind switch
+    {
+        EvidenceKind.Measured => "Measured evidence",
+        EvidenceKind.Derived => "Derived evidence",
+        EvidenceKind.Inferred => "Inferred coaching",
+        _ => "Diagnostic proxy"
+    };
+}

@@ -1,0 +1,44 @@
+<aside class="nav-rail" aria-label="Primary navigation">
+    <div class="brand-row">
+        <button class="brand-mark" aria-label="Go home" @onclick='() => State.Navigate("home")'><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M6 25C10 8 25 5 30 18C25 12 17 13 13 25Z"/><path d="M12 27H29"/></svg></button>
+        <div class="brand-copy"><strong>iRacing</strong><span>Coach</span></div>
+        <button class="rail-toggle" title="@(State.RailCollapsed ? "Expand navigation" : "Collapse navigation")" aria-label="@(State.RailCollapsed ? "Expand navigation" : "Collapse navigation")" @onclick="State.ToggleRail"><ProductIcon Name="menu" Size="18" /></button>
+    </div>
+
+    <nav>
+        @foreach (var item in Items.Where(item => State.IsCapabilityVisible(item.Capability)))
+        {
+            <button class="nav-item @(State.CurrentPage == item.Id ? "selected" : "")" aria-current="@(State.CurrentPage == item.Id ? "page" : null)" title="@item.Label" @onclick="() => State.Navigate(item.Id)"><span class="nav-icon"><ProductIcon Name="@item.Icon" Size="18" /></span><span class="nav-label">@item.Label</span></button>
+        }
+    </nav>
+
+    <div class="nav-spacer"></div>
+    <div class="rail-services" aria-label="Service status">
+        <div class="rail-service" title="Deterministic work stays on this PC"><span class="status-orb @(State.ServiceFailureCount > 0 ? "warning" : State.ServiceRequestInFlight ? "checking" : "ready")" aria-hidden="true"></span><span class="nav-label"><strong>Local engine</strong><small>@LocalActivity</small></span></div>
+        <div class="rail-service" title="Garage61 requests and local cache use"><span class="status-orb @(State.Garage61.Available ? "ready" : State.Garage61.Configured ? "warning" : "neutral")" aria-hidden="true"></span><span class="nav-label"><strong>Garage61</strong><small>@GarageActivity</small></span></div>
+        <div class="rail-service" title="Optional coaching requests only"><span class="status-orb @(State.IsCoaching ? "checking" : State.CoachEngine.ChatGptConnected ? "ready" : "neutral")" aria-hidden="true"></span><span class="nav-label"><strong>AI coaching</strong><small>@AiActivity</small></span></div>
+        @foreach (var item in State.Health.Where(item => (item.State is "warning" or "unavailable") && item.Id is not "garage61" and not "coachengine"))
+        {
+            <div class="rail-service" title="@item.Detail"><span class="status-orb @item.State" aria-hidden="true"></span><span class="nav-label"><strong>@item.Label</strong><small>@item.Detail</small></span></div>
+        }
+    </div>
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private static readonly (string Id, string Label, string Icon, ProductCapability Capability)[] Items =
+    [
+        ("home", "Home", "home", ProductCapability.Home),
+        ("live", "Live telemetry", "live", ProductCapability.LiveTelemetry),
+        ("analysis", "Race Analysis", "analysis", ProductCapability.RaceAnalysis),
+        ("planning", "Race Planning", "planning", ProductCapability.RacePlanning),
+        ("setup", "Setup Library", "setup", ProductCapability.SetupLibrary),
+        ("tuning", "Progressive Tuning", "tuning", ProductCapability.ProgressiveTuning),
+        ("connections", "Connections", "connections", ProductCapability.Connections),
+        ("settings", "Settings", "settings", ProductCapability.Settings)
+    ];
+    private string LocalActivity => State.ServiceRequestInFlight ? "Working locally" : State.LocalRequestCount == 0 ? "Ready" : $"{State.LocalRequestCount} reads · {State.ApiCacheHitCount} cache hits";
+    private string GarageActivity => State.Garage61RequestCount == 0 ? (State.Garage61.Configured ? "Connected · no requests yet" : "Not connected") : $"{State.Garage61RequestCount} requests · last {When(State.LastServiceRequest)}";
+    private string AiActivity => State.IsCoaching ? "Coaching request running" : State.AiRequestCount == 0 ? (State.CoachEngine.ChatGptConnected ? "Connected · idle" : "Not connected") : $"{State.AiRequestCount} requests · last {State.LastAiDuration?.TotalSeconds:0.0}s";
+    private static string When(DateTimeOffset? value) => value is null ? "never" : (DateTimeOffset.Now - value.Value).TotalSeconds < 10 ? "just now" : value.Value.ToString("t");
+}

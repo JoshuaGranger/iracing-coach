@@ -1,0 +1,6 @@
+# Stable checkout bytes keep the hash-based handoff manifest reproducible on Windows.
+* text=auto eol=lf
+
+*.ico binary
+*.png binary
+*.ibt binary

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/telemetry-events-v1.schema.json",
+  "title": "iRacing Coach native telemetry event search result",
+  "type": "object",
+  "required": [
+    "ok",
+    "selection",
+    "event_types",
+    "selection_mode",
+    "filters",
+    "record_bounds_semantics",
+    "max_events",
+    "source_fingerprints",
+    "sources",
+    "events",
+    "summary",
+    "evidence_rule"
+  ],
+  "properties": {
+    "ok": { "const": true },
+    "selection": { "type": "object" },
+    "event_types": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "brake_onset",
+          "brake_release",
+          "pit_transition",
+          "steering_torque_peak",
+          "shock_velocity_peak",
+          "wheel_speed_divergence"
+        ]
+      }
+    },
+    "selection_mode": { "enum": ["chronological", "severity"] },
+    "filters": { "type": "object" },
+    "record_bounds_semantics": { "type": "string" },
+    "max_events": { "type": "integer", "minimum": 1, "maximum": 500 },
+    "source_fingerprints": { "type": "array", "items": { "type": "object" } },
+    "sources": { "type": "array", "items": { "type": "object" } },
+    "events": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+    "summary": {
+      "type": "object",
+      "required": [
+        "source_count", "selection_mode", "scan_complete", "candidate_event_count",
+        "candidate_event_count_complete", "returned_event_count", "counts_by_type",
+        "candidate_counts_by_type", "omitted_event_count", "truncated"
+      ],
+      "properties": {
+        "source_count": { "type": "integer", "minimum": 0 },
+        "selection_mode": { "enum": ["chronological", "severity"] },
+        "scan_complete": { "type": "boolean" },
+        "candidate_event_count": { "type": "integer", "minimum": 0 },
+        "candidate_event_count_complete": { "type": "boolean" },
+        "returned_event_count": { "type": "integer", "minimum": 0 },
+        "counts_by_type": { "type": "object" },
+        "candidate_counts_by_type": { "type": "object" },
+        "omitted_event_count": { "type": ["integer", "null"], "minimum": 0 },
+        "truncated": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "evidence_rule": { "type": "string" }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "source_path", "source_sha256", "event_type", "source_record_index",
+        "session_time_s", "lap", "lap_distance_fraction", "lap_distance_pct",
+        "measurements", "evidence"
+      ],
+      "properties": {
+        "source_path": { "type": "string" },
+        "source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "event_type": { "type": "string" },
+        "source_record_index": { "type": "integer", "minimum": 0 },
+        "session_time_s": { "type": ["number", "null"] },
+        "lap": { "type": ["integer", "null"] },
+        "lap_distance_fraction": { "type": ["number", "null"] },
+        "lap_distance_pct": { "type": ["number", "null"] },
+        "measurements": { "type": "object" },
+        "evidence": {
+          "type": "object",
+          "required": ["label", "measured_channels", "method"],
+          "properties": {
+            "label": { "enum": ["measured", "derived", "proxy"] },
+            "measured_channels": { "type": "array", "items": { "type": "string" } },
+            "method": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

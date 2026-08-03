@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/track-phase-visualization-v1.schema.json",
+  "title": "iRacing Coach track and tire-phase visualization v1",
+  "description": "Presentation-ready, evidence-gated track/control traces. A usable comparison permits best-supported targets, never an unqualified optimal-lap claim.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "identity",
+    "track_profile",
+    "steering_presentation",
+    "phase_slider",
+    "phase_traces",
+    "comparison_quality",
+    "target_policy",
+    "groove",
+    "interruptions",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "fixture_metadata": {
+      "type": "object",
+      "required": ["synthetic", "real_driver_or_setup_data", "production_use_allowed", "visible_watermark", "purpose"],
+      "properties": {
+        "synthetic": { "const": true },
+        "real_driver_or_setup_data": { "const": false },
+        "production_use_allowed": { "const": false },
+        "visible_watermark": { "const": "SYNTHETIC UI FIXTURE - NOT DRIVING ADVICE" },
+        "purpose": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "object",
+      "required": ["track_name", "track_config", "car_name", "is_fixed_setup"],
+      "properties": {
+        "track_name": { "type": "string", "minLength": 1 },
+        "track_config": { "type": "string", "minLength": 1 },
+        "car_name": { "type": "string", "minLength": 1 },
+        "is_fixed_setup": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "track_profile": {
+      "type": "object",
+      "required": [
+        "geometry_source",
+        "display_mode",
+        "inside_outside_geometry",
+        "bins",
+        "shape",
+        "profile",
+        "detected_corner_segments"
+      ],
+      "properties": {
+        "geometry_source": { "enum": ["recorded_coordinates", "normalized_distance_strip", "synthetic_ui_fixture"] },
+        "display_mode": { "enum": ["track_shape", "normalized_distance_strip"] },
+        "inside_outside_geometry": { "$ref": "#/$defs/geometryCalibration" },
+        "bins": { "type": "integer", "minimum": 1 },
+        "shape": { "type": "array", "items": { "$ref": "#/$defs/shapePoint" } },
+        "profile": { "type": "array", "items": { "$ref": "#/$defs/profilePoint" } },
+        "detected_corner_segments": { "type": "array", "items": { "$ref": "#/$defs/cornerSegment" } }
+      },
+      "additionalProperties": true
+    },
+    "steering_presentation": {
+      "type": "object",
+      "required": [
+        "source_metric",
+        "semantics",
+        "signed_direction_available",
+        "steering_ratio_normalized",
+        "exact_steering_angle_target_supported",
+        "display_label",
+        "limitation"
+      ],
+      "properties": {
+        "source_metric": { "enum": ["steering_work_abs_rad", "signed_normalized_steering"] },
+        "semantics": { "enum": ["magnitude_only", "signed_normalized_angle"] },
+        "signed_direction_available": { "type": "boolean" },
+        "steering_ratio_normalized": { "type": "boolean" },
+        "exact_steering_angle_target_supported": { "type": "boolean" },
+        "display_label": { "type": "string", "minLength": 1 },
+        "limitation": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "phase_slider": {
+      "type": "object",
+      "required": ["mode", "tire_age_interpretation", "continuous_interpolation_supported", "values", "unsupported_green_lap_ranges"],
+      "properties": {
+        "mode": { "enum": ["snap-to-supported-phases", "continuous-supported"] },
+        "tire_age_interpretation": { "enum": ["green_laps_on_set_proxy", "measured_tire_wear"] },
+        "continuous_interpolation_supported": { "type": "boolean" },
+        "values": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/phaseValue" } },
+        "unsupported_green_lap_ranges": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              { "type": "integer", "minimum": 0 },
+              { "type": "integer", "minimum": 0 }
+            ],
+            "minItems": 2,
+            "maxItems": 2,
+            "items": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "phase_traces": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/phaseTrace" } },
+    "comparison_quality": {
+      "type": "object",
+      "required": [
+        "status",
+        "alignment_status",
+        "representative_lap_status",
+        "setup_scope",
+        "setup_fingerprint_match",
+        "conditions_scope",
+        "source_reference_ids",
+        "clean_reference_run_ids",
+        "optimality_claim_allowed",
+        "limitations"
+      ],
+      "properties": {
+        "status": { "enum": ["usable", "degraded", "unusable"] },
+        "alignment_status": { "enum": ["aligned", "partial", "unavailable"] },
+        "representative_lap_status": { "enum": ["usable", "proxy", "unavailable"] },
+        "setup_scope": { "enum": ["same_setup", "same_fixed_setup", "different_or_unknown"] },
+        "setup_fingerprint_match": { "type": "boolean" },
+        "conditions_scope": { "type": "string", "minLength": 1 },
+        "source_reference_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "clean_reference_run_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "optimality_claim_allowed": { "const": false },
+        "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    },
+    "target_policy": {
+      "type": "object",
+      "required": [
+        "exact_numeric_target_supported",
+        "required_comparison_status",
+        "local_reference_run_eligible",
+        "label",
+        "optimality_claim_allowed",
+        "metric_gates"
+      ],
+      "properties": {
+        "exact_numeric_target_supported": { "type": "boolean" },
+        "required_comparison_status": { "const": "usable" },
+        "local_reference_run_eligible": { "type": "boolean" },
+        "label": { "enum": ["Best-supported target", "Exact target unavailable"] },
+        "optimality_claim_allowed": { "const": false },
+        "metric_gates": {
+          "type": "object",
+          "required": ["speed_mph", "brake", "throttle", "steering"],
+          "additionalProperties": { "$ref": "#/$defs/metricGate" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "groove": {
+      "type": "object",
+      "required": [
+        "status",
+        "geometry_calibration_status",
+        "directional_labels_supported",
+        "claim_label",
+        "optimality_claim_allowed",
+        "recommendations",
+        "limitation"
+      ],
+      "properties": {
+        "status": { "enum": ["directional_supported", "unavailable"] },
+        "geometry_calibration_status": { "enum": ["calibrated", "unavailable"] },
+        "directional_labels_supported": { "type": "boolean" },
+        "claim_label": { "enum": ["Best-supported synthetic reference lane", "Groove direction unavailable"] },
+        "optimality_claim_allowed": { "const": false },
+        "recommendations": { "type": "array", "items": { "$ref": "#/$defs/grooveRecommendation" } },
+        "limitation": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "interruptions": { "type": "array", "items": { "$ref": "#/$defs/interruption" } },
+    "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+  },
+  "$defs": {
+    "unitInterval": { "type": "number", "minimum": 0, "maximum": 1 },
+    "geometryCalibration": {
+      "type": "object",
+      "required": ["status", "directional_labels_supported", "basis"],
+      "properties": {
+        "status": { "enum": ["calibrated", "unavailable"] },
+        "directional_labels_supported": { "type": "boolean" },
+        "basis": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "shapePoint": {
+      "type": "object",
+      "required": ["lap_pct", "x", "y"],
+      "properties": {
+        "lap_pct": { "$ref": "#/$defs/unitInterval" },
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "profilePoint": {
+      "type": "object",
+      "required": ["bin", "lap_pct", "speed_mph", "brake", "throttle", "steering_work_abs_rad", "samples"],
+      "properties": {
+        "bin": { "type": "integer", "minimum": 0 },
+        "lap_pct": { "$ref": "#/$defs/unitInterval" },
+        "x_normalized": { "type": "number" },
+        "y_normalized": { "type": "number" },
+        "speed_mph": { "type": "number", "minimum": 0 },
+        "brake": { "$ref": "#/$defs/unitInterval" },
+        "throttle": { "$ref": "#/$defs/unitInterval" },
+        "steering_work_abs_rad": { "type": "number", "minimum": 0 },
+        "lateral_g": { "type": "number" },
+        "samples": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "cornerSegment": {
+      "type": "object",
+      "required": ["segment", "start_pct", "end_pct", "wraps_start_finish"],
+      "properties": {
+        "segment": { "type": "integer", "minimum": 1 },
+        "start_pct": { "$ref": "#/$defs/unitInterval" },
+        "end_pct": { "$ref": "#/$defs/unitInterval" },
+        "wraps_start_finish": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "phaseValue": {
+      "type": "object",
+      "required": [
+        "key",
+        "label",
+        "green_lap_bounds",
+        "source_run_id",
+        "tire_set_id",
+        "source_lap_numbers",
+        "caution_laps_on_set",
+        "measured_tire_wear_available",
+        "evidence_class"
+      ],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "green_lap_bounds": {
+          "type": "array",
+          "prefixItems": [{ "type": "integer", "minimum": 0 }, { "type": "integer", "minimum": 0 }],
+          "minItems": 2,
+          "maxItems": 2,
+          "items": false
+        },
+        "source_run_id": { "type": "string", "minLength": 1 },
+        "tire_set_id": { "type": "string", "minLength": 1 },
+        "source_lap_numbers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
+        "caution_laps_on_set": { "type": "integer", "minimum": 0 },
+        "measured_tire_wear_available": { "type": "boolean" },
+        "evidence_class": { "enum": ["measured", "derived", "proxy"] }
+      },
+      "additionalProperties": false
+    },
+    "screening": {
+      "type": "object",
+      "required": ["damage_excluded", "tow_excluded", "pit_excluded", "caution_excluded", "traffic_screened", "eligible"],
+      "properties": {
+        "damage_excluded": { "type": "boolean" },
+        "tow_excluded": { "type": "boolean" },
+        "pit_excluded": { "type": "boolean" },
+        "caution_excluded": { "type": "boolean" },
+        "traffic_screened": { "type": "boolean" },
+        "eligible": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "traceSample": {
+      "type": "object",
+      "required": ["lap_pct", "speed_mph", "brake", "throttle", "steering_work_abs_rad"],
+      "properties": {
+        "lap_pct": { "$ref": "#/$defs/unitInterval" },
+        "speed_mph": { "type": "number", "minimum": 0 },
+        "brake": { "$ref": "#/$defs/unitInterval" },
+        "throttle": { "$ref": "#/$defs/unitInterval" },
+        "steering_work_abs_rad": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "phaseTrace": {
+      "type": "object",
+      "required": [
+        "trace_id",
+        "phase_key",
+        "trace_role",
+        "status",
+        "evidence_class",
+        "source_reference_ids",
+        "source_run_id",
+        "tire_set_id",
+        "setup_fingerprint",
+        "source_lap_numbers",
+        "screening",
+        "samples"
+      ],
+      "properties": {
+        "trace_id": { "type": "string", "minLength": 1 },
+        "phase_key": { "type": "string", "minLength": 1 },
+        "trace_role": { "enum": ["observed_local", "best_supported_target"] },
+        "status": { "enum": ["usable", "proxy", "unavailable"] },
+        "evidence_class": { "enum": ["measured", "derived", "proxy"] },
+        "source_reference_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "source_run_id": { "type": "string", "minLength": 1 },
+        "tire_set_id": { "type": "string", "minLength": 1 },
+        "setup_fingerprint": { "type": "string", "minLength": 1 },
+        "source_lap_numbers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
+        "screening": { "$ref": "#/$defs/screening" },
+        "samples": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/traceSample" } }
+      },
+      "additionalProperties": false
+    },
+    "metricGate": {
+      "type": "object",
+      "required": ["exact_numeric_target_supported", "evidence_class", "reason"],
+      "properties": {
+        "exact_numeric_target_supported": { "type": "boolean" },
+        "evidence_class": { "enum": ["measured", "derived", "proxy", "unavailable"] },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "grooveRecommendation": {
+      "type": "object",
+      "required": ["phase_key", "direction", "evidence_class", "source_reference_ids", "claim"],
+      "properties": {
+        "phase_key": { "type": "string", "minLength": 1 },
+        "direction": { "enum": ["lower", "middle", "upper", "migrate_lower", "migrate_upper"] },
+        "evidence_class": { "enum": ["derived", "proxy"] },
+        "source_reference_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "claim": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "interruption": {
+      "type": "object",
+      "required": ["kind", "start_s", "end_s", "lap", "elapsed_s", "evidence_class", "semantics"],
+      "properties": {
+        "kind": { "enum": ["incident-points", "tow", "pit-road", "stall", "pit-service-active", "repair-timer-positive", "repair-countdown-progress"] },
+        "start_s": { "type": "number", "minimum": 0 },
+        "end_s": { "type": "number", "minimum": 0 },
+        "lap": { "type": "integer", "minimum": 0 },
+        "elapsed_s": { "type": "number", "minimum": 0 },
+        "evidence_class": { "enum": ["measured", "derived"] },
+        "semantics": { "type": "string", "minLength": 1 },
+        "timer_kind": { "enum": ["mandatory", "optional", "combined"] },
+        "countdown_reduction_s": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

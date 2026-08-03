@@ -1,0 +1,35 @@
+# Local agent, test, and dependency state
+/.agents/
+/.pytest_cache/
+/.validation-deps/
+**/__pycache__/
+*.py[cod]
+
+# Portable user-owned state (never source control)
+/data/
+/logs/
+/setups/
+/backups/
+/exports/
+/portable-settings/
+/user-library/
+/settings.json
+/archive-manifest.json
+/portable-state.json
+
+# Credentials and machine-local state
+**/credentials/
+**/auth.json
+*.machine-local.json
+
+# .NET and release outputs
+companion-app/**/bin/
+companion-app/**/obj/
+companion-app/artifacts/
+companion-app/**/*.log
+companion-app/tools/installer-payload.zip
+
+# Personal telemetry is private. Only the named sanitized test fixtures are source.
+*.ibt
+!companion-app-handoff/fixtures/ibt/synthetic-race.ibt
+!companion-app-handoff/fixtures/ibt/truncated-race.ibt

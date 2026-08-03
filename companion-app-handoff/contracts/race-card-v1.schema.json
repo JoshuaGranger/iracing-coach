@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/race-card-v1.schema.json",
+  "title": "iRacing Coach Race Card v1",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "title",
+    "discipline",
+    "bottom_line",
+    "actions",
+    "corner_playbook",
+    "race_triggers",
+    "evidence_appendix",
+    "summary",
+    "target_policy",
+    "word_count_before_evidence",
+    "within_word_limit"
+  ],
+  "properties": {
+    "contract_version": { "const": 1 },
+    "analysis_id": { "type": ["string", "null"] },
+    "title": { "type": "string" },
+    "discipline": { "enum": ["oval", "road_or_other"] },
+    "bottom_line": { "$ref": "#/$defs/claim" },
+    "actions": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/claim" } },
+    "corner_playbook": { "type": "object" },
+    "data_context": { "type": "object" },
+    "race_triggers": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/claim" } },
+    "evidence_appendix": { "type": "array", "maxItems": 6, "items": { "$ref": "#/$defs/claim" } },
+    "summary": { "type": "object" },
+    "target_policy": {
+      "type": "object",
+      "required": ["comparison_quality_status", "exact_numeric_targets_emitted", "rule"],
+      "additionalProperties": true
+    },
+    "word_limit_before_evidence": { "type": "integer", "minimum": 1 },
+    "word_count_before_evidence": { "type": "integer", "minimum": 0 },
+    "within_word_limit": { "type": "boolean" },
+    "markdown": { "type": "string" },
+    "path": { "type": "string" },
+    "timing": { "type": "object" }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "required": ["text", "evidence_type", "tag"],
+      "properties": {
+        "label": { "type": "string" },
+        "text": { "type": "string" },
+        "evidence_type": { "enum": ["measured", "derived", "inferred", "proxy", "unavailable"] },
+        "tag": { "enum": ["[M]", "[D]", "[I]", "[P]", "[U]"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

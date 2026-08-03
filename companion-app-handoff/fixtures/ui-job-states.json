@@ -1,0 +1,25 @@
+{
+  "fixture_kind": "companion-ui-projection",
+  "projection": "job-tray-state",
+  "states": {
+    "queued": {
+      "cancellable": true,
+      "canonicalKey": "session:8001",
+      "createdAt": "2026-08-01T12:00:00Z",
+      "jobId": "job-1",
+      "operation": "analyze",
+      "status": "queued"
+    },
+    "running": {
+      "cancellable": true,
+      "canonicalKey": "session:8001",
+      "createdAt": "2026-08-01T12:00:00Z",
+      "elapsedMs": 4300,
+      "jobId": "job-1",
+      "operation": "analyze",
+      "stage": "decode-analysis",
+      "startedAt": "2026-08-01T12:00:01Z",
+      "status": "running"
+    }
+  }
+}

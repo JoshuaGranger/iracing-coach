@@ -1,0 +1,625 @@
+{
+  "server_name": "iracing-coach-local",
+  "server_version": "0.3.0",
+  "snapshot_version": 1,
+  "tools": [
+    {
+      "description": "Read-only inventory of local iRacing telemetry, replays, setups, lapfiles, safe logging settings, and known install roots.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_known_roots": {
+            "default": true,
+            "type": "boolean"
+          },
+          "recent_limit": {
+            "default": 20,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "root": {
+            "description": "Optional iRacing Documents root or a descendant.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "inventory_iracing_data"
+    },
+    {
+      "description": "Return a compact read-only snapshot of recent races, archived analyses, tuning packages, capabilities, and local Garage61 readiness for a companion UI.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "root": {
+            "description": "Optional iRacing Documents root or a descendant.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "iracing_companion_dashboard"
+    },
+    {
+      "description": "Discover recorded iRacing sessions and identify the latest Race session from IBT metadata.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 20,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "races_only": {
+            "default": true,
+            "type": "boolean"
+          },
+          "root": {
+            "description": "Optional iRacing root or telemetry directory.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "discover_iracing_sessions"
+    },
+    {
+      "description": "Inspect the complete channel catalog, profile selected channels, or load a bounded telemetry slice from the latest or specified iRacing IBT session.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "channels": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 12,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "end_record": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "iracing_root": {
+            "type": "string"
+          },
+          "max_samples": {
+            "default": 1000,
+            "maximum": 2000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "default": "catalog",
+            "enum": [
+              "catalog",
+              "profile",
+              "slice"
+            ],
+            "type": "string"
+          },
+          "search": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "selector": {
+            "default": "latest",
+            "description": "'latest', an IBT path within the configured iRacing root, or a SubSessionID.",
+            "type": "string"
+          },
+          "start_record": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target_hz": {
+            "default": null,
+            "description": "Output sample rate; omit or pass null to retain native rate.",
+            "oneOf": [
+              {
+                "maximum": 60,
+                "minimum": 1,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "query_iracing_telemetry"
+    },
+    {
+      "description": "Find bounded native-rate brake, pit, steering-torque, shock-velocity, and calibrated wheel-speed-divergence events with exact source-record, lap, time, and track-position context.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "end_record": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "event_types": {
+            "description": "Omit to run every supported detector; select only the needed types for compact results.",
+            "items": {
+              "enum": [
+                "brake_onset",
+                "brake_release",
+                "pit_transition",
+                "steering_torque_peak",
+                "shock_velocity_peak",
+                "wheel_speed_divergence"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "iracing_root": {
+            "type": "string"
+          },
+          "lap": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lap_distance_end": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "lap_distance_start": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "max_events": {
+            "default": 200,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "selection_mode": {
+            "default": "chronological",
+            "description": "Return the earliest matches, or scan the full window and retain a balanced strongest subset.",
+            "enum": [
+              "chronological",
+              "severity"
+            ],
+            "type": "string"
+          },
+          "selector": {
+            "default": "latest",
+            "description": "'latest', an IBT path within the configured iRacing root, or a SubSessionID.",
+            "type": "string"
+          },
+          "session_time_end": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "session_time_start": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "start_record": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "find_iracing_telemetry_events"
+    },
+    {
+      "description": "Analyze the latest Race session, or a specified IBT/session; return a concise deterministic Race Card plus damage, tow, repair, pit, tire, fuel, strategy, and coaching context with stage timings, then archive the complete evidence report.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "iracing_root": {
+            "type": "string"
+          },
+          "selector": {
+            "default": "latest",
+            "description": "'latest', an IBT path, or a SubSessionID.",
+            "type": "string"
+          },
+          "target_hz": {
+            "default": 20,
+            "maximum": 60,
+            "minimum": 1,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "name": "analyze_iracing_race"
+    },
+    {
+      "description": "Check whether the season/car/track/setup knowledge bundle is fresh, stale, or missing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_path": {
+            "type": "string"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object"
+          },
+          "sim_physics_fingerprint": {
+            "description": "Optional current sim/build/physics fingerprint used for early invalidation.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "iracing_knowledge_cache_status"
+    },
+    {
+      "description": "Persist researched car, track, manual, image-source, and Garage61 facts for the current iRacing season.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object"
+          },
+          "facts": {
+            "type": "object"
+          },
+          "garage61": {
+            "type": "object"
+          },
+          "notes_markdown": {
+            "type": "string"
+          },
+          "sim_physics_fingerprint": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          },
+          "sources": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "track_shape": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "context",
+          "sources",
+          "facts"
+        ],
+        "type": "object"
+      },
+      "name": "archive_iracing_knowledge"
+    },
+    {
+      "description": "Verify whether a securely stored Garage61 personal token exists and can access the official API.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "garage61_auth_status"
+    },
+    {
+      "description": "Find, rank, and archive comparable Garage61 laps for an analyzed car/track/session using the official API.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_path": {
+            "type": "string"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "download_telemetry": {
+            "default": true,
+            "type": "boolean"
+          },
+          "maximum_laps": {
+            "default": 8,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "analysis_path"
+        ],
+        "type": "object"
+      },
+      "name": "sync_garage61_references"
+    },
+    {
+      "description": "Return comparable historical runs for the same season, car, exact track layout, setup type, and race length.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_path": {
+            "type": "string"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object"
+          },
+          "include_other_seasons": {
+            "default": false,
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 200,
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "iracing_strategy_history"
+    },
+    {
+      "description": "Read-only catalog of local iRacing STO and HTML setup exports with pairing, hashes, parsed values, and identity warnings.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "car": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "maximum_entries": {
+            "default": 200,
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "race",
+              "qualifying",
+              "endurance",
+              "R",
+              "Q",
+              "E"
+            ],
+            "type": "string"
+          },
+          "root": {
+            "description": "Optional iRacing Documents root or its setups directory.",
+            "type": "string"
+          },
+          "season": {
+            "maxLength": 32,
+            "type": "string"
+          },
+          "track": {
+            "maxLength": 160,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "catalog_iracing_setups"
+    },
+    {
+      "description": "Create a season-scoped open-setup race/Q baseline for an exact car/track or a researched donor family; source setups remain read-only.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_path": {
+            "type": "string"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "car": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "iracing_root": {
+            "type": "string"
+          },
+          "season": {
+            "maxLength": 32,
+            "type": "string"
+          },
+          "track": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "track_characteristics": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "maxLength": 4000,
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "build_open_setup_package"
+    },
+    {
+      "description": "Combine driver symptoms, the authoritative embedded setup, telemetry, a baseline package, and prior experiments into a conservative open-setup test plan.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_path": {
+            "type": "string"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "maximum_changes": {
+            "default": 3,
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "package_id": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "symptoms": {
+            "oneOf": [
+              {
+                "maxLength": 8000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "items": {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              }
+            ]
+          }
+        },
+        "required": [
+          "analysis_path",
+          "symptoms"
+        ],
+        "type": "object"
+      },
+      "name": "recommend_open_setup_tuning"
+    },
+    {
+      "description": "Record whether a planned setup experiment improved, worsened, or did not change the car, optionally validating a result analysis.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "experiment_id": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "notes": {
+            "maxLength": 8000,
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "improved",
+              "worse",
+              "no-change",
+              "inconclusive"
+            ],
+            "type": "string"
+          },
+          "result_analysis_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "outcome",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "name": "record_open_setup_feedback"
+    },
+    {
+      "description": "Return season/car/track-scoped open-setup experiments and their recorded outcomes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_path": {
+            "type": "string"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "context": {
+            "type": "object"
+          },
+          "include_other_seasons": {
+            "default": false,
+            "type": "boolean"
+          },
+          "include_other_tracks": {
+            "default": false,
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "package_id": {
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "iracing_setup_history"
+    }
+  ],
+  "tools_call_payload": "Parse result.content[0].text as JSON and inspect isError",
+  "transport": "newline-delimited UTF-8 JSON-RPC 2.0"
+}

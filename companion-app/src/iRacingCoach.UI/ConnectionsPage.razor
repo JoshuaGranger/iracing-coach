@@ -1,0 +1,54 @@
+<div class="page-heading compact-heading">
+    <div><span class="eyebrow">Connections</span><h1>Optional services</h1><p>Connect ChatGPT or Garage61 here. Race analysis, planning, setups, and live telemetry keep working without them.</p></div>
+</div>
+
+<div class="connection-grid">
+    <section class="surface-card connection-card" aria-labelledby="chatgpt-connection">
+        <div class="connection-heading">
+            <div><span class="eyebrow">Coaching explanations</span><h2 id="chatgpt-connection">ChatGPT</h2></div>
+            <span class="status-label @(State.CoachEngine.ChatGptConnected ? "success" : State.QaFixtureMode ? "neutral" : State.CoachEngine.Installed ? "neutral" : "warning")">@(State.QaFixtureMode ? "Disabled for QA" : State.CoachEngine.ChatGptConnected ? "Connected" : "Not connected")</span>
+        </div>
+        <p>@CoachEngineMessage</p>
+        @if (!State.QaFixtureMode && (!State.CoachEngine.Installed || State.CoachEngine.Status is "repair" or "unavailable"))
+        {
+            <button class="button secondary" @onclick="State.RepairInstallation">Repair installation</button>
+        }
+        @if (!string.IsNullOrWhiteSpace(State.CoachEngine.VerificationCode))
+        {
+            <div class="verification-code"><span>Verification code</span><strong>@State.CoachEngine.VerificationCode</strong></div>
+        }
+        @if (State.CoachEngine.Installed && State.CoachEngine.Running && !State.CoachEngine.ChatGptConnected)
+        {
+            <div class="button-row"><button class="button primary" @onclick="() => State.ConnectChatGptAsync()">Connect ChatGPT</button><button class="button secondary" @onclick="() => State.ConnectChatGptAsync(true)">Use a verification code</button></div>
+        }
+        <small>Coach Engine handles sign-in securely. iRacing Coach never displays your credentials.</small>
+    </section>
+
+    <section class="surface-card connection-card" aria-labelledby="garage61-connection">
+        <div class="connection-heading">
+            <div><span class="eyebrow">Personal data connection</span><h2 id="garage61-connection">Garage61</h2></div>
+            <span class="status-label @(State.Garage61.Available ? "success" : "neutral")">@(State.QaFixtureMode ? "Disabled for QA" : State.Garage61.Available ? "Connected" : State.Garage61.Configured ? "Saved · offline" : "Not connected")</span>
+        </div>
+        <p>@Garage61Message</p>
+        <label class="connection-secret"><span>Personal access token<small>The value is hidden immediately and protected for this Windows user.</small></span><input type="password" autocomplete="off" spellcheck="false" disabled="@State.QaFixtureMode" placeholder="@(State.Garage61.Configured ? "Enter a new token to replace the saved connection" : "Paste your Garage61 token")" @bind="State.Garage61KeyInput" @bind:event="oninput" /></label>
+        <div class="button-row">
+            <button class="button primary" disabled="@(State.QaFixtureMode || string.IsNullOrWhiteSpace(State.Garage61KeyInput))" @onclick="() => State.ConnectGarage61Async()">Connect Garage61</button>
+            @if (!State.QaFixtureMode && State.Garage61.Configured) { <button class="button secondary" @onclick="() => State.DisconnectGarage61Async()">Disconnect</button> }
+        </div>
+        <small>Garage61 credentials are not part of the portable Coach folder and must be connected once on each PC.</small>
+    </section>
+</div>
+
+<section class="surface-card offline-promise"><div><span class="status-orb ready"></span><strong>Local features stay available</strong></div><p>Recorded race browsing, telemetry processing, Live Monitor, fuel calculations, Race Cards, and setup history do not depend on ChatGPT being online.</p></section>
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private string CoachEngineMessage => State.QaFixtureMode
+        ? "Online coaching is intentionally disabled while the offline QA fixture is running."
+        : !State.CoachEngine.Installed
+        ? "Coach Engine needs repair before ChatGPT can connect."
+        : State.CoachEngine.Running ? State.CoachEngine.Message : "Coach Engine is restarting.";
+    private string Garage61Message => State.QaFixtureMode
+        ? "Garage61 is intentionally disabled so this fixture cannot make a production request."
+        : State.Garage61.Message;
+}

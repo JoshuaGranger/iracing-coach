@@ -1,0 +1,35 @@
+{
+  "archive_root": "C:\\Users\\joshu\\Documents\\iRacing Coach\\data",
+  "iracing_root": "C:\\Users\\joshu\\Documents\\iRacing",
+  "install_root": "C:\\Program Files (x86)\\iRacing",
+  "telemetry_target_hz": 20,
+  "units": "englishStandard",
+  "latest_session_policy": "latest-race-by-session-metadata",
+  "garage61": {
+    "base_url": "https://garage61.net/api/v1",
+    "global_visible_laps_approved": false,
+    "maximum_reference_laps": 8,
+    "comparison_strategy": "representative-and-comparable",
+    "download_csv": true
+  },
+  "cache": {
+    "boundary": "iracing-season",
+    "key_fields": [
+      "season",
+      "car",
+      "exact-track-layout",
+      "fixed-or-open"
+    ],
+    "invalidate_on_physics_change": true
+  },
+  "tuning": {
+    "discipline_priority": "nascar-first",
+    "baseline_authority": "embedded-ibt-car-setup",
+    "source_setup_policy": "read-only",
+    "fixed_session_policy": "coaching-only",
+    "require_driver_symptom": true,
+    "maximum_changes_per_experiment": 1,
+    "experiment_protocol": "controlled-a-b-with-rollback",
+    "car_target_policy": "current-official-manual"
+  }
+}

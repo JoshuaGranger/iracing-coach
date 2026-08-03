@@ -1,0 +1,130 @@
+{
+  "experiment_id": "experiment-fixture-001",
+  "experiment_path": "%ARCHIVE_ROOT%\\tuning\\experiments\\experiment-fixture-001.json",
+  "ok": true,
+  "package_id": "setup-fixture-package-001",
+  "persisted": true,
+  "primary_recommendation": {
+    "change": "Reduce crossweight by one small garage step; keep ride heights and front preload at baseline.",
+    "confidence": "medium",
+    "evidence": [
+      "driver report: Tight center after 12 green laps; loose on throttle exit."
+    ],
+    "predicted_effect": "Free center rotation and reduce sustained RF scrub.",
+    "risk": "A nervous entry or reduced drive-off stability.",
+    "source": "vehicle-family tuning rule",
+    "system": "static-balance",
+    "verify": [
+      "center steering angle",
+      "RF versus RR temperature/wear",
+      "initial-throttle stability"
+    ]
+  },
+  "recommendation": {
+    "blockers": [],
+    "builder_note_provenance": {
+      "available": false,
+      "reason": "The synthetic fixture has no matching setup-builder note.",
+      "used": false
+    },
+    "causality": "Driver feedback identifies the symptom; telemetry cannot uniquely prove a setup parameter caused it.",
+    "prior_successes_considered": [],
+    "recommendations": [
+      {
+        "change": "Reduce crossweight by one small garage step; keep ride heights and front preload at baseline.",
+        "confidence": "medium",
+        "evidence": [
+          "driver report: Tight center after 12 green laps; loose on throttle exit."
+        ],
+        "predicted_effect": "Free center rotation and reduce sustained RF scrub.",
+        "risk": "A nervous entry or reduced drive-off stability.",
+        "source": "vehicle-family tuning rule",
+        "system": "static-balance",
+        "verify": [
+          "center steering angle",
+          "RF versus RR temperature/wear",
+          "initial-throttle stability"
+        ]
+      }
+    ],
+    "schema_version": 1,
+    "setup": {
+      "fingerprint": "fixture-baseline-001",
+      "is_fixed_setup": false,
+      "name": "synthetic-race",
+      "parameter_count": 84
+    },
+    "setup_comparison": {},
+    "status": "ready",
+    "symptoms": [
+      {
+        "balances": [
+          "tight"
+        ],
+        "onset_lap": 12,
+        "phases": [
+          "center",
+          "long_run"
+        ],
+        "reported": "Tight center after 12 green laps; loose on throttle exit.",
+        "source": "driver-report"
+      }
+    ],
+    "telemetry_evidence": {
+      "damage_repair": {
+        "incident_points": {
+          "damage_proof": false,
+          "status": "recorded_context_only"
+        },
+        "limitation": "Repair/tow state can invalidate setup A/B evidence but does not identify the damaged component or exact pace cost.",
+        "status": "usable",
+        "summary": {
+          "confirmed_fast_repair_uses": 0,
+          "recorded_repair_episodes": 0,
+          "repair_required_flag_episodes": 0,
+          "tow_episodes": 0
+        }
+      },
+      "dynamic_channels_available": [
+        "LFshockDefl",
+        "RFshockDefl"
+      ],
+      "embedded_setup_available": true,
+      "limits": [
+        "Telemetry cannot uniquely identify which setup parameter caused a handling symptom."
+      ],
+      "native_events": {
+        "cache_files_used": [],
+        "counts_by_type": {},
+        "event_count": 0,
+        "event_samples": [],
+        "event_samples_truncated": false,
+        "limitations": [
+          "No matching cached native-event query was available."
+        ],
+        "queries": [],
+        "source_sha256": null,
+        "status": "unavailable"
+      },
+      "platform": {},
+      "setup_fingerprint": "fixture-baseline-001",
+      "setup_name": "synthetic-race",
+      "shocks": {},
+      "tire_wear": [],
+      "tires": {}
+    },
+    "test_protocol": {
+      "control": "Match setup baseline, fuel, tires, weather, track state, and intended line.",
+      "native_event_alignment": {
+        "event_count": 0,
+        "rule": "Use cached event records only as alignment markers.",
+        "status": "unavailable"
+      },
+      "one_change_rule": true,
+      "sequence": [
+        "Record a clean baseline run before changing the garage."
+      ]
+    }
+  },
+  "status": "planned"
+}

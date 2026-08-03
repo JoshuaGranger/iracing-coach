@@ -1,0 +1,64 @@
+<div class="page-heading home-heading">
+    <div><span class="eyebrow">Race desk</span><h1>@State.Greeting</h1><p>Recordings and live race data appear automatically.</p></div>
+</div>
+
+<section class="home-live-strip @(State.LiveState.Snapshot.Connected ? "connected" : "waiting")" aria-label="Live telemetry connection">
+    <div class="home-live-status"><span class="status-orb @(State.LiveState.Snapshot.Connected ? "ready" : "neutral")"></span><div><strong>@State.LiveState.Snapshot.ConnectionLabel</strong><small>@(State.LiveState.Snapshot.Connected ? $"{State.LiveState.Snapshot.Flag} · {State.LiveState.Snapshot.PrimaryCue.Message}" : "Start iRacing when you are ready. Live monitoring stays local.")</small></div></div>
+    <div class="home-live-actions"><button class="button secondary compact" @onclick='() => State.Navigate("live")'>Open Live telemetry</button><button class="button primary compact" title="Open or hide the always-on-top race monitor" @onclick="State.ToggleLiveMonitor">@(State.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Open Live Monitor")</button></div>
+</section>
+
+<section aria-labelledby="workflows-title">
+    <div class="section-heading"><div><span class="eyebrow">Workflows</span><h2 id="workflows-title">Start here</h2></div></div>
+    <div class="workflow-grid">
+        <button class="workflow-card analysis" @onclick='() => State.Navigate("analysis")'><span class="workflow-icon"><ProductIcon Name="analysis" Size="20" /></span><span class="workflow-copy"><strong>Review a race</strong><small>Turn a recording into clear coaching points</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
+        @if (State.IsCapabilityVisible(ProductCapability.RacePlanning))
+        {
+            <button class="workflow-card planning" @onclick='() => State.Navigate("planning")'><span class="workflow-icon"><ProductIcon Name="planning" Size="20" /></span><span class="workflow-copy"><strong>Plan the next race</strong><small>Use comparable races from your history</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
+        }
+        <button class="workflow-card setup" @onclick='() => State.Navigate("setup")'><span class="workflow-icon"><ProductIcon Name="setup" Size="20" /></span><span class="workflow-copy"><strong>Browse setups</strong><small>Find setup files stored on this PC</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
+        @if (State.IsCapabilityVisible(ProductCapability.ProgressiveTuning))
+        {
+            <button class="workflow-card tuning" @onclick='() => State.Navigate("tuning")'><span class="workflow-icon"><ProductIcon Name="tuning" Size="20" /></span><span class="workflow-copy"><strong>Improve a setup</strong><small>Use feedback from an analyzed open-setup race</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
+        }
+    </div>
+</section>
+
+@if (State.Races.Count == 0)
+{
+    <section class="recent-empty @(AnalysisUnavailable ? "needs-attention" : "")" aria-labelledby="recent-title"><span class="empty-icon"><ProductIcon Name="@(AnalysisUnavailable ? "info" : "race")" Size="22" /></span><div><span class="eyebrow">@(AnalysisUnavailable ? "Needs attention" : "Automatic discovery")</span><h2 id="recent-title">@(AnalysisUnavailable ? "Race data could not be opened" : "Race recordings appear here")</h2><p>@(AnalysisUnavailable ? "Open troubleshooting for the cause and recovery steps." : "Finish a recorded Race session in iRacing. No refresh is needed.")</p></div><button class="button secondary compact" @onclick="OpenEmptyAction">@(AnalysisUnavailable ? "Open troubleshooting" : "Open Race Analysis")</button></section>
+}
+else
+{
+<section class="surface-card recent-card" aria-labelledby="recent-title">
+    <div class="card-header"><div><span class="eyebrow">Automatic discovery</span><h2 id="recent-title">Recent races</h2></div><button class="text-button icon-text-button" @onclick='() => State.Navigate("analysis")'>Open Race Analysis <ProductIcon Name="arrow-right" Size="15" /></button></div>
+    <div class="race-list">
+        @foreach (var race in State.Races.Take(6))
+        {
+            <article class="race-row @(HasResult(race) ? "" : "no-result")">
+                <div class="track-avatar" aria-hidden="true">@Initials(race.Track)</div>
+                <div class="race-main"><div class="race-title"><strong>@race.Track</strong><span>@race.Layout</span></div><small>@race.Car · @race.Date</small></div>
+                <div class="race-stat"><span>Setup</span><strong>@race.SetupType</strong></div>
+                @if (HasResult(race)) { <div class="race-stat"><span>Result</span><strong>@Result(race)</strong></div> }
+                <span class="status-label @(race.Analyzed ? "success" : "neutral")">@race.Status</span>
+                <button class="button compact @(race.Analyzed ? "secondary" : "primary")" @onclick="() => OpenRace(race)">@(race.Analyzed ? "Open" : "Analyze")</button>
+            </article>
+        }
+    </div>
+</section>
+}
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private bool AnalysisUnavailable => State.Health.Any(item => item.Id == "backend" && item.State == "unavailable");
+    private void OpenEmptyAction() { if (AnalysisUnavailable) State.OpenTroubleshooting(); else State.Navigate("analysis"); }
+    private Task OpenRace(RecentRace race) => State.OpenRaceFromHomeAsync(race);
+    private static bool HasResult(RecentRace race) => race.StartPosition > 0 || race.FinishPosition > 0;
+    private static string Result(RecentRace race) => (race.StartPosition, race.FinishPosition) switch
+    {
+        (> 0, > 0) => $"P{race.StartPosition} → P{race.FinishPosition}",
+        (_, > 0) => $"Finished P{race.FinishPosition}",
+        (> 0, _) => $"Started P{race.StartPosition}",
+        _ => string.Empty
+    };
+    private static string Initials(string value) => string.Concat(value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(word => char.ToUpperInvariant(word[0])));
+}

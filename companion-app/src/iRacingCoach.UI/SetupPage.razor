@@ -1,0 +1,93 @@
+<div class="page-heading compact-heading">
+    <div><span class="eyebrow">Setups</span><h1>Find the setup files on this PC</h1><p>Browse local iRacing setup files without changing the originals.</p></div>
+</div>
+
+@if (State.Setups.Count == 0)
+{
+    <section class="surface-card compact-empty-surface"><div class="empty-state"><span class="empty-icon"><ProductIcon Name="setup" Size="22" /></span><h2>No local setup files found</h2><p>Save a setup in iRacing and it will appear automatically.</p></div></section>
+}
+else
+{
+    <div class="workflow-layout setup-layout">
+        <aside class="surface-card form-panel">
+            <div class="card-header"><div><span class="eyebrow">Local iRacing setups</span><h2>Setup library</h2></div><span class="status-label neutral">@FilteredSetups.Count()</span></div>
+            <label class="search-field setup-search"><span>Search</span><input type="search" placeholder="Car, track, purpose, or name" @bind="SetupSearch" @bind:event="oninput" /></label>
+            <div class="setup-library-list" role="listbox" aria-label="Setup library">
+                @foreach (var setup in FilteredSetups)
+                {
+                    <button role="option" aria-selected="@(setup.Id == State.SelectedSetupId)" class="@(setup.Id == State.SelectedSetupId ? "selected" : null)" @onclick="() => State.SelectedSetupId = setup.Id"><span><strong>@setup.Name</strong><small>@setup.Car</small></span><span><b>@(Useful(setup.Track) ? setup.Track : "General")</b><small>@(Useful(setup.Role) ? setup.Role : setup.Fields.Count > 0 ? "Readable export" : "iRacing setup")</small></span></button>
+                }
+            </div>
+            @if (State.SelectedSetup is { } selected)
+            {
+                <div class="context-summary"><span>@selected.Car</span><strong>@selected.Name</strong>@if (Useful(selected.Track) || Useful(selected.Role) || Useful(selected.PairStatus)) { <small>@string.Join(" · ", new[] { selected.Track, selected.Role, selected.PairStatus }.Where(Useful))</small> }</div>
+                @if (Useful(selected.Note)) { <div class="inline-alert neutral-alert"><span class="alert-icon"><ProductIcon Name="info" Size="16" /></span><div><strong>Original stays untouched.</strong><span> @selected.Note</span></div></div> }
+                <button class="button secondary full" @onclick="State.OpenSelectedSetupFolder">Open containing folder</button>
+            }
+            <p class="fine-print">Setup files are read-only here. For a recorded race, its saved setup remains the source of truth.</p>
+        </aside>
+
+        @if (State.SelectedSetup is { } selectedSetup)
+        {
+            <section class="surface-card source-card">
+                <div class="card-header"><div><span class="eyebrow">Library</span><h2>Setup details</h2></div><span class="status-label neutral">Read only</span></div>
+                <div class="source-details">
+                    @if (Useful(selectedSetup.Car)) { <div><span>Car</span><strong>@selectedSetup.Car</strong></div> }
+                    @if (Useful(selectedSetup.Track)) { <div><span>Track</span><strong>@selectedSetup.Track</strong></div> }
+                    @if (Useful(selectedSetup.Role)) { <div><span>Purpose</span><strong>@selectedSetup.Role</strong></div> }
+                    @if (Useful(selectedSetup.PairStatus)) { <div><span>Linked recording</span><strong>@selectedSetup.PairStatus</strong></div> }
+                </div>
+                @if (selectedSetup.Fields.Count > 0)
+                {
+                    <div class="decoded-setup">
+                        <div class="analysis-section-heading"><div><span class="eyebrow">Exported setup details</span><h3>Readable settings</h3></div><span class="status-label success">@selectedSetup.Fields.Count fields</span></div>
+                        @foreach (var group in selectedSetup.Fields.GroupBy(field => field.Group))
+                        {
+                            <details class="setup-group" open="@(group.Key == selectedSetup.Fields[0].Group)"><summary>@group.Key <span>@group.Count()</span></summary><dl>@foreach (var field in group) { <div><dt>@field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
+                        }
+                    </div>
+                    @if (ComparableSetups.Any())
+                    {
+                        <div class="setup-comparison">
+                            <div class="analysis-section-heading"><div><span class="eyebrow">Read-only comparison</span><h3>What changed</h3></div></div>
+                            <label>Compare with<select @bind="State.CompareSetupId">@foreach (var option in ComparableSetups) { <option value="@option.Id">@option.Name · @option.Car</option> }</select></label>
+                            @if (State.CompareSetup is { } comparison)
+                            {
+                                <div class="setup-diff-list">
+                                    @foreach (var diff in Differences(selectedSetup, comparison).Take(80))
+                                    {
+                                        <div><span>@diff.Group</span><strong>@diff.Label</strong><del>@diff.Before</del><ins>@diff.After</ins></div>
+                                    }
+                                </div>
+                                @if (!Differences(selectedSetup, comparison).Any()) { <p class="muted-copy">The decoded exported fields match.</p> }
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p class="panel-note">This entry contains an opaque iRacing .sto file without a matching exported setup HTML. The file is cataloged, but its internal settings are not claimed as readable or editable.</p>
+                }
+                @if (Useful(selectedSetup.Fingerprint)) { <details class="evidence-details"><summary>Technical file record</summary><p class="mono">SHA-256: @selectedSetup.Fingerprint</p></details> }
+            </section>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private string SetupSearch { get; set; } = string.Empty;
+    private IEnumerable<LocalSetup> FilteredSetups => State.Setups.Where(setup => string.IsNullOrWhiteSpace(SetupSearch) || new[] { setup.Name, setup.Car, setup.Track, setup.Role }.Any(value => value?.Contains(SetupSearch, StringComparison.OrdinalIgnoreCase) == true)).OrderBy(setup => setup.Car).ThenBy(setup => setup.Track).ThenBy(setup => setup.Name);
+    private static bool Useful(string value) => !string.IsNullOrWhiteSpace(value) && !value.Contains("unavailable", StringComparison.OrdinalIgnoreCase) && !value.Contains("not identified", StringComparison.OrdinalIgnoreCase) && !value.Equals("Unidentified", StringComparison.OrdinalIgnoreCase);
+    private IEnumerable<LocalSetup> ComparableSetups => State.Setups.Where(setup => setup.Id != State.SelectedSetupId && setup.Fields.Count > 0 && (State.SelectedSetup is null || setup.Car.Equals(State.SelectedSetup.Car, StringComparison.OrdinalIgnoreCase)));
+    private static IEnumerable<SetupDifference> Differences(LocalSetup selected, LocalSetup comparison)
+    {
+        var before = comparison.Fields.ToDictionary(field => field.Key, StringComparer.OrdinalIgnoreCase);
+        foreach (var field in selected.Fields)
+        {
+            if (!before.TryGetValue(field.Key, out var prior) || !string.Equals(field.Value, prior.Value, StringComparison.OrdinalIgnoreCase))
+                yield return new SetupDifference(field.Group, field.Label, prior?.Value ?? "Not present", field.Value);
+        }
+    }
+    private sealed record SetupDifference(string Group, string Label, string Before, string After);
+}

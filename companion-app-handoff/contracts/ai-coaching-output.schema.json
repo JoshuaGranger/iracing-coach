@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/ai-coaching-output.schema.json",
+  "title": "iRacing Coach optional AI coaching output",
+  "type": "object",
+  "required": ["summary", "actions", "followUpNeeded"],
+  "properties": {
+    "summary": { "type": "string", "maxLength": 500 },
+    "actions": {
+      "type": "array",
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/evidenceStatement" }
+    },
+    "cornerCoaching": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["cornerId", "phase", "instruction", "evidenceClass", "evidenceIds"],
+        "properties": {
+          "cornerId": { "type": "string" },
+          "phase": { "enum": ["entry", "center", "exit", "whole-zone"] },
+          "instruction": { "type": "string", "maxLength": 300 },
+          "evidenceClass": { "$ref": "#/$defs/evidenceClass" },
+          "evidenceIds": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "strategy": { "$ref": "#/$defs/evidenceStatement" },
+    "setupExperiment": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["change", "expectedEffect", "risk", "successCriteria", "rollback", "evidenceIds"],
+          "properties": {
+            "change": { "type": "string" },
+            "expectedEffect": { "type": "string" },
+            "risk": { "type": "string" },
+            "successCriteria": { "type": "string" },
+            "rollback": { "type": "string" },
+            "evidenceIds": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "followUpNeeded": { "type": "boolean" }
+  },
+  "$defs": {
+    "evidenceClass": { "enum": ["measured", "derived", "inferred", "proxy"] },
+    "evidenceStatement": {
+      "type": "object",
+      "required": ["text", "evidenceClass", "evidenceIds"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 400 },
+        "evidenceClass": { "$ref": "#/$defs/evidenceClass" },
+        "evidenceIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

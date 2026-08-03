@@ -1,0 +1,87 @@
+<div class="page-heading">
+    <div><span class="eyebrow">Race planning</span><h1>Build the next race briefing</h1><p>Set the event, then use matching recorded evidence for fuel, tires, and race priorities.</p></div>
+    @if (State.PlanGenerated) { <button class="button secondary" @onclick="State.ResetPlan">Start over</button> }
+</div>
+
+@if (State.Races.Count == 0)
+{
+    <section class="surface-card compact-empty-surface"><div class="empty-state"><span class="empty-icon"><ProductIcon Name="planning" Size="22" /></span><h2>Finish a recorded race first</h2><p>Planning uses the recorded car, track, setup type, and distance.</p><button class="button primary" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button></div></section>
+}
+else
+{
+    <div class="workflow-layout planning-layout @(State.PlanGenerated ? "has-results" : "setup-only")">
+        <aside class="surface-card form-panel">
+            <div class="card-header"><div><span class="eyebrow">Next event</span><h2>Race details</h2></div></div>
+            <label>Car
+                <select value="@State.SelectedPlanCarId" @onchange="ChangeCar">@foreach (var car in State.Cars) { <option value="@car.Id">@car.Name · @car.Source</option> }</select>
+                <small>The most recently raced car is selected automatically.</small>
+            </label>
+            <label>Track and layout
+                <select value="@State.SelectedPlanTrack" @onchange="ChangeTrack">@foreach (var track in PlanTracks) { <option value="@track.Key">@track.Label</option> }</select>
+            </label>
+            <div class="field-row"><label>Distance<input type="number" min="1" max="1000" @bind="State.PlanDistanceValue" /></label><label>Measured in<select @bind="State.PlanDistanceMode"><option>Laps</option><option>Minutes</option></select></label></div>
+            <label>Setup rules<select value="@State.PlanSetupType" @onchange="ChangeSetupType"><option>Fixed</option><option>Open</option></select></label>
+            <label>Recorded race to use
+                <select @bind="State.SelectedPlanRaceId"><option value="">No matching recorded race</option>@foreach (var race in MatchingRaces) { <option value="@race.Id">@race.Track · @race.Layout · @race.Car · @race.Date</option> }</select>
+                <small>Only recordings that match this car, layout, and setup type are listed.</small>
+            </label>
+            @if (State.SelectedPlanRace is { } selected)
+            {
+                <div class="context-summary"><span>@selected.Car</span><strong>@selected.Track · @selected.Layout</strong><small>@selected.SetupType setup · @selected.Date</small></div>
+            }
+            <button class="button primary full" disabled="@(State.SelectedPlanRace is null)" @onclick="BuildPlan">Build @State.PlanDistanceValue-@State.PlanDistanceMode.ToLowerInvariant() briefing</button>
+        </aside>
+
+        @if (State.PlanGenerated)
+        {
+            <div class="workflow-results">
+            @if (State.PlanBriefing is { } plan)
+            {
+                <section class="surface-card plan-briefing">
+                    <div class="analysis-section-heading"><div><span class="eyebrow">Race briefing</span><h2>@plan.Track · @plan.Car</h2></div><span class="status-label @(plan.Confidence.Equals("Low", StringComparison.OrdinalIgnoreCase) ? "warning" : "success")">@plan.Confidence confidence</span></div>
+                    <div class="briefing-metrics">
+                        @if (plan.GreenFuelGallonsPerLap.HasValue) { <div><span>Green fuel use</span><strong>@plan.GreenFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
+                        @if (plan.CautionFuelGallonsPerLap.HasValue) { <div><span>Caution fuel use</span><strong>@plan.CautionFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
+                        <div><span>Fuel range</span><strong>@plan.FuelRange</strong></div><div><span>All-green baseline</span><strong>@plan.StopCount</strong></div>
+                    </div>
+                    @if (plan.PitTargets.Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>Equal-stint pit targets</span><strong>@string.Join(" · ", plan.PitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
+                    <div class="briefing-columns">
+                        <div><h3>Race priorities</h3>@foreach (var action in plan.Priorities.Where(item => CapabilityRegistry.IsSupported(item.Claim))) { <article class="briefing-action"><span>@action.Label</span><p>@action.Claim.Text</p></article> }</div>
+                        <div><h3>Tires and long-run approach</h3><p class="tire-guidance">@plan.TireGuidance</p>@if (plan.Triggers.Any(item => CapabilityRegistry.IsSupported(item.Claim))) { <h3>Race triggers</h3>@foreach (var trigger in plan.Triggers.Where(item => CapabilityRegistry.IsSupported(item.Claim))) { <article class="briefing-trigger"><strong>@trigger.Label</strong><span>@trigger.Claim.Text</span></article> } }</div>
+                    </div>
+                    @if (plan.Corners.Any(HasSupportedPhase)) { <div class="plan-corners"><h3>Corner approach by tire phase</h3>@foreach (var corner in plan.Corners.Where(HasSupportedPhase)) { <article><strong>@corner.Zone</strong>@if (Supported(corner.Early)) { <span><b>Early</b> @corner.Early.Text</span> }@if (Supported(corner.Middle)) { <span><b>Middle</b> @corner.Middle.Text</span> }@if (Supported(corner.Late)) { <span><b>Late</b> @corner.Late.Text</span> }</article> }</div> }
+                    @if (plan.Assumptions.Count > 0) { <details class="settings-disclosure"><summary>How this briefing was calculated</summary><ul>@foreach (var item in plan.Assumptions) { <li>@item</li> }</ul></details> }
+                </section>
+            }
+            <section class="surface-card">
+                <div class="card-header"><div><span class="eyebrow">Recorded comparisons</span><h2>Comparable race history</h2></div><span class="status-label neutral">Local recordings</span></div>
+                <p class="section-copy">@State.PlanMessage</p>
+                @if (State.StrategyScenarios.Count == 0)
+                {
+                    <div class="empty-state compact-empty"><span class="empty-icon"><ProductIcon Name="planning" Size="22" /></span><h3>No comparable runs yet</h3><p>Analyze more races with the same car, layout, setup type, and distance.</p></div>
+                }
+                else
+                {
+                    <div class="scenario-grid">@foreach (var run in State.StrategyScenarios) { <article class="scenario-card"><div class="scenario-title"><EvidenceBadge Kind="run.Evidence" /><strong>@run.Label</strong></div>@if (!string.IsNullOrWhiteSpace(run.Window)) { <b>@FriendlyWindow(run.Window)</b> }@if (!string.IsNullOrWhiteSpace(run.Stops)) { <span>@run.Stops</span> }@if (!string.IsNullOrWhiteSpace(run.Fuel)) { <span>@run.Fuel</span> }@if (!string.IsNullOrWhiteSpace(run.Note)) { <small>@run.Note</small> }</article> }</div>
+                    <div class="inline-alert neutral-alert"><span class="alert-icon"><ProductIcon Name="info" Size="16" /></span><div><strong>Recorded history, not a prediction.</strong><span> Cautions and race conditions can change the outcome.</span></div></div>
+                }
+            </section></div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private IEnumerable<(string Key, string Label)> PlanTracks => State.Races.OfType<RecentRace>().Where(race => !string.IsNullOrWhiteSpace(race.Track)).Select(race => ($"{race.Track}|{race.Layout}", string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track} · {race.Layout}")).DistinctBy(item => item.Item1).Select(item => (item.Item1, item.Item2));
+    private IEnumerable<RecentRace> MatchingRaces => State.Races.OfType<RecentRace>().Where(race =>
+        string.Equals(State.SelectedPlanCarId, race.CarPath.Length > 0 ? race.CarPath : race.Car, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(State.SelectedPlanTrack, $"{race.Track}|{race.Layout}", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(State.PlanSetupType, race.SetupType, StringComparison.OrdinalIgnoreCase));
+    private void ChangeCar(ChangeEventArgs args) => State.SelectPlanCar(args.Value?.ToString());
+    private void ChangeTrack(ChangeEventArgs args) => State.SelectPlanTrack(args.Value?.ToString());
+    private void ChangeSetupType(ChangeEventArgs args) => State.SelectPlanSetupType(args.Value?.ToString());
+    private Task BuildPlan() => State.GeneratePlanAsync();
+    private static string FriendlyWindow(string value) => DateTimeOffset.TryParse(value, out var date) ? date.ToLocalTime().ToString("MMM d · h:mm tt") : value;
+    private static bool Supported(EvidenceText claim) => CapabilityRegistry.IsSupported(claim) && !claim.Text.Contains("No eligible lap", StringComparison.OrdinalIgnoreCase) && !claim.Text.Contains("enough samples", StringComparison.OrdinalIgnoreCase);
+    private static bool HasSupportedPhase(CornerCoachingRow row) => Supported(row.Early) || Supported(row.Middle) || Supported(row.Late);
+}

@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "name": "gentle-charcoal-dark",
+  "mode": "dark",
+  "description": "A quiet charcoal racing workstation with restrained blue interaction and color reserved for evidence, telemetry, and genuine status changes.",
+  "colors": {
+    "app": "#141517",
+    "navigation": "#17191C",
+    "surface1": "#1B1D20",
+    "surface2": "#202328",
+    "surface3": "#272B30",
+    "surfaceHover": "#2D3238",
+    "borderSubtle": "#30353B",
+    "borderStrong": "#434A53",
+    "textPrimary": "#E8E9E7",
+    "textSecondary": "#B9BDC2",
+    "textMuted": "#90969E",
+    "textDisabled": "#656B73",
+    "accent": "#8DB4E2",
+    "accentFill": "#355C86",
+    "accentHover": "#426F9D",
+    "accentSubtle": "#202B38",
+    "focus": "#A9C9EE",
+    "success": "#79B995",
+    "warning": "#D3AD67",
+    "danger": "#D98686",
+    "info": "#7FB2C9",
+    "unavailable": "#8E98A5",
+    "chartBackground": "#17191C",
+    "chartGrid": "#30353B",
+    "chartReference": "#59616D",
+    "shadow": "#0B0D0F80"
+  },
+  "evidence": {
+    "measured": "#82AEEF",
+    "derived": "#7FC5BC",
+    "inferred": "#B99CE3",
+    "proxy": "#D3AD67",
+    "unavailable": "#8E98A5"
+  },
+  "telemetry": {
+    "speed": "#8DB4F6",
+    "throttle": "#71C29A",
+    "brake": "#E08A80",
+    "steering": "#B99CE3",
+    "fuel": "#D8B56B",
+    "fasterDelta": "#6FC7C0",
+    "slowerDelta": "#E08A80",
+    "caution": "#D3AD67",
+    "pitService": "#7993B5",
+    "traffic": "#9B91C7",
+    "tow": "#B38DD1",
+    "repairConfounded": "#D98686",
+    "target": "#E2BC70"
+  },
+  "typography": {
+    "uiFamilies": ["Segoe UI Variable Text", "Segoe UI", "sans-serif"],
+    "metricFamilies": ["Cascadia Mono", "Consolas", "monospace"],
+    "bodyPx": 14,
+    "bodyLinePx": 20,
+    "compactPx": 12,
+    "sectionTitlePx": 16,
+    "pageTitlePx": 26,
+    "metricPx": 22,
+    "weights": [400, 500, 600]
+  },
+  "spacingPx": [4, 8, 12, 16, 20, 24, 28, 32],
+  "radiiPx": {
+    "control": 5,
+    "card": 6,
+    "panel": 8,
+    "pill": 999
+  },
+  "motionMs": {
+    "hover": 130,
+    "panel": 200,
+    "maximumTranslationPx": 2,
+    "easing": "cubic-bezier(.2, 0, 0, 1)",
+    "honorReducedMotion": true,
+    "continuousStatusAnimationAllowed": false
+  },
+  "window": {
+    "defaultWidthPx": 1440,
+    "defaultHeightPx": 900,
+    "minimumWidthPx": 900,
+    "minimumHeightPx": 640,
+    "expandedNavigationPx": 216,
+    "collapsedNavigationPx": 64
+  },
+  "behavior": {
+    "pureBlackOrWhiteSurfacesAllowed": false,
+    "colorMayBeSoleInformationCarrier": false,
+    "targetTraceRequiresUsableComparison": true,
+    "continuousTireAgeRequiresBackendEvidence": true,
+    "globalBlockingSpinnerAllowed": false
+  }
+}

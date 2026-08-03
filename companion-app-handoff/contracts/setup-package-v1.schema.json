@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/setup-package-v1.schema.json",
+  "title": "iRacing Coach build_open_setup_package result",
+  "type": "object",
+  "required": [
+    "ok",
+    "status",
+    "package_id",
+    "package_path",
+    "context",
+    "baseline",
+    "baseline_confirmation",
+    "qualifying",
+    "donor",
+    "simulator_loadable_setup_produced",
+    "source_setup_files_modified"
+  ],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "status": {
+      "enum": [
+        "exact-track-baseline",
+        "provisional-exact-track-baseline",
+        "donor-baseline",
+        "needs-baseline-export-or-research"
+      ]
+    },
+    "package_id": { "type": "string" },
+    "package_path": { "type": "string" },
+    "context": {
+      "type": "object",
+      "required": ["season_key", "car_key", "track_key", "setup_type", "race_length_key"],
+      "properties": {
+        "season_key": { "type": "string" },
+        "car_key": { "type": "string" },
+        "track_key": { "type": "string" },
+        "setup_type": { "const": "open" },
+        "race_length_key": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "baseline": {
+      "oneOf": [
+        { "$ref": "#/$defs/setupCandidate" },
+        { "type": "null" }
+      ]
+    },
+    "baseline_confirmation": {
+      "type": "object",
+      "required": ["status", "confirmed", "reason"],
+      "properties": {
+        "status": { "type": "string" },
+        "confirmed": { "type": "boolean" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "qualifying": {
+      "oneOf": [
+        { "$ref": "#/$defs/setupCandidate" },
+        { "type": "null" }
+      ]
+    },
+    "donor": { "type": ["object", "null"] },
+    "simulator_loadable_setup_produced": { "const": false },
+    "source_setup_files_modified": { "const": false }
+  },
+  "$defs": {
+    "setupCandidate": {
+      "type": "object",
+      "required": [
+        "stem", "pair_status", "car_folder", "filename_identity", "sources",
+        "fingerprint", "builder_notes", "identity_warnings", "parsed_html",
+        "source_files_read_only"
+      ],
+      "properties": {
+        "stem": { "type": ["string", "null"] },
+        "pair_status": { "type": ["string", "null"] },
+        "car_folder": { "type": ["string", "null"] },
+        "filename_identity": { "type": "object" },
+        "sources": { "type": "object" },
+        "fingerprint": { "type": ["string", "null"] },
+        "builder_notes": { "type": "string" },
+        "identity_warnings": { "type": "array", "items": { "type": "string" } },
+        "parsed_html": { "type": ["object", "null"] },
+        "source_files_read_only": { "const": true }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

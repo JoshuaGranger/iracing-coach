@@ -1,0 +1,12 @@
+<div class="timeline-row">
+    <div class="timeline-label"><strong>@Label</strong><small>@Detail</small></div>
+    <div class="timeline-track"><span class="timeline-bar @Tone" style="left:@(Start)%;width:@(Width)%"></span></div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public string Detail { get; set; } = "";
+    [Parameter, EditorRequired] public string Tone { get; set; } = "";
+    [Parameter] public int Start { get; set; }
+    [Parameter] public int Width { get; set; }
+}

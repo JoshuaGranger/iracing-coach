@@ -1,0 +1,4 @@
+interface:
+  display_name: "iRacing Race & Setup Coach"
+  short_description: "Concise race cards, telemetry, strategy, and setup tuning"
+  default_prompt: "Use $analyze-iracing-race to give me a concise corner-by-corner Race Card for my latest race, with braking, turn-in, tire-age behavior, and groove migration."

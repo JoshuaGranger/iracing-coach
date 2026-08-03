@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/garage61-auth-status-v1.schema.json",
+  "title": "iRacing Coach garage61_auth_status result",
+  "type": "object",
+  "required": ["ok", "configured", "status", "credential_storage", "archive_root", "api_request"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "configured": { "type": "boolean" },
+    "status": { "enum": ["credential_store_unavailable", "not_configured", "unavailable", "available"] },
+    "credential_storage": { "const": "windows-user-dpapi" },
+    "archive_root": { "type": "string" },
+    "api_request": { "type": ["object", "null"] },
+    "error_type": { "type": "string" },
+    "message": { "type": "string" }
+  },
+  "additionalProperties": true
+}

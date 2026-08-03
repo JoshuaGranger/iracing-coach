@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>iRacing Coach Setup</AssemblyName>
+    <Version>0.9.3</Version>
+    <ApplicationIcon>..\iRacingCoach.App\Assets\iRacingCoach.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\tools\installer-payload.zip" LogicalName="iRacingCoach.Payload.zip" Condition="'$(EmbedInstallerPayload)' == 'true' and Exists('..\..\tools\installer-payload.zip')" />
+  </ItemGroup>
+  <Target Name="ValidateInstallerPayload" BeforeTargets="BeforeBuild" Condition="'$(EmbedInstallerPayload)' == 'true'">
+    <Error Condition="!Exists('..\..\tools\installer-payload.zip')" Text="Run tools\BuildRelease.ps1 to create installer-payload.zip before publishing the installer." />
+  </Target>
+</Project>

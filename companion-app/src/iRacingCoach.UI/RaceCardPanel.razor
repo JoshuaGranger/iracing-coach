@@ -1,0 +1,33 @@
+<section class="surface-card race-card-panel" aria-labelledby="race-card-title">
+    <div class="card-header"><div><span class="eyebrow">Race review</span><h2 id="race-card-title">@Card.Title</h2></div><span class="status-label success">Race Card ready</span></div>
+    @if (Supported(Card.BottomLine)) { <div class="bottom-line"><EvidenceBadge Kind="Card.BottomLine.Kind" /><strong>@Card.BottomLine.Text</strong></div> }
+    <div class="race-actions">
+        @foreach (var action in Card.Actions.Where(action => Supported(action.Claim)))
+        {
+            <article><span>@action.Label</span><p><EvidenceBadge Kind="action.Claim.Kind" /> @action.Claim.Text</p></article>
+        }
+    </div>
+    @if (Card.Corners.Any(HasCornerEvidence))
+    {
+        <div class="race-corner-grid">
+        @foreach (var row in Card.Corners.Where(HasCornerEvidence))
+        {
+            <article class="scenario-card"><strong>@row.Zone</strong>@foreach (var claim in Claims(row).Where(item => Supported(item.Claim))) { <p><span>@claim.Label</span><br /><EvidenceBadge Kind="claim.Claim.Kind" /> @claim.Claim.Text</p> }</article>
+        }
+        </div>
+    }
+    <div class="race-triggers">
+        @foreach (var trigger in Card.Triggers.Where(trigger => Supported(trigger.Claim)))
+        {
+            <div><span>@trigger.Label</span><p><EvidenceBadge Kind="trigger.Claim.Kind" /> @trigger.Claim.Text</p></div>
+        }
+    </div>
+    @if (Card.Appendix.Any(Supported)) { <details class="evidence-details"><summary>Evidence details</summary><ul>@foreach (var item in Card.Appendix.Where(Supported)) { <li><EvidenceBadge Kind="item.Kind" /> @item.Text</li> }</ul></details> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public RaceCard Card { get; set; } = null!;
+    private static bool Supported(EvidenceText claim) => CapabilityRegistry.IsSupported(claim);
+    private static bool HasCornerEvidence(CornerCoachingRow row) => Claims(row).Any(item => Supported(item.Claim));
+    private static (string Label, EvidenceText Claim)[] Claims(CornerCoachingRow row) => [("Early run", row.Early), ("Middle run", row.Middle), ("Late run", row.Late), ("Driving line", row.Groove)];
+}

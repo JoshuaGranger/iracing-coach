@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iRacing Coach</title>
+  <base href="/" />
+  <link rel="stylesheet" href="_content/iRacingCoach.UI/theme.generated.css" />
+  <link rel="stylesheet" href="_content/iRacingCoach.UI/coach.css" />
+</head>
+<body>
+  <div id="app">Opening your local race workspace…</div>
+  <div id="blazor-error-ui" hidden>An unexpected UI error occurred. Your local data was not changed.</div>
+  <script>
+    window.iracingCoach = {
+      scrollWorkspaceTop: function () {
+        const workspace = document.getElementById('main-content');
+        if (workspace) workspace.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }
+    };
+  </script>
+  <script src="_framework/blazor.webview.js"></script>
+</body>
+</html>

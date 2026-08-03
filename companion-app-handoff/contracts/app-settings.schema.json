@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/app-settings.schema.json",
+  "title": "iRacing Coach companion settings",
+  "type": "object",
+  "required": ["schemaVersion", "iracingRoot", "archiveRoot", "ai", "garage61"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "iracingRoot": { "type": "string", "minLength": 3 },
+    "installRoot": { "type": ["string", "null"], "minLength": 3 },
+    "archiveRoot": { "type": "string", "minLength": 3 },
+    "backendPython": { "type": ["string", "null"] },
+    "ui": {
+      "type": "object",
+      "required": ["theme", "density", "motion"],
+      "properties": {
+        "theme": { "const": "gentle-charcoal-dark" },
+        "density": { "enum": ["comfortable-compact"] },
+        "motion": { "enum": ["system", "reduced"] }
+      },
+      "additionalProperties": true
+    },
+    "ai": {
+      "type": "object",
+      "required": ["enabled", "adapter"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "adapter": { "enum": ["codex-app-server", "disabled"] }
+      },
+      "additionalProperties": true
+    },
+    "garage61": {
+      "type": "object",
+      "required": ["enabled", "globalVisibleLapsApproved"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "globalVisibleLapsApproved": { "const": false }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

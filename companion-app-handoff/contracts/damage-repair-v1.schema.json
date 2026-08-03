@@ -1,0 +1,376 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/damage-repair-v1.schema.json",
+  "title": "iRacing Coach damage, tow, and repair context v1",
+  "description": "Recorded tow/repair context. Pit-road, stall, service, tow, timer-positive, and countdown-progress clocks overlap and must never be added unless a separate non-overlapping calculation is supplied.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "time_basis",
+    "sampling_resolution_s",
+    "channel_coverage",
+    "summary",
+    "incident_points",
+    "episodes",
+    "lap_impacts",
+    "run_impacts",
+    "limitations",
+    "unavailable_measurements"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["usable", "partial", "unavailable"] },
+    "time_basis": { "type": "string", "minLength": 1 },
+    "sampling_resolution_s": { "type": "number", "exclusiveMinimum": 0 },
+    "channel_coverage": {
+      "type": "object",
+      "required": [
+        "tow_timer",
+        "mandatory_repair_timer",
+        "optional_repair_timer",
+        "pit_road",
+        "pit_stall",
+        "pit_service_active",
+        "fast_repairs_used",
+        "incident_points",
+        "repair_required_flag"
+      ],
+      "additionalProperties": { "$ref": "#/$defs/channelCoverage" }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "episodes",
+        "race_window_episodes",
+        "pre_race_or_grid_episodes",
+        "tow_episodes",
+        "recorded_repair_episodes",
+        "confirmed_fast_repair_uses",
+        "total_pit_road_time_s",
+        "total_pit_stall_time_s",
+        "total_pitstop_service_active_time_s",
+        "total_tow_active_time_s",
+        "total_repair_active_time_s",
+        "total_repair_timer_positive_observed_s",
+        "total_repair_work_completed_s",
+        "all_recording_pit_road_time_s",
+        "pre_race_or_grid_pit_road_time_s",
+        "totals_scope_note"
+      ],
+      "properties": {
+        "episodes": { "$ref": "#/$defs/count" },
+        "race_window_episodes": { "$ref": "#/$defs/count" },
+        "pre_race_or_grid_episodes": { "$ref": "#/$defs/count" },
+        "pit_road_episodes": { "$ref": "#/$defs/count" },
+        "tow_episodes": { "$ref": "#/$defs/count" },
+        "recorded_repair_episodes": { "$ref": "#/$defs/count" },
+        "repair_required_flag_episodes": { "$ref": "#/$defs/count" },
+        "mandatory_repair_episodes": { "$ref": "#/$defs/count" },
+        "optional_repair_episodes": { "$ref": "#/$defs/count" },
+        "confirmed_fast_repair_uses": { "$ref": "#/$defs/count" },
+        "total_pit_road_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "total_pit_stall_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "total_pitstop_service_active_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "total_tow_active_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "total_repair_active_time_s": {
+          "allOf": [{ "$ref": "#/$defs/nullableDuration" }],
+          "description": "Elapsed sampled time during which at least one recorded repair timer decreased."
+        },
+        "total_repair_timer_positive_observed_s": {
+          "allOf": [{ "$ref": "#/$defs/nullableDuration" }],
+          "description": "Elapsed time with a positive repair timer, whether or not that timer was decreasing."
+        },
+        "total_repair_work_completed_s": {
+          "allOf": [{ "$ref": "#/$defs/nullableDuration" }],
+          "description": "Sum of valid recorded timer reductions. This is repair-countdown reduction, not an exclusive pit-loss clock."
+        },
+        "total_repair_required_flag_active_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "all_recording_pit_road_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "pre_race_or_grid_pit_road_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "totals_scope_note": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "incident_points": {
+      "type": "object",
+      "required": ["status", "events", "damage_proof", "note"],
+      "properties": {
+        "status": { "enum": ["recorded_context_only", "unavailable"] },
+        "source_channel": { "type": ["string", "null"] },
+        "start_count": { "type": ["number", "null"], "minimum": 0 },
+        "end_count": { "type": ["number", "null"], "minimum": 0 },
+        "positive_delta": { "type": ["number", "null"], "minimum": 0 },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/incidentEvent" } },
+        "damage_proof": { "const": false },
+        "note": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "episodes": { "type": "array", "items": { "$ref": "#/$defs/episode" } },
+    "lap_impacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["lap", "episode_ids", "automatic_coaching_reference_eligible", "exclusion_reason_codes"],
+        "properties": {
+          "lap": { "type": "integer", "minimum": 0 },
+          "episode_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "automatic_coaching_reference_eligible": { "const": false },
+          "exclusion_reason_codes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      }
+    },
+    "run_impacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "run_number",
+          "automatic_coaching_reference_eligible",
+          "status",
+          "coaching_reference_lap_numbers"
+        ],
+        "properties": {
+          "run_number": { "type": "integer", "minimum": 1 },
+          "automatic_coaching_reference_eligible": { "type": "boolean" },
+          "status": { "type": "string", "minLength": 1 },
+          "reason_codes": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+          "coaching_reference_lap_numbers": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
+          "scope_note": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "unavailable_measurements": { "type": "array", "items": { "$ref": "#/$defs/unavailableMeasurement" } }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "nullableDuration": { "type": ["number", "null"], "minimum": 0 },
+    "nullableNonnegative": { "type": ["number", "null"], "minimum": 0 },
+    "channelCoverage": {
+      "type": "object",
+      "required": ["status", "channel", "unit"],
+      "properties": {
+        "status": { "enum": ["recorded", "unavailable"] },
+        "channel": { "type": ["string", "null"] },
+        "unit": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "recorded" } }, "required": ["status"] },
+          "then": { "properties": { "channel": { "type": "string", "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "unavailable" } }, "required": ["status"] },
+          "then": { "properties": { "channel": { "type": "null" } } }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "incidentEvent": {
+      "type": "object",
+      "required": ["event_id", "session_time_s", "points_added", "damage_proof"],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 },
+        "session_time_s": { "type": "number", "minimum": 0 },
+        "candidate_lap": { "type": ["integer", "null"], "minimum": 0 },
+        "points_added": { "type": "number", "minimum": 0 },
+        "damage_proof": { "const": false }
+      },
+      "additionalProperties": true
+    },
+    "timing": {
+      "type": "object",
+      "required": [
+        "pit_road_time_s",
+        "pit_stall_time_s",
+        "pitstop_service_active_time_s",
+        "tow_active_time_s",
+        "repair_active_time_s",
+        "repair_timer_positive_observed_s",
+        "repair_work_completed_s",
+        "nonexclusive_note"
+      ],
+      "properties": {
+        "pit_road_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "pit_stall_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "pitstop_service_active_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "tow_active_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "tow_timer_peak_s": { "$ref": "#/$defs/nullableNonnegative" },
+        "repair_active_time_s": {
+          "allOf": [{ "$ref": "#/$defs/nullableDuration" }],
+          "description": "Elapsed sampled countdown-progress time; distinct from timer-positive duration and countdown reduction."
+        },
+        "repair_timer_positive_observed_s": {
+          "allOf": [{ "$ref": "#/$defs/nullableDuration" }],
+          "description": "Elapsed positive-timer duration; a positive timer alone is not evidence that repair work progressed."
+        },
+        "repair_work_completed_s": {
+          "allOf": [{ "$ref": "#/$defs/nullableDuration" }],
+          "description": "Recorded countdown reduction; not an exclusive elapsed-time or pit-loss measure."
+        },
+        "repair_required_flag_active_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "nonexclusive_note": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "repairTimer": {
+      "type": "object",
+      "required": [
+        "status",
+        "source_channel",
+        "source_unit",
+        "peak_remaining_s",
+        "countdown_observed_s",
+        "remaining_at_stall_exit_s",
+        "timer_positive_observed_s",
+        "countdown_progress_elapsed_s",
+        "repair_work_completed_s",
+        "completion_status",
+        "countdown_progress_sample_count"
+      ],
+      "properties": {
+        "status": { "enum": ["unavailable", "recorded_zero", "recorded_positive_timer"] },
+        "source_channel": { "type": ["string", "null"] },
+        "source_unit": { "type": ["string", "null"] },
+        "peak_remaining_s": { "$ref": "#/$defs/nullableNonnegative" },
+        "countdown_observed_s": {
+          "allOf": [{ "$ref": "#/$defs/nullableNonnegative" }],
+          "description": "Backward-compatible alias for valid recorded timer reduction."
+        },
+        "remaining_at_stall_exit_s": { "$ref": "#/$defs/nullableNonnegative" },
+        "timer_positive_observed_s": { "$ref": "#/$defs/nullableDuration" },
+        "countdown_progress_elapsed_s": { "$ref": "#/$defs/nullableDuration" },
+        "repair_work_completed_s": { "$ref": "#/$defs/nullableNonnegative" },
+        "completion_status": {
+          "enum": [
+            "unavailable",
+            "not_active",
+            "active_at_recording_end",
+            "counted_down_to_zero",
+            "remaining_at_stall_exit",
+            "interrupted_or_unconfirmed"
+          ]
+        },
+        "countdown_progress_sample_count": { "type": "integer", "minimum": 0 },
+        "countdown_progress_first_sample_index": { "type": ["integer", "null"], "minimum": 0 },
+        "countdown_progress_last_sample_index": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "tow": {
+      "type": "object",
+      "required": ["status", "source_channel", "peak_remaining_s", "active_time_s", "completion_status"],
+      "properties": {
+        "status": { "enum": ["unavailable", "recorded_zero", "recorded_active"] },
+        "source_channel": { "type": ["string", "null"] },
+        "peak_remaining_s": { "$ref": "#/$defs/nullableNonnegative" },
+        "last_remaining_s": { "$ref": "#/$defs/nullableNonnegative" },
+        "active_time_s": { "$ref": "#/$defs/nullableDuration" },
+        "completion_status": { "enum": ["unavailable", "not_active", "active_at_recording_end", "counted_down_to_zero", "interrupted_or_unconfirmed"] }
+      },
+      "additionalProperties": true
+    },
+    "fastRepair": {
+      "type": "object",
+      "required": ["requested", "request_confirmed_as_use", "used_count_delta", "confirmation_rule"],
+      "properties": {
+        "requested": { "type": "boolean" },
+        "request_confirmed_as_use": { "type": "boolean" },
+        "used_count_delta": { "type": ["number", "null"], "minimum": 0 },
+        "confirmation_rule": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "damageEvidence": {
+      "type": "object",
+      "required": ["status", "severity", "location", "note"],
+      "properties": {
+        "status": { "type": "string", "minLength": 1 },
+        "severity": { "type": "null" },
+        "location": { "type": "null" },
+        "note": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "episode": {
+      "type": "object",
+      "required": [
+        "episode_id",
+        "classification",
+        "start_session_time_s",
+        "end_session_time_s",
+        "candidate_lap_numbers",
+        "session_phase",
+        "timing",
+        "tow",
+        "mandatory_repair",
+        "optional_repair",
+        "repair_required_state",
+        "fast_repair",
+        "incident_points_context",
+        "damage_evidence",
+        "source_channels"
+      ],
+      "properties": {
+        "episode_id": { "type": "string", "minLength": 1 },
+        "classification": { "type": "string", "minLength": 1 },
+        "start_session_time_s": { "type": "number", "minimum": 0 },
+        "end_session_time_s": { "type": "number", "minimum": 0 },
+        "candidate_lap_numbers": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 0 } },
+        "session_phase": { "enum": ["recorded_race_window", "pre_race_or_grid", "post_race_recording", "race_window_unavailable"] },
+        "timing": { "$ref": "#/$defs/timing" },
+        "tow": { "$ref": "#/$defs/tow" },
+        "mandatory_repair": { "$ref": "#/$defs/repairTimer" },
+        "optional_repair": { "$ref": "#/$defs/repairTimer" },
+        "repair_required_state": {
+          "type": "object",
+          "required": ["status", "active_time_s", "interpretation"],
+          "properties": {
+            "status": { "enum": ["recorded_active", "recorded_inactive", "unavailable"] },
+            "active_time_s": { "$ref": "#/$defs/nullableDuration" },
+            "interpretation": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": true
+        },
+        "fast_repair": { "$ref": "#/$defs/fastRepair" },
+        "incident_points_context": {
+          "type": "object",
+          "required": ["damage_proof", "note", "repair_correlated_candidate"],
+          "properties": {
+            "damage_proof": { "const": false },
+            "note": { "type": "string", "minLength": 1 },
+            "repair_correlated_candidate": {
+              "type": "object",
+              "required": ["status", "candidate_lap_numbers", "damage_onset_confirmed", "note"],
+              "properties": {
+                "status": { "enum": ["inferred_candidate_boundary", "unavailable"] },
+                "candidate_lap_numbers": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 0 } },
+                "damage_onset_confirmed": { "const": false },
+                "note": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "damage_evidence": { "$ref": "#/$defs/damageEvidence" },
+        "source_channels": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": true
+    },
+    "unavailableMeasurement": {
+      "type": "object",
+      "required": ["measurement", "reason"],
+      "properties": {
+        "measurement": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/theme-v1.schema.json",
+  "title": "iRacing Coach gentle dark theme",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "name",
+    "mode",
+    "colors",
+    "evidence",
+    "telemetry",
+    "typography",
+    "spacingPx",
+    "radiiPx",
+    "motionMs",
+    "window",
+    "behavior"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "const": "gentle-charcoal-dark" },
+    "mode": { "const": "dark" },
+    "colors": {
+      "type": "object",
+      "required": [
+        "app",
+        "navigation",
+        "surface1",
+        "surface2",
+        "surface3",
+        "borderSubtle",
+        "textPrimary",
+        "textSecondary",
+        "textMuted",
+        "accent",
+        "accentFill",
+        "focus",
+        "success",
+        "warning",
+        "danger",
+        "chartBackground",
+        "chartGrid"
+      ],
+      "additionalProperties": { "$ref": "#/$defs/color" }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["measured", "derived", "inferred", "proxy", "unavailable"],
+      "additionalProperties": { "$ref": "#/$defs/color" }
+    },
+    "telemetry": {
+      "type": "object",
+      "required": ["speed", "throttle", "brake", "steering", "caution", "pitService", "tow", "repairConfounded", "target"],
+      "additionalProperties": { "$ref": "#/$defs/color" }
+    },
+    "typography": {
+      "type": "object",
+      "required": ["uiFamilies", "metricFamilies", "bodyPx", "compactPx", "pageTitlePx", "weights"],
+      "additionalProperties": true
+    },
+    "spacingPx": {
+      "type": "array",
+      "minItems": 6,
+      "items": { "type": "integer", "minimum": 1 }
+    },
+    "radiiPx": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+    "motionMs": {
+      "type": "object",
+      "required": ["hover", "panel", "honorReducedMotion", "continuousStatusAnimationAllowed"],
+      "additionalProperties": true
+    },
+    "window": {
+      "type": "object",
+      "required": ["defaultWidthPx", "defaultHeightPx", "minimumWidthPx", "minimumHeightPx", "expandedNavigationPx", "collapsedNavigationPx"],
+      "additionalProperties": true
+    },
+    "behavior": {
+      "type": "object",
+      "required": ["pureBlackOrWhiteSurfacesAllowed", "colorMayBeSoleInformationCarrier", "targetTraceRequiresUsableComparison", "continuousTireAgeRequiresBackendEvidence", "globalBlockingSpinnerAllowed"],
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+    }
+  },
+  "additionalProperties": true
+}

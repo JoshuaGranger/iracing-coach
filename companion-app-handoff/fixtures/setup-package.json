@@ -1,0 +1,60 @@
+{
+  "baseline": {
+    "builder_notes": "",
+    "car_folder": "synthetic test car",
+    "filename_identity": {
+      "role": "race",
+      "season": "2026S3",
+      "track": "New Hampshire"
+    },
+    "fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "identity_warnings": [],
+    "pair_status": "paired",
+    "parsed_html": null,
+    "source_files_read_only": true,
+    "sources": {
+      "html": "%IRACING_ROOT%\\setups\\synthetic test car\\synthetic-race.htm",
+      "sto": "%IRACING_ROOT%\\setups\\synthetic test car\\synthetic-race.sto"
+    },
+    "stem": "synthetic-race"
+  },
+  "baseline_confirmation": {
+    "analysis_setup_name": null,
+    "analysis_track": null,
+    "car_directory_match": {
+      "artifact_car_directory": "synthetic test car",
+      "confirmed": true,
+      "expected_car_directory": "synthetic test car",
+      "expected_source": "resolved-car-fallback",
+      "reason": "The setup artifact is stored under the exact analyzed car directory."
+    },
+    "confirmed": false,
+    "reason": "The donor artifact requires target-track validation.",
+    "status": "provisional-conflicting-export-header"
+  },
+  "context": {
+    "car_key": "synthetic-test-car",
+    "race_length_key": "length-unknown",
+    "season_key": "2026-s3",
+    "setup_type": "open",
+    "track_key": "synthetic-speedway-oval"
+  },
+  "donor": {
+    "donor": "New Hampshire",
+    "family": "flat-brake-and-drive",
+    "matched_characteristics": [
+      "heavy braking",
+      "brake and drive"
+    ],
+    "reason": "flat braking zones, patient centers, and drive-off traction",
+    "status": "classified",
+    "warning": "Transfer the tuning logic, not an assumed tech-legal .sto file."
+  },
+  "ok": true,
+  "package_id": "setup-fixture-package-001",
+  "package_path": "%ARCHIVE_ROOT%\\tuning\\packages\\2026-s3\\synthetic-test-car\\synthetic-speedway-oval\\setup-fixture-package-001.json",
+  "qualifying": null,
+  "simulator_loadable_setup_produced": false,
+  "source_setup_files_modified": false,
+  "status": "donor-baseline"
+}

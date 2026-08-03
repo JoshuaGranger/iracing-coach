@@ -1,0 +1,98 @@
+@if (State.AnalysisWorkspaceOpen)
+{
+    @if (State.CurrentAnalysis is { } analysis && State.CurrentRaceCard is { } card)
+    {
+        <AnalysisWorkspacePage State="State" Workspace="analysis" Card="card" />
+    }
+    else
+    {
+        <div class="analysis-opening">
+            <button class="text-button" @onclick="State.CloseAnalysisWorkspace">← Race events</button>
+            <section class="surface-card analysis-opening-card" aria-live="polite">
+                @if (State.AnalysisLoading)
+                {
+                    <span class="activity-spinner" aria-hidden="true"></span>
+                    <span class="eyebrow">Local analysis</span>
+                    <h1>Opening @SelectedTrack</h1>
+                    <p>@State.AnalysisMessage</p>
+                    <button class="button secondary" @onclick="State.CancelAllJobs">Cancel</button>
+                }
+                else
+                {
+                    <span class="eyebrow">Recording not opened</span>
+                    <h1>The app is still running</h1>
+                    <p>@(string.IsNullOrWhiteSpace(State.AnalysisMessage) ? "This recording did not contain enough supported data to open." : State.AnalysisMessage)</p>
+                    <div class="button-row">
+                        <button class="button primary" @onclick="() => State.ReanalyzeRaceAsync()">Retry analysis</button>
+                        @if (State.LastRecoverableError is not null) { <span class="support-reference">Reference @State.LastRecoverableError.Id</span> }
+                    </div>
+                }
+            </section>
+        </div>
+    }
+}
+else
+{
+    <div class="page-heading compact-heading race-list-heading">
+        <div><span class="eyebrow">Race analysis</span><h1>Race events</h1><p>Select an event to open its telemetry workspace.</p></div>
+    </div>
+
+    <section class="race-events" aria-labelledby="race-events-heading">
+        <div class="race-list-toolbar">
+            <div><h2 id="race-events-heading">Recorded races</h2><span>@State.FilteredEventGroups.Count() events</span></div>
+            @if (HasRaceEvents)
+            {
+                <label class="search-field"><span class="sr-only">Search races</span><input type="search" placeholder="Search track, car, or series" @bind="State.RaceSearchText" @bind:event="oninput" /></label>
+                @if (State.AvailableRaceFilters.Count > 1)
+                {
+                    <label class="filter-field"><span class="sr-only">Filter races</span><select @bind="State.RaceFilter">@foreach (var filter in State.AvailableRaceFilters) { <option value="@filter">@FilterLabel(filter)</option> }</select></label>
+                }
+            }
+        </div>
+
+        @if (!State.FilteredEventGroups.Any())
+        {
+            <div class="empty-state race-browser-empty"><span class="empty-icon"><ProductIcon Name="analysis" Size="22" /></span><h3>@(HasRaceEvents ? "No matching races" : "No race recordings yet")</h3><p>@(HasRaceEvents ? "Clear the search or change the filter." : "A completed recorded Race session will appear here automatically.")</p>@if (HasRaceEvents) { <button class="button secondary" @onclick="ClearFilters">Clear filters</button> }</div>
+        }
+        else
+        {
+            <div class="race-event-table" role="list">
+                <div class="race-event-columns" aria-hidden="true"><span>Event</span><span>Result</span><span>Distance</span><span>Setup</span><span>Status</span><span></span></div>
+                @foreach (var group in State.FilteredEventGroups)
+                {
+                    var race = RaceSession(group);
+                    if (race is null) { continue; }
+                    <button class="race-event-row" role="listitem" @onclick="() => OpenEvent(group)">
+                        <span class="event-main"><strong>@group.Track</strong><small>@EventSubtitle(group, race)</small></span>
+                        <span class="event-result">@Result(race)</span>
+                        <span class="event-distance">@race.Summary</span>
+                        <span><span class="status-label neutral">@group.SetupType</span></span>
+                        <span><span class="status-label @(race.Analyzed ? "success" : "neutral")">@(race.Analyzed ? "Ready" : "Analyze")</span></span>
+                        <span class="event-open" aria-hidden="true">Open →</span>
+                    </button>
+                }
+            </div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private bool HasRaceEvents => State.EventGroups.OfType<RaceEventGroup>().Any(group => group.Sessions?.OfType<RecentRace>().Any(session => session.IsRace) == true);
+    private string SelectedTrack => State.SelectedRaceSession?.Track ?? "recorded race";
+    private void ClearFilters() { State.RaceSearchText = string.Empty; State.RaceFilter = RaceBrowserFilter.All; }
+    private static RecentRace? RaceSession(RaceEventGroup group) => group.Sessions?.OfType<RecentRace>().FirstOrDefault(session => session.IsRace);
+    private Task OpenEvent(RaceEventGroup group) => RaceSession(group) is { } race ? State.OpenRaceAsync(race) : Task.CompletedTask;
+    private static string EventSubtitle(RaceEventGroup group, RecentRace race)
+    {
+        var parts = new[] { group.Date, group.Layout, group.Car, race.Series, group.EventScope }.Where(value => !string.IsNullOrWhiteSpace(value));
+        return string.Join(" · ", parts);
+    }
+    private static string Result(RecentRace race) => (race.StartPosition, race.FinishPosition) switch
+    {
+        (> 0, > 0) => $"P{race.StartPosition} → P{race.FinishPosition}",
+        (_, > 0) => $"P{race.FinishPosition}",
+        _ => "—"
+    };
+    private static string FilterLabel(RaceBrowserFilter filter) => filter switch { RaceBrowserFilter.All => "All races", RaceBrowserFilter.HostedLeague => "Hosted / League", RaceBrowserFilter.Fixed => "Fixed setup", RaceBrowserFilter.Open => "Open setup", RaceBrowserFilter.NeedsAnalysis => "Needs analysis", _ => filter.ToString() };
+}

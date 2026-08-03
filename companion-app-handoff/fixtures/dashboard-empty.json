@@ -1,0 +1,28 @@
+{
+  "capabilities": {
+    "corner_phase_coaching": true,
+    "damage_repair_awareness": true,
+    "garage61_sync": false,
+    "groove_migration": true,
+    "native_event_search": true,
+    "progressive_tuning": true,
+    "race_analysis": true,
+    "race_card": true,
+    "race_planning": true,
+    "starting_setup_package": true
+  },
+  "contract_version": 1,
+  "garage61": {
+    "api_request_status": "not_requested",
+    "credential_configured": false,
+    "local_status_only": true
+  },
+  "generated_at": "2026-08-01T12:00:00+00:00",
+  "latest_race": null,
+  "ok": true,
+  "race_count": 0,
+  "races": [],
+  "read_only": true,
+  "recent_analyses": [],
+  "tuning_packages": []
+}

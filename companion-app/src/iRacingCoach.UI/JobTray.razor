@@ -1,0 +1,42 @@
+<aside class="job-tray @(State.JobTrayOpen ? "open" : "")" aria-label="Background jobs">
+    <button class="job-tray-header" aria-expanded="@State.JobTrayOpen" @onclick="State.ToggleJobTray">
+        <span class="job-icon"><ProductIcon Name="jobs" Size="17" /></span>
+        <span><strong>Background jobs</strong><small>@Summary</small></span>
+        <span class="job-count">@State.Jobs.Count</span><ProductIcon Name="@(State.JobTrayOpen ? "chevron-down" : "chevron-up")" Size="16" />
+    </button>
+    @if (State.JobTrayOpen)
+    {
+        <div class="job-tray-body">
+            @if (State.Jobs.Count == 0)
+            {
+                <div class="job-empty"><span><ProductIcon Name="check" Size="17" /></span><p>No work in progress.<small>You can keep using the app while analysis runs.</small></p></div>
+            }
+            else
+            {
+                @foreach (var job in State.Jobs)
+                {
+                    <article class="job-item @job.Status">
+                        <div class="job-row"><div><strong>@job.Title</strong><small>@job.Stage · @job.Elapsed.TotalSeconds.ToString("0.0") s</small></div><span class="status-label @JobTone(job.Status)">@JobStatus(job.Status)</span></div>
+                        <div class="progress-track"><i style="width:@(job.Progress)%"></i></div>
+                        <div class="job-actions">
+                            @if (job.Cancellable) { <button @onclick="() => State.CancelJob(job.Id)">Cancel</button> }
+                            @if (job.Status is "cancelled" or "failed") { <button @onclick="() => State.RetryJobAsync(job)">Retry</button> }
+                            @if (!string.IsNullOrWhiteSpace(job.ArtifactLabel)) { <button @onclick="State.OpenArtifact">Open @job.ArtifactLabel</button> }
+                        </div>
+                    </article>
+                }
+                @if (State.Jobs.Any(job => job.Status is "complete" or "cancelled" or "failed"))
+                {
+                    <button class="clear-jobs" @onclick="State.ClearCompletedJobs">Clear finished</button>
+                }
+            }
+        </div>
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private string Summary => State.Jobs.Count switch { 0 => "Idle", 1 => $"1 job · {JobStatus(State.Jobs[0].Status).ToLowerInvariant()}", _ => $"{State.Jobs.Count} jobs" };
+    private static string JobStatus(string status) => status switch { "running" => "In progress", "queued" => "Queued", "complete" => "Complete", "failed" => "Needs attention", "cancelled" => "Cancelled", _ => status };
+    private static string JobTone(string status) => status switch { "complete" => "success", "failed" or "cancelled" => "warning", _ => "neutral" };
+}

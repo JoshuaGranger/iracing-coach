@@ -1,0 +1,114 @@
+{
+  "analysis_path": "%ARCHIVE_ROOT%\\reports\\fixture\\analysis.json",
+  "ok": false,
+  "persisted": false,
+  "recommendation": {
+    "blockers": [
+      "Recorded tow/repair context makes this session unsuitable for a controlled setup conclusion; validate the symptom in a finalized clean run after repair."
+    ],
+    "builder_note_provenance": {
+      "available": false,
+      "reason": "The synthetic fixture has no matching setup-builder note.",
+      "used": false
+    },
+    "causality": "Driver feedback identifies the symptom; telemetry cannot uniquely prove a setup parameter caused it.",
+    "prior_successes_considered": [],
+    "recommendations": [],
+    "schema_version": 1,
+    "setup": {
+      "fingerprint": "fixture-baseline-001",
+      "is_fixed_setup": false,
+      "name": "synthetic-race",
+      "parameter_count": 84
+    },
+    "setup_comparison": {},
+    "status": "needs-clean-repaired-run",
+    "symptoms": [
+      {
+        "balances": [
+          "loose"
+        ],
+        "onset_lap": null,
+        "phases": [
+          "exit",
+          "long_run"
+        ],
+        "reported": "Loose exit after the repair stop.",
+        "source": "driver-report"
+      }
+    ],
+    "telemetry_evidence": {
+      "damage_repair": {
+        "incident_points": {
+          "damage_proof": false,
+          "status": "recorded_context_only"
+        },
+        "limitation": "Repair/tow state can invalidate setup A/B evidence but does not identify the damaged component or exact pace cost.",
+        "status": "usable",
+        "summary": {
+          "all_recording_pit_road_time_s": 92.4,
+          "confirmed_fast_repair_uses": 0,
+          "episodes": 1,
+          "mandatory_repair_episodes": 1,
+          "optional_repair_episodes": 1,
+          "pit_road_episodes": 1,
+          "pre_race_or_grid_episodes": 0,
+          "pre_race_or_grid_pit_road_time_s": 0.0,
+          "race_window_episodes": 1,
+          "recorded_repair_episodes": 1,
+          "repair_required_flag_episodes": 1,
+          "total_pit_road_time_s": 92.4,
+          "total_pit_stall_time_s": 70.0,
+          "total_pitstop_service_active_time_s": 58.0,
+          "total_repair_active_time_s": 43.5,
+          "total_repair_required_flag_active_time_s": 70.0,
+          "total_repair_timer_positive_observed_s": 58.0,
+          "total_repair_work_completed_s": 43.5,
+          "total_tow_active_time_s": 18.0,
+          "totals_scope_note": "Unsuffixed totals cover recorded-race-window episodes only; pre-race/grid pit state is reported separately and is not race pit loss.",
+          "tow_episodes": 1
+        }
+      },
+      "dynamic_channels_available": [
+        "LFshockDefl",
+        "RFshockDefl"
+      ],
+      "embedded_setup_available": true,
+      "limits": [
+        "Telemetry cannot uniquely identify which setup parameter caused a handling symptom."
+      ],
+      "native_events": {
+        "cache_files_used": [],
+        "counts_by_type": {},
+        "event_count": 0,
+        "event_samples": [],
+        "event_samples_truncated": false,
+        "limitations": [
+          "No matching cached native-event query was available."
+        ],
+        "queries": [],
+        "source_sha256": null,
+        "status": "unavailable"
+      },
+      "platform": {},
+      "setup_fingerprint": "fixture-baseline-001",
+      "setup_name": "synthetic-race",
+      "shocks": {},
+      "tire_wear": [],
+      "tires": {}
+    },
+    "test_protocol": {
+      "control": "Match setup baseline, fuel, tires, weather, track state, and intended line.",
+      "native_event_alignment": {
+        "event_count": 0,
+        "rule": "Use cached event records only as alignment markers.",
+        "status": "unavailable"
+      },
+      "one_change_rule": true,
+      "sequence": [
+        "Record a clean baseline run before changing the garage."
+      ]
+    }
+  },
+  "status": "needs-clean-repaired-run"
+}

@@ -1,0 +1,57 @@
+{
+  "ai": {
+    "app_server_schema_policy": "generate and pin from packaged Codex version",
+    "preferred_adapter": "codex-app-server-stdio",
+    "required_for_deterministic_workflows": false
+  },
+  "backend": {
+    "analysis_profile_version": "post-race-damage-repair-corner-phase-v7",
+    "analysis_schema_version": 2,
+    "analyze_result_contract_version": 1,
+    "archive_schema_version": 2,
+    "dashboard_contract_version": 1,
+    "groove_schema_version": 2,
+    "mcp_server_name": "iracing-coach-local",
+    "mcp_server_version": "0.3.0",
+    "race_card_contract_version": 1,
+    "setup_catalog_schema_version": 1,
+    "supported_mcp_protocol_versions": [
+      "2025-06-18",
+      "2025-03-26",
+      "2024-11-05"
+    ],
+    "tool_count": 16,
+    "transport": "stdio-jsonl-utf8",
+    "tuning_schema_version": 1
+  },
+  "environment": {
+    "IRACING_COACH_DATA": "trusted backend-owned archive root",
+    "IRACING_COACH_INSTALL_ROOT": "optional read-only iRacing installation root",
+    "IRACING_COACH_IRACING_ROOT": "trusted local iRacing Documents root",
+    "IRACING_COACH_PYTHON": "packaged Python executable",
+    "PYTHONUTF8": "1"
+  },
+  "handoff_contract_version": 1,
+  "plugin": {
+    "name": "iracing-coach",
+    "version": "0.1.0+codex.20260802035338"
+  },
+  "runtime": {
+    "operating_system": "Windows 10/11 x64",
+    "powershell_required_for": [
+      "MCP launcher",
+      "Garage61 DPAPI credential configuration"
+    ],
+    "python_minimum": "3.10",
+    "python_runtime_dependencies": []
+  },
+  "ui": {
+    "application_language": "C#",
+    "application_runtime": ".NET 10",
+    "default_theme": "gentle-charcoal-dark",
+    "design_system_version": 1,
+    "native_host": "WPF",
+    "view_layer": "Blazor Hybrid",
+    "webview_runtime_policy_required": true
+  }
+}

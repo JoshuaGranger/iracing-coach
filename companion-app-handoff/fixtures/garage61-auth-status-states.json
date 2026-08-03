@@ -1,0 +1,70 @@
+{
+  "offline": {
+    "api_request": {
+      "application_name": "iRacing Coach",
+      "authentication": "personal_access_token",
+      "permissions_requested": [
+        "general",
+        "driving_data",
+        "analyses"
+      ],
+      "remote_submission_confirmed": true,
+      "status": "pending"
+    },
+    "archive_root": "%ARCHIVE_ROOT%",
+    "configured": true,
+    "credential_storage": "windows-user-dpapi",
+    "error_type": "Garage61TransportError",
+    "message": "Garage61 is unavailable; local analysis remains available.",
+    "ok": false,
+    "status": "unavailable"
+  },
+  "pending": {
+    "api_request": {
+      "application_name": "iRacing Coach",
+      "authentication": "personal_access_token",
+      "permissions_requested": [
+        "general",
+        "driving_data",
+        "analyses"
+      ],
+      "remote_submission_confirmed": true,
+      "status": "pending"
+    },
+    "archive_root": "%ARCHIVE_ROOT%",
+    "configured": false,
+    "credential_storage": "windows-user-dpapi",
+    "message": "Garage61 API access is awaiting approval; use the signed-in browser fallback meanwhile.",
+    "ok": false,
+    "status": "not_configured"
+  },
+  "permission_error": {
+    "api_request": {
+      "application_name": "iRacing Coach",
+      "authentication": "personal_access_token",
+      "permissions_requested": [
+        "general",
+        "driving_data",
+        "analyses"
+      ],
+      "remote_submission_confirmed": true,
+      "status": "pending"
+    },
+    "archive_root": "%ARCHIVE_ROOT%",
+    "configured": true,
+    "credential_storage": "windows-user-dpapi",
+    "error_type": "Garage61HttpError",
+    "message": "Garage61 denied the requested API operation.",
+    "ok": false,
+    "status": "unavailable"
+  },
+  "unconfigured": {
+    "api_request": null,
+    "archive_root": "%ARCHIVE_ROOT%",
+    "configured": false,
+    "credential_storage": "windows-user-dpapi",
+    "message": "Garage61 is not configured. Run configure-garage61.ps1 once.",
+    "ok": false,
+    "status": "not_configured"
+  }
+}

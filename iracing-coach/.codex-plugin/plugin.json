@@ -1,0 +1,37 @@
+{
+  "name": "iracing-coach",
+  "version": "0.1.0+codex.20260802035338",
+  "description": "Produce concise corner-by-corner iRacing Race Cards with damage-aware telemetry, strategy, groove evidence, and NASCAR-first setup tuning.",
+  "author": {
+    "name": "Joshua"
+  },
+  "keywords": [
+    "iracing",
+    "sim racing",
+    "telemetry",
+    "race analysis",
+    "driver coaching",
+    "nascar",
+    "open setup",
+    "setup tuning"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "iRacing Race & Setup Coach",
+    "shortDescription": "Concise race cards and NASCAR-first setup tuning",
+    "longDescription": "Turn recorded iRacing telemetry and read-only setup artifacts into a fast corner-by-corner Race Card, evidence-based tire/fuel strategy, damage/tow/repair-aware run screening, groove-migration analysis, full archived diagnostics, companion-dashboard data, NASCAR-first new-week packages, and controlled one-change open-setup experiments with history and rollback.",
+    "developerName": "Joshua",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Give me a concise corner-by-corner Race Card for my latest race.",
+      "Build a NASCAR open-setup package for this week's track.",
+      "Diagnose my latest race and recommend one setup change."
+    ]
+  }
+}

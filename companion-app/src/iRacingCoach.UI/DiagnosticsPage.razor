@@ -1,0 +1,26 @@
+<section class="diagnostics-section" aria-labelledby="diagnostics-heading">
+    <div class="diagnostics-divider"></div>
+    <div class="section-heading diagnostics-heading">
+        <div><span class="eyebrow">Help</span><h2 id="diagnostics-heading">Troubleshooting</h2><p class="section-copy">Open these details only when something is not working. Credentials and raw telemetry are never included.</p></div>
+        <button class="button secondary" aria-expanded="@State.DiagnosticsExpanded" @onclick="State.ToggleDiagnostics">@(State.DiagnosticsExpanded ? "Hide details" : "Show details")</button>
+    </div>
+    @if (State.DiagnosticsExpanded)
+    {
+        <div class="diagnostic-grid compact-diagnostics">
+            @foreach (var fact in State.Diagnostics)
+            {
+                <div class="diagnostic-fact @fact.State"><span>@fact.Label</span><strong>@fact.Value</strong></div>
+            }
+        </div>
+        <div class="diagnostics-actions">
+            <button class="button secondary" @onclick="CheckAgain">Run health test</button>
+            <button class="button secondary" @onclick="State.OpenLogs">Open logs</button>
+            <span>Support information excludes API keys and raw telemetry.</span>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private Task CheckAgain() => State.RunHealthCheckAsync();
+}

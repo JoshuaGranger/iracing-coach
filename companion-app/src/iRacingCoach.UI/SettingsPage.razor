@@ -1,0 +1,126 @@
+<div class="page-heading compact-heading">
+    <div><span class="eyebrow">Settings</span><h1>App and data</h1><p>Your racing history and preferences live in the portable iRacing Coach folder. Protected account connections stay on this PC.</p></div>
+    <button class="button secondary" @onclick="State.ResetSettings">Restore defaults</button>
+</div>
+
+<section class="surface-card settings-compact" aria-labelledby="storage-heading">
+    <div class="settings-section-title"><div><span class="eyebrow">Storage</span><h2 id="storage-heading">Folders</h2></div><span class="status-label neutral">Source files stay read only</span></div>
+    <div class="settings-rows settings-folder-summary">
+        <div class="settings-status-row"><span>Coach data</span><span class="status-label success">Ready</span><small>Preferences, analysis, history, and setup copies move together.</small></div>
+        <div class="settings-status-row"><span>iRacing data</span><span class="status-label @(State.IRacingDetected ? "success" : "warning")">@(State.IRacingDetected ? "Found" : "Needs attention")</span><small>Telemetry, replays, saved setups, cars, and tracks are read only.</small></div>
+    </div>
+    <details class="settings-disclosure">
+        <summary>Change folder locations</summary>
+        <div class="settings-rows">
+            <label><span>Portable Coach folder<small>Preferences, analysis, history, learned data, and setup copies</small></span><input value="@State.Settings.CoachHome" readonly /></label>
+            <label><span>iRacing Documents<small>Telemetry, replays, and saved setups</small></span><input @bind="State.Settings.IRacingRoot" @bind:event="oninput" /></label>
+            <label><span>iRacing installation<small>Cars, tracks, versions, and content metadata; read only</small></span><input @bind="State.Settings.IRacingInstallRoot" @bind:event="oninput" /></label>
+            <label><span>Coach archive<small>Derived analysis and tuning history</small></span><input value="@State.Settings.ArchiveRoot" readonly /></label>
+        </div>
+    </details>
+</section>
+
+<section class="surface-card settings-compact" aria-labelledby="portable-copy-heading">
+    <div class="settings-section-title">
+        <div><span class="eyebrow">Backup and moving PCs</span><h2 id="portable-copy-heading">Prepare a migration copy</h2></div>
+        <button class="button primary" @onclick="() => State.PrepareBackupAsync()">Prepare copy</button>
+    </div>
+    <p class="section-copy">Checks the Coach folder and tells you when it is safe to copy to another PC.</p>
+    @if (State.Archive is not null)
+    {
+        <div class="settings-rows">
+            <div class="settings-status-row">
+                <span>Portable data found</span>
+                <span class="status-label success">@State.Archive.Restored.TotalItems items</span>
+                <small>@PortableSummary</small>
+            </div>
+            <div class="settings-status-row">
+                <span>Connections on another PC</span>
+                <span class="status-label neutral">Reconnect after copying</span>
+                <small>ChatGPT and Garage61 credentials are deliberately excluded. All cached data remains usable offline.</small>
+            </div>
+        </div>
+    }
+    @if (State.BackupPreparation is not null)
+    {
+        <div class="inline-alert">
+            <span class="alert-icon">@if (State.BackupPreparation.SafeToCopy) { <ProductIcon Name="check" Size="16" /> } else { <strong aria-hidden="true">!</strong> }</span>
+            <div>
+                <strong>@(State.BackupPreparation.SafeToCopy ? "Safe to copy" : "Not ready yet")</strong>
+                <span class="archive-copy-message">@State.BackupPreparation.Message</span>
+                @if (State.BackupPreparation.SafeToCopy)
+                {
+                    <small>@State.BackupPreparation.FileCount files · @FormatBytes(State.BackupPreparation.Bytes) · integrity checked</small>
+                }
+            </div>
+        </div>
+    }
+    @if (State.Archive is not null && State.Archive.Restored.UnresolvedSources > 0)
+    {
+        <div class="inline-alert neutral-alert">
+            <span class="alert-icon"><ProductIcon Name="info" Size="16" /></span>
+            <div><strong>@State.Archive.Restored.UnresolvedSources raw telemetry source@(State.Archive.Restored.UnresolvedSources == 1 ? " is" : "s are") missing on this PC.</strong><span> Archived reports remain usable. Locate a matching .ibt file to restore new native-rate queries.</span></div>
+            <button class="button secondary" @onclick="State.RequestLocateRawTelemetry">Locate raw telemetry</button>
+        </div>
+    }
+</section>
+
+<section class="surface-card settings-compact" aria-labelledby="connections-heading">
+    <div class="settings-section-title"><div><span class="eyebrow">Connections</span><h2 id="connections-heading">ChatGPT and Garage61</h2></div><button class="button secondary" @onclick='() => State.Navigate("connections")'>Manage connections</button></div>
+    <div class="settings-rows">
+        <div class="settings-status-row"><span>ChatGPT</span><span class="status-label @(State.CoachEngine.ChatGptConnected ? "success" : "neutral")">@(State.QaFixtureMode ? "Disabled for QA" : State.CoachEngine.ChatGptConnected ? "Connected" : "Not connected")</span><small>@CoachEngineMessage</small></div>
+        <div class="settings-status-row"><span>Garage61</span><span class="status-label @(State.Garage61.Available ? "success" : "neutral")">@(State.QaFixtureMode ? "Disabled for QA" : State.Garage61.Available ? "Connected" : State.Garage61.Configured ? "Saved · offline" : "Not connected")</span><small>@Garage61Message</small></div>
+    </div>
+    <div class="inline-alert credential-note"><span class="alert-icon"><ProductIcon Name="check" Size="16" /></span><div><strong>Connections stay on this PC.</strong><span> Reconnect after moving the Coach folder.</span></div></div>
+</section>
+
+<section class="surface-card settings-compact" aria-labelledby="behavior-heading">
+    <div class="settings-section-title"><div><span class="eyebrow">Behavior</span><h2 id="behavior-heading">Windows preferences</h2></div></div>
+    <div class="settings-toggles">
+        <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LaunchAtSignIn" /><span><strong>Open when I sign in</strong><small>Starts minimized and watches for completed recordings.</small></span></label>
+        <label class="toggle-row"><input type="checkbox" @bind="State.Settings.UseReducedMotion" /><span><strong>Reduce motion</strong><small>Turns off nonessential transitions.</small></span></label>
+    </div>
+</section>
+
+<section class="surface-card settings-compact" aria-labelledby="live-monitor-heading">
+    <div class="settings-section-title"><div><span class="eyebrow">Race overlay</span><h2 id="live-monitor-heading">Live Monitor</h2></div><span class="status-label neutral">Always on top</span></div>
+    <div class="settings-rows">
+        <label><span>Default layout<small>Compact keeps only glanceable race-critical information</small></span><select @bind="State.Settings.LiveMonitor.Mode"><option value="Compact">Compact</option><option value="Expanded">Expanded</option></select></label>
+        <label><span>Opacity<small>55–100%; click-through can be disabled from the tray</small></span><input type="range" min="0.55" max="1" step="0.05" @bind="State.Settings.LiveMonitor.Opacity" /><strong>@($"{State.Settings.LiveMonitor.Opacity:P0}")</strong></label>
+        <label><span>Global show/hide hotkey<small>Optional examples: Ctrl+Shift+L or Ctrl+Alt+F10</small></span><input @bind="State.Settings.LiveMonitor.GlobalHotkey" @bind:event="oninput" /></label>
+    </div>
+    <div class="settings-toggles">
+        <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.SafeGlanceEnabled" /><span><strong>Safe-glance mode</strong><small>Delay ordinary cue changes until a straight, caution, pit road, or lap completion.</small></span></label>
+        <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.ReopenOnConnect" /><span><strong>Open when iRacing connects</strong><small>Automatically reopen the monitor when the local stream appears.</small></span></label>
+        <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.ChromeVisible" /><span><strong>Show monitor controls</strong><small>Keep mode, lock, and hide controls visible.</small></span></label>
+        <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.PositionLocked" /><span><strong>Lock position</strong><small>Prevent accidental moving or resizing while racing.</small></span></label>
+    </div>
+</section>
+
+<div class="settings-savebar"><div><strong>Portable preferences</strong><span>@State.SettingsMessage</span></div><button class="button primary" @onclick="State.SaveSettings">Save settings</button></div>
+
+<DiagnosticsPage State="State" />
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1_073_741_824 => $"{bytes / 1_073_741_824d:0.0} GB",
+        >= 1_048_576 => $"{bytes / 1_048_576d:0.0} MB",
+        >= 1024 => $"{bytes / 1024d:0.0} KB",
+        _ => $"{bytes} bytes"
+    };
+    private string CoachEngineMessage => State.QaFixtureMode ? "Disabled by the offline QA fixture" : !State.CoachEngine.Installed ? "Repair required" : State.CoachEngine.Message;
+    private string Garage61Message => State.QaFixtureMode ? "No production requests are allowed in fixture mode." : State.Garage61.Message;
+    private string PortableSummary => State.Archive is null ? string.Empty : string.Join(" · ", new[]
+    {
+        (State.Archive.Restored.Reports, "report", "reports"),
+        (State.Archive.Restored.SeasonalBundles, "season file", "season files"),
+        (State.Archive.Restored.Setups, "setup", "setups"),
+        (State.Archive.Restored.TuningExperiments, "tuning file", "tuning files"),
+        (State.Archive.Restored.TireModels, "tire model", "tire models"),
+        (State.Archive.Restored.DriverModels, "driver model", "driver models"),
+        (State.Archive.Restored.AiCoachingFiles, "coaching record", "coaching records")
+    }.Where(item => item.Item1 > 0).Select(item => $"{item.Item1} {(item.Item1 == 1 ? item.Item2 : item.Item3)}"));
+}

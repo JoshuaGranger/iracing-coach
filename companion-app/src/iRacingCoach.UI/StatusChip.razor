@@ -1,0 +1,8 @@
+<div class="status-chip @Item.State" role="status" aria-label="@Item.Label: @Item.Detail">
+    <span class="status-orb @Item.State" aria-hidden="true"></span>
+    <span><strong>@Item.Label</strong><small>@Item.Detail</small></span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public HealthItem Item { get; set; } = null!;
+}

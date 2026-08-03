@@ -1,0 +1,51 @@
+@using System.Globalization
+
+<section class="tuning-track-selector" aria-labelledby="tuning-zone-heading">
+    <div><span class="eyebrow">Track location</span><h3 id="tuning-zone-heading">Choose the affected zone</h3></div>
+    <div class="tuning-track-visual">
+        @if (Workspace.TrackShape.Count >= 3)
+        {
+            <svg viewBox="0 0 420 240" role="img" aria-label="Selectable recorded track map">
+                <polyline points="@ShapePoints" class="tuning-track-line" />
+                @foreach (var zone in Zones)
+                {
+                    var point = PointAt(zone.CenterPercent);
+                    <circle cx="@F(point.X)" cy="@F(point.Y)" r="@(Selected == zone.Label ? 12 : 9)" class="tuning-zone-dot @(Selected == zone.Label ? "selected" : null)" />
+                    <svg:text x="@F(point.X)" y="@F(point.Y - 16)" text-anchor="middle">@zone.Label</svg:text>
+                }
+            </svg>
+        }
+        <div class="tuning-zone-list" role="group" aria-label="Recorded corner and load zones">
+            @foreach (var zone in Zones)
+            {
+                <button type="button" aria-pressed="@(Selected == zone.Label)" class="@(Selected == zone.Label ? "selected" : null)" @onclick="() => Select(zone.Label)"><strong>@zone.Label</strong><small>@($"{zone.StartPercent:P0}–{zone.EndPercent:P0} of lap")</small></button>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
+    [Parameter] public string Selected { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SelectedChanged { get; set; }
+    private IReadOnlyList<Zone> Zones => Workspace.Segments.Count > 0
+        ? Workspace.Segments.Take(6).Select(zone => new Zone(string.IsNullOrWhiteSpace(zone.Label) ? $"Load zone {zone.Number}" : zone.Label, zone.StartPercent, zone.EndPercent, zone.WrapsStartFinish)).ToArray()
+        : [new("Turns 1–2", .12, .42, false), new("Turns 3–4", .58, .88, false)];
+    private async Task Select(string value) { Selected = value; await SelectedChanged.InvokeAsync(value); }
+    private string ShapePoints => string.Join(" ", MapPoints.Select(point => $"{F(point.X)},{F(point.Y)}")) + (MapPoints.Count > 0 ? $" {F(MapPoints[0].X)},{F(MapPoints[0].Y)}" : string.Empty);
+    private IReadOnlyList<MapPoint> MapPoints
+    {
+        get
+        {
+            if (Workspace.TrackShape.Count < 3) return [];
+            var minX = Workspace.TrackShape.Min(point => point.X); var maxX = Workspace.TrackShape.Max(point => point.X);
+            var minY = Workspace.TrackShape.Min(point => point.Y); var maxY = Workspace.TrackShape.Max(point => point.Y);
+            var scale = Math.Min(340 / Math.Max(.0001, maxX - minX), 170 / Math.Max(.0001, maxY - minY));
+            return Workspace.TrackShape.Select(point => new MapPoint(point.LapPercent, 210 + (point.X - (minX + maxX) / 2) * scale, 120 + (point.Y - (minY + maxY) / 2) * scale)).ToArray();
+        }
+    }
+    private MapPoint PointAt(double percent) => MapPoints.MinBy(point => Math.Abs(point.Percent - percent)) ?? new MapPoint(percent, 210, 120);
+    private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+    private sealed record Zone(string Label, double StartPercent, double EndPercent, bool Wraps) { public double CenterPercent => Wraps ? ((StartPercent + EndPercent + 1) / 2) % 1 : (StartPercent + EndPercent) / 2; }
+    private sealed record MapPoint(double Percent, double X, double Y);
+}

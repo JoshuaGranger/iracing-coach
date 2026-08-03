@@ -1,0 +1,13 @@
+{
+  "id": 9,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\n  \"error\": \"WorkflowError\",\n  \"message\": \"The selected IBT is still changing; wait for finalization and retry.\",\n  \"tool\": \"analyze_iracing_race\"\n}",
+        "type": "text"
+      }
+    ],
+    "isError": true
+  }
+}

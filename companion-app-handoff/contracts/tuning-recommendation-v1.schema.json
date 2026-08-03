@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/tuning-recommendation-v1.schema.json",
+  "title": "iRacing Coach recommend_open_setup_tuning result",
+  "type": "object",
+  "required": ["ok", "status", "persisted", "recommendation"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "status": {
+      "enum": [
+        "planned",
+        "needs-driver-feedback",
+        "advisory-fixed-session",
+        "needs-open-setup-confirmation",
+        "needs-clean-repaired-run",
+        "needs-more-specific-driver-feedback",
+        "not-applicable-fixed-session"
+      ]
+    },
+    "persisted": { "type": "boolean" },
+    "analysis_path": { "type": "string" },
+    "experiment_id": { "type": "string" },
+    "experiment_path": { "type": "string" },
+    "package_id": { "type": ["string", "null"] },
+    "primary_recommendation": { "$ref": "#/$defs/proposal" },
+    "recommendation": { "$ref": "#/$defs/recommendation" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "persisted": { "const": true } } },
+      "then": {
+        "properties": { "ok": { "const": true }, "status": { "const": "planned" } },
+        "required": ["experiment_id", "experiment_path", "package_id", "primary_recommendation"]
+      },
+      "else": {
+        "properties": { "ok": { "const": false } },
+        "required": ["analysis_path"]
+      }
+    }
+  ],
+  "$defs": {
+    "proposal": {
+      "type": "object",
+      "required": ["system", "change", "predicted_effect", "evidence", "risk", "verify", "source", "confidence"],
+      "properties": {
+        "system": { "type": "string" },
+        "change": { "type": "string" },
+        "predicted_effect": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "risk": { "type": "string" },
+        "verify": { "type": "array", "items": { "type": "string" } },
+        "source": { "type": "string" },
+        "confidence": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "symptom": {
+      "type": "object",
+      "required": ["reported", "phases", "balances", "onset_lap", "source"],
+      "properties": {
+        "reported": { "type": "string" },
+        "phases": { "type": "array", "items": { "type": "string" } },
+        "balances": { "type": "array", "items": { "type": "string" } },
+        "onset_lap": { "type": ["integer", "null"] },
+        "source": { "const": "driver-report" }
+      },
+      "additionalProperties": true
+    },
+    "recommendation": {
+      "type": "object",
+      "required": [
+        "schema_version", "status", "symptoms", "setup", "setup_comparison",
+        "telemetry_evidence", "recommendations", "prior_successes_considered",
+        "blockers", "test_protocol", "causality", "builder_note_provenance"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "status": {
+          "enum": [
+            "ready",
+            "needs-driver-feedback",
+            "advisory-fixed-session",
+            "needs-open-setup-confirmation",
+            "needs-clean-repaired-run",
+            "needs-more-specific-driver-feedback"
+          ]
+        },
+        "symptoms": { "type": "array", "items": { "$ref": "#/$defs/symptom" } },
+        "setup": { "type": "object" },
+        "setup_comparison": { "type": "object" },
+        "telemetry_evidence": { "type": "object" },
+        "recommendations": { "type": "array", "items": { "$ref": "#/$defs/proposal" } },
+        "prior_successes_considered": { "type": "array", "items": { "type": "object" } },
+        "blockers": { "type": "array", "items": { "type": "string" } },
+        "test_protocol": { "type": "object" },
+        "causality": { "type": "string" },
+        "builder_note_provenance": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

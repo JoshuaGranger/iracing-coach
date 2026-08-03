@@ -1,0 +1,327 @@
+@using System.Globalization
+
+<section class="telemetry-workspace" aria-labelledby="telemetry-heading">
+    <div class="analysis-section-heading">
+        <div><span class="eyebrow">Recorded telemetry</span><h2 id="telemetry-heading">Where the lap time changed</h2></div>
+        <div class="telemetry-mode" role="group" aria-label="Track color">
+            @foreach (var option in Modes)
+            {
+                <button class="segmented @(Mode == option.Key ? "selected" : null)" aria-pressed="@(Mode == option.Key)" @onclick="() => Mode = option.Key">@option.Label</button>
+            }
+        </div>
+    </div>
+
+    @if (Workspace.Traces.Count == 0)
+    {
+        <div class="empty-state compact-empty"><h3>Detailed traces were not recorded</h3><p>The Race Card remains available. Enable iRacing disk telemetry to get speed, controls, and load traces in future races.</p></div>
+    }
+    else
+    {
+        <div class="telemetry-workstation-grid">
+        <aside class="lap-rail" aria-label="Runs and laps">
+            <div class="lap-rail-header">
+                <div><strong>Runs &amp; laps</strong><span>@Selected.Count selected</span></div>
+                <label class="clean-lap-filter"><input type="checkbox" @bind="CleanLapsOnly" /> Clean laps</label>
+            </div>
+            <div class="lap-rail-scroll">
+                @foreach (var group in LapGroups)
+                {
+                    <details class="lap-run-group" open>
+                        <summary><span>@group.Label</span><small>@group.Traces.Count laps</small></summary>
+                        @foreach (var trace in group.Traces)
+                        {
+                            var lap = LapInfo(trace.Lap);
+                            var isFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
+                            <button class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(FocusLap == trace.Lap ? "focused" : null)" aria-pressed="@Selected.Contains(trace.Lap)" @onclick="() => SelectLap(trace.Lap)">
+                                <span class="lap-selection"><span class="lap-color" style="background:@LapColor(trace.Lap)"></span><b>Lap @trace.Lap</b></span>
+                                <span class="lap-time">@LapTime(trace.LapTimeSeconds)</span>
+                                <span class="lap-state @LapStateClass(trace, lap)">@LapState(trace, lap)</span>
+                                @if (isFastest) { <span class="lap-best" title="Fastest recorded lap">BEST</span> }
+                                <span class="lap-focus-action" @onclick:stopPropagation="true" @onclick="() => SetFocus(trace.Lap)">@(FocusLap == trace.Lap ? "Focused" : "Focus")</span>
+                            </button>
+                        }
+                    </details>
+                }
+            </div>
+            <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ClearFocus">Show all</button></div>
+        </aside>
+
+        <div class="telemetry-grid">
+            <div class="track-panel">
+                <div class="panel-title"><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>@ModeLabel</span></div>
+                <svg class="track-map" viewBox="0 0 420 280" role="img" aria-label="Track telemetry map" @onmousemove="TrackMoved">
+                    @if (Workspace.TrackShape.Count >= 3)
+                    {
+                        @foreach (var segment in MapSegments)
+                        {
+                            <line x1="@F(segment.A.X)" y1="@F(segment.A.Y)" x2="@F(segment.B.X)" y2="@F(segment.B.Y)" stroke="@segment.Color" stroke-width="8" stroke-linecap="round" />
+                        }
+                        <circle cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="8" class="map-cursor-halo" />
+                        <circle cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="4" class="map-cursor" />
+                    }
+                    else
+                    {
+                        <line x1="28" y1="140" x2="392" y2="140" class="distance-base" />
+                        @foreach (var segment in StripSegments)
+                        {
+                            <line x1="@F(segment.X1)" y1="140" x2="@F(segment.X2)" y2="140" stroke="@segment.Color" stroke-width="14" stroke-linecap="round" />
+                        }
+                        @foreach (var zone in Workspace.Segments)
+                        {
+                            <line x1="@F(28 + zone.StartPercent * 364)" y1="113" x2="@F(28 + zone.StartPercent * 364)" y2="167" class="zone-marker" />
+                            <svg:text x="@F(28 + zone.StartPercent * 364)" y="99" class="chart-label">@zone.Label</svg:text>
+                        }
+                        <line x1="@F(28 + Cursor * 364)" y1="104" x2="@F(28 + Cursor * 364)" y2="176" class="map-cursor-line" />
+                        <svg:text x="28" y="205" class="chart-label">Start / finish</svg:text><svg:text x="392" y="205" text-anchor="end" class="chart-label">100%</svg:text>
+                    }
+                </svg>
+                <div class="cursor-readout"><strong>@((Cursor * 100).ToString("0.0"))%</strong><span>@CursorSummary</span></div>
+                @if (Workspace.GeometryMode != "track_shape")
+                {
+                    <p class="panel-note">This recording has lap distance but no usable position coordinates, so the app shows an honest distance strip instead of inventing a track shape.</p>
+                }
+            </div>
+
+            <div class="trace-panel">
+                <div class="panel-title"><strong>Aligned lap traces</strong><span>Move across the chart to inspect every view together</span></div>
+                <svg class="trace-chart" viewBox="@($"0 0 1000 {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized Speed, Time Delta, Throttle, Brake, Gear, RPM, Steering, Slip Angle, Yaw Rate, Lateral Acceleration, and Longitudinal Acceleration traces" @onmousemove="ChartMoved">
+                    @for (var row = 0; row < VisiblePanels.Count; row++)
+                    {
+                        var panel = VisiblePanels[row]; var top = 20 + row * 96;
+                        <rect x="58" y="@top" width="922" height="76" class="chart-row" />
+                        <line x1="58" y1="@(top + 38)" x2="980" y2="@(top + 38)" class="chart-grid-line" />
+                        <svg:text x="8" y="@(top + 17)" class="chart-title">@panel.Label</svg:text>
+                        <svg:text x="8" y="@(top + 36)" class="chart-unit">@panel.Unit</svg:text>
+                        <svg:text x="968" y="@(top + 17)" text-anchor="end" class="chart-cursor-value">@PanelValue(panel)</svg:text>
+                        @foreach (var trace in SelectedTraces)
+                        {
+                            <path d="@TracePath(trace, panel, top, false)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="2.2" vector-effect="non-scaling-stroke" />
+                            @if (panel.Second is not null)
+                            {
+                                <path d="@TracePath(trace, panel, top, true)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="1.7" stroke-dasharray="5 4" opacity=".72" vector-effect="non-scaling-stroke" />
+                            }
+                        }
+                    }
+                    @for (var tick = 0; tick <= 4; tick++)
+                    {
+                        var x = 58 + tick * 230.5;
+                        <line x1="@x" y1="20" x2="@x" y2="@ChartBottom" class="chart-grid-vertical" />
+                        <svg:text x="@x" y="@(ChartHeight - 8)" text-anchor="middle" class="chart-label">@(tick * 25)%</svg:text>
+                    }
+                    <line x1="@CursorChartX" y1="20" x2="@CursorChartX" y2="@ChartBottom" class="shared-cursor" />
+                </svg>
+            </div>
+        </div>
+        </div>
+        <div class="evidence-note"><EvidenceBadge Kind="EvidenceKind.Proxy" /><span>@Workspace.TireStressDefinition</span></div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
+    private readonly HashSet<int> Selected = [];
+    private string? _analysisId;
+    private string Mode { get; set; } = "speed";
+    private bool CleanLapsOnly { get; set; }
+    private int? FocusLap { get; set; }
+    private double Cursor { get; set; } = .25;
+    private static readonly (string Key, string Label)[] Modes = [("speed", "Speed"), ("throttle", "Throttle"), ("brake", "Brake"), ("steering", "Steering"), ("stress", "Tire stress")];
+    private static readonly PanelSpec[] Panels =
+    [
+        new("speed", "Speed", "mph", p => p.SpeedMph),
+        new("delta", "Time Delta", "s", _ => null),
+        new("controls", "Throttle / Brake", "%", p => p.Throttle, p => p.Brake),
+        new("gear", "Gear", "selected gear", p => p.Gear),
+        new("rpm", "RPM", "rpm", p => p.Rpm),
+        new("steering", "Steering", "rad", p => p.SteeringRadians),
+        new("rotation", "Slip Angle / Yaw Rate", "deg / deg/s", p => p.SlipAngleDegrees, p => p.YawRateDegreesPerSecond),
+        new("acceleration", "Lateral / Longitudinal G", "g", p => p.LateralG, p => p.LongitudinalG)
+    ];
+
+    protected override void OnParametersSet()
+    {
+        if (_analysisId == Workspace.AnalysisId) return;
+        _analysisId = Workspace.AnalysisId; Selected.Clear();
+        ResetSelection();
+    }
+
+    private IEnumerable<AnalysisLapTrace> SelectedTraces => Workspace.Traces.Where(trace => Selected.Contains(trace.Lap) && (!FocusLap.HasValue || trace.Lap == FocusLap));
+    private IEnumerable<LapGroup> LapGroups
+    {
+        get
+        {
+            var eligible = Workspace.Traces.Where(trace => !CleanLapsOnly || IsClean(trace));
+            var assigned = new HashSet<int>();
+            foreach (var run in Workspace.Runs)
+            {
+                var traces = eligible.Where(trace => run.Laps.Contains(trace.Lap)).ToArray();
+                if (traces.Length == 0) continue;
+                foreach (var trace in traces) assigned.Add(trace.Lap);
+                yield return new LapGroup($"Run {run.Number}", traces);
+            }
+            var remainder = eligible.Where(trace => !assigned.Contains(trace.Lap)).ToArray();
+            if (remainder.Length > 0) yield return new LapGroup(Workspace.Runs.Count == 0 ? "Recorded laps" : "Other laps", remainder);
+        }
+    }
+    private double FastestLapTime => Workspace.Traces.Where(trace => IsClean(trace) && trace.LapTimeSeconds.HasValue).Select(trace => trace.LapTimeSeconds!.Value).DefaultIfEmpty(double.MaxValue).Min();
+    private IReadOnlyList<PanelSpec> VisiblePanels => Panels.Where(HasPanelData).ToArray();
+    private AnalysisLapTrace PrimaryTrace => SelectedTraces.FirstOrDefault() ?? Workspace.Traces[0];
+    private AnalysisLapTrace ReferenceTrace => SelectedTraces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).FirstOrDefault() ?? PrimaryTrace;
+    private int ChartBottom => 20 + VisiblePanels.Count * 96 - 20;
+    private int ChartHeight => ChartBottom + 30;
+    private string ModeLabel => Modes.First(item => item.Key == Mode).Label;
+    private double CursorChartX => 58 + Cursor * 922;
+    private string CursorSummary
+    {
+        get
+        {
+            var point = Nearest(PrimaryTrace, Cursor);
+            var delta = point is null ? null : TimeDelta(PrimaryTrace, point);
+            return point is null ? "No sample" : $"{point.SpeedMph:0} mph · {point.Throttle * 100:0}% throttle · {point.Brake * 100:0}% brake" + (delta.HasValue ? $" · {delta.Value:+0.000;-0.000;0.000} s" : string.Empty);
+        }
+    }
+
+    private void ToggleLap(int lap)
+    {
+        if (!Selected.Remove(lap)) { if (Selected.Count >= 5) Selected.Remove(Selected.First()); Selected.Add(lap); }
+        if (Selected.Count == 0) Selected.Add(lap);
+    }
+    private void SelectLap(int lap) { ToggleLap(lap); if (FocusLap.HasValue && !Selected.Contains(lap)) FocusLap = null; }
+    private void SetFocus(int lap) { if (!Selected.Contains(lap)) ToggleLap(lap); FocusLap = FocusLap == lap ? null : lap; }
+    private void ClearFocus() => FocusLap = null;
+    private void ResetSelection()
+    {
+        Selected.Clear(); FocusLap = null;
+        foreach (var trace in Workspace.Traces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).Take(3)) Selected.Add(trace.Lap);
+        if (Selected.Count == 0) foreach (var trace in Workspace.Traces.Take(3)) Selected.Add(trace.Lap);
+    }
+    private AnalysisLap? LapInfo(int lap) => Workspace.Laps.FirstOrDefault(item => item.Lap == lap);
+    private static bool IsClean(AnalysisLapTrace trace) => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
+    private static string LapState(AnalysisLapTrace trace, AnalysisLap? lap) => !trace.Complete ? "Incomplete" : trace.PitTimeSeconds.GetValueOrDefault() > 0 ? "Pit" : trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) || trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) ? "Yellow" : lap?.Confounded == true ? "Affected" : "Green";
+    private static string LapStateClass(AnalysisLapTrace trace, AnalysisLap? lap) => LapState(trace, lap).ToLowerInvariant();
+    private void ChartMoved(MouseEventArgs args) => Cursor = Math.Clamp((args.OffsetX - 58) / 922d, 0, 1);
+    private void TrackMoved(MouseEventArgs args)
+    {
+        if (Workspace.TrackShape.Count < 3) { Cursor = Math.Clamp((args.OffsetX - 28) / 364d, 0, 1); return; }
+        var point = MapPoints.MinBy(item => Math.Pow(item.X - args.OffsetX, 2) + Math.Pow(item.Y - args.OffsetY, 2));
+        Cursor = point!.Percent;
+    }
+
+    private IReadOnlyList<MapPoint> MapPoints
+    {
+        get
+        {
+            var minX = Workspace.TrackShape.Min(p => p.X); var maxX = Workspace.TrackShape.Max(p => p.X);
+            var minY = Workspace.TrackShape.Min(p => p.Y); var maxY = Workspace.TrackShape.Max(p => p.Y);
+            var scale = Math.Min(350 / Math.Max(.0001, maxX - minX), 218 / Math.Max(.0001, maxY - minY));
+            return Workspace.TrackShape.Select(p => new MapPoint(p.LapPercent, 210 + (p.X - (minX + maxX) / 2) * scale, 140 + (p.Y - (minY + maxY) / 2) * scale)).ToArray();
+        }
+    }
+    private MapPoint CursorMapPoint => MapPoints.MinBy(point => Math.Abs(point.Percent - Cursor))!;
+    private IEnumerable<MapSegment> MapSegments
+    {
+        get
+        {
+            var points = MapPoints;
+            for (var index = 0; index < points.Count; index++)
+            {
+                var a = points[index]; var b = points[(index + 1) % points.Count];
+                yield return new MapSegment(a, b, MetricColor(MetricAt((a.Percent + b.Percent) / 2)));
+            }
+        }
+    }
+    private IEnumerable<StripSegment> StripSegments
+    {
+        get
+        {
+            const int count = 80;
+            for (var index = 0; index < count; index++)
+            {
+                var start = index / (double)count; var end = (index + 1) / (double)count;
+                yield return new StripSegment(28 + start * 364, 28 + end * 364, MetricColor(MetricAt((start + end) / 2)));
+            }
+        }
+    }
+    private double? MetricAt(double percent)
+    {
+        var point = Nearest(PrimaryTrace, percent);
+        return Mode switch { "throttle" => point?.Throttle, "brake" => point?.Brake, "steering" => point?.SteeringPeakRadians, "stress" => point?.TireStressProxy, _ => point?.SpeedMph };
+    }
+    private string MetricColor(double? value)
+    {
+        if (value is null) return "#59616D";
+        var normalized = Mode == "speed" ? Math.Clamp((value.Value - 60) / 120, 0, 1) : Mode == "steering" ? Math.Clamp(Math.Abs(value.Value) / .5, 0, 1) : Math.Clamp(value.Value, 0, 1);
+        var hue = 8 + normalized * 202;
+        return $"hsl({F(hue)} 66% 62%)";
+    }
+    private static AnalysisTracePoint? Nearest(AnalysisLapTrace trace, double percent) => trace.Points.MinBy(point => Math.Abs(point.LapPercent - percent));
+    private bool HasPanelData(PanelSpec panel)
+    {
+        if (panel.Key == "delta") return Workspace.Traces.Any(trace => trace.Points.Any(point => point.SessionTimeSeconds.HasValue));
+        return Workspace.Traces.Any(trace => trace.Points.Any(point => panel.First(point).HasValue || panel.Second?.Invoke(point).HasValue == true));
+    }
+    private double? PanelPointValue(PanelSpec panel, AnalysisLapTrace trace, AnalysisTracePoint point, bool useSecond)
+    {
+        if (panel.Key == "delta") return useSecond ? null : TimeDelta(trace, point);
+        return useSecond ? panel.Second?.Invoke(point) : panel.First(point);
+    }
+    private double? TimeDelta(AnalysisLapTrace trace, AnalysisTracePoint point)
+    {
+        if (!point.SessionTimeSeconds.HasValue) return null;
+        var traceStart = trace.Points.FirstOrDefault(item => item.SessionTimeSeconds.HasValue)?.SessionTimeSeconds;
+        var reference = ReferenceTrace;
+        var referencePoint = Nearest(reference, point.LapPercent);
+        var referenceStart = reference.Points.FirstOrDefault(item => item.SessionTimeSeconds.HasValue)?.SessionTimeSeconds;
+        if (!traceStart.HasValue || referencePoint?.SessionTimeSeconds is not double referenceTime || !referenceStart.HasValue) return null;
+        return (point.SessionTimeSeconds.Value - traceStart.Value) - (referenceTime - referenceStart.Value);
+    }
+    private string PanelValue(PanelSpec panel)
+    {
+        var point = Nearest(PrimaryTrace, Cursor);
+        if (point is null) return "—";
+        var first = PanelPointValue(panel, PrimaryTrace, point, false);
+        var second = PanelPointValue(panel, PrimaryTrace, point, true);
+        if (!first.HasValue && !second.HasValue) return "—";
+        if (panel.Key == "delta") return $"{first.GetValueOrDefault():+0.000;-0.000;0.000} s";
+        if (panel.Label == "Gear") return first.HasValue ? $"Gear {first.Value:0}" : "—";
+        if (panel.Label == "RPM") return first.HasValue ? $"{first.Value:0} rpm" : "—";
+        if (panel.Label == "Speed") return first.HasValue ? $"{first.Value:0.0} mph" : "—";
+        if (panel.Label == "Throttle / Brake") return $"{first.GetValueOrDefault() * 100:0}% / {second.GetValueOrDefault() * 100:0}%";
+        return second.HasValue ? $"{first:0.000} / {second:0.000}" : $"{first:0.000}";
+    }
+    private (double Min, double Max) PanelRange(PanelSpec panel)
+    {
+        var values = SelectedTraces.SelectMany(trace => trace.Points.SelectMany(point => new[] { PanelPointValue(panel, trace, point, false), PanelPointValue(panel, trace, point, true) })).Where(value => value.HasValue).Select(value => value!.Value).ToArray();
+        if (values.Length == 0) return (-.5, .5);
+        if (panel.Key == "delta")
+        {
+            var magnitude = Math.Max(.05, values.Max(value => Math.Abs(value)));
+            return (-magnitude, magnitude);
+        }
+        var min = values.Min(); var max = values.Max();
+        if (Math.Abs(max - min) < .0001) { min -= .5; max += .5; }
+        return (min, max);
+    }
+    private string TracePath(AnalysisLapTrace trace, PanelSpec panel, double top, bool useSecond)
+    {
+        var values = trace.Points.Select(point => PanelPointValue(panel, trace, point, useSecond)).Where(value => value.HasValue).ToArray();
+        if (values.Length == 0) return string.Empty;
+        var (min, max) = PanelRange(panel);
+        var started = false;
+        return string.Join(" ", trace.Points.Select(point =>
+        {
+            var value = PanelPointValue(panel, trace, point, useSecond); if (!value.HasValue) return string.Empty;
+            var x = 58 + point.LapPercent * 922; var y = top + 70 - (value.Value - min) / (max - min) * 64;
+            var command = started ? "L" : "M"; started = true;
+            return $"{command}{F(x)},{F(y)}";
+        }));
+    }
+    private string LapColor(int lap) { var colors = new[] { "#8DB4F6", "#71C29A", "#E2BC70", "#B99CE3", "#E08A80", "#7FC5BC" }; var index = Workspace.Traces.ToList().FindIndex(trace => trace.Lap == lap); return colors[Math.Max(0, index) % colors.Length]; }
+    private static string LapTime(double? seconds) => seconds is null ? "—" : TimeSpan.FromSeconds(seconds.Value).ToString(@"m\:ss\.fff");
+    private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+    private sealed record PanelSpec(string Key, string Label, string Unit, Func<AnalysisTracePoint, double?> First, Func<AnalysisTracePoint, double?>? Second = null);
+    private sealed record MapPoint(double Percent, double X, double Y);
+    private sealed record MapSegment(MapPoint A, MapPoint B, string Color);
+    private sealed record StripSegment(double X1, double X2, string Color);
+    private sealed record LapGroup(string Label, IReadOnlyList<AnalysisLapTrace> Traces);
+}

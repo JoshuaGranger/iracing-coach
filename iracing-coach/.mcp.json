@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "iracing-coach-local": {
+      "command": "powershell.exe",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "./skills/analyze-iracing-race/scripts/start-mcp.ps1"
+      ],
+      "cwd": "."
+    }
+  }
+}

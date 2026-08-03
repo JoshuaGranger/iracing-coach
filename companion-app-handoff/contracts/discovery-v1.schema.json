@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/discovery-v1.schema.json",
+  "title": "iRacing Coach discover sessions result",
+  "type": "object",
+  "required": [
+    "root",
+    "selection_policy",
+    "latest_race",
+    "session_count",
+    "returned_session_count",
+    "error_count",
+    "sessions",
+    "errors"
+  ],
+  "properties": {
+    "root": { "type": "string" },
+    "selection_policy": { "const": "latest-race-by-session-metadata" },
+    "latest_race": {
+      "oneOf": [
+        { "$ref": "dashboard-v1.schema.json#/$defs/session" },
+        { "type": "null" }
+      ]
+    },
+    "session_count": { "type": "integer", "minimum": 0 },
+    "returned_session_count": { "type": "integer", "minimum": 0 },
+    "error_count": { "type": "integer", "minimum": 0 },
+    "sessions": {
+      "type": "array",
+      "items": { "$ref": "dashboard-v1.schema.json#/$defs/session" }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "valid", "path", "error_type", "error"],
+        "properties": {
+          "kind": { "const": "error" },
+          "valid": { "const": false },
+          "path": { "type": "string" },
+          "error_type": { "type": "string" },
+          "error": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

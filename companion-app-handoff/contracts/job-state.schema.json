@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/job-state.schema.json",
+  "title": "iRacing Coach companion job state",
+  "type": "object",
+  "required": ["jobId", "operation", "canonicalKey", "status", "createdAt", "cancellable"],
+  "properties": {
+    "jobId": { "type": "string" },
+    "operation": { "type": "string" },
+    "canonicalKey": { "type": "string" },
+    "status": { "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
+    "stage": { "type": ["string", "null"] },
+    "createdAt": { "type": "string" },
+    "startedAt": { "type": ["string", "null"] },
+    "completedAt": { "type": ["string", "null"] },
+    "elapsedMs": { "type": "number", "minimum": 0 },
+    "cancellable": { "type": "boolean" },
+    "artifactPaths": { "type": "array", "items": { "type": "string" } },
+    "error": { "type": ["object", "null"] }
+  },
+  "additionalProperties": true
+}
+

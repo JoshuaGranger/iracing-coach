@@ -1,0 +1,10 @@
+<div class="live-gap-cell" title="@Tooltip">
+    <span>@Gap.Label</span><strong>@Value</strong><small class="trend-@Gap.Trend.ToString().ToLowerInvariant()">@Trend</small>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public LiveGapState Gap { get; set; } = null!;
+    private string Value => Gap.Seconds.HasValue ? $"+{Gap.Seconds:0.00} s" : "—";
+    private string Trend => Gap.Trend switch { LiveGapTrend.Closing => "Closing", LiveGapTrend.Growing => "Growing", LiveGapTrend.Stable => "Stable", _ => "Paused" };
+    private string Tooltip => Gap.Seconds.HasValue ? $"{Gap.Label}: {Gap.Seconds:0.000} seconds; {Trend}; {Gap.Evidence}; age {Gap.DataAge.TotalMilliseconds:0} ms" : Gap.UnavailableReason;
+}

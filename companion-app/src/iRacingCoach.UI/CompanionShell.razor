@@ -1,0 +1,98 @@
+@implements IDisposable
+@using Microsoft.JSInterop
+@inject CompanionState State
+@inject IJSRuntime JS
+
+<div class="app-shell @(State.RailCollapsed ? "rail-collapsed" : "") @(State.Settings.UseReducedMotion ? "reduced-motion" : "") @(State.CurrentPage == "first-run" ? "first-run-mode" : "")">
+    @if (State.QaFixtureMode)
+    {
+        <div class="qa-fixture-watermark" role="status">QA FIXTURE · OFFLINE</div>
+    }
+    @if (State.CurrentPage != "first-run")
+    {
+        <NavRail State="State" />
+    }
+    <main class="workspace" id="main-content" tabindex="-1">
+        @if (State.CurrentPage != "first-run")
+        {
+        <header class="command-bar">
+            <div class="crumb"><span class="eyebrow">iRacing Coach</span><span class="crumb-divider" aria-hidden="true">/</span><span>@PageLabel</span></div>
+            @if (!string.IsNullOrWhiteSpace(State.HeaderAlert))
+            {
+                <button class="header-alert" title="Open troubleshooting" @onclick="State.OpenTroubleshooting"><span class="dot" aria-hidden="true"></span>@State.HeaderAlert</button>
+            }
+        </header>
+        }
+        <section class="page-frame" aria-live="polite">
+            <CoachErrorBoundary @ref="_errorBoundary">
+                <ChildContent>
+                    @switch (State.CurrentPage)
+                    {
+                        case "live": <LiveTelemetryPage State="State" /> break;
+                        case "analysis": <AnalysisPage State="State" /> break;
+                        case "planning": <PlanningPage State="State" /> break;
+                        case "setup": <SetupPage State="State" /> break;
+                        case "tuning": <TuningPage State="State" /> break;
+                        case "connections": <ConnectionsPage State="State" /> break;
+                        case "settings": <SettingsPage State="State" /> break;
+                        case "first-run": <FirstRunPage State="State" /> break;
+                        default: <HomePage State="State" /> break;
+                    }
+                </ChildContent>
+                <ErrorContent Context="error">
+                    <section class="surface-card recoverable-error" role="alert">
+                        <span class="eyebrow">This view needs attention</span>
+                        <h1>The app kept running</h1>
+                        <p>That race or page contained data this view could not use. Your recordings were not changed.</p>
+                        <div class="button-row">
+                            <button class="button primary" @onclick="RecoverView">Retry view</button>
+                            <button class="button secondary" @onclick="() => CopySupportDetails(error)">Copy support details</button>
+                            <button class="button secondary" @onclick='() => State.Navigate("home")'>Return home</button>
+                        </div>
+                        @if (State.LastRecoverableError is { } contained)
+                        {
+                            <small>Reference @contained.Id · @contained.OccurredUtc.ToLocalTime().ToString("g")</small>
+                        }
+                    </section>
+                </ErrorContent>
+            </CoachErrorBoundary>
+        </section>
+    </main>
+    @if (State.Jobs.Count > 0)
+    {
+        <JobTray State="State" />
+    }
+    @if (!string.IsNullOrWhiteSpace(State.Toast))
+    {
+        <div class="toast" role="status"><span>@State.Toast</span><button aria-label="Dismiss notification" @onclick="State.DismissToast"><ProductIcon Name="close" Size="16" /></button></div>
+    }
+</div>
+
+@code {
+    private string? _renderedPage;
+    private CoachErrorBoundary? _errorBoundary;
+    protected override void OnInitialized() => State.Changed += OnStateChanged;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await State.InitializeAsync();
+        if (!string.Equals(_renderedPage, State.CurrentPage, StringComparison.Ordinal))
+        {
+            _renderedPage = State.CurrentPage;
+            await JS.InvokeVoidAsync("iracingCoach.scrollWorkspaceTop");
+        }
+    }
+    private string PageLabel => State.CurrentPage switch { "live" => "Live Telemetry", "analysis" => "Race Analysis", "planning" => "Race Planning", "setup" => "Setup Library", "tuning" => "Progressive Tuning", "connections" => "Connections", "settings" => "Settings", _ => "Home" };
+    private void RecoverView() { _errorBoundary?.Recover(); State.ClearRecoverableError(); }
+    private async Task CopySupportDetails(Exception error)
+    {
+        var details = State.LastRecoverableError?.SupportDetails ?? $"Area: user interface\nType: {error.GetType().Name}\nApp: iRacing Coach";
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", details);
+        State.Notify("Support details copied.");
+    }
+    private void OnStateChanged() => InvokeAsync(() =>
+    {
+        if (_errorBoundary is not null && !string.Equals(_renderedPage, State.CurrentPage, StringComparison.Ordinal)) _errorBoundary.Recover();
+        StateHasChanged();
+    });
+    public void Dispose() => State.Changed -= OnStateChanged;
+}

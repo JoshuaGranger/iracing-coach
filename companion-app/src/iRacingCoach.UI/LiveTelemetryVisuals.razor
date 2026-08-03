@@ -1,0 +1,123 @@
+@using System.Globalization
+
+<section class="live-visual-workspace" aria-labelledby="live-visual-heading">
+    <div class="analysis-section-heading">
+        <div><span class="eyebrow">Live driving</span><h2 id="live-visual-heading">Track and telemetry</h2></div>
+        <label class="history-control"><span>Chart history</span><select @bind="State.Settings.LiveMonitor.HistoryLaps" @bind:after="State.SaveLiveMonitorPreferences">@for (var lap = 1; lap <= 10; lap++) { <option value="@lap">@lap lap@(lap == 1 ? null : "s")</option> }</select></label>
+    </div>
+
+    <div class="live-visual-grid">
+        <div class="live-track-panel">
+            <div class="panel-title"><strong>@(HasPhysicalLine ? "Recent racing line" : "Current lap position")</strong><span>@(HasPhysicalLine ? "Position telemetry" : "Normalized lap distance")</span></div>
+            <svg class="live-track-map" viewBox="0 0 440 270" role="img" aria-label="Live car position">
+                @if (HasPhysicalLine)
+                {
+                    <path d="@PhysicalPath" class="live-racing-line" />
+                    <circle cx="@F(CurrentMap.X)" cy="@F(CurrentMap.Y)" r="10" class="live-car-halo" />
+                    <circle cx="@F(CurrentMap.X)" cy="@F(CurrentMap.Y)" r="5" class="live-car-marker" />
+                }
+                else
+                {
+                    <line x1="34" y1="135" x2="406" y2="135" class="distance-base" />
+                    <line x1="34" y1="135" x2="@F(34 + (Snapshot.LapDistancePercent ?? 0) * 372)" y2="135" class="live-distance-progress" />
+                    <circle cx="@F(34 + (Snapshot.LapDistancePercent ?? 0) * 372)" cy="135" r="8" class="live-car-marker" />
+                    <svg:text x="34" y="174" class="chart-label">Start / finish</svg:text><svg:text x="406" y="174" text-anchor="end" class="chart-label">@((Snapshot.LapDistancePercent ?? 0) * 100).ToString("0")%</svg:text>
+                }
+            </svg>
+            <div class="live-control-bars">
+                <div><span>Throttle</span><progress value="@(Snapshot.Throttle ?? 0)" max="1"></progress><strong>@Percent(Snapshot.Throttle)</strong></div>
+                <div><span>Brake</span><progress class="brake" value="@(Snapshot.Brake ?? 0)" max="1"></progress><strong>@Percent(Snapshot.Brake)</strong></div>
+            </div>
+        </div>
+
+        <div class="live-numeric-panel">
+            <div class="live-driving-metrics">
+                @if (Snapshot.SpeedMph.HasValue) { <div class="speed"><span>Speed</span><strong>@Snapshot.SpeedMph.Value.ToString("0")</strong><small>mph</small></div> }
+                @if (Snapshot.Gear.HasValue) { <div><span>Gear</span><strong>@Snapshot.Gear</strong></div> }
+                @if (Snapshot.Rpm.HasValue) { <div><span>Engine</span><strong>@Snapshot.Rpm.Value.ToString("0")</strong><small>RPM</small></div> }
+                @if (Snapshot.SteeringWheelAngleRadians.HasValue) { <div><span>Steering</span><strong>@Degrees(Snapshot.SteeringWheelAngleRadians)</strong><small>deg</small></div> }
+                @if (Snapshot.LateralAccelerationG.HasValue) { <div><span>Lateral load</span><strong>@Snapshot.LateralAccelerationG.Value.ToString("+0.00;-0.00;0.00")</strong><small>g</small></div> }
+                @if (Snapshot.YawRateDegreesPerSecond.HasValue) { <div><span>Yaw rate</span><strong>@Snapshot.YawRateDegreesPerSecond.Value.ToString("+0.0;-0.0;0.0")</strong><small>deg/s</small></div> }
+            </div>
+            <div class="panel-title live-trend-title"><strong>Recent traces</strong><span>@VisibleHistory.Count samples · local SDK</span></div>
+            <svg class="live-trend-chart" viewBox="0 0 760 300" preserveAspectRatio="none" role="img" aria-label="Live telemetry history">
+                @for (var row = 0; row < TrendPanels.Count; row++)
+                {
+                    var panel = TrendPanels[row]; var top = 12 + row * 70;
+                    <rect x="74" y="@top" width="672" height="54" class="chart-row" />
+                    <svg:text x="8" y="@(top + 18)" class="chart-title">@panel.Label</svg:text>
+                    <svg:text x="8" y="@(top + 35)" class="chart-unit">@panel.Unit</svg:text>
+                    <path d="@TrendPath(panel, top)" fill="none" stroke="@panel.Color" stroke-width="2" vector-effect="non-scaling-stroke" />
+                }
+            </svg>
+        </div>
+    </div>
+
+    @if (LapHistory.Count >= 2)
+    {
+        <div class="session-lap-trend">
+            <div class="panel-title"><strong>Full-session lap times</strong><span>Independent of the live chart history setting</span></div>
+            <svg viewBox="0 0 1000 130" preserveAspectRatio="none" role="img" aria-label="Full session lap time trend">
+                <rect x="45" y="10" width="940" height="92" class="chart-row" />
+                <path d="@LapTrendPath" fill="none" stroke="var(--telemetry-speed)" stroke-width="2.2" vector-effect="non-scaling-stroke" />
+                @foreach (var point in LapHistory)
+                {
+                    <circle cx="@F(LapX(point))" cy="@F(LapY(point))" r="3" fill="var(--telemetry-speed)" />
+                }
+            </svg>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private LiveRaceSnapshot Snapshot => State.LiveState.Snapshot;
+    private IReadOnlyList<LiveTracePoint> History => State.LiveState.History ?? [];
+    private IReadOnlyList<LiveTracePoint> VisibleHistory
+    {
+        get
+        {
+            var laps = History.Where(point => point.Lap.HasValue).Select(point => point.Lap!.Value).Distinct().OrderDescending().Take(Math.Clamp(State.Settings.LiveMonitor.HistoryLaps, 1, 10)).ToHashSet();
+            return laps.Count == 0 ? History.TakeLast(600).ToArray() : History.Where(point => point.Lap.HasValue && laps.Contains(point.Lap.Value)).TakeLast(1800).ToArray();
+        }
+    }
+    private bool HasPhysicalLine => VisibleHistory.Count(point => point.Latitude.HasValue && point.Longitude.HasValue) >= 3;
+    private IReadOnlyList<MapPoint> PhysicalPoints
+    {
+        get
+        {
+            var points = VisibleHistory.Where(point => point.Latitude.HasValue && point.Longitude.HasValue).TakeLast(600).ToArray();
+            if (points.Length == 0) return [];
+            var minX = points.Min(p => p.Longitude!.Value); var maxX = points.Max(p => p.Longitude!.Value);
+            var minY = points.Min(p => p.Latitude!.Value); var maxY = points.Max(p => p.Latitude!.Value);
+            var scale = Math.Min(360 / Math.Max(.0000001, maxX - minX), 210 / Math.Max(.0000001, maxY - minY));
+            return points.Select(p => new MapPoint(220 + (p.Longitude!.Value - (minX + maxX) / 2) * scale, 135 - (p.Latitude!.Value - (minY + maxY) / 2) * scale)).ToArray();
+        }
+    }
+    private string PhysicalPath => string.Join(" ", PhysicalPoints.Select((point, index) => $"{(index == 0 ? "M" : "L")}{F(point.X)},{F(point.Y)}"));
+    private MapPoint CurrentMap => PhysicalPoints.LastOrDefault() ?? new MapPoint(220, 135);
+    private IReadOnlyList<TrendSpec> TrendPanels => AllTrendPanels.Where(panel => VisibleHistory.Any(point => panel.Value(point).HasValue)).ToArray();
+    private static readonly TrendSpec[] AllTrendPanels =
+    [
+        new("Speed", "mph", "#8DB4F6", p => p.SpeedMph), new("Throttle", "%", "#71C29A", p => p.Throttle),
+        new("Brake", "%", "#E08A80", p => p.Brake), new("Steering", "deg", "#B99CE3", p => p.SteeringWheelAngleRadians * 57.29577951308232)
+    ];
+    private string TrendPath(TrendSpec panel, double top)
+    {
+        var values = VisibleHistory.Select(panel.Value).Where(value => value.HasValue).Select(value => value!.Value).ToArray();
+        if (values.Length == 0) return string.Empty;
+        var min = values.Min(); var max = values.Max(); if (Math.Abs(max - min) < .0001) { min -= .5; max += .5; }
+        var started = false; var count = Math.Max(1, VisibleHistory.Count - 1);
+        return string.Join(" ", VisibleHistory.Select((point, index) => { var value = panel.Value(point); if (!value.HasValue) return string.Empty; var command = started ? "L" : "M"; started = true; return $"{command}{F(74 + index / (double)count * 672)},{F(top + 50 - (value.Value - min) / (max - min) * 46)}"; }));
+    }
+    private IReadOnlyList<LapPoint> LapHistory => History.Where(point => point.Lap.HasValue && point.LastLapSeconds is > 0).GroupBy(point => point.Lap!.Value).Select(group => new LapPoint(group.Key, group.Last().LastLapSeconds!.Value)).OrderBy(point => point.Lap).ToArray();
+    private string LapTrendPath => string.Join(" ", LapHistory.Select((point, index) => $"{(index == 0 ? "M" : "L")}{F(LapX(point))},{F(LapY(point))}"));
+    private double LapX(LapPoint point) { var min = LapHistory.Min(p => p.Lap); var max = LapHistory.Max(p => p.Lap); return 45 + (point.Lap - min) / (double)Math.Max(1, max - min) * 940; }
+    private double LapY(LapPoint point) { var min = LapHistory.Min(p => p.Seconds); var max = LapHistory.Max(p => p.Seconds); return 96 - (point.Seconds - min) / Math.Max(.001, max - min) * 78; }
+    private static string Percent(double? value) => value.HasValue ? $"{value.Value * 100:0}%" : "—";
+    private static string Degrees(double? value) => value.HasValue ? (value.Value * 57.29577951308232).ToString("+0;-0;0") : "—";
+    private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+    private sealed record TrendSpec(string Label, string Unit, string Color, Func<LiveTracePoint, double?> Value);
+    private sealed record MapPoint(double X, double Y);
+    private sealed record LapPoint(int Lap, double Seconds);
+}

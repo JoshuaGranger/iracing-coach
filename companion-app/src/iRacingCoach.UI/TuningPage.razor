@@ -1,0 +1,82 @@
+<div class="page-heading">
+    <div><span class="eyebrow">Progressive tuning</span><h1>Build a controlled setup experiment</h1><p>Capture each handling issue, then test the smallest safe bundle and keep a rollback point.</p></div>
+</div>
+
+@if (!State.TuningRaces.Any())
+{
+    <section class="surface-card compact-empty-surface"><div class="empty-state"><span class="empty-icon"><ProductIcon Name="tuning" Size="22" /></span><h2>Analyze an open-setup race first</h2><p>A complete analysis and embedded setup are required.</p><button class="button primary" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button></div></section>
+}
+else
+{
+    <div class="workflow-layout tuning-layout @(State.TuningExperiment is null ? "setup-only" : "has-results")">
+        <aside class="surface-card form-panel">
+            <div class="card-header"><div><span class="eyebrow">Recorded starting point</span><h2>Choose a race</h2></div></div>
+            <label>Analyzed open-setup race<select @bind="State.SelectedTuningRaceId">@foreach (var raceOption in State.TuningRaces) { <option value="@raceOption.Id">@raceOption.Track · @raceOption.Car · @raceOption.Date</option> }</select><small>Fixed-setup and unanalyzed sessions are excluded because they cannot support a garage change.</small></label>
+            @if (State.SelectedTuningRace is { } race) { <div class="context-summary"><span>@race.Car</span><strong>@race.Track · @race.Layout</strong><small>Open setup · embedded setup and telemetry available</small></div> }
+            @if (State.CurrentAnalysis is { } tuningWorkspace && State.SelectedTuningRace is { } tuningRace && string.Equals(tuningWorkspace.Track, tuningRace.Track, StringComparison.OrdinalIgnoreCase))
+            {
+                <TuningTrackSelector Workspace="tuningWorkspace" @bind-Selected="State.TuningCorner" />
+            }
+            @if (State.TuningFeedback.Count > 0)
+            {
+                <div class="tuning-feedback-cards" aria-label="Saved handling feedback">
+                    @foreach (var item in State.TuningFeedback)
+                    {
+                        <article><div><strong>@item.Corner</strong><span>@item.RunPhase · @item.CornerPhase</span></div><b>@item.Balance</b><small>@item.Severity · @item.Confidence confidence@(item.Priority ? " · Priority" : string.Empty)</small><button aria-label="Remove feedback" @onclick="() => State.RemoveTuningFeedback(item)">Remove</button></article>
+                    }
+                </div>
+            }
+            <fieldset class="feedback-builder">
+                <legend>Handling feedback</legend>
+                <div class="feedback-step"><span>1</span><div><strong>When?</strong><div class="segmented-control" role="group" aria-label="Run phase">@foreach (var option in RunPhases) { <button type="button" aria-pressed="@(State.TuningRunPhase == option)" class="@(State.TuningRunPhase == option ? "selected" : "")" @onclick="() => State.TuningRunPhase = option">@option</button> }</div></div></div>
+                <div class="feedback-step"><span>2</span><div><strong>Where in the corner?</strong><div class="segmented-control" role="group" aria-label="Corner phase">@foreach (var option in CornerPhases) { <button type="button" aria-pressed="@(State.TuningCornerPhase == option)" class="@(State.TuningCornerPhase == option ? "selected" : "")" @onclick="() => State.TuningCornerPhase = option">@option</button> }</div></div></div>
+                <div class="feedback-step"><span>3</span><div><strong>What was the balance?</strong><div class="balance-grid" role="group" aria-label="Handling balance">@foreach (var option in Balances) { <button type="button" aria-pressed="@(State.TuningBalance == option.Value)" class="@(State.TuningBalance == option.Value ? "selected" : "")" @onclick="() => State.TuningBalance = option.Value"><b>@option.Label</b><small>@option.Help</small></button> }</div></div></div>
+                <div class="feedback-step"><span>4</span><div class="tuning-rating-row"><div><strong>How strong was it?</strong><div class="segmented-control" role="group" aria-label="Severity">@foreach (var option in Severities) { <button type="button" aria-pressed="@(State.TuningSeverity == option)" class="@(State.TuningSeverity == option ? "selected" : "")" @onclick="() => State.TuningSeverity = option">@option</button> }</div></div><div><strong>How certain are you?</strong><div class="segmented-control" role="group" aria-label="Confidence">@foreach (var option in Confidences) { <button type="button" aria-pressed="@(State.TuningConfidence == option)" class="@(State.TuningConfidence == option ? "selected" : "")" @onclick="() => State.TuningConfidence = option">@option</button> }</div></div></div></div>
+                <label class="priority-toggle"><input type="checkbox" @bind="State.TuningPriority" /><span><strong>Make this the priority</strong><small>Use when this issue matters more than the other feedback from the run.</small></span></label>
+            </fieldset>
+            <div class="field-row tuning-context-fields"><label>Corner or zone<input maxlength="80" placeholder="Whole lap, Turn 3, Esses…" @bind="State.TuningCorner" @bind:event="oninput" /></label><label>Optional detail<input maxlength="500" placeholder="Only after 12 green laps…" @bind="State.TuningNotes" @bind:event="oninput" /></label></div>
+            <div class="button-row tuning-actions"><button class="button secondary" disabled="@(string.IsNullOrWhiteSpace(State.TuningBalance) && string.IsNullOrWhiteSpace(State.SymptomText))" @onclick="State.AddTuningFeedback">Add feedback</button><button class="button primary" disabled="@(State.TuningFeedback.Count == 0 && string.IsNullOrWhiteSpace(State.TuningBalance) && string.IsNullOrWhiteSpace(State.SymptomText))" @onclick="BuildExperiment">Build controlled experiment</button></div>
+            <p class="fine-print">A race with tow or repair evidence may be rejected until you record a clean comparison run.</p>
+        </aside>
+
+        @if (State.TuningExperiment is { } experiment)
+        {
+            <div class="workflow-results"><section class="surface-card">
+                <div class="card-header"><div><span class="eyebrow">Evidence check</span><h2>Recommendation</h2></div><span class="status-label neutral">One change at a time</span></div>
+                <div class="experiment-card real-experiment">
+                    <div class="card-header"><div><span class="eyebrow">Controlled test</span><h2>@DisplaySystem(experiment.System)</h2></div><span class="status-label success">Saved locally</span></div>
+                    <div class="experiment-change"><span>Try this change</span><p>@experiment.Change</p></div>
+                    <div class="effect-risk"><div><span>What it should improve</span><p>@experiment.PredictedEffect</p></div><div><span>What to watch for</span><p>@experiment.Risk</p></div></div>
+                    @if (experiment.Verify.Count > 0) { <div class="verify-list"><span>Compare after the run</span>@foreach (var item in experiment.Verify) { <span class="verify-chip"><ProductIcon Name="check" Size="14" /> @item</span> }</div> }
+                    @if (!string.IsNullOrWhiteSpace(experiment.RollbackFingerprint)) { <div class="rollback-banner"><div><span>Your original setup is preserved</span><strong>Return to it if the change makes the car worse.</strong></div></div> }
+                    <label>Notes after your comparison run<textarea rows="3" maxlength="8000" placeholder="What changed? Was the run clean and comparable?" @bind="State.FeedbackNotes" @bind:event="oninput"></textarea></label>
+                    <div class="outcome-bar"><span>Save the result</span><button @onclick='() => Record("improved")'>Improved</button><button @onclick='() => Record("worse")'>Worse</button><button @onclick='() => Record("no-change")'>No change</button><button @onclick='() => Record("inconclusive")'>Inconclusive</button><strong>@experiment.Outcome</strong></div>
+                    <details class="evidence-details"><summary>Technical record</summary><ul><li>Test record: @experiment.ExperimentId</li>@if (!string.IsNullOrWhiteSpace(experiment.RollbackFingerprint)) { <li class="mono">Original setup: @experiment.RollbackFingerprint</li> }</ul></details>
+                </div>
+            </section></div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private static readonly string[] RunPhases = ["Early run", "Middle run", "Late run"];
+    private static readonly string[] CornerPhases = ["Entry", "Center", "Exit"];
+    private static readonly string[] Severities = ["Mild", "Moderate", "Severe"];
+    private static readonly string[] Confidences = ["Low", "Medium", "High"];
+    private static readonly (string Label, string Value, string Help)[] Balances =
+    [
+        ("Tight", "Tight / understeer", "Needs more steering"),
+        ("Loose", "Loose / oversteer", "Rear steps out"),
+        ("Unstable", "Unstable", "Hard to place consistently"),
+        ("Low grip", "Low grip", "Both ends lack grip")
+    ];
+    private static string DisplaySystem(string system) => system switch
+    {
+        "Static Balance" => "Corner balance",
+        "Driving First" => "Driving technique first",
+        _ => system
+    };
+    private Task BuildExperiment() { if (State.TuningFeedback.Count == 0) State.AddTuningFeedback(); return State.GenerateExperimentAsync(); }
+    private Task Record(string outcome) => State.RecordOutcomeAsync(outcome);
+}

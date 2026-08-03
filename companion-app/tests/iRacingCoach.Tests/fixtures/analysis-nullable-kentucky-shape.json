@@ -1,0 +1,161 @@
+{
+  "ok": true,
+  "analysis_id": "kentucky-null-regression",
+  "timing": { "total_ms": null },
+  "analysis_view": {
+    "schema_version": 1,
+    "identity": {
+      "track_name": "Kentucky Speedway",
+      "track_config": null,
+      "car_name": "Toyota Tundra TRD Pro",
+      "car_path": "trucks toyotatundra2022",
+      "event_type": "Race",
+      "is_fixed_setup": true,
+      "setup_fingerprint": null
+    },
+    "race_summary": {
+      "recorded_laps": 15,
+      "scheduled_laps": null,
+      "pit_stops_detected": 1
+    },
+    "runs": [
+      {
+        "run_number": 1,
+        "lap_numbers": [1, 2, null, "bad"],
+        "green_laps": 13.0,
+        "caution_laps": 0.0,
+        "fuel": { "used_gal": 4.587 },
+        "driving_load": {
+          "early_brake_energy_proxy": null,
+          "early_brake_vs_late_percent": null,
+          "early_steer_vs_late_percent": null,
+          "early_steering_work_proxy": null,
+          "late_brake_energy_proxy": null,
+          "late_steering_work_proxy": null
+        },
+        "pace": {
+          "early_average_lap_s": null,
+          "early_to_late_delta_s": null,
+          "green_lap_time_slope_s_per_lap": null,
+          "green_laps_used": 0,
+          "late_average_lap_s": null
+        },
+        "pit_service": null,
+        "tire_observation": null,
+        "tire_measurement_status": null,
+        "damage_repair_context": {
+          "automatic_coaching_reference_eligible": true,
+          "reason_codes": null
+        }
+      }
+    ],
+    "laps": [
+      {
+        "lap": 1,
+        "lap_time_s": null,
+        "complete": true,
+        "flag_state": null,
+        "green_fraction": null,
+        "caution_fraction": null,
+        "pit_time_s": null,
+        "position": { "start": null, "end": null },
+        "damage_repair_context": {
+          "automatic_coaching_reference_eligible": true,
+          "exclusion_reason_codes": null
+        }
+      }
+    ],
+    "lap_traces": {
+      "tire_stress_definition": null,
+      "traces": [
+        {
+          "lap": 1,
+          "lap_time_s": null,
+          "complete": true,
+          "flag_state": "green",
+          "green_fraction": null,
+          "caution_fraction": null,
+          "pit_time_s": null,
+          "points": [
+            {
+              "lap_pct": 0.25,
+              "speed_mph": null,
+              "speed_min_mph": null,
+              "speed_max_mph": null,
+              "throttle": null,
+              "throttle_min": null,
+              "brake": null,
+              "brake_mean": null,
+              "steering_rad": null,
+              "steering_peak_rad": null,
+              "gear": null,
+              "rpm": null,
+              "yaw_rate_deg_s": null,
+              "lateral_g": null,
+              "longitudinal_g": null,
+              "lat": null,
+              "lon": null,
+              "tire_stress_proxy": null
+            },
+            {
+              "lap_pct": 0.50,
+              "speed_mph": 153.2,
+              "throttle": 0.84,
+              "brake": 0.0,
+              "steering_rad": 0.31,
+              "gear": 4,
+              "rpm": 6420.0
+            },
+            {
+              "lap_pct": 0.75,
+              "speed_mph": 166.8,
+              "throttle": 0.96,
+              "brake": 0.0,
+              "steering_rad": 0.12,
+              "gear": 4,
+              "rpm": 7015.0
+            }
+          ]
+        }
+      ]
+    },
+    "track_profile": {
+      "shape": null,
+      "detected_corner_segments": [
+        { "segment": 1, "start_pct": null, "end_pct": null, "wraps_start_finish": null, "label": null }
+      ]
+    },
+    "corner_tire_age": {
+      "corners": [
+        { "remaining_percent_at_run_end": null }
+      ]
+    },
+    "strategy": {
+      "measured_green_fuel_gal_per_lap": null,
+      "measured_caution_fuel_gal_per_lap": null,
+      "forecast": {
+        "status": null,
+        "all_green_range_laps": 58.0,
+        "minimum_stops_all_green": null,
+        "equal_stint_pit_targets_all_green": [null, 38]
+      }
+    },
+    "damage_repair": null,
+    "setup_telemetry": null,
+    "data_quality": { "confidence": null },
+    "race_grades": {
+      "overall_grade": null,
+      "categories": [
+        { "key": "pace", "label": "Pace", "grade": null, "score": null, "evidence_type": null, "explanation": null, "improvement": null, "limitations": null }
+      ]
+    }
+  },
+  "race_card": {
+    "title": "Kentucky Race Card",
+    "bottom_line": { "evidence_type": "derived", "text": "Supported portions remain available." },
+    "actions": [],
+    "corner_playbook": { "rows": [] },
+    "race_triggers": [],
+    "evidence_appendix": []
+  }
+}

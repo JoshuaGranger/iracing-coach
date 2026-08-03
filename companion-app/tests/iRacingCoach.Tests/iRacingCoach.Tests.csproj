@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MSTest" Version="4.0.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\iRacingCoach.BackendClient\iRacingCoach.BackendClient.csproj" />
+    <ProjectReference Include="..\..\src\iRacingCoach.Contracts\iRacingCoach.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\iRacingCoach.Coordinator\iRacingCoach.Coordinator.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\..\companion-app-handoff\contracts\**\*.json" Link="fixtures\contracts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\companion-app-handoff\config\theme.dark.json" Link="fixtures\theme.dark.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\companion-app-handoff\fixtures\dashboard-populated.json" Link="fixtures\dashboard-populated.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\companion-app-handoff\fixtures\dashboard-empty.json" Link="fixtures\dashboard-empty.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\companion-app-handoff\fixtures\analyze-repair-heavy.json" Link="fixtures\analyze-repair-heavy.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\companion-app-handoff\fixtures\setup-recommendation.json" Link="fixtures\setup-recommendation.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures\analysis-nullable-kentucky-shape.json" Link="fixtures\analysis-nullable-kentucky-shape.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

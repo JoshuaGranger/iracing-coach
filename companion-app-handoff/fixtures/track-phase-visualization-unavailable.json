@@ -1,0 +1,2210 @@
+{
+  "comparison_quality": {
+    "alignment_status": "unavailable",
+    "clean_reference_run_ids": [],
+    "conditions_scope": "No aligned representative comparison in this synthetic unavailable-state case",
+    "limitations": [
+      "No aligned comparison is available; exact numeric target traces are prohibited."
+    ],
+    "optimality_claim_allowed": false,
+    "representative_lap_status": "unavailable",
+    "setup_fingerprint_match": false,
+    "setup_scope": "different_or_unknown",
+    "source_reference_ids": [],
+    "status": "unusable"
+  },
+  "fixture_metadata": {
+    "production_use_allowed": false,
+    "purpose": "Unavailable geometry, comparison, target, steering-angle, and groove UI states",
+    "real_driver_or_setup_data": false,
+    "synthetic": true,
+    "visible_watermark": "SYNTHETIC UI FIXTURE - NOT DRIVING ADVICE"
+  },
+  "groove": {
+    "claim_label": "Groove direction unavailable",
+    "directional_labels_supported": false,
+    "geometry_calibration_status": "unavailable",
+    "limitation": "Inside/outside geometry is not calibrated; path movement cannot be labeled as a groove.",
+    "optimality_claim_allowed": false,
+    "recommendations": [],
+    "status": "unavailable"
+  },
+  "identity": {
+    "car_name": "NASCAR Test Car",
+    "is_fixed_setup": false,
+    "track_config": "Oval",
+    "track_name": "Synthetic Speedway"
+  },
+  "interruptions": [],
+  "limitations": [
+    "Synthetic UI fixture with no real track geometry or driver/setup data.",
+    "Only an early observed-local phase is supported; all other tire-age positions are unavailable.",
+    "No exact target, directional groove, or signed steering-angle claim is allowed."
+  ],
+  "phase_slider": {
+    "continuous_interpolation_supported": false,
+    "mode": "snap-to-supported-phases",
+    "tire_age_interpretation": "green_laps_on_set_proxy",
+    "unsupported_green_lap_ranges": [
+      [
+        1,
+        1
+      ],
+      [
+        9,
+        27
+      ]
+    ],
+    "values": [
+      {
+        "caution_laps_on_set": 0,
+        "evidence_class": "proxy",
+        "green_lap_bounds": [
+          2,
+          8
+        ],
+        "key": "early",
+        "label": "Early",
+        "measured_tire_wear_available": false,
+        "source_lap_numbers": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "source_run_id": "synthetic-local-run-001",
+        "tire_set_id": "synthetic-local-tire-set-001"
+      }
+    ]
+  },
+  "phase_traces": [
+    {
+      "evidence_class": "derived",
+      "phase_key": "early",
+      "samples": [
+        {
+          "brake": 0.0,
+          "lap_pct": 0.004167,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.0125,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.020833,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.029167,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.0375,
+          "speed_mph": 150.41,
+          "steering_work_abs_rad": 0.0329,
+          "throttle": 0.9686
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.045833,
+          "speed_mph": 148.01,
+          "steering_work_abs_rad": 0.045,
+          "throttle": 0.9212
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.054167,
+          "speed_mph": 145.64,
+          "steering_work_abs_rad": 0.0568,
+          "throttle": 0.8746
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.0625,
+          "speed_mph": 143.32,
+          "steering_work_abs_rad": 0.0684,
+          "throttle": 0.8287
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.070833,
+          "speed_mph": 141.05,
+          "steering_work_abs_rad": 0.0797,
+          "throttle": 0.7839
+        },
+        {
+          "brake": 0.0411,
+          "lap_pct": 0.079167,
+          "speed_mph": 138.83,
+          "steering_work_abs_rad": 0.0908,
+          "throttle": 0.7278
+        },
+        {
+          "brake": 0.0556,
+          "lap_pct": 0.0875,
+          "speed_mph": 136.68,
+          "steering_work_abs_rad": 0.1016,
+          "throttle": 0.681
+        },
+        {
+          "brake": 0.0699,
+          "lap_pct": 0.095833,
+          "speed_mph": 134.6,
+          "steering_work_abs_rad": 0.112,
+          "throttle": 0.6355
+        },
+        {
+          "brake": 0.0839,
+          "lap_pct": 0.104167,
+          "speed_mph": 132.58,
+          "steering_work_abs_rad": 0.1221,
+          "throttle": 0.5916
+        },
+        {
+          "brake": 0.0978,
+          "lap_pct": 0.1125,
+          "speed_mph": 130.65,
+          "steering_work_abs_rad": 0.1317,
+          "throttle": 0.5493
+        },
+        {
+          "brake": 0.1114,
+          "lap_pct": 0.120833,
+          "speed_mph": 128.8,
+          "steering_work_abs_rad": 0.141,
+          "throttle": 0.5087
+        },
+        {
+          "brake": 0.1247,
+          "lap_pct": 0.129167,
+          "speed_mph": 127.04,
+          "steering_work_abs_rad": 0.1498,
+          "throttle": 0.4701
+        },
+        {
+          "brake": 0.1377,
+          "lap_pct": 0.1375,
+          "speed_mph": 125.38,
+          "steering_work_abs_rad": 0.1581,
+          "throttle": 0.4333
+        },
+        {
+          "brake": 0.1502,
+          "lap_pct": 0.145833,
+          "speed_mph": 123.82,
+          "steering_work_abs_rad": 0.1659,
+          "throttle": 0.3987
+        },
+        {
+          "brake": 0.1624,
+          "lap_pct": 0.154167,
+          "speed_mph": 122.35,
+          "steering_work_abs_rad": 0.1732,
+          "throttle": 0.3662
+        },
+        {
+          "brake": 0.1741,
+          "lap_pct": 0.1625,
+          "speed_mph": 121.0,
+          "steering_work_abs_rad": 0.18,
+          "throttle": 0.3359
+        },
+        {
+          "brake": 0.1853,
+          "lap_pct": 0.170833,
+          "speed_mph": 119.76,
+          "steering_work_abs_rad": 0.1862,
+          "throttle": 0.308
+        },
+        {
+          "brake": 0.1961,
+          "lap_pct": 0.179167,
+          "speed_mph": 118.63,
+          "steering_work_abs_rad": 0.1919,
+          "throttle": 0.2825
+        },
+        {
+          "brake": 0.2063,
+          "lap_pct": 0.1875,
+          "speed_mph": 117.62,
+          "steering_work_abs_rad": 0.1969,
+          "throttle": 0.2595
+        },
+        {
+          "brake": 0.2159,
+          "lap_pct": 0.195833,
+          "speed_mph": 116.72,
+          "steering_work_abs_rad": 0.2014,
+          "throttle": 0.239
+        },
+        {
+          "brake": 0.2249,
+          "lap_pct": 0.204167,
+          "speed_mph": 115.96,
+          "steering_work_abs_rad": 0.2052,
+          "throttle": 0.2211
+        },
+        {
+          "brake": 0.2333,
+          "lap_pct": 0.2125,
+          "speed_mph": 115.31,
+          "steering_work_abs_rad": 0.2084,
+          "throttle": 0.2059
+        },
+        {
+          "brake": 0.2411,
+          "lap_pct": 0.220833,
+          "speed_mph": 114.8,
+          "steering_work_abs_rad": 0.211,
+          "throttle": 0.1934
+        },
+        {
+          "brake": 0.2482,
+          "lap_pct": 0.229167,
+          "speed_mph": 114.41,
+          "steering_work_abs_rad": 0.213,
+          "throttle": 0.1835
+        },
+        {
+          "brake": 0.2547,
+          "lap_pct": 0.2375,
+          "speed_mph": 114.15,
+          "steering_work_abs_rad": 0.2143,
+          "throttle": 0.1765
+        },
+        {
+          "brake": 0.2604,
+          "lap_pct": 0.245833,
+          "speed_mph": 114.02,
+          "steering_work_abs_rad": 0.2149,
+          "throttle": 0.1722
+        },
+        {
+          "brake": 0.2654,
+          "lap_pct": 0.254167,
+          "speed_mph": 114.02,
+          "steering_work_abs_rad": 0.2149,
+          "throttle": 0.1707
+        },
+        {
+          "brake": 0.2697,
+          "lap_pct": 0.2625,
+          "speed_mph": 114.15,
+          "steering_work_abs_rad": 0.2143,
+          "throttle": 0.172
+        },
+        {
+          "brake": 0.2733,
+          "lap_pct": 0.270833,
+          "speed_mph": 114.41,
+          "steering_work_abs_rad": 0.213,
+          "throttle": 0.176
+        },
+        {
+          "brake": 0.2761,
+          "lap_pct": 0.279167,
+          "speed_mph": 114.8,
+          "steering_work_abs_rad": 0.211,
+          "throttle": 0.1829
+        },
+        {
+          "brake": 0.2782,
+          "lap_pct": 0.2875,
+          "speed_mph": 115.31,
+          "steering_work_abs_rad": 0.2084,
+          "throttle": 0.1925
+        },
+        {
+          "brake": 0.2795,
+          "lap_pct": 0.295833,
+          "speed_mph": 115.96,
+          "steering_work_abs_rad": 0.2052,
+          "throttle": 0.2048
+        },
+        {
+          "brake": 0.28,
+          "lap_pct": 0.304167,
+          "speed_mph": 116.72,
+          "steering_work_abs_rad": 0.2014,
+          "throttle": 0.2198
+        },
+        {
+          "brake": 0.2797,
+          "lap_pct": 0.3125,
+          "speed_mph": 117.62,
+          "steering_work_abs_rad": 0.1969,
+          "throttle": 0.2374
+        },
+        {
+          "brake": 0.2787,
+          "lap_pct": 0.320833,
+          "speed_mph": 118.63,
+          "steering_work_abs_rad": 0.1919,
+          "throttle": 0.2577
+        },
+        {
+          "brake": 0.277,
+          "lap_pct": 0.329167,
+          "speed_mph": 119.76,
+          "steering_work_abs_rad": 0.1862,
+          "throttle": 0.2805
+        },
+        {
+          "brake": 0.2744,
+          "lap_pct": 0.3375,
+          "speed_mph": 121.0,
+          "steering_work_abs_rad": 0.18,
+          "throttle": 0.3058
+        },
+        {
+          "brake": 0.2711,
+          "lap_pct": 0.345833,
+          "speed_mph": 122.35,
+          "steering_work_abs_rad": 0.1732,
+          "throttle": 0.3335
+        },
+        {
+          "brake": 0.2671,
+          "lap_pct": 0.354167,
+          "speed_mph": 123.82,
+          "steering_work_abs_rad": 0.1659,
+          "throttle": 0.3636
+        },
+        {
+          "brake": 0.2624,
+          "lap_pct": 0.3625,
+          "speed_mph": 125.38,
+          "steering_work_abs_rad": 0.1581,
+          "throttle": 0.3959
+        },
+        {
+          "brake": 0.2569,
+          "lap_pct": 0.370833,
+          "speed_mph": 127.04,
+          "steering_work_abs_rad": 0.1498,
+          "throttle": 0.4304
+        },
+        {
+          "brake": 0.2507,
+          "lap_pct": 0.379167,
+          "speed_mph": 128.8,
+          "steering_work_abs_rad": 0.141,
+          "throttle": 0.467
+        },
+        {
+          "brake": 0.2438,
+          "lap_pct": 0.3875,
+          "speed_mph": 130.65,
+          "steering_work_abs_rad": 0.1317,
+          "throttle": 0.5055
+        },
+        {
+          "brake": 0.2363,
+          "lap_pct": 0.395833,
+          "speed_mph": 132.58,
+          "steering_work_abs_rad": 0.1221,
+          "throttle": 0.5459
+        },
+        {
+          "brake": 0.2281,
+          "lap_pct": 0.404167,
+          "speed_mph": 134.6,
+          "steering_work_abs_rad": 0.112,
+          "throttle": 0.5881
+        },
+        {
+          "brake": 0.2193,
+          "lap_pct": 0.4125,
+          "speed_mph": 136.68,
+          "steering_work_abs_rad": 0.1016,
+          "throttle": 0.6319
+        },
+        {
+          "brake": 0.2099,
+          "lap_pct": 0.420833,
+          "speed_mph": 138.83,
+          "steering_work_abs_rad": 0.0908,
+          "throttle": 0.6772
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.429167,
+          "speed_mph": 141.05,
+          "steering_work_abs_rad": 0.0797,
+          "throttle": 0.7839
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.4375,
+          "speed_mph": 143.32,
+          "steering_work_abs_rad": 0.0684,
+          "throttle": 0.8287
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.445833,
+          "speed_mph": 145.64,
+          "steering_work_abs_rad": 0.0568,
+          "throttle": 0.8746
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.454167,
+          "speed_mph": 148.01,
+          "steering_work_abs_rad": 0.045,
+          "throttle": 0.9212
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.4625,
+          "speed_mph": 150.41,
+          "steering_work_abs_rad": 0.0329,
+          "throttle": 0.9686
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.470833,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.479167,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.4875,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.495833,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.504167,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.5125,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.520833,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.529167,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.5375,
+          "speed_mph": 150.41,
+          "steering_work_abs_rad": 0.0329,
+          "throttle": 0.9686
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.545833,
+          "speed_mph": 148.01,
+          "steering_work_abs_rad": 0.045,
+          "throttle": 0.9212
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.554167,
+          "speed_mph": 145.64,
+          "steering_work_abs_rad": 0.0568,
+          "throttle": 0.8746
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.5625,
+          "speed_mph": 143.32,
+          "steering_work_abs_rad": 0.0684,
+          "throttle": 0.8287
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.570833,
+          "speed_mph": 141.05,
+          "steering_work_abs_rad": 0.0797,
+          "throttle": 0.7839
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.579167,
+          "speed_mph": 138.83,
+          "steering_work_abs_rad": 0.0908,
+          "throttle": 0.7402
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.5875,
+          "speed_mph": 136.68,
+          "steering_work_abs_rad": 0.1016,
+          "throttle": 0.6977
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.595833,
+          "speed_mph": 134.6,
+          "steering_work_abs_rad": 0.112,
+          "throttle": 0.6565
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.604167,
+          "speed_mph": 132.58,
+          "steering_work_abs_rad": 0.1221,
+          "throttle": 0.6168
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.6125,
+          "speed_mph": 130.65,
+          "steering_work_abs_rad": 0.1317,
+          "throttle": 0.5786
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.620833,
+          "speed_mph": 128.8,
+          "steering_work_abs_rad": 0.141,
+          "throttle": 0.5422
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.629167,
+          "speed_mph": 127.04,
+          "steering_work_abs_rad": 0.1498,
+          "throttle": 0.5075
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.6375,
+          "speed_mph": 125.38,
+          "steering_work_abs_rad": 0.1581,
+          "throttle": 0.4746
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.645833,
+          "speed_mph": 123.82,
+          "steering_work_abs_rad": 0.1659,
+          "throttle": 0.4437
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.654167,
+          "speed_mph": 122.35,
+          "steering_work_abs_rad": 0.1732,
+          "throttle": 0.4149
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.6625,
+          "speed_mph": 121.0,
+          "steering_work_abs_rad": 0.18,
+          "throttle": 0.3881
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.670833,
+          "speed_mph": 119.76,
+          "steering_work_abs_rad": 0.1862,
+          "throttle": 0.3636
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.679167,
+          "speed_mph": 118.63,
+          "steering_work_abs_rad": 0.1919,
+          "throttle": 0.3413
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.6875,
+          "speed_mph": 117.62,
+          "steering_work_abs_rad": 0.1969,
+          "throttle": 0.3214
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.695833,
+          "speed_mph": 116.72,
+          "steering_work_abs_rad": 0.2014,
+          "throttle": 0.3038
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.704167,
+          "speed_mph": 115.96,
+          "steering_work_abs_rad": 0.2052,
+          "throttle": 0.2886
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.7125,
+          "speed_mph": 115.31,
+          "steering_work_abs_rad": 0.2084,
+          "throttle": 0.2759
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.720833,
+          "speed_mph": 114.8,
+          "steering_work_abs_rad": 0.211,
+          "throttle": 0.2657
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.729167,
+          "speed_mph": 114.41,
+          "steering_work_abs_rad": 0.213,
+          "throttle": 0.258
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.7375,
+          "speed_mph": 114.15,
+          "steering_work_abs_rad": 0.2143,
+          "throttle": 0.2529
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.745833,
+          "speed_mph": 114.02,
+          "steering_work_abs_rad": 0.2149,
+          "throttle": 0.2503
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.754167,
+          "speed_mph": 114.02,
+          "steering_work_abs_rad": 0.2149,
+          "throttle": 0.2503
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.7625,
+          "speed_mph": 114.15,
+          "steering_work_abs_rad": 0.2143,
+          "throttle": 0.2529
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.770833,
+          "speed_mph": 114.41,
+          "steering_work_abs_rad": 0.213,
+          "throttle": 0.258
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.779167,
+          "speed_mph": 114.8,
+          "steering_work_abs_rad": 0.211,
+          "throttle": 0.2657
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.7875,
+          "speed_mph": 115.31,
+          "steering_work_abs_rad": 0.2084,
+          "throttle": 0.2759
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.795833,
+          "speed_mph": 115.96,
+          "steering_work_abs_rad": 0.2052,
+          "throttle": 0.2886
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.804167,
+          "speed_mph": 116.72,
+          "steering_work_abs_rad": 0.2014,
+          "throttle": 0.3038
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.8125,
+          "speed_mph": 117.62,
+          "steering_work_abs_rad": 0.1969,
+          "throttle": 0.3214
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.820833,
+          "speed_mph": 118.63,
+          "steering_work_abs_rad": 0.1919,
+          "throttle": 0.3413
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.829167,
+          "speed_mph": 119.76,
+          "steering_work_abs_rad": 0.1862,
+          "throttle": 0.3636
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.8375,
+          "speed_mph": 121.0,
+          "steering_work_abs_rad": 0.18,
+          "throttle": 0.3881
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.845833,
+          "speed_mph": 122.35,
+          "steering_work_abs_rad": 0.1732,
+          "throttle": 0.4149
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.854167,
+          "speed_mph": 123.82,
+          "steering_work_abs_rad": 0.1659,
+          "throttle": 0.4437
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.8625,
+          "speed_mph": 125.38,
+          "steering_work_abs_rad": 0.1581,
+          "throttle": 0.4746
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.870833,
+          "speed_mph": 127.04,
+          "steering_work_abs_rad": 0.1498,
+          "throttle": 0.5075
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.879167,
+          "speed_mph": 128.8,
+          "steering_work_abs_rad": 0.141,
+          "throttle": 0.5422
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.8875,
+          "speed_mph": 130.65,
+          "steering_work_abs_rad": 0.1317,
+          "throttle": 0.5786
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.895833,
+          "speed_mph": 132.58,
+          "steering_work_abs_rad": 0.1221,
+          "throttle": 0.6168
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.904167,
+          "speed_mph": 134.6,
+          "steering_work_abs_rad": 0.112,
+          "throttle": 0.6565
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.9125,
+          "speed_mph": 136.68,
+          "steering_work_abs_rad": 0.1016,
+          "throttle": 0.6977
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.920833,
+          "speed_mph": 138.83,
+          "steering_work_abs_rad": 0.0908,
+          "throttle": 0.7402
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.929167,
+          "speed_mph": 141.05,
+          "steering_work_abs_rad": 0.0797,
+          "throttle": 0.7839
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.9375,
+          "speed_mph": 143.32,
+          "steering_work_abs_rad": 0.0684,
+          "throttle": 0.8287
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.945833,
+          "speed_mph": 145.64,
+          "steering_work_abs_rad": 0.0568,
+          "throttle": 0.8746
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.954167,
+          "speed_mph": 148.01,
+          "steering_work_abs_rad": 0.045,
+          "throttle": 0.9212
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.9625,
+          "speed_mph": 150.41,
+          "steering_work_abs_rad": 0.0329,
+          "throttle": 0.9686
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.970833,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.979167,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.9875,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        },
+        {
+          "brake": 0.0,
+          "lap_pct": 0.995833,
+          "speed_mph": 152.0,
+          "steering_work_abs_rad": 0.025,
+          "throttle": 1.0
+        }
+      ],
+      "screening": {
+        "caution_excluded": true,
+        "damage_excluded": true,
+        "eligible": true,
+        "pit_excluded": true,
+        "tow_excluded": true,
+        "traffic_screened": true
+      },
+      "setup_fingerprint": "synthetic-same-setup-fingerprint",
+      "source_lap_numbers": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "source_reference_ids": [
+        "synthetic-local-laps-early"
+      ],
+      "source_run_id": "synthetic-local-run-001",
+      "status": "usable",
+      "tire_set_id": "synthetic-local-tire-set-001",
+      "trace_id": "synthetic-local-early",
+      "trace_role": "observed_local"
+    }
+  ],
+  "schema_version": 1,
+  "steering_presentation": {
+    "display_label": "Steering work magnitude",
+    "exact_steering_angle_target_supported": false,
+    "limitation": "Absolute steering magnitude cannot establish turn direction or an exact wheel-angle target; signed, steering-ratio-normalized evidence is unavailable.",
+    "semantics": "magnitude_only",
+    "signed_direction_available": false,
+    "source_metric": "steering_work_abs_rad",
+    "steering_ratio_normalized": false
+  },
+  "target_policy": {
+    "exact_numeric_target_supported": false,
+    "label": "Exact target unavailable",
+    "local_reference_run_eligible": true,
+    "metric_gates": {
+      "brake": {
+        "evidence_class": "unavailable",
+        "exact_numeric_target_supported": false,
+        "reason": "No usable aligned comparison is available."
+      },
+      "speed_mph": {
+        "evidence_class": "unavailable",
+        "exact_numeric_target_supported": false,
+        "reason": "No usable aligned comparison is available."
+      },
+      "steering": {
+        "evidence_class": "unavailable",
+        "exact_numeric_target_supported": false,
+        "reason": "No usable aligned comparison is available."
+      },
+      "throttle": {
+        "evidence_class": "unavailable",
+        "exact_numeric_target_supported": false,
+        "reason": "No usable aligned comparison is available."
+      }
+    },
+    "optimality_claim_allowed": false,
+    "required_comparison_status": "usable"
+  },
+  "track_profile": {
+    "bins": 120,
+    "detected_corner_segments": [],
+    "display_mode": "normalized_distance_strip",
+    "geometry_source": "normalized_distance_strip",
+    "inside_outside_geometry": {
+      "basis": null,
+      "directional_labels_supported": false,
+      "status": "unavailable"
+    },
+    "profile": [
+      {
+        "bin": 0,
+        "brake": 0.0,
+        "lap_pct": 0.004167,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 1,
+        "brake": 0.0,
+        "lap_pct": 0.0125,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 2,
+        "brake": 0.0,
+        "lap_pct": 0.020833,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 3,
+        "brake": 0.0,
+        "lap_pct": 0.029167,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 4,
+        "brake": 0.0,
+        "lap_pct": 0.0375,
+        "lateral_g": 0.073,
+        "samples": 20,
+        "speed_mph": 150.41,
+        "steering_work_abs_rad": 0.0329,
+        "throttle": 0.9686
+      },
+      {
+        "bin": 5,
+        "brake": 0.0,
+        "lap_pct": 0.045833,
+        "lateral_g": 0.184,
+        "samples": 20,
+        "speed_mph": 148.01,
+        "steering_work_abs_rad": 0.045,
+        "throttle": 0.9212
+      },
+      {
+        "bin": 6,
+        "brake": 0.0,
+        "lap_pct": 0.054167,
+        "lateral_g": 0.293,
+        "samples": 20,
+        "speed_mph": 145.64,
+        "steering_work_abs_rad": 0.0568,
+        "throttle": 0.8746
+      },
+      {
+        "bin": 7,
+        "brake": 0.0,
+        "lap_pct": 0.0625,
+        "lateral_g": 0.4,
+        "samples": 20,
+        "speed_mph": 143.32,
+        "steering_work_abs_rad": 0.0684,
+        "throttle": 0.8287
+      },
+      {
+        "bin": 8,
+        "brake": 0.0,
+        "lap_pct": 0.070833,
+        "lateral_g": 0.504,
+        "samples": 20,
+        "speed_mph": 141.05,
+        "steering_work_abs_rad": 0.0797,
+        "throttle": 0.7839
+      },
+      {
+        "bin": 9,
+        "brake": 0.0411,
+        "lap_pct": 0.079167,
+        "lateral_g": 0.606,
+        "samples": 20,
+        "speed_mph": 138.83,
+        "steering_work_abs_rad": 0.0908,
+        "throttle": 0.7278
+      },
+      {
+        "bin": 10,
+        "brake": 0.0556,
+        "lap_pct": 0.0875,
+        "lateral_g": 0.705,
+        "samples": 20,
+        "speed_mph": 136.68,
+        "steering_work_abs_rad": 0.1016,
+        "throttle": 0.681
+      },
+      {
+        "bin": 11,
+        "brake": 0.0699,
+        "lap_pct": 0.095833,
+        "lateral_g": 0.802,
+        "samples": 20,
+        "speed_mph": 134.6,
+        "steering_work_abs_rad": 0.112,
+        "throttle": 0.6355
+      },
+      {
+        "bin": 12,
+        "brake": 0.0839,
+        "lap_pct": 0.104167,
+        "lateral_g": 0.894,
+        "samples": 20,
+        "speed_mph": 132.58,
+        "steering_work_abs_rad": 0.1221,
+        "throttle": 0.5916
+      },
+      {
+        "bin": 13,
+        "brake": 0.0978,
+        "lap_pct": 0.1125,
+        "lateral_g": 0.983,
+        "samples": 20,
+        "speed_mph": 130.65,
+        "steering_work_abs_rad": 0.1317,
+        "throttle": 0.5493
+      },
+      {
+        "bin": 14,
+        "brake": 0.1114,
+        "lap_pct": 0.120833,
+        "lateral_g": 1.068,
+        "samples": 20,
+        "speed_mph": 128.8,
+        "steering_work_abs_rad": 0.141,
+        "throttle": 0.5087
+      },
+      {
+        "bin": 15,
+        "brake": 0.1247,
+        "lap_pct": 0.129167,
+        "lateral_g": 1.149,
+        "samples": 20,
+        "speed_mph": 127.04,
+        "steering_work_abs_rad": 0.1498,
+        "throttle": 0.4701
+      },
+      {
+        "bin": 16,
+        "brake": 0.1377,
+        "lap_pct": 0.1375,
+        "lateral_g": 1.226,
+        "samples": 20,
+        "speed_mph": 125.38,
+        "steering_work_abs_rad": 0.1581,
+        "throttle": 0.4333
+      },
+      {
+        "bin": 17,
+        "brake": 0.1502,
+        "lap_pct": 0.145833,
+        "lateral_g": 1.298,
+        "samples": 20,
+        "speed_mph": 123.82,
+        "steering_work_abs_rad": 0.1659,
+        "throttle": 0.3987
+      },
+      {
+        "bin": 18,
+        "brake": 0.1624,
+        "lap_pct": 0.154167,
+        "lateral_g": 1.365,
+        "samples": 20,
+        "speed_mph": 122.35,
+        "steering_work_abs_rad": 0.1732,
+        "throttle": 0.3662
+      },
+      {
+        "bin": 19,
+        "brake": 0.1741,
+        "lap_pct": 0.1625,
+        "lateral_g": 1.428,
+        "samples": 20,
+        "speed_mph": 121.0,
+        "steering_work_abs_rad": 0.18,
+        "throttle": 0.3359
+      },
+      {
+        "bin": 20,
+        "brake": 0.1853,
+        "lap_pct": 0.170833,
+        "lateral_g": 1.485,
+        "samples": 20,
+        "speed_mph": 119.76,
+        "steering_work_abs_rad": 0.1862,
+        "throttle": 0.308
+      },
+      {
+        "bin": 21,
+        "brake": 0.1961,
+        "lap_pct": 0.179167,
+        "lateral_g": 1.537,
+        "samples": 20,
+        "speed_mph": 118.63,
+        "steering_work_abs_rad": 0.1919,
+        "throttle": 0.2825
+      },
+      {
+        "bin": 22,
+        "brake": 0.2063,
+        "lap_pct": 0.1875,
+        "lateral_g": 1.583,
+        "samples": 20,
+        "speed_mph": 117.62,
+        "steering_work_abs_rad": 0.1969,
+        "throttle": 0.2595
+      },
+      {
+        "bin": 23,
+        "brake": 0.2159,
+        "lap_pct": 0.195833,
+        "lateral_g": 1.625,
+        "samples": 20,
+        "speed_mph": 116.72,
+        "steering_work_abs_rad": 0.2014,
+        "throttle": 0.239
+      },
+      {
+        "bin": 24,
+        "brake": 0.2249,
+        "lap_pct": 0.204167,
+        "lateral_g": 1.66,
+        "samples": 20,
+        "speed_mph": 115.96,
+        "steering_work_abs_rad": 0.2052,
+        "throttle": 0.2211
+      },
+      {
+        "bin": 25,
+        "brake": 0.2333,
+        "lap_pct": 0.2125,
+        "lateral_g": 1.69,
+        "samples": 20,
+        "speed_mph": 115.31,
+        "steering_work_abs_rad": 0.2084,
+        "throttle": 0.2059
+      },
+      {
+        "bin": 26,
+        "brake": 0.2411,
+        "lap_pct": 0.220833,
+        "lateral_g": 1.713,
+        "samples": 20,
+        "speed_mph": 114.8,
+        "steering_work_abs_rad": 0.211,
+        "throttle": 0.1934
+      },
+      {
+        "bin": 27,
+        "brake": 0.2482,
+        "lap_pct": 0.229167,
+        "lateral_g": 1.731,
+        "samples": 20,
+        "speed_mph": 114.41,
+        "steering_work_abs_rad": 0.213,
+        "throttle": 0.1835
+      },
+      {
+        "bin": 28,
+        "brake": 0.2547,
+        "lap_pct": 0.2375,
+        "lateral_g": 1.743,
+        "samples": 20,
+        "speed_mph": 114.15,
+        "steering_work_abs_rad": 0.2143,
+        "throttle": 0.1765
+      },
+      {
+        "bin": 29,
+        "brake": 0.2604,
+        "lap_pct": 0.245833,
+        "lateral_g": 1.749,
+        "samples": 20,
+        "speed_mph": 114.02,
+        "steering_work_abs_rad": 0.2149,
+        "throttle": 0.1722
+      },
+      {
+        "bin": 30,
+        "brake": 0.2654,
+        "lap_pct": 0.254167,
+        "lateral_g": 1.749,
+        "samples": 20,
+        "speed_mph": 114.02,
+        "steering_work_abs_rad": 0.2149,
+        "throttle": 0.1707
+      },
+      {
+        "bin": 31,
+        "brake": 0.2697,
+        "lap_pct": 0.2625,
+        "lateral_g": 1.743,
+        "samples": 20,
+        "speed_mph": 114.15,
+        "steering_work_abs_rad": 0.2143,
+        "throttle": 0.172
+      },
+      {
+        "bin": 32,
+        "brake": 0.2733,
+        "lap_pct": 0.270833,
+        "lateral_g": 1.731,
+        "samples": 20,
+        "speed_mph": 114.41,
+        "steering_work_abs_rad": 0.213,
+        "throttle": 0.176
+      },
+      {
+        "bin": 33,
+        "brake": 0.2761,
+        "lap_pct": 0.279167,
+        "lateral_g": 1.713,
+        "samples": 20,
+        "speed_mph": 114.8,
+        "steering_work_abs_rad": 0.211,
+        "throttle": 0.1829
+      },
+      {
+        "bin": 34,
+        "brake": 0.2782,
+        "lap_pct": 0.2875,
+        "lateral_g": 1.69,
+        "samples": 20,
+        "speed_mph": 115.31,
+        "steering_work_abs_rad": 0.2084,
+        "throttle": 0.1925
+      },
+      {
+        "bin": 35,
+        "brake": 0.2795,
+        "lap_pct": 0.295833,
+        "lateral_g": 1.66,
+        "samples": 20,
+        "speed_mph": 115.96,
+        "steering_work_abs_rad": 0.2052,
+        "throttle": 0.2048
+      },
+      {
+        "bin": 36,
+        "brake": 0.28,
+        "lap_pct": 0.304167,
+        "lateral_g": 1.625,
+        "samples": 20,
+        "speed_mph": 116.72,
+        "steering_work_abs_rad": 0.2014,
+        "throttle": 0.2198
+      },
+      {
+        "bin": 37,
+        "brake": 0.2797,
+        "lap_pct": 0.3125,
+        "lateral_g": 1.583,
+        "samples": 20,
+        "speed_mph": 117.62,
+        "steering_work_abs_rad": 0.1969,
+        "throttle": 0.2374
+      },
+      {
+        "bin": 38,
+        "brake": 0.2787,
+        "lap_pct": 0.320833,
+        "lateral_g": 1.537,
+        "samples": 20,
+        "speed_mph": 118.63,
+        "steering_work_abs_rad": 0.1919,
+        "throttle": 0.2577
+      },
+      {
+        "bin": 39,
+        "brake": 0.277,
+        "lap_pct": 0.329167,
+        "lateral_g": 1.485,
+        "samples": 20,
+        "speed_mph": 119.76,
+        "steering_work_abs_rad": 0.1862,
+        "throttle": 0.2805
+      },
+      {
+        "bin": 40,
+        "brake": 0.2744,
+        "lap_pct": 0.3375,
+        "lateral_g": 1.428,
+        "samples": 20,
+        "speed_mph": 121.0,
+        "steering_work_abs_rad": 0.18,
+        "throttle": 0.3058
+      },
+      {
+        "bin": 41,
+        "brake": 0.2711,
+        "lap_pct": 0.345833,
+        "lateral_g": 1.365,
+        "samples": 20,
+        "speed_mph": 122.35,
+        "steering_work_abs_rad": 0.1732,
+        "throttle": 0.3335
+      },
+      {
+        "bin": 42,
+        "brake": 0.2671,
+        "lap_pct": 0.354167,
+        "lateral_g": 1.298,
+        "samples": 20,
+        "speed_mph": 123.82,
+        "steering_work_abs_rad": 0.1659,
+        "throttle": 0.3636
+      },
+      {
+        "bin": 43,
+        "brake": 0.2624,
+        "lap_pct": 0.3625,
+        "lateral_g": 1.226,
+        "samples": 20,
+        "speed_mph": 125.38,
+        "steering_work_abs_rad": 0.1581,
+        "throttle": 0.3959
+      },
+      {
+        "bin": 44,
+        "brake": 0.2569,
+        "lap_pct": 0.370833,
+        "lateral_g": 1.149,
+        "samples": 20,
+        "speed_mph": 127.04,
+        "steering_work_abs_rad": 0.1498,
+        "throttle": 0.4304
+      },
+      {
+        "bin": 45,
+        "brake": 0.2507,
+        "lap_pct": 0.379167,
+        "lateral_g": 1.068,
+        "samples": 20,
+        "speed_mph": 128.8,
+        "steering_work_abs_rad": 0.141,
+        "throttle": 0.467
+      },
+      {
+        "bin": 46,
+        "brake": 0.2438,
+        "lap_pct": 0.3875,
+        "lateral_g": 0.983,
+        "samples": 20,
+        "speed_mph": 130.65,
+        "steering_work_abs_rad": 0.1317,
+        "throttle": 0.5055
+      },
+      {
+        "bin": 47,
+        "brake": 0.2363,
+        "lap_pct": 0.395833,
+        "lateral_g": 0.894,
+        "samples": 20,
+        "speed_mph": 132.58,
+        "steering_work_abs_rad": 0.1221,
+        "throttle": 0.5459
+      },
+      {
+        "bin": 48,
+        "brake": 0.2281,
+        "lap_pct": 0.404167,
+        "lateral_g": 0.802,
+        "samples": 20,
+        "speed_mph": 134.6,
+        "steering_work_abs_rad": 0.112,
+        "throttle": 0.5881
+      },
+      {
+        "bin": 49,
+        "brake": 0.2193,
+        "lap_pct": 0.4125,
+        "lateral_g": 0.705,
+        "samples": 20,
+        "speed_mph": 136.68,
+        "steering_work_abs_rad": 0.1016,
+        "throttle": 0.6319
+      },
+      {
+        "bin": 50,
+        "brake": 0.2099,
+        "lap_pct": 0.420833,
+        "lateral_g": 0.606,
+        "samples": 20,
+        "speed_mph": 138.83,
+        "steering_work_abs_rad": 0.0908,
+        "throttle": 0.6772
+      },
+      {
+        "bin": 51,
+        "brake": 0.0,
+        "lap_pct": 0.429167,
+        "lateral_g": 0.504,
+        "samples": 20,
+        "speed_mph": 141.05,
+        "steering_work_abs_rad": 0.0797,
+        "throttle": 0.7839
+      },
+      {
+        "bin": 52,
+        "brake": 0.0,
+        "lap_pct": 0.4375,
+        "lateral_g": 0.4,
+        "samples": 20,
+        "speed_mph": 143.32,
+        "steering_work_abs_rad": 0.0684,
+        "throttle": 0.8287
+      },
+      {
+        "bin": 53,
+        "brake": 0.0,
+        "lap_pct": 0.445833,
+        "lateral_g": 0.293,
+        "samples": 20,
+        "speed_mph": 145.64,
+        "steering_work_abs_rad": 0.0568,
+        "throttle": 0.8746
+      },
+      {
+        "bin": 54,
+        "brake": 0.0,
+        "lap_pct": 0.454167,
+        "lateral_g": 0.184,
+        "samples": 20,
+        "speed_mph": 148.01,
+        "steering_work_abs_rad": 0.045,
+        "throttle": 0.9212
+      },
+      {
+        "bin": 55,
+        "brake": 0.0,
+        "lap_pct": 0.4625,
+        "lateral_g": 0.073,
+        "samples": 20,
+        "speed_mph": 150.41,
+        "steering_work_abs_rad": 0.0329,
+        "throttle": 0.9686
+      },
+      {
+        "bin": 56,
+        "brake": 0.0,
+        "lap_pct": 0.470833,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 57,
+        "brake": 0.0,
+        "lap_pct": 0.479167,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 58,
+        "brake": 0.0,
+        "lap_pct": 0.4875,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 59,
+        "brake": 0.0,
+        "lap_pct": 0.495833,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 60,
+        "brake": 0.0,
+        "lap_pct": 0.504167,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 61,
+        "brake": 0.0,
+        "lap_pct": 0.5125,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 62,
+        "brake": 0.0,
+        "lap_pct": 0.520833,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 63,
+        "brake": 0.0,
+        "lap_pct": 0.529167,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 64,
+        "brake": 0.0,
+        "lap_pct": 0.5375,
+        "lateral_g": 0.073,
+        "samples": 20,
+        "speed_mph": 150.41,
+        "steering_work_abs_rad": 0.0329,
+        "throttle": 0.9686
+      },
+      {
+        "bin": 65,
+        "brake": 0.0,
+        "lap_pct": 0.545833,
+        "lateral_g": 0.184,
+        "samples": 20,
+        "speed_mph": 148.01,
+        "steering_work_abs_rad": 0.045,
+        "throttle": 0.9212
+      },
+      {
+        "bin": 66,
+        "brake": 0.0,
+        "lap_pct": 0.554167,
+        "lateral_g": 0.293,
+        "samples": 20,
+        "speed_mph": 145.64,
+        "steering_work_abs_rad": 0.0568,
+        "throttle": 0.8746
+      },
+      {
+        "bin": 67,
+        "brake": 0.0,
+        "lap_pct": 0.5625,
+        "lateral_g": 0.4,
+        "samples": 20,
+        "speed_mph": 143.32,
+        "steering_work_abs_rad": 0.0684,
+        "throttle": 0.8287
+      },
+      {
+        "bin": 68,
+        "brake": 0.0,
+        "lap_pct": 0.570833,
+        "lateral_g": 0.504,
+        "samples": 20,
+        "speed_mph": 141.05,
+        "steering_work_abs_rad": 0.0797,
+        "throttle": 0.7839
+      },
+      {
+        "bin": 69,
+        "brake": 0.0,
+        "lap_pct": 0.579167,
+        "lateral_g": 0.606,
+        "samples": 20,
+        "speed_mph": 138.83,
+        "steering_work_abs_rad": 0.0908,
+        "throttle": 0.7402
+      },
+      {
+        "bin": 70,
+        "brake": 0.0,
+        "lap_pct": 0.5875,
+        "lateral_g": 0.705,
+        "samples": 20,
+        "speed_mph": 136.68,
+        "steering_work_abs_rad": 0.1016,
+        "throttle": 0.6977
+      },
+      {
+        "bin": 71,
+        "brake": 0.0,
+        "lap_pct": 0.595833,
+        "lateral_g": 0.802,
+        "samples": 20,
+        "speed_mph": 134.6,
+        "steering_work_abs_rad": 0.112,
+        "throttle": 0.6565
+      },
+      {
+        "bin": 72,
+        "brake": 0.0,
+        "lap_pct": 0.604167,
+        "lateral_g": 0.894,
+        "samples": 20,
+        "speed_mph": 132.58,
+        "steering_work_abs_rad": 0.1221,
+        "throttle": 0.6168
+      },
+      {
+        "bin": 73,
+        "brake": 0.0,
+        "lap_pct": 0.6125,
+        "lateral_g": 0.983,
+        "samples": 20,
+        "speed_mph": 130.65,
+        "steering_work_abs_rad": 0.1317,
+        "throttle": 0.5786
+      },
+      {
+        "bin": 74,
+        "brake": 0.0,
+        "lap_pct": 0.620833,
+        "lateral_g": 1.068,
+        "samples": 20,
+        "speed_mph": 128.8,
+        "steering_work_abs_rad": 0.141,
+        "throttle": 0.5422
+      },
+      {
+        "bin": 75,
+        "brake": 0.0,
+        "lap_pct": 0.629167,
+        "lateral_g": 1.149,
+        "samples": 20,
+        "speed_mph": 127.04,
+        "steering_work_abs_rad": 0.1498,
+        "throttle": 0.5075
+      },
+      {
+        "bin": 76,
+        "brake": 0.0,
+        "lap_pct": 0.6375,
+        "lateral_g": 1.226,
+        "samples": 20,
+        "speed_mph": 125.38,
+        "steering_work_abs_rad": 0.1581,
+        "throttle": 0.4746
+      },
+      {
+        "bin": 77,
+        "brake": 0.0,
+        "lap_pct": 0.645833,
+        "lateral_g": 1.298,
+        "samples": 20,
+        "speed_mph": 123.82,
+        "steering_work_abs_rad": 0.1659,
+        "throttle": 0.4437
+      },
+      {
+        "bin": 78,
+        "brake": 0.0,
+        "lap_pct": 0.654167,
+        "lateral_g": 1.365,
+        "samples": 20,
+        "speed_mph": 122.35,
+        "steering_work_abs_rad": 0.1732,
+        "throttle": 0.4149
+      },
+      {
+        "bin": 79,
+        "brake": 0.0,
+        "lap_pct": 0.6625,
+        "lateral_g": 1.428,
+        "samples": 20,
+        "speed_mph": 121.0,
+        "steering_work_abs_rad": 0.18,
+        "throttle": 0.3881
+      },
+      {
+        "bin": 80,
+        "brake": 0.0,
+        "lap_pct": 0.670833,
+        "lateral_g": 1.485,
+        "samples": 20,
+        "speed_mph": 119.76,
+        "steering_work_abs_rad": 0.1862,
+        "throttle": 0.3636
+      },
+      {
+        "bin": 81,
+        "brake": 0.0,
+        "lap_pct": 0.679167,
+        "lateral_g": 1.537,
+        "samples": 20,
+        "speed_mph": 118.63,
+        "steering_work_abs_rad": 0.1919,
+        "throttle": 0.3413
+      },
+      {
+        "bin": 82,
+        "brake": 0.0,
+        "lap_pct": 0.6875,
+        "lateral_g": 1.583,
+        "samples": 20,
+        "speed_mph": 117.62,
+        "steering_work_abs_rad": 0.1969,
+        "throttle": 0.3214
+      },
+      {
+        "bin": 83,
+        "brake": 0.0,
+        "lap_pct": 0.695833,
+        "lateral_g": 1.625,
+        "samples": 20,
+        "speed_mph": 116.72,
+        "steering_work_abs_rad": 0.2014,
+        "throttle": 0.3038
+      },
+      {
+        "bin": 84,
+        "brake": 0.0,
+        "lap_pct": 0.704167,
+        "lateral_g": 1.66,
+        "samples": 20,
+        "speed_mph": 115.96,
+        "steering_work_abs_rad": 0.2052,
+        "throttle": 0.2886
+      },
+      {
+        "bin": 85,
+        "brake": 0.0,
+        "lap_pct": 0.7125,
+        "lateral_g": 1.69,
+        "samples": 20,
+        "speed_mph": 115.31,
+        "steering_work_abs_rad": 0.2084,
+        "throttle": 0.2759
+      },
+      {
+        "bin": 86,
+        "brake": 0.0,
+        "lap_pct": 0.720833,
+        "lateral_g": 1.713,
+        "samples": 20,
+        "speed_mph": 114.8,
+        "steering_work_abs_rad": 0.211,
+        "throttle": 0.2657
+      },
+      {
+        "bin": 87,
+        "brake": 0.0,
+        "lap_pct": 0.729167,
+        "lateral_g": 1.731,
+        "samples": 20,
+        "speed_mph": 114.41,
+        "steering_work_abs_rad": 0.213,
+        "throttle": 0.258
+      },
+      {
+        "bin": 88,
+        "brake": 0.0,
+        "lap_pct": 0.7375,
+        "lateral_g": 1.743,
+        "samples": 20,
+        "speed_mph": 114.15,
+        "steering_work_abs_rad": 0.2143,
+        "throttle": 0.2529
+      },
+      {
+        "bin": 89,
+        "brake": 0.0,
+        "lap_pct": 0.745833,
+        "lateral_g": 1.749,
+        "samples": 20,
+        "speed_mph": 114.02,
+        "steering_work_abs_rad": 0.2149,
+        "throttle": 0.2503
+      },
+      {
+        "bin": 90,
+        "brake": 0.0,
+        "lap_pct": 0.754167,
+        "lateral_g": 1.749,
+        "samples": 20,
+        "speed_mph": 114.02,
+        "steering_work_abs_rad": 0.2149,
+        "throttle": 0.2503
+      },
+      {
+        "bin": 91,
+        "brake": 0.0,
+        "lap_pct": 0.7625,
+        "lateral_g": 1.743,
+        "samples": 20,
+        "speed_mph": 114.15,
+        "steering_work_abs_rad": 0.2143,
+        "throttle": 0.2529
+      },
+      {
+        "bin": 92,
+        "brake": 0.0,
+        "lap_pct": 0.770833,
+        "lateral_g": 1.731,
+        "samples": 20,
+        "speed_mph": 114.41,
+        "steering_work_abs_rad": 0.213,
+        "throttle": 0.258
+      },
+      {
+        "bin": 93,
+        "brake": 0.0,
+        "lap_pct": 0.779167,
+        "lateral_g": 1.713,
+        "samples": 20,
+        "speed_mph": 114.8,
+        "steering_work_abs_rad": 0.211,
+        "throttle": 0.2657
+      },
+      {
+        "bin": 94,
+        "brake": 0.0,
+        "lap_pct": 0.7875,
+        "lateral_g": 1.69,
+        "samples": 20,
+        "speed_mph": 115.31,
+        "steering_work_abs_rad": 0.2084,
+        "throttle": 0.2759
+      },
+      {
+        "bin": 95,
+        "brake": 0.0,
+        "lap_pct": 0.795833,
+        "lateral_g": 1.66,
+        "samples": 20,
+        "speed_mph": 115.96,
+        "steering_work_abs_rad": 0.2052,
+        "throttle": 0.2886
+      },
+      {
+        "bin": 96,
+        "brake": 0.0,
+        "lap_pct": 0.804167,
+        "lateral_g": 1.625,
+        "samples": 20,
+        "speed_mph": 116.72,
+        "steering_work_abs_rad": 0.2014,
+        "throttle": 0.3038
+      },
+      {
+        "bin": 97,
+        "brake": 0.0,
+        "lap_pct": 0.8125,
+        "lateral_g": 1.583,
+        "samples": 20,
+        "speed_mph": 117.62,
+        "steering_work_abs_rad": 0.1969,
+        "throttle": 0.3214
+      },
+      {
+        "bin": 98,
+        "brake": 0.0,
+        "lap_pct": 0.820833,
+        "lateral_g": 1.537,
+        "samples": 20,
+        "speed_mph": 118.63,
+        "steering_work_abs_rad": 0.1919,
+        "throttle": 0.3413
+      },
+      {
+        "bin": 99,
+        "brake": 0.0,
+        "lap_pct": 0.829167,
+        "lateral_g": 1.485,
+        "samples": 20,
+        "speed_mph": 119.76,
+        "steering_work_abs_rad": 0.1862,
+        "throttle": 0.3636
+      },
+      {
+        "bin": 100,
+        "brake": 0.0,
+        "lap_pct": 0.8375,
+        "lateral_g": 1.428,
+        "samples": 20,
+        "speed_mph": 121.0,
+        "steering_work_abs_rad": 0.18,
+        "throttle": 0.3881
+      },
+      {
+        "bin": 101,
+        "brake": 0.0,
+        "lap_pct": 0.845833,
+        "lateral_g": 1.365,
+        "samples": 20,
+        "speed_mph": 122.35,
+        "steering_work_abs_rad": 0.1732,
+        "throttle": 0.4149
+      },
+      {
+        "bin": 102,
+        "brake": 0.0,
+        "lap_pct": 0.854167,
+        "lateral_g": 1.298,
+        "samples": 20,
+        "speed_mph": 123.82,
+        "steering_work_abs_rad": 0.1659,
+        "throttle": 0.4437
+      },
+      {
+        "bin": 103,
+        "brake": 0.0,
+        "lap_pct": 0.8625,
+        "lateral_g": 1.226,
+        "samples": 20,
+        "speed_mph": 125.38,
+        "steering_work_abs_rad": 0.1581,
+        "throttle": 0.4746
+      },
+      {
+        "bin": 104,
+        "brake": 0.0,
+        "lap_pct": 0.870833,
+        "lateral_g": 1.149,
+        "samples": 20,
+        "speed_mph": 127.04,
+        "steering_work_abs_rad": 0.1498,
+        "throttle": 0.5075
+      },
+      {
+        "bin": 105,
+        "brake": 0.0,
+        "lap_pct": 0.879167,
+        "lateral_g": 1.068,
+        "samples": 20,
+        "speed_mph": 128.8,
+        "steering_work_abs_rad": 0.141,
+        "throttle": 0.5422
+      },
+      {
+        "bin": 106,
+        "brake": 0.0,
+        "lap_pct": 0.8875,
+        "lateral_g": 0.983,
+        "samples": 20,
+        "speed_mph": 130.65,
+        "steering_work_abs_rad": 0.1317,
+        "throttle": 0.5786
+      },
+      {
+        "bin": 107,
+        "brake": 0.0,
+        "lap_pct": 0.895833,
+        "lateral_g": 0.894,
+        "samples": 20,
+        "speed_mph": 132.58,
+        "steering_work_abs_rad": 0.1221,
+        "throttle": 0.6168
+      },
+      {
+        "bin": 108,
+        "brake": 0.0,
+        "lap_pct": 0.904167,
+        "lateral_g": 0.802,
+        "samples": 20,
+        "speed_mph": 134.6,
+        "steering_work_abs_rad": 0.112,
+        "throttle": 0.6565
+      },
+      {
+        "bin": 109,
+        "brake": 0.0,
+        "lap_pct": 0.9125,
+        "lateral_g": 0.705,
+        "samples": 20,
+        "speed_mph": 136.68,
+        "steering_work_abs_rad": 0.1016,
+        "throttle": 0.6977
+      },
+      {
+        "bin": 110,
+        "brake": 0.0,
+        "lap_pct": 0.920833,
+        "lateral_g": 0.606,
+        "samples": 20,
+        "speed_mph": 138.83,
+        "steering_work_abs_rad": 0.0908,
+        "throttle": 0.7402
+      },
+      {
+        "bin": 111,
+        "brake": 0.0,
+        "lap_pct": 0.929167,
+        "lateral_g": 0.504,
+        "samples": 20,
+        "speed_mph": 141.05,
+        "steering_work_abs_rad": 0.0797,
+        "throttle": 0.7839
+      },
+      {
+        "bin": 112,
+        "brake": 0.0,
+        "lap_pct": 0.9375,
+        "lateral_g": 0.4,
+        "samples": 20,
+        "speed_mph": 143.32,
+        "steering_work_abs_rad": 0.0684,
+        "throttle": 0.8287
+      },
+      {
+        "bin": 113,
+        "brake": 0.0,
+        "lap_pct": 0.945833,
+        "lateral_g": 0.293,
+        "samples": 20,
+        "speed_mph": 145.64,
+        "steering_work_abs_rad": 0.0568,
+        "throttle": 0.8746
+      },
+      {
+        "bin": 114,
+        "brake": 0.0,
+        "lap_pct": 0.954167,
+        "lateral_g": 0.184,
+        "samples": 20,
+        "speed_mph": 148.01,
+        "steering_work_abs_rad": 0.045,
+        "throttle": 0.9212
+      },
+      {
+        "bin": 115,
+        "brake": 0.0,
+        "lap_pct": 0.9625,
+        "lateral_g": 0.073,
+        "samples": 20,
+        "speed_mph": 150.41,
+        "steering_work_abs_rad": 0.0329,
+        "throttle": 0.9686
+      },
+      {
+        "bin": 116,
+        "brake": 0.0,
+        "lap_pct": 0.970833,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 117,
+        "brake": 0.0,
+        "lap_pct": 0.979167,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 118,
+        "brake": 0.0,
+        "lap_pct": 0.9875,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      },
+      {
+        "bin": 119,
+        "brake": 0.0,
+        "lap_pct": 0.995833,
+        "lateral_g": 0.0,
+        "samples": 20,
+        "speed_mph": 152.0,
+        "steering_work_abs_rad": 0.025,
+        "throttle": 1.0
+      }
+    ],
+    "shape": []
+  }
+}

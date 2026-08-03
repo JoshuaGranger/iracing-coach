@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/contracts/analyze-result-v1.schema.json",
+  "title": "iRacing Coach analyze result v1",
+  "type": "object",
+  "required": [
+    "ok",
+    "analysis_id",
+    "selector",
+    "selection",
+    "context",
+    "analysis_cache",
+    "knowledge_cache",
+    "historical_runs_considered",
+    "race_summary",
+    "race_timeline",
+    "damage_repair",
+    "strategy_forecast",
+    "data_quality",
+    "source_files",
+    "source_channel_coverage",
+    "analysis_path",
+    "report_path",
+    "race_card_path",
+    "race_card",
+    "timing",
+    "artifacts"
+  ],
+  "properties": {
+    "ok": { "const": true },
+    "analysis_id": { "type": ["string", "null"] },
+    "selector": { "type": "string" },
+    "selection": { "type": "object" },
+    "context": { "type": "object" },
+    "analysis_cache": { "type": "object" },
+    "knowledge_cache": { "type": "object" },
+    "historical_runs_considered": { "type": "integer", "minimum": 0 },
+    "race_summary": { "type": "object" },
+    "race_timeline": { "type": "object" },
+    "damage_repair": { "$ref": "damage-repair-v1.schema.json" },
+    "strategy_forecast": { "type": "object" },
+    "data_quality": { "type": "object" },
+    "source_files": { "type": "array", "items": { "type": "string" } },
+    "source_channel_coverage": { "type": "object" },
+    "analysis_path": { "type": "string" },
+    "report_path": { "type": "string" },
+    "race_card_path": { "type": "string" },
+    "race_card": { "$ref": "race-card-v1.schema.json" },
+    "timing": {
+      "type": "object",
+      "required": ["contract_version", "total_ms", "analysis_cache_hit"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "total_ms": { "type": "number", "minimum": 0 },
+        "analysis_cache_hit": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "artifacts": { "type": "object" }
+  },
+  "additionalProperties": true
+}

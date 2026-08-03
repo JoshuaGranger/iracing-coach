@@ -1,0 +1,179 @@
+{
+  "actions": [
+    {
+      "evidence_type": "inferred",
+      "label": "Start",
+      "tag": "[I]",
+      "text": "Give up two mph on entry and release the brake earlier"
+    },
+    {
+      "evidence_type": "inferred",
+      "label": "Long run",
+      "tag": "[I]",
+      "text": "Hold one steering arc and delay throttle until wheel unwind"
+    },
+    {
+      "evidence_type": "derived",
+      "label": "Strategy",
+      "tag": "[D]",
+      "text": "Fuel window opens near Lap 36 with a two-lap reserve"
+    }
+  ],
+  "analysis_id": "fixture-analysis-repair-heavy",
+  "bottom_line": {
+    "evidence_type": "derived",
+    "tag": "[D]",
+    "text": "Run 2 followed incomplete optional repair; use Run 1 for clean coaching"
+  },
+  "contract_version": 1,
+  "corner_playbook": {
+    "omitted_row_count": 0,
+    "phase_columns": [
+      {
+        "key": "phase_1",
+        "label": "Early"
+      },
+      {
+        "key": "phase_2",
+        "label": "Middle"
+      },
+      {
+        "key": "phase_3",
+        "label": "Late/older-set proxy"
+      }
+    ],
+    "rows": [
+      {
+        "corner_phase": "Load zone 1 entry",
+        "groove": {
+          "evidence_type": "unavailable",
+          "tag": "[U]",
+          "text": "Inside/outside sign not calibrated"
+        },
+        "phase_1": {
+          "evidence_type": "derived",
+          "tag": "[D]",
+          "text": "Obs E128/M112/X121 mph; B24%"
+        },
+        "phase_2": {
+          "evidence_type": "derived",
+          "tag": "[D]",
+          "text": "Target E126/M113/X123 mph; B21%"
+        },
+        "phase_3": {
+          "evidence_type": "inferred",
+          "tag": "[I]",
+          "text": "Release earlier; protect minimum speed"
+        },
+        "zone_id": "load-zone-1"
+      },
+      {
+        "corner_phase": "Load zone 2 center/exit",
+        "groove": {
+          "evidence_type": "unavailable",
+          "tag": "[U]",
+          "text": "Inside/outside sign not calibrated"
+        },
+        "phase_1": {
+          "evidence_type": "inferred",
+          "tag": "[I]",
+          "text": "One arc; throttle after apex"
+        },
+        "phase_2": {
+          "evidence_type": "inferred",
+          "tag": "[I]",
+          "text": "Reduce correction and unwind sooner"
+        },
+        "phase_3": {
+          "evidence_type": "inferred",
+          "tag": "[I]",
+          "text": "Wait for wheel unwind before full throttle"
+        },
+        "zone_id": "load-zone-2"
+      }
+    ],
+    "selected_run_number": 1,
+    "status": "usable"
+  },
+  "data_context": {
+    "alert_active": true,
+    "alert_rule": "Repair/tow context screens automatic corner and target-lap evidence",
+    "damage_repair": {
+      "material": true,
+      "recorded_repair_episodes": 1,
+      "selected_run_eligible": true,
+      "selected_run_number": 1,
+      "tow_episodes": 1
+    }
+  },
+  "discipline": "oval",
+  "evidence_appendix": [
+    {
+      "evidence_type": "measured",
+      "tag": "[M]",
+      "text": "Synthetic fixture; no real driver, setup, or lap data"
+    },
+    {
+      "evidence_type": "derived",
+      "tag": "[D]",
+      "text": "Run 1 is the only clean coaching reference"
+    },
+    {
+      "evidence_type": "derived",
+      "tag": "[D]",
+      "text": "Tow, stall, service, and repair intervals overlap"
+    },
+    {
+      "evidence_type": "unavailable",
+      "tag": "[U]",
+      "text": "Exact damaged component and exclusive repair loss unavailable"
+    }
+  ],
+  "markdown": "# Synthetic Speedway Race Card - NASCAR Test Car | Open | 80 laps\n\nBottom line: [D] Run 2 followed incomplete optional repair; use Run 1 for clean coaching\n\n- Start: [I] Give up two mph on entry and release the brake earlier\n- Long run: [I] Hold one steering arc and delay throttle until wheel unwind\n- Strategy: [D] Fuel window opens near Lap 36 with a two-lap reserve\n\n## Corner playbook\n\n### Load zone 1 entry\n- Early: [D] Obs E128/M112/X121 mph; B24%\n- Middle: [D] Target E126/M113/X123 mph; B21%\n- Late/older-set proxy: [I] Release earlier; protect minimum speed\n\n### Load zone 2 center/exit\n- Early: [I] One arc; throttle after apex\n- Middle: [I] Reduce correction and unwind sooner\n- Late/older-set proxy: [I] Wait for wheel unwind before full throttle\n\n\n## Race triggers\n\n- Tire phase: [I] After 12 green laps, trade entry speed for one steering arc\n- Pit: [D] Pit from Lap 36 with two-lap reserve; caution changes the window\n- Adjust/rollback: [I] Validate a clean repaired-car run before the next setup change\n\n## Evidence appendix\n\nTags: [M] measured; [D] calculated; [I] coaching inference; [P] proxy.\n\n- [M] Synthetic fixture; no real driver, setup, or lap data\n- [D] Run 1 is the only clean coaching reference\n- [D] Tow, stall, service, and repair intervals overlap\n",
+  "path": "%ARCHIVE_ROOT%\\reports\\fixture\\race-card.md",
+  "race_triggers": [
+    {
+      "evidence_type": "inferred",
+      "label": "Tire phase",
+      "tag": "[I]",
+      "text": "After 12 green laps, trade entry speed for one steering arc"
+    },
+    {
+      "evidence_type": "derived",
+      "label": "Pit",
+      "tag": "[D]",
+      "text": "Pit from Lap 36 with two-lap reserve; caution changes the window"
+    },
+    {
+      "evidence_type": "inferred",
+      "label": "Adjust/rollback",
+      "tag": "[I]",
+      "text": "Validate a clean repaired-car run before the next setup change"
+    }
+  ],
+  "summary": {
+    "caution_laps": 14.0,
+    "green_laps": 58.0,
+    "historical_runs_considered": 4,
+    "pit_stops": 2,
+    "recorded_laps": 72,
+    "runs": 3,
+    "scheduled_laps": 80
+  },
+  "tag_legend": {
+    "derived": "[D]",
+    "inferred": "[I]",
+    "measured": "[M]",
+    "proxy": "[P]",
+    "unavailable": "[U]"
+  },
+  "target_policy": {
+    "comparison_quality_status": "usable",
+    "exact_numeric_targets_emitted": true,
+    "rule": "Exact numeric coaching targets require a usable comparison and an automatically eligible local run"
+  },
+  "title": "Synthetic Speedway Race Card - NASCAR Test Car | Open | 80 laps",
+  "within_word_limit": true,
+  "word_count_before_evidence": 158,
+  "word_limit_before_evidence": 300
+}

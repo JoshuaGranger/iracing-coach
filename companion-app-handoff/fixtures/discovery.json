@@ -1,0 +1,80 @@
+{
+  "error_count": 1,
+  "errors": [
+    {
+      "error": "IBT file is shorter than the extent declared by its disk header.",
+      "error_type": "IbtTruncatedError",
+      "kind": "error",
+      "path": "%IRACING_ROOT%\\telemetry\\truncated-race.ibt",
+      "valid": false
+    }
+  ],
+  "latest_race": {
+    "car_id": 9002,
+    "car_path": "synthetic test car",
+    "end_time_unix": 1785589200.0,
+    "end_time_utc": "2026-08-01T13:00:00+00:00",
+    "event_type": "Race",
+    "file_count": 2,
+    "files": [
+      "%IRACING_ROOT%\\telemetry\\synthetic-entry-a.ibt",
+      "%IRACING_ROOT%\\telemetry\\synthetic-entry-b.ibt"
+    ],
+    "group_id": "subsession:8001:1",
+    "is_fixed_setup": false,
+    "is_race": true,
+    "kind": "session",
+    "latest_mtime_unix": 1785589201.0,
+    "season_id": 202603,
+    "series_id": 9003,
+    "session_id": 7001,
+    "session_unique_id": 3,
+    "sim_session_num": 1,
+    "sim_session_type": "Race",
+    "start_time_unix": 1785585600.0,
+    "start_time_utc": "2026-08-01T12:00:00+00:00",
+    "subsession_id": 8001,
+    "time_source": "disk_header",
+    "track_config_name": "Oval",
+    "track_id": 9001,
+    "track_name": "Synthetic Speedway",
+    "valid": true
+  },
+  "returned_session_count": 1,
+  "root": "%IRACING_ROOT%",
+  "selection_policy": "latest-race-by-session-metadata",
+  "session_count": 1,
+  "sessions": [
+    {
+      "car_id": 9002,
+      "car_path": "synthetic test car",
+      "end_time_unix": 1785589200.0,
+      "end_time_utc": "2026-08-01T13:00:00+00:00",
+      "event_type": "Race",
+      "file_count": 2,
+      "files": [
+        "%IRACING_ROOT%\\telemetry\\synthetic-entry-a.ibt",
+        "%IRACING_ROOT%\\telemetry\\synthetic-entry-b.ibt"
+      ],
+      "group_id": "subsession:8001:1",
+      "is_fixed_setup": false,
+      "is_race": true,
+      "kind": "session",
+      "latest_mtime_unix": 1785589201.0,
+      "season_id": 202603,
+      "series_id": 9003,
+      "session_id": 7001,
+      "session_unique_id": 3,
+      "sim_session_num": 1,
+      "sim_session_type": "Race",
+      "start_time_unix": 1785585600.0,
+      "start_time_utc": "2026-08-01T12:00:00+00:00",
+      "subsession_id": 8001,
+      "time_source": "disk_header",
+      "track_config_name": "Oval",
+      "track_id": 9001,
+      "track_name": "Synthetic Speedway",
+      "valid": true
+    }
+  ]
+}
