@@ -24,8 +24,8 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-020` | The workspace MUST lead with one compact event bar containing friendly identity, recorded counts, an unclipped phase selector when applicable, and strict grade. It SHOULD consume roughly one-tenth of the usable height. |
 | `RA-021` | Only recorded, openable phases may appear. Nonexistent phases and roadmap controls MUST be absent. |
 | `RA-022` | Switching Qualifying/Race MUST remain inside the event and preserve separate setup, conditions, laps, and conclusions. |
-| `RA-023` | Telemetry MUST be the primary always-visible workspace. Race shape, strategy, corner comparison, and interruption context MUST be integrated into the lap rail or a compact adjacent insight rail; a second tier of detail tabs is forbidden. |
-| `RA-024` | The workspace MUST favor one-screen comparison at a typical desktop width. An insight card MUST contain useful race-specific evidence or be contextually absent; a capability word, invariant explanation, or empty setup surface is never valid content. |
+| `RA-023` | Race sessions MUST place a `Telemetry` / `Race review` segmented selector directly below Grades. `Telemetry` MUST be the default and contain the complete visual lap, map, and chart workbench without summary cards beside it. `Race review` MUST contain the fastest-lap takeaway plus the race-specific shape, strategy, corner, pit, and repair findings. Qualifying MUST retain its current combined workspace until it receives a separate specification. |
+| `RA-024` | Each active Race section MUST favor one-screen use at a typical desktop width. An insight card MUST contain useful race-specific evidence or be contextually absent; a capability word, invariant explanation, or empty setup surface is never valid content. |
 | `RA-025` | A mapping/backend/render failure MUST be contained and provide Retry plus Copy Support Details without closing the app. |
 
 ## Vertical Runs/Laps rail

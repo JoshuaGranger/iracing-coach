@@ -685,6 +685,13 @@ input[type="range"] { accent-color: var(--accent); }
 .pace-falloff { color: #F08A78 !important; }.pace-improving { color: #5ED3A0 !important; }.pace-stable { color: #76C8D8 !important; }.tire-stat strong { color: #D7A4F0 !important; }.race-row-arrow { color: var(--accent); opacity: .45; transition: transform var(--motion-hover) var(--ease),opacity var(--motion-hover) var(--ease); }.home-race-row:hover .race-row-arrow { opacity: 1; transform: translateX(2px); }
 
 .analysis-one-screen { display: grid; grid-template-columns: minmax(0,1fr) 292px; gap: 10px; align-items: start; }.analysis-primary-column { min-width: 0; display: grid; gap: 10px; }
+.analysis-data-switch { width: max-content; min-height: 36px; align-self: start; }
+.analysis-data-switch .segmented { min-width: 104px; }
+.race-data-workspace { min-width: 0; }
+.race-review-page { min-width: 0; display: grid; gap: 10px; }
+.analysis-review-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap: 10px; align-items: start; }
+.qualifying-review-shell { display: contents; }
+.race-telemetry-page .telemetry-workspace { min-width: 0; }
 .analysis-insight-rail { position: sticky; top: 68px; display: grid; gap: 9px; max-height: calc(100vh - 88px); overflow-y: auto; scrollbar-width: thin; }
 .analysis-insight-card { min-width: 0; padding: 11px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); }.race-shape-card { border-top: 2px solid var(--telemetry-speed); }.strategy-card { border-top: 2px solid var(--telemetry-fuel); }.corner-card { border-top: 2px solid var(--telemetry-steering); }.incident-card { border-top: 2px solid var(--telemetry-brake); }
 .insight-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }.insight-heading h2 { margin: 1px 0 0; font-size: 15px; }.insight-help { width: 20px; height: 20px; display: grid; place-items: center; color: var(--text-muted); background: var(--surface-3); border: 1px solid var(--border-subtle); border-radius: 50%; font-size: var(--font-size-min); cursor: help; }

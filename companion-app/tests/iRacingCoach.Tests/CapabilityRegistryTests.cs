@@ -227,6 +227,17 @@ public sealed class CapabilityRegistryTests
         Assert.DoesNotContain("Relative estimate, not measured wear", analysis);
         StringAssert.Contains(analysis, "analysis-context-bar");
         StringAssert.Contains(analysis, "analysis-focus-strip");
+        StringAssert.Contains(analysis, "IsRaceWorkspace");
+        StringAssert.Contains(analysis, "SelectedEventSession");
+        StringAssert.Contains(analysis, "!session.IsQualifying");
+        StringAssert.Contains(analysis, "RaceDataSection");
+        StringAssert.Contains(analysis, "analysis-data-switch");
+        StringAssert.Contains(analysis, ">Telemetry</button>");
+        StringAssert.Contains(analysis, ">Race review</button>");
+        StringAssert.Contains(analysis, "RaceDataSection == \"telemetry\"");
+        StringAssert.Contains(analysis, "RaceDataSection == \"review\"");
+        StringAssert.Contains(analysis, "analysis-review-grid");
+        StringAssert.Contains(analysis, "qualifying-review-shell");
         StringAssert.Contains(analysis, "BuildCornerAreas");
         Assert.DoesNotContain("new TrackSegment", analysis);
         StringAssert.Contains(analysis, "UsefulAction");
@@ -299,6 +310,9 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "\"brake\" => $\"hsl");
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(css, ".event-session-switch .segmented");
+        StringAssert.Contains(css, ".analysis-data-switch");
+        StringAssert.Contains(css, ".analysis-review-grid");
+        StringAssert.Contains(css, ".qualifying-review-shell { display: contents; }");
         StringAssert.Contains(css, ".lap-time.fastest");
         StringAssert.Contains(css, "white-space: nowrap");
 

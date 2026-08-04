@@ -35,20 +35,48 @@
         </details>
     }
 
-    <div class="analysis-one-screen">
-        <main class="analysis-primary-column">
-            <section class="analysis-focus-strip" aria-label="What matters from this race">
-                <div class="analysis-bottom-line"><span>Fastest clean lap</span><strong>@FastestCleanLap</strong></div>
-                @foreach (var action in Card.Actions.Where(UsefulAction).Take(2))
+    @if (IsRaceWorkspace)
+    {
+        <div class="event-session-switch analysis-data-switch" role="tablist" aria-label="Race analysis section">
+            <button class="segmented @(RaceDataSection == "telemetry" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "telemetry")" @onclick='() => RaceDataSection = "telemetry"'>Telemetry</button>
+            <button class="segmented @(RaceDataSection == "review" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "review")" @onclick='() => RaceDataSection = "review"'>Race review</button>
+        </div>
+    }
+
+    <div class="@(IsRaceWorkspace ? "race-data-workspace" : "analysis-one-screen")">
+        @if (!IsRaceWorkspace || RaceDataSection == "telemetry")
+        {
+            <main class="analysis-primary-column race-telemetry-page">
+                @if (!IsRaceWorkspace)
                 {
-                    <article title="@action.Claim.Text"><b>@action.Label</b><span>@action.Claim.Text</span></article>
+                    <section class="analysis-focus-strip" aria-label="What matters from this session">
+                        <div class="analysis-bottom-line"><span>Fastest clean lap</span><strong>@FastestCleanLap</strong></div>
+                        @foreach (var action in Card.Actions.Where(UsefulAction).Take(2))
+                        {
+                            <article title="@action.Claim.Text"><b>@action.Label</b><span>@action.Claim.Text</span></article>
+                        }
+                    </section>
                 }
-            </section>
 
-            <TelemetryWorkspace Workspace="Workspace" />
-        </main>
+                <TelemetryWorkspace Workspace="Workspace" />
+            </main>
+        }
 
-        <aside class="analysis-insight-rail" aria-label="Race summary">
+        @if (!IsRaceWorkspace || RaceDataSection == "review")
+        {
+            <section class="@(IsRaceWorkspace ? "race-review-page" : "qualifying-review-shell")">
+                @if (IsRaceWorkspace)
+                {
+                    <section class="analysis-focus-strip" aria-label="What matters from this race">
+                        <div class="analysis-bottom-line"><span>Fastest clean lap</span><strong>@FastestCleanLap</strong></div>
+                        @foreach (var action in Card.Actions.Where(UsefulAction).Take(2))
+                        {
+                            <article title="@action.Claim.Text"><b>@action.Label</b><span>@action.Claim.Text</span></article>
+                        }
+                    </section>
+                }
+
+                <aside class="@(IsRaceWorkspace ? "analysis-review-grid" : "analysis-insight-rail")" aria-label="Race summary">
             <section class="analysis-insight-card race-shape-card">
                 <div class="insight-heading"><div><span class="eyebrow">Race shape</span><h2>At a glance</h2></div></div>
                 <div class="insight-stat-grid">
@@ -103,7 +131,9 @@
                     @if (PitTimeline.Count > 0) { <small class="pit-lap-list">Pit laps @LapRange(PitTimeline.Select(lap => lap.Lap).ToArray())</small> }
                 </section>
             }
-        </aside>
+                </aside>
+            </section>
+        }
     </div>
 </div>
 
@@ -111,6 +141,18 @@
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
     [Parameter, EditorRequired] public RaceCard Card { get; set; } = null!;
+    private string RaceDataSection { get; set; } = "telemetry";
+    private string? _analysisId;
+    private RecentRace? SelectedEventSession => EventSessions.FirstOrDefault(session => session.Id == State.SelectedRaceSessionId);
+    private bool IsRaceWorkspace => SelectedEventSession is { } session
+        ? !session.IsQualifying
+        : string.Equals(Workspace.SessionType, "Race", StringComparison.OrdinalIgnoreCase);
+    protected override void OnParametersSet()
+    {
+        if (_analysisId == Workspace.AnalysisId) return;
+        _analysisId = Workspace.AnalysisId;
+        RaceDataSection = "telemetry";
+    }
     private IReadOnlyList<RecentRace> EventSessions => State.EventGroups.OfType<RaceEventGroup>().FirstOrDefault(group => group.Sessions?.OfType<RecentRace>().Any(session => session.Id == State.SelectedRaceSessionId) == true)?.Sessions?.OfType<RecentRace>().Where(session => session.IsRace || session.IsQualifying).GroupBy(session => session.IsQualifying ? "qualifying" : "race").Select(group => group.First()).OrderBy(session => session.IsQualifying ? 0 : 1).ToArray() ?? [];
     private Task ShowEventSession(RecentRace session) => session.Id == State.SelectedRaceSessionId ? Task.CompletedTask : State.AnalyzeRaceAsync(session);
     private static string SessionName(RecentRace session) => session.IsQualifying ? "Qualifying" : "Race";
