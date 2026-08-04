@@ -144,12 +144,12 @@
                         @if (ChartHovered)
                         {
                         <g class="trace-cursor-tooltip">
-                            <rect x="@TooltipX" y="@(top + 4)" width="@TooltipWidth" height="@(14 + TooltipTraces.Count * 20)" rx="4" />
+                            <rect x="@TooltipX(panel)" y="@(top + 4)" width="@TooltipWidth(panel)" height="@(14 + TooltipTraces.Count * 20)" rx="4" />
                             @foreach (var trace in TooltipTraces.Select((value, index) => new { value, index }))
                             {
-                                <svg:text x="@(TooltipX + 8)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-lap">@trace.value.Lap</svg:text>
-                                <rect x="@(TooltipX + 30)" y="@(top + 13 + trace.index * 20)" width="10" height="10" rx="1" fill="@LapColor(trace.value.Lap)" />
-                                <svg:text x="@(TooltipX + 47)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-value">@CursorValue(panel, trace.value)</svg:text>
+                                <svg:text x="@(TooltipX(panel) + 8)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-lap">@trace.value.Lap</svg:text>
+                                <rect x="@(TooltipX(panel) + 30)" y="@(top + 13 + trace.index * 20)" width="10" height="10" rx="1" fill="@LapColor(trace.value.Lap)" />
+                                <svg:text x="@(TooltipX(panel) + 47)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-value">@CursorValue(panel, trace.value)</svg:text>
                             }
                         </g>
                         }
@@ -191,7 +191,7 @@
     private const int ChartRowHeight = 82;
     private const int ChartPlotHeight = 68;
     private const int TooltipRowHeight = 20;
-    private const int TooltipWidth = 164;
+    private const double TooltipCharacterWidth = 7.1;
     private static readonly (string Key, string Label)[] Modes = [("speed", "Speed"), ("throttle", "Throttle"), ("brake", "Brake"), ("steering", "Steering"), ("stress", "Tire load")];
     private static readonly PanelSpec[] Panels =
     [
@@ -245,7 +245,16 @@
     private double PlotWidth => Math.Max(300, _chartWidth - PlotLeft - 20);
     private double PlotRight => PlotLeft + PlotWidth;
     private double CursorChartX => PlotLeft + Cursor * PlotWidth;
-    private double TooltipX => CursorChartX - TooltipWidth - 12 >= PlotLeft ? CursorChartX - TooltipWidth - 12 : CursorChartX + 12;
+    private double TooltipWidth(PanelSpec panel)
+    {
+        var widestValue = TooltipTraces.Select(trace => CursorValue(panel, trace).Length).DefaultIfEmpty(1).Max();
+        return Math.Clamp(Math.Ceiling(55 + widestValue * TooltipCharacterWidth), 102, 184);
+    }
+    private double TooltipX(PanelSpec panel)
+    {
+        var width = TooltipWidth(panel);
+        return CursorChartX - width - 12 >= PlotLeft ? CursorChartX - width - 12 : CursorChartX + 12;
+    }
     private int TooltipCapacity => Math.Max(1, (ChartRowHeight - 18) / TooltipRowHeight);
     private int EffectiveTooltipOffset => Math.Clamp(_tooltipLapOffset, 0, Math.Max(0, SelectedTraces.Count() - TooltipCapacity));
     private IReadOnlyList<AnalysisLapTrace> TooltipTraces => SelectedTraces.Skip(EffectiveTooltipOffset).Take(TooltipCapacity).ToArray();

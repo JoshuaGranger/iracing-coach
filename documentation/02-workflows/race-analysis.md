@@ -65,7 +65,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-054` | Map rendering MUST preserve the recorded driving direction after conversion into screen coordinates. Zero brake MUST render as neutral track color; increasing brake input MUST increase, not decrease, brake emphasis. |
 | `RA-055` | Pointer conversion MUST use the SVG's rendered screen transform, including view-box scaling and letterboxing. The map SHOULD use the available panel height while preserving track shape rather than leaving a large unused area below a miniature map. |
 | `RA-056` | Trace rows SHOULD use the available analysis-panel height. SVG chart coordinates MUST track the rendered chart width so labels retain normal proportions under responsive layout. |
-| `RA-057` | Cursor values SHOULD open left of the crosshair when space permits. Each row MUST show only the selected-lap values that fit without overlapping adjacent rows; while the pointer is over the chart, the wheel MUST page through remaining selected laps without scrolling the surrounding page. |
+| `RA-057` | Cursor values SHOULD open left of the crosshair when space permits. Each chart's cursor card MUST size itself to that chart's widest currently displayed value instead of sharing a fixed width. Each row MUST show only the selected-lap values that fit without overlapping adjacent rows; while the pointer is over the chart, the wheel MUST page through remaining selected laps without scrolling the surrounding page. |
 
 ## Integrated insight contracts
 
