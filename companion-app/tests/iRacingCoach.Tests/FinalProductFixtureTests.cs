@@ -106,6 +106,7 @@ public sealed class FinalProductFixtureTests
         Assert.IsTrue(repairWorkspace.Damage.PitRoadEpisodes > 0 || repairWorkspace.Damage.RepairEpisodes > 0 || repairWorkspace.Damage.TowEpisodes > 0);
         Assert.IsNotNull(repairWorkspace.Damage.Incidents);
         Assert.IsTrue(repairWorkspace.Damage.Incidents.Any(incident => incident.Lap == 30 && incident.Points == 4));
+        Assert.IsTrue(repairWorkspace.Runs.Any(run => run.PitStop?.DamageRepairedSeconds > 0));
 
         var tuning = await qualifyingBackend.CallToolAsync(Configuration, "recommend_open_setup_tuning", new { });
         Assert.IsFalse(string.IsNullOrWhiteSpace(RuntimeMapper.Tuning(tuning).Change));

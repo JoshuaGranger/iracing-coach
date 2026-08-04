@@ -230,7 +230,9 @@ public sealed record AnalysisPitStop(
     double? LeftFrontTireWearPercent,
     double? RightFrontTireWearPercent,
     double? LeftRearTireWearPercent,
-    double? RightRearTireWearPercent);
+    double? RightRearTireWearPercent,
+    double? DamageRepairedSeconds = null,
+    double? PenaltyServedSeconds = null);
 
 public sealed record AnalysisRun(
     int Number,

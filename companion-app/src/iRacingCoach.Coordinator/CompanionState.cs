@@ -20,6 +20,7 @@ public sealed record TuningFeedbackDraft(
 
 public sealed class CompanionState : IDisposable
 {
+    private const int UiAnalysisCacheSchemaVersion = 2;
     private const string AppVersion = "0.11.1";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
@@ -1635,6 +1636,10 @@ public sealed class CompanionState : IDisposable
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
             var root = document.RootElement;
+            if (!root.TryGetProperty("schemaVersion", out var schema)
+                || schema.ValueKind != JsonValueKind.Number
+                || !schema.TryGetInt32(out var cacheSchema)
+                || cacheSchema != UiAnalysisCacheSchemaVersion) return false;
             if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.Object) return false;
             var cachedSourceWrite = root.TryGetProperty("sourceLastWriteUtc", out var stamp) && stamp.ValueKind == JsonValueKind.String
                 ? stamp.GetString() : null;
@@ -1771,7 +1776,7 @@ public sealed class CompanionState : IDisposable
     {
         PersistPortableArtifact("ui-analysis-cache", UiAnalysisCacheKey(race), new
         {
-            schemaVersion = 1,
+            schemaVersion = UiAnalysisCacheSchemaVersion,
             sourceLastWriteUtc = !string.IsNullOrWhiteSpace(race.SourcePath) && File.Exists(race.SourcePath)
                 ? File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture)
                 : null,

@@ -38,6 +38,9 @@
           Math.max(0, Math.min(viewWidth, (clientX - bounds.left) / bounds.width * viewWidth)),
           Math.max(0, Math.min(viewHeight, (clientY - bounds.top) / bounds.height * viewHeight))
         ];
+      },
+      viewportSize: function () {
+        return [window.innerWidth || 0, window.innerHeight || 0];
       }
     };
   </script>

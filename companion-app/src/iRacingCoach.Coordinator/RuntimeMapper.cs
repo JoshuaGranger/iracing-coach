@@ -270,13 +270,20 @@ public static class RuntimeMapper
             var serviceStart = Number(pitService, "start_time");
             var serviceEnd = Number(pitService, "end_time");
             var hasPitStop = Boolean(run, "ended_with_pit_stop") == true || pitService.ValueKind == JsonValueKind.Object;
+            var repairCompletedSeconds = Array(damage, "episodes")
+                .Where(episode => Array(Object(episode, "run_context"), "overlapping_run_numbers")
+                    .Select(NullableIntegerValue).Any(number => number == runNumber))
+                .Select(episode => Number(Object(episode, "timing"), "repair_work_completed_s") ?? 0)
+                .Sum();
             var pitStop = hasPitStop
                 ? new AnalysisPitStop(
                     serviceStart.HasValue && serviceEnd.HasValue ? Math.Max(0, serviceEnd.Value - serviceStart.Value) : null,
                     Number(pitService, "fuel_added_l") is { } fuelAddedLiters ? fuelAddedLiters / 3.785411784 : null,
                     Number(pitAssessment, "fuel_laps_remaining_at_end"),
                     Array(pitService, "tires_changed_observed").Select(Value).Where(value => value.Length > 0).ToArray(),
-                    TireWearPercent(tires, "LF"), TireWearPercent(tires, "RF"), TireWearPercent(tires, "LR"), TireWearPercent(tires, "RR"))
+                    TireWearPercent(tires, "LF"), TireWearPercent(tires, "RF"), TireWearPercent(tires, "LR"), TireWearPercent(tires, "RR"),
+                    repairCompletedSeconds > .005 ? repairCompletedSeconds : null,
+                    Number(pitService, "penalty_served_s"))
                 : null;
             return new AnalysisRun(
                 runNumber, Array(run, "lap_numbers").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray(),

@@ -242,12 +242,19 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "SectorDuration");
         StringAssert.Contains(telemetry, "session-fastest");
         StringAssert.Contains(telemetry, "IncidentPoints");
+        StringAssert.Contains(telemetry, "@($\"x{points}\")");
+        StringAssert.Contains(telemetry, "ShowPitPopover");
+        StringAssert.Contains(telemetry, "Damage repaired");
+        StringAssert.Contains(telemetry, "Race remaining");
+        StringAssert.Contains(telemetry, "Show all");
+        Assert.DoesNotContain("Pit stop recorded", telemetry);
         StringAssert.Contains(telemetry, "var hue = 280 * fraction");
         Assert.DoesNotContain("Other laps", telemetry);
         Assert.DoesNotContain("lap-focus-action", telemetry);
 
         var coachCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
-        StringAssert.Contains(coachCss, "--font-size-min: 11px");
+        StringAssert.Contains(coachCss, "--font-size-min: 11.67px");
+        StringAssert.Contains(coachCss, ".pit-lap-popover { position: fixed");
         Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(coachCss, "font-size:\\s*(9|10)px"));
         Assert.DoesNotContain("<span class=\"lap-state", telemetry);
         StringAssert.Contains(telemetry, "stroke-width=\"1.35\"");
@@ -260,6 +267,7 @@ public sealed class CapabilityRegistryTests
 
         var appHost = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "wwwroot", "index.html"));
         StringAssert.Contains(appHost, "getScreenCTM");
+        StringAssert.Contains(appHost, "viewportSize");
 
         var navigation = File.ReadAllText(Path.Combine(ui, "NavRail.razor"));
         StringAssert.Contains(navigation, "\"Setups\"");

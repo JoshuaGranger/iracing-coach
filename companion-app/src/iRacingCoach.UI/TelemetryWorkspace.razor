@@ -16,7 +16,7 @@
         <div class="telemetry-workstation-grid">
         <aside class="lap-rail" aria-label="Runs and laps">
             <div class="lap-rail-header">
-                <div><strong>Laps &amp; runs</strong><span>@Selected.Count selected</span></div>
+                <strong>Laps &amp; runs</strong><span>@Selected.Count selected</span>
                 <label class="clean-lap-filter"><input type="checkbox" checked="@CleanLapsOnly" @onchange="CleanLapFilterChanged" /> Clean laps</label>
             </div>
             <div class="lap-rail-scroll">
@@ -29,7 +29,7 @@
                             @if (group.Run is { } summaryRun)
                             {
                                 <span class="run-summary-metrics">@summaryRun.GreenLaps green · @summaryRun.CautionLaps caution</span>
-                                <span class="run-insight" tabindex="0" aria-label="Run @summaryRun.Number details" @onclick:stopPropagation="true">i<span class="run-tooltip" role="tooltip"><strong>Run @summaryRun.Number · laps @LapRange(summaryRun.Laps)</strong><span>Early pace <b>@LapTime(summaryRun.EarlyAverageLapSeconds)</b></span><span>Late pace <b>@LapTime(summaryRun.LateAverageLapSeconds)</b></span><span>Pace trend <b>@PaceTrend(summaryRun)</b></span>@if (summaryRun.FuelUsedGallons.HasValue) { <span>Fuel used <b>@summaryRun.FuelUsedGallons.Value.ToString("0.00") gal</b></span> }@if (summaryRun.TireRemainingPercent.HasValue) { <span>Lowest tire <b>@summaryRun.TireName @summaryRun.TireRemainingPercent.Value.ToString("0.0")%</b></span> }<small>@ControlChange(summaryRun)</small></span></span>
+                                <span class="run-insight" tabindex="0" aria-label="Run @summaryRun.Number details" @onclick:stopPropagation="true">i<span class="run-tooltip" role="tooltip"><strong>Run @summaryRun.Number · laps @LapRange(summaryRun.Laps)</strong>@if (HasOfficialPace(summaryRun)) { <span>Early pace <b>@LapTime(summaryRun.EarlyAverageLapSeconds)</b></span><span>Late pace <b>@LapTime(summaryRun.LateAverageLapSeconds)</b></span><span>Pace trend <b>@PaceTrend(summaryRun)</b></span> } else { <span>Observed green pace <b>@ObservedPaceRange(summaryRun)</b></span><span>Coaching comparison <b>Excluded</b></span> }@if (summaryRun.FuelUsedGallons.HasValue) { <span>Fuel used <b>@summaryRun.FuelUsedGallons.Value.ToString("0.00") gal</b></span> }@if (summaryRun.TireRemainingPercent.HasValue) { <span>Lowest tire <b>@summaryRun.TireName @summaryRun.TireRemainingPercent.Value.ToString("0.0")%</b></span> }<small>@(HasOfficialPace(summaryRun) ? ControlChange(summaryRun) : summaryRun.Status)</small></span></span>
                             }
                             else
                             {
@@ -43,10 +43,10 @@
                             var isFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
                             <button class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(pitLap ? "pit-lap" : null)" style="@($"--lap-color:{LapColor(trace.Lap)}")" aria-pressed="@Selected.Contains(trace.Lap)" @onclick="() => SelectLap(trace.Lap)">
                                 <span class="lap-selection"><span class="lap-flag @LapFlagClass(trace)" title="@LapFlagLabel(trace)" aria-label="@LapFlagLabel(trace)"><ProductIcon Name="race" Size="12" /></span><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
-                                <span class="lap-time @(isFastest ? "fastest" : null)">@LapTime(trace.LapTimeSeconds)@if (!isFastest && trace.LapTimeSeconds.HasValue && FastestLapTime < double.MaxValue) { <small>(+@((trace.LapTimeSeconds.Value - FastestLapTime).ToString("0.000")))</small> }</span>
+                                <span class="lap-time @(isFastest ? "fastest" : null)">@LapTime(trace.LapTimeSeconds)@if (ShowPaceDelta(trace, isFastest)) { <small>(+@((trace.LapTimeSeconds!.Value - FastestLapTime).ToString("0.000")))</small> }</span>
                                 <span class="lap-row-signals">
-                                    @if (pitLap) { <span class="pit-badge" title="Pit stop recorded">PIT</span> }
-                                    @if (IncidentPoints(trace.Lap) is var points && points > 0) { <span class="incident-badge severity-@IncidentSeverity(points)" title="@($"{points} incident point{(points == 1 ? string.Empty : "s")} on lap {trace.Lap}")">&times;@points</span> }
+                                    @if (pitLap) { <span class="pit-badge" @onmouseenter="args => ShowPitPopover(args, trace.Lap)" @onmouseleave="HidePitPopover" @onclick:stopPropagation="true">PIT</span> }
+                                    @if (IncidentPoints(trace.Lap) is var points && points > 0) { <span class="incident-badge severity-@IncidentSeverity(points)" title="@($"{points} incident point{(points == 1 ? string.Empty : "s")} on lap {trace.Lap}")">@($"x{points}")</span> }
                                     @if (SectorStarts.Count > 1)
                                     {
                                     <span class="sector-squares" aria-label="Sector performance">
@@ -58,9 +58,9 @@
                                     </span>
                                     }
                                 </span>
-                                @if (pitLap && run is not null)
+                                @if (pitLap && run is not null && ActivePitLap == trace.Lap)
                                 {
-                                    <span class="pit-lap-popover" role="tooltip">
+                                    <span class="pit-lap-popover" style="@PitPopoverStyle" role="tooltip">
                                         <span class="pit-popover-heading"><strong>Pit lap @trace.Lap</strong><small>@PitServiceTime(run)</small></span>
                                         <span class="pit-popover-row"><span>Tires changed</span><b>@ChangedTires(run)</b></span>
                                         <span class="pit-popover-label">Recorded tire wear</span>
@@ -72,6 +72,9 @@
                                         </span>
                                         <span class="pit-popover-row"><span>Fuel added</span><b>@FuelAdded(run)</b></span>
                                         <span class="pit-popover-row"><span>Fuel range at stop</span><b>@FuelRangeAtStop(run)</b></span>
+                                        <span class="pit-popover-row"><span>Race remaining</span><b>@RaceLapsRemaining(trace.Lap)</b></span>
+                                        @if (run.PitStop?.DamageRepairedSeconds is { } repaired) { <span class="pit-popover-row"><span>Damage repaired</span><b>@repaired.ToString("0.0") s</b></span> }
+                                        @if (run.PitStop?.PenaltyServedSeconds is { } penalty) { <span class="pit-popover-row"><span>Penalty served</span><b>@penalty.ToString("0.0") s</b></span> }
                                     </span>
                                 }
                             </button>
@@ -79,7 +82,7 @@
                     </details>
                 }
             </div>
-            <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button></div>
+            <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ShowAllLaps">Show all</button></div>
         </aside>
 
         <div class="telemetry-grid">
@@ -167,6 +170,9 @@
     private string Mode { get; set; } = "speed";
     private bool CleanLapsOnly { get; set; }
     private bool ChartHovered { get; set; }
+    private int? ActivePitLap { get; set; }
+    private double PitPopoverX { get; set; }
+    private double PitPopoverY { get; set; }
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
@@ -242,6 +248,7 @@
         if (Selected.Count == 0) Selected.Add(lap);
     }
     private void SelectLap(int lap) => ToggleLap(lap);
+    private void ShowAllLaps() => CleanLapsOnly = false;
     private void CleanLapFilterChanged(ChangeEventArgs args)
     {
         CleanLapsOnly = args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
@@ -259,6 +266,34 @@
         foreach (var trace in Workspace.Traces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).Take(3)) Selected.Add(trace.Lap);
         if (Selected.Count == 0) foreach (var trace in Workspace.Traces.Take(3)) Selected.Add(trace.Lap);
     }
+    private bool ShowPaceDelta(AnalysisLapTrace trace, bool isFastest) =>
+        !isFastest && trace.LapTimeSeconds.HasValue && FastestLapTime < double.MaxValue &&
+        (trace.Complete || trace.Lap != Workspace.Traces.Max(item => item.Lap));
+    private static bool HasOfficialPace(AnalysisRun run) =>
+        run.EarlyAverageLapSeconds.HasValue || run.LateAverageLapSeconds.HasValue || run.PaceSlopeSecondsPerLap.HasValue;
+    private string ObservedPaceRange(AnalysisRun run)
+    {
+        var times = Workspace.Traces
+            .Where(trace => run.Laps.Contains(trace.Lap) && trace.Complete && !IsCaution(trace) && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && trace.LapTimeSeconds.HasValue)
+            .Select(trace => trace.LapTimeSeconds!.Value)
+            .ToArray();
+        if (times.Length == 0) return "Unavailable";
+        if (times.Length == 1) return LapTime(times[0]);
+        return $"{LapTime(times.Min())}–{LapTime(times.Max())}";
+    }
+    private async Task ShowPitPopover(MouseEventArgs args, int lap)
+    {
+        var viewport = await JS.InvokeAsync<double[]>("iracingCoach.viewportSize");
+        var width = viewport.Length > 0 ? viewport[0] : 1280;
+        var height = viewport.Length > 1 ? viewport[1] : 800;
+        PitPopoverX = Math.Clamp(args.ClientX + 14, 12, Math.Max(12, width - 326));
+        PitPopoverY = args.ClientY > height / 2
+            ? Math.Max(12, args.ClientY - 350)
+            : Math.Min(args.ClientY + 14, Math.Max(12, height - 370));
+        ActivePitLap = lap;
+    }
+    private void HidePitPopover() => ActivePitLap = null;
+    private string PitPopoverStyle => $"left:{F(PitPopoverX)}px;top:{F(PitPopoverY)}px";
     private AnalysisRun? RunForLap(int lap)
     {
         var exact = Workspace.Runs.FirstOrDefault(run => run.Laps.Contains(lap));
@@ -556,6 +591,12 @@
         var lapsToFinish = Math.Max(0, Workspace.ScheduledLaps - run.Laps.Max());
         var margin = range - lapsToFinish;
         return margin >= 0 ? $"{range:0.0} laps · enough (+{margin:0.0})" : $"{range:0.0} laps · {-margin:0.0} short";
+    }
+    private string RaceLapsRemaining(int lap)
+    {
+        if (Workspace.ScheduledLaps <= 0) return "Not recorded";
+        var remaining = Math.Max(0, Workspace.ScheduledLaps - lap);
+        return $"{remaining} lap{(remaining == 1 ? string.Empty : "s")}";
     }
     private int IncidentPoints(int lap) => Workspace.Damage.Incidents?.Where(item => item.Lap == lap).Sum(item => item.Points) ?? 0;
     private static string IncidentSeverity(int points) => points >= 4 ? "high" : points >= 2 ? "medium" : "low";
