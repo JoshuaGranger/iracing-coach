@@ -704,14 +704,18 @@ public sealed class CoordinatorTests
     public async Task LiveTelemetryService_PublishesWithoutDroppedFramesAndTracksComputeLatency()
     {
         using var service = new LiveTelemetryService(new TestLiveTelemetrySource(), new LiveMonitorLayout());
+        var capturedFrames = 0;
+        service.FrameCaptured += _ => Interlocked.Increment(ref capturedFrames);
         service.Start();
-        await Task.Delay(750);
+        await Task.Delay(400);
 
-        Assert.IsGreaterThanOrEqualTo(5, service.Current.FramesRead);
+        Assert.IsGreaterThanOrEqualTo(20, service.Current.FramesRead);
+        Assert.IsGreaterThanOrEqualTo(20, capturedFrames);
         Assert.AreEqual(0, service.Current.DroppedFrames);
         Assert.IsGreaterThanOrEqualTo(0, service.Current.RenderLatencyMs);
         Assert.IsLessThan(25, service.Current.RenderLatencyMs);
         Assert.IsTrue(service.Current.Snapshot.Connected);
+        Assert.AreEqual(60, service.Current.SourceTickRate);
     }
 
     [TestMethod]

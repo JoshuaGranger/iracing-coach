@@ -527,7 +527,8 @@ public sealed record LiveMonitorState(
     long DroppedFrames,
     double RenderLatencyMs,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<LiveTracePoint>? History = null);
+    IReadOnlyList<LiveTracePoint>? History = null,
+    int SourceTickRate = 0);
 
 public sealed record TrayApplicationState(
     bool MainWindowVisible,
@@ -613,7 +614,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.11.0");
+    string ClientVersion = "0.11.1");
 
 public sealed record BackendHealthResult(
     bool Ok,

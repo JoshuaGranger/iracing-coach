@@ -244,6 +244,16 @@ public sealed class CapabilityRegistryTests
 
         var live = File.ReadAllText(Path.Combine(ui, "LiveTelemetryPage.razor"));
         StringAssert.Contains(live, "LiveTelemetryLayoutGrid");
+        var liveVisuals = File.ReadAllText(Path.Combine(ui, "LiveTelemetryVisuals.razor"));
+        StringAssert.Contains(liveVisuals, "<canvas");
+        StringAssert.Contains(liveVisuals, "LiveTelemetryFrame");
+        StringAssert.Contains(liveVisuals, "display-synced");
+        Assert.DoesNotContain("<svg class=\"live-trend-chart\"", liveVisuals);
+        var liveChart = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-chart.js"));
+        StringAssert.Contains(liveChart, "requestAnimationFrame");
+        StringAssert.Contains(liveChart, "Float64Array");
+        StringAssert.Contains(liveChart, "minima");
+        StringAssert.Contains(liveChart, "maxima");
         var liveGrid = File.ReadAllText(Path.Combine(ui, "LiveTelemetryLayoutGrid.razor"));
         StringAssert.Contains(liveGrid, "LiveMonitorLayouts.Active");
         StringAssert.Contains(liveGrid, "live-toolbox");

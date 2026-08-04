@@ -23,6 +23,8 @@ All high-rate live math is local. Live support must remain useful without AI and
 | `LT-015` | Factory layouts MUST become editable custom copies before mutation; invalid moves or sizes MUST preserve the prior valid layout and explain the conflict concisely. |
 | `LT-016` | Primary live screen space MUST favor glanceable telemetry. Detailed driving traces MAY remain in a subordinate expandable region. |
 | `LT-017` | No full-page tile or catalog option may be fixture-only, seeded, or disconnected from the real live catalog. |
+| `LT-018` | When the SDK publishes at 60 Hz, live frames MUST be captured at native cadence and the open trace canvas MUST paint at the display refresh cadence. A 60 Hz source may not be reduced to a 4–10 Hz chart by UI throttling. |
+| `LT-019` | High-rate trace painting MUST be isolated from slower text, layout, status, and navigation rendering. Trace downsampling MUST preserve within-pixel minima and maxima so brief brake or steering inputs remain visible. |
 
 ## Live Monitor grid editor
 
@@ -56,4 +58,4 @@ All high-rate live math is local. Live support must remain useful without AI and
 
 ## Current evidence
 
-Version 0.11.0 adds the shared full-page layout surface and collapsible Toolbox while retaining the miniature monitor as the same persisted view model. Deterministic replay remains development evidence only. Real simulator timing, multi-monitor ergonomics, and sustained live resource use remain HOME_QA work.
+Version 0.11.1 adds native-cadence SDK capture and a display-synchronized canvas trace renderer while retaining slower bounded updates for text and layout surfaces. Version 0.11.0 added the shared full-page layout surface and collapsible Toolbox while retaining the miniature monitor as the same persisted view model. Deterministic replay remains development evidence only. Real simulator timing, multi-monitor ergonomics, and sustained live resource use remain HOME_QA work.

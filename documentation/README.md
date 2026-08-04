@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current implementation snapshot](06-reality/implementation-snapshot-0.11.0.md)
+7. [Current implementation snapshot](06-reality/implementation-snapshot-0.11.1.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -50,7 +50,8 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Acceptance, test, and release](05-quality/acceptance-test-and-release.md)
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
 - `06-reality`
-  - [Implementation snapshot: 0.11.0](06-reality/implementation-snapshot-0.11.0.md)
+  - [Implementation snapshot: 0.11.1](06-reality/implementation-snapshot-0.11.1.md)
+  - [Prior implementation snapshot: 0.11.0](06-reality/implementation-snapshot-0.11.0.md)
   - [Prior implementation snapshot: 0.10.0](06-reality/implementation-snapshot-0.10.0.md)
   - [Traceability matrix](06-reality/traceability-matrix.md)
   - [Gaps, contradictions, and open questions](06-reality/gaps-contradictions-and-open-questions.md)
@@ -77,11 +78,11 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 
 ## Current baseline
 
-- Application version: `0.11.0` development candidate
+- Application version: `0.11.1` development candidate
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
 - Local verification: 74 .NET tests and 173 Python tests passed before packaging
 - Installer lifecycle: local guarded install/upgrade/rollback/uninstall verification passed
 - Final acceptance: **HOME_QA pending**
 
-The exact artifact, packaged UI, performance sample, privacy, and installer lifecycle evidence is summarized in `companion-app/RELEASE_0.11.0.md`. Build binaries and private user data are deliberately not part of the source repository.
+The 0.11.1 implementation evidence is summarized in `06-reality/implementation-snapshot-0.11.1.md`. The previous complete release certification remains in `companion-app/RELEASE_0.11.0.md`; unchanged installer lifecycle behavior was deliberately not re-certified for this rendering-only iteration. Build binaries and private user data are not part of the source repository.

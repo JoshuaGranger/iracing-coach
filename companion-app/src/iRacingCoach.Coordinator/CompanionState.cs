@@ -20,7 +20,7 @@ public sealed record TuningFeedbackDraft(
 
 public sealed class CompanionState : IDisposable
 {
-    private const string AppVersion = "0.11.0";
+    private const string AppVersion = "0.11.1";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
@@ -58,6 +58,7 @@ public sealed class CompanionState : IDisposable
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
         _liveTelemetry = new LiveTelemetryService(liveTelemetrySource, Settings.LiveMonitor);
         _liveTelemetry.Updated += OnLiveTelemetryUpdated;
+        _liveTelemetry.FrameCaptured += OnLiveTelemetryFrameCaptured;
         _coachEngine.Changed += OnCoachEngineChanged;
         _coachEngine.CoachMessageDelta += OnCoachMessageDelta;
         CoachEngine = _coachEngine.Current;
@@ -72,6 +73,7 @@ public sealed class CompanionState : IDisposable
 
     public event Action? Changed;
     public event Action? LiveTelemetryChanged;
+    public event Action<LiveTracePoint>? LiveTelemetryFrame;
     public event Action<CompanionSettings>? SettingsSaved;
     public event Action<bool>? LiveMonitorVisibilityRequested;
     public event Action? RawTelemetryLocateRequested;
@@ -1087,7 +1089,7 @@ public sealed class CompanionState : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "iRacingCoach",
             "Installer",
-            "iRacingCoach-0.11.0-Setup.exe");
+            "iRacingCoach-0.11.1-Setup.exe");
         if (!File.Exists(setup))
         {
             Toast = "The repair package could not be found. Run the latest iRacing Coach installer again.";
@@ -1798,6 +1800,8 @@ public sealed class CompanionState : IDisposable
         }
     }
 
+    private void OnLiveTelemetryFrameCaptured(LiveTracePoint frame) => LiveTelemetryFrame?.Invoke(frame);
+
     private async Task InitializeCoachEngineAsync()
     {
         try
@@ -1913,6 +1917,7 @@ public sealed class CompanionState : IDisposable
         _coachRequest?.Cancel();
         _coachRequest?.Dispose();
         _liveTelemetry.Updated -= OnLiveTelemetryUpdated;
+        _liveTelemetry.FrameCaptured -= OnLiveTelemetryFrameCaptured;
         _liveTelemetry.Dispose();
         _coachEngine.Changed -= OnCoachEngineChanged;
         _coachEngine.CoachMessageDelta -= OnCoachMessageDelta;

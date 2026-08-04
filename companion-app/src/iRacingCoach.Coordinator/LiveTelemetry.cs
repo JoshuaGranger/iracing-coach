@@ -57,6 +57,9 @@ public sealed record LiveTelemetrySample
 
 public sealed class LiveTelemetryService : IDisposable
 {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(8);
+    private static readonly TimeSpan HistorySnapshotInterval = TimeSpan.FromMilliseconds(100);
+    private const int MaximumHistoryPoints = 36_000;
     private readonly ILiveTelemetrySource _source;
     private readonly LiveTelemetryEngine _engine = new();
     private readonly object _gate = new();
@@ -65,8 +68,10 @@ public sealed class LiveTelemetryService : IDisposable
     private long _framesRead;
     private long _droppedFrames;
     private readonly Queue<LiveTracePoint> _history = new();
+    private IReadOnlyList<LiveTracePoint> _historySnapshot = [];
     private int _busy;
     private DateTimeOffset _lastPublish = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastHistorySnapshot = DateTimeOffset.MinValue;
 
     public LiveTelemetryService(ILiveTelemetrySource source, LiveMonitorLayout layout)
     {
@@ -75,10 +80,11 @@ public sealed class LiveTelemetryService : IDisposable
     }
 
     public event Action<LiveMonitorState>? Updated;
+    public event Action<LiveTracePoint>? FrameCaptured;
     public LiveMonitorState Current { get; private set; }
     public bool CoachingPaused { get; private set; }
 
-    public void Start() => _timer ??= new Timer(Poll, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
+    public void Start() => _timer ??= new Timer(Poll, null, TimeSpan.Zero, PollInterval);
 
     public void SetCoachingPaused(bool paused)
     {
@@ -105,25 +111,37 @@ public sealed class LiveTelemetryService : IDisposable
             {
                 var snapshot = _engine.Update(sample, Current.Layout.SafeGlanceEnabled, CoachingPaused);
                 var latency = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                LiveTracePoint? tracePoint = null;
                 if (sample.Connected)
                 {
-                    _history.Enqueue(new LiveTracePoint(
+                    tracePoint = new LiveTracePoint(
                         sample.Timestamp, sample.Lap, sample.LapDistancePercent,
                         sample.SpeedMetersPerSecond * 2.2369362920544, sample.Throttle, sample.Brake,
                         sample.SteeringWheelAngleRadians, sample.Gear, sample.Rpm,
                         sample.YawRateRadiansPerSecond * 57.29577951308232, sample.LateralAccelerationG,
-                        sample.LongitudinalAccelerationG, sample.Latitude, sample.Longitude, sample.LastLapSeconds));
-                    while (_history.Count > 3600) _history.Dequeue();
+                        sample.LongitudinalAccelerationG, sample.Latitude, sample.Longitude, sample.LastLapSeconds);
+                    _history.Enqueue(tracePoint);
+                    while (_history.Count > MaximumHistoryPoints ||
+                           (_history.Count > 1 && tracePoint.At - _history.Peek().At > TimeSpan.FromMinutes(10)))
+                        _history.Dequeue();
                 }
                 else if (Current.Snapshot.Connected)
                 {
                     _history.Clear();
+                    _historySnapshot = [];
+                    _lastHistorySnapshot = sample.Timestamp;
+                }
+                if (sample.Timestamp - _lastHistorySnapshot >= HistorySnapshotInterval || _historySnapshot.Count == 0)
+                {
+                    _historySnapshot = _history.ToArray();
+                    _lastHistorySnapshot = sample.Timestamp;
                 }
                 lock (_gate)
                 {
-                    Current = new LiveMonitorState(snapshot, Current.Layout, CoachingPaused, ++_framesRead, _droppedFrames, latency, DateTimeOffset.UtcNow, _history.ToArray());
+                    Current = new LiveMonitorState(snapshot, Current.Layout, CoachingPaused, ++_framesRead, _droppedFrames, latency, DateTimeOffset.UtcNow, _historySnapshot, sample.TickRate);
                 }
                 _lastPublish = DateTimeOffset.UtcNow;
+                if (tracePoint is not null) FrameCaptured?.Invoke(tracePoint);
                 Updated?.Invoke(Current);
             }
             else if (DateTimeOffset.UtcNow - _lastPublish > TimeSpan.FromSeconds(1))
