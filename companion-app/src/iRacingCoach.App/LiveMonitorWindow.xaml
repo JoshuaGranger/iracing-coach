@@ -43,8 +43,21 @@
             <Setter Property="Background" Value="{StaticResource Surface2Brush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="CaretBrush" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/><Setter Property="Padding" Value="9,7"/><Setter Property="MinHeight" Value="36"/>
         </Style>
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="{StaticResource Surface2Brush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/><Setter Property="Padding" Value="8,5"/><Setter Property="MinHeight" Value="34"/>
+            <Setter Property="Background" Value="{StaticResource Surface2Brush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/><Setter Property="Padding" Value="9,5"/><Setter Property="MinHeight" Value="34"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="DropDownToggle" Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="ComboChrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="5"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="28"/></Grid.ColumnDefinitions><ContentPresenter Margin="9,3,4,3" VerticalAlignment="Center" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" TextElement.Foreground="{StaticResource TextPrimaryBrush}"/><Path Grid.Column="1" Width="8" Height="5" Stretch="Fill" Fill="{StaticResource TextSecondaryBrush}" Data="M0,0 L8,0 L4,5 Z" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ComboChrome" Property="Background" Value="{StaticResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ComboChrome" Property="BorderBrush" Value="{StaticResource FocusBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" IsOpen="{TemplateBinding IsDropDownOpen}" Focusable="False" PopupAnimation="Fade"><Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="280" Margin="0,3,0,0" Padding="3" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1" CornerRadius="5"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel IsItemsHost="True"/></ScrollViewer></Border></Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
+        <Style TargetType="ComboBoxItem"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="Padding" Value="9,6"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Style.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="{StaticResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{StaticResource AccentSubtleBrush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/></Trigger></Style.Triggers></Style>
         <Style TargetType="Slider"><Setter Property="Margin" Value="8,2"/></Style>
         <Style x:Key="ActionButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource Surface2Brush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{StaticResource BorderStrongBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="12,7"/><Setter Property="MinHeight" Value="36"/><Setter Property="Cursor" Value="Hand"/>

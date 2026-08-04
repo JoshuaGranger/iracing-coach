@@ -81,7 +81,7 @@
             await JS.InvokeVoidAsync("iracingCoach.scrollWorkspaceTop");
         }
     }
-    private string PageLabel => State.CurrentPage switch { "live" => "Live Telemetry", "analysis" => "Race Analysis", "planning" => "Race Planning", "setup" => "Setup Library", "tuning" => "Progressive Tuning", "connections" => "Connections", "settings" => "Settings", _ => "Home" };
+    private string PageLabel => State.CurrentPage switch { "live" => "Live Telemetry", "analysis" => "Race Analysis", "planning" => "Race Planning", "setup" => "Setups", "tuning" => "Progressive Tuning", "connections" => "Connections", "settings" => "Settings", _ => "Home" };
     private void RecoverView() { _errorBoundary?.Recover(); State.ClearRecoverableError(); }
     private async Task CopySupportDetails(Exception error)
     {

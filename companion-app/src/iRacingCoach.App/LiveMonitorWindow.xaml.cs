@@ -30,7 +30,7 @@ namespace iRacingCoach.App;
 
 public partial class LiveMonitorWindow : Window
 {
-    private const double CellSize = 132;
+    private const double CellSize = 148;
     private const double EditorHeight = 300;
     private const string MetricDragFormat = "iRacingCoach.LiveMetric";
     private const string TileDragFormat = "iRacingCoach.LiveTile";
@@ -182,25 +182,24 @@ public partial class LiveMonitorWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var header = new Grid();
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var header = new StackPanel();
         header.Children.Add(new TextBlock
         {
             Text = definition.Name.ToUpper(CultureInfo.CurrentCulture),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
             Foreground = Resource<Brush>("TextSecondaryBrush"),
-            TextTrimming = TextTrimming.CharacterEllipsis
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxHeight = 26
         });
         var source = new TextBlock
         {
             Text = SourceLabel(definition.Source),
             FontSize = 9,
             Foreground = Resource<Brush>("TextMutedBrush"),
-            HorizontalAlignment = HAlignment.Right
+            HorizontalAlignment = HAlignment.Left
         };
-        Grid.SetColumn(source, 1);
         header.Children.Add(source);
         root.Children.Add(header);
 
