@@ -222,6 +222,16 @@ public sealed record AnalysisLap(
     bool Confounded,
     string ExclusionReason);
 
+public sealed record AnalysisPitStop(
+    double? ServiceSeconds,
+    double? FuelAddedGallons,
+    double? EstimatedFuelLapsRemaining,
+    IReadOnlyList<string> TiresChanged,
+    double? LeftFrontTireWearPercent,
+    double? RightFrontTireWearPercent,
+    double? LeftRearTireWearPercent,
+    double? RightRearTireWearPercent);
+
 public sealed record AnalysisRun(
     int Number,
     IReadOnlyList<int> Laps,
@@ -238,7 +248,8 @@ public sealed record AnalysisRun(
     double? TireRemainingPercent,
     string TireName,
     double? EarlyBrakeVsLatePercent,
-    double? EarlySteerVsLatePercent);
+    double? EarlySteerVsLatePercent,
+    AnalysisPitStop? PitStop = null);
 
 public sealed record AnalysisStrategy(
     double? GreenFuelGallonsPerLap,

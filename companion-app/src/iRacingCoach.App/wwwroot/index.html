@@ -24,6 +24,14 @@
       },
       pointerViewBox: function (element, clientX, clientY, viewWidth, viewHeight) {
         if (!element) return [0, 0];
+        const screenMatrix = element.getScreenCTM && element.getScreenCTM();
+        if (screenMatrix && element.createSVGPoint) {
+          const point = element.createSVGPoint();
+          point.x = clientX;
+          point.y = clientY;
+          const mapped = point.matrixTransform(screenMatrix.inverse());
+          return [mapped.x, mapped.y];
+        }
         const bounds = element.getBoundingClientRect();
         if (bounds.width <= 0 || bounds.height <= 0) return [0, 0];
         return [

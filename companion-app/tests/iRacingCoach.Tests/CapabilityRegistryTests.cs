@@ -232,12 +232,20 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(analysis, "UsefulAction");
         StringAssert.Contains(telemetry, "trace-cursor-tooltip");
         StringAssert.Contains(telemetry, "DirectionalDegrees");
+        StringAssert.Contains(telemetry, "pit-lap-popover");
+        StringAssert.Contains(telemetry, "ProjectedMapPercent");
+        StringAssert.Contains(telemetry, "MapPointAt(Cursor)");
+        Assert.DoesNotContain("<span class=\"lap-state", telemetry);
         StringAssert.Contains(telemetry, "stroke-width=\"1.35\"");
         StringAssert.Contains(telemetry, "140 - (p.Y");
         StringAssert.Contains(telemetry, "\"brake\" => $\"hsl");
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(css, ".event-session-switch .segmented");
+        StringAssert.Contains(css, ".lap-time.fastest");
         StringAssert.Contains(css, "white-space: nowrap");
+
+        var appHost = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "wwwroot", "index.html"));
+        StringAssert.Contains(appHost, "getScreenCTM");
 
         var navigation = File.ReadAllText(Path.Combine(ui, "NavRail.razor"));
         StringAssert.Contains(navigation, "\"Setups\"");

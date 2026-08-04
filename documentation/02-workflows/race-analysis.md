@@ -33,19 +33,19 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | ID | Requirement |
 | --- | --- |
 | `RA-030` | The rail MUST be vertical, independently scrollable, and left of the map/charts. |
-| `RA-031` | Every row MUST render a clear lap number, separate aligned lap time, and available fastest/delta state without redundant words. |
+| `RA-031` | Every row MUST render a clear lap number and aligned lap time without redundant state on both sides. The fastest clean time MUST be visibly magenta; other supported deltas MUST appear inline in parentheses after the lap time rather than consuming a second line. |
 | `RA-032` | Rows MUST expose selection color/control and available green, caution, mixed, pit, incomplete, off-track, incident, service, repair, or tow state with text/icon as well as color. |
 | `RA-033` | The rail MUST support multi-select, focus, and clean/green filtering. Its initial comparison SHOULD choose a small useful set rather than every lap. |
 | `RA-034` | Lap zero, partial parade, and otherwise invalid laps MUST NOT enter clean pace or reference selection. |
 | `RA-035` | Tire age, fuel, incident, repair, and fastest/sector markers MUST appear only when supported. |
-| `RA-036` | The rail MUST integrate run boundaries, flag mix, pace, fuel, and measured tire context. Dense secondary run detail MAY use one keyboard-accessible popover rather than a separate page section. |
+| `RA-036` | The rail MUST integrate run boundaries, flag mix, pace, fuel, and measured tire context. Dense secondary run detail MAY use one keyboard-accessible popover rather than a separate page section. A pit-lap hover/focus popup MUST show only supported service facts such as confirmed changed tires, recorded per-corner wear, recorded fuel added, service time, and estimated fuel range/sufficiency; an unavailable field MUST NOT be guessed. |
 
 ## Map and telemetry
 
 | ID | Requirement |
 | --- | --- |
 | `RA-040` | The map MUST use recorded position geometry; when absent, use a normalized distance strip rather than invented geometry. |
-| `RA-041` | Map and charts MUST share a bidirectional cursor within one source sample/bin. |
+| `RA-041` | Map and charts MUST share one bidirectional aligned-distance cursor. Between recorded geometry samples, the marker MUST interpolate on the recorded polyline instead of snapping off the rendered curve. |
 | `RA-042` | Multiple selected laps MUST use consistent per-lap trace colors across the rail, map, legend, and every chart. |
 | `RA-043` | Required distance-aligned channels are Speed, Time Delta, Throttle, Brake, Gear, RPM, and Steering. |
 | `RA-044` | RPM MUST have an independent readable scale and MUST vary when the recorded source varies. |
@@ -59,6 +59,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-052` | Each chart row MUST show a shared-cursor value for every selected lap, using lap number plus the same color marker as the corresponding trace. |
 | `RA-053` | Steering MUST be presented as human-readable left/right degrees. Analog display traces MAY use slight documented smoothing, but it MUST preserve braking, throttle, and steering events and MUST NOT alter analysis calculations. |
 | `RA-054` | Map rendering MUST preserve the recorded driving direction after conversion into screen coordinates. Zero brake MUST render as neutral track color; increasing brake input MUST increase, not decrease, brake emphasis. |
+| `RA-055` | Pointer conversion MUST use the SVG's rendered screen transform, including view-box scaling and letterboxing. The map SHOULD use the available panel height while preserving track shape rather than leaving a large unused area below a miniature map. |
 
 ## Integrated insight contracts
 

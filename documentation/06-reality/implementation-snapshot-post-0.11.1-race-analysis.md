@@ -12,6 +12,9 @@ Status: current-main focused Race Analysis development candidate. This snapshot 
 - Trace strokes are thinner and use slight display-only smoothing. The raw analysis data and calculations remain unchanged.
 - Steering values are presented as Left/Right degrees.
 - Every chart row has a shared multicolor cursor readout with lap number, trace color, value, and unit. Cursor position is derived from rendered bounds.
+- Lap rows now use one status icon, a brighter trace-color marker, magenta fastest time, and inline parenthesized pace delta. Pit rows expose a hover/focus service card backed by recorded tire-change, per-corner wear, fuel-added, service-duration, and estimated-range fields; missing fields remain explicit.
+- Chart labels and cursor values are larger. The track map uses a tight geometry view box and more of its column height.
+- Map pointer conversion now uses the SVG screen transform, then projects onto and interpolates along the rendered polyline. This removes both aspect-ratio offset and curve snapping while keeping the map and chart at one aligned-distance cursor.
 - Successful analysis and cache work no longer leaves a completion toast or completed-job tray over the charts.
 - Older analyses without detailed trace samples use a compact empty-telemetry state and still derive the fastest clean lap from supported recorded lap timing.
 - Tray Exit now hides all product surfaces immediately, returns from the tray callback before disposal, closes WPF/WebView surfaces before backend services, and guarantees one final shutdown attempt even when an individual cleanup step fails.

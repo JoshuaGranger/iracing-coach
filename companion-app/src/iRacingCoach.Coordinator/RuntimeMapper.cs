@@ -260,18 +260,33 @@ public static class RuntimeMapper
             var fuel = Object(run, "fuel");
             var pace = Object(run, "pace");
             var tire = Object(run, "tire_observation");
+            var tires = Object(tire, "tires");
+            var pitService = Object(run, "pit_service");
             var drivingLoad = Object(run, "driving_load");
             var damageContext = Object(run, "damage_repair_context");
             var reasons = Array(damageContext, "reason_codes").Select(Value).Where(value => value.Length > 0).ToArray();
+            var runNumber = Integer(run, "run_number");
+            var pitAssessment = Array(strategy, "pit_assessments").FirstOrDefault(item => Integer(item, "run_number") == runNumber);
+            var serviceStart = Number(pitService, "start_time");
+            var serviceEnd = Number(pitService, "end_time");
+            var hasPitStop = Boolean(run, "ended_with_pit_stop") == true || pitService.ValueKind == JsonValueKind.Object;
+            var pitStop = hasPitStop
+                ? new AnalysisPitStop(
+                    serviceStart.HasValue && serviceEnd.HasValue ? Math.Max(0, serviceEnd.Value - serviceStart.Value) : null,
+                    Number(pitService, "fuel_added_l") is { } fuelAddedLiters ? fuelAddedLiters / 3.785411784 : null,
+                    Number(pitAssessment, "fuel_laps_remaining_at_end"),
+                    Array(pitService, "tires_changed_observed").Select(Value).Where(value => value.Length > 0).ToArray(),
+                    TireWearPercent(tires, "LF"), TireWearPercent(tires, "RF"), TireWearPercent(tires, "LR"), TireWearPercent(tires, "RR"))
+                : null;
             return new AnalysisRun(
-                Integer(run, "run_number"), Array(run, "lap_numbers").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray(),
+                runNumber, Array(run, "lap_numbers").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray(),
                 (int)Math.Round(Number(run, "green_laps") ?? 0), (int)Math.Round(Number(run, "caution_laps") ?? 0), Number(fuel, "used_gal"),
                 Number(pace, "green_lap_time_slope_s_per_lap"), Humanize(Text(run, "tire_measurement_status")) ?? "Tire reading unavailable",
                 Boolean(damageContext, "automatic_coaching_reference_eligible") != false,
                 reasons.Length == 0 ? "Recorded run" : string.Join(", ", reasons.Select(Humanize).Where(value => value is not null)),
                 Number(pace, "early_average_lap_s"), Number(pace, "late_average_lap_s"), Number(pace, "early_to_late_delta_s"),
                 Number(tire, "lowest_remaining_percent"), Text(tire, "lowest_remaining_tire") ?? string.Empty,
-                Number(drivingLoad, "early_brake_vs_late_percent"), Number(drivingLoad, "early_steer_vs_late_percent"));
+                Number(drivingLoad, "early_brake_vs_late_percent"), Number(drivingLoad, "early_steer_vs_late_percent"), pitStop);
         }).ToArray();
 
         var shape = Array(track, "shape").Select(point => new TrackShapePoint(
@@ -491,6 +506,12 @@ public static class RuntimeMapper
         if (values.Length == 0) return null;
         var middle = values.Length / 2;
         return values.Length % 2 == 0 ? (values[middle - 1] + values[middle]) / 2d : values[middle];
+    }
+
+    private static double? TireWearPercent(JsonElement tires, string corner)
+    {
+        var remaining = Number(Object(tires, corner), "average_remaining_percent");
+        return remaining.HasValue ? Math.Clamp(100d - remaining.Value, 0d, 100d) : null;
     }
 
     private static JsonElement Object(JsonElement element, string property) =>

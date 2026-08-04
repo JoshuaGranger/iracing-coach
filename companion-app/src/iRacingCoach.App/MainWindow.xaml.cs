@@ -85,7 +85,8 @@ public partial class MainWindow : Window
                 : new CompanionState();
         }
 #endif
-        services.AddSingleton(_state);
+        var state = _state ?? throw new InvalidOperationException("The companion state was not initialized.");
+        services.AddSingleton(state);
 #if DEBUG
         services.AddBlazorWebViewDeveloperTools();
 #endif
@@ -99,7 +100,7 @@ public partial class MainWindow : Window
             Height = Math.Max(MinHeight, qaHeight);
         }
         if (_qaMode) Title = "iRacing Coach · QA Fixture";
-        _liveMonitor = new LiveMonitorWindow(_state);
+        _liveMonitor = new LiveMonitorWindow(state);
 
         _monitorItem = new Forms.ToolStripMenuItem("Show Live Monitor", null, (_, _) => _state.ToggleLiveMonitor());
         _statusItem = new Forms.ToolStripMenuItem("Live telemetry: waiting for iRacing") { Enabled = false };

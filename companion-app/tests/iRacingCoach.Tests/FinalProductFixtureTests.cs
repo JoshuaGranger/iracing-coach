@@ -62,6 +62,15 @@ public sealed class FinalProductFixtureTests
         Assert.IsGreaterThan(100, workspace.Traces.SelectMany(trace => trace.Points).Count(point => point.SessionTimeSeconds.HasValue));
         Assert.IsGreaterThan(100, workspace.Traces.SelectMany(trace => trace.Points).Count(point => point.SlipAngleDegrees.HasValue));
         Assert.IsTrue(workspace.Traces.SelectMany(trace => trace.Points).Any(point => point.YawRateDegreesPerSecond.HasValue && point.LateralG.HasValue && point.LongitudinalG.HasValue));
+        var recordedStop = workspace.Runs.Single(run => run.Number == 1).PitStop;
+        Assert.IsNotNull(recordedStop);
+        CollectionAssert.AreEquivalent(new[] { "LF", "LR", "RF", "RR" }, recordedStop.TiresChanged.ToArray());
+        Assert.AreEqual(0d, recordedStop.FuelAddedGallons.GetValueOrDefault(), .001d);
+        Assert.AreEqual(28.55d, recordedStop.EstimatedFuelLapsRemaining.GetValueOrDefault(), .001d);
+        Assert.AreEqual(8.12d, recordedStop.LeftFrontTireWearPercent.GetValueOrDefault(), .01d);
+        Assert.AreEqual(18.17d, recordedStop.RightFrontTireWearPercent.GetValueOrDefault(), .01d);
+        Assert.AreEqual(5.87d, recordedStop.LeftRearTireWearPercent.GetValueOrDefault(), .01d);
+        Assert.AreEqual(10.99d, recordedStop.RightRearTireWearPercent.GetValueOrDefault(), .01d);
         Assert.IsGreaterThanOrEqualTo(2, card.Corners.Count);
         Assert.IsNotNull(workspace.Strategy.AllGreenRangeLaps);
         Assert.IsGreaterThan(0d, workspace.Strategy.AllGreenRangeLaps.GetValueOrDefault());
