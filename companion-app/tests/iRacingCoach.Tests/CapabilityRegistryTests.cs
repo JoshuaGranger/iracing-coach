@@ -305,6 +305,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".lap-rail { align-self: stretch; height: auto; min-height: 0; max-height: none; contain: size; }");
         Assert.DoesNotContain(".lap-rail { align-self: stretch; height: 100%", coachCss);
         StringAssert.Contains(coachCss, ".lap-flag.checkered");
+        StringAssert.Contains(coachCss, ".lap-rail-scroll { overflow-x: hidden; overflow-y: auto;");
         StringAssert.Contains(coachCss, "justify-content: flex-end; gap: 2px;");
         Assert.DoesNotContain(".lap-flags .lap-flag + .lap-flag", coachCss);
         StringAssert.Contains(coachCss, ".telemetry-empty-selection");
