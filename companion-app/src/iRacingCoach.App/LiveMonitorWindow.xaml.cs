@@ -190,8 +190,8 @@ public partial class LiveMonitorWindow : Window
             FontWeight = FontWeights.SemiBold,
             Foreground = Resource<Brush>("TextSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxHeight = 26
+            TextTrimming = TextTrimming.None,
+            MaxHeight = 34
         });
         var source = new TextBlock
         {
@@ -1002,9 +1002,15 @@ public partial class LiveMonitorWindow : Window
 
     private T Resource<T>(string key) where T : class => (T)FindResource(key);
 
-    private sealed record LayoutItem(string Id, string Name, bool IsFactory);
+    private sealed record LayoutItem(string Id, string Name, bool IsFactory)
+    {
+        public override string ToString() => Name;
+    }
     private sealed record CatalogItem(string MetricId, string Name, string SourceLabel, string Detail, string StylesLabel, string AddAccessibleName);
-    private sealed record NamedOption<T>(T Value, string Label);
+    private sealed record NamedOption<T>(T Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
 
     private static readonly NamedOption<string>[] AccentOptions =
     [

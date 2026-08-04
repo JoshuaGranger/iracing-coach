@@ -224,7 +224,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(analysis, "BuildCornerRows");
 
         var navigation = File.ReadAllText(Path.Combine(ui, "NavRail.razor"));
-        StringAssert.Contains(navigation, "Setup Library");
+        StringAssert.Contains(navigation, "\"Setups\"");
 
         var tuning = File.ReadAllText(Path.Combine(ui, "TuningPage.razor"));
         StringAssert.Contains(tuning, "TuningTrackSelector");
