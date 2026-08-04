@@ -251,6 +251,12 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "var hue = 280 * fraction");
         StringAssert.Contains(telemetry, "Math.Abs(lapTime - FastestLapTime) < .0001");
         StringAssert.Contains(telemetry, "return \"#F05CDB\"");
+        StringAssert.Contains(telemetry, "@onwheel=\"ChartWheel\"");
+        StringAssert.Contains(telemetry, "@onwheel:preventDefault");
+        StringAssert.Contains(telemetry, "TooltipCapacity");
+        StringAssert.Contains(telemetry, "CursorChartX - TooltipWidth - 12 >= PlotLeft");
+        StringAssert.Contains(telemetry, "private const int ChartRowHeight = 82");
+        StringAssert.Contains(telemetry, "iracingCoach.elementSize");
         Assert.DoesNotContain("Other laps", telemetry);
         Assert.DoesNotContain("lap-focus-action", telemetry);
 
@@ -270,6 +276,7 @@ public sealed class CapabilityRegistryTests
         var appHost = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "wwwroot", "index.html"));
         StringAssert.Contains(appHost, "getScreenCTM");
         StringAssert.Contains(appHost, "viewportSize");
+        StringAssert.Contains(appHost, "elementSize");
 
         var navigation = File.ReadAllText(Path.Combine(ui, "NavRail.razor"));
         StringAssert.Contains(navigation, "\"Setups\"");
