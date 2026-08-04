@@ -284,6 +284,31 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
+    public void TrayExit_HidesImmediatelyDefersDisposalAndAlwaysReachesShutdown()
+    {
+        var appRoot = Path.Combine(CompanionRoot(), "src", "iRacingCoach.App");
+        var window = File.ReadAllText(Path.Combine(appRoot, "MainWindow.xaml.cs"));
+        var requestStart = window.IndexOf("private void RequestExit()", StringComparison.Ordinal);
+        var disposeStart = window.IndexOf("public void DisposeApplication()", StringComparison.Ordinal);
+        var request = window[requestStart..disposeStart];
+        StringAssert.Contains(request, "if (_exitRequested) return;");
+        StringAssert.Contains(request, "HideForApplicationExit();");
+        StringAssert.Contains(request, "Dispatcher.BeginInvoke(DispatcherPriority.Send");
+        Assert.IsLessThan(request.IndexOf("Dispatcher.BeginInvoke", StringComparison.Ordinal), request.IndexOf("HideForApplicationExit();", StringComparison.Ordinal));
+
+        var disposal = window[disposeStart..window.IndexOf("private void ApplyDarkTitleBar()", disposeStart, StringComparison.Ordinal)];
+        StringAssert.Contains(disposal, "TryCleanup(Close, \"close main window\")");
+        StringAssert.Contains(disposal, "TryCleanup(_state.Dispose, \"stop application services\")");
+        Assert.IsLessThan(disposal.IndexOf("TryCleanup(_state.Dispose", StringComparison.Ordinal), disposal.IndexOf("TryCleanup(Close", StringComparison.Ordinal));
+        StringAssert.Contains(window, "--qa-exit-after-ready");
+
+        var application = File.ReadAllText(Path.Combine(appRoot, "App.xaml.cs"));
+        StringAssert.Contains(application, "Interlocked.Exchange(ref _exitStarted, 1)");
+        StringAssert.Contains(application, "finally");
+        StringAssert.Contains(application, "Shutdown()");
+    }
+
+    [TestMethod]
     public void AiSchema_AllowsContextualSectionsAndForbidsMissingEvidenceClass()
     {
         using var schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepositoryRoot(), "companion-app-handoff", "contracts", "ai-coaching-output.schema.json")));

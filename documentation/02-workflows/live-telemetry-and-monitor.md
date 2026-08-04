@@ -55,7 +55,10 @@ All high-rate live math is local. Live support must remain useful without AI and
 | `TRAY-001` | The app SHOULD support minimize-to-tray and configurable close-to-tray. |
 | `TRAY-002` | The tray menu SHOULD expose Show App, Show/Hide Live Monitor, connection state, and Exit. |
 | `TRAY-003` | Exit MUST terminate live SDK, backend, and optional Coach Engine workers cleanly. |
+| `TRAY-004` | Selecting Exit MUST immediately hide the main window, Live Monitor, and tray icon; defer resource disposal until the tray callback has returned; and execute shutdown exactly once. A slow or failed cleanup step MUST NOT leave a frozen visible window or prevent the remaining shutdown steps. |
 
 ## Current evidence
 
 Version 0.11.1 adds native-cadence SDK capture and a display-synchronized canvas trace renderer while retaining slower bounded updates for text and layout surfaces. Version 0.11.0 added the shared full-page layout surface and collapsible Toolbox while retaining the miniature monitor as the same persisted view model. Deterministic replay remains development evidence only. Real simulator timing, multi-monitor ergonomics, and sustained live resource use require direct local validation on representative systems; they are not owned by a separate QA role.
+
+Current main also uses one idempotent, deferred tray-exit path. Process probes cover exit with the main window visible, the app hidden/minimized, and both main window and Live Monitor visible.

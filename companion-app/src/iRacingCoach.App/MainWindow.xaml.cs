@@ -1,10 +1,12 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using iRacingCoach.Coordinator;
 using iRacingCoach.Contracts;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +44,7 @@ public partial class MainWindow : Window
         var qaPage = qaOptions.Page;
         var qaScenario = qaOptions.Scenario;
         var qaSize = qaOptions.Size;
+        var qaExitAfterReady = allArguments.Any(argument => string.Equals(argument, "--qa-exit-after-ready", StringComparison.OrdinalIgnoreCase));
         var populatedQa = false;
 #if DEBUG
         if (!qaOptions.Enabled)
@@ -147,6 +150,7 @@ public partial class MainWindow : Window
                 await _state.InitializeAsync();
                 if (supportedQaPage) _state.Navigate(qaPage!);
                 if (qaScenario.Length > 0) await PrepareVisualQaScenarioAsync(qaScenario);
+                if (qaExitAfterReady) RequestExit();
             };
 #if DEBUG
         else if (supportedQaPage)
@@ -210,7 +214,7 @@ public partial class MainWindow : Window
 
     public void ShowFromTray()
     {
-        if (_disposed) return;
+        if (_disposed || _exitRequested) return;
         _state.SetPrimaryUiVisible(true);
         Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -261,6 +265,7 @@ public partial class MainWindow : Window
 
     private void OnMonitorVisibilityRequested(bool visible)
     {
+        if (_disposed || _exitRequested) return;
         if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => OnMonitorVisibilityRequested(visible)); return; }
         if (visible) _liveMonitor.ShowMonitor(); else _liveMonitor.HideMonitor();
         RefreshTrayMenu();
@@ -268,12 +273,13 @@ public partial class MainWindow : Window
 
     private void OnStateChanged()
     {
-        if (Dispatcher.HasShutdownStarted) return;
+        if (_disposed || _exitRequested || Dispatcher.HasShutdownStarted) return;
         _ = Dispatcher.BeginInvoke(RefreshTrayMenu);
     }
 
     private void OnLiveTelemetryChanged()
     {
+        if (_disposed || _exitRequested) return;
         var now = DateTimeOffset.UtcNow;
         if (now - _lastTrayLiveUpdate < TimeSpan.FromSeconds(1)) return;
         _lastTrayLiveUpdate = now;
@@ -282,6 +288,7 @@ public partial class MainWindow : Window
 
     private void RefreshTrayMenu()
     {
+        if (_disposed || _exitRequested) return;
         var snapshot = _state.LiveState.Snapshot;
         _monitorItem.Text = _state.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Show Live Monitor";
         _pauseItem.Text = _state.LiveCoachingPaused ? "Resume live coaching" : "Pause live coaching";
@@ -297,8 +304,11 @@ public partial class MainWindow : Window
 
     private void RequestExit()
     {
+        if (_exitRequested) return;
         _exitRequested = true;
-        ExitRequested?.Invoke();
+        HideForApplicationExit();
+        if (Dispatcher.HasShutdownStarted) ExitRequested?.Invoke();
+        else _ = Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() => ExitRequested?.Invoke()));
     }
 
     public void DisposeApplication()
@@ -306,21 +316,34 @@ public partial class MainWindow : Window
         if (_disposed) return;
         _disposed = true;
         _exitRequested = true;
+        HideForApplicationExit();
         _state.Changed -= OnStateChanged;
         _state.LiveTelemetryChanged -= OnLiveTelemetryChanged;
         _state.LiveMonitorVisibilityRequested -= OnMonitorVisibilityRequested;
         _state.RawTelemetryLocateRequested -= OnRawTelemetryLocateRequested;
-        _trayIcon.Visible = false;
-        _trayIcon.Dispose();
         if (_windowSource is not null)
         {
-            _windowSource.RemoveHook(WindowMessageHook);
-            _ = UnregisterHotKey(_windowSource.Handle, LiveMonitorHotkeyId);
+            TryCleanup(() => _windowSource.RemoveHook(WindowMessageHook), "remove window hook");
+            TryCleanup(() => _ = UnregisterHotKey(_windowSource.Handle, LiveMonitorHotkeyId), "unregister Live Monitor hotkey");
         }
-        _liveMonitor.Close();
-        _state.Dispose();
-        _services.Dispose();
-        Close();
+        TryCleanup(_liveMonitor.Close, "close Live Monitor");
+        TryCleanup(Close, "close main window");
+        TryCleanup(_trayIcon.Dispose, "dispose tray icon");
+        TryCleanup(_state.Dispose, "stop application services");
+        TryCleanup(_services.Dispose, "dispose application container");
+    }
+
+    private void HideForApplicationExit()
+    {
+        TryCleanup(Hide, "hide main window");
+        TryCleanup(_liveMonitor.Hide, "hide Live Monitor");
+        TryCleanup(() => _trayIcon.Visible = false, "hide tray icon");
+    }
+
+    private static void TryCleanup(Action action, string operation)
+    {
+        try { action(); }
+        catch (Exception error) { Trace.WriteLine($"Could not {operation} during application exit: {error}"); }
     }
 
     private void ApplyDarkTitleBar()

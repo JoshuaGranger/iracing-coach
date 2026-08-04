@@ -14,10 +14,11 @@ Status: current-main focused Race Analysis development candidate. This snapshot 
 - Every chart row has a shared multicolor cursor readout with lap number, trace color, value, and unit. Cursor position is derived from rendered bounds.
 - Successful analysis and cache work no longer leaves a completion toast or completed-job tray over the charts.
 - Older analyses without detailed trace samples use a compact empty-telemetry state and still derive the fastest clean lap from supported recorded lap timing.
+- Tray Exit now hides all product surfaces immediately, returns from the tray callback before disposal, closes WPF/WebView surfaces before backend services, and guarantees one final shutdown attempt even when an individual cleanup step fails.
 
 ## Verification at snapshot creation
 
-- Release solution tests: 74 passed, 0 failed.
+- Release solution tests: 75 passed, 0 failed.
 - Release application build: zero warnings and zero errors.
 - Native Windows fixture review covered event opening, whole-row Home navigation, immediate telemetry display, aligned multicolor values, steering direction/units, brake map selection, integrated run detail, and removal of success overlays.
 - Repository handoff verifier: passed.

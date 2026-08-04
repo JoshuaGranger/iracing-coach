@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
 
 namespace iRacingCoach.App;
 
@@ -12,6 +13,7 @@ public partial class App : System.Windows.Application
     private EventWaitHandle? _activationEvent;
     private RegisteredWaitHandle? _activationWait;
     private MainWindow? _mainWindow;
+    private int _exitStarted;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -53,19 +55,34 @@ public partial class App : System.Windows.Application
 
     private void ExitApplication()
     {
-        _mainWindow?.DisposeApplication();
-        Shutdown();
+        if (Interlocked.Exchange(ref _exitStarted, 1) != 0) return;
+        try
+        {
+            _mainWindow?.DisposeApplication();
+        }
+        catch (Exception error)
+        {
+            Trace.WriteLine($"Application cleanup failed during exit: {error}");
+        }
+        finally
+        {
+            if (!Dispatcher.HasShutdownStarted) Shutdown();
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _activationWait?.Unregister(null);
-        _activationEvent?.Dispose();
-        if (_mutex is not null)
+        try
         {
-            try { _mutex.ReleaseMutex(); } catch (ApplicationException) { }
-            _mutex.Dispose();
+            try { _mainWindow?.DisposeApplication(); } catch (Exception error) { Trace.WriteLine($"Final application cleanup failed: {error}"); }
+            _activationWait?.Unregister(null);
+            _activationEvent?.Dispose();
+            if (_mutex is not null)
+            {
+                try { _mutex.ReleaseMutex(); } catch (ApplicationException) { }
+                _mutex.Dispose();
+            }
         }
-        base.OnExit(e);
+        finally { base.OnExit(e); }
     }
 }

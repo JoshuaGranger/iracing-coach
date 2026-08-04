@@ -82,7 +82,7 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 - Application version: post-`0.11.1` current-main development candidate; no new package version is claimed by the Race Analysis round
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Local verification: 74 .NET tests and 173 Python tests passed before packaging
+- Local verification: 75 .NET tests plus the handoff Python/contract baseline pass on current main
 - Installer lifecycle: local guarded install/upgrade/rollback/uninstall verification passed
 - Current focused acceptance: Home and Race Analysis fixture interaction plus repository tests verified; broader real-session and packaged-release evidence remains scoped per change
 
