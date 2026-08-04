@@ -44,7 +44,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-damage-repair-corner-phase-v7"
+ANALYSIS_PROFILE_VERSION = "post-race-damage-repair-corner-phase-v8"
 ANALYZER_SOURCE_FILES = ("analysis_engine.py", "groove_analysis.py", "ibt_reader.py")
 
 # These are recorded SDK states, not a vehicle-health model.  In particular,
@@ -746,6 +746,86 @@ def _find_race_session(info: Mapping[str, Any]) -> Mapping[str, Any]:
     return {}
 
 
+def _session_track_usage(table: TelemetryTable) -> str | None:
+    """Resolve an inherited race rubber state without inventing track buildup."""
+
+    sessions = _path_get(table.session_info, "SessionInfo", "Sessions") or []
+    if not isinstance(sessions, Sequence):
+        return None
+    race_index = next(
+        (
+            index
+            for index in range(len(sessions) - 1, -1, -1)
+            if isinstance(sessions[index], Mapping)
+            and str(sessions[index].get("SessionType", "")).lower() == "race"
+        ),
+        len(sessions) - 1,
+    )
+    for index in range(race_index, -1, -1):
+        session = sessions[index]
+        if not isinstance(session, Mapping):
+            continue
+        state = str(session.get("SessionTrackRubberState") or "").strip()
+        if state and state.lower() != "carry over":
+            return state
+    return None
+
+
+def _lap_conditions(table: TelemetryTable, indices: Sequence[int]) -> dict[str, Any]:
+    def lap_values(*aliases: str) -> list[float]:
+        series = table.get(*aliases, default=None)
+        return [
+            value
+            for index in indices
+            if index < len(series) and (value := _finite(series[index])) is not None
+        ]
+
+    def median(*aliases: str) -> float | None:
+        return _median(lap_values(*aliases))
+
+    sky_value = median("Skies")
+    sky_labels = {0: "Clear", 1: "Partly cloudy", 2: "Mostly cloudy", 3: "Overcast"}
+    sky_label = sky_labels.get(int(round(sky_value))) if sky_value is not None else None
+    if sky_label is None:
+        recorded_sky = str(_deep_find(table.session_info, "TrackSkies") or "").strip()
+        if recorded_sky and recorded_sky.lower() != "dynamic":
+            sky_label = recorded_sky
+
+    track_temp_c = median("TrackTempCrew", "TrackTemp")
+    air_temp_c = median("AirTemp")
+    wind_speed_mps = median("WindVel")
+    wind_direction_rad = median("WindDir")
+    humidity = _fraction(median("RelativeHumidity"))
+    fog = _fraction(median("FogLevel"))
+    precipitation = _fraction(median("Precipitation"))
+    air_pressure_pa = median("AirPressure")
+    air_density_kg_m3 = median("AirDensity")
+    usage = median("TrackUsage")
+    usage_percent = _fraction(usage) * 100.0 if usage is not None else None
+    declared_wet_values = table.get("WeatherDeclaredWet", default=None)
+    declared_wet = (
+        any(_bool(declared_wet_values[index]) for index in indices if index < len(declared_wet_values))
+        if table.has("WeatherDeclaredWet")
+        else None
+    )
+    return {
+        "sky": sky_label,
+        "track_temperature_f": _round(track_temp_c * 9.0 / 5.0 + 32.0 if track_temp_c is not None else None, 1),
+        "air_temperature_f": _round(air_temp_c * 9.0 / 5.0 + 32.0 if air_temp_c is not None else None, 1),
+        "wind_speed_mph": _round(wind_speed_mps * 2.236936 if wind_speed_mps is not None else None, 1),
+        "wind_direction_degrees": _round(math.degrees(wind_direction_rad) % 360.0 if wind_direction_rad is not None else None, 1),
+        "relative_humidity_percent": _round(humidity * 100.0 if humidity is not None else None, 1),
+        "fog_percent": _round(fog * 100.0 if fog is not None else None, 1),
+        "air_pressure_inhg": _round(air_pressure_pa * 0.00029529983071445 if air_pressure_pa is not None else None, 2),
+        "air_density_lb_ft3": _round(air_density_kg_m3 * 0.0624279606 if air_density_kg_m3 is not None else None, 3),
+        "precipitation_percent": _round(precipitation * 100.0 if precipitation is not None else None, 1),
+        "track_wetness_state": _round(median("TrackWetness"), 0),
+        "track_usage_percent": _round(usage_percent, 1),
+        "track_usage": _session_track_usage(table),
+        "weather_declared_wet": declared_wet,
+    }
+
+
 def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     n = table.length
     times = table.get("SessionTime", "SessionTimeOfDay", default=None)
@@ -983,6 +1063,7 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
                     "used_l": _round(fuel_used),
                     "used_gal": _round(fuel_used / 3.785411784 if fuel_used is not None else None),
                 },
+                "conditions": _lap_conditions(table, indices),
                 "position": {
                     "start": position_values[0] if position_values else None,
                     "end": position_values[-1] if position_values else None,
@@ -1130,6 +1211,7 @@ def _lap_trace_payload(
                     "pit_entry": bool(lap.get("pit_entry")),
                     "pit_exit": bool(lap.get("pit_exit")),
                     "fuel_used_gal": _path_get(lap, "fuel", "used_gal"),
+                    "conditions": dict(lap.get("conditions") or {}),
                     "points": points,
                 }
             )

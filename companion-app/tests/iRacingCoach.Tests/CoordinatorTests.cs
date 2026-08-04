@@ -202,7 +202,7 @@ public sealed class CoordinatorTests
         "race_summary":{"recorded_laps":2,"scheduled_laps":10,"pit_stops_detected":0},
         "runs":[{"run_number":1,"lap_numbers":[1,2],"green_laps":2,"caution_laps":0,"fuel":{"used_gal":1.2},"pace":{"green_lap_time_slope_s_per_lap":0.1},"damage_repair_context":{"automatic_coaching_reference_eligible":true,"reason_codes":[]}}],
         "laps":[{"lap":1,"lap_time_s":31.2,"complete":true,"flag_state":"green","green_fraction":1,"caution_fraction":0,"pit_time_s":0,"position":{"start":4,"end":3},"damage_repair_context":{"automatic_coaching_reference_eligible":true,"exclusion_reason_codes":[]}}],
-        "lap_traces":{"tire_stress_definition":"Relative proxy; not measured wear.","traces":[{"lap":1,"lap_time_s":31.2,"complete":true,"flag_state":"green","flag_states":["green","yellow","black"],"pit_entry":true,"pit_exit":false,"fuel_used_gal":0.42,"points":[{"lap_pct":0.25,"speed_mph":125,"brake":0.2,"tire_stress_proxy":0.4}]}]},
+        "lap_traces":{"tire_stress_definition":"Relative proxy; not measured wear.","traces":[{"lap":1,"lap_time_s":31.2,"complete":true,"flag_state":"green","flag_states":["green","yellow","black"],"pit_entry":true,"pit_exit":false,"fuel_used_gal":0.42,"conditions":{"sky":"Partly cloudy","track_temperature_f":105.0,"air_temperature_f":77.2,"wind_speed_mph":14.0,"wind_direction_degrees":180,"relative_humidity_percent":83,"fog_percent":0,"air_pressure_inhg":28.8,"air_density_lb_ft3":0.071,"precipitation_percent":0,"track_usage":"moderately high usage","weather_declared_wet":false},"points":[{"lap_pct":0.25,"speed_mph":125,"brake":0.2,"tire_stress_proxy":0.4}]}]},
         "track_profile":{"shape":null,"detected_corner_segments":[]},"strategy":{"forecast":{"status":"insufficient_evidence"}},"damage_repair":{"status":"partial"},"setup_telemetry":{},"data_quality":{"confidence":"high"}}}
         """);
 
@@ -215,6 +215,10 @@ public sealed class CoordinatorTests
         Assert.IsTrue(workspace.Traces[0].PitEntry);
         Assert.IsFalse(workspace.Traces[0].PitExit);
         Assert.AreEqual(.42d, workspace.Traces[0].FuelUsedGallons);
+        Assert.AreEqual("Partly cloudy", workspace.Traces[0].Conditions!.Sky);
+        Assert.AreEqual(105d, workspace.Traces[0].Conditions!.TrackTemperatureF);
+        Assert.AreEqual(180d, workspace.Traces[0].Conditions!.WindDirectionDegrees);
+        Assert.AreEqual("moderately high usage", workspace.Traces[0].Conditions!.TrackUsage);
         StringAssert.Contains(workspace.TireStressDefinition, "not measured wear");
         Assert.AreEqual(42.5d, workspace.BackendElapsedMilliseconds);
     }

@@ -199,6 +199,22 @@ public sealed record AnalysisTracePoint(
     double? Longitude,
     double? TireStressProxy);
 
+public sealed record AnalysisLapConditions(
+    string? Sky,
+    double? TrackTemperatureF,
+    double? AirTemperatureF,
+    double? WindSpeedMph,
+    double? WindDirectionDegrees,
+    double? RelativeHumidityPercent,
+    double? FogPercent,
+    double? AirPressureInHg,
+    double? AirDensityPoundsPerCubicFoot,
+    double? PrecipitationPercent,
+    double? TrackWetnessState,
+    double? TrackUsagePercent,
+    string? TrackUsage,
+    bool? WeatherDeclaredWet);
+
 public sealed record AnalysisLapTrace(
     int Lap,
     double? LapTimeSeconds,
@@ -211,7 +227,8 @@ public sealed record AnalysisLapTrace(
     IReadOnlyList<string>? FlagStates = null,
     bool PitEntry = false,
     bool PitExit = false,
-    double? FuelUsedGallons = null);
+    double? FuelUsedGallons = null,
+    AnalysisLapConditions? Conditions = null);
 
 public sealed record AnalysisLap(
     int Lap,

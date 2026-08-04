@@ -20,7 +20,7 @@ public sealed record TuningFeedbackDraft(
 
 public sealed class CompanionState : IDisposable
 {
-    private const int UiAnalysisCacheSchemaVersion = 3;
+    private const int UiAnalysisCacheSchemaVersion = 4;
     private const string AppVersion = "0.11.1";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;

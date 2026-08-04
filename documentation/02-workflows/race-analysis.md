@@ -44,6 +44,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-039` | When trace timing and the session's actual sector definitions support it, each row SHOULD show sector markers derived from recorded session time at those boundaries. A chronological new best is green and the final session-fastest sector is magenta. Sector tooltips MUST contain only the sector identifier and recorded time; color carries the performance state without repeating explanatory suffixes. The UI MUST NOT divide a lap into manufactured equal sectors; unsupported sectors are omitted. |
 | `RA-040` | A run excluded from coaching comparison MUST still show its directly observed green-lap pace range when usable lap times exist, while labeling the coaching comparison excluded and retaining the exclusion reason. |
 | `RA-040A` | The lap rail MUST stretch to the full telemetry-workspace height. Per-lap fuel MUST be shown only from the recorded negative fuel-level change accumulated during that lap; unavailable values remain unavailable. |
+| `RA-040B` | Hovering a lap time MUST show a floating per-lap conditions card beside the pointer. It SHOULD include recorded sky state, track and air temperature, wind speed/direction, humidity, fog, pressure, air density, precipitation, and the inherited session track-usage state when supported. Values MUST come from samples within that lap or explicit session metadata; missing fields remain unavailable and MUST NOT be inferred. |
 
 ## Map and telemetry
 

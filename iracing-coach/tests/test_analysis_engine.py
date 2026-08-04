@@ -38,6 +38,12 @@ def synthetic_telemetry(lap_count: int = 8) -> dict:
         "LatAccel": [],
         "LongAccel": [],
         "FuelLevel": [],
+        "AirTemp": [], "TrackTempCrew": [],
+        "WindVel": [], "WindDir": [],
+        "RelativeHumidity": [], "FogLevel": [],
+        "AirPressure": [], "AirDensity": [],
+        "Precipitation": [], "WeatherDeclaredWet": [],
+        "Skies": [], "TrackWetness": [],
         "SessionFlags": [],
         "OnPitRoad": [],
         "PlayerCarInPitStall": [],
@@ -85,6 +91,18 @@ def synthetic_telemetry(lap_count: int = 8) -> dict:
         channels["LatAccel"].append(10.5 if in_corner else 0.8)
         channels["LongAccel"].append(-2.5 if brake else 0.4)
         channels["FuelLevel"].append(fuel)
+        channels["AirTemp"].append(25.0 + lap * 0.1)
+        channels["TrackTempCrew"].append(40.0 + lap * 0.2)
+        channels["WindVel"].append(6.25)
+        channels["WindDir"].append(3.14159265)
+        channels["RelativeHumidity"].append(0.83)
+        channels["FogLevel"].append(0.0)
+        channels["AirPressure"].append(97700.0)
+        channels["AirDensity"].append(1.13)
+        channels["Precipitation"].append(0.0)
+        channels["WeatherDeclaredWet"].append(False)
+        channels["Skies"].append(1)
+        channels["TrackWetness"].append(1)
         channels["SessionFlags"].append(0x4000 if lap == 7 else 0x0004)
         channels["OnPitRoad"].append(in_service)
         channels["PlayerCarInPitStall"].append(in_service)
@@ -169,7 +187,7 @@ def synthetic_telemetry(lap_count: int = 8) -> dict:
                 {"SectorNum": 1, "SectorStartPct": 0.333333},
                 {"SectorNum": 2, "SectorStartPct": 0.666667},
             ]},
-            "SessionInfo": {"Sessions": [{"SessionType": "Race", "SessionLaps": str(lap_count)}]},
+            "SessionInfo": {"Sessions": [{"SessionType": "Race", "SessionLaps": str(lap_count), "SessionTrackRubberState": "moderately high usage"}]},
         },
     }
 
@@ -630,6 +648,12 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertIn("not per-lap tread wear", traces["tire_stress"]["definition"])
         self.assertEqual(traces["sector_start_pcts"], [0.0, 0.333333, 0.666667])
         self.assertIsNotNone(traces["traces"][0]["fuel_used_gal"])
+        conditions = traces["traces"][0]["conditions"]
+        self.assertEqual(conditions["sky"], "Partly cloudy")
+        self.assertAlmostEqual(conditions["track_temperature_f"], 104.4, places=1)
+        self.assertAlmostEqual(conditions["wind_speed_mph"], 14.0, places=1)
+        self.assertEqual(conditions["relative_humidity_percent"], 83.0)
+        self.assertEqual(conditions["track_usage"], "moderately high usage")
         timeline = analysis["race_timeline"]
         event_types = [event["event_type"] for event in timeline["events"]]
         self.assertEqual(event_types[0], "race_start")
@@ -655,6 +679,10 @@ class AnalysisEngineTests(unittest.TestCase):
 
     def test_lap_traces_preserve_mixed_flags_pit_direction_and_fuel(self) -> None:
         telemetry = synthetic_telemetry(lap_count=3)
+        telemetry["session_info"]["SessionInfo"]["Sessions"] = [
+            {"SessionType": "Practice", "SessionTrackRubberState": "moderately high usage"},
+            {"SessionType": "Race", "SessionLaps": "3", "SessionTrackRubberState": "carry over"},
+        ]
         flags = telemetry["channels"]["SessionFlags"]
         on_pit = telemetry["channels"]["OnPitRoad"]
         for index in range(80, 120):
@@ -677,6 +705,7 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertTrue(traces[2]["pit_entry"])
         self.assertTrue(traces[3]["pit_exit"])
         self.assertGreater(traces[2]["fuel_used_gal"], 0)
+        self.assertEqual(traces[2]["conditions"]["track_usage"], "moderately high usage")
 
     def test_summarizes_setup_telemetry_in_engineering_units(self) -> None:
         analysis = analyze_telemetry(synthetic_telemetry())

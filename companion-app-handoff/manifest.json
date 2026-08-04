@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "bundle": "iracing-coach-companion-app-build-inputs",
   "scope": "clean build inputs; private data and credentials excluded",
-  "generated_at_utc": "2026-08-04T16:25:42.725349Z",
+  "generated_at_utc": "2026-08-04T16:43:12.623250Z",
   "excluded": [
     "data/ (optional private regression corpus)",
     ".git/",
@@ -69,8 +69,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/analysis_engine.py",
-      "bytes": 235129,
-      "sha256": "e4a485e356f44e075b19c19c4f309175d86677dcd425fadb8c3357249f80366f"
+      "bytes": 239034,
+      "sha256": "5fe6ab46fc47ee267acd00950113bc6ff0e1c532e4618f38417eae5155ba9edd"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/coach_cli.py",
@@ -154,8 +154,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/workflow.py",
-      "bytes": 145708,
-      "sha256": "d400a603d5c0d9f6cf945aa94f8b927055b8381b2134b6dcd6eea99f3ef2ec4d"
+      "bytes": 145737,
+      "sha256": "31379ca9c255f7777f5a4876ee9be8d1bbc41c6bde56dac2b12cfd09ee963e44"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/SKILL.md",
@@ -164,8 +164,8 @@
     },
     {
       "path": "iracing-coach/tests/test_analysis_engine.py",
-      "bytes": 33063,
-      "sha256": "588c1023a5712832aba2473729e7e62c491a36867096da48d24c2297839bb5ed"
+      "bytes": 34728,
+      "sha256": "b525ae08718c7be06abe76cbebe90ceccbccc000c4296a999d127284bf243d09"
     },
     {
       "path": "iracing-coach/tests/test_coach_cli.py",
@@ -325,7 +325,7 @@
     {
       "path": "companion-app-handoff/contracts/compatibility.json",
       "bytes": 1844,
-      "sha256": "92b2fdaee07de713f51ea195c35aab601ac106c6add595a02cbbd945cc28c51e"
+      "sha256": "e464a2b5c4021206c73b4406e53cdd0e325137ab63022b09856202afdc2fbd93"
     },
     {
       "path": "companion-app-handoff/contracts/damage-repair-v1.schema.json",
@@ -560,6 +560,6 @@
   ],
   "totals": {
     "file_count": 109,
-    "bytes": 1961669
+    "bytes": 1967268
   }
 }

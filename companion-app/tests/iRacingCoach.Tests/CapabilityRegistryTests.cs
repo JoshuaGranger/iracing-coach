@@ -235,6 +235,9 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "@if (ChartHovered)");
         StringAssert.Contains(telemetry, "DirectionalDegrees");
         StringAssert.Contains(telemetry, "pit-lap-popover");
+        StringAssert.Contains(telemetry, "ShowConditionsPopover");
+        StringAssert.Contains(telemetry, "lap-conditions-popover");
+        StringAssert.Contains(telemetry, "TrackUsage(conditions)");
         StringAssert.Contains(telemetry, "ProjectedMapPercent");
         StringAssert.Contains(telemetry, "MapPointAt(Cursor)");
         StringAssert.Contains(telemetry, "CleanLapFilterChanged");
@@ -283,6 +286,8 @@ public sealed class CapabilityRegistryTests
         var coachCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(coachCss, "--font-size-min: 11.67px");
         StringAssert.Contains(coachCss, ".pit-lap-popover { position: fixed");
+        StringAssert.Contains(coachCss, ".lap-conditions-popover { position: fixed");
+        StringAssert.Contains(coachCss, ".conditions-grid { display: grid; grid-template-columns: repeat(3");
         StringAssert.Contains(coachCss, "grid-template-columns: 70px 42px minmax(144px,1fr) 22px 60px 28px 64px");
         StringAssert.Contains(coachCss, "grid-template-columns: 474px minmax(0,1fr)");
         StringAssert.Contains(coachCss, ".lap-flag.checkered");

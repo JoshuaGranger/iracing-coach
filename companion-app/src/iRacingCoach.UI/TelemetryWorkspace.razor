@@ -50,7 +50,7 @@
                                     }
                                 </span>
                                 <span class="lap-identity"><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
-                                <span class="lap-time @(isFastest ? "fastest" : null)">@LapTime(trace.LapTimeSeconds)@if (ShowPaceDelta(trace, isFastest)) { <small>(+@((trace.LapTimeSeconds!.Value - FastestLapTime).ToString("0.000")))</small> }</span>
+                                <span class="lap-time condition-hover @(isFastest ? "fastest" : null)" title="Lap weather and track conditions" @onmouseenter="args => ShowConditionsPopover(args, trace.Lap)" @onmouseleave="HideConditionsPopover">@LapTime(trace.LapTimeSeconds)@if (ShowPaceDelta(trace, isFastest)) { <small>(+@((trace.LapTimeSeconds!.Value - FastestLapTime).ToString("0.000")))</small> }</span>
                                 <span class="lap-sector-column">
                                     @if (SectorStarts.Count > 1)
                                     {
@@ -90,6 +90,24 @@
                                         <span class="pit-popover-row"><span>Race remaining</span><b>@RaceLapsRemaining(trace.Lap)</b></span>
                                         @if (run.PitStop?.DamageRepairedSeconds is { } repaired) { <span class="pit-popover-row"><span>Damage repaired</span><b>@repaired.ToString("0.0") s</b></span> }
                                         @if (run.PitStop?.PenaltyServedSeconds is { } penalty) { <span class="pit-popover-row"><span>Penalty served</span><b>@penalty.ToString("0.0") s</b></span> }
+                                    </span>
+                                }
+                                @if (ActiveConditionsLap == trace.Lap && trace.Conditions is { } conditions)
+                                {
+                                    <span class="lap-conditions-popover" style="@ConditionsPopoverStyle" role="tooltip">
+                                        <span class="conditions-popover-heading"><strong>Lap @trace.Lap conditions</strong><small>@LapTime(trace.LapTimeSeconds)</small></span>
+                                        <span class="conditions-grid">
+                                            <span class="condition-item sky"><ProductIcon Name="weather" Size="17" /><b>@Sky(conditions)</b></span>
+                                            <span class="condition-item track-temp"><ProductIcon Name="temperature" Size="17" /><b>@Temperature(conditions.TrackTemperatureF)</b></span>
+                                            <span class="condition-item air-temp"><ProductIcon Name="air-temperature" Size="17" /><b>@Temperature(conditions.AirTemperatureF)</b></span>
+                                            <span class="condition-item wind"><ProductIcon Name="wind" Size="17" /><b>@Wind(conditions)</b></span>
+                                            <span class="condition-item humidity"><ProductIcon Name="humidity" Size="17" /><b>@Percent(conditions.RelativeHumidityPercent)</b></span>
+                                            <span class="condition-item fog"><ProductIcon Name="fog" Size="17" /><b>@Percent(conditions.FogPercent)</b></span>
+                                            <span class="condition-item pressure"><ProductIcon Name="pressure" Size="17" /><b>@Pressure(conditions.AirPressureInHg)</b></span>
+                                            <span class="condition-item density"><ProductIcon Name="density" Size="17" /><b>@Density(conditions.AirDensityPoundsPerCubicFoot)</b></span>
+                                            <span class="condition-item precipitation"><ProductIcon Name="precipitation" Size="17" /><b>@Percent(conditions.PrecipitationPercent)</b></span>
+                                        </span>
+                                        <span class="track-usage-row"><i aria-hidden="true"></i><strong>@TrackUsage(conditions)</strong></span>
                                     </span>
                                 }
                             </button>
@@ -193,9 +211,13 @@
     private bool CleanLapsOnly { get; set; }
     private bool ChartHovered { get; set; }
     private int? ActivePitLap { get; set; }
+    private int? ActiveConditionsLap { get; set; }
     private double PitPopoverX { get; set; }
     private double PitPopoverY { get; set; }
     private bool PitPopoverAbove { get; set; }
+    private double ConditionsPopoverX { get; set; }
+    private double ConditionsPopoverY { get; set; }
+    private bool ConditionsPopoverAbove { get; set; }
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
@@ -348,6 +370,18 @@
     }
     private void HidePitPopover() => ActivePitLap = null;
     private string PitPopoverStyle => $"left:{F(PitPopoverX)}px;top:{F(PitPopoverY)}px;transform:{(PitPopoverAbove ? "translateY(-100%)" : "none")}";
+    private async Task ShowConditionsPopover(MouseEventArgs args, int lap)
+    {
+        var viewport = await JS.InvokeAsync<double[]>("iracingCoach.viewportSize");
+        var width = viewport.Length > 0 ? viewport[0] : 1280;
+        var height = viewport.Length > 1 ? viewport[1] : 800;
+        ConditionsPopoverX = Math.Clamp(args.ClientX + 14, 12, Math.Max(12, width - 368));
+        ConditionsPopoverAbove = args.ClientY > height / 2;
+        ConditionsPopoverY = ConditionsPopoverAbove ? args.ClientY - 12 : args.ClientY + 12;
+        ActiveConditionsLap = lap;
+    }
+    private void HideConditionsPopover() => ActiveConditionsLap = null;
+    private string ConditionsPopoverStyle => $"left:{F(ConditionsPopoverX)}px;top:{F(ConditionsPopoverY)}px;transform:{(ConditionsPopoverAbove ? "translateY(-100%)" : "none")}";
     private AnalysisRun? RunForLap(int lap)
     {
         var exact = Workspace.Runs.FirstOrDefault(run => run.Laps.Contains(lap));
@@ -393,6 +427,40 @@
     }
     private static string FuelConsumed(AnalysisLapTrace trace) => trace.FuelUsedGallons is { } fuel ? $"{fuel:0.000} gal" : "—";
     private static string FuelConsumedTitle(AnalysisLapTrace trace) => trace.FuelUsedGallons is { } fuel ? $"{fuel:0.000} gal consumed on lap {trace.Lap}" : "Fuel use not recorded";
+    private static string Sky(AnalysisLapConditions conditions) => string.IsNullOrWhiteSpace(conditions.Sky) ? "—" : conditions.Sky;
+    private static string Temperature(double? value) => value is { } temperature ? $"{temperature:0.0} °F" : "—";
+    private static string Percent(double? value) => value is { } percent ? $"{percent:0.#}%" : "—";
+    private static string Pressure(double? value) => value is { } pressure ? $"{pressure:0.00} inHg" : "—";
+    private static string Density(double? value) => value is { } density ? $"{density:0.000} lb/ft³" : "—";
+    private static string Wind(AnalysisLapConditions conditions)
+    {
+        if (conditions.WindSpeedMph is not { } speed) return "—";
+        return conditions.WindDirectionDegrees is { } degrees
+            ? $"{speed:0.#} mph, {CompassDirection(degrees)}"
+            : $"{speed:0.#} mph";
+    }
+    private static string CompassDirection(double degrees)
+    {
+        string[] labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+        return labels[(int)Math.Round(((degrees % 360) + 360) % 360 / 45.0) % labels.Length];
+    }
+    private static string TrackUsage(AnalysisLapConditions conditions)
+    {
+        if (!string.IsNullOrWhiteSpace(conditions.TrackUsage))
+        {
+            var value = conditions.TrackUsage.Trim();
+            return char.ToUpperInvariant(value[0]) + value[1..];
+        }
+        return conditions.TrackUsagePercent switch
+        {
+            < 20 => "Low usage",
+            < 40 => "Moderately low usage",
+            < 60 => "Moderate usage",
+            < 80 => "Moderately high usage",
+            { } => "High usage",
+            _ => "Usage not recorded"
+        };
+    }
     private static bool IsCaution(AnalysisLapTrace trace) => trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) || trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
     private async Task ShowChartCursor()
     {

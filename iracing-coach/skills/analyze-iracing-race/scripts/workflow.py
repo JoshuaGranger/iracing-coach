@@ -210,6 +210,8 @@ _EXTENDED_ANALYSIS_CHANNELS = (
     "AirPressure",
     "WindVel",
     "WindDir",
+    "Skies",
+    "FogLevel",
     "RelativeHumidity",
     "Precipitation",
     "WeatherDeclaredWet",

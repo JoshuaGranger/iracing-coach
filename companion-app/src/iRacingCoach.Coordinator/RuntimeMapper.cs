@@ -256,7 +256,15 @@ public static class RuntimeMapper
                 Number(point, "lat"), Number(point, "lon"), Number(point, "tire_stress_proxy"))).ToArray(),
             Array(trace, "flag_states").Select(Value).Where(value => value.Length > 0).ToArray(),
             Boolean(trace, "pit_entry") == true, Boolean(trace, "pit_exit") == true,
-            Number(trace, "fuel_used_gal"))).ToArray();
+            Number(trace, "fuel_used_gal"),
+            Object(trace, "conditions") is var conditions ? new AnalysisLapConditions(
+                Text(conditions, "sky"), Number(conditions, "track_temperature_f"), Number(conditions, "air_temperature_f"),
+                Number(conditions, "wind_speed_mph"), Number(conditions, "wind_direction_degrees"),
+                Number(conditions, "relative_humidity_percent"), Number(conditions, "fog_percent"),
+                Number(conditions, "air_pressure_inhg"), Number(conditions, "air_density_lb_ft3"),
+                Number(conditions, "precipitation_percent"), Number(conditions, "track_wetness_state"),
+                Number(conditions, "track_usage_percent"), Text(conditions, "track_usage"),
+                Boolean(conditions, "weather_declared_wet")) : null)).ToArray();
 
         var runs = Array(view, "runs").Select(run =>
         {
