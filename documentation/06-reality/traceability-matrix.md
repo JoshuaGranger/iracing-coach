@@ -9,13 +9,13 @@ This matrix maps specification areas to implementation and verification anchors.
 | `RA-030` to `RA-049` | `TelemetryWorkspace.razor`, `AnalysisWorkspacePage.razor`, `analysis_engine.py` | full-telemetry Python tests, visual baselines | Implemented against fixtures; real-channel acceptance pending |
 | `RA-060` to `RA-111` | analysis workspace tabs, `analysis_engine.py`, `reporting.py`, `race_card.py` | analysis/report/damage/race-card tests | Broad implementation; some rubric/data combinations partial |
 | `PLAN-*` | `PlanningPage.razor`, planning contracts/mappers, deterministic report data | `FinalProductFixtureTests.cs`, reporting/workflow tests | Implemented fixture workflow |
-| `SETUP-*` | `SetupPage.razor`, `setup_catalog.py`, coordinator contracts | setup-catalog and coordinator tests | Implemented; opaque setup limits truthful detail |
-| `TUNE-*` | `TuningPage.razor`, `TuningTrackSelector.razor`, `tuning_engine.py`, `tuning_workflow.py` | tuning-engine/workflow tests | Implemented event-linked tuning; Starting Tune UI partial |
-| `LIVE-*` | `LiveTelemetryPage.razor`, `LiveMonitorWindow.*`, `LiveTelemetry.cs`, `IRacingSdkTelemetrySource.cs` | live monitor acceptance, .NET fixture tests | Fixture/replay accepted; HOME_QA real telemetry pending |
+| `SETUP-*` | `SetupPage.razor`, `RuntimeMapper.SetupPackage`, `setup_catalog.py`, coordinator contracts | setup-catalog, package, and product-truth tests | Library and Starting Tune implemented; opaque setup limits truthful detail |
+| `TUNE-*` | `SetupPage.razor`, `TuningPage.razor`, `TuningTrackSelector.razor`, `tuning_engine.py`, `tuning_workflow.py` | tuning-engine/workflow tests | Starting Tune and event-linked progressive tuning implemented; real A/B pending |
+| `LIVE-*`, `LMG-*` | `LiveTelemetryPage.razor`, `LiveMonitorWindow.*`, `LiveMonitorLayouts.cs`, `LiveTelemetryCatalog.cs`, `LiveTelemetry.cs`, `IRacingSdkTelemetrySource.cs` | `LiveMonitorTests.cs`, replay/live service tests | Grid/editor and replay verified; HOME_QA real telemetry pending |
 | `CONN-*`, `SET-*`, `DIAG-*` | Connections/Settings/Diagnostics pages, stores, logging | coordinator/backend tests | Implemented; real external auth varies |
-| `EV-*` | Python analysis/report/tuning modules, `EvidenceBadge.razor`, mappers | contract and engine tests | Strong deterministic coverage; UI completeness varies by source |
+| `EV-*` | Python analysis/report/tuning modules, `EvidenceBadge.razor`, `RuntimeMapper`, grade audit UI | contract, engine, and product-truth tests | Five-category availability is explicit; rubric calibration still HOME_QA-reviewable |
 | `TD-*` | IBT reader, native events, storage, analysis engine, live source | Python telemetry/event/storage tests | Implemented with synthetic/sanitized sources; real-field pending |
-| `PORT-*`, `SEC-*` | durable archive, settings/credential stores, secure/path storage | coordinator and path-security tests, privacy scan | Implemented; portable-secret tradeoff needs explicit design confirmation |
+| `PORT-*`, `SEC-*` | durable archive, portable logical settings, machine placement/credential stores | coordinator, monitor migration, and path-security tests, privacy scan | Machine-bound credential and placement split implemented |
 | `ARCH-*`, `PROC-*` | app startup, coach engine, backend client, coordinator | backend/coordinator tests and release build | Implemented local runtime shape |
 | `G61-*` | Garage61 client and credential UI/store | Garage61 adapter tests | Adapter/configuration implemented; real service acceptance conditional |
 | `AI-*` | coach-engine orchestration and MCP contracts | engine probe, contract tests | Deterministic engine implemented; optional AI is noncritical/partial |

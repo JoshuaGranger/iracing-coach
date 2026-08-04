@@ -27,7 +27,7 @@ The 0.9.3 UI implements search, selection, readable grouped fields, same-car com
 | `ST-005` | The application MUST NOT generate or overwrite a simulator-loadable STO. |
 | `ST-006` | Seasonal research MUST be cached and invalidated by relevant content/physics identity. |
 
-The backend contains package workflows; 0.9.3 does not expose the complete `Context → Source → Package → Baseline Run` first-class UI. This is a material partial capability.
+Version 0.10.0 exposes the backend package workflow as `Context → Source → Package → Baseline Run` inside Setups. It requires exact season/car/track input, presents source identity and SHA-256, refuses to relabel a race source as qualifying, records package/rollback identity, and reiterates that iRacing remains the only place setups are applied or saved.
 
 ## Progressive Tuning prerequisites
 

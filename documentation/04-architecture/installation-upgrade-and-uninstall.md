@@ -26,11 +26,13 @@ The product uses a normal per-user Windows installation while keeping user-owned
 
 | ID | Requirement |
 | --- | --- |
-| `UN-001` | Ordinary uninstall MUST remove installed binaries, shortcuts, protocol/task registrations owned by the app, and uninstall metadata. |
-| `UN-002` | Ordinary uninstall MUST preserve the Documents data home. |
+| `UN-001` | Ordinary uninstall MUST remove installed binaries, shortcuts, protocol/task registrations owned by the app, uninstall metadata, machine credentials, routine logs, crash data, and disposable private runtime state. |
+| `UN-002` | Ordinary uninstall MUST preserve the Documents data home, including user-retained reports/diagnostics, analysis and tuning history, learned knowledge, exports, backup metadata, and ordinary preferences. |
 | `UN-003` | Removing durable user data MUST be a separate, explicit, high-friction choice that enumerates the exact target. |
 | `UN-004` | Uninstall MUST NOT remove shared runtimes, unrelated files, or user data outside the resolved product paths. |
 | `UN-005` | Reinstall after ordinary uninstall MUST rediscover and reuse the preserved Documents home. |
+
+Migration to another PC restores the Documents data home and validates machine-specific paths. Garage61 and AI connection preferences may be restored, but credentials and private authentication state are never transferred; Connections must request reconnection once on the destination Windows account.
 
 ## Current evidence
 

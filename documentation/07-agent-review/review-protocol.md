@@ -15,7 +15,7 @@ This protocol is the primary consumer contract for the documentation tree. Its g
 2. `../00-governance/source-register.md`
 3. `../01-product/mission-scope-and-operating-context.md`
 4. The applicable workflow, data, architecture, and quality documents
-5. `../06-reality/implementation-snapshot-0.9.3.md`
+5. `../06-reality/implementation-snapshot-0.10.0.md`
 6. `../06-reality/traceability-matrix.md`
 7. `../06-reality/gaps-contradictions-and-open-questions.md`
 8. Relevant source, tests, release packet, and packaged application

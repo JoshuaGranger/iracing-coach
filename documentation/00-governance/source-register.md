@@ -15,6 +15,8 @@ This register records the material used to normalize the product specification. 
 | External `FINAL_PRODUCT_COMPLETION_SPEC.md` | Joshua's 2026-08-03 end-state authority | 24,874 | `30e8cd8c17c919cd60b9c757e9acef7e7e6f854e1fd6adb1c5c6b651bf58ecd2` |
 | External `expected-ui-assertions.json` | Machine-checkable UI expectations | 1,587 | `f7656cc4ac3cb19edbe2baeff484024c5b8b1bb47753722e5db82c26b4828c77` |
 | `companion-app/RELEASE_0.9.3.md` | Local implementation and verification claim | 4,612 | `229b52fe9e0f36099eaf0df2d4b885c657a2fd3a5aba4b86f4e099dbb424a717` |
+| External 2026-08-03 truth-and-completeness repair prompt | Bounded corrective iteration and approved product defaults | 15,165 | `c83a632995eefe9938da41f6cd7cb2079b9b7148db93c1bdab4e3ec9fc36d869` |
+| External 2026-08-03 Live Monitor overhaul | Binding replacement requirement for Live Monitor | 17,552 | `0254e4505d66b626305c267bb5162d86efe1731ec804857ca94d45d6d1a99eb9` |
 
 ## Executable reality sources
 

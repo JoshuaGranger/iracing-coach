@@ -6,7 +6,7 @@ External services enrich the product but do not define the critical local path.
 
 | ID | Requirement |
 | --- | --- |
-| `G61-001` | Garage61 configuration MUST be a Settings workflow with save, replace, remove, and connection-test behavior. |
+| `G61-001` | Garage61 configuration MUST be a Connections workflow with save, replace, remove, and connection-test behavior. Settings contains ordinary application preferences and subordinate diagnostics. |
 | `G61-002` | The UI MUST never display the complete stored credential after entry. |
 | `G61-003` | A failed, unauthorized, rate-limited, or unavailable response MUST identify the state and a useful remedy without breaking local analysis. |
 | `G61-004` | Garage61 data MUST identify provider provenance, retrieval time, scope, and alignment fitness. |

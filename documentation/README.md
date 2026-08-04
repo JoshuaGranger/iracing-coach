@@ -3,7 +3,7 @@
 This tree is the reviewable product contract for iRacing Coach. Its primary purpose is to let a human or an agent compare three different things without conflating them:
 
 1. **Intent** — what the application is required to do.
-2. **Reality** — what version 0.9.3 actually implements.
+2. **Reality** — what the current version actually implements.
 3. **Evidence** — what tests, fixtures, screenshots, packages, or HOME_QA observations prove.
 
 Passing tests does not make a requirement correct. Written requirements can be ambiguous, contradictory, unsafe, or impossible. Working code can satisfy the wrong requirement. This documentation is structured so an agent can criticize both directions.
@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current implementation snapshot](06-reality/implementation-snapshot-0.9.3.md)
+7. [Current implementation snapshot](06-reality/implementation-snapshot-0.10.0.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -27,6 +27,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Authority and normative language](00-governance/authority-and-language.md)
   - [Source register](00-governance/source-register.md)
   - [Criticism model](00-governance/criticism-model.md)
+  - [Decision log](00-governance/decision-log.md)
 - `01-product`
   - [Mission, scope, and operating context](01-product/mission-scope-and-operating-context.md)
   - [Capability status](01-product/capability-status.md)
@@ -49,13 +50,14 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Acceptance, test, and release](05-quality/acceptance-test-and-release.md)
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
 - `06-reality`
-  - [Implementation snapshot: 0.9.3](06-reality/implementation-snapshot-0.9.3.md)
+  - [Implementation snapshot: 0.10.0](06-reality/implementation-snapshot-0.10.0.md)
   - [Traceability matrix](06-reality/traceability-matrix.md)
   - [Gaps, contradictions, and open questions](06-reality/gaps-contradictions-and-open-questions.md)
 - `07-agent-review`
   - [Review protocol](07-agent-review/review-protocol.md)
   - [Finding template](07-agent-review/finding-template.md)
   - [Change impact checklist](07-agent-review/change-impact-checklist.md)
+  - [HOME_QA protocol](07-agent-review/home-qa-protocol.md)
 
 ## Stable requirement identifiers
 
@@ -74,11 +76,11 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 
 ## Current baseline
 
-- Application version: `0.9.3`
+- Application version: `0.10.0` development candidate
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Local verification: 63 .NET tests, 173 Python tests, and 8 final-product packet validation groups passed
+- Local verification: 73 .NET tests and 173 Python tests passed before packaging
 - Installer lifecycle: local guarded install/upgrade/rollback/uninstall verification passed
 - Final acceptance: **HOME_QA pending**
 
-The versioned evidence is summarized in [`companion-app/RELEASE_0.9.3.md`](../companion-app/RELEASE_0.9.3.md). Build binaries and private user data are deliberately not part of the source repository.
+The versioned evidence will be summarized in `companion-app/RELEASE_0.10.0.md` after the exact artifacts and UI walkthrough are complete. Build binaries and private user data are deliberately not part of the source repository.

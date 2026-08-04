@@ -28,8 +28,8 @@ Quality claims must identify the environment, artifact, fixture or real source, 
 | `REL-005` | Fixture-mode screenshots and tests MUST be labeled and MUST not imply real-service or real-telemetry acceptance. |
 | `REL-006` | Acceptance evidence SHOULD be machine-readable enough for another agent to independently verify file hashes, counts, and assertions. |
 
-## Current 0.9.3 evidence
+## Current 0.10.0 development evidence
 
-The handoff records a zero-warning Release build, 63 .NET tests, 173 Python tests, an 8/8 packet verification, privacy scan, visual evidence, and installer lifecycle checks. The external QA report for iteration 0001 adds fixture-based review. HOME_QA real-telemetry acceptance remains pending and therefore limits any claim of complete production acceptance.
+The current source records a zero-warning Release build, 73 .NET tests, and 173 Python tests. Exact packaged-app, visual, privacy, performance, and installer lifecycle evidence must be recorded in the 0.10.0 release record. HOME_QA real-telemetry acceptance remains pending and limits any claim of complete production acceptance.
 
-Evidence references: `companion-app/RELEASE_0.9.3.md`, `companion-app-handoff/ACCEPTANCE_CHECKLIST.md`, release packet manifests, and `developer-input/final-product-v1/qa-output/iteration-0001/`.
+Evidence references: `companion-app/RELEASE_0.10.0.md` after publication, `companion-app-handoff/ACCEPTANCE_CHECKLIST.md`, and the exact release artifact manifests.

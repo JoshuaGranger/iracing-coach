@@ -6,12 +6,12 @@ The durable-data home is `%USERPROFILE%\Documents\iRacing Coach`. It is intended
 
 | ID | Requirement |
 | --- | --- |
-| `PORT-001` | Settings, analysis history, reports, tuning history, setup-library metadata, logs, exports, backups, and other user-owned durable state MUST live under the Documents home. |
+| `PORT-001` | Settings, analysis history, user-created reports, tuning history, learned seasonal knowledge, setup-library metadata, retained diagnostics, exports, backup metadata, and other user-owned durable state MUST live under the Documents home. Routine machine logs, crash data, and disposable runtime diagnostics MUST live under `%LOCALAPPDATA%\iRacingCoach` and are not portable history. |
 | `PORT-002` | Copying the complete Documents home to another Windows PC MUST be sufficient to migrate user-owned application state, subject to machine-specific paths and credentials being revalidated. |
 | `PORT-003` | Program binaries, framework runtimes, build outputs, and installer payloads MUST NOT be required inside the durable-data home. |
 | `PORT-004` | The archive manifest MUST identify schema/application versions and MUST permit compatibility checks before restore or upgrade. |
 | `PORT-005` | Export and backup operations MUST be atomic enough that interruption does not replace a known-good archive with a partial archive. |
-| `PORT-006` | Logs and caches MUST be bounded and MUST be safe to regenerate or remove without deleting user-authored data. |
+| `PORT-006` | Machine logs and caches MUST be bounded and safe to regenerate or remove. A diagnostic or report explicitly retained by the user becomes durable Documents data and MUST NOT be removed with routine machine logs. |
 | `PORT-007` | The application MUST preserve durable data during ordinary update, repair, and uninstall. Destructive data removal requires a separate explicit user choice. |
 
 ## Settings and credentials
@@ -20,8 +20,8 @@ The durable-data home is `%USERPROFILE%\Documents\iRacing Coach`. It is intended
 | --- | --- |
 | `SEC-001` | Ordinary settings MUST persist in a portable settings file under the Documents home. |
 | `SEC-002` | Secrets MUST NOT be embedded in source control, logs, support details, screenshots, installer command lines, or exported diagnostic bundles. |
-| `SEC-003` | A Garage61 credential entered in Settings MUST persist across app use and PC transfer only through an explicitly designed credential representation. |
-| `SEC-004` | Credential storage MUST describe its portability/security tradeoff truthfully. If encrypted to one Windows account or machine, the archive MUST say that re-entry is required after transfer. |
+| `SEC-003` | A Garage61 credential entered in Connections MUST persist during normal use for the same Windows user and machine in protected machine storage. It MUST NOT be written to the portable Documents archive or silently transfer to another PC. |
+| `SEC-004` | Migration MUST restore nonsecret Garage61 and AI connection preferences while clearly requesting reconnection. Legacy portable secrets MUST be moved to protected machine storage when possible, removed from portable files, and redacted from logs, support data, exports, and migration records. |
 | `SEC-005` | Secret reads and writes MUST use least-privilege file permissions reasonably available to the per-user application. |
 | `SEC-006` | Support details MUST redact tokens, authorization headers, cookies, private paths when unnecessary, and raw telemetry payloads. |
 | `SEC-007` | Raw personal IBT files and user setup files MUST NOT enter the public or private source repository unless explicitly sanitized and approved as fixtures. |
@@ -33,6 +33,6 @@ The source repository contains application source, deterministic engine source, 
 
 Implementation references: `SettingsStore.cs`, `Garage61CredentialStore.cs`, `DurableArchive.cs`, `secure_store.py`, `path_security.py`, and `.gitignore`.
 
-## Known design tension
+## Credential portability decision
 
-The original product preference asks for a key that follows the portable folder. Strong machine-bound encryption conflicts with that behavior. The implementation and UI must choose and document a concrete model rather than claiming both seamless portability and machine-bound secrecy. This remains a suitable target for agentic security criticism.
+External-service credentials are deliberately machine-bound. Copying `Documents\iRacing Coach` restores user-created state and ordinary preferences, but Garage61 and AI require one reconnection on the destination Windows account. This resolves the earlier portability/security tension in favor of preventing portable secrets.
