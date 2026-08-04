@@ -247,6 +247,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "IncidentPoints");
         StringAssert.Contains(telemetry, "@($\"x{points}\")");
         StringAssert.Contains(telemetry, "ShowPitPopover");
+        StringAssert.Contains(telemetry, "PitPopoverAbove");
+        StringAssert.Contains(telemetry, "translateY(-100%)");
         StringAssert.Contains(telemetry, "Damage repaired");
         StringAssert.Contains(telemetry, "Race remaining");
         StringAssert.Contains(telemetry, "Show all");

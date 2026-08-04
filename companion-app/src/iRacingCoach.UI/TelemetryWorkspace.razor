@@ -178,6 +178,7 @@
     private int? ActivePitLap { get; set; }
     private double PitPopoverX { get; set; }
     private double PitPopoverY { get; set; }
+    private bool PitPopoverAbove { get; set; }
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
@@ -303,13 +304,12 @@
         var width = viewport.Length > 0 ? viewport[0] : 1280;
         var height = viewport.Length > 1 ? viewport[1] : 800;
         PitPopoverX = Math.Clamp(args.ClientX + 14, 12, Math.Max(12, width - 326));
-        PitPopoverY = args.ClientY > height / 2
-            ? Math.Max(12, args.ClientY - 350)
-            : Math.Min(args.ClientY + 14, Math.Max(12, height - 370));
+        PitPopoverAbove = args.ClientY > height / 2;
+        PitPopoverY = PitPopoverAbove ? args.ClientY - 12 : args.ClientY + 12;
         ActivePitLap = lap;
     }
     private void HidePitPopover() => ActivePitLap = null;
-    private string PitPopoverStyle => $"left:{F(PitPopoverX)}px;top:{F(PitPopoverY)}px";
+    private string PitPopoverStyle => $"left:{F(PitPopoverX)}px;top:{F(PitPopoverY)}px;transform:{(PitPopoverAbove ? "translateY(-100%)" : "none")}";
     private AnalysisRun? RunForLap(int lap)
     {
         var exact = Workspace.Runs.FirstOrDefault(run => run.Laps.Contains(lap));
