@@ -164,6 +164,11 @@ def synthetic_telemetry(lap_count: int = 8) -> dict:
                 "Drivers": [{"CarIdx": 0, "CarID": 123, "CarScreenName": "NASCAR Truck", "CarPath": "truck"}],
             },
             "CarSetup": {"Chassis": {"Front": {"Cross Weight": "50.0 %"}}},
+            "SplitTimeInfo": {"Sectors": [
+                {"SectorNum": 0, "SectorStartPct": 0.0},
+                {"SectorNum": 1, "SectorStartPct": 0.333333},
+                {"SectorNum": 2, "SectorStartPct": 0.666667},
+            ]},
             "SessionInfo": {"Sessions": [{"SessionType": "Race", "SessionLaps": str(lap_count)}]},
         },
     }
@@ -618,10 +623,12 @@ class AnalysisEngineTests(unittest.TestCase):
         )
         first_point = traces["traces"][0]["points"][0]
         self.assertIn("speed_mph", first_point)
+        self.assertIn("session_time_s", first_point)
         self.assertIn("brake", first_point)
         self.assertIn("tire_stress_proxy", first_point)
         self.assertEqual(traces["tire_stress"]["evidence_class"], "proxy")
         self.assertIn("not per-lap tread wear", traces["tire_stress"]["definition"])
+        self.assertEqual(traces["sector_start_pcts"], [0.0, 0.333333, 0.666667])
         timeline = analysis["race_timeline"]
         event_types = [event["event_type"] for event in timeline["events"]]
         self.assertEqual(event_types[0], "race_start")

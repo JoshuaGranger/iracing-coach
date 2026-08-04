@@ -314,6 +314,7 @@ public sealed class QaFixtureBackendClient : IBackendClient
         return new JsonObject
         {
             ["tire_stress_definition"] = "Relative controls-and-load proxy derived from recorded channels; not measured tire wear.",
+            ["sector_start_pcts"] = new JsonArray(0.0, 0.333333, 0.666667),
             ["traces"] = output
         };
     }

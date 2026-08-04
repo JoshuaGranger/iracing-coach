@@ -235,6 +235,18 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "pit-lap-popover");
         StringAssert.Contains(telemetry, "ProjectedMapPercent");
         StringAssert.Contains(telemetry, "MapPointAt(Cursor)");
+        StringAssert.Contains(telemetry, "CleanLapFilterChanged");
+        StringAssert.Contains(telemetry, "Selected.RemoveWhere");
+        StringAssert.Contains(telemetry, "SectorDuration");
+        StringAssert.Contains(telemetry, "session-fastest");
+        StringAssert.Contains(telemetry, "IncidentPoints");
+        StringAssert.Contains(telemetry, "var hue = 280 * fraction");
+        Assert.DoesNotContain("Other laps", telemetry);
+        Assert.DoesNotContain("lap-focus-action", telemetry);
+
+        var coachCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        StringAssert.Contains(coachCss, "--font-size-min: 11px");
+        Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(coachCss, "font-size:\\s*(9|10)px"));
         Assert.DoesNotContain("<span class=\"lap-state", telemetry);
         StringAssert.Contains(telemetry, "stroke-width=\"1.35\"");
         StringAssert.Contains(telemetry, "140 - (p.Y");

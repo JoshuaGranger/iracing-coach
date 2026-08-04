@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "bundle": "iracing-coach-companion-app-build-inputs",
   "scope": "clean build inputs; private data and credentials excluded",
-  "generated_at_utc": "2026-08-03T22:04:22.518890Z",
+  "generated_at_utc": "2026-08-04T15:22:24.318057Z",
   "excluded": [
     "data/ (optional private regression corpus)",
     ".git/",
@@ -69,8 +69,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/analysis_engine.py",
-      "bytes": 233301,
-      "sha256": "1c0f1cc593d7f79bde693c31c921b0add31d9760043442af689df0d93245d33c"
+      "bytes": 233897,
+      "sha256": "bafbe32caa432dca928118411ab0abf5d15d1d2ecf400423372aa148fd1275aa"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/coach_cli.py",
@@ -164,8 +164,8 @@
     },
     {
       "path": "iracing-coach/tests/test_analysis_engine.py",
-      "bytes": 31623,
-      "sha256": "db98ffe4652d9a7d8cff7d93f2f5b426556a0980b35b80b51b26aab9d109de22"
+      "bytes": 31997,
+      "sha256": "c067499ba26da3331634a3a8e45a817e61156a1512a09811780256c5d458fe3a"
     },
     {
       "path": "iracing-coach/tests/test_coach_cli.py",
@@ -560,6 +560,6 @@
   ],
   "totals": {
     "file_count": 109,
-    "bytes": 1958401
+    "bytes": 1959371
   }
 }

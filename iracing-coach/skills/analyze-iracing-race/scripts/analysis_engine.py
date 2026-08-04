@@ -995,6 +995,15 @@ def _lap_trace_payload(
     longitudinal_accel = table.get("LongAccel", default=None)
     latitude = table.get("Lat", default=None)
     longitude = table.get("Lon", default=None)
+    session_time = table.get("SessionTime", "SessionTimeOfDay", default=None)
+    raw_sectors = _path_get(table.session_info, "SplitTimeInfo", "Sectors") or []
+    sector_start_pcts = sorted({
+        value
+        for item in raw_sectors
+        if isinstance(item, Mapping)
+        and (value := _finite(item.get("SectorStartPct"))) is not None
+        and 0.0 <= value < 1.0
+    })
 
     def values(indices: Sequence[int], series: Sequence[Any]) -> list[float]:
         return [
@@ -1036,6 +1045,7 @@ def _lap_trace_payload(
             longitudinal_g = [value / 9.80665 for value in values(indices, longitudinal_accel)]
             latitudes = values(indices, latitude)
             longitudes = values(indices, longitude)
+            session_times = values(indices, session_time)
 
             representative_speed = _median(speeds)
             representative_steering = signed_peak(steerings)
@@ -1051,6 +1061,7 @@ def _lap_trace_payload(
             points.append(
                 {
                     "lap_pct": round((bucket + 0.5) / maximum_bins, 6),
+                    "session_time_s": _round(_median(session_times), 6),
                     "speed_mph": _round((representative_speed or 0.0) * 2.236936, 3),
                     "speed_min_mph": _round(min(speeds) * 2.236936 if speeds else None, 3),
                     "speed_max_mph": _round(max(speeds) * 2.236936 if speeds else None, 3),
@@ -1094,6 +1105,7 @@ def _lap_trace_payload(
     return {
         "schema_version": 1,
         "distance_bins_per_lap": maximum_bins,
+        "sector_start_pcts": [_round(value, 6) for value in sector_start_pcts],
         "trace_count": len(traces),
         "downsampling": (
             "lap-distance bins retain representative values plus speed range, "

@@ -318,6 +318,14 @@ public static class RuntimeMapper
                 "Excluded from the overall grade until evidence exists.")).ToArray();
 
         var damageSummary = Object(damage, "summary");
+        var incidentPoints = Object(damage, "incident_points");
+        var incidents = Array(incidentPoints, "events")
+            .Select(item => new AnalysisIncident(Integer(item, "candidate_lap"), (int)Math.Round(Number(item, "points_added") ?? 0)))
+            .Where(item => item.Lap > 0 && item.Points > 0)
+            .GroupBy(item => item.Lap)
+            .Select(group => new AnalysisIncident(group.Key, group.Sum(item => item.Points)))
+            .OrderBy(item => item.Lap)
+            .ToArray();
         var strategyDetails = new AnalysisStrategy(
             Number(strategy, "measured_green_fuel_gal_per_lap"), Number(strategy, "measured_caution_fuel_gal_per_lap"),
             NumberOrFirst(forecast, "all_green_range_laps"), NullableInteger(forecast, "minimum_stops_all_green"),
@@ -330,7 +338,7 @@ public static class RuntimeMapper
             Integer(damageSummary, "pit_road_episodes"), Integer(damageSummary, "tow_episodes"),
             Integer(damageSummary, "recorded_repair_episodes"), Integer(damageSummary, "confirmed_fast_repair_uses"),
             Number(damageSummary, "total_pit_road_time_s"), Number(damageSummary, "total_repair_work_completed_s"),
-            Array(damage, "limitations").Select(Value).Where(value => value.Length > 0).ToArray());
+            Array(damage, "limitations").Select(Value).Where(value => value.Length > 0).ToArray(), incidents);
 
         return new AnalysisWorkspace(
             Integer(view, "schema_version"), Text(response, "analysis_id") ?? string.Empty,
@@ -343,7 +351,8 @@ public static class RuntimeMapper
             Humanize(Text(forecast, "status")) ?? Humanize(Text(strategy, "confidence")) ?? "Insufficient recorded strategy evidence",
             Humanize(Text(damage, "status")) ?? "Unavailable", strategyDetails, damageDetails, Text(identity, "setup_fingerprint") ?? string.Empty,
             Humanize(Text(quality, "confidence")) ?? "Unknown", Number(timing, "total_ms") ?? 0,
-            Text(gradesRoot, "overall_grade") ?? "Not graded", grades);
+            Text(gradesRoot, "overall_grade") ?? "Not graded", grades,
+            Array(traceRoot, "sector_start_pcts").Select(NumberValue).Where(value => value.HasValue).Select(value => value!.Value).Order().ToArray());
     }
 
     public static SetupPackageView SetupPackage(JsonElement response, string requestedCar, string requestedTrack, string requestedSeason, string purpose)

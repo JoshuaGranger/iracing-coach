@@ -263,6 +263,8 @@ public sealed record AnalysisStrategy(
     IReadOnlyList<string> Assumptions,
     IReadOnlyList<string> Limitations);
 
+public sealed record AnalysisIncident(int Lap, int Points);
+
 public sealed record AnalysisDamage(
     int PitRoadEpisodes,
     int TowEpisodes,
@@ -270,7 +272,8 @@ public sealed record AnalysisDamage(
     int FastRepairUses,
     double? PitRoadTimeSeconds,
     double? RepairWorkSeconds,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations,
+    IReadOnlyList<AnalysisIncident>? Incidents = null);
 
 public sealed record TrackShapePoint(double LapPercent, double X, double Y);
 public sealed record TrackSegment(int Number, double StartPercent, double EndPercent, bool WrapsStartFinish, string Label);
@@ -314,7 +317,8 @@ public sealed record AnalysisWorkspace(
     string DataConfidence,
     double BackendElapsedMilliseconds,
     string OverallGrade,
-    IReadOnlyList<RaceGrade> Grades);
+    IReadOnlyList<RaceGrade> Grades,
+    IReadOnlyList<double>? SectorStartPercents = null);
 
 public sealed class JobItem
 {

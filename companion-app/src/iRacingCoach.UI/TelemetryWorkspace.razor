@@ -17,12 +17,13 @@
         <aside class="lap-rail" aria-label="Runs and laps">
             <div class="lap-rail-header">
                 <div><strong>Laps &amp; runs</strong><span>@Selected.Count selected</span></div>
-                <label class="clean-lap-filter"><input type="checkbox" @bind="CleanLapsOnly" /> Clean laps</label>
+                <label class="clean-lap-filter"><input type="checkbox" checked="@CleanLapsOnly" @onchange="CleanLapFilterChanged" /> Clean laps</label>
             </div>
             <div class="lap-rail-scroll">
-                @foreach (var group in LapGroups)
+                @foreach (var indexedGroup in LapGroups.Select((group, index) => new { Group = group, Index = index }))
                 {
-                    <details class="lap-run-group" open>
+                    var group = indexedGroup.Group;
+                    <details class="lap-run-group @(indexedGroup.Index > 0 ? "separated" : null)" open>
                         <summary>
                             <span class="run-summary-name">@group.Label</span>
                             @if (group.Run is { } summaryRun)
@@ -37,14 +38,26 @@
                         </summary>
                         @foreach (var trace in group.Traces)
                         {
-                            var lap = LapInfo(trace.Lap);
                             var run = RunForLap(trace.Lap);
                             var pitLap = trace.PitTimeSeconds.GetValueOrDefault() > 0;
                             var isFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
-                            <button class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(FocusLap == trace.Lap ? "focused" : null) @(pitLap ? "pit-lap" : null)" style="@($"--lap-color:{LapColor(trace.Lap)}")" aria-pressed="@Selected.Contains(trace.Lap)" @onclick="() => SelectLap(trace.Lap)">
-                                <span class="lap-selection"><span class="lap-flag @LapStateClass(trace, lap)" title="@LapState(trace, lap)" aria-label="@LapState(trace, lap)"><ProductIcon Name="race" Size="12" /></span><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
+                            <button class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(pitLap ? "pit-lap" : null)" style="@($"--lap-color:{LapColor(trace.Lap)}")" aria-pressed="@Selected.Contains(trace.Lap)" @onclick="() => SelectLap(trace.Lap)">
+                                <span class="lap-selection"><span class="lap-flag @LapFlagClass(trace)" title="@LapFlagLabel(trace)" aria-label="@LapFlagLabel(trace)"><ProductIcon Name="race" Size="12" /></span><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
                                 <span class="lap-time @(isFastest ? "fastest" : null)">@LapTime(trace.LapTimeSeconds)@if (!isFastest && trace.LapTimeSeconds.HasValue && FastestLapTime < double.MaxValue) { <small>(+@((trace.LapTimeSeconds.Value - FastestLapTime).ToString("0.000")))</small> }</span>
-                                <span class="lap-focus-action" @onclick:stopPropagation="true" @onclick="() => SetFocus(trace.Lap)">@(FocusLap == trace.Lap ? "Focused" : "Focus")</span>
+                                <span class="lap-row-signals">
+                                    @if (pitLap) { <span class="pit-badge" title="Pit stop recorded">PIT</span> }
+                                    @if (IncidentPoints(trace.Lap) is var points && points > 0) { <span class="incident-badge severity-@IncidentSeverity(points)" title="@($"{points} incident point{(points == 1 ? string.Empty : "s")} on lap {trace.Lap}")">&times;@points</span> }
+                                    @if (SectorStarts.Count > 1)
+                                    {
+                                    <span class="sector-squares" aria-label="Sector performance">
+                                        @for (var sector = 0; sector < SectorStarts.Count; sector++)
+                                        {
+                                            var sectorState = SectorState(trace, sector);
+                                            <i class="sector-square @sectorState.Class" title="@sectorState.Title"></i>
+                                        }
+                                    </span>
+                                    }
+                                </span>
                                 @if (pitLap && run is not null)
                                 {
                                     <span class="pit-lap-popover" role="tooltip">
@@ -66,7 +79,7 @@
                     </details>
                 }
             </div>
-            <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ClearFocus">Show all</button></div>
+            <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button></div>
         </aside>
 
         <div class="telemetry-grid">
@@ -150,7 +163,6 @@
     private string? _analysisId;
     private string Mode { get; set; } = "speed";
     private bool CleanLapsOnly { get; set; }
-    private int? FocusLap { get; set; }
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
@@ -181,22 +193,25 @@
         ResetSelection();
     }
 
-    private IEnumerable<AnalysisLapTrace> SelectedTraces => Workspace.Traces.Where(trace => Selected.Contains(trace.Lap) && (!FocusLap.HasValue || trace.Lap == FocusLap));
+    private IEnumerable<AnalysisLapTrace> SelectedTraces => Workspace.Traces.Where(trace => Selected.Contains(trace.Lap));
     private IEnumerable<LapGroup> LapGroups
     {
         get
         {
-            var eligible = Workspace.Traces.Where(trace => !CleanLapsOnly || IsClean(trace));
-            var assigned = new HashSet<int>();
-            foreach (var run in Workspace.Runs)
+            var eligible = Workspace.Traces.Where(trace => !CleanLapsOnly || IsClean(trace)).OrderBy(trace => trace.Lap).ToArray();
+            var runs = Workspace.Runs.Where(run => run.Laps.Count > 0).OrderBy(run => run.Laps.Min()).ToArray();
+            if (runs.Length == 0)
             {
-                var traces = eligible.Where(trace => run.Laps.Contains(trace.Lap)).ToArray();
-                if (traces.Length == 0) continue;
-                foreach (var trace in traces) assigned.Add(trace.Lap);
-                yield return new LapGroup($"Run {run.Number}", traces, run);
+                if (eligible.Length > 0) yield return new LapGroup("Recorded laps", eligible, null);
+                yield break;
             }
-            var remainder = eligible.Where(trace => !assigned.Contains(trace.Lap)).ToArray();
-            if (remainder.Length > 0) yield return new LapGroup(Workspace.Runs.Count == 0 ? "Recorded laps" : "Other laps", remainder, null);
+            for (var index = 0; index < runs.Length; index++)
+            {
+                var start = index == 0 ? int.MinValue : runs[index].Laps.Min();
+                var end = index + 1 < runs.Length ? runs[index + 1].Laps.Min() : int.MaxValue;
+                var traces = eligible.Where(trace => trace.Lap >= start && trace.Lap < end).ToArray();
+                if (traces.Length > 0) yield return new LapGroup($"Run {runs[index].Number}", traces, runs[index]);
+            }
         }
     }
     private double FastestLapTime => Workspace.Traces.Where(trace => IsClean(trace) && trace.LapTimeSeconds.HasValue).Select(trace => trace.LapTimeSeconds!.Value).DefaultIfEmpty(double.MaxValue).Min();
@@ -222,16 +237,24 @@
         if (!Selected.Remove(lap)) { if (Selected.Count >= 5) Selected.Remove(Selected.First()); Selected.Add(lap); }
         if (Selected.Count == 0) Selected.Add(lap);
     }
-    private void SelectLap(int lap) { ToggleLap(lap); if (FocusLap.HasValue && !Selected.Contains(lap)) FocusLap = null; }
-    private void SetFocus(int lap) { if (!Selected.Contains(lap)) ToggleLap(lap); FocusLap = FocusLap == lap ? null : lap; }
-    private void ClearFocus() => FocusLap = null;
+    private void SelectLap(int lap) => ToggleLap(lap);
+    private void CleanLapFilterChanged(ChangeEventArgs args)
+    {
+        CleanLapsOnly = args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        if (!CleanLapsOnly) return;
+        Selected.RemoveWhere(lap => Workspace.Traces.FirstOrDefault(trace => trace.Lap == lap) is not { } trace || !IsClean(trace));
+        if (Selected.Count == 0)
+        {
+            var fastestClean = Workspace.Traces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).FirstOrDefault();
+            if (fastestClean is not null) Selected.Add(fastestClean.Lap);
+        }
+    }
     private void ResetSelection()
     {
-        Selected.Clear(); FocusLap = null;
+        Selected.Clear();
         foreach (var trace in Workspace.Traces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).Take(3)) Selected.Add(trace.Lap);
         if (Selected.Count == 0) foreach (var trace in Workspace.Traces.Take(3)) Selected.Add(trace.Lap);
     }
-    private AnalysisLap? LapInfo(int lap) => Workspace.Laps.FirstOrDefault(item => item.Lap == lap);
     private AnalysisRun? RunForLap(int lap)
     {
         var exact = Workspace.Runs.FirstOrDefault(run => run.Laps.Contains(lap));
@@ -241,9 +264,10 @@
             .OrderByDescending(run => run.Laps.Max())
             .FirstOrDefault();
     }
-    private static bool IsClean(AnalysisLapTrace trace) => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
-    private static string LapState(AnalysisLapTrace trace, AnalysisLap? lap) => !trace.Complete ? "Incomplete" : trace.PitTimeSeconds.GetValueOrDefault() > 0 ? "Pit" : trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) || trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) ? "Yellow" : lap?.Confounded == true ? "Affected" : "Green";
-    private static string LapStateClass(AnalysisLapTrace trace, AnalysisLap? lap) => LapState(trace, lap).ToLowerInvariant();
+    private bool IsClean(AnalysisLapTrace trace) => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && IncidentPoints(trace.Lap) == 0 && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
+    private static string LapFlagLabel(AnalysisLapTrace trace) => !trace.Complete ? "Incomplete lap" : IsCaution(trace) ? "Caution lap" : "Green-flag lap";
+    private static string LapFlagClass(AnalysisLapTrace trace) => !trace.Complete ? "incomplete" : IsCaution(trace) ? "yellow" : "green";
+    private static bool IsCaution(AnalysisLapTrace trace) => trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) || trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
     private async Task ChartMoved(MouseEventArgs args)
     {
         if (_chartMovePending) return;
@@ -527,8 +551,63 @@
         var margin = range - lapsToFinish;
         return margin >= 0 ? $"{range:0.0} laps · enough (+{margin:0.0})" : $"{range:0.0} laps · {-margin:0.0} short";
     }
+    private int IncidentPoints(int lap) => Workspace.Damage.Incidents?.Where(item => item.Lap == lap).Sum(item => item.Points) ?? 0;
+    private static string IncidentSeverity(int points) => points >= 4 ? "high" : points >= 2 ? "medium" : "low";
+    private IReadOnlyList<double> SectorStarts => Workspace.SectorStartPercents?.Where(value => value >= 0 && value < 1).Distinct().Order().ToArray() ?? [];
+    private SectorStatus SectorState(AnalysisLapTrace trace, int sector)
+    {
+        var duration = SectorDuration(trace, sector);
+        if (!duration.HasValue) return new SectorStatus("unavailable", $"S{sector + 1}: not recorded");
+        if (!IsClean(trace)) return new SectorStatus("neutral", $"S{sector + 1}: {duration.Value:0.000} s · lap excluded from clean comparison");
+        var comparable = Workspace.Traces.Where(IsClean)
+            .Select(item => new { Trace = item, Duration = SectorDuration(item, sector) })
+            .Where(item => item.Duration.HasValue)
+            .ToArray();
+        var sessionBest = comparable.Select(item => item.Duration!.Value).DefaultIfEmpty(double.MaxValue).Min();
+        if (Math.Abs(duration.Value - sessionBest) < .0005)
+            return new SectorStatus("session-fastest", $"S{sector + 1}: {duration.Value:0.000} s · session fastest");
+        var priorBest = comparable.Where(item => item.Trace.Lap < trace.Lap).Select(item => item.Duration!.Value).DefaultIfEmpty(double.MaxValue).Min();
+        if (duration.Value < priorBest)
+            return new SectorStatus("new-best", $"S{sector + 1}: {duration.Value:0.000} s · new best at this point");
+        return new SectorStatus("neutral", $"S{sector + 1}: {duration.Value:0.000} s");
+    }
+    private double? SectorDuration(AnalysisLapTrace trace, int sector)
+    {
+        if (trace.Points.Count < 2) return null;
+        if (sector < 0 || sector >= SectorStarts.Count) return null;
+        var startPercent = SectorStarts[sector];
+        var endPercent = sector + 1 < SectorStarts.Count ? SectorStarts[sector + 1] : 1d;
+        var start = TimeAtPercent(trace.Points, startPercent);
+        var end = TimeAtPercent(trace.Points, endPercent);
+        return start.HasValue && end.HasValue && end.Value >= start.Value ? end.Value - start.Value : null;
+    }
+    private static double? TimeAtPercent(IReadOnlyList<AnalysisTracePoint> points, double target)
+    {
+        var usable = points.Where(point => point.SessionTimeSeconds.HasValue).OrderBy(point => point.LapPercent).ToArray();
+        if (usable.Length == 0) return null;
+        if (target <= usable[0].LapPercent) return usable[0].SessionTimeSeconds;
+        if (target >= usable[^1].LapPercent) return usable[^1].SessionTimeSeconds;
+        for (var index = 1; index < usable.Length; index++)
+        {
+            if (usable[index].LapPercent < target) continue;
+            var before = usable[index - 1];
+            var after = usable[index];
+            var span = after.LapPercent - before.LapPercent;
+            if (span <= .000001) return after.SessionTimeSeconds;
+            var fraction = (target - before.LapPercent) / span;
+            return before.SessionTimeSeconds!.Value + (after.SessionTimeSeconds!.Value - before.SessionTimeSeconds.Value) * fraction;
+        }
+        return null;
+    }
     private static string FriendlyZone(TrackSegment zone) => string.IsNullOrWhiteSpace(zone.Label) || zone.Label.StartsWith("Load zone", StringComparison.OrdinalIgnoreCase) ? $"C{zone.Number}" : zone.Label;
-    private string LapColor(int lap) { var colors = new[] { "#78A7EF", "#60D1A2", "#F4B64A", "#B993F5", "#F06E67", "#4DD7D0", "#E67EC5", "#A9D34F" }; var index = Workspace.Traces.ToList().FindIndex(trace => trace.Lap == lap); return colors[Math.Max(0, index) % colors.Length]; }
+    private string LapColor(int lap)
+    {
+        var laps = Workspace.Traces.Select(trace => trace.Lap).Distinct().OrderBy(value => value).ToArray();
+        var index = Array.IndexOf(laps, lap);
+        var fraction = laps.Length <= 1 ? 0 : Math.Max(0, index) / (double)(laps.Length - 1);
+        var hue = 280 * fraction;
+        return $"hsl({hue.ToString("0.##", CultureInfo.InvariantCulture)} 82% 62%)";
+    }
     private static string LapTime(double? seconds) => seconds is null ? "—" : TimeSpan.FromSeconds(seconds.Value).ToString(@"m\:ss\.fff");
     private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private sealed record PanelSpec(string Key, string Label, string Unit, Func<AnalysisTracePoint, double?> First, Func<AnalysisTracePoint, double?>? Second = null);
@@ -536,4 +615,5 @@
     private sealed record MapSegment(MapPoint A, MapPoint B, string Color);
     private sealed record StripSegment(double X1, double X2, string Color);
     private sealed record LapGroup(string Label, IReadOnlyList<AnalysisLapTrace> Traces, AnalysisRun? Run);
+    private sealed record SectorStatus(string Class, string Title);
 }

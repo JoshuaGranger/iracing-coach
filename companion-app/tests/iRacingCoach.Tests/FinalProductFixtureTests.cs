@@ -56,6 +56,7 @@ public sealed class FinalProductFixtureTests
         Assert.AreEqual("Kentucky Speedway", workspace.Track);
         Assert.AreEqual("Toyota Tundra TRD Pro", workspace.Car);
         Assert.IsGreaterThanOrEqualTo(3, workspace.Traces.Count);
+        CollectionAssert.AreEqual(new[] { 0.0, 0.333333, 0.666667 }, workspace.SectorStartPercents!.ToArray());
         Assert.IsGreaterThanOrEqualTo(100, workspace.TrackShape.Count);
         Assert.HasCount(2, workspace.Segments);
         Assert.IsGreaterThan(100, workspace.Traces.SelectMany(trace => trace.Points).Where(point => point.Rpm.HasValue).Select(point => point.Rpm!.Value).Distinct().Count());
@@ -103,6 +104,8 @@ public sealed class FinalProductFixtureTests
         var repair = await repairBackend.CallToolAsync(Configuration, "analyze_iracing_race", new { selector = "fixture://repair-race" });
         var repairWorkspace = RuntimeMapper.Analysis(repair);
         Assert.IsTrue(repairWorkspace.Damage.PitRoadEpisodes > 0 || repairWorkspace.Damage.RepairEpisodes > 0 || repairWorkspace.Damage.TowEpisodes > 0);
+        Assert.IsNotNull(repairWorkspace.Damage.Incidents);
+        Assert.IsTrue(repairWorkspace.Damage.Incidents.Any(incident => incident.Lap == 30 && incident.Points == 4));
 
         var tuning = await qualifyingBackend.CallToolAsync(Configuration, "recommend_open_setup_tuning", new { });
         Assert.IsFalse(string.IsNullOrWhiteSpace(RuntimeMapper.Tuning(tuning).Change));

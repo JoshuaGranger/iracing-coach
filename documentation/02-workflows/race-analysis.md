@@ -34,11 +34,14 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | --- | --- |
 | `RA-030` | The rail MUST be vertical, independently scrollable, and left of the map/charts. |
 | `RA-031` | Every row MUST render a clear lap number and aligned lap time without redundant state on both sides. The fastest clean time MUST be visibly magenta; other supported deltas MUST appear inline in parentheses after the lap time rather than consuming a second line. |
-| `RA-032` | Rows MUST expose selection color/control and available green, caution, mixed, pit, incomplete, off-track, incident, service, repair, or tow state with text/icon as well as color. |
-| `RA-033` | The rail MUST support multi-select, focus, and clean/green filtering. Its initial comparison SHOULD choose a small useful set rather than every lap. |
+| `RA-032` | Rows MUST expose selection color/control and available green, caution, mixed, pit, incomplete, off-track, incident, service, repair, or tow state with text/icon as well as color. Flag state, pit state, and incident points MUST remain independently visible when they overlap. |
+| `RA-033` | The rail MUST support multi-select and clean/green filtering. Enabling the clean filter MUST remove dirty laps from both the rail and the active trace selection. Its initial comparison SHOULD choose a small useful set rather than every lap. |
 | `RA-034` | Lap zero, partial parade, and otherwise invalid laps MUST NOT enter clean pace or reference selection. |
 | `RA-035` | Tire age, fuel, incident, repair, and fastest/sector markers MUST appear only when supported. |
 | `RA-036` | The rail MUST integrate run boundaries, flag mix, pace, fuel, and measured tire context. Dense secondary run detail MAY use one keyboard-accessible popover rather than a separate page section. A pit-lap hover/focus popup MUST show only supported service facts such as confirmed changed tires, recorded per-corner wear, recorded fuel added, service time, and estimated fuel range/sufficiency; an unavailable field MUST NOT be guessed. |
+| `RA-037` | Laps MUST remain in chronological start-to-finish order. Run headers and horizontal separators MUST show run boundaries without moving unassigned caution, pit, incomplete, or incident laps into an “Other laps” bucket. |
+| `RA-038` | Per-lap trace colors MUST progress continuously from red through orange, yellow, green, blue, indigo, and violet across the full recorded lap count; spacing between colors MUST be derived from that count. |
+| `RA-039` | When trace timing and the session's actual sector definitions support it, each row SHOULD show sector markers derived from recorded session time at those boundaries. A chronological new best is green and the final session-fastest sector is magenta. The UI MUST NOT divide a lap into manufactured equal sectors; unsupported sectors are omitted. |
 
 ## Map and telemetry
 
