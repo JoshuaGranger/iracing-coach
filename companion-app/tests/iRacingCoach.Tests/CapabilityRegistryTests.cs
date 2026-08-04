@@ -275,7 +275,8 @@ public sealed class CapabilityRegistryTests
         var coachCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(coachCss, "--font-size-min: 11.67px");
         StringAssert.Contains(coachCss, ".pit-lap-popover { position: fixed");
-        StringAssert.Contains(coachCss, "grid-template-columns: 24px 42px minmax(128px,1fr) 22px 28px 28px");
+        StringAssert.Contains(coachCss, "grid-template-columns: 24px 42px minmax(144px,1fr) 22px 28px 28px");
+        StringAssert.Contains(coachCss, "grid-template-columns: 332px minmax(0,1fr)");
         Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(coachCss, "font-size:\\s*(9|10)px"));
         Assert.DoesNotContain("<span class=\"lap-state", telemetry);
         StringAssert.Contains(telemetry, "stroke-width=\"1.35\"");
