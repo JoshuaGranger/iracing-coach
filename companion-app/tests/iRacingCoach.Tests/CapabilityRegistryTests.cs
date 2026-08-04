@@ -254,6 +254,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "@onwheel=\"ChartWheel\"");
         StringAssert.Contains(telemetry, "@onwheel:preventDefault");
         StringAssert.Contains(telemetry, "TooltipCapacity");
+        StringAssert.Contains(telemetry, "private const int TooltipWidth = 164");
+        Assert.DoesNotContain(">Lap @trace.value.Lap</svg:text>", telemetry);
         StringAssert.Contains(telemetry, "CursorChartX - TooltipWidth - 12 >= PlotLeft");
         StringAssert.Contains(telemetry, "private const int ChartRowHeight = 82");
         StringAssert.Contains(telemetry, "iracingCoach.elementSize");

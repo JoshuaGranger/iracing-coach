@@ -60,7 +60,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-049` | A target/reference trace MUST identify provenance, scope, scenario, and confidence and MUST require a usable aligned comparison. |
 | `RA-050` | Map color controls MUST sit with the map, identify the lap they depict, and never appear to control an adjacent chart. |
 | `RA-051` | The crosshair MUST derive from the rendered chart bounds so Windows scaling and responsive layout cannot offset the pointer from the inspected sample. |
-| `RA-052` | Each chart row MUST show a shared-cursor value for every selected lap, using lap number plus the same color marker as the corresponding trace. |
+| `RA-052` | Each chart row MUST show a shared-cursor value for every selected lap, using the compact bare lap number plus the same color marker as the corresponding trace. The repeated word “Lap” MUST be omitted from cursor rows. |
 | `RA-053` | Steering MUST be presented as human-readable left/right degrees. Analog display traces MAY use slight documented smoothing, but it MUST preserve braking, throttle, and steering events and MUST NOT alter analysis calculations. |
 | `RA-054` | Map rendering MUST preserve the recorded driving direction after conversion into screen coordinates. Zero brake MUST render as neutral track color; increasing brake input MUST increase, not decrease, brake emphasis. |
 | `RA-055` | Pointer conversion MUST use the SVG's rendered screen transform, including view-box scaling and letterboxing. The map SHOULD use the available panel height while preserving track shape rather than leaving a large unused area below a miniature map. |

@@ -139,12 +139,12 @@
                         @if (ChartHovered)
                         {
                         <g class="trace-cursor-tooltip">
-                            <rect x="@TooltipX" y="@(top + 4)" width="186" height="@(14 + TooltipTraces.Count * 20)" rx="4" />
+                            <rect x="@TooltipX" y="@(top + 4)" width="@TooltipWidth" height="@(14 + TooltipTraces.Count * 20)" rx="4" />
                             @foreach (var trace in TooltipTraces.Select((value, index) => new { value, index }))
                             {
-                                <svg:text x="@(TooltipX + 8)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-lap">Lap @trace.value.Lap</svg:text>
-                                <rect x="@(TooltipX + 52)" y="@(top + 13 + trace.index * 20)" width="10" height="10" rx="1" fill="@LapColor(trace.value.Lap)" />
-                                <svg:text x="@(TooltipX + 69)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-value">@CursorValue(panel, trace.value)</svg:text>
+                                <svg:text x="@(TooltipX + 8)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-lap">@trace.value.Lap</svg:text>
+                                <rect x="@(TooltipX + 30)" y="@(top + 13 + trace.index * 20)" width="10" height="10" rx="1" fill="@LapColor(trace.value.Lap)" />
+                                <svg:text x="@(TooltipX + 47)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-value">@CursorValue(panel, trace.value)</svg:text>
                             }
                         </g>
                         }
@@ -185,7 +185,7 @@
     private const int ChartRowHeight = 82;
     private const int ChartPlotHeight = 68;
     private const int TooltipRowHeight = 20;
-    private const int TooltipWidth = 186;
+    private const int TooltipWidth = 164;
     private static readonly (string Key, string Label)[] Modes = [("speed", "Speed"), ("throttle", "Throttle"), ("brake", "Brake"), ("steering", "Steering"), ("stress", "Tire load")];
     private static readonly PanelSpec[] Panels =
     [
