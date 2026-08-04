@@ -301,6 +301,9 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".conditions-grid { display: grid; grid-template-columns: repeat(3");
         StringAssert.Contains(coachCss, "grid-template-columns: 70px 42px minmax(144px,1fr) 22px 60px 28px 64px");
         StringAssert.Contains(coachCss, "grid-template-columns: 474px minmax(0,1fr)");
+        StringAssert.Contains(coachCss, ".telemetry-workstation-grid > .telemetry-grid { align-self: start; }");
+        StringAssert.Contains(coachCss, ".lap-rail { align-self: stretch; height: auto; min-height: 0; max-height: none; contain: size; }");
+        Assert.DoesNotContain(".lap-rail { align-self: stretch; height: 100%", coachCss);
         StringAssert.Contains(coachCss, ".lap-flag.checkered");
         StringAssert.Contains(coachCss, ".telemetry-empty-selection");
         Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(coachCss, "font-size:\\s*(9|10)px"));
