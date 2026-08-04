@@ -4,7 +4,7 @@ This tree is the reviewable product contract for iRacing Coach. Its primary purp
 
 1. **Intent** — what the application is required to do.
 2. **Reality** — what the current version actually implements.
-3. **Evidence** — what tests, fixtures, screenshots, packages, or HOME_QA observations prove.
+3. **Evidence** — what tests, fixtures, screenshots, packages, or direct simulator observations prove.
 
 Passing tests does not make a requirement correct. Written requirements can be ambiguous, contradictory, unsafe, or impossible. Working code can satisfy the wrong requirement. This documentation is structured so an agent can criticize both directions.
 
@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current implementation snapshot](06-reality/implementation-snapshot-0.11.1.md)
+7. [Current implementation snapshot](06-reality/implementation-snapshot-post-0.11.1-race-analysis.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -50,6 +50,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Acceptance, test, and release](05-quality/acceptance-test-and-release.md)
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
 - `06-reality`
+  - [Current-main Race Analysis snapshot](06-reality/implementation-snapshot-post-0.11.1-race-analysis.md)
   - [Implementation snapshot: 0.11.1](06-reality/implementation-snapshot-0.11.1.md)
   - [Prior implementation snapshot: 0.11.0](06-reality/implementation-snapshot-0.11.0.md)
   - [Prior implementation snapshot: 0.10.0](06-reality/implementation-snapshot-0.10.0.md)
@@ -59,7 +60,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Review protocol](07-agent-review/review-protocol.md)
   - [Finding template](07-agent-review/finding-template.md)
   - [Change impact checklist](07-agent-review/change-impact-checklist.md)
-  - [HOME_QA protocol](07-agent-review/home-qa-protocol.md)
+  - [Retired remote-QA protocol](07-agent-review/home-qa-protocol.md)
 
 ## Stable requirement identifiers
 
@@ -73,16 +74,16 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 - **Not implemented:** no complete production behavior exists.
 - **Unsupported:** intentionally excluded because the source or permission contract cannot support it.
 - **Fixture verified:** proven only with the isolated sanitized QA mode.
-- **HOME_QA pending:** requires installed-app or real-simulator evidence from Joshua's racing PC.
-- **Accepted:** may be assigned only from an explicit HOME_QA release decision.
+- **Real-system verified:** directly observed with the named executable, hardware, simulator/source, scenario, and date.
+- **Accepted:** explicitly accepted by Joshua for the named scope or release artifact.
 
 ## Current baseline
 
-- Application version: `0.11.1` development candidate
+- Application version: post-`0.11.1` current-main development candidate; no new package version is claimed by the Race Analysis round
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
 - Local verification: 74 .NET tests and 173 Python tests passed before packaging
 - Installer lifecycle: local guarded install/upgrade/rollback/uninstall verification passed
-- Final acceptance: **HOME_QA pending**
+- Current focused acceptance: Home and Race Analysis fixture interaction plus repository tests verified; broader real-session and packaged-release evidence remains scoped per change
 
-The 0.11.1 implementation and artifact evidence is summarized in `06-reality/implementation-snapshot-0.11.1.md` and `companion-app/RELEASE_0.11.1.md`. The previous complete release certification remains in `companion-app/RELEASE_0.11.0.md`; unchanged installer lifecycle behavior was deliberately not re-certified for this rendering-only iteration. Build binaries and private user data are not part of the source repository.
+The current Race Analysis implementation is summarized in `06-reality/implementation-snapshot-post-0.11.1-race-analysis.md`. The 0.11.1 artifact evidence remains in `06-reality/implementation-snapshot-0.11.1.md` and `companion-app/RELEASE_0.11.1.md`. Unchanged installer lifecycle behavior was deliberately not re-certified for this focused UI iteration. Build binaries and private user data are not part of the source repository.

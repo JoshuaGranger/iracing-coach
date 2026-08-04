@@ -37,7 +37,7 @@ Use this before accepting a material product, data, integration, or release chan
 ## Verification and release
 
 - Which .NET, Python, contract, fixture, visual, performance, installer, and privacy tests must change?
-- Does the change require real telemetry, real Garage61, or HOME_QA evidence?
+- Does the change require direct real telemetry, real Garage61, or representative installed-system evidence?
 - Was the packaged executable tested rather than only the development host?
 - Are release notes, compatibility contract, hashes, traceability matrix, and implementation snapshot updated?
 - Is the source repository still free of credentials, personal data, raw telemetry, user setups, and oversized generated payloads?

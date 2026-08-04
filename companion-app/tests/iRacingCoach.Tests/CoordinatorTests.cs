@@ -39,7 +39,7 @@ public sealed class CoordinatorTests
             Selector = "8001"
         };
 
-        var opening = state.AnalyzeRaceAsync(race);
+        var opening = state.AnalyzeRaceAsync(race, force: true);
         await Task.Delay(20);
 
         Assert.IsTrue(state.AnalysisWorkspaceOpen);
@@ -113,6 +113,9 @@ public sealed class CoordinatorTests
         Assert.AreEqual("Synthetic Speedway", races[0].Track);
         Assert.IsTrue(races[0].Analyzed);
         Assert.AreEqual(8, races[0].StartPosition);
+        Assert.IsNotNull(races[0].Overview);
+        Assert.AreEqual(58, races[0].Overview!.GreenLaps);
+        Assert.AreEqual(14, races[0].Overview!.CautionLaps);
         Assert.AreEqual(5, races[0].FinishPosition);
         Assert.IsFalse(string.IsNullOrWhiteSpace(races[0].CarPath));
 

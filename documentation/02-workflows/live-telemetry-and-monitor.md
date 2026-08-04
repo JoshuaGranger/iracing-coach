@@ -58,4 +58,4 @@ All high-rate live math is local. Live support must remain useful without AI and
 
 ## Current evidence
 
-Version 0.11.1 adds native-cadence SDK capture and a display-synchronized canvas trace renderer while retaining slower bounded updates for text and layout surfaces. Version 0.11.0 added the shared full-page layout surface and collapsible Toolbox while retaining the miniature monitor as the same persisted view model. Deterministic replay remains development evidence only. Real simulator timing, multi-monitor ergonomics, and sustained live resource use remain HOME_QA work.
+Version 0.11.1 adds native-cadence SDK capture and a display-synchronized canvas trace renderer while retaining slower bounded updates for text and layout surfaces. Version 0.11.0 added the shared full-page layout surface and collapsible Toolbox while retaining the miniature monitor as the same persisted view model. Deterministic replay remains development evidence only. Real simulator timing, multi-monitor ergonomics, and sustained live resource use require direct local validation on representative systems; they are not owned by a separate QA role.

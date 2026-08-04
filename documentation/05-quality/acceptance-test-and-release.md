@@ -14,7 +14,7 @@ Quality claims must identify the environment, artifact, fixture or real source, 
 | `QA-006` | Visual review MUST cover supported window sizes, scaling factors, long values, truncation, scroll behavior, focus, contrast, and title/icon consistency. |
 | `QA-007` | Installer, prior-version replacement, rollback, uninstall, reinstall, and data preservation MUST be tested on the exact package. |
 | `QA-008` | Secret/privacy scanning MUST cover source, staged repository content, release payload, logs, screenshots, and support bundles. |
-| `QA-009` | Real iRacing telemetry acceptance MUST be performed by HOME_QA on a real supported environment and MUST NOT be claimed from replay fixtures. |
+| `QA-009` | Real iRacing telemetry claims MUST be supported by direct observation on a real supported environment and MUST NOT be claimed from replay fixtures alone. The evidence MUST identify the executable/commit, environment, source scenario, date, and observed result. |
 | `QA-010` | A failed acceptance item MUST remain visible with evidence and ownership; it may not be rewritten as passed because adjacent tests succeeded. |
 
 ## Release record
@@ -28,8 +28,6 @@ Quality claims must identify the environment, artifact, fixture or real source, 
 | `REL-005` | Fixture-mode screenshots and tests MUST be labeled and MUST not imply real-service or real-telemetry acceptance. |
 | `REL-006` | Acceptance evidence SHOULD be machine-readable enough for another agent to independently verify file hashes, counts, and assertions. |
 
-## Current 0.11.0 development evidence
+## Current development evidence
 
-The 0.11.0 development tree builds with zero warnings and zero errors; 74 .NET tests and 173 Python tests pass. The fixture walkthrough covers shared live layouts/toolbox, compact automatic Race Analysis, cursor alignment, streamlined planning, Starting Tune, event-linked corner feedback, controlled tuning, and Connections inside Settings. Exact artifact hashes, privacy scan, packaged-app checks, and guarded installer lifecycle results are recorded in `companion-app/RELEASE_0.11.0.md`.
-
-HOME_QA real-telemetry acceptance remains pending and limits any claim of complete production acceptance. Evidence references: `companion-app/RELEASE_0.11.0.md`, `companion-app-handoff/ACCEPTANCE_CHECKLIST.md`, and the exact release artifact manifests.
+The current development tree builds with zero warnings and zero errors; 74 .NET tests pass. The handoff verifier also runs the Python/contract baseline. Native fixture walkthroughs cover the changed Home and Race Analysis behavior. Exact historical artifact hashes, privacy scans, packaged-app checks, and guarded installer lifecycle results remain recorded in the applicable `companion-app/RELEASE_*.md` files. Focused UI iterations do not repeat unchanged installer/upgrade checks; an actual packaged release still must satisfy the relevant release gates.

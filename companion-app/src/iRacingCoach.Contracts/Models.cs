@@ -88,13 +88,29 @@ public sealed record RecentRace(
     int FileCount = 1,
     string Series = "",
     string Season = "",
-    string Selector = "")
+    string Selector = "",
+    RaceOverview? Overview = null)
 {
     public bool IsRace => string.Equals(SessionType, "Race", StringComparison.OrdinalIgnoreCase);
     public bool IsQualifying => SessionType?.Contains("Qual", StringComparison.OrdinalIgnoreCase) == true;
     public bool Reconnected => FileCount > 1;
     public string EffectiveSelector => string.IsNullOrWhiteSpace(Selector) ? Id ?? string.Empty : Selector;
 }
+
+public sealed record RaceOverview(
+    int RecordedLaps = 0,
+    int GreenLaps = 0,
+    int CautionLaps = 0,
+    int PitStops = 0,
+    int Runs = 0,
+    int LongestGreenRun = 0,
+    double? PaceSlopeSecondsPerLap = null,
+    double? PaceConsistencyPercent = null,
+    double? LowestTireRemainingPercent = null,
+    string LowestTireName = "",
+    double? ControlLoadChangePercent = null,
+    double? FuelUsedGallons = null,
+    double? BestCleanLapSeconds = null);
 
 public sealed record RaceEventGroup(
     string Id,

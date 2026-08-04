@@ -35,194 +35,141 @@
         </details>
     }
 
-    <section class="analysis-focus-strip" aria-label="What matters from this race">
-        <div class="analysis-bottom-line"><span>Fastest clean lap</span><strong>@FastestCleanLap</strong></div>
-        @foreach (var action in Card.Actions.Where(UsefulAction).Take(2))
-        {
-            <article title="@action.Claim.Text"><b>@action.Label</b><span>@action.Claim.Text</span></article>
-        }
-    </section>
+    <div class="analysis-one-screen">
+        <main class="analysis-primary-column">
+            <section class="analysis-focus-strip" aria-label="What matters from this race">
+                <div class="analysis-bottom-line"><span>Fastest clean lap</span><strong>@FastestCleanLap</strong></div>
+                @foreach (var action in Card.Actions.Where(UsefulAction).Take(2))
+                {
+                    <article title="@action.Claim.Text"><b>@action.Label</b><span>@action.Claim.Text</span></article>
+                }
+            </section>
 
-    <TelemetryWorkspace Workspace="Workspace" />
+            <TelemetryWorkspace Workspace="Workspace" />
+        </main>
 
-    <nav class="analysis-tabs" aria-label="Analysis sections">
-        @foreach (var tab in DetailTabs)
-        {
-            <button class="@(DetailTab == tab.Key ? "selected" : null)" aria-current="@(DetailTab == tab.Key ? "page" : null)" @onclick="() => DetailTab = tab.Key">@tab.Label</button>
-        }
-    </nav>
-
-    @if (DetailTab == "runs")
-    {
-    <div class="analysis-detail-grid">
-        <section class="surface-card" aria-labelledby="laps-heading">
-            <div class="analysis-section-heading"><div><span class="eyebrow">Lap context</span><h2 id="laps-heading">Laps and runs</h2></div></div>
-            @if (Workspace.Runs.Count > 0)
-            {
-                <div class="run-list">
-                    @foreach (var run in Workspace.Runs)
-                    {
-                        <article class="run-row"><div><strong>Run @run.Number</strong><span>Laps @LapRange(run.Laps)</span></div><dl><div><dt>Green</dt><dd>@run.GreenLaps</dd></div><div><dt>Caution</dt><dd>@run.CautionLaps</dd></div>@if (run.FuelUsedGallons.HasValue) { <div><dt>Fuel used</dt><dd>@Gallons(run.FuelUsedGallons)</dd></div> }@if (run.PaceSlopeSecondsPerLap.HasValue) { <div><dt>Pace trend</dt><dd>@Trend(run.PaceSlopeSecondsPerLap)</dd></div> }@if (run.EarlyAverageLapSeconds.HasValue) { <div><dt>Early pace</dt><dd>@LapTime(run.EarlyAverageLapSeconds)</dd></div> }@if (run.LateAverageLapSeconds.HasValue) { <div><dt>Late pace</dt><dd>@LapTime(run.LateAverageLapSeconds)</dd></div> }</dl>
-                        @if (run.TireRemainingPercent.HasValue) { <p><EvidenceBadge Kind="EvidenceKind.Measured" /><strong>@run.TireName @run.TireRemainingPercent.Value.ToString("0.0")% remaining</strong> at this run's recorded stop.</p> }
-                        @if (run.EarlyToLateDeltaSeconds.HasValue || run.EarlyBrakeVsLatePercent.HasValue || run.EarlySteerVsLatePercent.HasValue) { <small>@RunChange(run)</small> }
-                        <small>@run.TireEndpoint · @run.Status</small></article>
-                    }
+        <aside class="analysis-insight-rail" aria-label="Race summary">
+            <section class="analysis-insight-card race-shape-card">
+                <div class="insight-heading"><div><span class="eyebrow">Race shape</span><h2>At a glance</h2></div></div>
+                <div class="insight-stat-grid">
+                    <div class="green"><span>Green laps</span><strong>@GreenLaps</strong></div>
+                    <div class="yellow"><span>Caution laps</span><strong>@CautionLaps</strong></div>
+                    <div class="pace"><span>Longest run</span><strong>@LongestRun</strong></div>
+                    <div class="tire"><span>@TireHeading</span><strong>@TireReading</strong></div>
                 </div>
-            }
-            else
-            {
-                <p class="muted-copy">The recording did not contain enough completed laps to separate runs.</p>
-            }
-        </section>
+                @if (LongestRunDetail is { } run)
+                {
+                    <div class="compact-run-trend"><span>Pace trend</span><strong class="@TrendClass(run.PaceSlopeSecondsPerLap)">@Trend(run.PaceSlopeSecondsPerLap)</strong><small>@RunChange(run)</small></div>
+                }
+            </section>
 
+            @if (HasStrategy)
+            {
+                <section class="analysis-insight-card strategy-card">
+                    <div class="insight-heading"><div><span class="eyebrow">Fuel &amp; stops</span><h2>Strategy</h2></div></div>
+                    <dl class="compact-fact-list">
+                        @if (Workspace.Strategy.GreenFuelGallonsPerLap.HasValue) { <div><dt>Green-lap fuel</dt><dd>@Workspace.Strategy.GreenFuelGallonsPerLap.Value.ToString("0.000") gal</dd></div> }
+                        @if (Workspace.Strategy.AllGreenRangeLaps.HasValue) { <div><dt>All-green range</dt><dd>@Workspace.Strategy.AllGreenRangeLaps.Value.ToString("0.0") laps</dd></div> }
+                        @if (Workspace.Strategy.MinimumStopsAllGreen.HasValue) { <div><dt>Minimum stops</dt><dd>@Workspace.Strategy.MinimumStopsAllGreen</dd></div> }
+                        <div><dt>Recorded stops</dt><dd>@Workspace.PitStops</dd></div>
+                    </dl>
+                    @if (Workspace.Strategy.EqualStintPitTargets.Count > 0) { <div class="compact-pit-window"><span>Equal-stint window</span><strong>@string.Join(" · ", Workspace.Strategy.EqualStintPitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
+                </section>
+            }
+
+            @if (CornerAreas.Count > 0)
+            {
+                <section class="analysis-insight-card corner-card">
+                    <div class="insight-heading"><div><span class="eyebrow">Track areas</span><h2>Corner comparison</h2></div><span class="insight-help" tabindex="0" title="These areas are detected from steering and lateral load. They are numbered when the recording does not provide official corner names.">?</span></div>
+                    <div class="compact-corner-list">
+                        @foreach (var corner in CornerAreas)
+                        {
+                            <article><strong>@corner.Label</strong><span><b>Early</b>@corner.Early</span><span><b>Late</b>@corner.Late</span></article>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (HasPitActivity)
+            {
+                <section class="analysis-insight-card incident-card">
+                    <div class="insight-heading"><div><span class="eyebrow">Race interruptions</span><h2>Pit &amp; repairs</h2></div></div>
+                    <dl class="compact-fact-list">
+                        <div><dt>Pit-road episodes</dt><dd>@Workspace.Damage.PitRoadEpisodes</dd></div>
+                        @if (Workspace.Damage.TowEpisodes > 0) { <div><dt>Tows</dt><dd>@Workspace.Damage.TowEpisodes</dd></div> }
+                        @if (Workspace.Damage.RepairEpisodes > 0) { <div><dt>Repairs</dt><dd>@Workspace.Damage.RepairEpisodes</dd></div> }
+                        @if (Workspace.Damage.FastRepairUses > 0) { <div><dt>Fast repairs</dt><dd>@Workspace.Damage.FastRepairUses</dd></div> }
+                    </dl>
+                    @if (PitTimeline.Count > 0) { <small class="pit-lap-list">Pit laps @LapRange(PitTimeline.Select(lap => lap.Lap).ToArray())</small> }
+                </section>
+            }
+        </aside>
     </div>
-    }
-
-    @if (DetailTab == "corners")
-    {
-        <section class="surface-card" aria-labelledby="corners-heading">
-            <div class="analysis-section-heading"><div><span class="eyebrow">Corner coaching</span><h2 id="corners-heading">How the race changed</h2></div></div>
-            @if (CornerRows.Count > 0)
-            {
-                <div class="corner-coaching-grid">
-                    @foreach (var corner in CornerRows)
-                    {
-                        <article><h3>@corner.Zone</h3><div><span>Early</span><p>@corner.Early.Text</p></div><div><span>Middle</span><p>@corner.Middle.Text</p></div><div><span>Late</span><p>@corner.Late.Text</p></div></article>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="empty-state compact-empty"><h3>Corner comparisons are unavailable</h3><p>This recording does not contain enough complete lap traces to compare early-, middle-, and late-run driving.</p></div>
-            }
-        </section>
-    }
-
-    @if (DetailTab is "strategy" or "damage" or "evidence")
-    {
-        <section class="surface-card analysis-tab-panel">
-            @if (DetailTab == "strategy")
-            {
-                <div class="analysis-section-heading"><div><span class="eyebrow">Fuel &amp; strategy</span><h2>Recorded range and race-distance outlook</h2></div><EvidenceBadge Kind="EvidenceKind.Derived" /></div>
-                <div class="strategy-fact-grid">
-                    @if (Workspace.Strategy.GreenFuelGallonsPerLap.HasValue) { <article><span>Green-lap fuel</span><strong>@Workspace.Strategy.GreenFuelGallonsPerLap.Value.ToString("0.000") gal</strong><small>Measured per green lap</small></article> }
-                    @if (Workspace.Strategy.CautionFuelGallonsPerLap.HasValue) { <article><span>Caution-lap fuel</span><strong>@Workspace.Strategy.CautionFuelGallonsPerLap.Value.ToString("0.000") gal</strong><small>Measured per caution lap</small></article> }
-                    @if (Workspace.Strategy.AllGreenRangeLaps.HasValue) { <article><span>Observed all-green range</span><strong>@Workspace.Strategy.AllGreenRangeLaps.Value.ToString("0.0") laps</strong><small>Includes the recorded reserve</small></article> }
-                    @if (Workspace.ScheduledLaps > 0 && Workspace.Strategy.MinimumStopsAllGreen.HasValue) { <article><span>Minimum stops</span><strong>@Workspace.Strategy.MinimumStopsAllGreen</strong><small>For @Workspace.ScheduledLaps scheduled laps</small></article> }
-                    @if (Workspace.Strategy.ReserveGreenLaps.HasValue) { <article><span>Operational reserve</span><strong>@Workspace.Strategy.ReserveGreenLaps.Value.ToString("0.#") laps</strong><small>@Gallons(Workspace.Strategy.ReserveFuelGallons)</small></article> }
-                    <article><span>Recorded pit activity</span><strong>@Workspace.PitStops stop@(Workspace.PitStops == 1 ? string.Empty : "s")</strong><small>@RecordedPitLaps</small></article>
-                </div>
-                @if (Workspace.Strategy.EqualStintPitTargets.Count > 0) { <div class="pit-target"><span>Equal-stint window</span><strong>@string.Join(" · ", Workspace.Strategy.EqualStintPitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
-                <p class="panel-note"><strong>@FriendlyStrategyClassification.</strong> @StrategyUncertainty</p>
-            }
-            else if (DetailTab == "damage")
-            {
-                <div class="analysis-section-heading"><div><span class="eyebrow">Damage &amp; repairs</span><h2>Recorded pit, tow, and repair timeline</h2></div><EvidenceBadge Kind="EvidenceKind.Measured" /></div>
-                <div class="strategy-fact-grid"><article><span>Pit-road episodes</span><strong>@Workspace.Damage.PitRoadEpisodes</strong><small>@Seconds(Workspace.Damage.PitRoadTimeSeconds)</small></article><article><span>Tow episodes</span><strong>@Workspace.Damage.TowEpisodes</strong><small>Recorded telemetry</small></article><article><span>Repair episodes</span><strong>@Workspace.Damage.RepairEpisodes</strong><small>@Seconds(Workspace.Damage.RepairWorkSeconds) work observed</small></article><article><span>Fast repairs used</span><strong>@Workspace.Damage.FastRepairUses</strong><small>Recorded counter</small></article></div>
-                @if (PitTimeline.Count > 0) { <div class="event-timeline">@foreach (var item in PitTimeline) { <article><strong>Lap @item.Lap</strong><span>@Seconds(item.PitTimeSeconds) on pit road</span>@if (item.Confounded) { <small>Excluded from clean coaching comparisons because @FriendlyExclusionReason(item.ExclusionReason).</small> }</article> }</div> }
-                <p class="panel-note">@DamageConclusion Missing body-damage channels are never converted into a no-damage claim.</p>
-            }
-            else
-            {
-                <div class="analysis-section-heading"><div><span class="eyebrow">Setup</span><h2>Setup saved with this race</h2></div><span class="status-label neutral">@Workspace.SetupType</span></div>
-                @if (!string.IsNullOrWhiteSpace(Workspace.SetupFingerprint)) { <p class="mono compact-fingerprint">@Workspace.SetupFingerprint</p> }
-                <details class="evidence-details"><summary>Data availability</summary><dl class="evidence-facts"><div><dt>Telemetry</dt><dd>@Workspace.DataConfidence</dd></div><div><dt>Repairs</dt><dd>@Workspace.DamageStatus</dd></div><div><dt>Strategy</dt><dd>@Workspace.StrategyStatus</dd></div></dl></details>
-            }
-        </section>
-    }
-
-    @if (State.IsCapabilityVisible(ProductCapability.ChatGptCoaching))
-    {
-        <section class="surface-card coach-question-card" aria-labelledby="analysis-coach-heading">
-            <div class="analysis-section-heading"><div><span class="eyebrow">Optional coaching</span><h2 id="analysis-coach-heading">Ask about this race</h2></div><span class="status-label @(State.CoachEngine.ChatGptConnected ? "success" : "neutral")">@(State.CoachEngine.ChatGptConnected ? "ChatGPT connected" : "Connection required")</span></div>
-            @if (State.CoachEngine.ChatGptConnected)
-            {
-                <textarea rows="3" aria-label="Coaching question" placeholder="What should I work on first?" @bind="State.CoachQuestion" @bind:event="oninput"></textarea>
-                <div class="button-row"><button class="button primary" disabled="@(State.IsCoaching || string.IsNullOrWhiteSpace(State.CoachQuestion))" @onclick="() => State.AskRaceCoachAsync()">@(State.IsCoaching ? "Coach is thinking…" : "Ask the Coach")</button>@if (State.IsCoaching) { <button class="button secondary" @onclick="State.CancelCoachRequest">Cancel</button> }</div>
-            }
-            else
-            {
-                <button class="button secondary" @onclick='() => State.Navigate("connections")'>Connect ChatGPT</button>
-            }
-            @if (!string.IsNullOrWhiteSpace(State.CoachAnswer)) { <div class="coach-answer" role="status">@State.CoachAnswer</div> }
-        </section>
-    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
     [Parameter, EditorRequired] public RaceCard Card { get; set; } = null!;
-    private string DetailTab { get; set; } = "runs";
-    private static readonly (string Key, string Label)[] DetailTabs = [("runs", "Laps & Runs"), ("corners", "Corners"), ("strategy", "Fuel & Strategy"), ("damage", "Pit & Repairs"), ("evidence", "Setup")];
     private IReadOnlyList<RecentRace> EventSessions => State.EventGroups.OfType<RaceEventGroup>().FirstOrDefault(group => group.Sessions?.OfType<RecentRace>().Any(session => session.Id == State.SelectedRaceSessionId) == true)?.Sessions?.OfType<RecentRace>().Where(session => session.IsRace || session.IsQualifying).GroupBy(session => session.IsQualifying ? "qualifying" : "race").Select(group => group.First()).OrderBy(session => session.IsQualifying ? 0 : 1).ToArray() ?? [];
     private Task ShowEventSession(RecentRace session) => session.Id == State.SelectedRaceSessionId ? Task.CompletedTask : State.AnalyzeRaceAsync(session);
     private static string SessionName(RecentRace session) => session.IsQualifying ? "Qualifying" : "Race";
     private static string LapRange(IReadOnlyList<int> laps) => laps.Count == 0 ? "—" : laps.Count == 1 ? laps[0].ToString() : $"{laps.Min()}–{laps.Max()}";
-    private static string Gallons(double? value) => value is null ? "—" : $"{value:0.00} gal";
-    private static string Trend(double? value) => value is null ? "—" : value > .005 ? $"+{value:0.000} s/lap" : value < -.005 ? $"{value:0.000} s/lap" : "Stable";
-    private string FastestCleanLap => LapTime(Workspace.Traces.Where(trace => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase)).MinBy(trace => trace.LapTimeSeconds ?? double.MaxValue)?.LapTimeSeconds);
+    private string FastestCleanLap
+    {
+        get
+        {
+            var traceTime = Workspace.Traces.Where(IsClean).MinBy(trace => trace.LapTimeSeconds ?? double.MaxValue)?.LapTimeSeconds;
+            var lapTime = Workspace.Laps.Where(IsClean).MinBy(lap => lap.LapTimeSeconds ?? double.MaxValue)?.LapTimeSeconds;
+            return LapTime(traceTime ?? lapTime);
+        }
+    }
+    private int GreenLaps => Workspace.Runs.Sum(run => run.GreenLaps);
+    private int CautionLaps => Workspace.Runs.Sum(run => run.CautionLaps);
+    private AnalysisRun? LongestRunDetail => Workspace.Runs.OrderByDescending(run => run.GreenLaps).FirstOrDefault();
+    private string LongestRun => LongestRunDetail is { } run ? $"{run.GreenLaps} green" : "—";
+    private AnalysisRun? LowestTireRun => Workspace.Runs.Where(run => run.TireRemainingPercent.HasValue).OrderBy(run => run.TireRemainingPercent).FirstOrDefault();
+    private string TireHeading => LowestTireRun is not null ? "Lowest tire" : "Tire reading";
+    private string TireReading => LowestTireRun is { } run ? $"{run.TireName} {run.TireRemainingPercent:0.0}%" : "—";
+    private bool HasStrategy => Workspace.Strategy.GreenFuelGallonsPerLap.HasValue || Workspace.Strategy.AllGreenRangeLaps.HasValue || Workspace.PitStops > 0;
+    private bool HasPitActivity => Workspace.Damage.PitRoadEpisodes > 0 || Workspace.Damage.TowEpisodes > 0 || Workspace.Damage.RepairEpisodes > 0 || Workspace.Damage.FastRepairUses > 0;
+    private IReadOnlyList<AnalysisLap> PitTimeline => Workspace.Laps.Where(lap => lap.Lap > 0 && lap.PitTimeSeconds is > 0).ToArray();
+    private IReadOnlyList<CornerComparison> CornerAreas => BuildCornerAreas();
+    private static bool IsClean(AnalysisLapTrace trace) => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase);
+    private static bool IsClean(AnalysisLap lap) => lap.Complete && !lap.Confounded && lap.PitTimeSeconds.GetValueOrDefault() <= 0 && !lap.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) && !lap.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase);
     private static bool UsefulAction(RaceAction action) => CapabilityRegistry.IsSupported(action.Claim)
         && !string.IsNullOrWhiteSpace(action.Label)
         && !string.IsNullOrWhiteSpace(action.Claim.Text)
         && !action.Claim.Text.Contains("match this wear pattern", StringComparison.OrdinalIgnoreCase)
         && !action.Claim.Text.Contains("before assigning cause", StringComparison.OrdinalIgnoreCase)
         && !action.Claim.Text.Contains("repeatability check", StringComparison.OrdinalIgnoreCase);
-    private IReadOnlyList<CornerCoachingRow> CornerRows => Card.Corners.Count > 0 ? Card.Corners : BuildCornerRows();
-    private IReadOnlyList<AnalysisLap> PitTimeline => Workspace.Laps.Where(lap => lap.Lap > 0 && lap.PitTimeSeconds is > 0).ToArray();
-    private string RecordedPitLaps => PitTimeline.Count == 0 ? "No in-race pit lap was recorded" : $"Laps {LapRange(PitTimeline.Select(lap => lap.Lap).ToArray())}";
-    private string StrategyUncertainty => Workspace.Strategy.Assumptions.Concat(Workspace.Strategy.Limitations).FirstOrDefault() ?? "Future cautions, traffic, and pit loss can change the result.";
-    private string FriendlyStrategyClassification => Workspace.Strategy.Classification.Equals("Fuel Feasibility Forecast, Not An Optimal Pit Call Claim", StringComparison.OrdinalIgnoreCase) ? "Fuel range estimate, not an optimal pit call" : Workspace.Strategy.Classification;
-    private string DynamicsCoverage
-    {
-        get
-        {
-            var points = Workspace.Traces.SelectMany(trace => trace.Points).ToArray();
-            var channels = new List<string>();
-            if (points.Any(point => point.SlipAngleDegrees.HasValue)) channels.Add("Slip Angle");
-            if (points.Any(point => point.YawRateDegreesPerSecond.HasValue)) channels.Add("Yaw Rate");
-            if (points.Any(point => point.LateralG.HasValue)) channels.Add("Lateral Acceleration");
-            if (points.Any(point => point.LongitudinalG.HasValue)) channels.Add("Longitudinal Acceleration");
-            return channels.Count == 0 ? "No dynamics channels were recorded" : string.Join(", ", channels);
-        }
-    }
-    private string DamageConclusion => Workspace.Damage.TowEpisodes == 0 && Workspace.Damage.RepairEpisodes == 0 ? "No tow or repair work was recorded in the available channels." : "Recorded tow or repair activity is shown above and affected laps stay out of clean comparisons.";
-    private static string Seconds(double? value) => value.HasValue ? $"{value.Value:0.0} s" : "No duration recorded";
-    private static string FriendlyExclusionReason(string reason) => reason switch
-    {
-        "Pit Tow Or Repair Episode Overlap" => "pit, tow, or repair activity overlapped the lap",
-        "PitOrTow" => "pit or tow activity overlapped the lap",
-        _ => string.IsNullOrWhiteSpace(reason) ? "the lap was affected by non-racing activity" : reason.Replace('_', ' ').ToLowerInvariant()
-    };
+    private static string Trend(double? value) => value is null ? "—" : value > .005 ? $"+{value:0.000} s/lap" : value < -.005 ? $"{value:0.000} s/lap" : "Stable";
+    private static string TrendClass(double? value) => value switch { > .02 => "pace-falloff", < -.005 => "pace-improving", not null => "pace-stable", _ => string.Empty };
     private static string LapTime(double? value) => value.HasValue ? TimeSpan.FromSeconds(value.Value).ToString(@"m\:ss\.fff") : "—";
     private static string RunChange(AnalysisRun run)
     {
         var parts = new List<string>();
-        if (run.EarlyToLateDeltaSeconds.HasValue) parts.Add($"Early-to-late pace {run.EarlyToLateDeltaSeconds.Value:+0.000;-0.000;0.000} s");
-        if (run.EarlySteerVsLatePercent.HasValue) parts.Add($"steering work {run.EarlySteerVsLatePercent.Value:+0;-0;0}%");
-        if (run.EarlyBrakeVsLatePercent.HasValue) parts.Add($"brake load {run.EarlyBrakeVsLatePercent.Value:+0;-0;0}%");
+        if (run.EarlyToLateDeltaSeconds.HasValue) parts.Add($"{run.EarlyToLateDeltaSeconds.Value:+0.000;-0.000;0.000} s early to late");
+        if (run.TireRemainingPercent.HasValue) parts.Add($"{run.TireName} {run.TireRemainingPercent.Value:0.0}% left");
         return string.Join(" · ", parts);
     }
-    private IReadOnlyList<CornerCoachingRow> BuildCornerRows()
+    private IReadOnlyList<CornerComparison> BuildCornerAreas()
     {
-        if (Workspace.Traces.Count == 0) return [];
-        if (Workspace.Segments.Count == 0) return [];
-        var zones = Workspace.Segments.Take(4).ToArray();
+        if (Workspace.Segments.Count == 0 || Workspace.Traces.Count == 0) return [];
         var ordered = Workspace.Traces.Where(trace => trace.Points.Count > 0).OrderBy(trace => trace.Lap).ToArray();
         if (ordered.Length == 0) return [];
-        return zones.Select(zone => new CornerCoachingRow(string.IsNullOrWhiteSpace(zone.Label) ? $"Load zone {zone.Number}" : zone.Label,
-            PhaseClaim(ordered.Take(Math.Max(1, (int)Math.Ceiling(ordered.Length / 3d))), zone, "Early run"),
-            PhaseClaim(ordered.Skip(ordered.Length / 3).Take(Math.Max(1, ordered.Length / 3)), zone, "Middle run"),
-            PhaseClaim(ordered.Skip(Math.Max(0, ordered.Length * 2 / 3)), zone, "Late run"),
-            new EvidenceText(EvidenceKind.Derived, "Use the synchronized map and traces to compare the same recorded load zone across laps."))).ToArray();
+        var phaseSize = Math.Max(1, (int)Math.Ceiling(ordered.Length / 3d));
+        return Workspace.Segments.Take(4).Select(zone => new CornerComparison(
+            FriendlyZone(zone), ZoneSummary(ordered.Take(phaseSize), zone), ZoneSummary(ordered.Skip(Math.Max(0, ordered.Length - phaseSize)), zone))).ToArray();
     }
-    private static EvidenceText PhaseClaim(IEnumerable<AnalysisLapTrace> traces, TrackSegment zone, string phase)
+    private static string FriendlyZone(TrackSegment zone) => string.IsNullOrWhiteSpace(zone.Label) || zone.Label.StartsWith("Load zone", StringComparison.OrdinalIgnoreCase) ? $"Corner area {zone.Number}" : zone.Label;
+    private static string ZoneSummary(IEnumerable<AnalysisLapTrace> traces, TrackSegment zone)
     {
         var points = traces.SelectMany(trace => trace.Points).Where(point => zone.WrapsStartFinish ? point.LapPercent >= zone.StartPercent || point.LapPercent <= zone.EndPercent : point.LapPercent >= zone.StartPercent && point.LapPercent <= zone.EndPercent).ToArray();
-        if (points.Length == 0) return new EvidenceText(EvidenceKind.Unavailable, $"{phase}: no samples in this zone.");
+        if (points.Length == 0) return "No samples";
         var speed = points.Where(point => point.SpeedMph.HasValue).Select(point => point.SpeedMph!.Value).DefaultIfEmpty().Average();
         var brake = points.Where(point => point.Brake.HasValue).Select(point => point.Brake!.Value).DefaultIfEmpty().Average() * 100;
-        var throttle = points.Where(point => point.Throttle.HasValue).Select(point => point.Throttle!.Value).DefaultIfEmpty().Average() * 100;
-        return new EvidenceText(EvidenceKind.Derived, $"{speed:0} mph average · {brake:0}% brake · {throttle:0}% throttle");
+        return $"{speed:0} mph · {brake:0}% brake";
     }
+    private sealed record CornerComparison(string Label, string Early, string Late);
 }

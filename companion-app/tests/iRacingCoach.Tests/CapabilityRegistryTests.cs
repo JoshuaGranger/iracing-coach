@@ -213,23 +213,28 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "<b>@trace.Lap</b>");
         foreach (var channel in new[] { "Speed", "Time Delta", "Throttle / brake", "Gear", "RPM", "Steering", "Slip / yaw", "Lateral / long. G" })
             StringAssert.Contains(telemetry, $"\"{channel}\"");
-        foreach (var dynamicsChannel in new[] { "Slip Angle", "Yaw Rate", "Lateral Acceleration", "Longitudinal Acceleration" })
-            StringAssert.Contains(telemetry, dynamicsChannel);
         StringAssert.Contains(telemetry, "PanelRange(panel)");
         Assert.DoesNotContain("Gear / RPM", telemetry);
 
         var analysis = File.ReadAllText(Path.Combine(ui, "AnalysisWorkspacePage.razor"));
         Assert.DoesNotContain("<RaceCardPanel", analysis);
-        StringAssert.Contains(analysis, "Recorded range and race-distance outlook");
-        StringAssert.Contains(analysis, "Recorded pit, tow, and repair timeline");
-        foreach (var tab in new[] { "Laps & Runs", "Corners", "Fuel & Strategy", "Pit & Repairs", "Setup" })
-            StringAssert.Contains(analysis, $"\"{tab}\"");
+        StringAssert.Contains(analysis, "analysis-one-screen");
+        StringAssert.Contains(analysis, "analysis-insight-rail");
+        StringAssert.Contains(analysis, "Corner comparison");
+        StringAssert.Contains(analysis, "Pit &amp; repairs");
+        Assert.DoesNotContain("analysis-tabs", analysis);
+        Assert.DoesNotContain("DetailTabs", analysis);
         Assert.DoesNotContain("Relative estimate, not measured wear", analysis);
         StringAssert.Contains(analysis, "analysis-context-bar");
         StringAssert.Contains(analysis, "analysis-focus-strip");
-        StringAssert.Contains(analysis, "BuildCornerRows");
+        StringAssert.Contains(analysis, "BuildCornerAreas");
         Assert.DoesNotContain("new TrackSegment", analysis);
         StringAssert.Contains(analysis, "UsefulAction");
+        StringAssert.Contains(telemetry, "trace-cursor-tooltip");
+        StringAssert.Contains(telemetry, "DirectionalDegrees");
+        StringAssert.Contains(telemetry, "stroke-width=\"1.35\"");
+        StringAssert.Contains(telemetry, "140 - (p.Y");
+        StringAssert.Contains(telemetry, "\"brake\" => $\"hsl");
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(css, ".event-session-switch .segmented");
         StringAssert.Contains(css, "white-space: nowrap");
@@ -263,6 +268,10 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "SettingsPage.razor")), "<ConnectionsPage State=\"State\" Embedded=\"true\"");
         var home = File.ReadAllText(Path.Combine(ui, "HomePage.razor"));
         StringAssert.Contains(home, "Find a starting tune");
+        StringAssert.Contains(home, "home-race-row");
+        StringAssert.Contains(home, "TireMetric");
+        Assert.DoesNotContain("Automatic discovery", home);
+        Assert.DoesNotContain("Open Race Analysis", home);
         Assert.DoesNotContain("Browse setups", home);
         var monitor = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "LiveMonitorWindow.xaml"));
         StringAssert.Contains(monitor, "ShowInTaskbar=\"True\"");

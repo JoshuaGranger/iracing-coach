@@ -332,7 +332,7 @@ public sealed class CompanionState : IDisposable
             {
                 var mapped = DashboardMapper.Map(dashboard);
                 Races.Clear();
-                Races.AddRange(mapped);
+                Races.AddRange(mapped.Select((race, index) => index < 6 ? EnrichRaceOverview(race) : race));
                 var discovery = await discoveryTask;
                 EventSessions.Clear();
                 EventSessions.AddRange(DashboardMapper.MapEvents(dashboard, discovery));
@@ -496,6 +496,7 @@ public sealed class CompanionState : IDisposable
             var mappedAnalysis = RuntimeMapper.Analysis(result);
             CurrentRaceCard = mappedCard;
             CurrentAnalysis = mappedAnalysis;
+            UpdateRaceOverview(race, mappedAnalysis);
             SaveUiAnalysisCache(race, result);
         }, cancellationToken);
         AnalysisLoading = false;
@@ -525,10 +526,7 @@ public sealed class CompanionState : IDisposable
 
         Navigate("analysis");
         SelectRaceSession(session);
-        if (!race.Analyzed)
-        {
-            await AnalyzeRaceAsync(session, cancellationToken);
-        }
+        await AnalyzeRaceAsync(session, cancellationToken);
     }
 
     public void SelectRaceSession(RecentRace session)
@@ -1338,13 +1336,13 @@ public sealed class CompanionState : IDisposable
             await operation(linked.Token);
             job.Status = "complete"; job.Stage = "Complete"; job.Progress = 100; job.Cancellable = false; job.Elapsed = timer.Elapsed;
             JobTrayOpen = false;
-            Toast = $"{title} complete.";
+            Toast = null;
         }
         catch (OperationCanceledException)
         {
             job.Status = "cancelled"; job.Stage = "Cancelled safely"; job.Cancellable = false; job.Elapsed = timer.Elapsed;
             JobTrayOpen = false;
-            Toast = $"{title} cancelled.";
+            Toast = null;
         }
         catch (Exception ex)
         {
@@ -1647,6 +1645,7 @@ public sealed class CompanionState : IDisposable
             }
             CurrentRaceCard = RuntimeMapper.RaceCard(response);
             CurrentAnalysis = RuntimeMapper.Analysis(response);
+            UpdateRaceOverview(race, CurrentAnalysis);
             AnalysisLoading = false;
             AnalysisMessage = string.Empty;
             ApiCacheHitCount++;
@@ -1667,6 +1666,7 @@ public sealed class CompanionState : IDisposable
             using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
             CurrentAnalysis = RuntimeMapper.ArchivedAnalysis(document.RootElement);
             CurrentRaceCard = RuntimeMapper.ArchivedRaceCard(document.RootElement);
+            UpdateRaceOverview(race, CurrentAnalysis);
             AnalysisLoading = false;
             AnalysisMessage = string.Empty;
             ApiCacheHitCount++;
@@ -1698,6 +1698,54 @@ public sealed class CompanionState : IDisposable
         }
         return result;
     }
+
+    private RecentRace EnrichRaceOverview(RecentRace race)
+    {
+        if (string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return race;
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
+            return race with { Overview = RuntimeMapper.Overview(document.RootElement) };
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
+        {
+            ReportUnhandledException("race overview", ex);
+            return race;
+        }
+    }
+
+    private void UpdateRaceOverview(RecentRace race, AnalysisWorkspace analysis)
+    {
+        var cleanTimes = analysis.Traces.Where(trace => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0
+                && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase)
+                && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase)
+                && trace.LapTimeSeconds is > 0)
+            .Select(trace => trace.LapTimeSeconds!.Value).ToArray();
+        double? consistency = null;
+        if (cleanTimes.Length >= 2)
+        {
+            var mean = cleanTimes.Average();
+            if (mean > 0) consistency = Math.Sqrt(cleanTimes.Sum(value => Math.Pow(value - mean, 2)) / cleanTimes.Length) / mean * 100;
+        }
+        var longest = analysis.Runs.OrderByDescending(run => run.GreenLaps).FirstOrDefault();
+        var tire = analysis.Runs.Where(run => run.TireRemainingPercent.HasValue).OrderBy(run => run.TireRemainingPercent).FirstOrDefault();
+        var controlChange = analysis.Runs.SelectMany(run => new[] { run.EarlyBrakeVsLatePercent, run.EarlySteerVsLatePercent })
+            .Where(value => value.HasValue).Select(value => Math.Abs(value!.Value)).DefaultIfEmpty().Max();
+        var overview = new RaceOverview(
+            analysis.RecordedLaps, analysis.Runs.Sum(run => run.GreenLaps), analysis.Runs.Sum(run => run.CautionLaps),
+            analysis.PitStops, analysis.Runs.Count, longest?.GreenLaps ?? 0, longest?.PaceSlopeSecondsPerLap,
+            consistency, tire?.TireRemainingPercent, tire?.TireName ?? string.Empty, controlChange > 0 ? controlChange : null,
+            analysis.Runs.Where(run => run.FuelUsedGallons.HasValue).Sum(run => run.FuelUsedGallons), cleanTimes.Length > 0 ? cleanTimes.Min() : null);
+        for (var index = 0; index < Races.Count; index++)
+            if (SameRace(Races[index], race)) Races[index] = Races[index] with { Overview = overview };
+        for (var index = 0; index < EventSessions.Count; index++)
+            if (SameRace(EventSessions[index], race)) EventSessions[index] = EventSessions[index] with { Overview = overview };
+    }
+
+    private static bool SameRace(RecentRace candidate, RecentRace selected) =>
+        string.Equals(candidate.Id, selected.Id, StringComparison.OrdinalIgnoreCase) ||
+        (!string.IsNullOrWhiteSpace(candidate.EventKey) && string.Equals(candidate.EventKey, selected.EventKey, StringComparison.OrdinalIgnoreCase)) ||
+        (!string.IsNullOrWhiteSpace(candidate.EffectiveSelector) && string.Equals(candidate.EffectiveSelector, selected.EffectiveSelector, StringComparison.OrdinalIgnoreCase));
 
     private IReadOnlyList<LocalSetup> LoadArchivedSetups()
     {

@@ -23,7 +23,7 @@
             }
         </header>
         }
-        <section class="page-frame" aria-live="polite">
+        <section class="page-frame @(State.CurrentPage == "analysis" ? "analysis-page-frame" : null)" aria-live="polite">
             <CoachErrorBoundary @ref="_errorBoundary">
                 <ChildContent>
                     @switch (State.CurrentPage)
@@ -58,7 +58,7 @@
             </CoachErrorBoundary>
         </section>
     </main>
-    @if (State.Jobs.Count > 0)
+    @if (State.Jobs.Any(job => job.Status is "queued" or "running" or "failed"))
     {
         <JobTray State="State" />
     }

@@ -33,14 +33,14 @@ Home is a race desk, not a generic card dashboard.
 | ID | Requirement |
 | --- | --- |
 | `HOME-001` | Home MUST show the current iRacing connection and direct actions for Live Telemetry and Live Monitor. |
-| `HOME-002` | Home MUST show up to six recent recorded races with friendly track, layout, car, date, setup type, result when known, and analysis state. |
-| `HOME-003` | Open/Analyze on a recent race MUST select that exact event and open its deterministic workflow. |
+| `HOME-002` | Home MUST show up to six recent recorded races with friendly track, layout, car, date, setup type, result when known, and compact race-specific measurements. Useful measurements include green/caution laps, longest green run, stop/run count, pace trend or consistency, and measured tire remaining when supported. |
+| `HOME-003` | The complete recent-race row MUST select that exact event, open Race Analysis, and begin loading its Race telemetry without a second action. A detached Analyze chip or Open Race Analysis link is forbidden. |
 | `HOME-004` | Planning and tuning actions MUST appear only when real eligible history exists. |
-| `HOME-005` | The empty state MUST explain automatic discovery and MUST NOT offer a redundant manual refresh. |
+| `HOME-005` | The section heading MUST be simply `Recent races`. Its empty state MAY briefly explain how real recordings arrive and MUST NOT offer a redundant manual refresh. |
 | `HOME-006` | A backend failure MUST replace the ordinary empty state with one actionable troubleshooting path. |
 | `HOME-007` | Home SHOULD expose the single highest-value next action and an upcoming event when a supported provider exists. |
 | `HOME-008` | Home MUST NOT display raw source paths, car folders, SubSessionIDs, fingerprints, or fixture identifiers. |
 
 ## Current implementation note
 
-The 0.11.0 `HomePage` implements connection status, concise workflow actions, automatic discovery, recent races, result formatting, direct race opening, and warning-only troubleshooting. Upcoming official event discovery and a computed single “highest-value next action” are not complete first-class surfaces.
+Current main implements connection status, concise workflow actions, whole-row recent-race opening, and real analysis-derived race summaries. Tire remaining is labeled as measured only when a recorded service observation supports it; otherwise the field is omitted or replaced by a supported control-load comparison. Upcoming official event discovery and a computed single highest-value next action are not complete first-class surfaces.

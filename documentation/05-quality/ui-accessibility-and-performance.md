@@ -18,6 +18,8 @@ The UI should feel like a calm professional race-engineering workspace: black/gr
 | `UI-010` | Error states MUST preserve surrounding context and offer retry plus redacted support details where useful. |
 | `UI-011` | Primary views MUST favor changing decisions and measurements over explanatory prose. Invariant limitations, methodology, and provenance belong in tooltips or subordinate disclosures. |
 | `UI-012` | Controls MUST sit beside the content they affect, and labels MUST state ambiguous scope such as the selected lap or layout. |
+| `UI-013` | Recorded-race comparison SHOULD fit its primary telemetry, lap/run selection, and compact changing insights into one coherent desktop workspace without lower navigation tabs. |
+| `UI-014` | Successful background work MUST settle silently. Only running work that materially benefits from progress visibility or failed work requiring action may occupy persistent UI. |
 
 ## Accessibility
 

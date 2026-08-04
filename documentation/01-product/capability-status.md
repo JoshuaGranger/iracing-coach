@@ -1,14 +1,14 @@
 # Capability status
 
-This inventory describes the intended user-facing capability and the 0.11.0 development reality. “Implemented” does not mean HOME_QA accepted.
+This inventory describes the intended user-facing capability and current-main development reality. Acceptance is based on repository tests plus direct local fixture, replay, SDK, and recorded-data validation appropriate to the changed surface; no separate HOME_QA role owns product truth.
 
-| Capability | Intended state | 0.11.0 reality | Acceptance boundary |
+| Capability | Intended state | Current reality | Acceptance boundary |
 | --- | --- | --- | --- |
-| Home | Compact race desk, recent races, live state, next actions | Implemented | Fixture/local QA; HOME_QA pending |
-| Live Telemetry | Full-screen shared named grid, collapsible Toolbox, optional driving traces, fuel and safe cues | Implemented with SDK source and deterministic replay | Fixture interaction/replay verified; real SDK HOME_QA pending |
-| Live Monitor | Separate always-on-top view of the same portable named layouts | Implemented | Shared-layout interaction/replay verified; HOME_QA real-race acceptance pending |
-| Race browser | Newest-first friendly event rows; whole row opens | Implemented | Kentucky behavior locally/previous HOME_QA observed |
-| Full Race Analysis | Telemetry-first workspace with five subordinate evidence tabs | Implemented | Fixture verified; real-recording breadth pending |
+| Home | Compact race desk, recent races, live state, next actions | Implemented; rows include supported race-shape, pace, and tire context | Fixture/local interaction verified |
+| Live Telemetry | Full-screen shared named grid, collapsible Toolbox, optional driving traces, fuel and safe cues | Implemented with SDK source and deterministic replay | Fixture interaction/replay verified; continued real SDK validation required |
+| Live Monitor | Separate always-on-top view of the same portable named layouts | Implemented | Shared-layout interaction/replay verified; continued real-race validation required |
+| Race browser | Newest-first friendly event rows; whole row opens | Implemented | Kentucky behavior verified locally |
+| Full Race Analysis | Telemetry-first one-screen workspace with integrated lap/run context and compact insight rail | Implemented | Fixture and local interaction verified; real-recording breadth remains an ongoing validation target |
 | Qualifying phase | Present only when recorded and openable | Conditional | Fixture verified; real paired-event acceptance pending |
 | Race Planning | Manual matching-history planner and briefing | Implemented for recorded-history path | Official upcoming-event discovery not implemented |
 | Setup indexing | Internal read-only discovery used by analysis and Starting Tune | Implemented; no first-class library UI | Local/fixture verified |
@@ -22,7 +22,7 @@ This inventory describes the intended user-facing capability and the 0.11.0 deve
 | Wet-weather analysis | Only when validated wet data exists | Not implemented | Hidden from production |
 | Multiclass analysis | Class-aware scoring and context | Not implemented | Hidden from production |
 | Target/reference trace | Evidence-gated aligned comparison | Partial/conditional | Actual recorded multi-lap trace works; validated external target remains limited |
-| Tray behavior | Minimize/close options and monitor controls | Partial | Source exists; complete HOME_QA tray matrix not recorded |
+| Tray behavior | Minimize/close options and monitor controls | Partial | Source exists; complete local tray matrix not recorded |
 
 ## Capability registry alignment
 

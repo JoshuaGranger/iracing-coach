@@ -40,6 +40,6 @@ The application may be useful only to the extent that it accurately describes wh
 
 ## Implementation reality
 
-The Python engine models provenance, exclusions, setup readability, and deterministic analysis. The .NET mapping and UI expose much of this material through badges, evidence panels, confidence text, and support details. Coverage is not yet proven for every production channel combination. Real-session acceptance remains a HOME_QA responsibility.
+The Python engine models provenance, exclusions, setup readability, and deterministic analysis. The .NET mapping and UI expose much of this material through badges, evidence panels, confidence text, and support details. Coverage is not yet proven for every production channel combination. Real-session claims require direct evidence from a named local executable and scenario; no separate QA role owns that responsibility.
 
 Primary evidence: `iracing-coach/skills/analyze-iracing-race/scripts/analysis_engine.py`, `reporting.py`, `tuning_engine.py`, and `companion-app/src/iRacingCoach.UI/EvidenceBadge.razor`.

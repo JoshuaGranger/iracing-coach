@@ -23,7 +23,59 @@ public static class RuntimeMapper
             scheduled > 0 ? $"{recorded} of {scheduled} laps" : $"{recorded} recorded laps", false, true,
             Integer(summary, "starting_position"), Integer(summary, "final_recorded_position"), Text(identity, "car_path") ?? string.Empty,
             analysisPath, string.Empty, start, id, Text(identity, "event_type") ?? "Race", "Archived", 1,
-            Text(identity, "series_name") ?? string.Empty, Text(identity, "season_name") ?? string.Empty, analysisPath);
+            Text(identity, "series_name") ?? string.Empty, Text(identity, "season_name") ?? string.Empty, analysisPath,
+            Overview(report));
+    }
+
+    public static RaceOverview Overview(JsonElement report)
+    {
+        var view = Object(report, "analysis_view");
+        var analysis = view.ValueKind == JsonValueKind.Object ? view : report;
+        var summary = Object(analysis, "race_summary");
+        if (summary.ValueKind != JsonValueKind.Object) summary = Object(report, "race_summary");
+        var runs = Array(analysis, "runs");
+        var laps = Array(analysis, "laps");
+
+        var cleanTimes = laps.Where(lap => Boolean(lap, "complete") == true
+                && (Number(lap, "pit_time_s") ?? 0) <= 0
+                && !string.Equals(Text(lap, "flag_state"), "yellow", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(Text(lap, "flag_state"), "caution", StringComparison.OrdinalIgnoreCase))
+            .Select(lap => Number(lap, "lap_time_s"))
+            .Where(value => value is > 0)
+            .Select(value => value!.Value)
+            .ToArray();
+        double? consistency = null;
+        if (cleanTimes.Length >= 2)
+        {
+            var mean = cleanTimes.Average();
+            if (mean > 0) consistency = Math.Sqrt(cleanTimes.Sum(value => Math.Pow(value - mean, 2)) / cleanTimes.Length) / mean * 100;
+        }
+
+        var runDetails = runs.Select(run =>
+        {
+            var pace = Object(run, "pace");
+            var tire = Object(run, "tire_observation");
+            var load = Object(run, "driving_load");
+            return new
+            {
+                Green = (int)Math.Round(Number(run, "green_laps") ?? 0),
+                Slope = Number(pace, "green_lap_time_slope_s_per_lap"),
+                Tire = Number(tire, "lowest_remaining_percent"),
+                TireName = Text(tire, "lowest_remaining_tire") ?? string.Empty,
+                BrakeChange = Number(load, "early_brake_vs_late_percent"),
+                SteerChange = Number(load, "early_steer_vs_late_percent")
+            };
+        }).ToArray();
+        var longest = runDetails.OrderByDescending(run => run.Green).FirstOrDefault();
+        var tireReading = runDetails.Where(run => run.Tire.HasValue).OrderBy(run => run.Tire).FirstOrDefault();
+        var controlChange = runDetails.SelectMany(run => new[] { run.BrakeChange, run.SteerChange })
+            .Where(value => value.HasValue).Select(value => Math.Abs(value!.Value)).DefaultIfEmpty().Max();
+
+        return new RaceOverview(
+            Integer(summary, "recorded_laps"), Integer(summary, "green_laps_estimated"), Integer(summary, "caution_laps_estimated"),
+            Integer(summary, "pit_stops_detected"), runs.Count(), runDetails.Select(run => run.Green).DefaultIfEmpty().Max(),
+            longest?.Slope, consistency, tireReading?.Tire, tireReading?.TireName ?? string.Empty,
+            controlChange > 0 ? controlChange : null, Number(summary, "fuel_used_gal"), cleanTimes.Length > 0 ? cleanTimes.Min() : null);
     }
 
     public static AnalysisWorkspace ArchivedAnalysis(JsonElement report)

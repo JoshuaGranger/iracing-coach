@@ -25,23 +25,30 @@
 
 @if (State.Races.Count == 0)
 {
-    <section class="recent-empty @(AnalysisUnavailable ? "needs-attention" : "")" aria-labelledby="recent-title"><span class="empty-icon"><ProductIcon Name="@(AnalysisUnavailable ? "info" : "race")" Size="22" /></span><div><span class="eyebrow">@(AnalysisUnavailable ? "Needs attention" : "Automatic discovery")</span><h2 id="recent-title">@(AnalysisUnavailable ? "Race data could not be opened" : "Race recordings appear here")</h2><p>@(AnalysisUnavailable ? "Open troubleshooting for the cause and recovery steps." : "Finish a recorded Race session in iRacing. No refresh is needed.")</p></div><button class="button secondary compact" @onclick="OpenEmptyAction">@(AnalysisUnavailable ? "Open troubleshooting" : "Open Race Analysis")</button></section>
+    <section class="recent-empty @(AnalysisUnavailable ? "needs-attention" : "")" aria-labelledby="recent-title">
+        <span class="empty-icon"><ProductIcon Name="@(AnalysisUnavailable ? "info" : "race")" Size="22" /></span>
+        <div><span class="eyebrow">Recent races</span><h2 id="recent-title">@(AnalysisUnavailable ? "Race data could not be opened" : "No recorded races yet")</h2><p>@(AnalysisUnavailable ? "Open troubleshooting for the cause and recovery steps." : "Finish a recorded Race session in iRacing and it will appear here.")</p></div>
+        @if (AnalysisUnavailable) { <button class="button secondary compact" @onclick="OpenEmptyAction">Open troubleshooting</button> }
+    </section>
 }
 else
 {
 <section class="surface-card recent-card" aria-labelledby="recent-title">
-    <div class="card-header"><div><span class="eyebrow">Automatic discovery</span><h2 id="recent-title">Recent races</h2></div><button class="text-button icon-text-button" @onclick='() => State.Navigate("analysis")'>Open Race Analysis <ProductIcon Name="arrow-right" Size="15" /></button></div>
+    <div class="card-header recent-card-header"><h2 id="recent-title">Recent races</h2></div>
     <div class="race-list">
         @foreach (var race in State.Races.Take(6))
         {
-            <article class="race-row @(HasResult(race) ? "" : "no-result")">
-                <div class="track-avatar" aria-hidden="true">@Initials(race.Track)</div>
-                <div class="race-main"><div class="race-title"><strong>@race.Track</strong><span>@race.Layout</span></div><small>@race.Car · @race.Date</small></div>
-                <div class="race-stat"><span>Setup</span><strong>@race.SetupType</strong></div>
-                @if (HasResult(race)) { <div class="race-stat"><span>Result</span><strong>@Result(race)</strong></div> }
-                <span class="status-label @(race.Analyzed ? "success" : "neutral")">@race.Status</span>
-                <button class="button compact @(race.Analyzed ? "secondary" : "primary")" @onclick="() => OpenRace(race)">@(race.Analyzed ? "Open" : "Analyze")</button>
-            </article>
+            var overview = race.Overview;
+            <button class="race-row home-race-row" @onclick="() => OpenRace(race)" title="Open @race.Track race analysis">
+                <span class="track-avatar" aria-hidden="true">@Initials(race.Track)</span>
+                <span class="race-main"><span class="race-title"><strong>@race.Track</strong><span>@race.Layout</span></span><small>@race.Car · @race.Date</small></span>
+                <span class="race-stat result-stat"><span>Result</span><strong>@(HasResult(race) ? Result(race) : "—")</strong><small>@race.SetupType setup</small></span>
+                <span class="race-stat race-condition-stat"><span>Race laps</span><strong><i class="metric-dot green"></i>@Metric(overview?.GreenLaps) green</strong><small><i class="metric-dot yellow"></i>@Metric(overview?.CautionLaps) caution</small></span>
+                <span class="race-stat"><span>Longest run</span><strong>@Metric(overview?.LongestGreenRun) green</strong><small>@Plural(overview?.Runs, "run") · @Plural(overview?.PitStops, "stop")</small></span>
+                <span class="race-stat pace-stat"><span>Pace trend</span><strong class="@PaceClass(overview)">@PaceTrend(overview)</strong><small>@Consistency(overview)</small></span>
+                <span class="race-stat tire-stat" title="@TireDetail(overview)"><span>@TireMetricLabel(overview)</span><strong>@TireMetric(overview)</strong><small>@TireMetricNote(overview)</small></span>
+                <span class="race-row-arrow" aria-hidden="true"><ProductIcon Name="arrow-right" Size="16" /></span>
+            </button>
         }
     </div>
 </section>
@@ -50,7 +57,7 @@ else
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     private bool AnalysisUnavailable => State.Health.Any(item => item.Id == "backend" && item.State == "unavailable");
-    private void OpenEmptyAction() { if (AnalysisUnavailable) State.OpenTroubleshooting(); else State.Navigate("analysis"); }
+    private void OpenEmptyAction() => State.OpenTroubleshooting();
     private Task OpenRace(RecentRace race) => State.OpenRaceFromHomeAsync(race);
     private static bool HasResult(RecentRace race) => race.StartPosition > 0 || race.FinishPosition > 0;
     private static string Result(RecentRace race) => (race.StartPosition, race.FinishPosition) switch
@@ -61,4 +68,19 @@ else
         _ => string.Empty
     };
     private static string Initials(string value) => string.Concat(value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(word => char.ToUpperInvariant(word[0])));
+    private static string Metric(int? value) => value is > 0 ? value.Value.ToString() : "—";
+    private static string Plural(int? value, string noun) => value is > 0 ? $"{value} {noun}{(value == 1 ? string.Empty : "s")}" : $"No {noun}s";
+    private static string PaceTrend(RaceOverview? overview) => overview?.PaceSlopeSecondsPerLap switch
+    {
+        > .005 => $"+{overview.PaceSlopeSecondsPerLap:0.000} s/lap",
+        < -.005 => $"{overview.PaceSlopeSecondsPerLap:0.000} s/lap",
+        not null => "Stable",
+        _ => "—"
+    };
+    private static string PaceClass(RaceOverview? overview) => overview?.PaceSlopeSecondsPerLap switch { > .02 => "pace-falloff", < -.005 => "pace-improving", not null => "pace-stable", _ => string.Empty };
+    private static string Consistency(RaceOverview? overview) => overview?.PaceConsistencyPercent is { } value ? $"{value:0.0}% lap variation" : "Variation unavailable";
+    private static string TireMetricLabel(RaceOverview? overview) => overview?.LowestTireRemainingPercent.HasValue == true ? "Tire left" : overview?.ControlLoadChangePercent.HasValue == true ? "Control load" : "Tire use";
+    private static string TireMetric(RaceOverview? overview) => overview?.LowestTireRemainingPercent is { } remaining ? $"{overview.LowestTireName} {remaining:0.0}%" : overview?.ControlLoadChangePercent is { } load ? $"{load:0}% change" : "—";
+    private static string TireMetricNote(RaceOverview? overview) => overview?.LowestTireRemainingPercent.HasValue == true ? "Measured at a stop" : overview?.ControlLoadChangePercent.HasValue == true ? "Brake / steering work" : "No pit reading";
+    private static string TireDetail(RaceOverview? overview) => overview?.LowestTireRemainingPercent is { } remaining ? $"Lowest recorded tire reading: {overview.LowestTireName} {remaining:0.0}% remaining at a pit stop." : overview?.ControlLoadChangePercent is { } load ? $"Largest early-to-late change in recorded brake or steering work: {load:0.0}%." : "No supported tire-service reading was recorded for this race.";
 }

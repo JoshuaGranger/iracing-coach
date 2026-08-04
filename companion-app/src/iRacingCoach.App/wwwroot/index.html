@@ -21,6 +21,15 @@
         if (!element) return 0;
         const bounds = element.getBoundingClientRect();
         return bounds.width > 0 ? Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width)) : 0;
+      },
+      pointerViewBox: function (element, clientX, clientY, viewWidth, viewHeight) {
+        if (!element) return [0, 0];
+        const bounds = element.getBoundingClientRect();
+        if (bounds.width <= 0 || bounds.height <= 0) return [0, 0];
+        return [
+          Math.max(0, Math.min(viewWidth, (clientX - bounds.left) / bounds.width * viewWidth)),
+          Math.max(0, Math.min(viewHeight, (clientY - bounds.top) / bounds.height * viewHeight))
+        ];
       }
     };
   </script>

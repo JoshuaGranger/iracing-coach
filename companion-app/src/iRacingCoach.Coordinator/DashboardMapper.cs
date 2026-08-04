@@ -95,6 +95,9 @@ public static class DashboardMapper
         var start = Integer(summary, "starting_position");
         var finish = Integer(summary, "final_recorded_position");
         var cautions = Integer(summary, "caution_laps_estimated");
+        var greenLaps = Integer(summary, "green_laps_estimated");
+        var pitStops = Integer(summary, "pit_stops_detected");
+        var runs = Integer(summary, "runs_detected");
         var status = analyzed ? "Analyzed" : isRace ? "Needs analysis" : "Recorded";
         var summaryText = analyzed
             ? $"{Display(recordedLaps, "laps")} · {Position(start)} → {Position(finish)}"
@@ -123,7 +126,9 @@ public static class DashboardMapper
             Math.Max(1, Integer(session, "file_count")),
             Text(session, "series_name") ?? string.Empty,
             Text(session, "season_name") ?? string.Empty,
-            selector);
+            selector,
+            new RaceOverview(recordedLaps, greenLaps, cautions, pitStops, runs,
+                FuelUsedGallons: Number(summary, "fuel_used_gal")));
     }
 
     private static JsonElement MatchDashboardRace(JsonElement session, IReadOnlyList<JsonElement> dashboardRaces)
@@ -206,6 +211,15 @@ public static class DashboardMapper
         return value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number)
             ? (int)Math.Round(number, MidpointRounding.AwayFromZero)
             : 0;
+    }
+
+    private static double? Number(JsonElement element, string property)
+    {
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(property, out var value) || value.ValueKind != JsonValueKind.Number)
+        {
+            return null;
+        }
+        return value.TryGetDouble(out var number) ? number : null;
     }
 
     private static string LocalDate(string? timestamp)

@@ -50,10 +50,10 @@ Avoid terms such as “professional,” “fast,” “useful,” “perfect,”
 ## Evidence boundaries
 
 - Local fixture evidence can prove deterministic mapping, rendering, interaction, and failure containment.
-- Fixture evidence cannot prove real iRacing SDK compatibility, real HOME_QA performance, Garage61 account scope, or live race usefulness.
+- Fixture evidence cannot prove real iRacing SDK compatibility, real-session performance, Garage61 account scope, or live race usefulness.
 - A screenshot proves one rendered state, not keyboard behavior, data lineage, request count, or correct calculations.
 - A unit test proves the encoded case, not the completeness or desirability of the requirement.
-- Only HOME_QA may mark a release **Accepted**.
+- Only Joshua may mark a scope or release artifact **Accepted**. Agents may report verified evidence and remaining limits but may not infer product acceptance.
 
 ## Change control
 

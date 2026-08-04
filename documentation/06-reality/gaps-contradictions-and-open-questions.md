@@ -4,7 +4,7 @@ This is the current criticism backlog. Items remain open until evidence closes t
 
 | ID | Issue | Why it matters | Closure evidence |
 | --- | --- | --- | --- |
-| `GAP-001` | Real telemetry acceptance is HOME_QA pending. | Fixtures cannot prove SDK field behavior, timing, reconnects, or real session variance. | Passed HOME_QA report tied to exact build and representative sessions. |
+| `GAP-001` | Representative real-telemetry breadth remains incomplete. | Fixtures cannot prove every SDK field combination, timing, reconnect, car, or session variance. | Direct real-system evidence tied to exact builds and representative sessions, with failures retained rather than generalized away. |
 | `GAP-002` | Closed in 0.11.0: the unused Setup Library surface was removed; internal setup indexing, recorded Track View, and Starting Tune remain aligned with capability truth and tests. | Capability truth must agree with user-visible reality and automated gating. | Reopen only with a named source/registry mismatch. |
 | `GAP-003` | Closed in development in 0.11.0; packaged and real baseline acceptance remain quality gates rather than missing product behavior. | Starting Tune is first-class inside Setups. | Event/source/checks/run UI, package mapper, Q/R separation, and product-truth tests. |
 | `GAP-004` | Machine-bound Garage61 credential policy is decided; implementation evidence is incomplete for the new migration/redaction/permissions matrix. | The destination PC must restore nonsecret state while requiring reconnection and never carrying a portable secret. | Migration, legacy-secret removal, redaction, and least-privilege storage tests tied to the packaged build. |
@@ -22,7 +22,7 @@ This is the current criticism backlog. Items remain open until evidence closes t
 1. What exact Windows versions, WebView2 versions, scaling factors, and minimum hardware define the support matrix?
 2. External-service credentials are explicitly excluded from portable migration and require reconnection on the destination PC.
 3. What source is authoritative for owned cars when iRacing does not expose ownership locally in a reliable supported form?
-4. What threshold of real-session coverage is required before removing the HOME_QA limitation?
+4. What threshold of real-session coverage is required for each telemetry-related release claim?
 5. Starting Tune remains within Setups; Progressive Tuning remains event-linked follow-up unless user research justifies a navigation change.
 6. Which optional AI behaviors, if any, are release requirements rather than roadmap ideas?
 7. How long should histories, logs, cached raw extracts, and backups be retained by default?
