@@ -85,15 +85,12 @@
 <section class="surface-card settings-compact" aria-labelledby="live-monitor-heading">
     <div class="settings-section-title"><div><span class="eyebrow">Race overlay</span><h2 id="live-monitor-heading">Live Monitor</h2></div><span class="status-label neutral">Always on top</span></div>
     <div class="settings-rows">
-        <label><span>Default layout<small>Compact keeps only glanceable race-critical information</small></span><select @bind="State.Settings.LiveMonitor.Mode"><option value="Compact">Compact</option><option value="Expanded">Expanded</option></select></label>
-        <label><span>Opacity<small>55–100%; click-through can be disabled from the tray</small></span><input type="range" min="0.55" max="1" step="0.05" @bind="State.Settings.LiveMonitor.Opacity" /><strong>@($"{State.Settings.LiveMonitor.Opacity:P0}")</strong></label>
+        <div class="settings-status-row"><span>Active layout</span><strong>@LiveMonitorLayouts.Active(State.Settings.LiveMonitor).Layout.Name</strong><small>Use the monitor's gear and unlock controls to change its grid, tiles, and scale.</small></div>
         <label><span>Global show/hide hotkey<small>Optional examples: Ctrl+Shift+L or Ctrl+Alt+F10</small></span><input @bind="State.Settings.LiveMonitor.GlobalHotkey" @bind:event="oninput" /></label>
     </div>
     <div class="settings-toggles">
         <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.SafeGlanceEnabled" /><span><strong>Safe-glance mode</strong><small>Delay ordinary cue changes until a straight, caution, pit road, or lap completion.</small></span></label>
         <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.ReopenOnConnect" /><span><strong>Open when iRacing connects</strong><small>Automatically reopen the monitor when the local stream appears.</small></span></label>
-        <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.ChromeVisible" /><span><strong>Show monitor controls</strong><small>Keep mode, lock, and hide controls visible.</small></span></label>
-        <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.PositionLocked" /><span><strong>Lock position</strong><small>Prevent accidental moving or resizing while racing.</small></span></label>
     </div>
 </section>
 

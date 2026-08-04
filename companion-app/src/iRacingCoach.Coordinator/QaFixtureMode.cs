@@ -51,6 +51,7 @@ public sealed class QaFixtureBackendClient : IBackendClient
             "analyze_iracing_race" => BuildSelectedAnalysis(arguments),
             "iracing_strategy_history" => BuildStrategyHistory(arguments),
             "catalog_iracing_setups" => _scenario == "empty" ? JsonSerializer.SerializeToElement(new { ok = true, entries = Array.Empty<object>() }) : BuildSetupCatalog(),
+            "build_open_setup_package" => LoadElement("synthetic", "setup-package.json"),
             "recommend_open_setup_tuning" => LoadElement("synthetic", _scenario == "damage-blocked" ? "setup-recommendation-damage-blocked.json" : "setup-recommendation.json"),
             "record_open_setup_feedback" => JsonSerializer.SerializeToElement(new { ok = true, recorded = true, source = "qa-fixture" }),
             "copy_iracing_setup_to_coach" => JsonSerializer.SerializeToElement(new { ok = true, copied = false, source = "qa-fixture" }),

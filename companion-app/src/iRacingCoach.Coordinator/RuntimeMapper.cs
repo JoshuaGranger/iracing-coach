@@ -227,10 +227,28 @@ public static class RuntimeMapper
         var segments = Array(track, "detected_corner_segments").Select(segment => new TrackSegment(
             Integer(segment, "segment"), Number(segment, "start_pct") ?? 0, Number(segment, "end_pct") ?? 0,
             Boolean(segment, "wraps_start_finish") == true, Text(segment, "label") ?? $"Load zone {Integer(segment, "segment")}" )).ToArray();
-        var grades = Array(gradesRoot, "categories").Select(item => new RaceGrade(
-            Text(item, "key") ?? string.Empty, Text(item, "label") ?? "Race execution", Text(item, "grade") ?? string.Empty,
-            Number(item, "score") ?? 0, Evidence(Text(item, "evidence_type")), Text(item, "explanation") ?? string.Empty,
-            Text(item, "improvement") ?? string.Empty, Text(item, "limitations") ?? string.Empty)).ToArray();
+        var suppliedGrades = Array(gradesRoot, "categories").ToDictionary(item => Text(item, "key") ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+        var gradeDefinitions = new[]
+        {
+            ("pace", "Pace execution", "Clean completed green laps; fastest and median lap time"),
+            ("consistency", "Consistency and execution", "Usable-lap variation after supported exclusions"),
+            ("tire_management", "Tire management", "Clean-run pace trend, control load, and discrete service readings"),
+            ("racecraft", "Racecraft and adaptability", "Recorded start/finish position and race timeline"),
+            ("strategy", "Pit and strategy execution", "Recorded pit, tow, repair, and fuel-window evidence")
+        };
+        var grades = gradeDefinitions.Select(definition => suppliedGrades.TryGetValue(definition.Item1, out var item)
+            ? new RaceGrade(
+                definition.Item1, Text(item, "label") ?? definition.Item2, Text(item, "grade") ?? "Not graded",
+                Number(item, "score"), Evidence(Text(item, "evidence_type")), Text(item, "explanation") ?? "The available recorded evidence was graded.",
+                Text(item, "improvement") ?? "Review the supporting telemetry before choosing the next action.",
+                Text(item, "limitations") ?? "This local grade is bounded by the recorded channels.", true, [definition.Item3],
+                definition.Item1 == "pace" ? "Pace is capped below A+ without an external field-strength reference." : "Strict race-specific execution scale.")
+            : new RaceGrade(
+                definition.Item1, definition.Item2, "Not graded", null, EvidenceKind.Unavailable,
+                "There is not enough supported recorded evidence for this category.",
+                "Record a longer, clean run with the required channels available.",
+                "Missing evidence is not converted to a neutral score and does not affect the overall grade.", false, [definition.Item3],
+                "Excluded from the overall grade until evidence exists.")).ToArray();
 
         var damageSummary = Object(damage, "summary");
         var strategyDetails = new AnalysisStrategy(
@@ -258,7 +276,47 @@ public static class RuntimeMapper
             Humanize(Text(forecast, "status")) ?? Humanize(Text(strategy, "confidence")) ?? "Insufficient recorded strategy evidence",
             Humanize(Text(damage, "status")) ?? "Unavailable", strategyDetails, damageDetails, Text(identity, "setup_fingerprint") ?? string.Empty,
             Humanize(Text(quality, "confidence")) ?? "Unknown", Number(timing, "total_ms") ?? 0,
-            Text(gradesRoot, "overall_grade") ?? string.Empty, grades);
+            Text(gradesRoot, "overall_grade") ?? "Not graded", grades);
+    }
+
+    public static SetupPackageView SetupPackage(JsonElement response, string requestedCar, string requestedTrack, string requestedSeason, string purpose)
+    {
+        if (Boolean(response, "ok") != true) throw new InvalidDataException(Text(response, "message") ?? "A starting tune package could not be built from the selected context.");
+        var raceBaseline = Object(response, "baseline");
+        var qualifyingBaseline = Object(response, "qualifying");
+        var wantsQualifying = purpose.Equals("Qualifying", StringComparison.OrdinalIgnoreCase);
+        if (wantsQualifying && qualifyingBaseline.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("No separate qualifying baseline was found for this exact context. A race setup will not be relabeled as qualifying.");
+        var baseline = wantsQualifying ? qualifyingBaseline : raceBaseline;
+        var confirmation = Object(response, "baseline_confirmation");
+        var donor = Object(response, "donor");
+        var warnings = Array(baseline, "identity_warnings").Select(Value).Where(value => value.Length > 0).ToList();
+        if (Text(donor, "warning") is { Length: > 0 } warning) warnings.Add(warning);
+        if (warnings.Count == 0) warnings.Add("Confirm the selected setup passes iRacing tech for the target event before changing it.");
+        var exact = !wantsQualifying && Boolean(confirmation, "confirmed") == true;
+        var source = exact ? "Exact recorded baseline" : "Related baseline for validation";
+        var donorName = Text(donor, "donor") ?? Text(baseline, "stem") ?? "Selected local baseline";
+        return new SetupPackageView(
+            Text(response, "package_id") ?? "Saved starting tune",
+            Humanize(Text(response, "status")) ?? "Package ready",
+            source,
+            Text(baseline, "fingerprint") ?? "Fingerprint unavailable",
+            donorName,
+            exact ? "The source matches the requested recorded context." : wantsQualifying
+                ? "A separate qualifying candidate was found. Verify it in the exact qualifying session before use."
+                : (Text(confirmation, "reason") ?? "The source must be validated at the target track."),
+            warnings,
+            [
+                "Load the source setup in iRacing without overwriting it.",
+                "Save a working copy under a new name.",
+                "Pass iRacing tech inspection for the exact car, track, and session.",
+                "Run a clean baseline before making one controlled change.",
+                "Keep this package fingerprint as the rollback reference."
+            ],
+            Text(response, "package_path") ?? string.Empty, requestedCar, requestedTrack, requestedSeason, purpose,
+            Text(donor, "reason") ?? string.Empty,
+            Boolean(response, "simulator_loadable_setup_produced") == true,
+            Boolean(response, "source_setup_files_modified") == true);
     }
 
     public static TuningExperimentView Tuning(JsonElement response)

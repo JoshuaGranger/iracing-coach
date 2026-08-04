@@ -61,14 +61,17 @@ public sealed class JsonSettingsStore : ISettingsStore
 
             settings.CoachHome = Path.GetDirectoryName(_path) ?? CompanionSettings.DefaultCoachHome;
             settings.LiveMonitor ??= new LiveMonitorLayout();
+            var migratedMonitor = serialized is not null && settings.SettingsSchemaVersion < 4 && TryMigrateLegacyMonitor(serialized, settings.LiveMonitor);
             var migratedMachineLayout = serialized is not null && !File.Exists(_machinePath) && TryReadLegacyMachineLayout(serialized, settings.LiveMonitor);
             ApplyMachineSettings(settings.LiveMonitor);
+            var repairedMonitor = LiveMonitorLayouts.ValidateAndRepair(settings.LiveMonitor, out var monitorCorruption);
+            if ((migratedMonitor || monitorCorruption) && serialized is not null) PreserveLegacyMonitor(serialized, monitorCorruption ? "rejected" : "v0.9.3");
             try
             {
                 var migrated = TryMigrateGarage61Credential(settings);
-                var schemaMigrated = settings.SettingsSchemaVersion < 3;
-                settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 3);
-                if (migrated || legacyCredentialPresent || migratedMachineLayout || schemaMigrated) Save(settings);
+                var schemaMigrated = settings.SettingsSchemaVersion < 4;
+                settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
+                if (migrated || legacyCredentialPresent || migratedMachineLayout || migratedMonitor || repairedMonitor || schemaMigrated) Save(settings);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException or PlatformNotSupportedException) { }
             return settings;
@@ -86,7 +89,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             _credentials.Store(settings.Garage61ApiKey);
             settings.Garage61ApiKey = string.Empty;
         }
-        settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 3);
+        settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
+        _ = LiveMonitorLayouts.ValidateAndRepair(settings.LiveMonitor, out _);
         SaveMachineSettings(settings.LiveMonitor);
         var directory = Path.GetDirectoryName(_path) ?? throw new InvalidOperationException("The settings path has no parent directory.");
         Directory.CreateDirectory(directory);
@@ -104,9 +108,13 @@ public sealed class JsonSettingsStore : ISettingsStore
             if (local is null) return;
             layout.Left = local.LiveMonitor.Left;
             layout.Top = local.LiveMonitor.Top;
-            layout.Width = local.LiveMonitor.Width;
-            layout.Height = local.LiveMonitor.Height;
+            layout.OverallScale = local.LiveMonitor.OverallScale is >= .7 and <= 2
+                ? local.LiveMonitor.OverallScale
+                : local.LiveMonitor.Width is > 0
+                    ? Math.Clamp(local.LiveMonitor.Width.Value / 560d, .7, 2)
+                    : 1;
             layout.MonitorDeviceName = local.LiveMonitor.MonitorDeviceName;
+            layout.PlacementRecoveredAt = local.LiveMonitor.PlacementRecoveredAt;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
     }
@@ -119,9 +127,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             {
                 Left = layout.Left,
                 Top = layout.Top,
-                Width = layout.Width,
-                Height = layout.Height,
-                MonitorDeviceName = layout.MonitorDeviceName
+                OverallScale = Math.Clamp(layout.OverallScale, .7, 2),
+                MonitorDeviceName = layout.MonitorDeviceName,
+                PlacementRecoveredAt = layout.PlacementRecoveredAt
             }
         };
         var directory = Path.GetDirectoryName(_machinePath) ?? throw new InvalidOperationException("The machine settings path has no parent directory.");
@@ -183,8 +191,7 @@ public sealed class JsonSettingsStore : ISettingsStore
             if (!document.RootElement.TryGetProperty("liveMonitor", out var monitor) || monitor.ValueKind != JsonValueKind.Object) return false;
             if (monitor.TryGetProperty("left", out var left) && left.TryGetDouble(out var leftValue)) layout.Left = leftValue;
             if (monitor.TryGetProperty("top", out var top) && top.TryGetDouble(out var topValue)) layout.Top = topValue;
-            if (monitor.TryGetProperty("width", out var width) && width.TryGetDouble(out var widthValue)) layout.Width = widthValue;
-            if (monitor.TryGetProperty("height", out var height) && height.TryGetDouble(out var heightValue)) layout.Height = heightValue;
+            if (monitor.TryGetProperty("width", out var width) && width.TryGetDouble(out var widthValue)) layout.OverallScale = Math.Clamp(widthValue / 560d, .7, 2);
             if (monitor.TryGetProperty("monitorDeviceName", out var monitorName) && monitorName.ValueKind == JsonValueKind.String)
                 layout.MonitorDeviceName = monitorName.GetString() ?? string.Empty;
             return true;
@@ -195,9 +202,80 @@ public sealed class JsonSettingsStore : ISettingsStore
         }
     }
 
+    private static bool TryMigrateLegacyMonitor(string serialized, LiveMonitorLayout layout)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(serialized);
+            if (!document.RootElement.TryGetProperty("liveMonitor", out var monitor) || monitor.ValueKind != JsonValueKind.Object) return false;
+            if (monitor.TryGetProperty("positionLocked", out var locked) && locked.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                layout.IsLocked = locked.GetBoolean();
+            if (!monitor.TryGetProperty("secondaryFields", out var fields) || fields.ValueKind != JsonValueKind.Array) return true;
+            var mapped = fields.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => LegacyMetric(item.GetString()))
+                .Where(item => item is not null)
+                .Cast<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (mapped.Length == 0) return true;
+            var rows = Math.Clamp((int)Math.Ceiling(mapped.Length / 3d), 1, 8);
+            var migrated = new LiveMonitorNamedLayout { Name = "Migrated 0.9.3", Rows = rows, Columns = 3 };
+            for (var index = 0; index < mapped.Length; index++)
+            {
+                var definition = LiveTelemetryCatalog.Get(mapped[index]);
+                migrated.Tiles.Add(new LiveMonitorTile
+                {
+                    MetricId = definition.Id,
+                    Row = index / 3,
+                    Column = index % 3,
+                    DisplayStyle = definition.DefaultStyle,
+                    Unit = definition.DefaultUnit,
+                    Precision = definition.DefaultPrecision
+                });
+            }
+            layout.UserLayouts.Add(migrated);
+            layout.ActiveLayoutId = migrated.Id;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string? LegacyMetric(string? value) => value?.ToLowerInvariant() switch
+    {
+        "leaderlap" => "leader-last-lap",
+        "gaptrends" => "ahead-gap",
+        "tirephase" => "tire-phase",
+        "fuel" => "fuel",
+        "weather" => "track-temperature",
+        "repairs" => "mandatory-repair",
+        "adjustment" => "brake-bias",
+        _ => null
+    };
+
+    private void PreserveLegacyMonitor(string serialized, string label)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(serialized);
+            if (!document.RootElement.TryGetProperty("liveMonitor", out var monitor)) return;
+            var supportPath = _machinePath + $".{label}-monitor.json";
+            if (File.Exists(supportPath)) return;
+            var directory = Path.GetDirectoryName(supportPath) ?? throw new InvalidOperationException("The support path has no parent directory.");
+            Directory.CreateDirectory(directory);
+            var temporary = supportPath + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(monitor, JsonOptions));
+            File.Move(temporary, supportPath, overwrite: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException) { }
+    }
+
     private sealed class MachineSettings
     {
-        public int SchemaVersion { get; set; } = 1;
+        public int SchemaVersion { get; set; } = 2;
         public MachineMonitorPlacement LiveMonitor { get; set; } = new();
     }
 
@@ -205,8 +283,9 @@ public sealed class JsonSettingsStore : ISettingsStore
     {
         public double? Left { get; set; }
         public double? Top { get; set; }
-        public double Width { get; set; } = 560;
-        public double Height { get; set; } = 275;
+        public double OverallScale { get; set; } = 1;
+        public double? Width { get; set; }
         public string MonitorDeviceName { get; set; } = string.Empty;
+        public DateTimeOffset? PlacementRecoveredAt { get; set; }
     }
 }

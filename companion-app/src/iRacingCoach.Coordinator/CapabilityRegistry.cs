@@ -86,6 +86,8 @@ public sealed class CapabilityContext
     public bool HasRaceRecordings { get; init; }
     public bool HasOpenAnalyzedRace { get; init; }
     public bool HasSetupFiles { get; init; }
+    public bool HasComparableSetups { get; init; }
+    public bool HasTrackView { get; init; }
     public bool HasMissingRawTelemetry { get; init; }
     public bool LiveConnected { get; init; }
     public bool HasLeaderGap { get; init; }
@@ -136,6 +138,8 @@ public static class CapabilityRegistry
             ProductCapability.LiveTelemetry when !context.LiveConnected => Temporary(definition, "Waiting for iRacing", "Start or join an iRacing session; connection retries automatically."),
             ProductCapability.RacePlanning => Conditional(definition, context.HasRaceRecordings),
             ProductCapability.ProgressiveTuning => Conditional(definition, context.HasOpenAnalyzedRace),
+            ProductCapability.SetupComparison => Conditional(definition, context.HasComparableSetups),
+            ProductCapability.TrackMap => Conditional(definition, context.HasTrackView),
             ProductCapability.RawTelemetryRelocation => Conditional(definition, context.HasMissingRawTelemetry),
             ProductCapability.ChatGptCoaching when !context.CoachEngineInstalled => new(definition, CapabilityClass.TemporarilyUnavailable, false, "Coach Engine needs repair", "Run Repair installation from Connections."),
             ProductCapability.ChatGptCoaching when !context.CoachEngineRunning => Temporary(definition, "Coach Engine is restarting", "Wait for the private Coach Engine to restart."),
@@ -195,10 +199,10 @@ public static class CapabilityRegistry
             Supported(ProductCapability.Garage61Connection, "Garage61 connection", "Authorize approved personal Garage61 access", "Machine-bound PAT and auth-status adapter", "Connection loss or rate limit; automatic retry and credential replacement"),
             Unsupported(ProductCapability.Garage61GlobalComparison, "Garage61 global-field comparison", "Compare against globally visible laps", "Garage61 API", "Global-visible scope is not approved"),
             NotImplemented(ProductCapability.QualifyingAnalysis, "Qualifying analysis", "Review qualifying performance", "Finalized qualifying recording"),
-            NotImplemented(ProductCapability.SetupComparison, "Setup comparison", "Compare setup parameters", "Validated setup parser"),
-            NotImplemented(ProductCapability.SetupPackageBuilder, "Setup package builder", "Assemble a coaching package", "Setup/package workflow"),
+            ConditionalDefinition(ProductCapability.SetupComparison, "Setup comparison", "Compare readable setup parameters", "Two readable same-car setup snapshots", "Two readable setups for the selected car exist"),
+            Supported(ProductCapability.SetupPackageBuilder, "Starting Tune", "Build a read-only baseline coaching package", "Local setup catalog and setup-package workflow"),
             NotImplemented(ProductCapability.SetupExperimentTab, "Setup experiments tab", "Browse setup experiments", "Tuning history"),
-            NotImplemented(ProductCapability.TrackMap, "Track map", "Locate coaching on geographic track shape", "Calibrated track geometry"),
+            ConditionalDefinition(ProductCapability.TrackMap, "Track view", "Locate coaching on recorded geometry or lap distance", "Recorded track geometry with truthful distance-strip fallback", "The selected analysis contains telemetry traces"),
             NotImplemented(ProductCapability.ExactTargetTrace, "Exact target trace", "Compare against an aligned representative lap", "Validated aligned target telemetry"),
             NotImplemented(ProductCapability.PushToPass, "Push-to-pass guidance", "Use a supported in-car control", "Car capability and live channel"),
             NotImplemented(ProductCapability.WeightJacker, "Weight-jacker guidance", "Use a supported in-car control", "Car capability and live channel"),
@@ -238,4 +242,15 @@ public static class CapabilityRegistry
 
     private static CapabilityDefinition NotImplemented(ProductCapability id, string name, string value, string source) =>
         new(id, name, value, source, CapabilityClass.NotImplemented, "No complete validated production implementation", "Production absence test", "Not exposed as a temporary state", "Omit until implementation and validation are complete", "Development inventory only", false);
+
+    public static bool HasSetupComparison(IEnumerable<LocalSetup> setups, string? selectedSetupId = null)
+    {
+        var readable = setups.Where(setup => setup.Fields.Count > 0).ToArray();
+        if (string.IsNullOrWhiteSpace(selectedSetupId))
+            return readable.GroupBy(setup => setup.Car, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() >= 2);
+        var selected = readable.FirstOrDefault(setup => string.Equals(setup.Id, selectedSetupId, StringComparison.Ordinal));
+        return selected is not null && readable.Any(setup => setup.Id != selected.Id && setup.Car.Equals(selected.Car, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static bool HasTrackView(AnalysisWorkspace? workspace) => workspace?.Traces.Count > 0;
 }

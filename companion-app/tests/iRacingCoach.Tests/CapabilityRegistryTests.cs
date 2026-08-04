@@ -31,8 +31,7 @@ public sealed class CapabilityRegistryTests
         var hidden = new[]
         {
             ProductCapability.Garage61GlobalComparison, ProductCapability.QualifyingAnalysis,
-            ProductCapability.SetupComparison, ProductCapability.SetupPackageBuilder,
-            ProductCapability.SetupExperimentTab, ProductCapability.TrackMap,
+            ProductCapability.SetupExperimentTab,
             ProductCapability.ExactTargetTrace, ProductCapability.PushToPass,
             ProductCapability.WeightJacker, ProductCapability.WetWeatherAnalysis,
             ProductCapability.MulticlassAnalysis
@@ -84,6 +83,22 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
+    public void TrackViewAndSetupComparison_AreTruthfullyConditionalAndReachable()
+    {
+        var inventory = CapabilityRegistry.Inventory.ToDictionary(item => item.Id);
+        Assert.AreEqual(CapabilityClass.ConditionallyApplicable, inventory[ProductCapability.TrackMap].Classification);
+        Assert.AreEqual(CapabilityClass.ConditionallyApplicable, inventory[ProductCapability.SetupComparison].Classification);
+        Assert.IsFalse(CapabilityRegistry.Evaluate(ProductCapability.TrackMap, new CapabilityContext()).Visible);
+        Assert.IsTrue(CapabilityRegistry.Evaluate(ProductCapability.TrackMap, new CapabilityContext { HasTrackView = true }).Visible);
+        Assert.IsFalse(CapabilityRegistry.Evaluate(ProductCapability.SetupComparison, new CapabilityContext()).Visible);
+        Assert.IsTrue(CapabilityRegistry.Evaluate(ProductCapability.SetupComparison, new CapabilityContext { HasComparableSetups = true }).Visible);
+
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor")), "track-map");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "SetupPage.razor")), "ProductCapability.SetupComparison");
+    }
+
+    [TestMethod]
     public void UnvalidatedWetMulticlassAndGarage61GlobalScopes_StayAbsentInEveryContext()
     {
         foreach (var context in new[] { new CapabilityContext(), FullyPopulated() })
@@ -132,7 +147,8 @@ public sealed class CapabilityRegistryTests
         Assert.IsFalse(production.Any(text => text.Contains("[U]", StringComparison.Ordinal)));
 
         var setup = File.ReadAllText(Path.Combine(ui, "SetupPage.razor"));
-        Assert.DoesNotContain("Build Package", setup);
+        StringAssert.Contains(setup, "Starting Tune");
+        StringAssert.Contains(setup, "Find baseline source");
         Assert.DoesNotContain(">Compare<", setup);
         Assert.DoesNotContain("section-tabs", setup);
         Assert.IsFalse(File.Exists(Path.Combine(ui, "TrackTelemetryView.razor")));
@@ -240,6 +256,7 @@ public sealed class CapabilityRegistryTests
     private static CapabilityContext FullyPopulated() => new()
     {
         HasRaceRecordings = true, HasOpenAnalyzedRace = true, HasSetupFiles = true, HasMissingRawTelemetry = true,
+        HasComparableSetups = true, HasTrackView = true,
         LiveConnected = true, HasLeaderGap = true, HasAheadGap = true, HasBehindGap = true, HasPaceRange = true,
         HasPitWindow = true, HasFuelLimit = true, HasLastLap = true, HasLeaderLastLap = true, HasTirePhase = true,
         HasWeather = true, HasBrakeBias = true, HasRepair = true, HasOfficialEvents = true, HasHostedLeagueEvents = true,

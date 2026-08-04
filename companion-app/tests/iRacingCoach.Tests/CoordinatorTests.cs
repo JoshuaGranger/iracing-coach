@@ -310,17 +310,21 @@ public sealed class CoordinatorTests
             UseReducedMotion = true,
             LiveMonitor = new LiveMonitorLayout
             {
-                Mode = LiveMonitorMode.Expanded,
+                ActiveLayoutId = "layout-personal",
+                IsLocked = false,
                 Left = 220,
                 Top = 140,
-                Width = 640,
-                Height = 410,
-                Opacity = .8,
-                ClickThrough = true,
-                PositionLocked = true,
-                ChromeVisible = false,
+                OverallScale = 1.4,
                 ReopenOnConnect = true,
-                GlobalHotkey = "Ctrl+Shift+L"
+                GlobalHotkey = "Ctrl+Shift+L",
+                UserLayouts =
+                [
+                    new LiveMonitorNamedLayout
+                    {
+                        Id = "layout-personal", Name = "Personal Race", Rows = 2, Columns = 3,
+                        Tiles = [new LiveMonitorTile { Id = "tile-speed", MetricId = "speed", DisplayStyle = LiveMonitorDisplayStyle.Trend, Unit = "mph" }]
+                    }
+                ]
             }
         };
 
@@ -339,15 +343,12 @@ public sealed class CoordinatorTests
         Assert.IsTrue(File.Exists(path + ".machine-local.json"));
         Assert.IsTrue(actual.LaunchAtSignIn);
         Assert.IsTrue(actual.UseReducedMotion);
-        Assert.AreEqual(LiveMonitorMode.Expanded, actual.LiveMonitor.Mode);
+        Assert.AreEqual("layout-personal", actual.LiveMonitor.ActiveLayoutId);
+        Assert.IsFalse(actual.LiveMonitor.IsLocked);
+        Assert.AreEqual("Personal Race", actual.LiveMonitor.UserLayouts.Single().Name);
         Assert.AreEqual(220, actual.LiveMonitor.Left);
         Assert.AreEqual(140, actual.LiveMonitor.Top);
-        Assert.AreEqual(640, actual.LiveMonitor.Width);
-        Assert.AreEqual(410, actual.LiveMonitor.Height);
-        Assert.AreEqual(.8, actual.LiveMonitor.Opacity);
-        Assert.IsTrue(actual.LiveMonitor.ClickThrough);
-        Assert.IsTrue(actual.LiveMonitor.PositionLocked);
-        Assert.IsFalse(actual.LiveMonitor.ChromeVisible);
+        Assert.AreEqual(1.4, actual.LiveMonitor.OverallScale);
         Assert.IsTrue(actual.LiveMonitor.ReopenOnConnect);
         Assert.AreEqual("Ctrl+Shift+L", actual.LiveMonitor.GlobalHotkey);
     }
@@ -364,16 +365,22 @@ public sealed class CoordinatorTests
         var settings = new CompanionSettings { CoachHome = directory };
         settings.LiveMonitor.Left = 310;
         settings.LiveMonitor.Top = 180;
+        settings.LiveMonitor.OverallScale = 1.6;
         settings.LiveMonitor.MonitorDeviceName = @"\\.\DISPLAY3";
+        settings.LiveMonitor.UserLayouts.Add(new LiveMonitorNamedLayout { Id = "portable-layout", Name = "Portable layout", Tiles = [new LiveMonitorTile { MetricId = "speed" }] });
+        settings.LiveMonitor.ActiveLayoutId = "portable-layout";
         first.Save(settings);
 
         var restoredOnFirstPc = first.Load();
         var restoredOnSecondPc = new JsonSettingsStore(portable, credentials, secondMachine).Load();
 
         Assert.AreEqual(310, restoredOnFirstPc.LiveMonitor.Left);
+        Assert.AreEqual(1.6, restoredOnFirstPc.LiveMonitor.OverallScale);
         Assert.AreEqual(@"\\.\DISPLAY3", restoredOnFirstPc.LiveMonitor.MonitorDeviceName);
         Assert.IsNull(restoredOnSecondPc.LiveMonitor.Left);
+        Assert.AreEqual(1, restoredOnSecondPc.LiveMonitor.OverallScale);
         Assert.AreEqual(string.Empty, restoredOnSecondPc.LiveMonitor.MonitorDeviceName);
+        Assert.AreEqual("Portable layout", restoredOnSecondPc.LiveMonitor.UserLayouts.Single().Name);
         Assert.DoesNotContain("DISPLAY3", File.ReadAllText(portable));
     }
 
@@ -528,7 +535,7 @@ public sealed class CoordinatorTests
         Assert.AreEqual(string.Empty, actual.Garage61ApiKey);
         Assert.DoesNotContain("legacy-test-key", File.ReadAllText(path));
         Assert.IsFalse(File.ReadAllText(path).Contains("garage61ApiKey", StringComparison.OrdinalIgnoreCase));
-        Assert.AreEqual(3, actual.SettingsSchemaVersion);
+        Assert.AreEqual(4, actual.SettingsSchemaVersion);
     }
 
     [TestMethod]

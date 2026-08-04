@@ -247,7 +247,19 @@ public sealed record AnalysisDamage(
 
 public sealed record TrackShapePoint(double LapPercent, double X, double Y);
 public sealed record TrackSegment(int Number, double StartPercent, double EndPercent, bool WrapsStartFinish, string Label);
-public sealed record RaceGrade(string Key, string Label, string Grade, double Score, EvidenceKind Evidence, string Explanation, string Improvement, string Limitation);
+public sealed record RaceGrade(
+    string Key,
+    string Label,
+    string Grade,
+    double? Score,
+    EvidenceKind Evidence,
+    string Explanation,
+    string Improvement,
+    string Limitation,
+    bool Available = true,
+    IReadOnlyList<string>? Inputs = null,
+    string Calibration = "Strict local execution scale",
+    string Provenance = "Deterministic local analysis");
 
 public sealed record AnalysisWorkspace(
     int SchemaVersion,
@@ -304,7 +316,7 @@ public sealed class CompanionSettings
     [JsonIgnore]
     public string Garage61ApiKey { get; set; } = string.Empty;
     public bool FirstRunComplete { get; set; }
-    public int SettingsSchemaVersion { get; set; } = 3;
+    public int SettingsSchemaVersion { get; set; } = 4;
     public Dictionary<string, string> CoachThreadIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     [JsonIgnore]
     public string PythonPath => ResolvePackagedExecutable("python", "python.exe");
@@ -341,29 +353,53 @@ public sealed class CompanionSettings
     }
 }
 
-public enum LiveMonitorMode { Compact, Expanded }
+public enum LiveMonitorMetricSource { Recorded, Calculated, Coach }
+public enum LiveMonitorDisplayStyle { Number, Gauge, Bar, Trend, Status }
+public enum LiveMonitorTrendDuration { Seconds15, Seconds30, Seconds60, OneLap, ThreeLaps }
 public enum LiveGapTrend { Closing, Stable, Growing, Stale, Unavailable }
 public enum LiveCuePriority { Information = 0, Environment = 10, Coaching = 20, Pace = 30, Traffic = 40, PitService = 50, Strategy = 60, Critical = 100 }
 public enum LiveCueSuppressionReason { None, SafeGlanceDelay, Caution, PitCycle, DifferentLap, StaleTelemetry, NoBaseline, Paused }
 
 public sealed class LiveMonitorLayout
 {
+    public const string FactoryDefaultId = "factory-default";
     public bool Visible { get; set; }
-    public LiveMonitorMode Mode { get; set; } = LiveMonitorMode.Compact;
+    public string ActiveLayoutId { get; set; } = FactoryDefaultId;
+    public bool IsLocked { get; set; } = true;
+    public List<LiveMonitorNamedLayout> UserLayouts { get; set; } = [];
     [JsonIgnore] public double? Left { get; set; }
     [JsonIgnore] public double? Top { get; set; }
-    [JsonIgnore] public double Width { get; set; } = 560;
-    [JsonIgnore] public double Height { get; set; } = 275;
-    public double Opacity { get; set; } = 0.94;
-    public bool ClickThrough { get; set; }
-    public bool PositionLocked { get; set; }
-    public bool ChromeVisible { get; set; } = true;
+    [JsonIgnore] public double OverallScale { get; set; } = 1;
     public bool SafeGlanceEnabled { get; set; } = true;
     public bool ReopenOnConnect { get; set; }
     public int HistoryLaps { get; set; } = 3;
     [JsonIgnore] public string MonitorDeviceName { get; set; } = string.Empty;
+    [JsonIgnore] public DateTimeOffset? PlacementRecoveredAt { get; set; }
     public string GlobalHotkey { get; set; } = string.Empty;
-    public List<string> SecondaryFields { get; set; } = ["leaderLap", "gapTrends", "tirePhase", "fuel", "weather", "repairs", "adjustment"];
+}
+
+public sealed class LiveMonitorNamedLayout
+{
+    public string Id { get; set; } = $"layout-{Guid.NewGuid():N}";
+    public string Name { get; set; } = "Custom";
+    public int Rows { get; set; } = 2;
+    public int Columns { get; set; } = 3;
+    public List<LiveMonitorTile> Tiles { get; set; } = [];
+}
+
+public sealed class LiveMonitorTile
+{
+    public string Id { get; set; } = $"tile-{Guid.NewGuid():N}";
+    public string MetricId { get; set; } = "position";
+    public int Row { get; set; }
+    public int Column { get; set; }
+    public int RowSpan { get; set; } = 1;
+    public int ColumnSpan { get; set; } = 1;
+    public LiveMonitorDisplayStyle DisplayStyle { get; set; } = LiveMonitorDisplayStyle.Number;
+    public string Unit { get; set; } = string.Empty;
+    public int Precision { get; set; } = 1;
+    public LiveMonitorTrendDuration TrendDuration { get; set; } = LiveMonitorTrendDuration.Seconds30;
+    public string Accent { get; set; } = "default";
 }
 
 public sealed record LiveGapState(
@@ -479,7 +515,9 @@ public sealed record LiveRaceSnapshot(
     double? LongitudinalAccelerationG = null,
     double? LapDistancePercent = null,
     double? Latitude = null,
-    double? Longitude = null);
+    double? Longitude = null,
+    double? FuelLiters = null,
+    double? FuelLevelPercent = null);
 
 public sealed record LiveMonitorState(
     LiveRaceSnapshot Snapshot,
@@ -532,7 +570,15 @@ public sealed record SetupPackageView(
     string Donor,
     string Confirmation,
     IReadOnlyList<string> Risks,
-    IReadOnlyList<string> BaselineChecks);
+    IReadOnlyList<string> BaselineChecks,
+    string PackagePath = "",
+    string Car = "",
+    string Track = "",
+    string Season = "",
+    string Purpose = "Race",
+    string DonorReason = "",
+    bool SimulatorSetupProduced = false,
+    bool SourceFilesModified = false);
 
 public sealed record TuningExperimentView(
     string ExperimentId,
@@ -567,7 +613,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.9.3");
+    string ClientVersion = "0.10.0");
 
 public sealed record BackendHealthResult(
     bool Ok,

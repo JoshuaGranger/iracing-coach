@@ -20,7 +20,7 @@ public sealed record TuningFeedbackDraft(
 
 public sealed class CompanionState : IDisposable
 {
-    private const string AppVersion = "0.9.3";
+    private const string AppVersion = "0.10.0";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
@@ -116,6 +116,12 @@ public sealed class CompanionState : IDisposable
     public string SelectedTuningRaceId { get; set; } = string.Empty;
     public string SelectedSetupId { get; set; } = string.Empty;
     public string CompareSetupId { get; set; } = string.Empty;
+    public int StartingTuneStep { get; private set; } = 1;
+    public string StartingTuneSeason { get; set; } = string.Empty;
+    public string StartingTuneCar { get; set; } = string.Empty;
+    public string StartingTuneTrack { get; set; } = string.Empty;
+    public string StartingTunePurpose { get; set; } = "Race";
+    public bool StartingTuneBusy { get; private set; }
     public string SelectedRaceSessionId { get; private set; } = string.Empty;
     public string RaceSearchText { get; set; } = string.Empty;
     public RaceBrowserFilter RaceFilter { get; set; }
@@ -130,6 +136,7 @@ public sealed class CompanionState : IDisposable
     public List<TuningFeedbackDraft> TuningFeedback { get; } = [];
     public RacePlanBriefing? PlanBriefing { get; private set; }
     public TuningExperimentView? TuningExperiment { get; private set; }
+    public SetupPackageView? StartingTunePackage { get; private set; }
     public RaceCard? CurrentRaceCard { get; private set; }
     public AnalysisWorkspace? CurrentAnalysis { get; private set; }
     public bool AnalysisWorkspaceOpen { get; private set; }
@@ -191,6 +198,8 @@ public sealed class CompanionState : IDisposable
                 HasRaceRecordings = Races.Count > 0,
                 HasOpenAnalyzedRace = TuningRaces.Any(),
                 HasSetupFiles = Setups.Count > 0,
+                HasComparableSetups = CapabilityRegistry.HasSetupComparison(Setups, SelectedSetupId),
+                HasTrackView = CapabilityRegistry.HasTrackView(CurrentAnalysis),
                 HasMissingRawTelemetry = Archive?.Restored.UnresolvedSources > 0,
                 LiveConnected = live.Connected,
                 HasLeaderGap = live.LeaderGap.Seconds.HasValue,
@@ -745,6 +754,66 @@ public sealed class CompanionState : IDisposable
         });
     }
 
+    public void OpenStartingTune()
+    {
+        if (string.IsNullOrWhiteSpace(StartingTuneCar)) StartingTuneCar = SelectedSetup?.Car ?? Races.FirstOrDefault(race => race.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase))?.Car ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(StartingTuneTrack)) StartingTuneTrack = SelectedSetup?.Track ?? Races.FirstOrDefault(race => race.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase))?.Track ?? string.Empty;
+        RaiseChanged();
+    }
+
+    public async Task BuildStartingTuneAsync(CancellationToken cancellationToken = default)
+    {
+        if (StartingTuneBusy) return;
+        if (string.IsNullOrWhiteSpace(StartingTuneSeason) || string.IsNullOrWhiteSpace(StartingTuneCar) || string.IsNullOrWhiteSpace(StartingTuneTrack))
+        {
+            SetupMessage = "Enter the iRacing season, car, and exact track layout before finding a baseline.";
+            RaiseChanged();
+            return;
+        }
+        StartingTuneBusy = true;
+        SetupMessage = "Reviewing your local setups and recorded context…";
+        RaiseChanged();
+        try
+        {
+            var response = await CallBackendAsync("build_open_setup_package", new
+            {
+                iracing_root = Settings.IRacingRoot,
+                archive_root = Settings.ArchiveRoot,
+                season = StartingTuneSeason.Trim(),
+                car = StartingTuneCar.Trim(),
+                track = StartingTuneTrack.Trim()
+            }, cancellationToken);
+            StartingTunePackage = RuntimeMapper.SetupPackage(response, StartingTuneCar.Trim(), StartingTuneTrack.Trim(), StartingTuneSeason.Trim(), StartingTunePurpose);
+            StartingTuneStep = 2;
+            SetupMessage = "A read-only source and rollback record are ready for review.";
+        }
+        catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
+        {
+            SetupMessage = Bound(ex.Message);
+            StartingTunePackage = null;
+        }
+        finally
+        {
+            StartingTuneBusy = false;
+            RaiseChanged();
+        }
+    }
+
+    public void SetStartingTuneStep(int step)
+    {
+        if (StartingTunePackage is null && step > 1) return;
+        StartingTuneStep = Math.Clamp(step, 1, 4);
+        RaiseChanged();
+    }
+
+    public void ResetStartingTune()
+    {
+        StartingTunePackage = null;
+        StartingTuneStep = 1;
+        SetupMessage = "Enter an open-setup event context to build a new starting tune.";
+        RaiseChanged();
+    }
+
     public void SaveSettings()
     {
         var sourceValid = TryValidateLocalRoot(Settings.IRacingRoot, out var sourceError);
@@ -968,7 +1037,7 @@ public sealed class CompanionState : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "iRacingCoach",
             "Installer",
-            "iRacingCoach-0.9.3-Setup.exe");
+            "iRacingCoach-0.10.0-Setup.exe");
         if (!File.Exists(setup))
         {
             Toast = "The repair package could not be found. Run the latest iRacing Coach installer again.";
@@ -999,20 +1068,17 @@ public sealed class CompanionState : IDisposable
         Settings.DiagnosticIncludeConfounded = false;
         var liveDefaults = new LiveMonitorLayout();
         Settings.LiveMonitor.Visible = liveDefaults.Visible;
-        Settings.LiveMonitor.Mode = liveDefaults.Mode;
+        Settings.LiveMonitor.ActiveLayoutId = liveDefaults.ActiveLayoutId;
+        Settings.LiveMonitor.IsLocked = liveDefaults.IsLocked;
+        Settings.LiveMonitor.UserLayouts = [];
         Settings.LiveMonitor.Left = liveDefaults.Left;
         Settings.LiveMonitor.Top = liveDefaults.Top;
-        Settings.LiveMonitor.Width = liveDefaults.Width;
-        Settings.LiveMonitor.Height = liveDefaults.Height;
-        Settings.LiveMonitor.Opacity = liveDefaults.Opacity;
-        Settings.LiveMonitor.ClickThrough = liveDefaults.ClickThrough;
-        Settings.LiveMonitor.PositionLocked = liveDefaults.PositionLocked;
-        Settings.LiveMonitor.ChromeVisible = liveDefaults.ChromeVisible;
+        Settings.LiveMonitor.OverallScale = liveDefaults.OverallScale;
         Settings.LiveMonitor.SafeGlanceEnabled = liveDefaults.SafeGlanceEnabled;
         Settings.LiveMonitor.ReopenOnConnect = liveDefaults.ReopenOnConnect;
         Settings.LiveMonitor.MonitorDeviceName = liveDefaults.MonitorDeviceName;
+        Settings.LiveMonitor.PlacementRecoveredAt = null;
         Settings.LiveMonitor.GlobalHotkey = liveDefaults.GlobalHotkey;
-        Settings.LiveMonitor.SecondaryFields = [.. liveDefaults.SecondaryFields];
         LiveMonitorVisibilityRequested?.Invoke(false);
         SettingsMessage = "App preferences were restored. Protected account connections and racing history were kept.";
         RaiseChanged();
@@ -1384,7 +1450,7 @@ public sealed class CompanionState : IDisposable
         new("Garage61", Garage61.Available ? "Connected" : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
         new("Live telemetry", LiveState.Snapshot.Connected ? $"Connected · {LiveState.Snapshot.Flag} · {LiveState.Snapshot.DataAge.TotalMilliseconds:0} ms old" : "Waiting for iRacing", LiveState.Snapshot.Connected ? "ready" : "neutral"),
         new("Live update pipeline", $"{LiveState.FramesRead:N0} frames · {LiveState.DroppedFrames:N0} dropped · {LiveState.RenderLatencyMs:0.00} ms compute", LiveState.DroppedFrames == 0 ? "ready" : "warning"),
-        new("Live Monitor", Settings.LiveMonitor.Visible ? $"Visible · {Settings.LiveMonitor.Mode}" : "Hidden", "neutral"),
+        new("Live Monitor", Settings.LiveMonitor.Visible ? $"Visible · {LiveMonitorLayouts.Active(Settings.LiveMonitor).Layout.Name}" : "Hidden", "neutral"),
         new("Overlay compatibility", "Works above borderless-windowed iRacing and on another monitor; exclusive fullscreen may cover it", "neutral"),
         new("Automatic discovery", "Watching files · quiet 30-second safety check", "ready"),
         new("Finalized races found", Races.Count.ToString(CultureInfo.CurrentCulture)),

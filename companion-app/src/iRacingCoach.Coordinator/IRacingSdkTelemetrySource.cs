@@ -102,6 +102,7 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 LastLapSeconds = Positive(ReadDouble("LapLastLapTime", bestOffset)),
                 LeaderLastLapSeconds = Positive(ArrayValue(lastLapTimes, leaderIndex)),
                 FuelLiters = NonNegative(ReadDouble("FuelLevel", bestOffset)),
+                FuelLevelPercent = Percentage(ReadDouble("FuelLevelPct", bestOffset)),
                 TrackTemperatureC = ReadDouble("TrackTempCrew", bestOffset) ?? ReadDouble("TrackTemp", bestOffset),
                 AirTemperatureC = ReadDouble("AirTemp", bestOffset),
                 BrakeBiasPercent = ReadDouble("dcBrakeBias", bestOffset),
@@ -235,6 +236,7 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
     private static int? Positive(int? value) => value is > 0 ? value : null;
     private static double? Positive(double? value) => value is > 0 && double.IsFinite(value.Value) ? value : null;
     private static double? NonNegative(double? value) => value is >= 0 && double.IsFinite(value.Value) ? value : null;
+    private static double? Percentage(double? value) => value is >= 0 and <= 1 && double.IsFinite(value.Value) ? value : null;
     private static int TypeWidth(int type) => type switch { 0 or 1 => 1, 2 or 3 or 4 => 4, 5 => 8, _ => 0 };
     private static string FlagLabel(uint flags)
     {

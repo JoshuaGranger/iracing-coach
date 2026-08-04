@@ -24,7 +24,6 @@ public partial class MainWindow : Window
     private readonly Forms.ToolStripMenuItem _monitorItem;
     private readonly Forms.ToolStripMenuItem _statusItem;
     private readonly Forms.ToolStripMenuItem _pauseItem;
-    private readonly Forms.ToolStripMenuItem _clickThroughItem;
     private readonly bool _qaMode;
     private bool _exitRequested;
     private bool _trayNoticeShown;
@@ -102,13 +101,11 @@ public partial class MainWindow : Window
         _monitorItem = new Forms.ToolStripMenuItem("Show Live Monitor", null, (_, _) => _state.ToggleLiveMonitor());
         _statusItem = new Forms.ToolStripMenuItem("Live telemetry: waiting for iRacing") { Enabled = false };
         _pauseItem = new Forms.ToolStripMenuItem("Pause live coaching", null, (_, _) => _state.ToggleLiveCoaching());
-        _clickThroughItem = new Forms.ToolStripMenuItem("Disable monitor click-through", null, (_, _) => _liveMonitor.DisableClickThrough());
         var trayMenu = new Forms.ContextMenuStrip();
         trayMenu.Items.Add(new Forms.ToolStripMenuItem("Open iRacing Coach", null, (_, _) => ShowFromTray()));
         trayMenu.Items.Add(_monitorItem);
         trayMenu.Items.Add(_statusItem);
         trayMenu.Items.Add(_pauseItem);
-        trayMenu.Items.Add(_clickThroughItem);
         trayMenu.Items.Add(new Forms.ToolStripSeparator());
         trayMenu.Items.Add(new Forms.ToolStripMenuItem("Settings", null, (_, _) => OpenSettings()));
         trayMenu.Items.Add(new Forms.ToolStripSeparator());
@@ -289,7 +286,6 @@ public partial class MainWindow : Window
         _monitorItem.Text = _state.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Show Live Monitor";
         _pauseItem.Text = _state.LiveCoachingPaused ? "Resume live coaching" : "Pause live coaching";
         _pauseItem.Visible = snapshot.Connected;
-        _clickThroughItem.Visible = _state.Settings.LiveMonitor.ClickThrough;
         _statusItem.Text = snapshot.Connected
             ? $"Live telemetry: connected · {snapshot.Flag}{(snapshot.Lap.HasValue ? $" · L{snapshot.Lap}" : string.Empty)}"
             : "Live telemetry: waiting for iRacing";

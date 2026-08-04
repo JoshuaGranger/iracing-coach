@@ -33,6 +33,7 @@ public sealed record LiveTelemetrySample
     public double? LastLapSeconds { get; init; }
     public double? LeaderLastLapSeconds { get; init; }
     public double? FuelLiters { get; init; }
+    public double? FuelLevelPercent { get; init; }
     public double? TrackTemperatureC { get; init; }
     public double? AirTemperatureC { get; init; }
     public double? BrakeBiasPercent { get; init; }
@@ -260,7 +261,8 @@ public sealed class LiveTelemetryEngine
             sample.Timestamp, DateTimeOffset.UtcNow - sample.Timestamp, sample.Source, 0.9, string.Empty,
             sample.SpeedMetersPerSecond * 2.2369362920544, sample.Throttle, sample.Brake, sample.SteeringWheelAngleRadians,
             sample.Gear, sample.Rpm, sample.YawRateRadiansPerSecond * 57.29577951308232, sample.LateralAccelerationG,
-            sample.LongitudinalAccelerationG, sample.LapDistancePercent, sample.Latitude, sample.Longitude);
+            sample.LongitudinalAccelerationG, sample.LapDistancePercent, sample.Latitude, sample.Longitude,
+            sample.FuelLiters, sample.FuelLevelPercent);
     }
 
     public static LiveRaceSnapshot Disconnected(string reason = "Start iRacing to connect the local telemetry stream.")

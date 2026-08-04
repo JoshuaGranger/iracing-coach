@@ -29,11 +29,13 @@
     @if (Workspace.Grades.Count > 0)
     {
         <section class="race-grade-panel" aria-labelledby="grades-heading">
-            <div class="overall-grade"><span>Race grade</span><strong>@Workspace.OverallGrade</strong><small>Strict recorded-execution standard</small></div>
+            <div class="overall-grade"><span>Race grade</span><strong>@Workspace.OverallGrade</strong><small>Only supported categories are included</small></div>
             <div class="grade-categories">
                 @foreach (var grade in Workspace.Grades)
                 {
-                    <article title="@grade.Limitation"><div><span>@grade.Label</span><strong>@grade.Grade</strong></div><p>@grade.Explanation</p><small><b>Next:</b> @grade.Improvement</small></article>
+                    <article class="@(grade.Available ? null : "grade-unavailable")" title="@grade.Limitation"><div><span>@grade.Label</span><strong>@grade.Grade</strong></div><p>@grade.Explanation</p><small><b>Next:</b> @grade.Improvement</small>
+                        <details class="grade-audit"><summary>How this was graded</summary><dl><div><dt>Score</dt><dd>@(grade.Score.HasValue ? grade.Score.Value.ToString("0.0") : "Excluded — insufficient evidence")</dd></div><div><dt>Evidence</dt><dd>@grade.Evidence</dd></div><div><dt>Calibration</dt><dd>@grade.Calibration</dd></div><div><dt>Provenance</dt><dd>@grade.Provenance</dd></div></dl><p><b>Inputs:</b> @string.Join("; ", grade.Inputs ?? [])</p><p><b>Limitation:</b> @grade.Limitation</p></details>
+                    </article>
                 }
             </div>
         </section>

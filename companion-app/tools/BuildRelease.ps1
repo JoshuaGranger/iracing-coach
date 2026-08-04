@@ -11,7 +11,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '0.9.3'
+$version = '0.10.0'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot '..'))
 $backendSource = Join-Path $workspaceRoot 'iracing-coach'
