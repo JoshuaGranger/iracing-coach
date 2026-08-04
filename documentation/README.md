@@ -83,4 +83,4 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 - Installer lifecycle: local guarded install/upgrade/rollback/uninstall verification passed
 - Final acceptance: **HOME_QA pending**
 
-The versioned evidence will be summarized in `companion-app/RELEASE_0.10.0.md` after the exact artifacts and UI walkthrough are complete. Build binaries and private user data are deliberately not part of the source repository.
+The exact artifact, packaged UI, performance sample, privacy, and installer lifecycle evidence is summarized in `companion-app/RELEASE_0.10.0.md`. Build binaries and private user data are deliberately not part of the source repository.
