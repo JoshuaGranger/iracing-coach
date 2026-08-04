@@ -649,6 +649,9 @@
     private static string FriendlyZone(TrackSegment zone) => string.IsNullOrWhiteSpace(zone.Label) || zone.Label.StartsWith("Load zone", StringComparison.OrdinalIgnoreCase) ? $"C{zone.Number}" : zone.Label;
     private string LapColor(int lap)
     {
+        var trace = Workspace.Traces.FirstOrDefault(item => item.Lap == lap);
+        if (trace?.LapTimeSeconds is { } lapTime && Math.Abs(lapTime - FastestLapTime) < .0001)
+            return "#F05CDB";
         var laps = Workspace.Traces.Select(trace => trace.Lap).Distinct().OrderBy(value => value).ToArray();
         var index = Array.IndexOf(laps, lap);
         var fraction = laps.Length <= 1 ? 0 : Math.Max(0, index) / (double)(laps.Length - 1);

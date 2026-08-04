@@ -249,6 +249,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "Show all");
         Assert.DoesNotContain("Pit stop recorded", telemetry);
         StringAssert.Contains(telemetry, "var hue = 280 * fraction");
+        StringAssert.Contains(telemetry, "Math.Abs(lapTime - FastestLapTime) < .0001");
+        StringAssert.Contains(telemetry, "return \"#F05CDB\"");
         Assert.DoesNotContain("Other laps", telemetry);
         Assert.DoesNotContain("lap-focus-action", telemetry);
 
