@@ -1,14 +1,10 @@
 @using System.Globalization
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
 
 <section class="telemetry-workspace" aria-labelledby="telemetry-heading">
     <div class="analysis-section-heading">
-        <div><span class="eyebrow">Recorded telemetry</span><h2 id="telemetry-heading">Where the lap time changed</h2></div>
-        <div class="telemetry-mode" role="group" aria-label="Track color">
-            @foreach (var option in Modes)
-            {
-                <button class="segmented @(Mode == option.Key ? "selected" : null)" aria-pressed="@(Mode == option.Key)" @onclick="() => Mode = option.Key">@option.Label</button>
-            }
-        </div>
+        <div><span class="eyebrow">Telemetry</span><h2 id="telemetry-heading">Compare laps</h2></div>
     </div>
 
     @if (Workspace.Traces.Count == 0)
@@ -33,10 +29,10 @@
                             var lap = LapInfo(trace.Lap);
                             var isFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
                             <button class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(FocusLap == trace.Lap ? "focused" : null)" aria-pressed="@Selected.Contains(trace.Lap)" @onclick="() => SelectLap(trace.Lap)">
-                                <span class="lap-selection"><span class="lap-color" style="background:@LapColor(trace.Lap)"></span><b>Lap @trace.Lap</b></span>
+                                <span class="lap-selection"><span class="lap-flag @LapStateClass(trace, lap)"><ProductIcon Name="race" Size="12" /></span><b>@trace.Lap</b></span>
                                 <span class="lap-time">@LapTime(trace.LapTimeSeconds)</span>
                                 <span class="lap-state @LapStateClass(trace, lap)">@LapState(trace, lap)</span>
-                                @if (isFastest) { <span class="lap-best" title="Fastest recorded lap">BEST</span> }
+                                @if (isFastest) { <span class="lap-best" title="Fastest recorded lap">FASTEST</span> } else if (trace.LapTimeSeconds.HasValue && FastestLapTime < double.MaxValue) { <span class="lap-delta">+@((trace.LapTimeSeconds.Value - FastestLapTime).ToString("0.000"))</span> }
                                 <span class="lap-focus-action" @onclick:stopPropagation="true" @onclick="() => SetFocus(trace.Lap)">@(FocusLap == trace.Lap ? "Focused" : "Focus")</span>
                             </button>
                         }
@@ -48,7 +44,7 @@
 
         <div class="telemetry-grid">
             <div class="track-panel">
-                <div class="panel-title"><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>@ModeLabel</span></div>
+                <div class="panel-title track-panel-title"><div><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Lap @PrimaryTrace.Lap</span></div><label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label></div>
                 <svg class="track-map" viewBox="0 0 420 280" role="img" aria-label="Track telemetry map" @onmousemove="TrackMoved">
                     @if (Workspace.TrackShape.Count >= 3)
                     {
@@ -83,13 +79,13 @@
             </div>
 
             <div class="trace-panel">
-                <div class="panel-title"><strong>Aligned lap traces</strong><span>Move across the chart to inspect every view together</span></div>
-                <svg class="trace-chart" viewBox="@($"0 0 1000 {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized Speed, Time Delta, Throttle, Brake, Gear, RPM, Steering, Slip Angle, Yaw Rate, Lateral Acceleration, and Longitudinal Acceleration traces" @onmousemove="ChartMoved">
+                <div class="panel-title"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare</span></div>
+                <svg @ref="ChartElement" class="trace-chart" viewBox="@($"0 0 1000 {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized Speed, Time Delta, Throttle, Brake, Gear, RPM, Steering, Slip Angle, Yaw Rate, Lateral Acceleration, and Longitudinal Acceleration traces" @onmousemove="ChartMoved">
                     @for (var row = 0; row < VisiblePanels.Count; row++)
                     {
                         var panel = VisiblePanels[row]; var top = 20 + row * 96;
-                        <rect x="58" y="@top" width="922" height="76" class="chart-row" />
-                        <line x1="58" y1="@(top + 38)" x2="980" y2="@(top + 38)" class="chart-grid-line" />
+                        <rect x="@PlotLeft" y="@top" width="@PlotWidth" height="76" class="chart-row" />
+                        <line x1="@PlotLeft" y1="@(top + 38)" x2="980" y2="@(top + 38)" class="chart-grid-line" />
                         <svg:text x="8" y="@(top + 17)" class="chart-title">@panel.Label</svg:text>
                         <svg:text x="8" y="@(top + 36)" class="chart-unit">@panel.Unit</svg:text>
                         <svg:text x="968" y="@(top + 17)" text-anchor="end" class="chart-cursor-value">@PanelValue(panel)</svg:text>
@@ -104,7 +100,7 @@
                     }
                     @for (var tick = 0; tick <= 4; tick++)
                     {
-                        var x = 58 + tick * 230.5;
+                        var x = PlotLeft + tick * (PlotWidth / 4d);
                         <line x1="@x" y1="20" x2="@x" y2="@ChartBottom" class="chart-grid-vertical" />
                         <svg:text x="@x" y="@(ChartHeight - 8)" text-anchor="middle" class="chart-label">@(tick * 25)%</svg:text>
                     }
@@ -113,7 +109,6 @@
             </div>
         </div>
         </div>
-        <div class="evidence-note"><EvidenceBadge Kind="EvidenceKind.Proxy" /><span>@Workspace.TireStressDefinition</span></div>
     }
 </section>
 
@@ -125,17 +120,21 @@
     private bool CleanLapsOnly { get; set; }
     private int? FocusLap { get; set; }
     private double Cursor { get; set; } = .25;
+    private ElementReference ChartElement;
+    private bool _chartMovePending;
+    private const double PlotLeft = 108;
+    private const double PlotWidth = 872;
     private static readonly (string Key, string Label)[] Modes = [("speed", "Speed"), ("throttle", "Throttle"), ("brake", "Brake"), ("steering", "Steering"), ("stress", "Tire stress")];
     private static readonly PanelSpec[] Panels =
     [
         new("speed", "Speed", "mph", p => p.SpeedMph),
         new("delta", "Time Delta", "s", _ => null),
-        new("controls", "Throttle / Brake", "%", p => p.Throttle, p => p.Brake),
+        new("controls", "Throttle / brake", "%", p => p.Throttle, p => p.Brake),
         new("gear", "Gear", "selected gear", p => p.Gear),
         new("rpm", "RPM", "rpm", p => p.Rpm),
         new("steering", "Steering", "rad", p => p.SteeringRadians),
-        new("rotation", "Slip Angle / Yaw Rate", "deg / deg/s", p => p.SlipAngleDegrees, p => p.YawRateDegreesPerSecond),
-        new("acceleration", "Lateral / Longitudinal G", "g", p => p.LateralG, p => p.LongitudinalG)
+        new("rotation", "Slip / yaw", "deg / deg/s", p => p.SlipAngleDegrees, p => p.YawRateDegreesPerSecond),
+        new("acceleration", "Lateral / long. G", "g", p => p.LateralG, p => p.LongitudinalG)
     ];
 
     protected override void OnParametersSet()
@@ -170,7 +169,7 @@
     private int ChartBottom => 20 + VisiblePanels.Count * 96 - 20;
     private int ChartHeight => ChartBottom + 30;
     private string ModeLabel => Modes.First(item => item.Key == Mode).Label;
-    private double CursorChartX => 58 + Cursor * 922;
+    private double CursorChartX => PlotLeft + Cursor * PlotWidth;
     private string CursorSummary
     {
         get
@@ -199,7 +198,17 @@
     private static bool IsClean(AnalysisLapTrace trace) => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
     private static string LapState(AnalysisLapTrace trace, AnalysisLap? lap) => !trace.Complete ? "Incomplete" : trace.PitTimeSeconds.GetValueOrDefault() > 0 ? "Pit" : trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) || trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) ? "Yellow" : lap?.Confounded == true ? "Affected" : "Green";
     private static string LapStateClass(AnalysisLapTrace trace, AnalysisLap? lap) => LapState(trace, lap).ToLowerInvariant();
-    private void ChartMoved(MouseEventArgs args) => Cursor = Math.Clamp((args.OffsetX - 58) / 922d, 0, 1);
+    private async Task ChartMoved(MouseEventArgs args)
+    {
+        if (_chartMovePending) return;
+        _chartMovePending = true;
+        try
+        {
+            var pointer = await JS.InvokeAsync<double>("iracingCoach.pointerFraction", ChartElement, args.ClientX);
+            Cursor = Math.Clamp((pointer * 1000 - PlotLeft) / PlotWidth, 0, 1);
+        }
+        finally { _chartMovePending = false; }
+    }
     private void TrackMoved(MouseEventArgs args)
     {
         if (Workspace.TrackShape.Count < 3) { Cursor = Math.Clamp((args.OffsetX - 28) / 364d, 0, 1); return; }
@@ -286,7 +295,7 @@
         if (panel.Label == "Gear") return first.HasValue ? $"Gear {first.Value:0}" : "—";
         if (panel.Label == "RPM") return first.HasValue ? $"{first.Value:0} rpm" : "—";
         if (panel.Label == "Speed") return first.HasValue ? $"{first.Value:0.0} mph" : "—";
-        if (panel.Label == "Throttle / Brake") return $"{first.GetValueOrDefault() * 100:0}% / {second.GetValueOrDefault() * 100:0}%";
+        if (panel.Key == "controls") return $"{first.GetValueOrDefault() * 100:0}% / {second.GetValueOrDefault() * 100:0}%";
         return second.HasValue ? $"{first:0.000} / {second:0.000}" : $"{first:0.000}";
     }
     private (double Min, double Max) PanelRange(PanelSpec panel)
@@ -311,7 +320,7 @@
         return string.Join(" ", trace.Points.Select(point =>
         {
             var value = PanelPointValue(panel, trace, point, useSecond); if (!value.HasValue) return string.Empty;
-            var x = 58 + point.LapPercent * 922; var y = top + 70 - (value.Value - min) / (max - min) * 64;
+            var x = PlotLeft + point.LapPercent * PlotWidth; var y = top + 70 - (value.Value - min) / (max - min) * 64;
             var command = started ? "L" : "M"; started = true;
             return $"{command}{F(x)},{F(y)}";
         }));

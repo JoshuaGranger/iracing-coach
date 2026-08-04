@@ -16,6 +16,8 @@ The UI should feel like a calm professional race-engineering workspace: black/gr
 | `UI-008` | Content MUST remain usable at supported minimum window dimensions and common Windows scaling settings without clipped actions or inaccessible regions. |
 | `UI-009` | Maps, charts, tables, and rails MUST share selection/state consistently and MUST avoid encoding meaning by color alone. |
 | `UI-010` | Error states MUST preserve surrounding context and offer retry plus redacted support details where useful. |
+| `UI-011` | Primary views MUST favor changing decisions and measurements over explanatory prose. Invariant limitations, methodology, and provenance belong in tooltips or subordinate disclosures. |
+| `UI-012` | Controls MUST sit beside the content they affect, and labels MUST state ambiguous scope such as the selected lap or layout. |
 
 ## Accessibility
 

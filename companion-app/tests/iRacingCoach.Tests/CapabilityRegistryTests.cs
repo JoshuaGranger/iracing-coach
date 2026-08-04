@@ -83,7 +83,7 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void TrackViewAndSetupComparison_AreTruthfullyConditionalAndReachable()
+    public void TrackViewAndSetupComparison_AreTruthfullyConditionalWhileLibraryUiIsRemoved()
     {
         var inventory = CapabilityRegistry.Inventory.ToDictionary(item => item.Id);
         Assert.AreEqual(CapabilityClass.ConditionallyApplicable, inventory[ProductCapability.TrackMap].Classification);
@@ -95,7 +95,9 @@ public sealed class CapabilityRegistryTests
 
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
         StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor")), "track-map");
-        StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "SetupPage.razor")), "ProductCapability.SetupComparison");
+        var setup = File.ReadAllText(Path.Combine(ui, "SetupPage.razor"));
+        Assert.DoesNotContain("ProductCapability.SetupComparison", setup);
+        Assert.DoesNotContain("Setup library", setup);
     }
 
     [TestMethod]
@@ -148,7 +150,8 @@ public sealed class CapabilityRegistryTests
 
         var setup = File.ReadAllText(Path.Combine(ui, "SetupPage.razor"));
         StringAssert.Contains(setup, "Starting Tune");
-        StringAssert.Contains(setup, "Find baseline source");
+        StringAssert.Contains(setup, "Find starting point");
+        Assert.DoesNotContain("Setup library", setup);
         Assert.DoesNotContain(">Compare<", setup);
         Assert.DoesNotContain("section-tabs", setup);
         Assert.IsFalse(File.Exists(Path.Combine(ui, "TrackTelemetryView.razor")));
@@ -207,8 +210,8 @@ public sealed class CapabilityRegistryTests
         var root = CompanionRoot();
         var ui = Path.Combine(root, "src", "iRacingCoach.UI");
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
-        StringAssert.Contains(telemetry, "<b>Lap @trace.Lap</b>");
-        foreach (var channel in new[] { "Speed", "Time Delta", "Throttle / Brake", "Gear", "RPM", "Steering", "Slip Angle / Yaw Rate", "Lateral / Longitudinal G" })
+        StringAssert.Contains(telemetry, "<b>@trace.Lap</b>");
+        foreach (var channel in new[] { "Speed", "Time Delta", "Throttle / brake", "Gear", "RPM", "Steering", "Slip / yaw", "Lateral / long. G" })
             StringAssert.Contains(telemetry, $"\"{channel}\"");
         foreach (var dynamicsChannel in new[] { "Slip Angle", "Yaw Rate", "Lateral Acceleration", "Longitudinal Acceleration" })
             StringAssert.Contains(telemetry, dynamicsChannel);
@@ -219,9 +222,17 @@ public sealed class CapabilityRegistryTests
         Assert.DoesNotContain("<RaceCardPanel", analysis);
         StringAssert.Contains(analysis, "Recorded range and race-distance outlook");
         StringAssert.Contains(analysis, "Recorded pit, tow, and repair timeline");
-        foreach (var tab in new[] { "Overview", "Telemetry", "Corner Coaching", "Runs & Tires", "Fuel & Strategy", "Damage & Repairs", "Setup & Evidence" })
+        foreach (var tab in new[] { "Laps & Runs", "Corners", "Fuel & Strategy", "Pit & Repairs", "Setup" })
             StringAssert.Contains(analysis, $"\"{tab}\"");
+        Assert.DoesNotContain("Relative estimate, not measured wear", analysis);
+        StringAssert.Contains(analysis, "analysis-context-bar");
+        StringAssert.Contains(analysis, "analysis-focus-strip");
         StringAssert.Contains(analysis, "BuildCornerRows");
+        Assert.DoesNotContain("new TrackSegment", analysis);
+        StringAssert.Contains(analysis, "UsefulAction");
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        StringAssert.Contains(css, ".event-session-switch .segmented");
+        StringAssert.Contains(css, "white-space: nowrap");
 
         var navigation = File.ReadAllText(Path.Combine(ui, "NavRail.razor"));
         StringAssert.Contains(navigation, "\"Setups\"");
@@ -232,7 +243,17 @@ public sealed class CapabilityRegistryTests
         Assert.IsTrue(File.Exists(Path.Combine(ui, "TuningTrackSelector.razor")));
 
         var live = File.ReadAllText(Path.Combine(ui, "LiveTelemetryPage.razor"));
-        StringAssert.Contains(live, "live-disconnected-preview");
+        StringAssert.Contains(live, "LiveTelemetryLayoutGrid");
+        var liveGrid = File.ReadAllText(Path.Combine(ui, "LiveTelemetryLayoutGrid.razor"));
+        StringAssert.Contains(liveGrid, "LiveMonitorLayouts.Active");
+        StringAssert.Contains(liveGrid, "live-toolbox");
+        StringAssert.Contains(liveGrid, "toolbox-metric-catalog");
+        StringAssert.Contains(liveGrid, "reading.NumericValue.HasValue");
+        Assert.DoesNotContain("\"connections\", \"Connections\"", navigation);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "SettingsPage.razor")), "<ConnectionsPage State=\"State\" Embedded=\"true\"");
+        var home = File.ReadAllText(Path.Combine(ui, "HomePage.razor"));
+        StringAssert.Contains(home, "Find a starting tune");
+        Assert.DoesNotContain("Browse setups", home);
         var monitor = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "LiveMonitorWindow.xaml"));
         StringAssert.Contains(monitor, "ShowInTaskbar=\"True\"");
 

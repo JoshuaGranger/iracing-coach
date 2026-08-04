@@ -1,21 +1,21 @@
 # Capability status
 
-This inventory describes the intended user-facing capability and the 0.10.0 development reality. “Implemented” does not mean HOME_QA accepted.
+This inventory describes the intended user-facing capability and the 0.11.0 development reality. “Implemented” does not mean HOME_QA accepted.
 
-| Capability | Intended state | 0.10.0 reality | Acceptance boundary |
+| Capability | Intended state | 0.11.0 reality | Acceptance boundary |
 | --- | --- | --- | --- |
 | Home | Compact race desk, recent races, live state, next actions | Implemented | Fixture/local QA; HOME_QA pending |
-| Live Telemetry | Real-time map, metrics, traces, trends, fuel and safe cues | Implemented with SDK source and deterministic replay | Replay verified; real SDK HOME_QA pending |
-| Live Monitor | Separate locked always-on-top grid with portable named layouts | Implemented | Automated layout/replay verified; packaged visual and HOME_QA real-race acceptance pending |
+| Live Telemetry | Full-screen shared named grid, collapsible Toolbox, optional driving traces, fuel and safe cues | Implemented with SDK source and deterministic replay | Fixture interaction/replay verified; real SDK HOME_QA pending |
+| Live Monitor | Separate always-on-top view of the same portable named layouts | Implemented | Shared-layout interaction/replay verified; HOME_QA real-race acceptance pending |
 | Race browser | Newest-first friendly event rows; whole row opens | Implemented | Kentucky behavior locally/previous HOME_QA observed |
-| Full Race Analysis | Exact seven-tab evidence workspace and multi-lap telemetry | Implemented | Fixture verified; final installed build pending |
+| Full Race Analysis | Telemetry-first workspace with five subordinate evidence tabs | Implemented | Fixture verified; real-recording breadth pending |
 | Qualifying phase | Present only when recorded and openable | Conditional | Fixture verified; real paired-event acceptance pending |
 | Race Planning | Manual matching-history planner and briefing | Implemented for recorded-history path | Official upcoming-event discovery not implemented |
-| Setup Library | Read-only discovery, readable fields, comparison | Implemented | Local/fixture verified |
-| Starting Tune package | Guided open-setup package workflow | Implemented as Context → Source → Package → Baseline Run | Packaged UI and real baseline acceptance pending |
+| Setup indexing | Internal read-only discovery used by analysis and Starting Tune | Implemented; no first-class library UI | Local/fixture verified |
+| Starting Tune package | Guided open-setup package workflow | Implemented as Event → Source → Checks → Run | Fixture verified; real baseline acceptance pending |
 | Progressive Tuning | Map-based multiple feedback cards and reversible experiment | Implemented for supported open races | Fixture verified; real clean A/B acceptance pending |
-| Connections | Garage61 and private Coach Engine service management | Implemented | Real Garage61/ChatGPT account acceptance pending |
-| Settings and Diagnostics | Portable settings plus compact diagnostics and backup preparation | Implemented | Local lifecycle/tests verified |
+| Connections | Garage61 and private Coach Engine service management inside Settings | Implemented | Real Garage61/ChatGPT account acceptance pending |
+| Settings and Diagnostics | Portable settings, embedded connections, compact diagnostics, and backup preparation | Implemented | Local lifecycle/tests verified |
 | Garage61 own/team API | Protected machine credential, health, bounded sync | Conditional | Storage/status covered; real authorized sync pending |
 | Garage61 global comparison | Only with separately approved scope | Unsupported now | MUST remain absent until permission exists |
 | AI coaching | Optional bounded Coach Engine synthesis | Conditional | Runtime packaged; real account/schema interaction pending |
@@ -26,7 +26,7 @@ This inventory describes the intended user-facing capability and the 0.10.0 deve
 
 ## Capability registry alignment
 
-The production `CapabilityRegistry` is the user-visible inventory. Version 0.10.0 aligns `TrackMap`, `SetupComparison`, and `SetupPackageBuilder` with their real conditional or supported implementations. Registry tests prove that incomplete and permanently unsupported capabilities remain hidden.
+The production `CapabilityRegistry` is the user-visible inventory. Version 0.11.0 keeps setup comparison as an internal conditional capability, removes the unused library surface, and aligns shared live layouts, recorded track zones, and Starting Tune with their real implementations. Registry tests prove that incomplete and permanently unsupported capabilities remain hidden.
 
 ## Visibility rules
 

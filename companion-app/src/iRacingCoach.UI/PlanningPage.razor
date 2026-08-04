@@ -1,5 +1,5 @@
 <div class="page-heading">
-    <div><span class="eyebrow">Race planning</span><h1>Build the next race briefing</h1><p>Set the event, then use matching recorded evidence for fuel, tires, and race priorities.</p></div>
+    <div><span class="eyebrow">Race planning</span><h1>Next race</h1></div>
     @if (State.PlanGenerated) { <button class="button secondary" @onclick="State.ResetPlan">Start over</button> }
 </div>
 
@@ -14,22 +14,20 @@ else
             <div class="card-header"><div><span class="eyebrow">Next event</span><h2>Race details</h2></div></div>
             <label>Car
                 <select value="@State.SelectedPlanCarId" @onchange="ChangeCar">@foreach (var car in State.Cars) { <option value="@car.Id">@car.Name · @car.Source</option> }</select>
-                <small>The most recently raced car is selected automatically.</small>
             </label>
             <label>Track and layout
                 <select value="@State.SelectedPlanTrack" @onchange="ChangeTrack">@foreach (var track in PlanTracks) { <option value="@track.Key">@track.Label</option> }</select>
             </label>
             <div class="field-row"><label>Distance<input type="number" min="1" max="1000" @bind="State.PlanDistanceValue" /></label><label>Measured in<select @bind="State.PlanDistanceMode"><option>Laps</option><option>Minutes</option></select></label></div>
             <label>Setup rules<select value="@State.PlanSetupType" @onchange="ChangeSetupType"><option>Fixed</option><option>Open</option></select></label>
-            <label>Recorded race to use
+            <label class="recorded-race-field">Recorded race to use
                 <select @bind="State.SelectedPlanRaceId"><option value="">No matching recorded race</option>@foreach (var race in MatchingRaces) { <option value="@race.Id">@race.Track · @race.Layout · @race.Car · @race.Date</option> }</select>
-                <small>Only recordings that match this car, layout, and setup type are listed.</small>
             </label>
             @if (State.SelectedPlanRace is { } selected)
             {
                 <div class="context-summary"><span>@selected.Car</span><strong>@selected.Track · @selected.Layout</strong><small>@selected.SetupType setup · @selected.Date</small></div>
             }
-            <button class="button primary full" disabled="@(State.SelectedPlanRace is null)" @onclick="BuildPlan">Build @State.PlanDistanceValue-@State.PlanDistanceMode.ToLowerInvariant() briefing</button>
+            <button class="button primary full" disabled="@(State.SelectedPlanRace is null)" @onclick="BuildPlan">Build @BriefingDistance briefing</button>
         </aside>
 
         @if (State.PlanGenerated)
@@ -45,11 +43,14 @@ else
                         <div><span>Fuel range</span><strong>@plan.FuelRange</strong></div><div><span>All-green baseline</span><strong>@plan.StopCount</strong></div>
                     </div>
                     @if (plan.PitTargets.Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>Equal-stint pit targets</span><strong>@string.Join(" · ", plan.PitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
-                    <div class="briefing-columns">
-                        <div><h3>Race priorities</h3>@foreach (var action in plan.Priorities.Where(item => CapabilityRegistry.IsSupported(item.Claim))) { <article class="briefing-action"><span>@action.Label</span><p>@action.Claim.Text</p></article> }</div>
-                        <div><h3>Tires and long-run approach</h3><p class="tire-guidance">@plan.TireGuidance</p>@if (plan.Triggers.Any(item => CapabilityRegistry.IsSupported(item.Claim))) { <h3>Race triggers</h3>@foreach (var trigger in plan.Triggers.Where(item => CapabilityRegistry.IsSupported(item.Claim))) { <article class="briefing-trigger"><strong>@trigger.Label</strong><span>@trigger.Claim.Text</span></article> } }</div>
-                    </div>
-                    @if (plan.Corners.Any(HasSupportedPhase)) { <div class="plan-corners"><h3>Corner approach by tire phase</h3>@foreach (var corner in plan.Corners.Where(HasSupportedPhase)) { <article><strong>@corner.Zone</strong>@if (Supported(corner.Early)) { <span><b>Early</b> @corner.Early.Text</span> }@if (Supported(corner.Middle)) { <span><b>Middle</b> @corner.Middle.Text</span> }@if (Supported(corner.Late)) { <span><b>Late</b> @corner.Late.Text</span> }</article> }</div> }
+                    @if (plan.Priorities.Any(UsefulPriority) || UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => CapabilityRegistry.IsSupported(item.Claim)))
+                    {
+                        <div class="briefing-columns">
+                            @if (plan.Priorities.Any(UsefulPriority)) { <div><h3>Race priorities</h3>@foreach (var action in plan.Priorities.Where(UsefulPriority).Take(3)) { <article class="briefing-action"><span>@action.Label</span><p>@action.Claim.Text</p></article> }</div> }
+                            @if (UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => CapabilityRegistry.IsSupported(item.Claim))) { <div><h3>Tires and long-run approach</h3>@if (UsefulTireGuidance(plan.TireGuidance)) { <p class="tire-guidance">@plan.TireGuidance</p> }@if (plan.Triggers.Any(item => CapabilityRegistry.IsSupported(item.Claim))) { <h3>Race triggers</h3>@foreach (var trigger in plan.Triggers.Where(item => CapabilityRegistry.IsSupported(item.Claim))) { <article class="briefing-trigger"><strong>@trigger.Label</strong><span>@trigger.Claim.Text</span></article> } }</div> }
+                        </div>
+                    }
+                    @if (plan.Corners.Any(HasSupportedPhase)) { <div class="plan-corners"><h3>Corner evidence by run phase</h3>@foreach (var corner in plan.Corners.Where(HasSupportedPhase)) { <article><strong>@corner.Zone</strong>@if (UsefulCornerPhase(corner.Early)) { <span><b>Early</b> @FriendlyCornerText(corner.Early.Text)</span> }@if (UsefulCornerPhase(corner.Middle)) { <span><b>Middle</b> @FriendlyCornerText(corner.Middle.Text)</span> }@if (UsefulCornerPhase(corner.Late)) { <span><b>Late</b> @FriendlyCornerText(corner.Late.Text)</span> }</article> }</div> }
                     @if (plan.Assumptions.Count > 0) { <details class="settings-disclosure"><summary>How this briefing was calculated</summary><ul>@foreach (var item in plan.Assumptions) { <li>@item</li> }</ul></details> }
                 </section>
             }
@@ -63,7 +64,6 @@ else
                 else
                 {
                     <div class="scenario-grid">@foreach (var run in State.StrategyScenarios) { <article class="scenario-card"><div class="scenario-title"><EvidenceBadge Kind="run.Evidence" /><strong>@run.Label</strong></div>@if (!string.IsNullOrWhiteSpace(run.Window)) { <b>@FriendlyWindow(run.Window)</b> }@if (!string.IsNullOrWhiteSpace(run.Stops)) { <span>@run.Stops</span> }@if (!string.IsNullOrWhiteSpace(run.Fuel)) { <span>@run.Fuel</span> }@if (!string.IsNullOrWhiteSpace(run.Note)) { <small>@run.Note</small> }</article> }</div>
-                    <div class="inline-alert neutral-alert"><span class="alert-icon"><ProductIcon Name="info" Size="16" /></span><div><strong>Recorded history, not a prediction.</strong><span> Cautions and race conditions can change the outcome.</span></div></div>
                 }
             </section></div>
         }
@@ -81,7 +81,25 @@ else
     private void ChangeTrack(ChangeEventArgs args) => State.SelectPlanTrack(args.Value?.ToString());
     private void ChangeSetupType(ChangeEventArgs args) => State.SelectPlanSetupType(args.Value?.ToString());
     private Task BuildPlan() => State.GeneratePlanAsync();
+    private string BriefingDistance => $"{State.PlanDistanceValue}-{(State.PlanDistanceMode.Equals("Minutes", StringComparison.OrdinalIgnoreCase) ? "minute" : "lap")}";
     private static string FriendlyWindow(string value) => DateTimeOffset.TryParse(value, out var date) ? date.ToLocalTime().ToString("MMM d · h:mm tt") : value;
     private static bool Supported(EvidenceText claim) => CapabilityRegistry.IsSupported(claim) && !claim.Text.Contains("No eligible lap", StringComparison.OrdinalIgnoreCase) && !claim.Text.Contains("enough samples", StringComparison.OrdinalIgnoreCase);
-    private static bool HasSupportedPhase(CornerCoachingRow row) => Supported(row.Early) || Supported(row.Middle) || Supported(row.Late);
+    private static bool UsefulPriority(RaceAction action) => Supported(action.Claim)
+        && !action.Claim.Text.Contains("rollback", StringComparison.OrdinalIgnoreCase)
+        && !action.Claim.Text.Contains("change one setup system", StringComparison.OrdinalIgnoreCase)
+        && !action.Claim.Text.Contains("match this wear pattern", StringComparison.OrdinalIgnoreCase)
+        && !action.Claim.Text.Contains("before assigning cause", StringComparison.OrdinalIgnoreCase)
+        && !action.Label.Contains("adjust", StringComparison.OrdinalIgnoreCase);
+    private static bool UsefulTireGuidance(string value) => !string.IsNullOrWhiteSpace(value)
+        && !value.Contains("Use the recorded early-, middle-, and late-run comparison", StringComparison.OrdinalIgnoreCase);
+    private static bool UsefulCornerPhase(EvidenceText claim) => Supported(claim)
+        && !claim.Text.Contains("repeatability check", StringComparison.OrdinalIgnoreCase)
+        && !claim.Text.Contains("match this wear pattern", StringComparison.OrdinalIgnoreCase)
+        && !claim.Text.Contains("no external target", StringComparison.OrdinalIgnoreCase)
+        && !claim.Text.Contains("before assigning cause", StringComparison.OrdinalIgnoreCase);
+    private static bool HasSupportedPhase(CornerCoachingRow row) => UsefulCornerPhase(row.Early) || UsefulCornerPhase(row.Middle) || UsefulCornerPhase(row.Late);
+    private static string FriendlyCornerText(string value) => System.Text.RegularExpressions.Regex.Replace(value, @"([0-9]+(?:\.[0-9]+)?) rad median steering", match =>
+        double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var radians)
+            ? $"{radians * 180d / Math.PI:0.0}° median steering"
+            : match.Value);
 }

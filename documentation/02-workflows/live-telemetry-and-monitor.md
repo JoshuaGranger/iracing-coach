@@ -17,6 +17,12 @@ All high-rate live math is local. Live support must remain useful without AI and
 | `LT-009` | Disconnection MUST clear session-specific baselines and stale actionable cues. |
 | `LT-010` | Disconnected state MUST retain a professional structural preview and one clear waiting explanation. |
 | `LT-011` | A deterministic replay interface MUST exercise connected behavior without iRacing or private telemetry. |
+| `LT-012` | The full page and miniature monitor MUST use the same named layout, grid, tile definitions, catalog, persisted logical preferences, and live readings. |
+| `LT-013` | The full page MUST provide a right-side Toolbox that can collapse without leaving an empty column and reopen without losing selection or layout state. |
+| `LT-014` | The Toolbox MUST support named-layout selection/create/duplicate/reset/delete, 1–8 rows and columns, tile selection/move/resize/remove, compatible display style/unit/precision controls, metric search, and metric addition. |
+| `LT-015` | Factory layouts MUST become editable custom copies before mutation; invalid moves or sizes MUST preserve the prior valid layout and explain the conflict concisely. |
+| `LT-016` | Primary live screen space MUST favor glanceable telemetry. Detailed driving traces MAY remain in a subordinate expandable region. |
+| `LT-017` | No full-page tile or catalog option may be fixture-only, seeded, or disconnected from the real live catalog. |
 
 ## Live Monitor grid editor
 
@@ -50,4 +56,4 @@ All high-rate live math is local. Live support must remain useful without AI and
 
 ## Current evidence
 
-Version 0.10.0 adds the bound grid editor, typed telemetry catalog, layouts, portability split, migration, and automated layout/performance/accessibility coverage. Deterministic replay remains development evidence only. Real simulator timing, multi-monitor ergonomics, and sustained live resource use remain HOME_QA work.
+Version 0.11.0 adds the shared full-page layout surface and collapsible Toolbox while retaining the miniature monitor as the same persisted view model. Deterministic replay remains development evidence only. Real simulator timing, multi-monitor ergonomics, and sustained live resource use remain HOME_QA work.

@@ -16,6 +16,11 @@
       scrollWorkspaceTop: function () {
         const workspace = document.getElementById('main-content');
         if (workspace) workspace.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      },
+      pointerFraction: function (element, clientX) {
+        if (!element) return 0;
+        const bounds = element.getBoundingClientRect();
+        return bounds.width > 0 ? Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width)) : 0;
       }
     };
   </script>

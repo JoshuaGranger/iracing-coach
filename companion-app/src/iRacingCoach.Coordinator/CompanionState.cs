@@ -20,7 +20,7 @@ public sealed record TuningFeedbackDraft(
 
 public sealed class CompanionState : IDisposable
 {
-    private const string AppVersion = "0.10.0";
+    private const string AppVersion = "0.11.0";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
@@ -471,15 +471,16 @@ public sealed class CompanionState : IDisposable
     {
         SelectRaceSession(race);
         AnalysisWorkspaceOpen = true;
-        AnalysisMessage = string.Empty;
+        AnalysisLoading = true;
+        AnalysisMessage = race.Analyzed ? "Opening telemetry…" : "Reading telemetry…";
+        CurrentRaceCard = null;
+        CurrentAnalysis = null;
+        RaiseChanged();
         if (!force && TryLoadUiAnalysisCache(race))
         {
             RaiseChanged();
             return;
         }
-        AnalysisLoading = true;
-        AnalysisMessage = race.Analyzed ? "Opening the saved analysis…" : "Building the local analysis…";
-        RaiseChanged();
         await RunJobAsync($"Analyze {race.Track}", $"session:{race.Id}", "Reading the recorded race", async token =>
         {
             var result = await CallBackendAsync("analyze_iracing_race", new
@@ -670,6 +671,55 @@ public sealed class CompanionState : IDisposable
     public void RemoveTuningFeedback(TuningFeedbackDraft draft)
     {
         TuningFeedback.Remove(draft);
+        RaiseChanged();
+    }
+
+    public async Task SelectTuningRaceAsync(string? raceId, CancellationToken cancellationToken = default)
+    {
+        SelectedTuningRaceId = raceId?.Trim() ?? string.Empty;
+        TuningCorner = "Whole lap";
+        TuningFeedback.Clear();
+        var race = SelectedTuningRace;
+        if (race is null)
+        {
+            RaiseChanged();
+            return;
+        }
+        if (CurrentAnalysis is not null &&
+            string.Equals(CurrentAnalysis.Track, race.Track, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(CurrentAnalysis.Car, race.Car, StringComparison.OrdinalIgnoreCase))
+        {
+            RaiseChanged();
+            return;
+        }
+
+        TuningMessage = "Loading this race's track and telemetry…";
+        RaiseChanged();
+        if (TryLoadUiAnalysisCache(race))
+        {
+            TuningMessage = "Click a recorded corner, then describe what the car did.";
+            RaiseChanged();
+            return;
+        }
+
+        try
+        {
+            var result = await CallBackendAsync("analyze_iracing_race", new
+            {
+                selector = race.EffectiveSelector,
+                iracing_root = Settings.IRacingRoot,
+                archive_root = Settings.ArchiveRoot,
+                target_hz = 20
+            }, cancellationToken);
+            CurrentRaceCard = RuntimeMapper.RaceCard(result);
+            CurrentAnalysis = RuntimeMapper.Analysis(result);
+            SaveUiAnalysisCache(race, result);
+            TuningMessage = "Click a recorded corner, then describe what the car did.";
+        }
+        catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
+        {
+            TuningMessage = Bound(ex.Message);
+        }
         RaiseChanged();
     }
 
@@ -1037,7 +1087,7 @@ public sealed class CompanionState : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "iRacingCoach",
             "Installer",
-            "iRacingCoach-0.10.0-Setup.exe");
+            "iRacingCoach-0.11.0-Setup.exe");
         if (!File.Exists(setup))
         {
             Toast = "The repair package could not be found. Run the latest iRacing Coach installer again.";
@@ -1088,6 +1138,7 @@ public sealed class CompanionState : IDisposable
 
     public void Navigate(string page)
     {
+        if (string.Equals(page, "connections", StringComparison.OrdinalIgnoreCase)) page = "settings";
         var capability = page switch
         {
             "planning" => ProductCapability.RacePlanning,

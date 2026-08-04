@@ -31,6 +31,28 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task OpeningRace_ImmediatelyShowsItsTelemetryLoadingStateWithoutStaleAnalysis()
+    {
+        using var state = new CompanionState(new FakeBackend(callDelay: TimeSpan.FromMilliseconds(100)));
+        var race = new RecentRace("race-loading", "Kentucky Speedway", "Oval", "Toyota Tundra", "Today", "Fixed", "Ready", "Recorded", false, true, 6, 11)
+        {
+            Selector = "8001"
+        };
+
+        var opening = state.AnalyzeRaceAsync(race);
+        await Task.Delay(20);
+
+        Assert.IsTrue(state.AnalysisWorkspaceOpen);
+        Assert.IsTrue(state.AnalysisLoading);
+        Assert.AreEqual("race-loading", state.SelectedRaceSessionId);
+        Assert.IsNull(state.CurrentAnalysis);
+        StringAssert.Contains(state.AnalysisMessage, "telemetry");
+
+        await opening;
+        Assert.IsFalse(state.AnalysisLoading);
+    }
+
+    [TestMethod]
     public void Troubleshooting_OpensOnlyOnRequestAndNavigationCommandsRemainFast()
     {
         using var state = new CompanionState(new FakeBackend());

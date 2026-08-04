@@ -9,10 +9,10 @@ This matrix maps specification areas to implementation and verification anchors.
 | `RA-030` to `RA-049` | `TelemetryWorkspace.razor`, `AnalysisWorkspacePage.razor`, `analysis_engine.py` | full-telemetry Python tests, visual baselines | Implemented against fixtures; real-channel acceptance pending |
 | `RA-060` to `RA-111` | analysis workspace tabs, `analysis_engine.py`, `reporting.py`, `race_card.py` | analysis/report/damage/race-card tests | Broad implementation; some rubric/data combinations partial |
 | `PLAN-*` | `PlanningPage.razor`, planning contracts/mappers, deterministic report data | `FinalProductFixtureTests.cs`, reporting/workflow tests | Implemented fixture workflow |
-| `SETUP-*` | `SetupPage.razor`, `RuntimeMapper.SetupPackage`, `setup_catalog.py`, coordinator contracts | setup-catalog, package, and product-truth tests | Library and Starting Tune implemented; opaque setup limits truthful detail |
+| `SETUP-*` | `SetupPage.razor`, `RuntimeMapper.SetupPackage`, `setup_catalog.py`, coordinator contracts | setup-catalog, package, and product-truth tests | Internal indexing and Starting Tune implemented; unused library UI removed |
 | `TUNE-*` | `SetupPage.razor`, `TuningPage.razor`, `TuningTrackSelector.razor`, `tuning_engine.py`, `tuning_workflow.py` | tuning-engine/workflow tests | Starting Tune and event-linked progressive tuning implemented; real A/B pending |
-| `LIVE-*`, `LMG-*` | `LiveTelemetryPage.razor`, `LiveMonitorWindow.*`, `LiveMonitorLayouts.cs`, `LiveTelemetryCatalog.cs`, `LiveTelemetry.cs`, `IRacingSdkTelemetrySource.cs` | `LiveMonitorTests.cs`, replay/live service tests | Grid/editor and replay verified; HOME_QA real telemetry pending |
-| `CONN-*`, `SET-*`, `DIAG-*` | Connections/Settings/Diagnostics pages, stores, logging | coordinator/backend tests | Implemented; real external auth varies |
+| `LIVE-*`, `LMG-*` | `LiveTelemetryPage.razor`, `LiveTelemetryLayoutGrid.razor`, `LiveMonitorWindow.*`, `LiveMonitorLayouts.cs`, `LiveTelemetryCatalog.cs`, `LiveTelemetry.cs`, `IRacingSdkTelemetrySource.cs` | `LiveMonitorTests.cs`, replay/live service tests, fixture interaction packet | Shared full/miniature layout and replay verified; HOME_QA real telemetry pending |
+| `CONN-*`, `SET-*`, `DIAG-*` | embedded `ConnectionsPage.razor`, `SettingsPage.razor`, diagnostics, stores, logging | coordinator/backend and production-source tests | Implemented inside Settings; real external auth varies |
 | `EV-*` | Python analysis/report/tuning modules, `EvidenceBadge.razor`, `RuntimeMapper`, grade audit UI | contract, engine, and product-truth tests | Five-category availability is explicit; rubric calibration still HOME_QA-reviewable |
 | `TD-*` | IBT reader, native events, storage, analysis engine, live source | Python telemetry/event/storage tests | Implemented with synthetic/sanitized sources; real-field pending |
 | `PORT-*`, `SEC-*` | durable archive, portable logical settings, machine placement/credential stores | coordinator, monitor migration, and path-security tests, privacy scan | Machine-bound credential and placement split implemented |
@@ -20,7 +20,7 @@ This matrix maps specification areas to implementation and verification anchors.
 | `G61-*` | Garage61 client and credential UI/store | Garage61 adapter tests | Adapter/configuration implemented; real service acceptance conditional |
 | `AI-*` | coach-engine orchestration and MCP contracts | engine probe, contract tests | Deterministic engine implemented; optional AI is noncritical/partial |
 | `INST-*`, `UPG-*`, `UN-*` | installer/uninstaller, release/lifecycle scripts | installer-upgrade evidence | Locally verified; representative-PC breadth pending |
-| `QA-*`, `REL-*` | build/verify scripts and release packet | 0.9.3 release record, QA iteration 0001 | Most gates recorded; HOME_QA pending |
+| `QA-*`, `REL-*` | build/verify scripts and release packet | 0.11.0 release record, QA iteration evidence | Most gates recorded; HOME_QA pending |
 | `UI-*`, `ACC-*`, `PERF-*` | Razor/CSS/WPF host, performance probe | visual baselines, UI audit, performance packet | Substantial fixture evidence; exhaustive accessibility/performance acceptance pending |
 
 ## Maintenance rule

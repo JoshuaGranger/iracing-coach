@@ -1,6 +1,7 @@
-<div class="page-heading compact-heading">
-    <div><span class="eyebrow">Connections</span><h1>Optional services</h1><p>Connect ChatGPT or Garage61 here. Race analysis, planning, setups, and live telemetry keep working without them.</p></div>
-</div>
+@if (!Embedded)
+{
+    <div class="page-heading compact-heading"><div><span class="eyebrow">Settings</span><h1>Connections</h1></div></div>
+}
 
 <div class="connection-grid">
     <section class="surface-card connection-card" aria-labelledby="chatgpt-connection">
@@ -39,10 +40,11 @@
     </section>
 </div>
 
-<section class="surface-card offline-promise"><div><span class="status-orb ready"></span><strong>Local features stay available</strong></div><p>Recorded race browsing, telemetry processing, Live Monitor, fuel calculations, Race Cards, and setup history do not depend on ChatGPT being online.</p></section>
+@if (!Embedded) { <section class="surface-card offline-promise"><div><span class="status-orb ready"></span><strong>Local tools work without these services</strong></div></section> }
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    [Parameter] public bool Embedded { get; set; }
     private string CoachEngineMessage => State.QaFixtureMode
         ? "Online coaching is intentionally disabled while the offline QA fixture is running."
         : !State.CoachEngine.Installed

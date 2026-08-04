@@ -15,7 +15,7 @@
         {
             <button class="workflow-card planning" @onclick='() => State.Navigate("planning")'><span class="workflow-icon"><ProductIcon Name="planning" Size="20" /></span><span class="workflow-copy"><strong>Plan the next race</strong><small>Use comparable races from your history</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
         }
-        <button class="workflow-card setup" @onclick='() => State.Navigate("setup")'><span class="workflow-icon"><ProductIcon Name="setup" Size="20" /></span><span class="workflow-copy"><strong>Browse setups</strong><small>Find setup files stored on this PC</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
+        <button class="workflow-card setup" @onclick='() => State.Navigate("setup")'><span class="workflow-icon"><ProductIcon Name="setup" Size="20" /></span><span class="workflow-copy"><strong>Find a starting tune</strong><small>Build from a real setup on this PC</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
         @if (State.IsCapabilityVisible(ProductCapability.ProgressiveTuning))
         {
             <button class="workflow-card tuning" @onclick='() => State.Navigate("tuning")'><span class="workflow-icon"><ProductIcon Name="tuning" Size="20" /></span><span class="workflow-copy"><strong>Improve a setup</strong><small>Use feedback from an analyzed open-setup race</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>

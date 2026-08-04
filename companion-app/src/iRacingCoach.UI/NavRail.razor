@@ -34,7 +34,6 @@
         ("planning", "Race Planning", "planning", ProductCapability.RacePlanning),
         ("setup", "Setups", "setup", ProductCapability.SetupLibrary),
         ("tuning", "Progressive Tuning", "tuning", ProductCapability.ProgressiveTuning),
-        ("connections", "Connections", "connections", ProductCapability.Connections),
         ("settings", "Settings", "settings", ProductCapability.Settings)
     ];
     private string LocalActivity => State.ServiceRequestInFlight ? "Working locally" : State.LocalRequestCount == 0 ? "Ready" : $"{State.LocalRequestCount} reads · {State.ApiCacheHitCount} cache hits";

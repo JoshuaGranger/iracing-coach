@@ -2,120 +2,22 @@
     var snapshot = State.LiveState.Snapshot;
 }
 
-<div class="page-heading live-heading">
-    <div><span class="eyebrow">Live race data</span><h1>Live telemetry</h1><p>Your iRacing telemetry updates this page, the Live Monitor, and tray status together.</p></div>
-    <button class="button primary monitor-launch" title="@MonitorTooltip" @onclick="State.ToggleLiveMonitor"><ProductIcon Name="monitor" Size="17" /> @(State.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Open Live Monitor")</button>
+<div class="page-heading compact-heading live-heading">
+    <div><span class="eyebrow">Live telemetry</span><h1>Race dashboard</h1></div>
 </div>
 
-<section class="live-status-strip @(snapshot.Connected ? "connected" : "waiting")" aria-label="Live telemetry status">
-    <div><span class="status-orb @(snapshot.Connected ? "ready" : "neutral")"></span><strong>@snapshot.ConnectionLabel</strong><small>@(snapshot.Connected ? $"{snapshot.Flag} · telemetry age {snapshot.DataAge.TotalMilliseconds:0} ms" : "Start or join an iRacing session. Connection retries automatically.")</small></div>
-    @if (snapshot.Connected) { <button class="button secondary compact" @onclick="State.ToggleLiveCoaching">@(State.LiveCoachingPaused ? "Resume live coaching" : "Pause live coaching")</button> }
-</section>
-
-@if (snapshot.Connected)
+@if (!snapshot.Connected)
 {
+    <div class="inline-alert neutral-alert live-waiting"><span class="status-orb neutral"></span><div><strong>Waiting for iRacing</strong><span>The dashboard connects automatically when a session starts.</span></div></div>
+}
+
+<LiveTelemetryLayoutGrid State="State" />
+
+<details class="live-driving-disclosure">
+    <summary><ProductIcon Name="analysis" Size="16" /> Driving traces</summary>
     <LiveTelemetryVisuals State="State" />
-    <div class="live-dashboard">
-        <section class="surface-card live-primary-card" aria-labelledby="live-race-state">
-            <div class="card-header"><div><span class="eyebrow">Race state</span><h2 id="live-race-state">@snapshot.Flag</h2></div>@if (snapshot.OverallPosition is > 0) { <span class="status-label success">@Position(snapshot.OverallPosition)</span> }</div>
-            @if (snapshot.Lap.HasValue || snapshot.ClassPosition is > 0 || State.IsCapabilityVisible(ProductCapability.LiveLastLap) || State.IsCapabilityVisible(ProductCapability.LiveTirePhase))
-            {
-                <div class="live-primary-metrics">
-                    @if (snapshot.Lap.HasValue) { <div><span>Lap</span><strong>@Lap(snapshot)</strong></div> }
-                    @if (snapshot.ClassPosition is > 0) { <div><span>Class</span><strong>@Position(snapshot.ClassPosition)</strong></div> }
-                    @if (State.IsCapabilityVisible(ProductCapability.LiveLastLap)) { <div><span>Last lap</span><strong>@LapTime(snapshot.LastLapSeconds)</strong></div> }
-                    @if (State.IsCapabilityVisible(ProductCapability.LiveTirePhase)) { <div><span>Tire phase</span><strong>@snapshot.TirePhase</strong></div> }
-                </div>
-            }
-            @if (HasGap)
-            {
-                <div class="live-gap-grid">
-                    @if (State.IsCapabilityVisible(ProductCapability.LiveLeaderGap)) { <GapCell Gap="snapshot.LeaderGap" /> }
-                    @if (State.IsCapabilityVisible(ProductCapability.LiveAheadGap)) { <GapCell Gap="snapshot.AheadGap" /> }
-                    @if (State.IsCapabilityVisible(ProductCapability.LiveBehindGap)) { <GapCell Gap="snapshot.BehindGap" /> }
-                </div>
-            }
-        </section>
-
-        @if (CueSupported(snapshot.PrimaryCue))
-        {
-            <section class="surface-card live-cue-card priority-@snapshot.PrimaryCue.Priority.ToString().ToLowerInvariant()" aria-labelledby="priority-cue">
-                <div class="card-header"><div><span class="eyebrow">Highest priority</span><h2 id="priority-cue">Current action</h2></div><EvidenceBadge Kind="snapshot.PrimaryCue.Evidence" /></div>
-                <p class="live-cue">@snapshot.PrimaryCue.Message</p>@if (!string.IsNullOrWhiteSpace(snapshot.PrimaryCue.Basis)) { <small>@snapshot.PrimaryCue.Basis</small> }
-                @if (snapshot.SafeGlance.SuppressionReason == LiveCueSuppressionReason.SafeGlanceDelay) { <div class="safe-glance-note">A new ordinary coaching cue is queued until a safer glance opportunity.</div> }
-            </section>
-        }
-
-        @if (State.IsCapabilityVisible(ProductCapability.LivePaceRange))
-        {
-            <section class="surface-card" aria-labelledby="live-pace">
-                <div class="card-header"><div><span class="eyebrow">Your pace in this session</span><h2 id="live-pace">Personal pace range</h2></div><EvidenceBadge Kind="snapshot.PaceTarget.Evidence" /></div>
-                <div class="live-large-value" title="@PaceTooltip(snapshot.PaceTarget)">@Pace(snapshot.PaceTarget)</div>@if (!string.IsNullOrWhiteSpace(snapshot.PaceTarget.Source)) { <p class="section-copy">@snapshot.PaceTarget.Source</p> }
-            </section>
-        }
-
-        @if (State.IsCapabilityVisible(ProductCapability.LivePitWindow) || State.IsCapabilityVisible(ProductCapability.LiveFuelLimit))
-        {
-            <section class="surface-card" aria-labelledby="live-pit">
-                <div class="card-header"><div><span class="eyebrow">Fuel and pit</span><h2 id="live-pit">@(State.IsCapabilityVisible(ProductCapability.LivePitWindow) ? "Pit timing" : "Fuel range")</h2></div><EvidenceBadge Kind="snapshot.Pit.Evidence" /></div>
-                <div class="live-pit-grid">@if (State.IsCapabilityVisible(ProductCapability.LivePitWindow)) { <div><span>Best pit window</span><strong>@PitWindow(snapshot.Pit)</strong></div> }@if (State.IsCapabilityVisible(ProductCapability.LiveFuelLimit)) { <div><span>Laps until fuel runs out</span><strong>@Laps(snapshot.Pit.FuelHardLimitLaps)</strong></div> }</div>
-                @if (!string.IsNullOrWhiteSpace(snapshot.Pit.Recommendation)) { <p class="section-copy">@snapshot.Pit.Recommendation</p> }
-            </section>
-        }
-
-        @if (HasDetails(snapshot))
-        {
-            <section class="surface-card live-detail-card" aria-labelledby="live-detail">
-                <div class="card-header"><div><span class="eyebrow">More race details</span><h2 id="live-detail">Race details</h2></div></div>
-                <dl class="live-detail-grid">
-                    @if (State.IsCapabilityVisible(ProductCapability.LiveLeaderLastLap)) { <div><dt>Leader last lap</dt><dd>@LapTime(snapshot.LeaderLastLapSeconds)</dd></div> }
-                    @if (snapshot.LastLapPaceDifferenceSeconds.HasValue) { <div><dt>Last-lap pace difference</dt><dd>@SignedTime(snapshot.LastLapPaceDifferenceSeconds)</dd></div> }
-                    @if (snapshot.GreenLapsOnTires.HasValue) { <div><dt>Green laps on tires</dt><dd>@snapshot.GreenLapsOnTires</dd></div> }
-                    @if (snapshot.FuelLapsRemaining.HasValue) { <div><dt>Fuel remaining</dt><dd>@FuelLaps(snapshot.FuelLapsRemaining)</dd></div> }
-                    @if (snapshot.TrackTemperatureC.HasValue) { <div><dt>Track temperature</dt><dd>@Temperature(snapshot.TrackTemperatureC)</dd></div> }
-                    @if (snapshot.AirTemperatureC.HasValue) { <div><dt>Air temperature</dt><dd>@Temperature(snapshot.AirTemperatureC)</dd></div> }
-                    @if (State.IsCapabilityVisible(ProductCapability.LiveBrakeBias)) { <div><dt>Brake bias</dt><dd>@Percent(snapshot.BrakeBiasPercent)</dd></div> }
-                    @if (State.IsCapabilityVisible(ProductCapability.LiveRepair)) { <div><dt>Repair</dt><dd>@Repair(snapshot)</dd></div> }
-                </dl>
-            </section>
-        }
-    </div>
-}
-else
-{
-    <section class="live-disconnected-preview" aria-label="Live telemetry layout preview">
-        <div class="surface-card live-preview-map"><div class="card-header"><div><span class="eyebrow">Track position</span><h2>Live map</h2></div><span class="status-label neutral">Waiting for iRacing</span></div><svg viewBox="0 0 500 230" role="img" aria-label="Track map appears here when connected"><path d="M80,145 C105,52 225,35 330,70 C430,103 444,165 350,190 C250,217 125,204 80,145 Z" /><circle cx="80" cy="145" r="7" /></svg><p>Position, leader timing, and nearby traffic will appear on the recorded track shape.</p></div>
-        <div class="live-preview-metrics">@foreach (var metric in PreviewMetrics) { <article class="surface-card"><span>@metric</span><strong>—</strong><small>Live when connected</small></article> }</div>
-        <div class="surface-card live-preview-traces"><div class="card-header"><div><span class="eyebrow">Driver inputs</span><h2>Scrolling telemetry</h2></div><span>Lap width: Auto</span></div>@foreach (var trace in PreviewTraces) { <div><strong>@trace</strong><span class="preview-trace-line"></span><em>—</em></div> }<p>Speed, throttle, brake, steering, gear, and RPM retain this layout while the SDK reconnects.</p></div>
-        <div class="surface-card live-preview-history"><div><span class="eyebrow">Full session</span><h2>Lap trend</h2></div><div class="preview-lap-bars">@for (var index = 0; index < 12; index++) { <i style="height:@(22 + index % 4 * 8)px"></i> }</div><p>Completed laps build a session-long pace and tire-phase view.</p></div>
-    </section>
-}
-
-<section class="surface-card live-monitor-controls" aria-labelledby="monitor-controls">
-    <div class="card-header"><div><span class="eyebrow">Live Monitor</span><h2 id="monitor-controls">Display behavior</h2></div></div>
-    <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.SafeGlanceEnabled" @bind:after="State.SaveLiveMonitorPreferences" /><span><strong>Safe-glance mode</strong><small>Ordinary coaching changes only on straights, under caution, on pit road, or after a lap.</small></span></label>
-    <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.ReopenOnConnect" @bind:after="State.SaveLiveMonitorPreferences" /><span><strong>Open when iRacing connects</strong><small>Reopens the monitor automatically when the local SDK stream appears.</small></span></label>
-    <p class="fine-print">Always-on-top generally works above borderless-windowed iRacing and on another monitor. Exclusive fullscreen may cover it; the app will not change your iRacing display settings.</p>
-</section>
+</details>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
-    private string MonitorTooltip => $"{State.LiveState.Snapshot.ConnectionLabel}. {(State.Settings.LiveMonitor.Visible ? "Hide" : "Open")} the always-on-top monitor.";
-    private bool HasGap => State.IsCapabilityVisible(ProductCapability.LiveLeaderGap) || State.IsCapabilityVisible(ProductCapability.LiveAheadGap) || State.IsCapabilityVisible(ProductCapability.LiveBehindGap);
-    private bool HasDetails(LiveRaceSnapshot value) => State.IsCapabilityVisible(ProductCapability.LiveLeaderLastLap) || value.LastLapPaceDifferenceSeconds.HasValue || value.GreenLapsOnTires.HasValue || value.FuelLapsRemaining.HasValue || State.IsCapabilityVisible(ProductCapability.LiveWeather) || State.IsCapabilityVisible(ProductCapability.LiveBrakeBias) || State.IsCapabilityVisible(ProductCapability.LiveRepair);
-    private static bool CueSupported(LiveDriverCue cue) => cue.Evidence != EvidenceKind.Unavailable && !string.IsNullOrWhiteSpace(cue.Message);
-    private static string Position(int? value) => $"P{value}";
-    private static string Lap(LiveRaceSnapshot value) => value.LapsRemaining.HasValue ? $"{value.Lap} · {value.LapsRemaining} remaining" : value.Lap!.Value.ToString();
-    private static string LapTime(double? value) => TimeSpan.FromSeconds(value!.Value).ToString(value.Value >= 60 ? "m\\:ss\\.fff" : "s\\.fff");
-    private static string SignedTime(double? value) => $"{value:+0.000;-0.000;0.000} s";
-    private static string Pace(LivePaceTarget value) => $"{LapTime(value.MinimumSeconds)}–{LapTime(value.MaximumSeconds)}";
-    private static string PaceTooltip(LivePaceTarget value) => $"Source: {value.Source}; confidence {value.Confidence:P0}; evidence: {value.Evidence}";
-    private static string PitWindow(LivePitRecommendation value) => $"{value.WindowOpensInLaps}–{value.WindowClosesInLaps} laps";
-    private static string Laps(int? value) => $"{value} laps";
-    private static string FuelLaps(double? value) => $"{value:0.0} laps";
-    private static string Temperature(double? value) => $"{value:0.0} °C";
-    private static string Percent(double? value) => $"{value:0.0}%";
-    private static string Repair(LiveRaceSnapshot value) => value.MandatoryRepairSeconds is > 0 ? $"Mandatory {value.MandatoryRepairSeconds:0}s" : $"Optional {value.OptionalRepairSeconds:0}s";
-    private static readonly string[] PreviewMetrics = ["Lap", "Position", "Gap ahead", "Gap behind", "Last lap", "Fuel range"];
-    private static readonly string[] PreviewTraces = ["Speed", "Throttle / brake", "Steering", "Gear", "RPM"];
 }

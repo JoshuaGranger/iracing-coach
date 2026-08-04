@@ -28,8 +28,8 @@ Quality claims must identify the environment, artifact, fixture or real source, 
 | `REL-005` | Fixture-mode screenshots and tests MUST be labeled and MUST not imply real-service or real-telemetry acceptance. |
 | `REL-006` | Acceptance evidence SHOULD be machine-readable enough for another agent to independently verify file hashes, counts, and assertions. |
 
-## Current 0.10.0 development evidence
+## Current 0.11.0 development evidence
 
-The exact 0.10.0 candidate was built from source revision `d6a56146e544b5ea3e2108c8c67adf9d4dc5cc74`. The Release build completed with zero warnings and zero errors; 73 .NET tests and 173 Python tests passed. The packaged-app walkthrough, warm replay sample, privacy scan, artifact hashes, and guarded installer lifecycle results are recorded in `companion-app/RELEASE_0.10.0.md`.
+The 0.11.0 development tree builds with zero warnings and zero errors; 74 .NET tests and 173 Python tests pass. The fixture walkthrough covers shared live layouts/toolbox, compact automatic Race Analysis, cursor alignment, streamlined planning, Starting Tune, event-linked corner feedback, controlled tuning, and Connections inside Settings. Exact artifact hashes, privacy scan, packaged-app checks, and guarded installer lifecycle results are recorded in `companion-app/RELEASE_0.11.0.md`.
 
-HOME_QA real-telemetry acceptance remains pending and limits any claim of complete production acceptance. Evidence references: `companion-app/RELEASE_0.10.0.md`, `companion-app-handoff/ACCEPTANCE_CHECKLIST.md`, and the exact release artifact manifests.
+HOME_QA real-telemetry acceptance remains pending and limits any claim of complete production acceptance. Evidence references: `companion-app/RELEASE_0.11.0.md`, `companion-app-handoff/ACCEPTANCE_CHECKLIST.md`, and the exact release artifact manifests.

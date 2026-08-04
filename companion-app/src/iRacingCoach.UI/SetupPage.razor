@@ -1,152 +1,53 @@
 <div class="page-heading compact-heading">
-    <div><span class="eyebrow">Setups</span><h1>@(SetupMode == "starting" ? "Build a starting tune" : "Your setup library")</h1><p>@(SetupMode == "starting" ? "Choose the event, review the real source, and create a safe baseline plan." : "Browse local iRacing setup files without changing the originals.")</p></div>
+    <div><span class="eyebrow">Setups</span><h1>Starting tune</h1></div>
 </div>
 
-<nav class="analysis-tabs" aria-label="Setup sections">
-    <button class="@(SetupMode == "library" ? "selected" : null)" @onclick="OpenLibrary">Library</button>
-    <button class="@(SetupMode == "starting" ? "selected" : null)" @onclick="OpenStartingTune">Starting Tune</button>
-</nav>
-
-@if (SetupMode == "starting")
-{
-    <section class="surface-card form-panel starting-tune" aria-labelledby="starting-tune-heading">
-        <div class="card-header"><div><span class="eyebrow">Step @State.StartingTuneStep of 4</span><h2 id="starting-tune-heading">@StartingTuneHeading</h2></div><span class="status-label neutral">Coaching package only</span></div>
-        <div class="progress-rail" aria-label="Starting Tune progress">
-            @foreach (var step in new[] { (1, "Context"), (2, "Source"), (3, "Package"), (4, "Baseline run") })
-            {
-                <button class="@(State.StartingTuneStep == step.Item1 ? "active" : State.StartingTuneStep > step.Item1 ? "done" : null)" disabled="@(step.Item1 > 1 && State.StartingTunePackage is null)" @onclick="() => State.SetStartingTuneStep(step.Item1)"><span>@step.Item1</span>@step.Item2</button>
-            }
-        </div>
-        @if (State.StartingTuneStep == 1)
+<section class="surface-card form-panel starting-tune" aria-labelledby="starting-tune-heading">
+    <div class="card-header"><div><span class="eyebrow">Step @State.StartingTuneStep of 4</span><h2 id="starting-tune-heading">@StartingTuneHeading</h2></div></div>
+    <div class="progress-rail" aria-label="Starting Tune progress">
+        @foreach (var step in new[] { (1, "Event"), (2, "Source"), (3, "Checks"), (4, "Run") })
         {
-            <div class="form-grid two-column">
-                <label>iRacing season<input @bind="State.StartingTuneSeason" placeholder="Example: 2026S3" /></label>
-                <label>Purpose<select @bind="State.StartingTunePurpose"><option>Race</option><option>Qualifying</option></select></label>
-                <label>Car<input @bind="State.StartingTuneCar" placeholder="Exact iRacing car" /></label>
-                <label>Track and layout<input @bind="State.StartingTuneTrack" placeholder="Exact track layout" /></label>
-            </div>
-            <p class="panel-note">Only local setup files and recorded coaching data are considered. No setup is invented and no .sto file is changed.</p>
-            <button class="button primary" disabled="@State.StartingTuneBusy" @onclick="BuildStartingTune">@(State.StartingTuneBusy ? "Finding a defensible source…" : "Find baseline source")</button>
-        }
-        else if (State.StartingTunePackage is { } package)
-        {
-            @if (State.StartingTuneStep == 2)
-            {
-                <div class="source-details"><div><span>Source status</span><strong>@package.Source</strong></div><div><span>Local setup</span><strong>@package.Donor</strong></div><div><span>Car</span><strong>@package.Car</strong></div><div><span>Track</span><strong>@package.Track</strong></div></div>
-                <div class="inline-alert neutral-alert"><span class="alert-icon"><ProductIcon Name="info" Size="16" /></span><div><strong>Why this source</strong><span> @package.Confirmation @package.DonorReason</span></div></div>
-                <details class="evidence-details" open><summary>Source identity and cautions</summary><p class="mono">SHA-256: @package.Fingerprint</p><ul>@foreach (var risk in package.Risks) { <li>@risk</li> }</ul></details>
-                <div class="workflow-actions"><button class="button secondary" @onclick="State.ResetStartingTune">Change context</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(3)">Review package</button></div>
-            }
-            else if (State.StartingTuneStep == 3)
-            {
-                <div class="source-details"><div><span>Package</span><strong>@package.PackageId</strong></div><div><span>Status</span><strong>@package.Status</strong></div><div><span>Purpose</span><strong>@package.Purpose</strong></div><div><span>Season</span><strong>@package.Season</strong></div></div>
-                <h3>Baseline validation</h3><ol>@foreach (var check in package.BaselineChecks) { <li>@check</li> }</ol>
-                <div class="inline-alert neutral-alert"><span class="alert-icon"><ProductIcon Name="shield" Size="16" /></span><div><strong>No simulator setup was generated.</strong><span> The original source remains read only. You apply and save changes inside iRacing.</span></div></div>
-                @if (package.SimulatorSetupProduced || package.SourceFilesModified) { <div class="inline-alert warning-alert"><strong>Safety contract failed.</strong> Do not use this package.</div> }
-                <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(2)">Back</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(4)">Start baseline run</button></div>
-            }
-            else
-            {
-                <div class="empty-state compact"><span class="empty-icon"><ProductIcon Name="live" Size="22" /></span><h2>Run the unchanged baseline first</h2><p>Load a copy in iRacing, pass tech, then record 5 clean laps with matching fuel, tires, weather, track state, and line. Keep the package fingerprint for rollback.</p></div>
-                <p class="panel-note">After the run is analyzed, open Progressive Tuning, select that event, describe what the car did, and test one logical change at a time.</p>
-                <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(3)">Back</button><button class="button primary" @onclick="OpenTuning">Open Progressive Tuning</button></div>
-            }
-        }
-        <p class="fine-print">@State.SetupMessage</p>
-    </section>
-}
-else if (State.Setups.Count == 0)
-{
-    <section class="surface-card compact-empty-surface"><div class="empty-state"><span class="empty-icon"><ProductIcon Name="setup" Size="22" /></span><h2>No local setup files found</h2><p>Save a setup in iRacing and it will appear automatically.</p></div></section>
-}
-else
-{
-    <div class="workflow-layout setup-layout">
-        <aside class="surface-card form-panel">
-            <div class="card-header"><div><span class="eyebrow">Local iRacing setups</span><h2>Setup library</h2></div><span class="status-label neutral">@FilteredSetups.Count()</span></div>
-            <label class="search-field setup-search"><span>Search</span><input type="search" placeholder="Car, track, purpose, or name" @bind="SetupSearch" @bind:event="oninput" /></label>
-            <div class="setup-library-list" role="listbox" aria-label="Setup library">
-                @foreach (var setup in FilteredSetups)
-                {
-                    <button role="option" aria-selected="@(setup.Id == State.SelectedSetupId)" class="@(setup.Id == State.SelectedSetupId ? "selected" : null)" @onclick="() => State.SelectedSetupId = setup.Id"><span><strong>@setup.Name</strong><small>@setup.Car</small></span><span><b>@(Useful(setup.Track) ? setup.Track : "General")</b><small>@(Useful(setup.Role) ? setup.Role : setup.Fields.Count > 0 ? "Readable export" : "iRacing setup")</small></span></button>
-                }
-            </div>
-            @if (State.SelectedSetup is { } selected)
-            {
-                <div class="context-summary"><span>@selected.Car</span><strong>@selected.Name</strong>@if (Useful(selected.Track) || Useful(selected.Role) || Useful(selected.PairStatus)) { <small>@string.Join(" · ", new[] { selected.Track, selected.Role, selected.PairStatus }.Where(Useful))</small> }</div>
-                @if (Useful(selected.Note)) { <div class="inline-alert neutral-alert"><span class="alert-icon"><ProductIcon Name="info" Size="16" /></span><div><strong>Original stays untouched.</strong><span> @selected.Note</span></div></div> }
-                <button class="button secondary full" @onclick="State.OpenSelectedSetupFolder">Open containing folder</button>
-            }
-            <p class="fine-print">Setup files are read-only here. For a recorded race, its saved setup remains the source of truth.</p>
-        </aside>
-
-        @if (State.SelectedSetup is { } selectedSetup)
-        {
-            <section class="surface-card source-card">
-                <div class="card-header"><div><span class="eyebrow">Library</span><h2>Setup details</h2></div><span class="status-label neutral">Read only</span></div>
-                <div class="source-details">
-                    @if (Useful(selectedSetup.Car)) { <div><span>Car</span><strong>@selectedSetup.Car</strong></div> }
-                    @if (Useful(selectedSetup.Track)) { <div><span>Track</span><strong>@selectedSetup.Track</strong></div> }
-                    @if (Useful(selectedSetup.Role)) { <div><span>Purpose</span><strong>@selectedSetup.Role</strong></div> }
-                    @if (Useful(selectedSetup.PairStatus)) { <div><span>Linked recording</span><strong>@selectedSetup.PairStatus</strong></div> }
-                </div>
-                @if (selectedSetup.Fields.Count > 0)
-                {
-                    <div class="decoded-setup">
-                        <div class="analysis-section-heading"><div><span class="eyebrow">Exported setup details</span><h3>Readable settings</h3></div><span class="status-label success">@selectedSetup.Fields.Count fields</span></div>
-                        @foreach (var group in selectedSetup.Fields.GroupBy(field => field.Group))
-                        {
-                            <details class="setup-group" open="@(group.Key == selectedSetup.Fields[0].Group)"><summary>@group.Key <span>@group.Count()</span></summary><dl>@foreach (var field in group) { <div><dt>@field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
-                        }
-                    </div>
-                    @if (State.IsCapabilityVisible(ProductCapability.SetupComparison))
-                    {
-                        <div class="setup-comparison">
-                            <div class="analysis-section-heading"><div><span class="eyebrow">Read-only comparison</span><h3>What changed</h3></div></div>
-                            <label>Compare with<select @bind="State.CompareSetupId">@foreach (var option in ComparableSetups) { <option value="@option.Id">@option.Name · @option.Car</option> }</select></label>
-                            @if (State.CompareSetup is { } comparison)
-                            {
-                                <div class="setup-diff-list">
-                                    @foreach (var diff in Differences(selectedSetup, comparison).Take(80))
-                                    {
-                                        <div><span>@diff.Group</span><strong>@diff.Label</strong><del>@diff.Before</del><ins>@diff.After</ins></div>
-                                    }
-                                </div>
-                                @if (!Differences(selectedSetup, comparison).Any()) { <p class="muted-copy">The decoded exported fields match.</p> }
-                            }
-                        </div>
-                    }
-                }
-                else
-                {
-                    <p class="panel-note">This entry contains an opaque iRacing .sto file without a matching exported setup HTML. The file is cataloged, but its internal settings are not claimed as readable or editable.</p>
-                }
-                @if (Useful(selectedSetup.Fingerprint)) { <details class="evidence-details"><summary>Technical file record</summary><p class="mono">SHA-256: @selectedSetup.Fingerprint</p></details> }
-            </section>
+            <button class="@(State.StartingTuneStep == step.Item1 ? "active" : State.StartingTuneStep > step.Item1 ? "done" : null)" disabled="@(step.Item1 > 1 && State.StartingTunePackage is null)" @onclick="() => State.SetStartingTuneStep(step.Item1)"><span>@step.Item1</span>@step.Item2</button>
         }
     </div>
-}
+    @if (State.StartingTuneStep == 1)
+    {
+        <div class="form-grid two-column">
+            <label>Season<input @bind="State.StartingTuneSeason" placeholder="2026S3" /></label>
+            <label>Session<select @bind="State.StartingTunePurpose"><option>Race</option><option>Qualifying</option></select></label>
+            <label>Car<input @bind="State.StartingTuneCar" placeholder="Exact iRacing car" /></label>
+            <label>Track<input @bind="State.StartingTuneTrack" placeholder="Exact track and layout" /></label>
+        </div>
+        <button class="button primary" disabled="@State.StartingTuneBusy" @onclick="BuildStartingTune">@(State.StartingTuneBusy ? "Finding source…" : "Find starting point")</button>
+    }
+    else if (State.StartingTunePackage is { } package)
+    {
+        @if (State.StartingTuneStep == 2)
+        {
+            <div class="source-details"><div><span>Source</span><strong>@package.Source</strong></div><div><span>Setup</span><strong>@package.Donor</strong></div><div><span>Car</span><strong>@package.Car</strong></div><div><span>Track</span><strong>@package.Track</strong></div></div>
+            <p class="section-copy">@package.Confirmation @package.DonorReason</p>
+            @if (package.Risks.Count > 0) { <details class="evidence-details"><summary>Cautions</summary><ul>@foreach (var risk in package.Risks) { <li>@risk</li> }</ul></details> }
+            <div class="workflow-actions"><button class="button secondary" @onclick="State.ResetStartingTune">Change event</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(3)">Review checks</button></div>
+        }
+        else if (State.StartingTuneStep == 3)
+        {
+            <div class="source-details"><div><span>Purpose</span><strong>@package.Purpose</strong></div><div><span>Season</span><strong>@package.Season</strong></div><div><span>Status</span><strong>@package.Status</strong></div></div>
+            <ol class="baseline-checks">@foreach (var check in package.BaselineChecks) { <li>@check</li> }</ol>
+            <details class="evidence-details"><summary>Technical record</summary><p class="mono">@package.Fingerprint</p></details>
+            <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(2)">Back</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(4)">Baseline run</button></div>
+        }
+        else
+        {
+            <div class="baseline-run-card"><ProductIcon Name="race" Size="22" /><div><h2>Run five clean laps</h2><p>Use the unchanged setup, then analyze the session and give feedback by corner.</p></div></div>
+            <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(3)">Back</button><button class="button primary" @onclick="OpenTuning">Open tuning</button></div>
+        }
+    }
+    @if (!string.IsNullOrWhiteSpace(State.SetupMessage)) { <p class="fine-print">@State.SetupMessage</p> }
+</section>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
-    private string SetupSearch { get; set; } = string.Empty;
-    private string SetupMode { get; set; } = "library";
-    private string StartingTuneHeading => State.StartingTuneStep switch { 1 => "Choose the exact event", 2 => "Review the selected source", 3 => "Confirm the coaching package", _ => "Record a clean baseline" };
-    private void OpenLibrary() => SetupMode = "library";
-    private void OpenStartingTune() { SetupMode = "starting"; State.OpenStartingTune(); }
-    private void OpenTuning() => State.Navigate("tuning");
+    private string StartingTuneHeading => State.StartingTuneStep switch { 1 => "Choose the event", 2 => "Confirm the source", 3 => "Verify the baseline", _ => "Record the baseline" };
     private Task BuildStartingTune() => State.BuildStartingTuneAsync();
-    private IEnumerable<LocalSetup> FilteredSetups => State.Setups.Where(setup => string.IsNullOrWhiteSpace(SetupSearch) || new[] { setup.Name, setup.Car, setup.Track, setup.Role }.Any(value => value?.Contains(SetupSearch, StringComparison.OrdinalIgnoreCase) == true)).OrderBy(setup => setup.Car).ThenBy(setup => setup.Track).ThenBy(setup => setup.Name);
-    private static bool Useful(string value) => !string.IsNullOrWhiteSpace(value) && !value.Contains("unavailable", StringComparison.OrdinalIgnoreCase) && !value.Contains("not identified", StringComparison.OrdinalIgnoreCase) && !value.Equals("Unidentified", StringComparison.OrdinalIgnoreCase);
-    private IEnumerable<LocalSetup> ComparableSetups => State.Setups.Where(setup => setup.Id != State.SelectedSetupId && setup.Fields.Count > 0 && (State.SelectedSetup is null || setup.Car.Equals(State.SelectedSetup.Car, StringComparison.OrdinalIgnoreCase)));
-    private static IEnumerable<SetupDifference> Differences(LocalSetup selected, LocalSetup comparison)
-    {
-        var before = comparison.Fields.ToDictionary(field => field.Key, StringComparer.OrdinalIgnoreCase);
-        foreach (var field in selected.Fields)
-        {
-            if (!before.TryGetValue(field.Key, out var prior) || !string.Equals(field.Value, prior.Value, StringComparison.OrdinalIgnoreCase))
-                yield return new SetupDifference(field.Group, field.Label, prior?.Value ?? "Not present", field.Value);
-        }
-    }
-    private sealed record SetupDifference(string Group, string Label, string Before, string After);
+    private void OpenTuning() => State.Navigate("tuning");
 }

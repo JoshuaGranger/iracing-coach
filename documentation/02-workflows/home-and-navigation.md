@@ -10,10 +10,9 @@ The final-product navigation order is:
 4. Race Planning
 5. Setups
 6. Progressive Tuning
-7. Connections
-8. Settings
+7. Settings
 
-Version 0.9.3 labels the fifth item `Setup Library`; this is acceptable current reality but should be reconciled with the shorter `Setups` specification during a future copy review.
+Version 0.11.0 uses this order. Connection management is a Settings section rather than a primary destination.
 
 ## Navigation requirements
 
@@ -44,4 +43,4 @@ Home is a race desk, not a generic card dashboard.
 
 ## Current implementation note
 
-The 0.9.3 `HomePage` implements connection status, workflow actions, automatic discovery, recent races, result formatting, and warning-only troubleshooting. Upcoming official event discovery and a computed single “highest-value next action” are not complete first-class surfaces.
+The 0.11.0 `HomePage` implements connection status, concise workflow actions, automatic discovery, recent races, result formatting, direct race opening, and warning-only troubleshooting. Upcoming official event discovery and a computed single “highest-value next action” are not complete first-class surfaces.

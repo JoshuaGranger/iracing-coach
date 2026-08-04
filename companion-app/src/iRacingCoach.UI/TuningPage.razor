@@ -1,5 +1,5 @@
 <div class="page-heading">
-    <div><span class="eyebrow">Progressive tuning</span><h1>Build a controlled setup experiment</h1><p>Capture each handling issue, then test the smallest safe bundle and keep a rollback point.</p></div>
+    <div><span class="eyebrow">Progressive tuning</span><h1>Build a setup experiment</h1></div>
 </div>
 
 @if (!State.TuningRaces.Any())
@@ -11,8 +11,8 @@ else
     <div class="workflow-layout tuning-layout @(State.TuningExperiment is null ? "setup-only" : "has-results")">
         <aside class="surface-card form-panel">
             <div class="card-header"><div><span class="eyebrow">Recorded starting point</span><h2>Choose a race</h2></div></div>
-            <label>Analyzed open-setup race<select @bind="State.SelectedTuningRaceId">@foreach (var raceOption in State.TuningRaces) { <option value="@raceOption.Id">@raceOption.Track · @raceOption.Car · @raceOption.Date</option> }</select><small>Fixed-setup and unanalyzed sessions are excluded because they cannot support a garage change.</small></label>
-            @if (State.SelectedTuningRace is { } race) { <div class="context-summary"><span>@race.Car</span><strong>@race.Track · @race.Layout</strong><small>Open setup · embedded setup and telemetry available</small></div> }
+            <label>Analyzed open-setup race<select value="@State.SelectedTuningRaceId" @onchange="ChangeRace">@foreach (var raceOption in State.TuningRaces) { <option value="@raceOption.Id">@raceOption.Track · @raceOption.Car · @raceOption.Date</option> }</select></label>
+            @if (State.SelectedTuningRace is { } race) { <div class="context-summary"><span>@race.Car</span><strong>@race.Track · @race.Layout</strong></div> }
             @if (State.CurrentAnalysis is { } tuningWorkspace && State.SelectedTuningRace is { } tuningRace && string.Equals(tuningWorkspace.Track, tuningRace.Track, StringComparison.OrdinalIgnoreCase))
             {
                 <TuningTrackSelector Workspace="tuningWorkspace" @bind-Selected="State.TuningCorner" />
@@ -32,11 +32,10 @@ else
                 <div class="feedback-step"><span>2</span><div><strong>Where in the corner?</strong><div class="segmented-control" role="group" aria-label="Corner phase">@foreach (var option in CornerPhases) { <button type="button" aria-pressed="@(State.TuningCornerPhase == option)" class="@(State.TuningCornerPhase == option ? "selected" : "")" @onclick="() => State.TuningCornerPhase = option">@option</button> }</div></div></div>
                 <div class="feedback-step"><span>3</span><div><strong>What was the balance?</strong><div class="balance-grid" role="group" aria-label="Handling balance">@foreach (var option in Balances) { <button type="button" aria-pressed="@(State.TuningBalance == option.Value)" class="@(State.TuningBalance == option.Value ? "selected" : "")" @onclick="() => State.TuningBalance = option.Value"><b>@option.Label</b><small>@option.Help</small></button> }</div></div></div>
                 <div class="feedback-step"><span>4</span><div class="tuning-rating-row"><div><strong>How strong was it?</strong><div class="segmented-control" role="group" aria-label="Severity">@foreach (var option in Severities) { <button type="button" aria-pressed="@(State.TuningSeverity == option)" class="@(State.TuningSeverity == option ? "selected" : "")" @onclick="() => State.TuningSeverity = option">@option</button> }</div></div><div><strong>How certain are you?</strong><div class="segmented-control" role="group" aria-label="Confidence">@foreach (var option in Confidences) { <button type="button" aria-pressed="@(State.TuningConfidence == option)" class="@(State.TuningConfidence == option ? "selected" : "")" @onclick="() => State.TuningConfidence = option">@option</button> }</div></div></div></div>
-                <label class="priority-toggle"><input type="checkbox" @bind="State.TuningPriority" /><span><strong>Make this the priority</strong><small>Use when this issue matters more than the other feedback from the run.</small></span></label>
+                <label class="priority-toggle"><input type="checkbox" @bind="State.TuningPriority" /><span><strong>Make this the priority</strong></span></label>
             </fieldset>
             <div class="field-row tuning-context-fields"><label>Corner or zone<input maxlength="80" placeholder="Whole lap, Turn 3, Esses…" @bind="State.TuningCorner" @bind:event="oninput" /></label><label>Optional detail<input maxlength="500" placeholder="Only after 12 green laps…" @bind="State.TuningNotes" @bind:event="oninput" /></label></div>
             <div class="button-row tuning-actions"><button class="button secondary" disabled="@(string.IsNullOrWhiteSpace(State.TuningBalance) && string.IsNullOrWhiteSpace(State.SymptomText))" @onclick="State.AddTuningFeedback">Add feedback</button><button class="button primary" disabled="@(State.TuningFeedback.Count == 0 && string.IsNullOrWhiteSpace(State.TuningBalance) && string.IsNullOrWhiteSpace(State.SymptomText))" @onclick="BuildExperiment">Build controlled experiment</button></div>
-            <p class="fine-print">A race with tow or repair evidence may be rejected until you record a clean comparison run.</p>
         </aside>
 
         @if (State.TuningExperiment is { } experiment)
@@ -79,4 +78,13 @@ else
     };
     private Task BuildExperiment() { if (State.TuningFeedback.Count == 0) State.AddTuningFeedback(); return State.GenerateExperimentAsync(); }
     private Task Record(string outcome) => State.RecordOutcomeAsync(outcome);
+    private Task ChangeRace(ChangeEventArgs args) => State.SelectTuningRaceAsync(args.Value?.ToString());
+    private string? _loadedRaceId;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var raceId = State.SelectedTuningRaceId;
+        if (string.IsNullOrWhiteSpace(raceId) || string.Equals(_loadedRaceId, raceId, StringComparison.Ordinal)) return;
+        _loadedRaceId = raceId;
+        await State.SelectTuningRaceAsync(raceId);
+    }
 }

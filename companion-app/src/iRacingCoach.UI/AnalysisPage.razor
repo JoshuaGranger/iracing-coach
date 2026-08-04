@@ -6,28 +6,27 @@
     }
     else
     {
-        <div class="analysis-opening">
-            <button class="text-button" @onclick="State.CloseAnalysisWorkspace">← Race events</button>
-            <section class="surface-card analysis-opening-card" aria-live="polite">
-                @if (State.AnalysisLoading)
-                {
-                    <span class="activity-spinner" aria-hidden="true"></span>
-                    <span class="eyebrow">Local analysis</span>
-                    <h1>Opening @SelectedTrack</h1>
-                    <p>@State.AnalysisMessage</p>
-                    <button class="button secondary" @onclick="State.CancelAllJobs">Cancel</button>
-                }
-                else
-                {
+        <div class="analysis-opening analysis-workspace-page">
+            <header class="analysis-context-bar">
+                <button class="back-button" @onclick="State.CloseAnalysisWorkspace">← Races</button>
+                <div class="analysis-event-title"><span class="eyebrow">Recorded race</span><h1>@SelectedTrack</h1><p>@SelectedContext</p></div>
+            </header>
+            @if (State.AnalysisLoading)
+            {
+                <section class="telemetry-workspace analysis-telemetry-loading" aria-live="polite" aria-busy="true">
+                    <div><span class="activity-spinner" aria-hidden="true"></span><strong>Loading telemetry</strong><span>@State.AnalysisMessage</span></div>
+                    <div class="telemetry-loading-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+                </section>
+            }
+            else
+            {
+                <section class="surface-card analysis-opening-card" aria-live="polite">
                     <span class="eyebrow">Recording not opened</span>
-                    <h1>The app is still running</h1>
+                    <h1>Telemetry could not be loaded</h1>
                     <p>@(string.IsNullOrWhiteSpace(State.AnalysisMessage) ? "This recording did not contain enough supported data to open." : State.AnalysisMessage)</p>
-                    <div class="button-row">
-                        <button class="button primary" @onclick="() => State.ReanalyzeRaceAsync()">Retry analysis</button>
-                        @if (State.LastRecoverableError is not null) { <span class="support-reference">Reference @State.LastRecoverableError.Id</span> }
-                    </div>
-                }
-            </section>
+                    <div class="button-row"><button class="button primary" @onclick="() => State.ReanalyzeRaceAsync()">Retry</button>@if (State.LastRecoverableError is not null) { <span class="support-reference">Reference @State.LastRecoverableError.Id</span> }</div>
+                </section>
+            }
         </div>
     }
 }
@@ -80,6 +79,7 @@ else
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     private bool HasRaceEvents => State.EventGroups.OfType<RaceEventGroup>().Any(group => group.Sessions?.OfType<RecentRace>().Any(session => session.IsRace) == true);
     private string SelectedTrack => State.SelectedRaceSession?.Track ?? "recorded race";
+    private string SelectedContext => State.SelectedRaceSession is { } race ? string.Join(" · ", new[] { race.Car, race.Layout, race.Date }.Where(value => !string.IsNullOrWhiteSpace(value))) : string.Empty;
     private void ClearFilters() { State.RaceSearchText = string.Empty; State.RaceFilter = RaceBrowserFilter.All; }
     private static RecentRace? RaceSession(RaceEventGroup group) => group.Sessions?.OfType<RecentRace>().FirstOrDefault(session => session.IsRace);
     private Task OpenEvent(RaceEventGroup group) => RaceSession(group) is { } race ? State.OpenRaceAsync(race) : Task.CompletedTask;

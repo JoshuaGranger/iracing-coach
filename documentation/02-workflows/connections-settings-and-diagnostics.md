@@ -13,6 +13,7 @@ Connections manages optional services, not application users.
 | `CON-005` | ChatGPT authentication MUST remain owned by the private Coach Engine/Codex managed flow. |
 | `CON-006` | Fixture mode MUST report services truthfully offline and MUST make zero production requests. |
 | `CON-007` | No application account, profile, sign-out, or workspace switcher may be introduced. |
+| `CON-008` | Connections MUST be a section inside Settings, not a primary navigation destination. Legacy internal navigation requests for Connections MUST land on Settings. |
 
 ## Portable settings
 
@@ -43,4 +44,4 @@ Preparing a copy must checkpoint relevant databases, reject active durable jobs,
 
 ## Current implementation note
 
-Version 0.9.3 has separate Connections and Settings navigation, with diagnostics rendered subordinate to Settings state. Earlier prose called for no separate Connections page; the final-product specification restored Connections as a primary item. The final-product instruction governs.
+Version 0.11.0 embeds Garage61 and ChatGPT connection controls directly in Settings. Connections is no longer a primary navigation item.

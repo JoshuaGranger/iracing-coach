@@ -613,7 +613,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.10.0");
+    string ClientVersion = "0.11.0");
 
 public sealed record BackendHealthResult(
     bool Ok,

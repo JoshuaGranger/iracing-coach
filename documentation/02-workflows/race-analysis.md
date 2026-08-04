@@ -15,15 +15,16 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-007` | Search and filters MUST operate only on recorded/indexed fields and MUST adapt when a category is absent. |
 | `RA-008` | Cached analysis SHOULD open effectively immediately; reanalysis MUST be explicit. |
 | `RA-009` | Active, changing, zero-record, truncated, or trailing-partial IBTs MUST be deferred without advertising an artifact. |
+| `RA-010` | Selecting an event MUST immediately open its Race telemetry when present. Slower reads MUST show a quiet loading state inside the telemetry panel; the user must not toggle another session to trigger loading. |
 
 ## Workspace hierarchy
 
 | ID | Requirement |
 | --- | --- |
-| `RA-020` | The workspace MUST lead with a friendly event header, phase selector when applicable, strict grade, and concise priorities. |
+| `RA-020` | The workspace MUST lead with one compact event bar containing friendly identity, recorded counts, an unclipped phase selector when applicable, and strict grade. It SHOULD consume roughly one-tenth of the usable height. |
 | `RA-021` | Only recorded, openable phases may appear. Nonexistent phases and roadmap controls MUST be absent. |
 | `RA-022` | Switching Qualifying/Race MUST remain inside the event and preserve separate setup, conditions, laps, and conclusions. |
-| `RA-023` | The detail tabs MUST be exactly: Overview, Telemetry, Corner Coaching, Runs & Tires, Fuel & Strategy, Damage & Repairs, Setup & Evidence. |
+| `RA-023` | Telemetry MUST be the primary always-visible workspace. The subordinate detail tabs MUST be exactly: Laps & Runs, Corners, Fuel & Strategy, Pit & Repairs, Setup. |
 | `RA-024` | A tab MUST contain useful supported content or be contextually absent; a capability word alone is never a valid panel. |
 | `RA-025` | A mapping/backend/render failure MUST be contained and provide Retry plus Copy Support Details without closing the app. |
 
@@ -32,9 +33,9 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | ID | Requirement |
 | --- | --- |
 | `RA-030` | The rail MUST be vertical, independently scrollable, and left of the map/charts. |
-| `RA-031` | Every row MUST render `Lap <integer>` and a separate aligned lap-time field. |
+| `RA-031` | Every row MUST render a clear lap number, separate aligned lap time, and available fastest/delta state without redundant words. |
 | `RA-032` | Rows MUST expose selection color/control and available green, caution, mixed, pit, incomplete, off-track, incident, service, repair, or tow state with text/icon as well as color. |
-| `RA-033` | The rail MUST support multi-select, focus, clean/green filtering, Best Three, and Show All. |
+| `RA-033` | The rail MUST support multi-select, focus, and clean/green filtering. Its initial comparison SHOULD choose a small useful set rather than every lap. |
 | `RA-034` | Lap zero, partial parade, and otherwise invalid laps MUST NOT enter clean pace or reference selection. |
 | `RA-035` | Tire age, fuel, incident, repair, and fastest/sector markers MUST appear only when supported. |
 
@@ -52,12 +53,14 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-047` | Screen drawing MUST preserve short extrema through min/max-aware downsampling. |
 | `RA-048` | The workspace MUST support focus/hide, legends with units, zoom/reset, and keyboard-accessible selection. |
 | `RA-049` | A target/reference trace MUST identify provenance, scope, scenario, and confidence and MUST require a usable aligned comparison. |
+| `RA-050` | Map color controls MUST sit with the map, identify the lap they depict, and never appear to control an adjacent chart. |
+| `RA-051` | The crosshair MUST derive from the rendered chart bounds so Windows scaling and responsive layout cannot offset the pointer from the inspected sample. |
 
 ## Tab contracts
 
 ### Overview
 
-- `RA-060`: MUST summarize result, totals, grades, priorities, tire/fuel/damage context, confidence, and exclusions without repeating a detached Race Card.
+- `RA-060`: MUST summarize result, totals, grades, and at most the changing useful priorities without repeating a detached Race Card or static methodology prose.
 
 ### Corner Coaching
 
@@ -65,6 +68,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 - `RA-071`: SHOULD separate early/middle/late phase and entry/center/exit where evidence supports it.
 - `RA-072`: SHOULD show entry speed, brake onset/peak/release, minimum speed, steering work, throttle pickup, exit speed, and tire-management instruction when supported.
 - `RA-073`: Exact targets and groove direction MUST obey comparison and geometry gates; relative coaching remains acceptable when exact targets are unavailable.
+- `RA-074`: Corner zones MUST come from recorded/derived session segmentation. The UI MUST NOT manufacture generic corner names when segmentation is absent.
 
 ### Runs & Tires
 
@@ -91,6 +95,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 
 - `RA-110`: Setup MUST show friendly type/source and readable recorded parameters; fixed events emphasize driving-only changes.
 - `RA-111`: Evidence MUST show coverage, exclusions, provenance, and technical identifiers without leaking those identifiers into primary views.
+- `RA-112`: Repeated limitations that are invariant across races belong in a tooltip or subordinate disclosure, not a primary card.
 
 ## Grading
 

@@ -66,12 +66,8 @@
 </section>
 
 <section class="surface-card settings-compact" aria-labelledby="connections-heading">
-    <div class="settings-section-title"><div><span class="eyebrow">Connections</span><h2 id="connections-heading">ChatGPT and Garage61</h2></div><button class="button secondary" @onclick='() => State.Navigate("connections")'>Manage connections</button></div>
-    <div class="settings-rows">
-        <div class="settings-status-row"><span>ChatGPT</span><span class="status-label @(State.CoachEngine.ChatGptConnected ? "success" : "neutral")">@(State.QaFixtureMode ? "Disabled for QA" : State.CoachEngine.ChatGptConnected ? "Connected" : "Not connected")</span><small>@CoachEngineMessage</small></div>
-        <div class="settings-status-row"><span>Garage61</span><span class="status-label @(State.Garage61.Available ? "success" : "neutral")">@(State.QaFixtureMode ? "Disabled for QA" : State.Garage61.Available ? "Connected" : State.Garage61.Configured ? "Saved · offline" : "Not connected")</span><small>@Garage61Message</small></div>
-    </div>
-    <div class="inline-alert credential-note"><span class="alert-icon"><ProductIcon Name="check" Size="16" /></span><div><strong>Connections stay on this PC.</strong><span> Reconnect after moving the Coach folder.</span></div></div>
+    <div class="settings-section-title"><div><span class="eyebrow">Connections</span><h2 id="connections-heading">ChatGPT and Garage61</h2></div></div>
+    <ConnectionsPage State="State" Embedded="true" />
 </section>
 
 <section class="surface-card settings-compact" aria-labelledby="behavior-heading">
@@ -108,8 +104,6 @@
         >= 1024 => $"{bytes / 1024d:0.0} KB",
         _ => $"{bytes} bytes"
     };
-    private string CoachEngineMessage => State.QaFixtureMode ? "Disabled by the offline QA fixture" : !State.CoachEngine.Installed ? "Repair required" : State.CoachEngine.Message;
-    private string Garage61Message => State.QaFixtureMode ? "No production requests are allowed in fixture mode." : State.Garage61.Message;
     private string PortableSummary => State.Archive is null ? string.Empty : string.Join(" · ", new[]
     {
         (State.Archive.Restored.Reports, "report", "reports"),

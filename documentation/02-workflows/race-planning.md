@@ -13,7 +13,7 @@ Race Planning converts a selected future context plus comparable recorded eviden
 | `RP-005` | The planner SHOULD support a supported official upcoming-event provider with a manual fallback. |
 | `RP-006` | A schedule provider MUST NOT inspect browser cookies, passwords, or unrelated local state. |
 
-Version 0.9.3 implements the manual recorded-history path. Official upcoming-event discovery is not a complete production capability.
+Version 0.11.0 implements the compact manual recorded-history path. Official upcoming-event discovery is not a complete production capability.
 
 ## Deterministic calculation contract
 
@@ -41,6 +41,7 @@ The local 0.9.3 QA oracle is a 50-lap Kentucky-style fixture with a 49.3-lap sup
 | `RP-046` | Comparable history MUST identify its recorded nature and uncertainty; it is not a prediction. |
 | `RP-047` | The word “optimal” MUST NOT be used without position, pit-loss, rules, future-caution/overtime, and relevant-history evidence. |
 | `RP-048` | Assumptions and calculation provenance MUST be available in a subordinate disclosure. |
+| `RP-049` | Generic instructions that do not change with the selected race MUST be omitted. Repeated methodology and invariant limitations belong in subordinate disclosure, not primary briefing space. |
 
 ## Empty and failure states
 

@@ -1,20 +1,20 @@
 # Setups, Starting Tune, and Progressive Tuning
 
-## Setup Library
+## Internal setup indexing
 
 | ID | Requirement |
 | --- | --- |
-| `SU-001` | The library MUST inventory actual local setup artifacts without modifying originals. |
-| `SU-002` | Search and rows MUST use friendly car, track, role/purpose, and setup names where known. |
+| `SU-001` | The application MUST inventory actual local setup artifacts without modifying originals. |
+| `SU-002` | Setup indexing is a supporting service for Starting Tune and analysis, not a first-class browse/library screen. |
 | `SU-003` | Opaque STO files MAY expose path-independent identity, size/time, and SHA-256 but MUST NOT claim decoded parameters. |
 | `SU-004` | The recorded IBT `CarSetup` tree is authoritative for what was driven. |
 | `SU-005` | Readable HTML/embedded parameters SHOULD be grouped into human systems such as tires, aero, springs, shocks, bars, heights, differential, gears, and brakes. |
 | `SU-006` | Filename/header conflicts MUST remain visible and provisional. |
-| `SU-007` | Readable setups MAY be compared by normalized field, but comparison MUST retain provenance and uncertainty. |
-| `SU-008` | “Open containing folder” MAY be provided; no workflow may overwrite the source setup. |
+| `SU-007` | Readable setups MAY be compared internally by normalized field, but comparison MUST retain provenance and uncertainty. |
+| `SU-008` | No workflow may overwrite the source setup. |
 | `SU-009` | Raw folder identifiers and fingerprints belong only in technical details. |
 
-The 0.9.3 UI implements search, selection, readable grouped fields, same-car comparison, opaque-STO truthfulness, and technical hashes.
+Version 0.11.0 removes the user-facing Setup Library because it did not support a useful decision. Real local indexing remains available to Starting Tune and analysis.
 
 ## Starting Tune package
 
@@ -27,7 +27,7 @@ The 0.9.3 UI implements search, selection, readable grouped fields, same-car com
 | `ST-005` | The application MUST NOT generate or overwrite a simulator-loadable STO. |
 | `ST-006` | Seasonal research MUST be cached and invalidated by relevant content/physics identity. |
 
-Version 0.10.0 exposes the backend package workflow as `Context → Source → Package → Baseline Run` inside Setups. It requires exact season/car/track input, presents source identity and SHA-256, refuses to relabel a race source as qualifying, records package/rollback identity, and reiterates that iRacing remains the only place setups are applied or saved.
+Version 0.11.0 exposes the backend package workflow as `Event → Source → Checks → Run` inside Setups. It requires exact season/car/track input, presents source identity and SHA-256 in subordinate detail, refuses to relabel a race source as qualifying, and records package/rollback identity. iRacing remains the only place setups are applied or saved.
 
 ## Progressive Tuning prerequisites
 
@@ -47,6 +47,8 @@ Version 0.10.0 exposes the backend package workflow as `Context → Source → P
 | `PT-023` | Driver wording and telemetry corroboration MUST remain separately identifiable. |
 | `PT-024` | All saved feedback cards MUST contribute to recommendation input; the last form state may not silently replace earlier cards. |
 | `PT-025` | The builder MUST NOT require feedback for every corner or phase. |
+| `PT-026` | Selecting the tuning page or a different eligible race MUST load that race's recorded track/telemetry context automatically. |
+| `PT-027` | When recorded zones are absent, the builder MAY accept Whole lap or typed feedback but MUST NOT invent corner names or map regions. |
 
 ## Experiment contract
 
@@ -60,4 +62,4 @@ Version 0.10.0 exposes the backend package workflow as `Context → Source → P
 | `PT-045` | Improved, Worse, No change, and Inconclusive outcomes MUST be recordable and durable. |
 | `PT-046` | Failed experiments MUST remain searchable so equivalent disproven changes are not repeated. |
 
-Version 0.9.3 fixture QA verified a real track selector, two feedback cards on different zones, a generated controlled recommendation, and result controls. Real clean-run A/B acceptance remains pending.
+Version 0.11.0 fixture QA verified automatic event loading, a real track selector, zone-specific feedback, a generated controlled recommendation, and result controls. Real clean-run A/B acceptance remains pending.

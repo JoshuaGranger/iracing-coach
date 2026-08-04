@@ -10,17 +10,22 @@
                 @foreach (var zone in Zones)
                 {
                     var point = PointAt(zone.CenterPercent);
-                    <circle cx="@F(point.X)" cy="@F(point.Y)" r="@(Selected == zone.Label ? 12 : 9)" class="tuning-zone-dot @(Selected == zone.Label ? "selected" : null)" />
-                    <svg:text x="@F(point.X)" y="@F(point.Y - 16)" text-anchor="middle">@zone.Label</svg:text>
+                    <g class="tuning-zone-target" role="button" tabindex="0" @onclick="() => Select(zone.Label)">
+                        <circle cx="@F(point.X)" cy="@F(point.Y)" r="18" class="tuning-zone-hit" />
+                        <circle cx="@F(point.X)" cy="@F(point.Y)" r="@(Selected == zone.Label ? 12 : 9)" class="tuning-zone-dot @(Selected == zone.Label ? "selected" : null)" />
+                        <svg:text x="@F(point.X)" y="@F(point.Y - 16)" text-anchor="middle">@zone.Label</svg:text>
+                    </g>
                 }
             </svg>
         }
-        <div class="tuning-zone-list" role="group" aria-label="Recorded corner and load zones">
-            @foreach (var zone in Zones)
-            {
-                <button type="button" aria-pressed="@(Selected == zone.Label)" class="@(Selected == zone.Label ? "selected" : null)" @onclick="() => Select(zone.Label)"><strong>@zone.Label</strong><small>@($"{zone.StartPercent:P0}–{zone.EndPercent:P0} of lap")</small></button>
-            }
-        </div>
+        @if (Zones.Count > 0)
+        {
+            <div class="tuning-zone-list" role="group" aria-label="Recorded corner and load zones">@foreach (var zone in Zones) { <button type="button" aria-pressed="@(Selected == zone.Label)" class="@(Selected == zone.Label ? "selected" : null)" @onclick="() => Select(zone.Label)"><strong>@zone.Label</strong><small>@($"{zone.StartPercent:P0}–{zone.EndPercent:P0}")</small></button> }</div>
+        }
+        else
+        {
+            <div class="empty-state compact-empty"><h3>No recorded corner zones</h3><p>Use Whole lap; the app will not invent corner labels.</p></div>
+        }
     </div>
 </section>
 
@@ -28,9 +33,10 @@
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
     [Parameter] public string Selected { get; set; } = string.Empty;
     [Parameter] public EventCallback<string> SelectedChanged { get; set; }
-    private IReadOnlyList<Zone> Zones => Workspace.Segments.Count > 0
-        ? Workspace.Segments.Take(6).Select(zone => new Zone(string.IsNullOrWhiteSpace(zone.Label) ? $"Load zone {zone.Number}" : zone.Label, zone.StartPercent, zone.EndPercent, zone.WrapsStartFinish)).ToArray()
-        : [new("Turns 1–2", .12, .42, false), new("Turns 3–4", .58, .88, false)];
+    private IReadOnlyList<Zone> Zones => Workspace.Segments
+        .Where(zone => !string.IsNullOrWhiteSpace(zone.Label))
+        .Take(12)
+        .Select(zone => new Zone(zone.Label, zone.StartPercent, zone.EndPercent, zone.WrapsStartFinish)).ToArray();
     private async Task Select(string value) { Selected = value; await SelectedChanged.InvokeAsync(value); }
     private string ShapePoints => string.Join(" ", MapPoints.Select(point => $"{F(point.X)},{F(point.Y)}")) + (MapPoints.Count > 0 ? $" {F(MapPoints[0].X)},{F(MapPoints[0].Y)}" : string.Empty);
     private IReadOnlyList<MapPoint> MapPoints
