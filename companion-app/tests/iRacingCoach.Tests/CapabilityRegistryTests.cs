@@ -292,17 +292,18 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void TrayExit_HidesImmediatelyDefersDisposalAndAlwaysReachesShutdown()
+    public void TrayExit_MarshalsFromTheTrayLoopThenAlwaysReachesShutdown()
     {
         var appRoot = Path.Combine(CompanionRoot(), "src", "iRacingCoach.App");
         var window = File.ReadAllText(Path.Combine(appRoot, "MainWindow.xaml.cs"));
         var requestStart = window.IndexOf("private void RequestExit()", StringComparison.Ordinal);
         var disposeStart = window.IndexOf("public void DisposeApplication()", StringComparison.Ordinal);
         var request = window[requestStart..disposeStart];
+        StringAssert.Contains(request, "if (!Dispatcher.CheckAccess())");
+        StringAssert.Contains(request, "new Action(RequestExit)");
         StringAssert.Contains(request, "if (_exitRequested) return;");
         StringAssert.Contains(request, "HideForApplicationExit();");
         StringAssert.Contains(request, "Dispatcher.BeginInvoke(DispatcherPriority.Send");
-        Assert.IsLessThan(request.IndexOf("Dispatcher.BeginInvoke", StringComparison.Ordinal), request.IndexOf("HideForApplicationExit();", StringComparison.Ordinal));
 
         var disposal = window[disposeStart..window.IndexOf("private void ApplyDarkTitleBar()", disposeStart, StringComparison.Ordinal)];
         StringAssert.Contains(disposal, "TryCleanup(Close, \"close main window\")");

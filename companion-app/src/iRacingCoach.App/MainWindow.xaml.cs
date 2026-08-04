@@ -305,11 +305,18 @@ public partial class MainWindow : Window
 
     private void RequestExit()
     {
+        // NotifyIcon callbacks run on the Windows Forms message loop. Move the entire
+        // shutdown handoff to WPF before touching windows or application lifetime.
+        if (!Dispatcher.CheckAccess())
+        {
+            if (!Dispatcher.HasShutdownStarted)
+                _ = Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(RequestExit));
+            return;
+        }
         if (_exitRequested) return;
         _exitRequested = true;
         HideForApplicationExit();
-        if (Dispatcher.HasShutdownStarted) ExitRequested?.Invoke();
-        else _ = Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() => ExitRequested?.Invoke()));
+        ExitRequested?.Invoke();
     }
 
     public void DisposeApplication()
