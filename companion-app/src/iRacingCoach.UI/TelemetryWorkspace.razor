@@ -42,11 +42,10 @@
                             var pitLap = trace.PitTimeSeconds.GetValueOrDefault() > 0;
                             var isFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
                             <button class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(pitLap ? "pit-lap" : null)" style="@($"--lap-color:{LapColor(trace.Lap)}")" aria-pressed="@Selected.Contains(trace.Lap)" @onclick="() => SelectLap(trace.Lap)">
-                                <span class="lap-selection"><span class="lap-flag @LapFlagClass(trace)" title="@LapFlagLabel(trace)" aria-label="@LapFlagLabel(trace)"><ProductIcon Name="race" Size="12" /></span><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
+                                <span class="lap-flag @LapFlagClass(trace)" title="@LapFlagLabel(trace)" aria-label="@LapFlagLabel(trace)"><ProductIcon Name="race" Size="12" /></span>
+                                <span class="lap-identity"><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
                                 <span class="lap-time @(isFastest ? "fastest" : null)">@LapTime(trace.LapTimeSeconds)@if (ShowPaceDelta(trace, isFastest)) { <small>(+@((trace.LapTimeSeconds!.Value - FastestLapTime).ToString("0.000")))</small> }</span>
-                                <span class="lap-row-signals">
-                                    @if (pitLap) { <span class="pit-badge" @onmouseenter="args => ShowPitPopover(args, trace.Lap)" @onmouseleave="HidePitPopover" @onclick:stopPropagation="true">PIT</span> }
-                                    @if (IncidentPoints(trace.Lap) is var points && points > 0) { <span class="incident-badge severity-@IncidentSeverity(points)" title="@($"{points} incident point{(points == 1 ? string.Empty : "s")} on lap {trace.Lap}")">@($"x{points}")</span> }
+                                <span class="lap-sector-column">
                                     @if (SectorStarts.Count > 1)
                                     {
                                     <span class="sector-squares" aria-label="Sector performance">
@@ -57,6 +56,12 @@
                                         }
                                     </span>
                                     }
+                                </span>
+                                <span class="lap-incident-column">
+                                    @if (IncidentPoints(trace.Lap) is var points && points > 0) { <span class="incident-badge severity-@IncidentSeverity(points)" title="@($"{points} incident point{(points == 1 ? string.Empty : "s")} on lap {trace.Lap}")">@($"x{points}")</span> }
+                                </span>
+                                <span class="lap-pit-column">
+                                    @if (pitLap) { <span class="pit-badge" @onmouseenter="args => ShowPitPopover(args, trace.Lap)" @onmouseleave="HidePitPopover" @onclick:stopPropagation="true">PIT</span> }
                                 </span>
                                 @if (pitLap && run is not null && ActivePitLap == trace.Lap)
                                 {

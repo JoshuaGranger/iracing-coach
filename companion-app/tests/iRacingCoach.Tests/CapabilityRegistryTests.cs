@@ -248,6 +248,11 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "Race remaining");
         StringAssert.Contains(telemetry, "Show all");
         Assert.DoesNotContain("Pit stop recorded", telemetry);
+        Assert.DoesNotContain("lap-row-signals", telemetry);
+        StringAssert.Contains(telemetry, "class=\"lap-identity\"");
+        StringAssert.Contains(telemetry, "class=\"lap-sector-column\"");
+        StringAssert.Contains(telemetry, "class=\"lap-incident-column\"");
+        StringAssert.Contains(telemetry, "class=\"lap-pit-column\"");
         StringAssert.Contains(telemetry, "var hue = 280 * fraction");
         StringAssert.Contains(telemetry, "Math.Abs(lapTime - FastestLapTime) < .0001");
         StringAssert.Contains(telemetry, "return \"#F05CDB\"");
@@ -265,6 +270,7 @@ public sealed class CapabilityRegistryTests
         var coachCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(coachCss, "--font-size-min: 11.67px");
         StringAssert.Contains(coachCss, ".pit-lap-popover { position: fixed");
+        StringAssert.Contains(coachCss, "grid-template-columns: 24px 42px minmax(128px,1fr) 22px 28px 28px");
         Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(coachCss, "font-size:\\s*(9|10)px"));
         Assert.DoesNotContain("<span class=\"lap-state", telemetry);
         StringAssert.Contains(telemetry, "stroke-width=\"1.35\"");

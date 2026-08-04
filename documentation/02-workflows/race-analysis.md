@@ -33,7 +33,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | ID | Requirement |
 | --- | --- |
 | `RA-030` | The rail MUST be vertical, independently scrollable, and left of the map/charts. |
-| `RA-031` | Every row MUST render a clear lap number and aligned lap time without redundant state on both sides. The fastest clean time MUST be visibly magenta; other supported deltas MUST appear inline in parentheses after the lap time rather than consuming a second line. |
+| `RA-031` | Every row MUST use stable columns in this order: flag, lap number with trace color, pace with inline delta, sectors, incidents, and pit state. The flag and lap-number columns MUST remain compact without artificial whitespace. The fastest clean time MUST be visibly magenta; other supported deltas MUST appear inline in parentheses after the lap time rather than consuming a second line. |
 | `RA-032` | Rows MUST expose selection color/control and available green, caution, mixed, pit, incomplete, off-track, incident, service, repair, or tow state with text/icon as well as color. Flag state, pit state, and incident points MUST remain independently visible when they overlap. |
 | `RA-033` | The rail MUST support multi-select and clean/green filtering. Enabling the clean filter MUST remove dirty laps from both the rail and the active trace selection. Its initial comparison SHOULD choose a small useful set rather than every lap. |
 | `RA-034` | Lap zero, partial parade, and otherwise invalid laps MUST NOT enter clean pace or reference selection. |
