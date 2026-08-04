@@ -85,4 +85,4 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 - Installer lifecycle: local guarded install/upgrade/rollback/uninstall verification passed
 - Final acceptance: **HOME_QA pending**
 
-The 0.11.1 implementation evidence is summarized in `06-reality/implementation-snapshot-0.11.1.md`. The previous complete release certification remains in `companion-app/RELEASE_0.11.0.md`; unchanged installer lifecycle behavior was deliberately not re-certified for this rendering-only iteration. Build binaries and private user data are not part of the source repository.
+The 0.11.1 implementation and artifact evidence is summarized in `06-reality/implementation-snapshot-0.11.1.md` and `companion-app/RELEASE_0.11.1.md`. The previous complete release certification remains in `companion-app/RELEASE_0.11.0.md`; unchanged installer lifecycle behavior was deliberately not re-certified for this rendering-only iteration. Build binaries and private user data are not part of the source repository.
