@@ -231,6 +231,8 @@ public sealed class CapabilityRegistryTests
         Assert.DoesNotContain("new TrackSegment", analysis);
         StringAssert.Contains(analysis, "UsefulAction");
         StringAssert.Contains(telemetry, "trace-cursor-tooltip");
+        StringAssert.Contains(telemetry, "@onmouseleave=\"HideChartCursor\"");
+        StringAssert.Contains(telemetry, "@if (ChartHovered)");
         StringAssert.Contains(telemetry, "DirectionalDegrees");
         StringAssert.Contains(telemetry, "pit-lap-popover");
         StringAssert.Contains(telemetry, "ProjectedMapPercent");

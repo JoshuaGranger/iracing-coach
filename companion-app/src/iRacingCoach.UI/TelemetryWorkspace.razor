@@ -116,7 +116,7 @@
 
             <div class="trace-panel">
                 <div class="panel-title"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare</span></div>
-                <svg @ref="ChartElement" class="trace-chart" viewBox="@($"0 0 1000 {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized speed, time delta, controls, gear, RPM, steering, rotation, and acceleration traces" @onmousemove="ChartMoved">
+                <svg @ref="ChartElement" class="trace-chart" viewBox="@($"0 0 1000 {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized speed, time delta, controls, gear, RPM, steering, rotation, and acceleration traces" @onmouseenter="ShowChartCursor" @onmouseleave="HideChartCursor" @onmousemove="ChartMoved">
                     @for (var row = 0; row < VisiblePanels.Count; row++)
                     {
                         var panel = VisiblePanels[row]; var top = ChartTop + row * ChartRowHeight;
@@ -131,8 +131,10 @@
                             {
                                 <path d="@TracePath(trace, panel, top, true)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="1.05" stroke-dasharray="4 3" opacity=".72" vector-effect="non-scaling-stroke" />
                             }
-                            @if (PanelCursorY(panel, trace, top) is { } markerY) { <circle cx="@CursorChartX" cy="@markerY" r="3.4" fill="@LapColor(trace.Lap)" class="trace-cursor-marker" /> }
+                            @if (ChartHovered && PanelCursorY(panel, trace, top) is { } markerY) { <circle cx="@CursorChartX" cy="@markerY" r="3.4" fill="@LapColor(trace.Lap)" class="trace-cursor-marker" /> }
                         }
+                        @if (ChartHovered)
+                        {
                         <g class="trace-cursor-tooltip">
                             <rect x="@TooltipX" y="@(top + 4)" width="186" height="@(14 + SelectedTraces.Count() * 20)" rx="4" />
                             @foreach (var trace in SelectedTraces.Select((value, index) => new { value, index }))
@@ -142,6 +144,7 @@
                                 <svg:text x="@(TooltipX + 69)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-value">@CursorValue(panel, trace.value)</svg:text>
                             }
                         </g>
+                        }
                     }
                     @for (var tick = 0; tick <= 4; tick++)
                     {
@@ -149,7 +152,7 @@
                         <line x1="@x" y1="@ChartTop" x2="@x" y2="@ChartBottom" class="chart-grid-vertical" />
                         <svg:text x="@x" y="@(ChartHeight - 7)" text-anchor="middle" class="chart-label">@(tick * 25)%</svg:text>
                     }
-                    <line x1="@CursorChartX" y1="@ChartTop" x2="@CursorChartX" y2="@ChartBottom" class="shared-cursor" />
+                    @if (ChartHovered) { <line x1="@CursorChartX" y1="@ChartTop" x2="@CursorChartX" y2="@ChartBottom" class="shared-cursor" /> }
                 </svg>
             </div>
         </div>
@@ -163,6 +166,7 @@
     private string? _analysisId;
     private string Mode { get; set; } = "speed";
     private bool CleanLapsOnly { get; set; }
+    private bool ChartHovered { get; set; }
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
@@ -268,6 +272,8 @@
     private static string LapFlagLabel(AnalysisLapTrace trace) => !trace.Complete ? "Incomplete lap" : IsCaution(trace) ? "Caution lap" : "Green-flag lap";
     private static string LapFlagClass(AnalysisLapTrace trace) => !trace.Complete ? "incomplete" : IsCaution(trace) ? "yellow" : "green";
     private static bool IsCaution(AnalysisLapTrace trace) => trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) || trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
+    private void ShowChartCursor() => ChartHovered = true;
+    private void HideChartCursor() => ChartHovered = false;
     private async Task ChartMoved(MouseEventArgs args)
     {
         if (_chartMovePending) return;
