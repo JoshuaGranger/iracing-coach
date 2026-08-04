@@ -241,6 +241,9 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "Selected.RemoveWhere");
         StringAssert.Contains(telemetry, "SectorDuration");
         StringAssert.Contains(telemetry, "session-fastest");
+        StringAssert.Contains(telemetry, "$\"S{sector + 1} · {duration.Value:0.000} s\"");
+        Assert.DoesNotContain("lap excluded from clean comparison", telemetry);
+        Assert.DoesNotContain("new best at this point", telemetry);
         StringAssert.Contains(telemetry, "IncidentPoints");
         StringAssert.Contains(telemetry, "@($\"x{points}\")");
         StringAssert.Contains(telemetry, "ShowPitPopover");

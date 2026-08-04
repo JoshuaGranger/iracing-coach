@@ -639,19 +639,20 @@
     private SectorStatus SectorState(AnalysisLapTrace trace, int sector)
     {
         var duration = SectorDuration(trace, sector);
-        if (!duration.HasValue) return new SectorStatus("unavailable", $"S{sector + 1}: not recorded");
-        if (!IsClean(trace)) return new SectorStatus("neutral", $"S{sector + 1}: {duration.Value:0.000} s · lap excluded from clean comparison");
+        var title = duration.HasValue ? $"S{sector + 1} · {duration.Value:0.000} s" : $"S{sector + 1} · —";
+        if (!duration.HasValue) return new SectorStatus("unavailable", title);
+        if (!IsClean(trace)) return new SectorStatus("neutral", title);
         var comparable = Workspace.Traces.Where(IsClean)
             .Select(item => new { Trace = item, Duration = SectorDuration(item, sector) })
             .Where(item => item.Duration.HasValue)
             .ToArray();
         var sessionBest = comparable.Select(item => item.Duration!.Value).DefaultIfEmpty(double.MaxValue).Min();
         if (Math.Abs(duration.Value - sessionBest) < .0005)
-            return new SectorStatus("session-fastest", $"S{sector + 1}: {duration.Value:0.000} s · session fastest");
+            return new SectorStatus("session-fastest", title);
         var priorBest = comparable.Where(item => item.Trace.Lap < trace.Lap).Select(item => item.Duration!.Value).DefaultIfEmpty(double.MaxValue).Min();
         if (duration.Value < priorBest)
-            return new SectorStatus("new-best", $"S{sector + 1}: {duration.Value:0.000} s · new best at this point");
-        return new SectorStatus("neutral", $"S{sector + 1}: {duration.Value:0.000} s");
+            return new SectorStatus("new-best", title);
+        return new SectorStatus("neutral", title);
     }
     private double? SectorDuration(AnalysisLapTrace trace, int sector)
     {
