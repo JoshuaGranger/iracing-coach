@@ -207,7 +207,11 @@ public sealed record AnalysisLapTrace(
     double? GreenFraction,
     double? CautionFraction,
     double? PitTimeSeconds,
-    IReadOnlyList<AnalysisTracePoint> Points);
+    IReadOnlyList<AnalysisTracePoint> Points,
+    IReadOnlyList<string>? FlagStates = null,
+    bool PitEntry = false,
+    bool PitExit = false,
+    double? FuelUsedGallons = null);
 
 public sealed record AnalysisLap(
     int Lap,

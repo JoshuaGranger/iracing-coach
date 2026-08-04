@@ -629,6 +629,7 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertEqual(traces["tire_stress"]["evidence_class"], "proxy")
         self.assertIn("not per-lap tread wear", traces["tire_stress"]["definition"])
         self.assertEqual(traces["sector_start_pcts"], [0.0, 0.333333, 0.666667])
+        self.assertIsNotNone(traces["traces"][0]["fuel_used_gal"])
         timeline = analysis["race_timeline"]
         event_types = [event["event_type"] for event in timeline["events"]]
         self.assertEqual(event_types[0], "race_start")
@@ -651,6 +652,31 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertGreaterEqual(len(grades["categories"]), 2)
         self.assertTrue(all(item["explanation"] and item["improvement"] for item in grades["categories"]))
         self.assertTrue(any("capped below A+" in item.get("limitations", "") for item in grades["categories"] if item["key"] == "pace"))
+
+    def test_lap_traces_preserve_mixed_flags_pit_direction_and_fuel(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=3)
+        flags = telemetry["channels"]["SessionFlags"]
+        on_pit = telemetry["channels"]["OnPitRoad"]
+        for index in range(80, 120):
+            flags[index] = 0x0004
+        for index in range(120, 160):
+            flags[index] = 0x4000
+        flags[100] |= 0x00010000
+        flags[101] |= 0x0002
+        flags[102] |= 0x0001
+        for index in range(145, 171):
+            on_pit[index] = True
+
+        analysis = analyze_telemetry(telemetry, source_paths=["flags.ibt"])
+        traces = {item["lap"]: item for item in analysis["lap_traces"]["traces"]}
+
+        self.assertEqual(
+            traces[2]["flag_states"],
+            ["green", "yellow", "black", "white", "checkered"],
+        )
+        self.assertTrue(traces[2]["pit_entry"])
+        self.assertTrue(traces[3]["pit_exit"])
+        self.assertGreater(traces[2]["fuel_used_gal"], 0)
 
     def test_summarizes_setup_telemetry_in_engineering_units(self) -> None:
         analysis = analyze_telemetry(synthetic_telemetry())

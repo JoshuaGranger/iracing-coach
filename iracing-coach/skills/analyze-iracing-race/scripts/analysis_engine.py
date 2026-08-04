@@ -25,7 +25,10 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
 
 
 CAUTION_FLAGS = 0x0008 | 0x0100 | 0x0200 | 0x4000 | 0x8000
+CHECKERED_FLAG = 0x0001
+WHITE_FLAG = 0x0002
 GREEN_FLAG = 0x0004
+BLACK_FLAG = 0x00010000
 REPAIR_REQUIRED_FLAG = 0x00100000
 TIRES = ("LF", "RF", "LR", "RR")
 POSITIONS = ("L", "M", "R")
@@ -787,6 +790,7 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
         caution_time = 0.0
         green_time = 0.0
         pit_time = 0.0
+        observed_flags = 0
         racing_state_time = 0.0
         on_track_time = 0.0
         track_location_time = 0.0
@@ -794,6 +798,7 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
         traffic_observed_time = 0.0
         for index in indices:
             flag_value = int(_finite(flags[index]) or 0)
+            observed_flags |= flag_value
             if flag_value & CAUTION_FLAGS:
                 caution_time += dts[index]
             else:
@@ -881,6 +886,25 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
                 if current is not None:
                     previous = current
             fuel_used = negative_drops
+        pit_entry = any(
+            _bool(pit[index]) and (index == 0 or not _bool(pit[index - 1]))
+            for index in indices
+        )
+        pit_exit = any(
+            not _bool(pit[index]) and index > 0 and _bool(pit[index - 1])
+            for index in indices
+        )
+        flag_states: list[str] = []
+        if green_time > 0.0:
+            flag_states.append("green")
+        if caution_time > 0.0:
+            flag_states.append("yellow")
+        if observed_flags & BLACK_FLAG:
+            flag_states.append("black")
+        if observed_flags & WHITE_FLAG:
+            flag_states.append("white")
+        if observed_flags & CHECKERED_FLAG:
+            flag_states.append("checkered")
         brake_energy = 0.0
         steering_work = 0.0
         overlap_time = 0.0
@@ -908,9 +932,12 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
                 "lap_time_s": _round(duration),
                 "complete": complete,
                 "flag_state": classified,
+                "flag_states": flag_states,
                 "green_fraction": _round(green_time / running_time),
                 "caution_fraction": _round(caution_time / running_time),
                 "pit_time_s": _round(pit_time),
+                "pit_entry": pit_entry,
+                "pit_exit": pit_exit,
                 "racing_state_fraction": _round(
                     racing_state_time / running_time if has_session_state else None,
                     4,
@@ -1096,9 +1123,13 @@ def _lap_trace_payload(
                     "lap_time_s": lap.get("lap_time_s"),
                     "complete": bool(lap.get("complete")),
                     "flag_state": lap.get("flag_state"),
+                    "flag_states": list(lap.get("flag_states") or []),
                     "green_fraction": lap.get("green_fraction"),
                     "caution_fraction": lap.get("caution_fraction"),
                     "pit_time_s": lap.get("pit_time_s"),
+                    "pit_entry": bool(lap.get("pit_entry")),
+                    "pit_exit": bool(lap.get("pit_exit")),
+                    "fuel_used_gal": _path_get(lap, "fuel", "used_gal"),
                     "points": points,
                 }
             )

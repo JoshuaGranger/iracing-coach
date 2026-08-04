@@ -253,7 +253,10 @@ public static class RuntimeMapper
                 Number(point, "throttle"), Number(point, "throttle_min"), Number(point, "brake"), Number(point, "brake_mean"),
                 Number(point, "steering_rad"), Number(point, "steering_peak_rad"), Number(point, "slip_angle_deg"), NullableInteger(point, "gear"), Number(point, "rpm"),
                 Number(point, "yaw_rate_deg_s"), Number(point, "lateral_g"), Number(point, "longitudinal_g"),
-                Number(point, "lat"), Number(point, "lon"), Number(point, "tire_stress_proxy"))).ToArray())).ToArray();
+                Number(point, "lat"), Number(point, "lon"), Number(point, "tire_stress_proxy"))).ToArray(),
+            Array(trace, "flag_states").Select(Value).Where(value => value.Length > 0).ToArray(),
+            Boolean(trace, "pit_entry") == true, Boolean(trace, "pit_exit") == true,
+            Number(trace, "fuel_used_gal"))).ToArray();
 
         var runs = Array(view, "runs").Select(run =>
         {

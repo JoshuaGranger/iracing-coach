@@ -256,8 +256,14 @@ public sealed class CapabilityRegistryTests
         Assert.DoesNotContain("lap-row-signals", telemetry);
         StringAssert.Contains(telemetry, "class=\"lap-identity\"");
         StringAssert.Contains(telemetry, "class=\"lap-sector-column\"");
+        StringAssert.Contains(telemetry, "class=\"lap-fuel-column\"");
         StringAssert.Contains(telemetry, "class=\"lap-incident-column\"");
         StringAssert.Contains(telemetry, "class=\"lap-pit-column\"");
+        StringAssert.Contains(telemetry, "PIT (@direction)");
+        StringAssert.Contains(telemetry, "LapFlags(trace)");
+        StringAssert.Contains(telemetry, "ClearSelection");
+        StringAssert.Contains(telemetry, "No laps selected");
+        Assert.DoesNotContain("Selected.Count >= 5", telemetry);
         StringAssert.Contains(telemetry, "var hue = 280 * fraction");
         StringAssert.Contains(telemetry, "Math.Abs(lapTime - FastestLapTime) < .0001");
         StringAssert.Contains(telemetry, "return \"#F05CDB\"");
@@ -277,8 +283,10 @@ public sealed class CapabilityRegistryTests
         var coachCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(coachCss, "--font-size-min: 11.67px");
         StringAssert.Contains(coachCss, ".pit-lap-popover { position: fixed");
-        StringAssert.Contains(coachCss, "grid-template-columns: 24px 42px minmax(144px,1fr) 22px 28px 28px");
-        StringAssert.Contains(coachCss, "grid-template-columns: 332px minmax(0,1fr)");
+        StringAssert.Contains(coachCss, "grid-template-columns: 70px 42px minmax(144px,1fr) 22px 60px 28px 64px");
+        StringAssert.Contains(coachCss, "grid-template-columns: 474px minmax(0,1fr)");
+        StringAssert.Contains(coachCss, ".lap-flag.checkered");
+        StringAssert.Contains(coachCss, ".telemetry-empty-selection");
         Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(coachCss, "font-size:\\s*(9|10)px"));
         Assert.DoesNotContain("<span class=\"lap-state", telemetry);
         StringAssert.Contains(telemetry, "stroke-width=\"1.35\"");

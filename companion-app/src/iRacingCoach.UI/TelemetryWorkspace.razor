@@ -39,10 +39,16 @@
                         @foreach (var trace in group.Traces)
                         {
                             var run = RunForLap(trace.Lap);
-                            var pitLap = trace.PitTimeSeconds.GetValueOrDefault() > 0;
+                            var pitDirections = PitDirections(trace);
+                            var pitLap = pitDirections.Count > 0 || trace.PitTimeSeconds.GetValueOrDefault() > 0;
                             var isFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
                             <button class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(pitLap ? "pit-lap" : null)" style="@($"--lap-color:{LapColor(trace.Lap)}")" aria-pressed="@Selected.Contains(trace.Lap)" @onclick="() => SelectLap(trace.Lap)">
-                                <span class="lap-flag @LapFlagClass(trace)" title="@LapFlagLabel(trace)" aria-label="@LapFlagLabel(trace)"><ProductIcon Name="race" Size="12" /></span>
+                                <span class="lap-flags" aria-label="Recorded lap flags">
+                                    @foreach (var flag in LapFlags(trace))
+                                    {
+                                        <span class="lap-flag @flag.Class" title="@flag.Label" aria-label="@flag.Label"><ProductIcon Name="race" Size="12" /></span>
+                                    }
+                                </span>
                                 <span class="lap-identity"><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
                                 <span class="lap-time @(isFastest ? "fastest" : null)">@LapTime(trace.LapTimeSeconds)@if (ShowPaceDelta(trace, isFastest)) { <small>(+@((trace.LapTimeSeconds!.Value - FastestLapTime).ToString("0.000")))</small> }</span>
                                 <span class="lap-sector-column">
@@ -57,11 +63,15 @@
                                     </span>
                                     }
                                 </span>
+                                <span class="lap-fuel-column" title="@FuelConsumedTitle(trace)">@FuelConsumed(trace)</span>
                                 <span class="lap-incident-column">
                                     @if (IncidentPoints(trace.Lap) is var points && points > 0) { <span class="incident-badge severity-@IncidentSeverity(points)" title="@($"{points} incident point{(points == 1 ? string.Empty : "s")} on lap {trace.Lap}")">@($"x{points}")</span> }
                                 </span>
                                 <span class="lap-pit-column">
-                                    @if (pitLap) { <span class="pit-badge" @onmouseenter="args => ShowPitPopover(args, trace.Lap)" @onmouseleave="HidePitPopover" @onclick:stopPropagation="true">PIT</span> }
+                                    @foreach (var direction in pitDirections)
+                                    {
+                                        <span class="pit-badge" @onmouseenter="args => ShowPitPopover(args, trace.Lap)" @onmouseleave="HidePitPopover" @onclick:stopPropagation="true">PIT (@direction)</span>
+                                    }
                                 </span>
                                 @if (pitLap && run is not null && ActivePitLap == trace.Lap)
                                 {
@@ -87,9 +97,15 @@
                     </details>
                 }
             </div>
-            <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ShowAllLaps">Show all</button></div>
+            <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ClearSelection">Clear</button><button class="text-button" @onclick="ShowAllLaps">Show all</button></div>
         </aside>
 
+        @if (Selected.Count == 0)
+        {
+            <div class="telemetry-empty-selection"><strong>No laps selected</strong><span>Select a lap, Best three, or Show all to display telemetry.</span></div>
+        }
+        else
+        {
         <div class="telemetry-grid">
             <div class="track-panel">
                 <div class="panel-title track-panel-title"><div><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Lap @PrimaryTrace.Lap</span></div><label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label></div>
@@ -164,6 +180,7 @@
                 </svg>
             </div>
         </div>
+        }
         </div>
     }
 </section>
@@ -270,11 +287,23 @@
 
     private void ToggleLap(int lap)
     {
-        if (!Selected.Remove(lap)) { if (Selected.Count >= 5) Selected.Remove(Selected.First()); Selected.Add(lap); }
+        if (!Selected.Remove(lap)) Selected.Add(lap);
         if (Selected.Count == 0) Selected.Add(lap);
     }
     private void SelectLap(int lap) => ToggleLap(lap);
-    private void ShowAllLaps() => CleanLapsOnly = false;
+    private void ShowAllLaps()
+    {
+        CleanLapsOnly = false;
+        Selected.Clear();
+        foreach (var trace in Workspace.Traces) Selected.Add(trace.Lap);
+        _tooltipLapOffset = 0;
+    }
+    private void ClearSelection()
+    {
+        Selected.Clear();
+        ChartHovered = false;
+        _tooltipLapOffset = 0;
+    }
     private void CleanLapFilterChanged(ChangeEventArgs args)
     {
         CleanLapsOnly = args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
@@ -329,8 +358,41 @@
             .FirstOrDefault();
     }
     private bool IsClean(AnalysisLapTrace trace) => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && IncidentPoints(trace.Lap) == 0 && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
-    private static string LapFlagLabel(AnalysisLapTrace trace) => !trace.Complete ? "Incomplete lap" : IsCaution(trace) ? "Caution lap" : "Green-flag lap";
-    private static string LapFlagClass(AnalysisLapTrace trace) => !trace.Complete ? "incomplete" : IsCaution(trace) ? "yellow" : "green";
+    private IReadOnlyList<LapFlag> LapFlags(AnalysisLapTrace trace)
+    {
+        var states = new List<string>(trace.FlagStates ?? []);
+        if (trace.GreenFraction.GetValueOrDefault() > .001 && !states.Contains("green", StringComparer.OrdinalIgnoreCase)) states.Insert(0, "green");
+        if (trace.CautionFraction.GetValueOrDefault() > .001 && !states.Any(value => value.Equals("yellow", StringComparison.OrdinalIgnoreCase) || value.Equals("caution", StringComparison.OrdinalIgnoreCase))) states.Add("yellow");
+        if (states.Count == 0) states.Add(!trace.Complete ? "incomplete" : IsCaution(trace) ? "yellow" : "green");
+        return states
+            .Select(state => state.ToLowerInvariant() switch
+            {
+                "green" => new LapFlag("green", "Green flag"),
+                "yellow" or "caution" => new LapFlag("yellow", "Yellow flag"),
+                "black" => new LapFlag("black", "Black flag"),
+                "white" => new LapFlag("white", "White flag"),
+                "checkered" or "checker" => new LapFlag("checkered", "Checkered flag"),
+                _ => new LapFlag("incomplete", "Incomplete lap")
+            })
+            .DistinctBy(flag => flag.Class)
+            .ToArray();
+    }
+    private IReadOnlyList<string> PitDirections(AnalysisLapTrace trace)
+    {
+        var directions = new List<string>();
+        if (trace.PitEntry) directions.Add("in");
+        if (trace.PitExit) directions.Add("out");
+        if (directions.Count > 0 || trace.PitTimeSeconds.GetValueOrDefault() <= 0) return directions;
+        var ordered = Workspace.Traces.OrderBy(item => item.Lap).ToArray();
+        var index = Array.FindIndex(ordered, item => item.Lap == trace.Lap);
+        var previousWasPit = index > 0 && ordered[index - 1].PitTimeSeconds.GetValueOrDefault() > 0;
+        var nextIsPit = index >= 0 && index + 1 < ordered.Length && ordered[index + 1].PitTimeSeconds.GetValueOrDefault() > 0;
+        if (!previousWasPit) directions.Add("in");
+        if (!nextIsPit) directions.Add("out");
+        return directions;
+    }
+    private static string FuelConsumed(AnalysisLapTrace trace) => trace.FuelUsedGallons is { } fuel ? $"{fuel:0.000} gal" : "—";
+    private static string FuelConsumedTitle(AnalysisLapTrace trace) => trace.FuelUsedGallons is { } fuel ? $"{fuel:0.000} gal consumed on lap {trace.Lap}" : "Fuel use not recorded";
     private static bool IsCaution(AnalysisLapTrace trace) => trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) || trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
     private async Task ShowChartCursor()
     {
@@ -711,4 +773,5 @@
     private sealed record StripSegment(double X1, double X2, string Color);
     private sealed record LapGroup(string Label, IReadOnlyList<AnalysisLapTrace> Traces, AnalysisRun? Run);
     private sealed record SectorStatus(string Class, string Title);
+    private sealed record LapFlag(string Class, string Label);
 }
