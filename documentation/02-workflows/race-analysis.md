@@ -55,6 +55,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-041` | Map and charts MUST share one bidirectional aligned-distance cursor. Between recorded geometry samples, the marker MUST interpolate on the recorded polyline instead of snapping off the rendered curve. |
 | `RA-042` | Multiple selected laps MUST use consistent per-lap trace colors across the rail, cursor legends, and every comparison chart. The aggregate track map uses metric-strength color rather than a per-lap color. |
 | `RA-043` | Required distance-aligned channels are Speed, Time Delta, Throttle, Brake, Gear, RPM, and Steering. |
+| `RA-043A` | Throttle and Brake MUST use separate solid-line chart rows. When a recording contains a tire-stress proxy and at least one measured tire endpoint, the workbench MUST add a `Calculated tire wear` row showing cumulative estimated percentage consumed within each lap. The estimate MUST allocate measured run wear by integrated recorded stress, use a measured session calibration only for runs without their own endpoint, remain explicitly labeled as calculated, and be omitted when no measured calibration exists. It MUST NOT replace or relabel measured tire remaining. |
 | `RA-044` | RPM MUST have an independent readable scale and MUST vary when the recorded source varies. |
 | `RA-045` | Slip Angle, Yaw Rate, Lateral Acceleration, and Longitudinal Acceleration SHOULD appear when the source channels exist. |
 | `RA-046` | Each channel MUST use one shared scale across selected laps; per-lap normalization is forbidden. |

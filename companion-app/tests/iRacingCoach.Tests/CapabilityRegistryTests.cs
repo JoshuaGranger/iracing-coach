@@ -211,8 +211,11 @@ public sealed class CapabilityRegistryTests
         var ui = Path.Combine(root, "src", "iRacingCoach.UI");
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
         StringAssert.Contains(telemetry, "<b>@trace.Lap</b>");
-        foreach (var channel in new[] { "Speed", "Time Delta", "Throttle / brake", "Gear", "RPM", "Steering", "Slip / yaw", "Lateral / long. G" })
+        foreach (var channel in new[] { "Speed", "Time Delta", "Throttle", "Brake", "Calculated tire wear", "Gear", "RPM", "Steering", "Slip / yaw", "Lateral / long. G" })
             StringAssert.Contains(telemetry, $"\"{channel}\"");
+        Assert.DoesNotContain("Throttle / brake", telemetry);
+        StringAssert.Contains(telemetry, "CalculatedTireWear.Build");
+        StringAssert.Contains(telemetry, "tire-wear\") return (0, Math.Max(.01");
         StringAssert.Contains(telemetry, "PanelRange(panel)");
         Assert.DoesNotContain("Gear / RPM", telemetry);
 

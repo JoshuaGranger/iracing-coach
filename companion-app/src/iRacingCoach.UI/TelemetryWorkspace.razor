@@ -158,7 +158,7 @@
 
             <div class="trace-panel">
                 <div class="panel-title"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare</span></div>
-                <svg @ref="ChartElement" class="trace-chart" viewBox="@($"0 0 {F(_chartWidth)} {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized speed, time delta, controls, gear, RPM, steering, rotation, and acceleration traces" @onmouseenter="ShowChartCursor" @onmouseleave="HideChartCursor" @onmousemove="ChartMoved" @onwheel="ChartWheel" @onwheel:preventDefault>
+                <svg @ref="ChartElement" class="trace-chart" viewBox="@($"0 0 {F(_chartWidth)} {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized speed, time delta, throttle, brake, calculated tire wear, gear, RPM, steering, rotation, and acceleration traces" @onmouseenter="ShowChartCursor" @onmouseleave="HideChartCursor" @onmousemove="ChartMoved" @onwheel="ChartWheel" @onwheel:preventDefault>
                     @for (var row = 0; row < VisiblePanels.Count; row++)
                     {
                         var panel = VisiblePanels[row]; var top = ChartTop + row * ChartRowHeight;
@@ -225,6 +225,7 @@
     private bool _trackMovePending;
     private double _chartWidth = 1000;
     private int _tooltipLapOffset;
+    private readonly Dictionary<AnalysisTracePoint, double?> _calculatedWearByPoint = new(ReferenceEqualityComparer.Instance);
     private const double PlotLeft = 126;
     private const int ChartTop = 12;
     private const int ChartRowHeight = 82;
@@ -236,7 +237,9 @@
     [
         new("speed", "Speed", "mph", p => p.SpeedMph),
         new("delta", "Time Delta", "s", _ => null),
-        new("controls", "Throttle / brake", "%", p => p.Throttle, p => p.Brake),
+        new("throttle", "Throttle", "%", p => p.Throttle),
+        new("brake", "Brake", "%", p => p.Brake),
+        new("tire-wear", "Calculated tire wear", "% this lap", _ => null),
         new("gear", "Gear", "selected gear", p => p.Gear),
         new("rpm", "RPM", "rpm", p => p.Rpm),
         new("steering", "Steering", "left / right", p => p.SteeringRadians * 180 / Math.PI),
@@ -250,9 +253,22 @@
         _analysisId = Workspace.AnalysisId;
         ResetSelection();
         _tooltipLapOffset = 0;
+        RebuildCalculatedTireWear();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender) => await MeasureChart();
+
+    private void RebuildCalculatedTireWear()
+    {
+        _calculatedWearByPoint.Clear();
+        var calculated = CalculatedTireWear.Build(Workspace.Traces, Workspace.Runs);
+        foreach (var trace in Workspace.Traces)
+        {
+            if (!calculated.TryGetValue(trace.Lap, out var values)) continue;
+            for (var index = 0; index < Math.Min(trace.Points.Count, values.Count); index++)
+                _calculatedWearByPoint[trace.Points[index]] = values[index];
+        }
+    }
 
     private IEnumerable<AnalysisLapTrace> SelectedTraces => Workspace.Traces.Where(trace => Selected.Contains(trace.Lap));
     private IEnumerable<LapGroup> LapGroups
@@ -685,11 +701,13 @@
     private bool HasPanelData(PanelSpec panel)
     {
         if (panel.Key == "delta") return Workspace.Traces.Any(trace => trace.Points.Any(point => point.SessionTimeSeconds.HasValue));
+        if (panel.Key == "tire-wear") return _calculatedWearByPoint.Values.Any(value => value.HasValue);
         return Workspace.Traces.Any(trace => trace.Points.Any(point => panel.First(point).HasValue || panel.Second?.Invoke(point).HasValue == true));
     }
     private double? PanelPointValue(PanelSpec panel, AnalysisLapTrace trace, AnalysisTracePoint point, bool useSecond)
     {
         if (panel.Key == "delta") return useSecond ? null : TimeDelta(trace, point);
+        if (panel.Key == "tire-wear") return useSecond ? null : _calculatedWearByPoint.GetValueOrDefault(point);
         return useSecond ? panel.Second?.Invoke(point) : panel.First(point);
     }
     private double? TimeDelta(AnalysisLapTrace trace, AnalysisTracePoint point)
@@ -715,7 +733,9 @@
             "gear" => $"Gear {first:0}",
             "rpm" => $"{first:0} rpm",
             "speed" => $"{first:0.0} mph",
-            "controls" => $"T {first.GetValueOrDefault() * 100:0}% · B {second.GetValueOrDefault() * 100:0}%",
+            "throttle" => $"{first.GetValueOrDefault() * 100:0}%",
+            "brake" => $"{first.GetValueOrDefault() * 100:0}%",
+            "tire-wear" => $"{first.GetValueOrDefault():0.000}% est.",
             "steering" => DirectionalDegrees(first),
             "rotation" => $"{first:0.0}° · {second:0.0}°/s",
             "acceleration" => $"{first:0.00} · {second:0.00} g",
@@ -727,6 +747,8 @@
     {
         var values = SelectedTraces.SelectMany(trace => trace.Points.SelectMany(point => new[] { PanelPointValue(panel, trace, point, false), PanelPointValue(panel, trace, point, true) })).Where(value => value.HasValue).Select(value => value!.Value).ToArray();
         if (values.Length == 0) return (-.5, .5);
+        if (panel.Key is "throttle" or "brake") return (0, 1);
+        if (panel.Key == "tire-wear") return (0, Math.Max(.01, values.Max() * 1.05));
         if (panel.Key == "delta" || panel.Key == "steering")
         {
             var magnitude = Math.Max(panel.Key == "delta" ? .05 : 1, values.Max(value => Math.Abs(value)));
@@ -756,8 +778,8 @@
     private double? SmoothedValue(PanelSpec panel, AnalysisLapTrace trace, int index, bool useSecond)
     {
         var current = PanelPointValue(panel, trace, trace.Points[index], useSecond);
-        if (!current.HasValue || panel.Key == "gear") return current;
-        var neighborWeight = panel.Key == "controls" ? .10 : .16;
+        if (!current.HasValue || panel.Key is "gear" or "tire-wear") return current;
+        var neighborWeight = panel.Key is "throttle" or "brake" ? .10 : .16;
         var currentWeight = 1 - neighborWeight * 2;
         var sum = current.Value * currentWeight;
         var weight = currentWeight;
