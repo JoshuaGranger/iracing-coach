@@ -288,6 +288,11 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "@onwheel=\"ChartWheel\"");
         StringAssert.Contains(telemetry, "@onwheel:preventDefault");
         StringAssert.Contains(telemetry, "TooltipCapacity");
+        StringAssert.Contains(telemetry, "@SelectedAverageLabel");
+        StringAssert.Contains(telemetry, "private AggregateSample AverageAt(double percent)");
+        StringAssert.Contains(telemetry, "Average(samples.Select(sample => sample.Point!.SpeedMph))");
+        StringAssert.Contains(telemetry, "Average(samples.Select(sample => TimeDelta(sample.Trace, sample.Point!)))");
+        Assert.DoesNotContain("<span>Lap @PrimaryTrace.Lap</span>", telemetry);
         StringAssert.Contains(telemetry, "TooltipCharacterWidth = 7.1");
         StringAssert.Contains(telemetry, "private double TooltipWidth(PanelSpec panel)");
         StringAssert.Contains(telemetry, "widestValue * TooltipCharacterWidth");

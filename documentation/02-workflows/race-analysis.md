@@ -52,7 +52,7 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | --- | --- |
 | `RA-040` | The map MUST use recorded position geometry; when absent, use a normalized distance strip rather than invented geometry. |
 | `RA-041` | Map and charts MUST share one bidirectional aligned-distance cursor. Between recorded geometry samples, the marker MUST interpolate on the recorded polyline instead of snapping off the rendered curve. |
-| `RA-042` | Multiple selected laps MUST use consistent per-lap trace colors across the rail, map, legend, and every chart. |
+| `RA-042` | Multiple selected laps MUST use consistent per-lap trace colors across the rail, cursor legends, and every comparison chart. The aggregate track map uses metric-strength color rather than a per-lap color. |
 | `RA-043` | Required distance-aligned channels are Speed, Time Delta, Throttle, Brake, Gear, RPM, and Steering. |
 | `RA-044` | RPM MUST have an independent readable scale and MUST vary when the recorded source varies. |
 | `RA-045` | Slip Angle, Yaw Rate, Lateral Acceleration, and Longitudinal Acceleration SHOULD appear when the source channels exist. |
@@ -60,7 +60,8 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 | `RA-047` | Screen drawing MUST preserve short extrema through min/max-aware downsampling. |
 | `RA-048` | The workspace MUST support focus/hide, legends with units, zoom/reset, and keyboard-accessible selection. |
 | `RA-049` | A target/reference trace MUST identify provenance, scope, scenario, and confidence and MUST require a usable aligned comparison. |
-| `RA-050` | Map color controls MUST sit with the map, identify the lap they depict, and never appear to control an adjacent chart. |
+| `RA-050` | Map color controls MUST sit with the map, identify that they depict the average of all currently selected laps, and never appear to control an adjacent chart. Speed, throttle, brake, steering, and tire-load values at each aligned track position MUST be averaged across those laps; the cursor readout MUST use the same aggregate scope. |
+| `RA-050A` | Every map metric MUST use a low-to-high strength gradient with a distinct, readable family: blue/cyan for speed, green for throttle, red for brake, purple for steering magnitude, and yellow-to-red for tire load. Missing and effectively zero control/load values MUST remain visually neutral. |
 | `RA-051` | The crosshair MUST derive from the rendered chart bounds so Windows scaling and responsive layout cannot offset the pointer from the inspected sample. |
 | `RA-052` | Each chart row MUST show a shared-cursor value for every selected lap, using the compact bare lap number plus the same color marker as the corresponding trace. The repeated word “Lap” MUST be omitted from cursor rows. |
 | `RA-053` | Steering MUST be presented as human-readable left/right degrees. Analog display traces MAY use slight documented smoothing, but it MUST preserve braking, throttle, and steering events and MUST NOT alter analysis calculations. |

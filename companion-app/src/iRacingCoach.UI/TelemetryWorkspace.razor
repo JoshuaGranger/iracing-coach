@@ -126,7 +126,7 @@
         {
         <div class="telemetry-grid">
             <div class="track-panel">
-                <div class="panel-title track-panel-title"><div><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Lap @PrimaryTrace.Lap</span></div><label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label></div>
+                <div class="panel-title track-panel-title"><div><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>@SelectedAverageLabel</span></div><label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label></div>
                 <svg @ref="TrackElement" class="track-map" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map" @onmousemove="TrackMoved">
                     @if (Workspace.TrackShape.Count >= 3)
                     {
@@ -279,6 +279,7 @@
     private IReadOnlyList<PanelSpec> VisiblePanels => Panels.Where(HasPanelData).ToArray();
     private AnalysisLapTrace PrimaryTrace => SelectedTraces.FirstOrDefault() ?? Workspace.Traces[0];
     private AnalysisLapTrace ReferenceTrace => SelectedTraces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).FirstOrDefault() ?? PrimaryTrace;
+    private string SelectedAverageLabel => $"{Selected.Count}-lap average";
     private int ChartBottom => ChartTop + VisiblePanels.Count * ChartRowHeight - (ChartRowHeight - ChartPlotHeight);
     private int ChartHeight => ChartBottom + 24;
     private double PlotWidth => Math.Max(300, _chartWidth - PlotLeft - 20);
@@ -301,9 +302,8 @@
     {
         get
         {
-            var point = Nearest(PrimaryTrace, Cursor);
-            var delta = point is null ? null : TimeDelta(PrimaryTrace, point);
-            return point is null ? "No sample" : $"{point.SpeedMph:0} mph · {point.Throttle * 100:0}% throttle · {point.Brake * 100:0}% brake" + (delta.HasValue ? $" · {delta.Value:+0.000;-0.000;0.000} s" : string.Empty);
+            var sample = AverageAt(Cursor);
+            return sample.Count == 0 ? "No sample" : $"{sample.SpeedMph:0} mph · {sample.Throttle * 100:0}% throttle · {sample.Brake * 100:0}% brake" + (sample.TimeDeltaSeconds.HasValue ? $" · {sample.TimeDeltaSeconds.Value:+0.000;-0.000;0.000} s" : string.Empty);
         }
     }
 
@@ -622,29 +622,66 @@
     }
     private double? MetricAt(double percent)
     {
-        var point = Nearest(PrimaryTrace, percent);
-        return Mode switch { "throttle" => point?.Throttle, "brake" => point?.Brake, "steering" => point?.SteeringPeakRadians, "stress" => point?.TireStressProxy, _ => point?.SpeedMph };
+        var sample = AverageAt(percent);
+        return Mode switch { "throttle" => sample.Throttle, "brake" => sample.Brake, "steering" => sample.SteeringRadians, "stress" => sample.TireStress, _ => sample.SpeedMph };
     }
     private string MetricColor(double? value)
     {
         if (value is null) return "#4A515A";
-        if (Mode == "speed")
+        var normalized = Mode switch
         {
-            var level = Math.Clamp((value.Value - 45) / 125, 0, 1);
-            return $"hsl({F(42 + level * 176)} 78% {F(57 + level * 8)}%)";
-        }
-        var normalized = Mode == "steering" ? Math.Clamp(Math.Abs(value.Value) / .55, 0, 1) : Math.Clamp(value.Value, 0, 1);
-        if (normalized < .015) return "#3B424A";
+            "speed" => Math.Clamp(value.Value / 180, 0, 1),
+            "steering" => Math.Clamp(Math.Abs(value.Value) / .55, 0, 1),
+            _ => Math.Clamp(value.Value, 0, 1)
+        };
+        if (Mode != "speed" && normalized < .015) return "#3B424A";
         return Mode switch
         {
-            "brake" => $"hsl({F(20 - normalized * 16)} 82% {F(65 - normalized * 8)}%)",
-            "throttle" => $"hsl({F(158 - normalized * 14)} 64% {F(51 + normalized * 9)}%)",
-            "steering" => $"hsl({F(285 - normalized * 22)} 68% {F(66 - normalized * 7)}%)",
-            "stress" => $"hsl({F(112 - normalized * 102)} 76% 59%)",
+            "speed" => $"hsl({F(216 - normalized * 30)} {F(30 + normalized * 58)}% {F(30 + normalized * 38)}%)",
+            "brake" => $"hsl({F(8 - normalized * 5)} {F(34 + normalized * 56)}% {F(30 + normalized * 32)}%)",
+            "throttle" => $"hsl({F(150 - normalized * 12)} {F(30 + normalized * 60)}% {F(28 + normalized * 34)}%)",
+            "steering" => $"hsl({F(292 - normalized * 22)} {F(32 + normalized * 55)}% {F(31 + normalized * 35)}%)",
+            "stress" => $"hsl({F(52 - normalized * 45)} {F(42 + normalized * 48)}% {F(31 + normalized * 32)}%)",
             _ => "#78A7EF"
         };
     }
-    private static AnalysisTracePoint? Nearest(AnalysisLapTrace trace, double percent) => trace.Points.MinBy(point => Math.Abs(point.LapPercent - percent));
+    private AggregateSample AverageAt(double percent)
+    {
+        var samples = SelectedTraces
+            .Select(trace => new { Trace = trace, Point = Nearest(trace, percent) })
+            .Where(sample => sample.Point is not null)
+            .ToArray();
+        if (samples.Length == 0) return new AggregateSample(0, null, null, null, null, null, null);
+        return new AggregateSample(
+            samples.Length,
+            Average(samples.Select(sample => sample.Point!.SpeedMph)),
+            Average(samples.Select(sample => sample.Point!.Throttle)),
+            Average(samples.Select(sample => sample.Point!.Brake)),
+            Average(samples.Select(sample => sample.Point!.SteeringPeakRadians)),
+            Average(samples.Select(sample => sample.Point!.TireStressProxy)),
+            Average(samples.Select(sample => TimeDelta(sample.Trace, sample.Point!))));
+    }
+    private static double? Average(IEnumerable<double?> values)
+    {
+        var recorded = values.Where(value => value.HasValue).Select(value => value!.Value).ToArray();
+        return recorded.Length == 0 ? null : recorded.Average();
+    }
+    private static AnalysisTracePoint? Nearest(AnalysisLapTrace trace, double percent)
+    {
+        var points = trace.Points;
+        if (points.Count == 0) return null;
+        var low = 0;
+        var high = points.Count - 1;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            if (points[middle].LapPercent < percent) low = middle + 1;
+            else high = middle - 1;
+        }
+        if (low <= 0) return points[0];
+        if (low >= points.Count) return points[^1];
+        return Math.Abs(points[low].LapPercent - percent) < Math.Abs(points[low - 1].LapPercent - percent) ? points[low] : points[low - 1];
+    }
     private bool HasPanelData(PanelSpec panel)
     {
         if (panel.Key == "delta") return Workspace.Traces.Any(trace => trace.Points.Any(point => point.SessionTimeSeconds.HasValue));
@@ -851,4 +888,5 @@
     private sealed record LapGroup(string Label, IReadOnlyList<AnalysisLapTrace> Traces, AnalysisRun? Run);
     private sealed record SectorStatus(string Class, string Title);
     private sealed record LapFlag(string Class, string Label);
+    private sealed record AggregateSample(int Count, double? SpeedMph, double? Throttle, double? Brake, double? SteeringRadians, double? TireStress, double? TimeDeltaSeconds);
 }

@@ -9,6 +9,7 @@ Status: current-main focused Race Analysis development candidate. This snapshot 
 - Race Analysis is a telemetry-first one-screen workspace. The old lower detail tabs and non-useful Setup panel are removed.
 - Run, fuel, measured tire, race-shape, strategy, recorded track-area comparison, and pit/repair facts are integrated into the lap rail and compact insight rail.
 - The map Y conversion preserves recorded driving direction. Brake map color is neutral at zero and becomes warmer with increasing input.
+- The track map aggregates every selected lap at each aligned track position. Its header reports the selected-lap average scope, its cursor reports averaged speed/controls/time delta, and its metric modes use distinct low-to-high strength gradients.
 - Trace strokes are thinner and use slight display-only smoothing. The raw analysis data and calculations remain unchanged.
 - Steering values are presented as Left/Right degrees.
 - Every chart row has a shared multicolor cursor readout with lap number, trace color, value, and unit. Cursor position is derived from rendered bounds.
