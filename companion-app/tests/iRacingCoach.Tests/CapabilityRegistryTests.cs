@@ -270,6 +270,7 @@ public sealed class CapabilityRegistryTests
         Assert.DoesNotContain("lap-row-signals", telemetry);
         StringAssert.Contains(telemetry, "class=\"lap-identity\"");
         StringAssert.Contains(telemetry, "class=\"lap-sector-column\"");
+        StringAssert.Contains(telemetry, "class=\"lap-pace-value\"");
         StringAssert.Contains(telemetry, "class=\"lap-fuel-column\"");
         StringAssert.Contains(telemetry, "class=\"lap-incident-column\"");
         StringAssert.Contains(telemetry, "class=\"lap-pit-column\"");

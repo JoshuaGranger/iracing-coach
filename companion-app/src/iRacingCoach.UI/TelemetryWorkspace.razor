@@ -50,7 +50,7 @@
                                     }
                                 </span>
                                 <span class="lap-identity"><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
-                                <span class="lap-time condition-hover @(isFastest ? "fastest" : null)" title="Lap weather and track conditions" @onmouseenter="args => ShowConditionsPopover(args, trace.Lap)" @onmouseleave="HideConditionsPopover">@LapTime(trace.LapTimeSeconds)@if (ShowPaceDelta(trace, isFastest)) { <small>(+@((trace.LapTimeSeconds!.Value - FastestLapTime).ToString("0.000")))</small> }</span>
+                                <span class="lap-time condition-hover @(isFastest ? "fastest" : null)" title="Lap weather and track conditions" @onmouseenter="args => ShowConditionsPopover(args, trace.Lap)" @onmouseleave="HideConditionsPopover"><span class="lap-pace-value">@LapTime(trace.LapTimeSeconds)</span>@if (ShowPaceDelta(trace, isFastest)) { <small>(+@((trace.LapTimeSeconds!.Value - FastestLapTime).ToString("0.000")))</small> }</span>
                                 <span class="lap-sector-column">
                                     @if (SectorStarts.Count > 1)
                                     {
