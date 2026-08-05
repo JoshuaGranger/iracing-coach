@@ -21,7 +21,7 @@ public sealed record TuningFeedbackDraft(
 public sealed class CompanionState : IDisposable
 {
     private const int UiAnalysisCacheSchemaVersion = 4;
-    private const string AppVersion = "0.11.1";
+    private const string AppVersion = "0.12.0";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
@@ -1081,7 +1081,7 @@ public sealed class CompanionState : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "iRacingCoach",
             "Installer",
-            "iRacingCoach-0.11.1-Setup.exe");
+            "iRacingCoach-0.12.0-Setup.exe");
         if (!File.Exists(setup))
         {
             Toast = "The repair package could not be found. Run the latest iRacing Coach installer again.";

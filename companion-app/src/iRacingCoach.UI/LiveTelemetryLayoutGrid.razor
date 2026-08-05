@@ -1,111 +1,603 @@
+@implements IAsyncDisposable
 @using System.Globalization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
 
-<section class="live-layout-studio @(_toolboxOpen ? "toolbox-open" : "toolbox-closed")" aria-label="Live telemetry layout">
+<section @ref="_studioElement"
+         class="live-layout-studio @(_toolboxOpen ? "editing toolbox-open" : "viewing toolbox-closed")"
+         data-live-layout-studio
+         aria-label="Live telemetry dashboard editor"
+         @onkeydown="HandleStudioKeyDown">
     <div class="live-layout-main">
         <div class="live-layout-toolbar">
-            <label><span class="sr-only">Layout</span><select value="@Active.Id" @onchange="ChangeLayout">@foreach (var choice in Choices) { <option value="@choice.Layout.Id">@choice.Layout.Name</option> }</select></label>
-            <span class="live-layout-state"><span class="status-orb @(Snapshot.Connected ? "ready" : "neutral")"></span>@(Snapshot.Connected ? $"{Snapshot.Flag} · Lap {Snapshot.Lap}" : "Waiting for iRacing")</span>
-            <button class="icon-button" title="@(State.Settings.LiveMonitor.Visible ? "Hide popout" : "Open popout")" aria-label="@(State.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Open Live Monitor")" @onclick="State.ToggleLiveMonitor"><ProductIcon Name="monitor" Size="17" /></button>
-            <button class="button secondary compact toolbox-toggle" @onclick="ToggleToolbox" aria-expanded="@_toolboxOpen"><ProductIcon Name="setup" Size="16" /> @(_toolboxOpen ? "Hide tools" : "Customize")</button>
+            <label class="live-layout-picker">
+                <span class="sr-only">Dashboard layout</span>
+                <select value="@Active.Id" @onchange="ChangeLayout" aria-label="Dashboard layout">
+                    @foreach (var choice in Choices)
+                    {
+                        <option value="@choice.Layout.Id">@choice.Layout.Name</option>
+                    }
+                </select>
+            </label>
+
+            <span class="live-layout-state" title="Live iRacing connection state">
+                <span class="status-orb @(Snapshot.Connected ? "ready" : "neutral")" aria-hidden="true"></span>
+                <span>@(Snapshot.Connected ? $"{Snapshot.Flag} - Lap {Snapshot.Lap}" : "Waiting for iRacing")</span>
+            </span>
+
+            <div class="live-layout-toolbar-actions">
+                @if (_toolboxOpen)
+                {
+                    <button class="icon-button" disabled="@(_undo.Count == 0)" title="Undo layout change" aria-label="Undo layout change" @onclick="Undo"><ProductIcon Name="undo" Size="17" /></button>
+                    <button class="icon-button" disabled="@(_redo.Count == 0)" title="Redo layout change" aria-label="Redo layout change" @onclick="Redo"><ProductIcon Name="redo" Size="17" /></button>
+                }
+                <button class="icon-button" title="@(State.Settings.LiveMonitor.Visible ? "Hide separate Live Monitor" : "Open separate Live Monitor")" aria-label="@(State.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Open Live Monitor")" @onclick="State.ToggleLiveMonitor"><ProductIcon Name="monitor" Size="17" /></button>
+                <button class="button @(_toolboxOpen ? "primary" : "secondary") compact toolbox-toggle" @onclick="ToggleToolbox" aria-expanded="@_toolboxOpen" aria-controls="live-telemetry-toolbox">
+                    <ProductIcon Name="@(_toolboxOpen ? "check" : "setup")" Size="16" /> @(_toolboxOpen ? "Done" : "Customize")
+                </button>
+            </div>
         </div>
 
-        <div class="live-layout-grid" style="--live-columns:@Active.Columns;--live-rows:@Active.Rows">
-            @foreach (var tile in Active.Tiles)
+        <div class="live-layout-viewport" data-live-grid-viewport>
+            <div class="live-layout-grid"
+                 data-live-grid
+                 data-columns="@Active.Columns"
+                 data-rows="@Active.Rows"
+                 style="--live-columns:@Active.Columns;--live-rows:@Active.Rows"
+                 aria-label="@($"{Active.Name}, {Active.Columns} columns by {Active.Rows} rows")">
+            @if (_toolboxOpen)
             {
+                @for (var row = 0; row < Active.Rows; row++)
+                {
+                    @for (var column = 0; column < Active.Columns; column++)
+                    {
+                        <span class="live-grid-cell" style="grid-row:@(row + 1);grid-column:@(column + 1)" aria-hidden="true"></span>
+                    }
+                }
+            }
+
+            @if (Active.Tiles.Count == 0)
+            {
+                <div class="live-grid-empty">
+                    <ProductIcon Name="plus" Size="22" />
+                    <strong>Build your dashboard</strong>
+                    <span>Drag telemetry from the Toolbox onto this grid.</span>
+                </div>
+            }
+
+                @foreach (var tile in Active.Tiles.OrderBy(item => item.Row).ThenBy(item => item.Column))
+                {
                 var definition = LiveTelemetryCatalog.Get(tile.MetricId);
                 var reading = Read(tile);
-                <button class="live-layout-tile style-@tile.DisplayStyle.ToString().ToLowerInvariant() @(!reading.Available ? "unavailable" : null) @(_selectedTileId == tile.Id ? "selected" : null)" style="grid-column:@(tile.Column + 1) / span @tile.ColumnSpan;grid-row:@(tile.Row + 1) / span @tile.RowSpan" title="@TileTitle(definition, reading)" @onclick="() => SelectTile(tile.Id)">
-                    <span class="live-tile-heading">@definition.Name</span>
-                    @if (tile.DisplayStyle == LiveMonitorDisplayStyle.Trend && reading.TrendValues.Count > 1)
+                var selected = _selectedTileId == tile.Id;
+                <article @key="tile.Id"
+                         class="live-layout-tile style-@StyleClass(tile.DisplayStyle) @(!reading.Available ? "unavailable" : null) @(selected ? "selected" : null)"
+                         style="@TileStyle(tile, definition)"
+                         data-live-tile
+                         data-tile-id="@tile.Id"
+                         data-row="@tile.Row"
+                         data-column="@tile.Column"
+                         data-row-span="@tile.RowSpan"
+                         data-column-span="@tile.ColumnSpan"
+                         tabindex="@(_toolboxOpen ? "-1" : "0")"
+                         role="group"
+                         aria-label="@TileAccessibleName(definition, reading, tile)"
+                         title="@TileTitle(definition, reading)"
+                         @onclick="() => SelectTile(tile.Id)">
+                    <header class="live-tile-header">
+                        @if (_toolboxOpen)
+                        {
+                            <button type="button" class="live-tile-drag-handle" data-live-drag-tile aria-label="Move @definition.Name" title="Drag to move @definition.Name" @onclick="() => SelectTile(tile.Id)" @onclick:stopPropagation="true" @onkeydown="args => HandleTileKeyDown(tile.Id, args)">
+                                <ProductIcon Name="grip" Size="15" />
+                                <span class="live-tile-heading">@definition.Name</span>
+                            </button>
+                            <div class="live-tile-actions">
+                                <button type="button" class="live-tile-action" aria-label="Configure @definition.Name" title="Widget display settings" aria-expanded="@(_openTileMenuId == tile.Id)" @onclick="() => ToggleTileMenu(tile.Id)" @onclick:stopPropagation="true"><ProductIcon Name="chevron-down" Size="15" /></button>
+                                <button type="button" class="live-tile-action remove" aria-label="Remove @definition.Name" title="Remove widget (Undo available)" @onclick="() => RemoveTile(tile.Id)" @onclick:stopPropagation="true"><ProductIcon Name="trash" Size="15" /></button>
+                            </div>
+                            <span class="live-tile-heading live-tile-heading-compact" aria-hidden="true">@definition.Name</span>
+                        }
+                        else
+                        {
+                            <span class="live-tile-heading">@definition.Name</span>
+                        }
+                    </header>
+
+                    @if (_toolboxOpen && _openTileMenuId == tile.Id)
                     {
-                        <svg class="live-tile-trend" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="@TrendPath(reading.TrendValues)" /></svg>
+                        <div class="live-tile-quick-menu" role="group" aria-label="@($"{definition.Name} display settings")" @onclick:stopPropagation="true">
+                            <div class="quick-menu-heading"><strong>Widget style</strong><button type="button" class="live-tile-action" aria-label="Close widget settings" @onclick="() => ToggleTileMenu(tile.Id)"><ProductIcon Name="close" Size="14" /></button></div>
+                            <label>Display
+                                <select value="@tile.DisplayStyle" @onchange="args => ChangeTileStyle(tile.Id, args)">
+                                    @foreach (var style in definition.Styles) { <option value="@style">@StyleLabel(style)</option> }
+                                </select>
+                            </label>
+                            @if (UsesAccent(tile.DisplayStyle))
+                            {
+                                <fieldset class="tile-color-field"><legend>Color</legend><div class="tile-color-options">@foreach (var accent in AccentOptions) { <button type="button" class="tile-color-swatch @accent.Value @(tile.Accent == accent.Value ? "active" : null)" style="--swatch-color:@AccentToken(accent.Value)" title="@accent.Label" aria-label="@($"Use {accent.Label.ToLowerInvariant()} color")" aria-pressed="@(tile.Accent == accent.Value)" @onclick="() => SetTileAccent(tile.Id, accent.Value)"></button> }</div></fieldset>
+                            }
+                            @if (tile.DisplayStyle == LiveMonitorDisplayStyle.Trend)
+                            {
+                                <label>Chart history
+                                    <select value="@tile.TrendDuration" @onchange="args => ChangeTileTrend(tile.Id, args)">@foreach (var duration in LiveTelemetryCatalog.TrendDurations(tile.MetricId)) { <option value="@duration">@TrendLabel(duration)</option> }</select>
+                                </label>
+                            }
+                        </div>
                     }
-                    <span class="live-tile-value @(!reading.NumericValue.HasValue ? "textual" : null)">@reading.DisplayValue</span>
-                    @if (reading.NumericValue.HasValue && !string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }
-                    @if (tile.DisplayStyle is LiveMonitorDisplayStyle.Gauge or LiveMonitorDisplayStyle.Bar && reading.NumericValue.HasValue)
+
+                    <div class="live-tile-content">
+                        @if (!reading.Available)
+                        {
+                            <span class="live-tile-missing"><strong>@reading.DisplayValue</strong><small>@reading.AvailabilityMessage</small></span>
+                        }
+                        else if (tile.DisplayStyle == LiveMonitorDisplayStyle.Gauge && reading.NumericValue.HasValue)
+                        {
+                            <div class="live-tile-gauge">
+                                <svg viewBox="0 0 100 66" role="img" aria-label="@($"{definition.Name}: {reading.DisplayValue} {reading.Unit}")"><path class="gauge-track" d="M12 56 A38 38 0 0 1 88 56" pathLength="100" /><path class="gauge-value" d="M12 56 A38 38 0 0 1 88 56" pathLength="100" stroke-dasharray="@GaugeDash(reading)" /></svg>
+                                <span class="live-tile-value">@reading.DisplayValue</span>
+                                @if (!string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }
+                            </div>
+                        }
+                        else if (tile.DisplayStyle == LiveMonitorDisplayStyle.Bar && reading.NumericValue.HasValue)
+                        {
+                            <div class="live-tile-number-line"><span class="live-tile-value">@reading.DisplayValue</span>@if (!string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }</div>
+                            <span class="live-tile-bar" role="meter" aria-valuemin="@(reading.Minimum ?? 0)" aria-valuemax="@(reading.Maximum ?? 100)" aria-valuenow="@reading.NumericValue"><i style="width:@PercentToken(MeterPercent(reading))%"></i></span>
+                        }
+                        else if (tile.DisplayStyle == LiveMonitorDisplayStyle.Trend && reading.TrendValues.Count > 1)
+                        {
+                            <div class="live-tile-chart">
+                                <svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img" aria-label="@($"{definition.Name} {TrendLabel(tile.TrendDuration)} chart")"><path class="tile-chart-grid" d="M0 22 H100" /><path class="tile-chart-line" d="@TrendPath(reading.TrendValues, definition.TrendShape)" /></svg>
+                                <div class="live-tile-chart-value"><span class="live-tile-value">@reading.DisplayValue</span>@if (!string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }</div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="live-tile-number-line @(tile.DisplayStyle == LiveMonitorDisplayStyle.Status || !reading.NumericValue.HasValue ? "textual" : null)"><span class="live-tile-value">@reading.DisplayValue</span>@if (reading.NumericValue.HasValue && !string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }</div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(reading.SecondaryValue)) { <small class="live-tile-secondary">@reading.SecondaryValue</small> }
+                    </div>
+
+                    @if (_toolboxOpen)
                     {
-                        <span class="live-tile-meter"><i style="width:@MeterPercent(reading)%"></i></span>
+                        @foreach (var edge in ResizeEdges)
+                        {
+                            <span class="live-tile-resize-handle edge-@edge" data-live-resize="@edge" aria-hidden="true"></span>
+                        }
                     }
-                    @if (!string.IsNullOrWhiteSpace(reading.SecondaryValue)) { <small>@reading.SecondaryValue</small> }
-                </button>
-            }
+                    </article>
+                }
+            </div>
         </div>
     </div>
 
     @if (_toolboxOpen)
     {
-        <aside class="live-toolbox" aria-label="Live telemetry toolbox">
-            <div class="live-toolbox-heading"><div><span class="eyebrow">Toolbox</span><h2>Customize</h2></div><button class="icon-button" aria-label="Collapse toolbox" @onclick="ToggleToolbox"><ProductIcon Name="arrow-right" Size="17" /></button></div>
+        <button type="button" class="live-toolbox-backdrop" tabindex="-1" aria-label="Close telemetry toolbox" @onclick="CloseToolbox"></button>
+        <aside id="live-telemetry-toolbox" class="live-toolbox" aria-label="Live telemetry toolbox">
+            <header class="live-toolbox-heading">
+                <div><span class="eyebrow">Live telemetry</span><h2>Customize dashboard</h2><p>Drag, resize, and tune each widget.</p></div>
+                <button class="icon-button" aria-label="Close telemetry toolbox" title="Done customizing" @onclick="CloseToolbox"><ProductIcon Name="close" Size="17" /></button>
+            </header>
 
-            <section>
-                <div class="toolbox-section-heading"><strong>Layout</strong><span>@Active.Rows by @Active.Columns</span></div>
-                @if (!ActiveChoice.IsFactory) { <label>Name<input value="@Active.Name" maxlength="40" @onchange="RenameLayout" /></label> }
-                <div class="toolbox-grid-controls"><label>Rows<select value="@Active.Rows" @onchange="ChangeRows">@for (var value = 1; value <= 8; value++) { <option value="@value">@value</option> }</select></label><label>Columns<select value="@Active.Columns" @onchange="ChangeColumns">@for (var value = 1; value <= 8; value++) { <option value="@value">@value</option> }</select></label></div>
-                <div class="toolbox-actions"><button @onclick="NewLayout">New</button><button @onclick="DuplicateLayout">Duplicate</button><button @onclick="ResetLayout">Reset</button><button disabled="@ActiveChoice.IsFactory" @onclick="DeleteLayout">Delete</button></div>
-            </section>
-
-            @if (SelectedTile is { } selected)
-            {
-                var selectedDefinition = LiveTelemetryCatalog.Get(selected.MetricId);
-                <section>
-                    <div class="toolbox-section-heading"><strong>@selectedDefinition.Name</strong><button class="text-button danger-text" @onclick="RemoveSelected">Remove</button></div>
-                    <div class="toolbox-grid-controls"><label>Row<select value="@selected.Row" @onchange="ChangeTileRow">@for (var value = 0; value < Active.Rows; value++) { <option value="@value">@(value + 1)</option> }</select></label><label>Column<select value="@selected.Column" @onchange="ChangeTileColumn">@for (var value = 0; value < Active.Columns; value++) { <option value="@value">@(value + 1)</option> }</select></label><label>Height<select value="@selected.RowSpan" @onchange="ChangeTileHeight">@for (var value = 1; value <= Active.Rows; value++) { <option value="@value">@value</option> }</select></label><label>Width<select value="@selected.ColumnSpan" @onchange="ChangeTileWidth">@for (var value = 1; value <= Active.Columns; value++) { <option value="@value">@value</option> }</select></label></div>
-                    <label>Display<select value="@selected.DisplayStyle" @onchange="ChangeTileStyle">@foreach (var style in selectedDefinition.Styles) { <option value="@style">@style</option> }</select></label>
-                    @if (selectedDefinition.Units.Count > 1) { <label>Unit<select value="@selected.Unit" @onchange="ChangeTileUnit">@foreach (var unit in selectedDefinition.Units) { <option value="@unit">@unit</option> }</select></label> }
-                    <label>Decimals<select value="@selected.Precision" @onchange="ChangeTilePrecision">@for (var value = 0; value <= 3; value++) { <option value="@value">@value</option> }</select></label>
+            <div class="live-toolbox-body">
+                <section class="toolbox-layout-section">
+                    <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Dashboard</span><strong>@Active.Name</strong></div><span>@Active.Columns x @Active.Rows</span></div>
+                    @if (!ActiveChoice.IsFactory)
+                    {
+                        <label>Name<input value="@Active.Name" maxlength="40" @onchange="RenameLayout" /></label>
+                    }
+                    <div class="toolbox-grid-controls">
+                        <label>Columns<select value="@Active.Columns" @onchange="ChangeColumns">@for (var value = 1; value <= 8; value++) { <option value="@value">@value</option> }</select></label>
+                        <label>Rows<select value="@Active.Rows" @onchange="ChangeRows">@for (var value = 1; value <= 8; value++) { <option value="@value">@value</option> }</select></label>
+                    </div>
+                    <div class="toolbox-actions">
+                        <button title="Create a new dashboard" @onclick="NewLayout"><ProductIcon Name="plus" Size="15" /> New</button>
+                        <button title="Duplicate this dashboard" @onclick="DuplicateLayout"><ProductIcon Name="duplicate" Size="15" /> Duplicate</button>
+                        <button disabled="@ActiveChoice.IsFactory" title="Restore the default widgets" @onclick="ResetLayout"><ProductIcon Name="reset" Size="15" /> Reset</button>
+                        <button class="danger" disabled="@ActiveChoice.IsFactory" title="Delete this custom dashboard" @onclick="DeleteLayout"><ProductIcon Name="trash" Size="15" /> Delete</button>
+                    </div>
                 </section>
-            }
 
-            <section class="toolbox-metric-catalog">
-                <div class="toolbox-section-heading"><strong>Add telemetry</strong><span>@FilteredCatalog.Count</span></div>
-                <input type="search" placeholder="Search" @bind="_metricSearch" @bind:event="oninput" />
-                <div class="toolbox-metric-list">@foreach (var metric in FilteredCatalog) { <button @onclick="() => AddMetric(metric.Id)"><span><strong>@metric.Name</strong><small>@SourceLabel(metric.Source)</small></span><b>+</b></button> }</div>
-            </section>
+                @if (SelectedTile is { } selected)
+                {
+                    var selectedDefinition = LiveTelemetryCatalog.Get(selected.MetricId);
+                    <section class="toolbox-inspector-section">
+                        <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Selected widget</span><strong>@selectedDefinition.Name</strong></div><span>@selected.ColumnSpan x @selected.RowSpan</span></div>
+                        <div class="tile-style-picker" role="group" aria-label="Display style">
+                            @foreach (var style in selectedDefinition.Styles)
+                            {
+                                <button class="@(selected.DisplayStyle == style ? "active" : null)" aria-pressed="@(selected.DisplayStyle == style)" @onclick="() => SetTileStyle(selected.Id, style)"><ProductIcon Name="@StyleIcon(style)" Size="17" /><span>@StyleLabel(style)</span></button>
+                            }
+                        </div>
+                        <div class="toolbox-grid-controls">
+                            @if (selectedDefinition.Units.Count > 1)
+                            {
+                                <label>Unit<select value="@selected.Unit" @onchange="args => ChangeTileUnit(selected.Id, args)">@foreach (var unit in selectedDefinition.Units) { <option value="@unit">@(string.IsNullOrWhiteSpace(unit) ? "None" : unit)</option> }</select></label>
+                            }
+                            <label>Decimals<select value="@selected.Precision" @onchange="args => ChangeTilePrecision(selected.Id, args)">@for (var value = 0; value <= 3; value++) { <option value="@value">@value</option> }</select></label>
+                        </div>
+                        @if (UsesAccent(selected.DisplayStyle))
+                        {
+                            <fieldset class="tile-color-field"><legend>Widget color</legend><div class="tile-color-options large">@foreach (var accent in AccentOptions) { <button type="button" class="tile-color-swatch @accent.Value @(selected.Accent == accent.Value ? "active" : null)" style="--swatch-color:@AccentToken(accent.Value)" title="@accent.Label" aria-label="@($"Use {accent.Label.ToLowerInvariant()} color")" aria-pressed="@(selected.Accent == accent.Value)" @onclick="() => SetTileAccent(selected.Id, accent.Value)"></button> }</div></fieldset>
+                        }
+                        @if (selected.DisplayStyle == LiveMonitorDisplayStyle.Trend)
+                        {
+                            <label>Chart history<select value="@selected.TrendDuration" @onchange="args => ChangeTileTrend(selected.Id, args)">@foreach (var duration in LiveTelemetryCatalog.TrendDurations(selected.MetricId)) { <option value="@duration">@TrendLabel(duration)</option> }</select></label>
+                        }
+                        <button class="toolbox-remove-widget" @onclick="() => RemoveTile(selected.Id)"><ProductIcon Name="trash" Size="16" /> Remove widget <span>Undo available</span></button>
+                    </section>
+                }
+
+                <section class="toolbox-metric-catalog">
+                    <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Widget library</span><strong>Add telemetry</strong></div><span>@FilteredCatalog.Count</span></div>
+                    <label class="toolbox-search"><span class="sr-only">Search telemetry catalog</span><ProductIcon Name="search" Size="16" /><input type="search" placeholder="Search speed, fuel, gaps..." @bind="_metricSearch" @bind:event="oninput" /></label>
+                    <div class="toolbox-metric-list">
+                        @if (FilteredCatalog.Count == 0)
+                        {
+                            <div class="toolbox-search-empty"><strong>No matching telemetry</strong><span>Try a shorter name or source.</span></div>
+                        }
+                        @foreach (var metric in FilteredCatalog)
+                        {
+                            <article class="toolbox-metric-card" data-live-catalog-item data-live-drag-metric="@metric.Id" data-metric-id="@metric.Id" title="Drag @metric.Name onto the grid">
+                                <span class="metric-drag-handle" aria-hidden="true"><ProductIcon Name="grip" Size="15" /></span>
+                                <div><strong>@metric.Name</strong><small>@SourceLabel(metric.Source) - @StyleSummary(metric)</small></div>
+                                <button type="button" class="metric-add-button" data-live-no-drag aria-label="Add @metric.Name to the first available grid space" title="Add to dashboard" @onclick="() => AddMetric(metric.Id)"><ProductIcon Name="plus" Size="16" /></button>
+                            </article>
+                        }
+                    </div>
+                </section>
+            </div>
+
+            <footer class="live-toolbox-footer">
+                <span><kbd>Alt</kbd> + arrow moves</span><span><kbd>Shift</kbd> + arrow resizes</span><span><kbd>Del</kbd> removes</span>
+            </footer>
         </aside>
     }
 </section>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+
+    private readonly List<LayoutSnapshot> _undo = [];
+    private readonly List<LayoutSnapshot> _redo = [];
+    private ElementReference _studioElement;
+    private DotNetObjectReference<LiveTelemetryLayoutGrid>? _dotNetReference;
     private bool _toolboxOpen = true;
+    private bool _jsReady;
     private string _metricSearch = string.Empty;
+    private string _editorMessage = "Changes save automatically.";
     private string? _selectedTileId;
+    private string? _openTileMenuId;
+    private string? _lastKnownLayoutSignature;
+    private string? _configuredInteractionSignature;
+
     private LiveRaceSnapshot Snapshot => State.LiveState.Snapshot;
     private LiveMonitorLayout Preferences => State.Settings.LiveMonitor;
     private IReadOnlyList<LiveMonitorLayoutChoice> Choices => LiveMonitorLayouts.Choices(Preferences);
     private LiveMonitorLayoutChoice ActiveChoice => LiveMonitorLayouts.Active(Preferences);
     private LiveMonitorNamedLayout Active => ActiveChoice.Layout;
     private LiveMonitorTile? SelectedTile => Active.Tiles.FirstOrDefault(tile => tile.Id == _selectedTileId);
-    private IReadOnlyList<LiveTelemetryMetricDefinition> FilteredCatalog => LiveTelemetryCatalog.All.Where(item => string.IsNullOrWhiteSpace(_metricSearch) || item.Name.Contains(_metricSearch, StringComparison.OrdinalIgnoreCase)).ToArray();
+    private IReadOnlyList<LiveTelemetryMetricDefinition> FilteredCatalog => LiveTelemetryCatalog.All
+        .Where(item => string.IsNullOrWhiteSpace(_metricSearch) || item.Name.Contains(_metricSearch, StringComparison.OrdinalIgnoreCase) || SourceLabel(item.Source).Contains(_metricSearch, StringComparison.OrdinalIgnoreCase))
+        .ToArray();
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var layoutSignature = LayoutSignature();
+        if (_lastKnownLayoutSignature is not null && !string.Equals(_lastKnownLayoutSignature, layoutSignature, StringComparison.Ordinal))
+        {
+            _undo.Clear();
+            _redo.Clear();
+            _editorMessage = "Dashboard changed in the Live Monitor; undo history was refreshed.";
+        }
+        _lastKnownLayoutSignature = layoutSignature;
+
+        var interactionSignature = $"{layoutSignature}|{_toolboxOpen}|{State.Settings.UseReducedMotion}";
+        if (!_jsReady)
+        {
+            _dotNetReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("iracingCoachLiveTelemetryLayout.initialize", _studioElement, _dotNetReference, InteractionOptions());
+            _jsReady = true;
+            _configuredInteractionSignature = interactionSignature;
+        }
+        else if (!string.Equals(_configuredInteractionSignature, interactionSignature, StringComparison.Ordinal))
+        {
+            await JS.InvokeVoidAsync("iracingCoachLiveTelemetryLayout.configure", _studioElement, InteractionOptions());
+            _configuredInteractionSignature = interactionSignature;
+        }
+    }
+
+    private object InteractionOptions() => new { editing = _toolboxOpen, reducedMotion = State.Settings.UseReducedMotion, rows = Active.Rows, columns = Active.Columns };
     private LiveTelemetryMetricReading Read(LiveMonitorTile tile) => LiveTelemetryCatalog.Read(tile.MetricId, State.LiveState, tile.Unit, tile.Precision, tile.TrendDuration);
-    private void ToggleToolbox() => _toolboxOpen = !_toolboxOpen;
-    private void SelectTile(string id) { _selectedTileId = id; _toolboxOpen = true; }
-    private void Save() => State.SaveLiveMonitorPreferences();
-    private void ChangeLayout(ChangeEventArgs args) { Preferences.ActiveLayoutId = args.Value?.ToString() ?? LiveMonitorLayout.FactoryDefaultId; _selectedTileId = null; Save(); }
-    private void NewLayout() { LiveMonitorLayouts.Create(Preferences); _selectedTileId = null; Save(); }
-    private void DuplicateLayout() { LiveMonitorLayouts.Duplicate(Preferences); _selectedTileId = null; Save(); }
-    private void ResetLayout() { LiveMonitorLayouts.ResetActive(Preferences); _selectedTileId = null; Save(); }
-    private void DeleteLayout() { if (LiveMonitorLayouts.DeleteActive(Preferences)) { _selectedTileId = null; Save(); } }
-    private void RenameLayout(ChangeEventArgs args) { var layout = LiveMonitorLayouts.EnsureEditable(Preferences); var name = args.Value?.ToString()?.Trim(); if (!string.IsNullOrWhiteSpace(name)) layout.Name = name; Save(); }
+    private void ToggleToolbox() { _toolboxOpen = !_toolboxOpen; if (!_toolboxOpen) { _openTileMenuId = null; _selectedTileId = null; } }
+    private void CloseToolbox() { _toolboxOpen = false; _openTileMenuId = null; _selectedTileId = null; }
+    private void SelectTile(string id) { if (!_toolboxOpen) return; if (_openTileMenuId != id) _openTileMenuId = null; _selectedTileId = id; }
+    private void ToggleTileMenu(string id) { _selectedTileId = id; _openTileMenuId = _openTileMenuId == id ? null : id; }
+    private void HandleStudioKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key != "Escape" || !_toolboxOpen) return;
+        if (_openTileMenuId is not null) _openTileMenuId = null;
+        else CloseToolbox();
+    }
+
+    private void ChangeLayout(ChangeEventArgs args)
+    {
+        var next = args.Value?.ToString() ?? LiveMonitorLayout.FactoryDefaultId;
+        if (next == Preferences.ActiveLayoutId) return;
+        var before = Capture();
+        Preferences.ActiveLayoutId = next;
+        CompleteMutation(before, "Dashboard switched.");
+        _selectedTileId = null;
+        _openTileMenuId = null;
+    }
+
+    private void NewLayout() { var before = Capture(); LiveMonitorLayouts.Create(Preferences); CompleteMutation(before, "New dashboard created."); _selectedTileId = null; }
+    private void DuplicateLayout() { var before = Capture(); LiveMonitorLayouts.Duplicate(Preferences); CompleteMutation(before, "Dashboard duplicated."); _selectedTileId = null; }
+    private void ResetLayout()
+    {
+        var before = Capture();
+        if (!LiveMonitorLayouts.ResetActive(Preferences))
+        {
+            _editorMessage = "Factory dashboards are already at their default layout.";
+            State.Notify(_editorMessage);
+            return;
+        }
+        CompleteMutation(before, "Dashboard reset. Undo is available.");
+        _selectedTileId = null;
+    }
+    private void DeleteLayout() { var before = Capture(); if (LiveMonitorLayouts.DeleteActive(Preferences)) { CompleteMutation(before, "Custom dashboard deleted. Undo is available."); _selectedTileId = null; } }
+
+    private void RenameLayout(ChangeEventArgs args)
+    {
+        var name = args.Value?.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || string.Equals(name, Active.Name, StringComparison.Ordinal)) return;
+        var before = Capture();
+        LiveMonitorLayouts.EnsureEditable(Preferences).Name = name;
+        CompleteMutation(before, "Dashboard renamed.");
+    }
+
     private void ChangeRows(ChangeEventArgs args) => ResizeGrid(Parse(args, Active.Rows), Active.Columns);
     private void ChangeColumns(ChangeEventArgs args) => ResizeGrid(Active.Rows, Parse(args, Active.Columns));
-    private void ResizeGrid(int rows, int columns) { var layout = LiveMonitorLayouts.EnsureEditable(Preferences); if (!LiveMonitorLayouts.TryResizeGrid(layout, rows, columns, out _)) State.Notify("The tiles do not fit in that grid."); Save(); }
-    private void AddMetric(string id) { var layout = LiveMonitorLayouts.EnsureEditable(Preferences); if (LiveMonitorLayouts.TryAddMetric(layout, id, out var tileId)) _selectedTileId = tileId; else State.Notify("The grid is full."); Save(); }
-    private void RemoveSelected() { if (_selectedTileId is null) return; var layout = LiveMonitorLayouts.EnsureEditable(Preferences); LiveMonitorLayouts.RemoveTile(layout, _selectedTileId); _selectedTileId = null; Save(); }
-    private void ChangeTileRow(ChangeEventArgs args) { if (SelectedTile is { } tile) MoveTile(Parse(args, tile.Row), tile.Column); }
-    private void ChangeTileColumn(ChangeEventArgs args) { if (SelectedTile is { } tile) MoveTile(tile.Row, Parse(args, tile.Column)); }
-    private void MoveTile(int row, int column) { if (_selectedTileId is null) return; var layout = LiveMonitorLayouts.EnsureEditable(Preferences); if (!LiveMonitorLayouts.TryMoveTile(layout, _selectedTileId, row, column)) State.Notify("That position is occupied."); Save(); }
-    private void ChangeTileHeight(ChangeEventArgs args) { if (SelectedTile is { } tile) ResizeTile(Parse(args, tile.RowSpan), tile.ColumnSpan); }
-    private void ChangeTileWidth(ChangeEventArgs args) { if (SelectedTile is { } tile) ResizeTile(tile.RowSpan, Parse(args, tile.ColumnSpan)); }
-    private void ResizeTile(int rows, int columns) { if (_selectedTileId is null) return; var layout = LiveMonitorLayouts.EnsureEditable(Preferences); if (!LiveMonitorLayouts.TryResizeTile(layout, _selectedTileId, rows, columns)) State.Notify("That size does not fit."); Save(); }
-    private void ChangeTileStyle(ChangeEventArgs args) { var tile = EditableSelected(); if (tile is not null && Enum.TryParse<LiveMonitorDisplayStyle>(args.Value?.ToString(), out var value)) tile.DisplayStyle = value; Save(); }
-    private void ChangeTileUnit(ChangeEventArgs args) { var tile = EditableSelected(); if (tile is not null) tile.Unit = args.Value?.ToString() ?? tile.Unit; Save(); }
-    private void ChangeTilePrecision(ChangeEventArgs args) { var tile = EditableSelected(); if (tile is not null) tile.Precision = Math.Clamp(Parse(args, tile.Precision), 0, 3); Save(); }
-    private LiveMonitorTile? EditableSelected() => _selectedTileId is null ? null : LiveMonitorLayouts.EnsureEditable(Preferences).Tiles.FirstOrDefault(tile => tile.Id == _selectedTileId);
+    private void ResizeGrid(int rows, int columns)
+    {
+        TryMutation(() => LiveMonitorLayouts.TryResizeGrid(LiveMonitorLayouts.EnsureEditable(Preferences), rows, columns, out _), $"Grid resized to {columns} x {rows}.", "Those dimensions cannot hold every widget.");
+    }
+
+    private void AddMetric(string id)
+    {
+        string? tileId = null;
+        if (TryMutation(() => LiveMonitorLayouts.TryAddMetric(LiveMonitorLayouts.EnsureEditable(Preferences), id, out tileId), $"{LiveTelemetryCatalog.Get(id).Name} added.", "The grid is full."))
+            _selectedTileId = tileId;
+    }
+
+    private void RemoveTile(string id)
+    {
+        if (TryMutation(() => LiveMonitorLayouts.RemoveTile(LiveMonitorLayouts.EnsureEditable(Preferences), id), "Widget removed. Undo is available.", "That widget is no longer present."))
+        {
+            if (_selectedTileId == id) _selectedTileId = null;
+            if (_openTileMenuId == id) _openTileMenuId = null;
+        }
+    }
+
+    private void ChangeTileStyle(string id, ChangeEventArgs args)
+    {
+        if (Enum.TryParse<LiveMonitorDisplayStyle>(args.Value?.ToString(), out var style)) SetTileStyle(id, style);
+    }
+
+    private void SetTileStyle(string id, LiveMonitorDisplayStyle style)
+    {
+        var definition = DefinitionForTile(id);
+        if (definition is null || !definition.Styles.Contains(style)) return;
+        MutateTile(id, tile => tile.DisplayStyle = style, $"Display changed to {StyleLabel(style)}.");
+    }
+
+    private void ChangeTileUnit(string id, ChangeEventArgs args)
+    {
+        var unit = args.Value?.ToString() ?? string.Empty;
+        var definition = DefinitionForTile(id);
+        if (definition is not null && definition.Units.Contains(unit)) MutateTile(id, tile => tile.Unit = unit, "Unit updated.");
+    }
+
+    private void ChangeTilePrecision(string id, ChangeEventArgs args)
+    {
+        var precision = Math.Clamp(Parse(args, 0), 0, 3);
+        MutateTile(id, tile => tile.Precision = precision, "Precision updated.");
+    }
+
+    private void ChangeTileTrend(string id, ChangeEventArgs args)
+    {
+        if (!Enum.TryParse<LiveMonitorTrendDuration>(args.Value?.ToString(), out var duration)) return;
+        var metricId = Active.Tiles.FirstOrDefault(tile => tile.Id == id)?.MetricId;
+        if (metricId is not null && LiveTelemetryCatalog.TrendDurations(metricId).Contains(duration)) MutateTile(id, tile => tile.TrendDuration = duration, $"Chart history set to {TrendLabel(duration)}.");
+    }
+
+    private void SetTileAccent(string id, string accent)
+    {
+        if (AccentOptions.All(option => option.Value != accent)) return;
+        MutateTile(id, tile => tile.Accent = accent, $"Widget color set to {AccentOptions.First(option => option.Value == accent).Label.ToLowerInvariant()}.");
+    }
+
+    private void MutateTile(string id, Action<LiveMonitorTile> update, string message)
+    {
+        TryMutation(() =>
+        {
+            var tile = LiveMonitorLayouts.EnsureEditable(Preferences).Tiles.FirstOrDefault(item => item.Id == id);
+            if (tile is null) return false;
+            update(tile);
+            return true;
+        }, message, "That widget is no longer present.");
+    }
+
+    [JSInvokable]
+    public async Task<bool> CommitTilePlacement(string tileId, int row, int column, int rowSpan, int columnSpan)
+    {
+        var result = false;
+        await InvokeAsync(() =>
+        {
+            var current = Active.Tiles.FirstOrDefault(tile => tile.Id == tileId);
+            if (current is not null && current.Row == row && current.Column == column && current.RowSpan == rowSpan && current.ColumnSpan == columnSpan) { result = true; return; }
+            result = TryMutation(() => LiveMonitorLayouts.TryPlaceTile(LiveMonitorLayouts.EnsureEditable(Preferences), tileId, row, column, rowSpan, columnSpan), $"Widget snapped to column {column + 1}, row {row + 1}, size {columnSpan} x {rowSpan}.", "That footprint cannot fit in this grid.");
+            if (result) _selectedTileId = tileId;
+            StateHasChanged();
+        });
+        return result;
+    }
+
+    [JSInvokable]
+    public async Task<bool> DropMetric(string metricId, int row, int column)
+    {
+        var result = false;
+        await InvokeAsync(() =>
+        {
+            string? tileId = null;
+            result = TryMutation(() => LiveMonitorLayouts.TryAddMetric(LiveMonitorLayouts.EnsureEditable(Preferences), metricId, row, column, out tileId), $"{LiveTelemetryCatalog.Get(metricId).Name} added at column {column + 1}, row {row + 1}.", "That widget cannot fit in this grid.");
+            if (result) _selectedTileId = tileId;
+            StateHasChanged();
+        });
+        return result;
+    }
+
+    private void HandleTileKeyDown(string tileId, KeyboardEventArgs args)
+    {
+        if (!_toolboxOpen) return;
+        if (args.Key == "Delete") { RemoveTile(tileId); return; }
+        if (args.Key is not ("ArrowLeft" or "ArrowRight" or "ArrowUp" or "ArrowDown")) return;
+        var tile = Active.Tiles.FirstOrDefault(item => item.Id == tileId);
+        if (tile is null) return;
+        var horizontal = args.Key == "ArrowRight" ? 1 : args.Key == "ArrowLeft" ? -1 : 0;
+        var vertical = args.Key == "ArrowDown" ? 1 : args.Key == "ArrowUp" ? -1 : 0;
+        if (args.ShiftKey)
+            _ = TryMutation(() => LiveMonitorLayouts.TryPlaceTile(LiveMonitorLayouts.EnsureEditable(Preferences), tileId, tile.Row, tile.Column, tile.RowSpan + vertical, tile.ColumnSpan + horizontal), "Widget resized with the keyboard.", "That keyboard resize cannot fit.");
+        else if (args.AltKey)
+            _ = TryMutation(() => LiveMonitorLayouts.TryPlaceTile(LiveMonitorLayouts.EnsureEditable(Preferences), tileId, tile.Row + vertical, tile.Column + horizontal, tile.RowSpan, tile.ColumnSpan), "Widget moved with the keyboard.", "That keyboard move cannot fit.");
+    }
+
+    private bool TryMutation(Func<bool> mutation, string successMessage, string failureMessage)
+    {
+        var before = Capture();
+        if (!mutation())
+        {
+            Restore(before);
+            _editorMessage = failureMessage;
+            State.Notify(failureMessage);
+            return false;
+        }
+        CompleteMutation(before, successMessage);
+        return true;
+    }
+
+    private void CompleteMutation(LayoutSnapshot before, string message)
+    {
+        _undo.Add(before);
+        if (_undo.Count > 40) _undo.RemoveAt(0);
+        _redo.Clear();
+        _editorMessage = message;
+        Save();
+    }
+
+    private void Undo()
+    {
+        if (_undo.Count == 0) return;
+        _redo.Add(Capture());
+        var previous = _undo[^1];
+        _undo.RemoveAt(_undo.Count - 1);
+        Restore(previous);
+        _selectedTileId = null;
+        _openTileMenuId = null;
+        _editorMessage = "Layout change undone.";
+        Save();
+    }
+
+    private void Redo()
+    {
+        if (_redo.Count == 0) return;
+        _undo.Add(Capture());
+        var next = _redo[^1];
+        _redo.RemoveAt(_redo.Count - 1);
+        Restore(next);
+        _selectedTileId = null;
+        _openTileMenuId = null;
+        _editorMessage = "Layout change restored.";
+        Save();
+    }
+
+    private LayoutSnapshot Capture() => new(Preferences.ActiveLayoutId, Preferences.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList());
+    private void Restore(LayoutSnapshot snapshot) { Preferences.ActiveLayoutId = snapshot.ActiveLayoutId; Preferences.UserLayouts = snapshot.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList(); }
+    private void Save() { _lastKnownLayoutSignature = LayoutSignature(); State.SaveLiveMonitorPreferences(); }
+    private LiveTelemetryMetricDefinition? DefinitionForTile(string id) { var metricId = Active.Tiles.FirstOrDefault(tile => tile.Id == id)?.MetricId; return metricId is not null && LiveTelemetryCatalog.TryGet(metricId, out var definition) ? definition : null; }
+    private string LayoutSignature() => LiveMonitorLayouts.EditorSignature(Preferences);
+
     private static int Parse(ChangeEventArgs args, int fallback) => int.TryParse(args.Value?.ToString(), out var value) ? value : fallback;
-    private static string SourceLabel(LiveMonitorMetricSource source) => source switch { LiveMonitorMetricSource.Recorded => "iRacing", LiveMonitorMetricSource.Calculated => "Calculated", _ => "Coach" };
+    private static string SourceLabel(LiveMonitorMetricSource source) => source switch { LiveMonitorMetricSource.Recorded => "Recorded", LiveMonitorMetricSource.Calculated => "Calculated", _ => "Coach" };
     private static string TileTitle(LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading) => reading.Available ? definition.Description : reading.AvailabilityMessage;
+    private static string TileAccessibleName(LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading, LiveMonitorTile tile) => $"{definition.Name}, {reading.DisplayValue}{(string.IsNullOrWhiteSpace(reading.Unit) ? string.Empty : $" {reading.Unit}")}, {StyleLabel(tile.DisplayStyle)} widget, column {tile.Column + 1}, row {tile.Row + 1}, size {tile.ColumnSpan} by {tile.RowSpan}";
+    private static bool UsesAccent(LiveMonitorDisplayStyle style) => style is LiveMonitorDisplayStyle.Gauge or LiveMonitorDisplayStyle.Bar or LiveMonitorDisplayStyle.Trend;
+    private static string StyleLabel(LiveMonitorDisplayStyle style) => style switch { LiveMonitorDisplayStyle.Trend => "Chart", LiveMonitorDisplayStyle.Status => "Status", LiveMonitorDisplayStyle.Gauge => "Gauge", LiveMonitorDisplayStyle.Bar => "Bar", _ => "Number" };
+    private static string StyleIcon(LiveMonitorDisplayStyle style) => style switch { LiveMonitorDisplayStyle.Trend => "chart", LiveMonitorDisplayStyle.Gauge => "gauge", LiveMonitorDisplayStyle.Bar => "bar", LiveMonitorDisplayStyle.Status => "status", _ => "number" };
+    private static string StyleClass(LiveMonitorDisplayStyle style) => style == LiveMonitorDisplayStyle.Trend ? "chart" : style.ToString().ToLowerInvariant();
+    private static string StyleSummary(LiveTelemetryMetricDefinition definition) => string.Join(", ", definition.Styles.Select(StyleLabel));
+    private static string TrendLabel(LiveMonitorTrendDuration duration) => duration switch { LiveMonitorTrendDuration.Seconds15 => "15 seconds", LiveMonitorTrendDuration.Seconds30 => "30 seconds", LiveMonitorTrendDuration.Seconds60 => "60 seconds", LiveMonitorTrendDuration.OneLap => "1 lap", LiveMonitorTrendDuration.ThreeLaps => "3 laps", _ => duration.ToString() };
     private static double MeterPercent(LiveTelemetryMetricReading reading) { var min = reading.Minimum ?? 0; var max = reading.Maximum ?? 100; return Math.Clamp((reading.NumericValue.GetValueOrDefault() - min) / Math.Max(.0001, max - min) * 100, 0, 100); }
-    private static string TrendPath(IReadOnlyList<double> values) { var min = values.Min(); var max = values.Max(); if (Math.Abs(max - min) < .0001) { min -= .5; max += .5; } return string.Join(" ", values.Select((value, index) => $"{(index == 0 ? "M" : "L")}{(index * 100d / Math.Max(1, values.Count - 1)).ToString("0.##", CultureInfo.InvariantCulture)},{(27 - (value - min) / (max - min) * 24).ToString("0.##", CultureInfo.InvariantCulture)}")); }
+    private static string GaugeDash(LiveTelemetryMetricReading reading) => $"{PercentToken(MeterPercent(reading))} 100";
+    private static string PercentToken(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+    private static string TileStyle(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition) => $"grid-column:{tile.Column + 1} / span {tile.ColumnSpan};grid-row:{tile.Row + 1} / span {tile.RowSpan};--tile-accent:{TileAccent(tile, definition)}";
+    private static string TileAccent(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition) => tile.Accent != "default" ? AccentToken(tile.Accent) : definition.Id switch { "speed" => "var(--telemetry-speed)", "throttle" => "var(--telemetry-throttle)", "brake" => "var(--telemetry-brake)", "steering" => "var(--telemetry-steering)", "fuel" or "fuel-laps" => "var(--telemetry-fuel)", _ => "var(--accent)" };
+    private static string AccentToken(string accent) => accent switch { "blue" => "var(--telemetry-speed)", "green" => "var(--telemetry-throttle)", "amber" => "var(--telemetry-fuel)", "coral" => "var(--telemetry-brake)", "violet" => "var(--telemetry-steering)", _ => "var(--accent)" };
+
+    private static string TrendPath(IReadOnlyList<double> values, LiveMonitorTrendShape shape)
+    {
+        var points = Downsample(values, 112);
+        var min = points.Min(point => point.Value);
+        var max = points.Max(point => point.Value);
+        if (Math.Abs(max - min) < .0001) { min -= .5; max += .5; }
+        static string Token(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+        var path = new List<string>(shape == LiveMonitorTrendShape.Step ? points.Count * 2 : points.Count);
+        for (var index = 0; index < points.Count; index++)
+        {
+            var x = points[index].Index * 100d / Math.Max(1, values.Count - 1);
+            var y = 41 - (points[index].Value - min) / (max - min) * 38;
+            if (index == 0) path.Add($"M{Token(x)},{Token(y)}");
+            else if (shape == LiveMonitorTrendShape.Step) { path.Add($"H{Token(x)}"); path.Add($"V{Token(y)}"); }
+            else path.Add($"L{Token(x)},{Token(y)}");
+        }
+        return string.Join(" ", path);
+    }
+
+    private static IReadOnlyList<TrendPoint> Downsample(IReadOnlyList<double> values, int bucketCount)
+    {
+        if (values.Count <= bucketCount * 2) return values.Select((value, index) => new TrendPoint(index, value)).ToArray();
+        var result = new List<TrendPoint>(bucketCount * 2 + 2) { new(0, values[0]) };
+        for (var bucket = 0; bucket < bucketCount; bucket++)
+        {
+            var start = 1 + (int)((values.Count - 2L) * bucket / bucketCount);
+            var end = 1 + (int)((values.Count - 2L) * (bucket + 1) / bucketCount);
+            if (end <= start) continue;
+            var minIndex = start; var maxIndex = start;
+            for (var index = start + 1; index < end; index++) { if (values[index] < values[minIndex]) minIndex = index; if (values[index] > values[maxIndex]) maxIndex = index; }
+            if (minIndex < maxIndex) { result.Add(new(minIndex, values[minIndex])); result.Add(new(maxIndex, values[maxIndex])); }
+            else if (maxIndex < minIndex) { result.Add(new(maxIndex, values[maxIndex])); result.Add(new(minIndex, values[minIndex])); }
+            else result.Add(new(minIndex, values[minIndex]));
+        }
+        result.Add(new(values.Count - 1, values[^1]));
+        return result;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_jsReady)
+        {
+            try { await JS.InvokeVoidAsync("iracingCoachLiveTelemetryLayout.dispose", _studioElement); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        _dotNetReference?.Dispose();
+    }
+
+    private sealed record LayoutSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts);
+    private sealed record TrendPoint(int Index, double Value);
+    private sealed record AccentOption(string Value, string Label);
+    private static readonly string[] ResizeEdges = ["n", "e", "s", "w", "ne", "se", "sw", "nw"];
+    private static readonly AccentOption[] AccentOptions = [new("default", "Automatic"), new("blue", "Blue"), new("green", "Green"), new("amber", "Amber"), new("coral", "Coral"), new("violet", "Violet")];
 }

@@ -19,7 +19,11 @@ public static class LiveMonitorLayouts
             ("leader-gap", LiveMonitorDisplayStyle.Number),
             ("fuel", LiveMonitorDisplayStyle.Bar),
             ("pit-window", LiveMonitorDisplayStyle.Number),
-            ("coach-cue", LiveMonitorDisplayStyle.Status)),
+            ("coach-cue", LiveMonitorDisplayStyle.Status))
+    ];
+
+    private static readonly IReadOnlyList<LiveMonitorNamedLayout> BuiltInUserTemplates =
+    [
         BuildFactory(FactoryRaceId, "Race",
             ("position", LiveMonitorDisplayStyle.Number),
             ("ahead-gap", LiveMonitorDisplayStyle.Number),
@@ -36,20 +40,26 @@ public static class LiveMonitorLayouts
             ("coach-cue", LiveMonitorDisplayStyle.Status))
     ];
 
-    public static IReadOnlyList<LiveMonitorLayoutChoice> Choices(LiveMonitorLayout preferences) =>
-        Factory.Select(layout => new LiveMonitorLayoutChoice(Clone(layout), true))
-            .Concat(preferences.UserLayouts.Select(layout => new LiveMonitorLayoutChoice(layout, false)))
+    public static IReadOnlyList<LiveMonitorLayoutChoice> Choices(LiveMonitorLayout preferences)
+    {
+        InitializeBuiltInDashboards(preferences);
+        return Factory.Select(layout => new LiveMonitorLayoutChoice(Clone(layout), true))
+            .Concat(preferences.UserLayouts
+                .Where(layout => !IsFactory(layout.Id))
+                .Select(layout => new LiveMonitorLayoutChoice(layout, false)))
             .ToArray();
+    }
 
     public static LiveMonitorLayoutChoice Active(LiveMonitorLayout preferences)
     {
+        InitializeBuiltInDashboards(preferences);
+        if (IsFactory(preferences.ActiveLayoutId)) return new(Clone(Factory[0]), true);
         var user = preferences.UserLayouts.FirstOrDefault(layout => string.Equals(layout.Id, preferences.ActiveLayoutId, StringComparison.Ordinal));
         if (user is not null) return new(user, false);
-        var factory = Factory.FirstOrDefault(layout => string.Equals(layout.Id, preferences.ActiveLayoutId, StringComparison.Ordinal)) ?? Factory[0];
-        return new(Clone(factory), true);
+        return new(Clone(Factory[0]), true);
     }
 
-    public static bool IsFactory(string id) => Factory.Any(layout => string.Equals(layout.Id, id, StringComparison.Ordinal));
+    public static bool IsFactory(string id) => string.Equals(id, LiveMonitorLayout.FactoryDefaultId, StringComparison.Ordinal);
 
     public static LiveMonitorNamedLayout EnsureEditable(LiveMonitorLayout preferences)
     {
@@ -87,29 +97,35 @@ public static class LiveMonitorLayouts
 
     public static bool DeleteActive(LiveMonitorLayout preferences)
     {
+        InitializeBuiltInDashboards(preferences);
+        if (IsFactory(preferences.ActiveLayoutId)) return false;
         var removed = preferences.UserLayouts.RemoveAll(layout => string.Equals(layout.Id, preferences.ActiveLayoutId, StringComparison.Ordinal)) > 0;
         if (removed) preferences.ActiveLayoutId = LiveMonitorLayout.FactoryDefaultId;
         return removed;
     }
 
-    public static void ResetActive(LiveMonitorLayout preferences)
+    public static bool ResetActive(LiveMonitorLayout preferences)
     {
         var active = Active(preferences);
-        if (active.IsFactory)
-        {
-            preferences.ActiveLayoutId = LiveMonitorLayout.FactoryDefaultId;
-            return;
-        }
+        if (active.IsFactory) return false;
 
         var name = active.Layout.Name;
-        var reset = Clone(Factory[0]);
+        var template = BuiltInUserTemplates.FirstOrDefault(layout => string.Equals(layout.Id, active.Layout.Id, StringComparison.Ordinal)) ?? Factory[0];
+        var reset = Clone(template);
         reset.Id = active.Layout.Id;
         reset.Name = name;
         var index = preferences.UserLayouts.FindIndex(layout => layout.Id == active.Layout.Id);
         preferences.UserLayouts[index] = reset;
+        return true;
     }
 
     public static bool TryAddMetric(LiveMonitorNamedLayout layout, string metricId, out string? tileId)
+        => TryAddMetricCore(layout, metricId, null, null, out tileId);
+
+    public static bool TryAddMetric(LiveMonitorNamedLayout layout, string metricId, int row, int column, out string? tileId)
+        => TryAddMetricCore(layout, metricId, row, column, out tileId);
+
+    private static bool TryAddMetricCore(LiveMonitorNamedLayout layout, string metricId, int? row, int? column, out string? tileId)
     {
         tileId = null;
         if (!LiveTelemetryCatalog.TryGet(metricId, out var definition)) return false;
@@ -122,7 +138,7 @@ public static class LiveMonitorLayouts
         };
         var candidate = Clone(layout);
         candidate.Tiles.Add(tile);
-        if (!TryPack(candidate, tile.Id, null, null)) return false;
+        if (!TryPack(candidate, tile.Id, row, column)) return false;
         CopyInto(candidate, layout);
         tileId = tile.Id;
         return true;
@@ -130,24 +146,27 @@ public static class LiveMonitorLayouts
 
     public static bool TryMoveTile(LiveMonitorNamedLayout layout, string tileId, int row, int column)
     {
-        var candidate = Clone(layout);
-        var tile = candidate.Tiles.FirstOrDefault(item => item.Id == tileId);
-        if (tile is null) return false;
-        tile.Row = Math.Clamp(row, 0, candidate.Rows - 1);
-        tile.Column = Math.Clamp(column, 0, candidate.Columns - 1);
-        if (!TryPack(candidate, tileId, tile.Row, tile.Column)) return false;
-        CopyInto(candidate, layout);
-        return true;
+        var tile = layout.Tiles.FirstOrDefault(item => item.Id == tileId);
+        return tile is not null && TryPlaceTile(layout, tileId, row, column, tile.RowSpan, tile.ColumnSpan);
     }
 
     public static bool TryResizeTile(LiveMonitorNamedLayout layout, string tileId, int rowSpan, int columnSpan)
+    {
+        var tile = layout.Tiles.FirstOrDefault(item => item.Id == tileId);
+        return tile is not null && TryPlaceTile(layout, tileId, tile.Row, tile.Column, rowSpan, columnSpan);
+    }
+
+    public static bool TryPlaceTile(LiveMonitorNamedLayout layout, string tileId, int row, int column, int rowSpan, int columnSpan)
     {
         var candidate = Clone(layout);
         var tile = candidate.Tiles.FirstOrDefault(item => item.Id == tileId);
         if (tile is null) return false;
         tile.RowSpan = Math.Clamp(rowSpan, 1, candidate.Rows);
         tile.ColumnSpan = Math.Clamp(columnSpan, 1, candidate.Columns);
+        tile.Row = Math.Clamp(row, 0, candidate.Rows - tile.RowSpan);
+        tile.Column = Math.Clamp(column, 0, candidate.Columns - tile.ColumnSpan);
         if (!TryPack(candidate, tileId, tile.Row, tile.Column)) return false;
+        if (SamePlacement(layout, candidate)) return false;
         CopyInto(candidate, layout);
         return true;
     }
@@ -189,6 +208,55 @@ public static class LiveMonitorLayouts
                 continue;
             }
             var candidate = Clone(layout);
+            var tileIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var tile in candidate.Tiles)
+            {
+                if (!tileIds.Add(tile.Id))
+                {
+                    var suffix = 2;
+                    var repairedId = $"{tile.Id}-repaired";
+                    while (tileIds.Contains(repairedId) || candidate.Tiles.Any(item => item != tile && item.Id == repairedId))
+                        repairedId = $"{tile.Id}-repaired-{suffix++}";
+                    tile.Id = repairedId;
+                    tileIds.Add(repairedId);
+                    changed = true;
+                    corruptionFound = true;
+                }
+
+                var definition = LiveTelemetryCatalog.Get(tile.MetricId);
+                if (!definition.Styles.Contains(tile.DisplayStyle))
+                {
+                    tile.DisplayStyle = definition.DefaultStyle;
+                    changed = true;
+                    corruptionFound = true;
+                }
+                if (!definition.Units.Contains(tile.Unit, StringComparer.Ordinal))
+                {
+                    tile.Unit = definition.DefaultUnit;
+                    changed = true;
+                    corruptionFound = true;
+                }
+                var precision = Math.Clamp(tile.Precision, 0, 3);
+                if (tile.Precision != precision)
+                {
+                    tile.Precision = precision;
+                    changed = true;
+                    corruptionFound = true;
+                }
+                if (!Enum.IsDefined(typeof(LiveMonitorTrendDuration), tile.TrendDuration))
+                {
+                    tile.TrendDuration = LiveMonitorTrendDuration.Seconds30;
+                    changed = true;
+                    corruptionFound = true;
+                }
+                var accent = AllowedAccents.FirstOrDefault(value => string.Equals(value, tile.Accent, StringComparison.OrdinalIgnoreCase));
+                if (accent is null || !string.Equals(accent, tile.Accent, StringComparison.Ordinal))
+                {
+                    tile.Accent = accent ?? "default";
+                    changed = true;
+                    corruptionFound = true;
+                }
+            }
             if (!TryPack(candidate, null, null, null))
             {
                 corruptionFound = true;
@@ -199,6 +267,7 @@ public static class LiveMonitorLayouts
             validLayouts.Add(candidate);
         }
         preferences.UserLayouts = validLayouts;
+        if (InitializeBuiltInDashboards(preferences)) changed = true;
         if (!IsFactory(preferences.ActiveLayoutId) && preferences.UserLayouts.All(layout => layout.Id != preferences.ActiveLayoutId))
         {
             preferences.ActiveLayoutId = LiveMonitorLayout.FactoryDefaultId;
@@ -234,6 +303,23 @@ public static class LiveMonitorLayouts
             Accent = tile.Accent
         }).ToList()
     };
+
+    public static string EditorSignature(LiveMonitorLayout preferences) =>
+        $"{preferences.BuiltInDashboardsInitialized}/{preferences.ActiveLayoutId}|{string.Join(";", preferences.UserLayouts.Select(layout => $"{layout.Id}/{layout.Name}/{layout.Rows}/{layout.Columns}:{string.Join(",", layout.Tiles.Select(tile => $"{tile.Id}/{tile.MetricId}/{tile.Row}/{tile.Column}/{tile.RowSpan}/{tile.ColumnSpan}/{tile.DisplayStyle}/{tile.Unit}/{tile.Precision}/{tile.TrendDuration}/{tile.Accent}"))}"))}";
+
+    private static bool InitializeBuiltInDashboards(LiveMonitorLayout preferences)
+    {
+        preferences.UserLayouts ??= [];
+        if (preferences.BuiltInDashboardsInitialized) return false;
+
+        var seeded = BuiltInUserTemplates
+            .Where(template => preferences.UserLayouts.All(layout => !string.Equals(layout.Id, template.Id, StringComparison.Ordinal)))
+            .Select(Clone)
+            .ToArray();
+        if (seeded.Length > 0) preferences.UserLayouts.InsertRange(0, seeded);
+        preferences.BuiltInDashboardsInitialized = true;
+        return true;
+    }
 
     private static LiveMonitorNamedLayout BuildFactory(string id, string name, params (string Metric, LiveMonitorDisplayStyle Style)[] metrics)
     {
@@ -324,4 +410,6 @@ public static class LiveMonitorLayouts
         if (!used.Contains(basis)) return basis;
         for (var index = 2; ; index++) if (!used.Contains($"{basis} {index}")) return $"{basis} {index}";
     }
+
+    private static readonly string[] AllowedAccents = ["default", "blue", "green", "amber", "coral", "violet"];
 }

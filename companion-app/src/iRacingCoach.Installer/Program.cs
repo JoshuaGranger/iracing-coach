@@ -298,7 +298,7 @@ internal static class InstallerEngine
         var source = Environment.ProcessPath ?? throw new InvalidOperationException("The setup path is unavailable.");
         var cacheRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iRacingCoach", "Installer");
         Directory.CreateDirectory(cacheRoot);
-        var destination = Path.Combine(cacheRoot, "iRacingCoach-0.11.1-Setup.exe");
+        var destination = Path.Combine(cacheRoot, "iRacingCoach-0.12.0-Setup.exe");
         foreach (var oldInstaller in Directory.EnumerateFiles(cacheRoot, "iRacingCoach-*-Setup.exe", SearchOption.TopDirectoryOnly))
         {
             if (!string.Equals(oldInstaller, destination, StringComparison.OrdinalIgnoreCase)) File.Delete(oldInstaller);
@@ -379,9 +379,9 @@ internal static class InstallerEngine
         CreateShortcut(Path.Combine(startMenu, "iRacing Coach.lnk"), executable, target);
         if (desktopShortcut) CreateShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "iRacing Coach.lnk"), executable, target);
         using var key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\iRacing Coach");
-        key.SetValue("DisplayName", "iRacing Coach"); key.SetValue("DisplayVersion", "0.11.1"); key.SetValue("Publisher", "iRacing Coach");
+        key.SetValue("DisplayName", "iRacing Coach"); key.SetValue("DisplayVersion", "0.12.0"); key.SetValue("Publisher", "iRacing Coach");
         key.SetValue("InstallLocation", target); key.SetValue("DisplayIcon", executable); key.SetValue("UninstallString", $"\"{Path.Combine(target, "Uninstall iRacing Coach.exe")}\"");
-        key.SetValue("ModifyPath", $"\"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iRacingCoach", "Installer", "iRacingCoach-0.11.1-Setup.exe")}\" --repair");
+        key.SetValue("ModifyPath", $"\"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iRacingCoach", "Installer", "iRacingCoach-0.12.0-Setup.exe")}\" --repair");
         key.SetValue("NoModify", 0, RegistryValueKind.DWord); key.SetValue("NoRepair", 0, RegistryValueKind.DWord);
     }
 

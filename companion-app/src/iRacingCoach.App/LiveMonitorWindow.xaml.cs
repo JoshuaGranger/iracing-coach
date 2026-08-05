@@ -30,7 +30,9 @@ namespace iRacingCoach.App;
 
 public partial class LiveMonitorWindow : Window
 {
-    private const double CellSize = 148;
+    private const double GridViewportWidth = 444;
+    private const double GridViewportHeight = 296;
+    private const double DefaultCellSize = 148;
     private const double EditorHeight = 300;
     private const string MetricDragFormat = "iRacingCoach.LiveMetric";
     private const string TileDragFormat = "iRacingCoach.LiveTile";
@@ -41,7 +43,8 @@ public partial class LiveMonitorWindow : Window
     private readonly Dictionary<string, (double Minimum, double Maximum)> _trendRanges = new(StringComparer.Ordinal);
     private bool _restoring;
     private bool _updatingControls;
-    private bool _settingsOpen;
+    private bool _gridSettingsOpen;
+    private bool _scaleSettingsOpen;
     private int _renderDirty;
     private DateTimeOffset _lastCatalogRefresh = DateTimeOffset.MinValue;
     private string? _selectedTileId;
@@ -49,11 +52,16 @@ public partial class LiveMonitorWindow : Window
     private string? _dragTileId;
     private CatalogItem? _dragCatalogItem;
     private Border? _dropPreview;
-    private LayoutSnapshot? _settingsBackup;
+    private GridSettingsSnapshot? _gridSettingsBackup;
+    private LayoutSnapshot[]? _gridSettingsUndoBackup;
+    private double? _scaleSettingsBackup;
+    private double _cellSize = DefaultCellSize;
+    private string _lastKnownEditorSignature;
 
     public LiveMonitorWindow(CompanionState state)
     {
         _state = state;
+        _lastKnownEditorSignature = LiveMonitorLayouts.EditorSignature(Preferences);
         InitializeComponent();
         SizeToContent = SizeToContent.WidthAndHeight;
         _saveTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) => SavePlacement(), Dispatcher);
@@ -67,13 +75,13 @@ public partial class LiveMonitorWindow : Window
         SourceInitialized += (_, _) => ApplyWindowTreatment();
         LocationChanged += (_, _) => ScheduleSave();
         _state.Changed += OnCompanionStateChanged;
-        _state.LiveTelemetryChanged += OnCompanionStateChanged;
+        _state.LiveTelemetryChanged += OnLiveTelemetryChanged;
         Closed += (_, _) =>
         {
             _renderTimer.Stop();
             _saveTimer.Stop();
             _state.Changed -= OnCompanionStateChanged;
-            _state.LiveTelemetryChanged -= OnCompanionStateChanged;
+            _state.LiveTelemetryChanged -= OnLiveTelemetryChanged;
         };
     }
 
@@ -99,7 +107,29 @@ public partial class LiveMonitorWindow : Window
 
     private void OnCompanionStateChanged()
     {
-        if (!Dispatcher.HasShutdownStarted) Interlocked.Exchange(ref _renderDirty, 1);
+        Interlocked.Exchange(ref _renderDirty, 1);
+        if (Dispatcher.HasShutdownStarted) return;
+        if (Dispatcher.CheckAccess()) CheckForExternalEditorChange();
+        else Dispatcher.BeginInvoke(CheckForExternalEditorChange, DispatcherPriority.Background);
+    }
+
+    private void OnLiveTelemetryChanged() => Interlocked.Exchange(ref _renderDirty, 1);
+
+    private void CheckForExternalEditorChange()
+    {
+        var signature = LiveMonitorLayouts.EditorSignature(Preferences);
+        if (string.Equals(signature, _lastKnownEditorSignature, StringComparison.Ordinal)) return;
+        _lastKnownEditorSignature = signature;
+        _undo.Clear();
+        _selectedTileId = null;
+        _gridSettingsBackup = null;
+        _gridSettingsUndoBackup = null;
+        _scaleSettingsBackup = null;
+        _gridSettingsOpen = false;
+        _scaleSettingsOpen = false;
+        _trendRanges.Clear();
+        RenderAll();
+        EditorMessage.Text = "Dashboard changed in the main app. Undo history was refreshed.";
     }
 
     private LiveMonitorLayout Preferences => _state.Settings.LiveMonitor;
@@ -133,11 +163,13 @@ public partial class LiveMonitorWindow : Window
         TileGrid.Children.Clear();
         TileGrid.RowDefinitions.Clear();
         TileGrid.ColumnDefinitions.Clear();
-        TileGrid.Width = layout.Columns * CellSize;
-        TileGrid.Height = layout.Rows * CellSize;
+        _cellSize = Math.Min(GridViewportWidth / layout.Columns, GridViewportHeight / layout.Rows);
+        TileGrid.Width = layout.Columns * _cellSize;
+        TileGrid.Height = layout.Rows * _cellSize;
         TileGrid.HorizontalAlignment = HAlignment.Center;
-        for (var row = 0; row < layout.Rows; row++) TileGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CellSize) });
-        for (var column = 0; column < layout.Columns; column++) TileGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(CellSize) });
+        TileGrid.VerticalAlignment = VerticalAlignment.Center;
+        for (var row = 0; row < layout.Rows; row++) TileGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(_cellSize) });
+        for (var column = 0; column < layout.Columns; column++) TileGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_cellSize) });
 
         foreach (var tile in layout.Tiles.OrderBy(item => item.Row).ThenBy(item => item.Column))
         {
@@ -150,9 +182,6 @@ public partial class LiveMonitorWindow : Window
             Grid.SetColumnSpan(visual, tile.ColumnSpan);
             TileGrid.Children.Add(visual);
         }
-        WorkspaceHost.MinWidth = Math.Max(408, TileGrid.Width);
-        SettingsSurface.MinWidth = Math.Max(408, TileGrid.Width);
-        SettingsSurface.MinHeight = Math.Max(264, TileGrid.Height);
     }
 
     private Border BuildTile(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading)
@@ -164,6 +193,7 @@ public partial class LiveMonitorWindow : Window
             Margin = new Thickness(3),
             Padding = new Thickness(10),
             CornerRadius = new CornerRadius(6),
+            ClipToBounds = true,
             Background = Resource<Brush>(selected ? "AccentSubtleBrush" : "Surface1Brush"),
             BorderBrush = Resource<Brush>(selected ? "AccentBrush" : "BorderSubtleBrush"),
             BorderThickness = new Thickness(selected ? 2 : 1),
@@ -239,7 +269,7 @@ public partial class LiveMonitorWindow : Window
     {
         LiveMonitorDisplayStyle.Bar => BuildBar(reading, AccentFor(tile, definition)),
         LiveMonitorDisplayStyle.Gauge => BuildGauge(reading, AccentFor(tile, definition)),
-        LiveMonitorDisplayStyle.Trend when reading.TrendValues.Count > 1 => BuildTrend(tile, reading, AccentFor(tile, definition)),
+        LiveMonitorDisplayStyle.Trend when reading.TrendValues.Count > 1 => BuildTrend(tile, definition, reading, AccentFor(tile, definition)),
         LiveMonitorDisplayStyle.Status => BuildStatus(reading),
         _ => BuildNumber(reading)
     };
@@ -326,10 +356,10 @@ public partial class LiveMonitorWindow : Window
         return grid;
     }
 
-    private UIElement BuildTrend(LiveMonitorTile tile, LiveTelemetryMetricReading reading, Brush accent)
+    private UIElement BuildTrend(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading, Brush accent)
     {
-        var width = Math.Max(82, tile.ColumnSpan * CellSize - 28);
-        var height = Math.Max(46, tile.RowSpan * CellSize - 74);
+        var width = Math.Max(24, tile.ColumnSpan * _cellSize - 28);
+        var height = Math.Max(18, tile.RowSpan * _cellSize - 74);
         var canvas = new Canvas { Width = width, Height = height, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Center };
         var range = TrendRange(tile.Id, reading.TrendValues);
         var points = DownsampleMinMax(reading.TrendValues, Math.Max(24, (int)width / 2));
@@ -338,6 +368,8 @@ public partial class LiveMonitorWindow : Window
         {
             var x = points.Count == 1 ? 0 : index * width / (points.Count - 1);
             var y = height - (points[index] - range.Minimum) / (range.Maximum - range.Minimum) * height;
+            if (definition.TrendShape == LiveMonitorTrendShape.Step && collection.Count > 0)
+                collection.Add(new Point(x, collection[^1].Y));
             collection.Add(new Point(x, y));
         }
         canvas.Children.Add(new Line { X1 = 0, X2 = width, Y1 = height / 2, Y2 = height / 2, Stroke = Resource<Brush>("BorderSubtleBrush"), StrokeThickness = 1 });
@@ -394,6 +426,7 @@ public partial class LiveMonitorWindow : Window
         LayoutNameBox.Text = active.Layout.Name;
         LayoutNameBox.IsReadOnly = active.IsFactory;
         DeleteLayoutButton.IsEnabled = !active.IsFactory;
+        ResetLayoutButton.IsEnabled = !active.IsFactory;
         UndoButton.IsEnabled = _undo.Count > 0;
     }
 
@@ -408,7 +441,7 @@ public partial class LiveMonitorWindow : Window
             {
                 var reading = LiveTelemetryCatalog.Read(definition.Id, _state.LiveState, definition.DefaultUnit, definition.DefaultPrecision);
                 var detail = reading.Available ? $"{reading.DisplayValue} {reading.Unit}".Trim() : reading.AvailabilityMessage;
-                return new CatalogItem(definition.Id, definition.Name, SourceLabel(definition.Source), detail, string.Join(" · ", definition.Styles), $"Add {definition.Name}");
+                return new CatalogItem(definition.Id, definition.Name, SourceLabel(definition.Source), detail, string.Join(" · ", definition.Styles.Select(StyleLabel)), $"Add {definition.Name}");
             }).ToArray();
     }
 
@@ -416,7 +449,7 @@ public partial class LiveMonitorWindow : Window
     {
         var layout = ActiveChoice.Layout;
         var tile = layout.Tiles.FirstOrDefault(item => item.Id == _selectedTileId);
-        if (tile is null || Preferences.IsLocked || _settingsOpen)
+        if (tile is null || Preferences.IsLocked || _gridSettingsOpen || _scaleSettingsOpen)
         {
             TileEditor.Visibility = Visibility.Collapsed;
             return;
@@ -427,8 +460,11 @@ public partial class LiveMonitorWindow : Window
         {
             TileEditor.Visibility = Visibility.Visible;
             SelectedTileName.Text = definition.Name;
-            StyleSelector.ItemsSource = definition.Styles;
-            StyleSelector.SelectedItem = tile.DisplayStyle;
+            StyleSelector.DisplayMemberPath = nameof(NamedOption<LiveMonitorDisplayStyle>.Label);
+            StyleSelector.SelectedValuePath = nameof(NamedOption<LiveMonitorDisplayStyle>.Value);
+            StyleSelector.ItemsSource = definition.Styles
+                .Select(value => new NamedOption<LiveMonitorDisplayStyle>(value, StyleLabel(value))).ToArray();
+            StyleSelector.SelectedValue = tile.DisplayStyle;
             UnitSelector.ItemsSource = definition.Units;
             UnitSelector.SelectedItem = tile.Unit;
             WidthSelector.ItemsSource = Enumerable.Range(1, layout.Columns).ToArray();
@@ -467,10 +503,13 @@ public partial class LiveMonitorWindow : Window
         LockIcon.Data = Geometry.Parse(unlocked
             ? "M6,7 L6,5 C6,2 11,2 12,4 M3,7 L13,7 L13,15 L3,15 Z"
             : "M5,7 L5,5 C5,1.5 11,1.5 11,5 L11,7 M3,7 L13,7 L13,15 L3,15 Z");
-        SettingsButton.Tag = _settingsOpen ? "selected" : null;
-        SettingsSurface.Visibility = _settingsOpen ? Visibility.Visible : Visibility.Collapsed;
-        TileGrid.Visibility = _settingsOpen ? Visibility.Collapsed : Visibility.Visible;
-        var showEditor = unlocked && !_settingsOpen;
+        GridSettingsButton.Tag = _gridSettingsOpen ? "selected" : null;
+        ScaleSettingsButton.Tag = _scaleSettingsOpen ? "selected" : null;
+        GridSettingsSurface.Visibility = _gridSettingsOpen ? Visibility.Visible : Visibility.Collapsed;
+        ScaleSettingsSurface.Visibility = _scaleSettingsOpen ? Visibility.Visible : Visibility.Collapsed;
+        var settingsOpen = _gridSettingsOpen || _scaleSettingsOpen;
+        TileGrid.Visibility = settingsOpen ? Visibility.Collapsed : Visibility.Visible;
+        var showEditor = unlocked && !settingsOpen;
         if (immediate || ReducedMotion())
         {
             EditorPanel.BeginAnimation(HeightProperty, null);
@@ -508,63 +547,96 @@ public partial class LiveMonitorWindow : Window
 
     private void LockButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_settingsOpen) CloseSettings(commit: true);
+        if (_gridSettingsOpen) CloseGridSettings(commit: true);
+        if (_scaleSettingsOpen) CloseScaleSettings(commit: true);
         Preferences.IsLocked = !Preferences.IsLocked;
         if (Preferences.IsLocked) _selectedTileId = null;
-        _state.SaveLiveMonitorPreferences();
+        SavePreferences();
         RenderEditingState();
         RenderGrid();
         RefreshLayoutSelector();
     }
 
-    private void SettingsButton_Click(object sender, RoutedEventArgs e)
+    private void GridSettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_settingsOpen) { CloseSettings(commit: true); return; }
-        _settingsBackup = Capture();
-        _settingsOpen = true;
+        if (_gridSettingsOpen) { CloseGridSettings(commit: true); return; }
+        if (_scaleSettingsOpen) CloseScaleSettings(commit: true);
+        _gridSettingsBackup = CaptureGridSettings();
+        _gridSettingsUndoBackup = _undo.ToArray();
+        _gridSettingsOpen = true;
         var layout = ActiveChoice.Layout;
         _updatingControls = true;
         RowsSlider.Value = layout.Rows;
         ColumnsSlider.Value = layout.Columns;
-        ScaleSlider.Value = Math.Round(Preferences.OverallScale * 100 / 10) * 10;
         RowsValue.Text = layout.Rows.ToString(CultureInfo.CurrentCulture);
         ColumnsValue.Text = layout.Columns.ToString(CultureInfo.CurrentCulture);
-        ScaleValue.Text = $"{Preferences.OverallScale:P0}";
-        SettingsMessage.Text = string.Empty;
+        GridSettingsMessage.Text = $"{layout.Columns} × {layout.Rows}";
         _updatingControls = false;
         RenderEditingState();
     }
 
-    private void CancelSettings_Click(object sender, RoutedEventArgs e) => CloseSettings(commit: false);
-    private void ApplySettings_Click(object sender, RoutedEventArgs e) => CloseSettings(commit: true);
-
-    private void CloseSettings(bool commit)
+    private void ScaleSettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!commit && _settingsBackup is not null) Restore(_settingsBackup);
-        _settingsOpen = false;
-        _settingsBackup = null;
-        if (commit) _state.SaveLiveMonitorPreferences(); else _state.SaveLiveMonitorPreferences();
+        if (_scaleSettingsOpen) { CloseScaleSettings(commit: true); return; }
+        if (_gridSettingsOpen) CloseGridSettings(commit: true);
+        _scaleSettingsBackup = Preferences.OverallScale;
+        _scaleSettingsOpen = true;
+        _updatingControls = true;
+        ScaleSlider.Value = Math.Round(Preferences.OverallScale * 100 / 10) * 10;
+        ScaleValue.Text = $"{Preferences.OverallScale:P0}";
+        _updatingControls = false;
+        RenderEditingState();
+    }
+
+    private void CancelGridSettings_Click(object sender, RoutedEventArgs e) => CloseGridSettings(commit: false);
+    private void ApplyGridSettings_Click(object sender, RoutedEventArgs e) => CloseGridSettings(commit: true);
+    private void CancelScaleSettings_Click(object sender, RoutedEventArgs e) => CloseScaleSettings(commit: false);
+    private void ApplyScaleSettings_Click(object sender, RoutedEventArgs e) => CloseScaleSettings(commit: true);
+
+    private void CloseGridSettings(bool commit)
+    {
+        if (!commit && _gridSettingsBackup is not null)
+        {
+            RestoreGridSettings(_gridSettingsBackup);
+            RestoreUndoHistory(_gridSettingsUndoBackup);
+        }
+        _gridSettingsOpen = false;
+        _gridSettingsBackup = null;
+        _gridSettingsUndoBackup = null;
+        SavePreferences();
+        RenderAll();
+    }
+
+    private void CloseScaleSettings(bool commit)
+    {
+        if (!commit && _scaleSettingsBackup.HasValue) Preferences.OverallScale = _scaleSettingsBackup.Value;
+        _scaleSettingsOpen = false;
+        _scaleSettingsBackup = null;
+        SavePreferences();
         RenderAll();
     }
 
     private void GridSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (_updatingControls || !_settingsOpen || !IsLoaded) return;
+        if (_updatingControls || !_gridSettingsOpen || !IsLoaded) return;
         var rows = (int)Math.Round(RowsSlider.Value);
         var columns = (int)Math.Round(ColumnsSlider.Value);
         PushUndo();
         var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
         if (!LiveMonitorLayouts.TryResizeGrid(layout, rows, columns, out var moved))
         {
-            _undo.Pop();
+            RollbackFailedMutation();
+            layout = ActiveChoice.Layout;
             _updatingControls = true;
             RowsSlider.Value = layout.Rows;
             ColumnsSlider.Value = layout.Columns;
             _updatingControls = false;
-            SettingsMessage.Text = "Those dimensions cannot hold every tile. Resize or remove a tile before shrinking the grid.";
+            GridSettingsMessage.Foreground = Resource<Brush>("WarningBrush");
+            GridSettingsMessage.Text = "Those dimensions cannot hold every tile. Resize or remove a tile before shrinking the grid.";
             return;
         }
-        SettingsMessage.Text = moved > 0 ? $"Preview: {moved} tile{(moved == 1 ? string.Empty : "s")} reflowed without overlap." : "Preview fits without moving tiles.";
+        GridSettingsMessage.Foreground = Resource<Brush>("TextSecondaryBrush");
+        GridSettingsMessage.Text = $"{columns} × {rows}";
         RowsValue.Text = rows.ToString(CultureInfo.CurrentCulture);
         ColumnsValue.Text = columns.ToString(CultureInfo.CurrentCulture);
         RefreshLayoutSelector();
@@ -573,7 +645,7 @@ public partial class LiveMonitorWindow : Window
 
     private void ScaleSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (_updatingControls || !_settingsOpen || !IsLoaded) return;
+        if (_updatingControls || !_scaleSettingsOpen || !IsLoaded) return;
         Preferences.OverallScale = Math.Clamp(Math.Round(ScaleSlider.Value / 10) / 10, .7, 2);
         ScaleValue.Text = $"{Preferences.OverallScale:P0}";
         ApplyScale();
@@ -587,7 +659,7 @@ public partial class LiveMonitorWindow : Window
         _selectedTileId = null;
         _trendRanges.Clear();
         _undo.Clear();
-        _state.SaveLiveMonitorPreferences();
+        SavePreferences();
         RenderAll();
     }
 
@@ -608,14 +680,19 @@ public partial class LiveMonitorWindow : Window
     private void ResetLayout_Click(object sender, RoutedEventArgs e)
     {
         PushUndo();
-        LiveMonitorLayouts.ResetActive(Preferences);
+        if (!LiveMonitorLayouts.ResetActive(Preferences))
+        {
+            RollbackFailedMutation();
+            EditorMessage.Text = "Factory layouts are already at their defaults.";
+            return;
+        }
         AfterLayoutChange("Layout reset to the factory 3 × 2 grid.");
     }
 
     private void DeleteLayout_Click(object sender, RoutedEventArgs e)
     {
         PushUndo();
-        if (!LiveMonitorLayouts.DeleteActive(Preferences)) { _undo.Pop(); return; }
+        if (!LiveMonitorLayouts.DeleteActive(Preferences)) { RollbackFailedMutation(); return; }
         _selectedTileId = null;
         AfterLayoutChange("Custom layout deleted. Undo is available.");
     }
@@ -635,7 +712,7 @@ public partial class LiveMonitorWindow : Window
         if (_undo.TryPop(out var snapshot))
         {
             Restore(snapshot);
-            _state.SaveLiveMonitorPreferences();
+            SavePreferences();
             EditorMessage.Text = "Last layout change undone.";
             RenderAll();
         }
@@ -657,7 +734,7 @@ public partial class LiveMonitorWindow : Window
         var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
         if (!LiveMonitorLayouts.TryAddMetric(layout, metricId, out var tileId))
         {
-            _undo.Pop();
+            RollbackFailedMutation();
             EditorMessage.Text = "The grid is full. Increase rows or columns, or remove a tile first.";
             return;
         }
@@ -721,7 +798,7 @@ public partial class LiveMonitorWindow : Window
         {
             PushUndo();
             var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-            if (!LiveMonitorLayouts.TryAddMetric(layout, metricId, out var tileId)) { _undo.Pop(); EditorMessage.Text = "The grid is full."; return; }
+            if (!LiveMonitorLayouts.TryAddMetric(layout, metricId, out var tileId)) { RollbackFailedMutation(); EditorMessage.Text = "The grid is full."; return; }
             _selectedTileId = tileId;
             _ = LiveMonitorLayouts.TryMoveTile(layout, tileId!, row, column);
             AfterLayoutChange($"{LiveTelemetryCatalog.Get(metricId).Name} added.");
@@ -730,7 +807,7 @@ public partial class LiveMonitorWindow : Window
         {
             PushUndo();
             var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-            if (!LiveMonitorLayouts.TryMoveTile(layout, tileId, row, column)) { _undo.Pop(); EditorMessage.Text = "That tile does not fit there."; return; }
+            if (!LiveMonitorLayouts.TryMoveTile(layout, tileId, row, column)) { RollbackFailedMutation(); EditorMessage.Text = "That tile does not fit there."; return; }
             _selectedTileId = tileId;
             AfterLayoutChange("Tiles reflowed without overlap.");
         }
@@ -739,7 +816,7 @@ public partial class LiveMonitorWindow : Window
     private (int Row, int Column) DropCell(Point point)
     {
         var layout = ActiveChoice.Layout;
-        return (Math.Clamp((int)(point.Y / CellSize), 0, layout.Rows - 1), Math.Clamp((int)(point.X / CellSize), 0, layout.Columns - 1));
+        return (Math.Clamp((int)(point.Y / _cellSize), 0, layout.Rows - 1), Math.Clamp((int)(point.X / _cellSize), 0, layout.Columns - 1));
     }
 
     private void ShowDropPreview(int row, int column)
@@ -764,9 +841,9 @@ public partial class LiveMonitorWindow : Window
         PushUndo();
         var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
         var tile = layout.Tiles.FirstOrDefault(item => item.Id == _selectedTileId);
-        if (tile is null) { _undo.Pop(); return; }
+        if (tile is null) { RollbackFailedMutation(); return; }
         var definition = LiveTelemetryCatalog.Get(tile.MetricId);
-        if (StyleSelector.SelectedItem is LiveMonitorDisplayStyle style && definition.Styles.Contains(style)) tile.DisplayStyle = style;
+        if (StyleSelector.SelectedValue is LiveMonitorDisplayStyle style && definition.Styles.Contains(style)) tile.DisplayStyle = style;
         if (UnitSelector.SelectedItem is string unit && definition.Units.Contains(unit)) tile.Unit = unit;
         if (PrecisionSelector.SelectedItem is int precision) tile.Precision = Math.Clamp(precision, 0, 3);
         if (TrendSelector.SelectedValue is LiveMonitorTrendDuration duration && LiveTelemetryCatalog.TrendDurations(tile.MetricId).Contains(duration)) tile.TrendDuration = duration;
@@ -781,7 +858,7 @@ public partial class LiveMonitorWindow : Window
         var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
         if (!LiveMonitorLayouts.TryResizeTile(layout, _selectedTileId, height, width))
         {
-            _undo.Pop();
+            RollbackFailedMutation();
             EditorMessage.Text = "That tile size cannot fit in the current grid.";
             RefreshTileEditor();
             return;
@@ -794,7 +871,7 @@ public partial class LiveMonitorWindow : Window
         if (_selectedTileId is null) return;
         PushUndo();
         var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-        if (!LiveMonitorLayouts.RemoveTile(layout, _selectedTileId)) { _undo.Pop(); return; }
+        if (!LiveMonitorLayouts.RemoveTile(layout, _selectedTileId)) { RollbackFailedMutation(); return; }
         _selectedTileId = null;
         AfterLayoutChange("Tile removed. Undo is available.");
     }
@@ -818,7 +895,7 @@ public partial class LiveMonitorWindow : Window
             : LiveMonitorLayouts.TryMoveTile(editable, tileId,
                 tile.Row + (e.Key == Key.Down ? 1 : e.Key == Key.Up ? -1 : 0),
                 tile.Column + (e.Key == Key.Right ? 1 : e.Key == Key.Left ? -1 : 0));
-        if (!changed) { _undo.Pop(); EditorMessage.Text = "That keyboard move does not fit."; }
+        if (!changed) { RollbackFailedMutation(); EditorMessage.Text = "That keyboard move does not fit."; }
         else AfterLayoutChange(shift ? "Tile resized." : "Tile moved.");
         e.Handled = true;
     }
@@ -826,7 +903,7 @@ public partial class LiveMonitorWindow : Window
     private void AfterLayoutChange(string message)
     {
         _trendRanges.Clear();
-        _state.SaveLiveMonitorPreferences();
+        SavePreferences();
         EditorMessage.Text = message;
         _updatingControls = true;
         RefreshLayoutSelector();
@@ -840,25 +917,58 @@ public partial class LiveMonitorWindow : Window
         _undo.Push(Capture());
         while (_undo.Count > 20)
         {
-            var retained = _undo.Reverse().Take(20).Reverse().ToArray();
+            var retained = _undo.Take(20).Reverse().ToArray();
             _undo.Clear();
             foreach (var item in retained) _undo.Push(item);
         }
         UndoButton.IsEnabled = true;
     }
 
+    private void RollbackFailedMutation()
+    {
+        if (!_undo.TryPop(out var snapshot)) return;
+        var selectedTileId = _selectedTileId;
+        Restore(snapshot);
+        if (selectedTileId is not null && ActiveChoice.Layout.Tiles.Any(tile => tile.Id == selectedTileId))
+            _selectedTileId = selectedTileId;
+        UndoButton.IsEnabled = _undo.Count > 0;
+    }
+
+    private void SavePreferences()
+    {
+        _lastKnownEditorSignature = LiveMonitorLayouts.EditorSignature(Preferences);
+        _state.SaveLiveMonitorPreferences();
+    }
+
     private LayoutSnapshot Capture() => new(
         Preferences.ActiveLayoutId,
-        Preferences.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList(),
-        Preferences.OverallScale);
+        Preferences.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList());
 
     private void Restore(LayoutSnapshot snapshot)
     {
         Preferences.ActiveLayoutId = snapshot.ActiveLayoutId;
         Preferences.UserLayouts = snapshot.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList();
-        Preferences.OverallScale = snapshot.OverallScale;
         _selectedTileId = null;
         _trendRanges.Clear();
+    }
+
+    private GridSettingsSnapshot CaptureGridSettings() => new(
+        Preferences.ActiveLayoutId,
+        Preferences.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList());
+
+    private void RestoreGridSettings(GridSettingsSnapshot snapshot)
+    {
+        Preferences.ActiveLayoutId = snapshot.ActiveLayoutId;
+        Preferences.UserLayouts = snapshot.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList();
+        _selectedTileId = null;
+        _trendRanges.Clear();
+    }
+
+    private void RestoreUndoHistory(IReadOnlyList<LayoutSnapshot>? snapshots)
+    {
+        _undo.Clear();
+        if (snapshots is null) return;
+        for (var index = snapshots.Count - 1; index >= 0; index--) _undo.Push(snapshots[index]);
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => _state.SetLiveMonitorVisible(false);
@@ -949,7 +1059,7 @@ public partial class LiveMonitorWindow : Window
         Preferences.Top = Top;
         var handle = new WindowInteropHelper(this).Handle;
         if (handle != IntPtr.Zero) Preferences.MonitorDeviceName = Forms.Screen.FromHandle(handle).DeviceName;
-        _state.SaveLiveMonitorPreferences();
+        SavePreferences();
     }
 
     private void ApplyWindowTreatment()
@@ -1030,7 +1140,16 @@ public partial class LiveMonitorWindow : Window
         LiveMonitorTrendDuration.ThreeLaps => "3 laps",
         _ => duration.ToString()
     };
-    private sealed record LayoutSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts, double OverallScale);
+    private static string StyleLabel(LiveMonitorDisplayStyle style) => style switch
+    {
+        LiveMonitorDisplayStyle.Trend => "Chart",
+        LiveMonitorDisplayStyle.Status => "Status",
+        LiveMonitorDisplayStyle.Gauge => "Gauge",
+        LiveMonitorDisplayStyle.Bar => "Bar",
+        _ => "Number"
+    };
+    private sealed record LayoutSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts);
+    private sealed record GridSettingsSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts);
 
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left; public int Top; public int Right; public int Bottom; }
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int value, int size);

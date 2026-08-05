@@ -19,8 +19,8 @@ All high-rate live math is local. Live support must remain useful without AI and
 | `LT-011` | A deterministic replay interface MUST exercise connected behavior without iRacing or private telemetry. |
 | `LT-012` | The full page and miniature monitor MUST use the same named layout, grid, tile definitions, catalog, persisted logical preferences, and live readings. |
 | `LT-013` | The full page MUST provide a right-side Toolbox that can collapse without leaving an empty column and reopen without losing selection or layout state. |
-| `LT-014` | The Toolbox MUST support named-layout selection/create/duplicate/reset/delete, 1–8 rows and columns, tile selection/move/resize/remove, compatible display style/unit/precision controls, metric search, and metric addition. |
-| `LT-015` | Factory layouts MUST become editable custom copies before mutation; invalid moves or sizes MUST preserve the prior valid layout and explain the conflict concisely. |
+| `LT-014` | The Toolbox MUST support named-layout selection/create/duplicate/reset/delete, 1–8 rows and columns, tile selection/move/resize/remove, display style/unit/precision controls, metric search, and metric addition. Every telemetry metric MUST support Number, Bar, Gauge, and Chart forms, including truthful state encoding and history for boolean or categorical values. |
+| `LT-015` | Default MUST remain immutable. Every other dashboard MUST support rename and delete; invalid moves or sizes MUST preserve the prior valid layout and explain the conflict concisely. |
 | `LT-016` | Primary live screen space MUST favor glanceable telemetry. Detailed driving traces MAY remain in a subordinate expandable region. |
 | `LT-017` | No full-page tile or catalog option may be fixture-only, seeded, or disconnected from the real live catalog. |
 | `LT-018` | When the SDK publishes at 60 Hz, live frames MUST be captured at native cadence and the open trace canvas MUST paint at the display refresh cadence. A 60 Hz source may not be reduced to a 4–10 Hz chart by UI throttling. |
@@ -35,18 +35,19 @@ All high-rate live math is local. Live support must remain useful without AI and
 | `LM-003` | Disconnected and replay states MUST be visibly distinguishable. |
 | `LM-004` | Monitor physical position, display identity, and overall scale MUST be machine-local. Named logical grid layouts, tile choices, styles, units, precision, trend duration, and accent choices MUST be portable. |
 | `LM-005` | Opening/hiding the monitor MUST change the actual window, not only an internal boolean. |
-| `LMG-001` | The top strip MUST contain only an always-available move grip, named-layout selector, lock/unlock icon, grid/scale settings icon, and close icon, with tooltips, accessible names, focus states, and keyboard access. |
-| `LMG-002` | Grid rows and columns MUST each support 1 through 8. Overall scale MUST support 70% through 200%; Cancel MUST restore the prior grid and scale. |
+| `LMG-001` | The top strip MUST contain only an always-available move grip, named-layout selector, lock/unlock icon, separate grid and physical-scale controls, and close icon, with tooltips, accessible names, focus states, and keyboard access. |
+| `LMG-002` | Grid rows and columns MUST each support 1 through 8 inside a fixed logical footprint. Cells MUST remain square and shrink as row or column count increases. Popout-only overall scale MUST support 70% through 200%; each control's Cancel action MUST restore only that control's prior values. The fixed/full-page surface MUST fit its window without a physical-scale control. |
 | `LMG-003` | The monitor MUST start locked. Unlocking MUST expand the editor below the grid without covering a tile. Reduced-motion preference MUST suppress nonessential transition animation. |
-| `LMG-004` | The catalog MUST list every supported live scalar, boolean, enum, and derived metric alphabetically, with search, a fixed scroll region, current value or truthful unavailable reason, source label, compatible styles, and an Add control. |
+| `LMG-004` | The catalog MUST list every supported live scalar, boolean, enum, and derived metric alphabetically, with search, a fixed scroll region, current value or truthful unavailable reason, source label, available forms, and an Add control. A catalog item MUST be draggable from the full row while its Add control remains independently operable. |
 | `LMG-005` | Missing live data MUST never be displayed as zero, neutral, average, or fixture data. Disconnect MUST invalidate stale readings. |
 | `LMG-006` | Tiles MUST support drag/drop cell preview, snap/reflow without overlap, 1×1 minimum resizing, deletion, keyboard move/resize alternatives, and at least one undo level. |
-| `LMG-007` | Numeric metrics MUST support compatible Number, Gauge, Bar, and Trend styles. Trend tiles MUST support 15/30/60 seconds and 1/3 laps when the metric has history. Trend ranges MUST remain stable while visible and downsample without hiding extrema. |
+| `LMG-007` | Every metric MUST support Number, Gauge, Bar, and Trend styles. Boolean and categorical trends MUST use truthful stable scalar encodings and step transitions; missing data MUST remain missing. Trend tiles MUST support 15/30/60 seconds and 1/3 laps. Trend ranges MUST remain stable while visible and downsample without hiding extrema. |
 | `LMG-008` | Per-tile controls MUST expose only valid style, unit, 0–3 decimal precision, trend duration, size, and accent choices. |
-| `LMG-009` | Factory layouts MUST include distinct Default, Race, and Qualifying layouts. Factory layouts are immutable; editing one creates a custom copy. Custom layouts support create, duplicate, rename, reset, and delete. |
+| `LMG-009` | Default MUST be the only immutable dashboard. Race and Qualifying MUST be seeded once as ordinary portable dashboards so they and every user-created dashboard support create, duplicate, rename, reset, and delete without a deleted dashboard being restored on restart. |
 | `LMG-010` | Legacy 0.9.3 monitor preferences MUST migrate once. Invalid layouts MUST fall back to Default and preserve rejected monitor data in machine-local support evidence. |
 | `LMG-011` | Moving between PCs MUST retain logical layouts while recomputing physical placement and scale from destination-machine state. Off-screen placement MUST recover to a visible working area. |
 | `LMG-012` | The monitor render path MUST remain local, bounded, and independent of AI or network calls. Replay tests MUST measure sustained update behavior and dropped-frame/latency counters. |
+| `LMG-013` | Edit mode MUST not reserve permanent space for drag instructions, routine success messages, or readiness text. During resize, the preview MUST show only the proposed column-by-row size unless the placement is invalid. |
 
 ## Tray and shutdown
 

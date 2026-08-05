@@ -114,12 +114,37 @@ public sealed class LiveTelemetryService : IDisposable
                 LiveTracePoint? tracePoint = null;
                 if (sample.Connected)
                 {
+                    double? paceMidpoint = snapshot.PaceTarget.MinimumSeconds.HasValue && snapshot.PaceTarget.MaximumSeconds.HasValue
+                        ? (snapshot.PaceTarget.MinimumSeconds.Value + snapshot.PaceTarget.MaximumSeconds.Value) / 2
+                        : null;
+                    var historyMetrics = new LiveMetricHistoryFrame(
+                        snapshot.AirTemperatureC,
+                        snapshot.AheadGap.Seconds,
+                        snapshot.BehindGap.Seconds,
+                        snapshot.BrakeBiasPercent,
+                        snapshot.ClassPosition,
+                        snapshot.PrimaryCue.Priority,
+                        LiveTelemetryMetricEncoding.Flag(snapshot.Flag),
+                        snapshot.FuelLiters,
+                        snapshot.FuelLapsRemaining,
+                        snapshot.LapsRemaining,
+                        snapshot.OverallPosition == 1 ? 0 : snapshot.LeaderGap.Seconds,
+                        snapshot.LeaderLastLapSeconds,
+                        snapshot.MandatoryRepairSeconds,
+                        snapshot.OnPitRoad,
+                        snapshot.OptionalRepairSeconds,
+                        paceMidpoint,
+                        snapshot.Pit.WindowOpensInLaps ?? snapshot.Pit.FuelHardLimitLaps,
+                        snapshot.OverallPosition,
+                        LiveTelemetryMetricEncoding.TirePhase(snapshot.TirePhase),
+                        snapshot.TrackTemperatureC);
                     tracePoint = new LiveTracePoint(
                         sample.Timestamp, sample.Lap, sample.LapDistancePercent,
                         sample.SpeedMetersPerSecond * 2.2369362920544, sample.Throttle, sample.Brake,
                         sample.SteeringWheelAngleRadians, sample.Gear, sample.Rpm,
                         sample.YawRateRadiansPerSecond * 57.29577951308232, sample.LateralAccelerationG,
-                        sample.LongitudinalAccelerationG, sample.Latitude, sample.Longitude, sample.LastLapSeconds);
+                        sample.LongitudinalAccelerationG, sample.Latitude, sample.Longitude, sample.LastLapSeconds,
+                        historyMetrics);
                     _history.Enqueue(tracePoint);
                     while (_history.Count > MaximumHistoryPoints ||
                            (_history.Count > 1 && tracePoint.At - _history.Peek().At > TimeSpan.FromMinutes(10)))

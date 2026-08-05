@@ -379,7 +379,11 @@ public sealed class CoordinatorTests
         Assert.IsTrue(actual.UseReducedMotion);
         Assert.AreEqual("layout-personal", actual.LiveMonitor.ActiveLayoutId);
         Assert.IsFalse(actual.LiveMonitor.IsLocked);
-        Assert.AreEqual("Personal Race", actual.LiveMonitor.UserLayouts.Single().Name);
+        Assert.AreEqual("Personal Race", actual.LiveMonitor.UserLayouts.Single(layout => layout.Id == "layout-personal").Name);
+        CollectionAssert.AreEquivalent(
+            new[] { LiveMonitorLayouts.FactoryRaceId, LiveMonitorLayouts.FactoryQualifyingId },
+            actual.LiveMonitor.UserLayouts.Where(layout => layout.Id != "layout-personal").Select(layout => layout.Id).ToArray());
+        Assert.IsTrue(actual.LiveMonitor.BuiltInDashboardsInitialized);
         Assert.AreEqual(220, actual.LiveMonitor.Left);
         Assert.AreEqual(140, actual.LiveMonitor.Top);
         Assert.AreEqual(1.4, actual.LiveMonitor.OverallScale);
@@ -414,7 +418,10 @@ public sealed class CoordinatorTests
         Assert.IsNull(restoredOnSecondPc.LiveMonitor.Left);
         Assert.AreEqual(1, restoredOnSecondPc.LiveMonitor.OverallScale);
         Assert.AreEqual(string.Empty, restoredOnSecondPc.LiveMonitor.MonitorDeviceName);
-        Assert.AreEqual("Portable layout", restoredOnSecondPc.LiveMonitor.UserLayouts.Single().Name);
+        Assert.AreEqual("Portable layout", restoredOnSecondPc.LiveMonitor.UserLayouts.Single(layout => layout.Id == "portable-layout").Name);
+        CollectionAssert.AreEquivalent(
+            new[] { LiveMonitorLayouts.FactoryRaceId, LiveMonitorLayouts.FactoryQualifyingId },
+            restoredOnSecondPc.LiveMonitor.UserLayouts.Where(layout => layout.Id != "portable-layout").Select(layout => layout.Id).ToArray());
         Assert.DoesNotContain("DISPLAY3", File.ReadAllText(portable));
     }
 

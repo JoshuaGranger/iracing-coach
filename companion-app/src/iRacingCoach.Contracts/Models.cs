@@ -410,9 +410,15 @@ public sealed class CompanionSettings
 public enum LiveMonitorMetricSource { Recorded, Calculated, Coach }
 public enum LiveMonitorDisplayStyle { Number, Gauge, Bar, Trend, Status }
 public enum LiveMonitorTrendDuration { Seconds15, Seconds30, Seconds60, OneLap, ThreeLaps }
+public enum LiveMonitorTrendShape { Continuous, Step }
 public enum LiveGapTrend { Closing, Stable, Growing, Stale, Unavailable }
 public enum LiveCuePriority { Information = 0, Environment = 10, Coaching = 20, Pace = 30, Traffic = 40, PitService = 50, Strategy = 60, Critical = 100 }
 public enum LiveCueSuppressionReason { None, SafeGlanceDelay, Caution, PitCycle, DifferentLap, StaleTelemetry, NoBaseline, Paused }
+
+// Stable visualization ordinals for categorical live telemetry. They are not
+// measurements or severity scores; chart renderers should use a stepped path.
+public enum LiveFlagTrendState { Green = 0, Blue = 1, White = 2, Checkered = 3, Yellow = 4, Black = 5, Red = 6, Other = 7 }
+public enum LiveTirePhaseTrendState { Early = 0, Middle = 1, Late = 2 }
 
 public sealed class LiveMonitorLayout
 {
@@ -421,6 +427,7 @@ public sealed class LiveMonitorLayout
     public string ActiveLayoutId { get; set; } = FactoryDefaultId;
     public bool IsLocked { get; set; } = true;
     public List<LiveMonitorNamedLayout> UserLayouts { get; set; } = [];
+    public bool BuiltInDashboardsInitialized { get; set; }
     [JsonIgnore] public double? Left { get; set; }
     [JsonIgnore] public double? Top { get; set; }
     [JsonIgnore] public double OverallScale { get; set; } = 1;
@@ -482,7 +489,32 @@ public sealed record LiveTracePoint(
     double? LongitudinalAccelerationG,
     double? Latitude,
     double? Longitude,
-    double? LastLapSeconds);
+    double? LastLapSeconds,
+    LiveMetricHistoryFrame Metrics = default);
+
+// Retained beside the high-rate driving channels without a dictionary or
+// boxed value per sample. Nullable fields preserve unavailable data as missing.
+public readonly record struct LiveMetricHistoryFrame(
+    double? AirTemperatureC,
+    double? AheadGapSeconds,
+    double? BehindGapSeconds,
+    double? BrakeBiasPercent,
+    int? ClassPosition,
+    LiveCuePriority? CoachCuePriority,
+    LiveFlagTrendState? FlagState,
+    double? FuelLiters,
+    double? FuelLapsRemaining,
+    int? LapsRemaining,
+    double? LeaderGapSeconds,
+    double? LeaderLastLapSeconds,
+    double? MandatoryRepairSeconds,
+    bool? OnPitRoad,
+    double? OptionalRepairSeconds,
+    double? PaceMidpointSeconds,
+    int? PitWindowLaps,
+    int? OverallPosition,
+    LiveTirePhaseTrendState? TirePhase,
+    double? TrackTemperatureC);
 
 public sealed record LivePaceTarget(
     double? MinimumSeconds,
@@ -668,7 +700,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.11.1");
+    string ClientVersion = "0.12.0");
 
 public sealed record BackendHealthResult(
     bool Ok,

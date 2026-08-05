@@ -14,7 +14,8 @@ public sealed record LiveTelemetryMetricDefinition(
     LiveMonitorDisplayStyle DefaultStyle,
     int DefaultPrecision,
     double? SemanticMinimum = null,
-    double? SemanticMaximum = null);
+    double? SemanticMaximum = null,
+    LiveMonitorTrendShape TrendShape = LiveMonitorTrendShape.Continuous);
 
 public sealed record LiveTelemetryMetricReading(
     bool Available,
@@ -29,6 +30,15 @@ public sealed record LiveTelemetryMetricReading(
 
 public static class LiveTelemetryCatalog
 {
+    private static readonly IReadOnlyList<LiveMonitorTrendDuration> AllTrendDurations =
+    [
+        LiveMonitorTrendDuration.Seconds15,
+        LiveMonitorTrendDuration.Seconds30,
+        LiveMonitorTrendDuration.Seconds60,
+        LiveMonitorTrendDuration.OneLap,
+        LiveMonitorTrendDuration.ThreeLaps
+    ];
+
     private static readonly IReadOnlyDictionary<string, LiveTelemetryMetricDefinition> ById = Build()
         .ToDictionary(item => item.Id, StringComparer.Ordinal);
 
@@ -47,147 +57,162 @@ public static class LiveTelemetryCatalog
             return Missing(unit, "Waiting for iRacing");
 
         var trend = Trend(metricId, state.History ?? [], duration, unit);
-        return metricId switch
+        var reading = metricId switch
         {
             "air-temperature" => Number(snapshot.AirTemperatureC, unit, precision, trend, value => Temperature(value, unit)),
-            "ahead-gap" => Seconds(snapshot.AheadGap.Seconds, precision, snapshot.AheadGap.UnavailableReason),
-            "behind-gap" => Seconds(snapshot.BehindGap.Seconds, precision, snapshot.BehindGap.UnavailableReason),
+            "ahead-gap" => Seconds(snapshot.AheadGap.Seconds, precision, snapshot.AheadGap.UnavailableReason, trend),
+            "behind-gap" => Seconds(snapshot.BehindGap.Seconds, precision, snapshot.BehindGap.UnavailableReason, trend),
             "brake" => Percent(snapshot.Brake, precision, trend),
             "brake-bias" => Number(snapshot.BrakeBiasPercent, "%", precision, trend),
-            "class-position" => Position(snapshot.ClassPosition),
-            "coach-cue" => Text(snapshot.PrimaryCue.Message, snapshot.PrimaryCue.Basis),
-            "flag" => Text(snapshot.Flag, snapshot.Flag == "RACING" ? "Recorded session state" : "iRacing race status"),
-            "fuel" => Fuel(snapshot, unit, precision),
+            "class-position" => Position(snapshot.ClassPosition, trend),
+            "coach-cue" => Text(snapshot.PrimaryCue.Message, snapshot.PrimaryCue.Basis, (double)snapshot.PrimaryCue.Priority, 0, 100, trend),
+            "flag" => Flag(snapshot, trend),
+            "fuel" => Fuel(snapshot, unit, precision, trend),
             "fuel-laps" => Number(snapshot.FuelLapsRemaining, "laps", precision, trend, value => value),
             "gear" => Number(snapshot.Gear, string.Empty, 0, trend),
             "lap" => Number(snapshot.Lap, string.Empty, 0, trend, value => value, "Lap not measured yet."),
             "laps-remaining" => Number(snapshot.LapsRemaining, "laps", 0, trend),
-            "last-lap" => LastLap(snapshot),
+            "last-lap" => LastLap(snapshot, trend),
             "lateral-acceleration" => Acceleration(snapshot.LateralAccelerationG, unit, precision, trend),
-            "leader-gap" => snapshot.OverallPosition == 1 ? new(true, "Leader", string.Empty, string.Empty, 0, null, null, string.Empty, []) : Seconds(snapshot.LeaderGap.Seconds, precision, snapshot.LeaderGap.UnavailableReason),
-            "leader-last-lap" => LapTime(snapshot.LeaderLastLapSeconds),
+            "leader-gap" => snapshot.OverallPosition == 1 ? new(true, "Leader", string.Empty, string.Empty, 0, 0, null, string.Empty, trend) : Seconds(snapshot.LeaderGap.Seconds, precision, snapshot.LeaderGap.UnavailableReason, trend),
+            "leader-last-lap" => LapTime(snapshot.LeaderLastLapSeconds, trend),
             "longitudinal-acceleration" => Acceleration(snapshot.LongitudinalAccelerationG, unit, precision, trend),
-            "mandatory-repair" => Seconds(snapshot.MandatoryRepairSeconds, 0, "No mandatory repair workload is currently recorded."),
-            "on-pit-road" => Text(snapshot.OnPitRoad ? "On pit road" : "On track", "Recorded OnPitRoad state"),
-            "optional-repair" => Seconds(snapshot.OptionalRepairSeconds, 0, "No optional repair workload is currently recorded."),
-            "pace-range" => Pace(snapshot),
-            "pit-window" => Pit(snapshot),
-            "position" => Position(snapshot.OverallPosition),
+            "mandatory-repair" => Seconds(snapshot.MandatoryRepairSeconds, 0, "No mandatory repair workload is currently recorded.", trend),
+            "on-pit-road" => Text(snapshot.OnPitRoad ? "On pit road" : "On track", "Recorded OnPitRoad state", snapshot.OnPitRoad ? 1 : 0, 0, 1, trend),
+            "optional-repair" => Seconds(snapshot.OptionalRepairSeconds, 0, "No optional repair workload is currently recorded.", trend),
+            "pace-range" => Pace(snapshot, trend),
+            "pit-window" => Pit(snapshot, trend),
+            "position" => Position(snapshot.OverallPosition, trend),
             "rpm" => Number(snapshot.Rpm, "rpm", 0, trend),
             "speed" => Number(snapshot.SpeedMph, unit, precision, trend, value => Speed(value, unit)),
             "steering" => Number(snapshot.SteeringWheelAngleRadians, unit, precision, trend, value => Steering(value, unit)),
             "throttle" => Percent(snapshot.Throttle, precision, trend),
-            "tire-phase" => Text(Useful(snapshot.TirePhase) ? snapshot.TirePhase : "Insufficient evidence", "Calculated from current clean-run evidence"),
+            "tire-phase" => TirePhase(snapshot, trend),
             "track-temperature" => Number(snapshot.TrackTemperatureC, unit, precision, trend, value => Temperature(value, unit)),
             "yaw-rate" => Number(snapshot.YawRateDegreesPerSecond, unit, precision, trend, value => Yaw(value, unit)),
             _ => Missing(unit, "Not measured in this session")
         };
+
+        return ApplyRange(definition, reading);
     }
 
-    public static IReadOnlyList<LiveMonitorTrendDuration> TrendDurations(string metricId) => metricId switch
-    {
-        "speed" or "throttle" or "brake" or "steering" or "gear" or "rpm" or "yaw-rate" or "lateral-acceleration" or "longitudinal-acceleration" =>
-            [LiveMonitorTrendDuration.Seconds15, LiveMonitorTrendDuration.Seconds30, LiveMonitorTrendDuration.Seconds60, LiveMonitorTrendDuration.OneLap, LiveMonitorTrendDuration.ThreeLaps],
-        _ => []
-    };
+    public static IReadOnlyList<LiveMonitorTrendDuration> TrendDurations(string metricId) => ById.ContainsKey(metricId) ? AllTrendDurations : [];
 
     private static IReadOnlyList<LiveTelemetryMetricDefinition> Build()
     {
-        var number = new[] { LiveMonitorDisplayStyle.Number };
-        var numericTrend = new[] { LiveMonitorDisplayStyle.Number, LiveMonitorDisplayStyle.Trend };
-        var status = new[] { LiveMonitorDisplayStyle.Status, LiveMonitorDisplayStyle.Number };
-        var percent = new[] { LiveMonitorDisplayStyle.Number, LiveMonitorDisplayStyle.Gauge, LiveMonitorDisplayStyle.Bar, LiveMonitorDisplayStyle.Trend };
+        var all = new[] { LiveMonitorDisplayStyle.Number, LiveMonitorDisplayStyle.Gauge, LiveMonitorDisplayStyle.Bar, LiveMonitorDisplayStyle.Trend };
+        var status = new[] { LiveMonitorDisplayStyle.Status, LiveMonitorDisplayStyle.Number, LiveMonitorDisplayStyle.Gauge, LiveMonitorDisplayStyle.Bar, LiveMonitorDisplayStyle.Trend };
         return
         [
-            D("air-temperature", "Air temperature", "Recorded ambient temperature.", LiveMonitorMetricSource.Recorded, "°C", ["°C", "°F"], number, 1),
-            D("ahead-gap", "Gap ahead", "Physical same-lap scoring interval to the car ahead.", LiveMonitorMetricSource.Calculated, "s", ["s"], number, 2),
-            D("behind-gap", "Gap behind", "Physical same-lap scoring interval to the car behind.", LiveMonitorMetricSource.Calculated, "s", ["s"], number, 2),
-            D("brake", "Brake", "Recorded brake-pedal input.", LiveMonitorMetricSource.Recorded, "%", ["%"], percent, 0, 0, 100),
-            D("brake-bias", "Brake bias", "Recorded in-car brake-bias setting when the car exposes it.", LiveMonitorMetricSource.Recorded, "%", ["%"], [LiveMonitorDisplayStyle.Number, LiveMonitorDisplayStyle.Bar], 1, 40, 70),
-            D("class-position", "Class position", "Recorded class scoring position.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], number, 0),
+            D("air-temperature", "Air temperature", "Recorded ambient temperature.", LiveMonitorMetricSource.Recorded, "°C", ["°C", "°F"], all, 1),
+            D("ahead-gap", "Gap ahead", "Physical same-lap scoring interval to the car ahead.", LiveMonitorMetricSource.Calculated, "s", ["s"], all, 2, 0),
+            D("behind-gap", "Gap behind", "Physical same-lap scoring interval to the car behind.", LiveMonitorMetricSource.Calculated, "s", ["s"], all, 2, 0),
+            D("brake", "Brake", "Recorded brake-pedal input.", LiveMonitorMetricSource.Recorded, "%", ["%"], all, 0, 0, 100),
+            D("brake-bias", "Brake bias", "Recorded in-car brake-bias setting when the car exposes it.", LiveMonitorMetricSource.Recorded, "%", ["%"], all, 1, 40, 70),
+            D("class-position", "Class position", "Recorded class scoring position.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], all, 0, 1),
             D("coach-cue", "Coach cue", "Highest-priority local safe-glance instruction.", LiveMonitorMetricSource.Coach, string.Empty, [string.Empty], status, 0),
             D("flag", "Flag state", "Recorded iRacing race-control state.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], status, 0),
-            D("fuel", "Fuel remaining", "Recorded fuel with locally calculated lap estimate.", LiveMonitorMetricSource.Calculated, "US gal", ["US gal", "L"], [LiveMonitorDisplayStyle.Number, LiveMonitorDisplayStyle.Gauge, LiveMonitorDisplayStyle.Bar], LiveMonitorDisplayStyle.Bar, 1, 0, 100),
-            D("fuel-laps", "Fuel laps remaining", "Estimated laps from measured fuel-use history.", LiveMonitorMetricSource.Calculated, "laps", ["laps"], number, 1),
-            D("gear", "Gear", "Recorded selected gear.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], numericTrend, LiveMonitorDisplayStyle.Number, 0),
-            D("lap", "Lap", "Current recorded player lap.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], number, 0),
-            D("laps-remaining", "Laps remaining", "Recorded session laps remaining.", LiveMonitorMetricSource.Recorded, "laps", ["laps"], number, 0),
-            D("last-lap", "Last lap", "Last completed lap with leader-lap delta when available.", LiveMonitorMetricSource.Calculated, "time", ["time"], number, 3),
-            D("lateral-acceleration", "Lateral acceleration", "Recorded lateral acceleration.", LiveMonitorMetricSource.Recorded, "g", ["g", "m/s²"], numericTrend, LiveMonitorDisplayStyle.Trend, 2),
-            D("leader-gap", "Physical gap to leader", "Physical same-lap scoring interval to the overall leader.", LiveMonitorMetricSource.Calculated, "s", ["s"], number, 2),
-            D("leader-last-lap", "Leader last lap", "Last recorded lap time for the overall leader.", LiveMonitorMetricSource.Recorded, "time", ["time"], number, 3),
-            D("longitudinal-acceleration", "Longitudinal acceleration", "Recorded longitudinal acceleration.", LiveMonitorMetricSource.Recorded, "g", ["g", "m/s²"], numericTrend, LiveMonitorDisplayStyle.Trend, 2),
-            D("mandatory-repair", "Mandatory repair", "Recorded mandatory repair countdown.", LiveMonitorMetricSource.Recorded, "s", ["s"], number, 0),
+            DWithDefault("fuel", "Fuel remaining", "Recorded fuel with locally calculated lap estimate.", LiveMonitorMetricSource.Calculated, "US gal", ["US gal", "L"], all, LiveMonitorDisplayStyle.Bar, 1, 0),
+            D("fuel-laps", "Fuel laps remaining", "Estimated laps from measured fuel-use history.", LiveMonitorMetricSource.Calculated, "laps", ["laps"], all, 1, 0),
+            DWithDefault("gear", "Gear", "Recorded selected gear.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], all, LiveMonitorDisplayStyle.Number, 0, -1, 12),
+            D("lap", "Lap", "Current recorded player lap.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], all, 0, 0),
+            D("laps-remaining", "Laps remaining", "Recorded session laps remaining.", LiveMonitorMetricSource.Recorded, "laps", ["laps"], all, 0, 0),
+            D("last-lap", "Last lap", "Last completed lap with leader-lap delta when available.", LiveMonitorMetricSource.Calculated, "time", ["time"], all, 3, 0),
+            DWithDefault("lateral-acceleration", "Lateral acceleration", "Recorded lateral acceleration.", LiveMonitorMetricSource.Recorded, "g", ["g", "m/s²"], all, LiveMonitorDisplayStyle.Trend, 2),
+            D("leader-gap", "Physical gap to leader", "Physical same-lap scoring interval to the overall leader.", LiveMonitorMetricSource.Calculated, "s", ["s"], all, 2, 0),
+            D("leader-last-lap", "Leader last lap", "Last recorded lap time for the overall leader.", LiveMonitorMetricSource.Recorded, "time", ["time"], all, 3, 0),
+            DWithDefault("longitudinal-acceleration", "Longitudinal acceleration", "Recorded longitudinal acceleration.", LiveMonitorMetricSource.Recorded, "g", ["g", "m/s²"], all, LiveMonitorDisplayStyle.Trend, 2),
+            D("mandatory-repair", "Mandatory repair", "Recorded mandatory repair countdown.", LiveMonitorMetricSource.Recorded, "s", ["s"], all, 0, 0),
             D("on-pit-road", "Pit-road state", "Recorded pit-road state.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], status, 0),
-            D("optional-repair", "Optional repair", "Recorded optional repair countdown.", LiveMonitorMetricSource.Recorded, "s", ["s"], number, 0),
-            D("pace-range", "Personal pace range", "Clean in-session pace band when enough evidence exists.", LiveMonitorMetricSource.Coach, "time", ["time"], number, 3),
-            D("pit-window", "Laps until recommended pit", "Strategic window when supported, otherwise the fuel hard limit.", LiveMonitorMetricSource.Coach, "laps", ["laps"], number, 0),
-            D("position", "Position", "Recorded overall scoring position.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], number, 0),
-            D("rpm", "RPM", "Recorded engine speed.", LiveMonitorMetricSource.Recorded, "rpm", ["rpm"], numericTrend, LiveMonitorDisplayStyle.Trend, 0),
-            D("speed", "Speed", "Recorded vehicle speed.", LiveMonitorMetricSource.Recorded, "mph", ["mph", "km/h"], numericTrend, LiveMonitorDisplayStyle.Trend, 1),
-            D("steering", "Steering", "Recorded steering-wheel angle.", LiveMonitorMetricSource.Recorded, "deg", ["deg", "rad"], numericTrend, LiveMonitorDisplayStyle.Trend, 1),
-            D("throttle", "Throttle", "Recorded throttle-pedal input.", LiveMonitorMetricSource.Recorded, "%", ["%"], percent, LiveMonitorDisplayStyle.Gauge, 0, 0, 100),
+            D("optional-repair", "Optional repair", "Recorded optional repair countdown.", LiveMonitorMetricSource.Recorded, "s", ["s"], all, 0, 0),
+            D("pace-range", "Personal pace range", "Clean in-session pace band when enough evidence exists.", LiveMonitorMetricSource.Coach, "time", ["time"], all, 3, 0),
+            D("pit-window", "Laps until recommended pit", "Strategic window when supported, otherwise the fuel hard limit.", LiveMonitorMetricSource.Coach, "laps", ["laps"], all, 0, 0),
+            D("position", "Position", "Recorded overall scoring position.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], all, 0, 1),
+            DWithDefault("rpm", "RPM", "Recorded engine speed.", LiveMonitorMetricSource.Recorded, "rpm", ["rpm"], all, LiveMonitorDisplayStyle.Trend, 0, 0),
+            DWithDefault("speed", "Speed", "Recorded vehicle speed.", LiveMonitorMetricSource.Recorded, "mph", ["mph", "km/h"], all, LiveMonitorDisplayStyle.Trend, 1, 0),
+            DWithDefault("steering", "Steering", "Recorded steering-wheel angle.", LiveMonitorMetricSource.Recorded, "deg", ["deg", "rad"], all, LiveMonitorDisplayStyle.Trend, 1),
+            DWithDefault("throttle", "Throttle", "Recorded throttle-pedal input.", LiveMonitorMetricSource.Recorded, "%", ["%"], all, LiveMonitorDisplayStyle.Gauge, 0, 0, 100),
             D("tire-phase", "Tire / run phase", "Local phase label from current clean-run evidence.", LiveMonitorMetricSource.Coach, string.Empty, [string.Empty], status, 0),
-            D("track-temperature", "Track temperature", "Recorded track temperature.", LiveMonitorMetricSource.Recorded, "°C", ["°C", "°F"], number, 1),
-            D("yaw-rate", "Yaw rate", "Recorded yaw rate.", LiveMonitorMetricSource.Recorded, "deg/s", ["deg/s", "rad/s"], numericTrend, LiveMonitorDisplayStyle.Trend, 1)
+            D("track-temperature", "Track temperature", "Recorded track temperature.", LiveMonitorMetricSource.Recorded, "°C", ["°C", "°F"], all, 1),
+            DWithDefault("yaw-rate", "Yaw rate", "Recorded yaw rate.", LiveMonitorMetricSource.Recorded, "deg/s", ["deg/s", "rad/s"], all, LiveMonitorDisplayStyle.Trend, 1)
         ];
     }
 
     private static LiveTelemetryMetricDefinition D(string id, string name, string description, LiveMonitorMetricSource source, string defaultUnit, IReadOnlyList<string> units, IReadOnlyList<LiveMonitorDisplayStyle> styles, int precision, double? min = null, double? max = null) =>
-        new(id, name, description, source, defaultUnit, units, styles, styles[0], precision, min, max);
+        new(id, name, description, source, defaultUnit, units, styles, styles[0], precision, min, max, TrendShape(id));
 
-    private static LiveTelemetryMetricDefinition D(string id, string name, string description, LiveMonitorMetricSource source, string defaultUnit, IReadOnlyList<string> units, IReadOnlyList<LiveMonitorDisplayStyle> styles, LiveMonitorDisplayStyle defaultStyle, int precision, double? min = null, double? max = null) =>
-        new(id, name, description, source, defaultUnit, units, styles, defaultStyle, precision, min, max);
+    private static LiveTelemetryMetricDefinition DWithDefault(string id, string name, string description, LiveMonitorMetricSource source, string defaultUnit, IReadOnlyList<string> units, IReadOnlyList<LiveMonitorDisplayStyle> styles, LiveMonitorDisplayStyle defaultStyle, int precision, double? min = null, double? max = null) =>
+        new(id, name, description, source, defaultUnit, units, styles, defaultStyle, precision, min, max, TrendShape(id));
 
-    private static LiveTelemetryMetricReading Fuel(LiveRaceSnapshot snapshot, string unit, int precision)
+    private static LiveTelemetryMetricReading Fuel(LiveRaceSnapshot snapshot, string unit, int precision, IReadOnlyList<double> trend)
     {
         if (!snapshot.FuelLiters.HasValue) return Missing(unit, "Fuel level not measured in this session");
         var value = unit == "US gal" ? snapshot.FuelLiters.Value * 0.2641720524 : snapshot.FuelLiters.Value;
         var secondary = snapshot.FuelLapsRemaining.HasValue ? $"{snapshot.FuelLapsRemaining.Value:0.0} estimated laps" : "Lap estimate needs clean fuel-use evidence";
+        double? capacity = snapshot.FuelLevelPercent is > .0001
+            ? value / snapshot.FuelLevelPercent.Value
+            : null;
         return new(true, value.ToString($"F{precision}", CultureInfo.CurrentCulture), secondary, unit,
-            snapshot.FuelLevelPercent.HasValue ? snapshot.FuelLevelPercent.Value * 100 : null, 0, 100,
-            snapshot.FuelLevelPercent.HasValue ? string.Empty : "Fuel percentage not measured; showing amount only.", []);
+            value, 0, capacity,
+            snapshot.FuelLevelPercent.HasValue ? string.Empty : "Fuel percentage not measured; range follows recorded amount.", trend);
     }
 
-    private static LiveTelemetryMetricReading LastLap(LiveRaceSnapshot snapshot)
+    private static LiveTelemetryMetricReading Flag(LiveRaceSnapshot snapshot, IReadOnlyList<double> trend)
+    {
+        var state = LiveTelemetryMetricEncoding.Flag(snapshot.Flag);
+        return state.HasValue
+            ? Text(snapshot.Flag, snapshot.Flag == "RACING" ? "Recorded session state" : "iRacing race status", Ordinal(state), 0, 7, trend)
+            : Missing(string.Empty, "Flag state not measured in this session");
+    }
+
+    private static LiveTelemetryMetricReading TirePhase(LiveRaceSnapshot snapshot, IReadOnlyList<double> trend)
+    {
+        var phase = LiveTelemetryMetricEncoding.TirePhase(snapshot.TirePhase);
+        return phase.HasValue
+            ? Text(snapshot.TirePhase, "Calculated from current clean-run evidence", Ordinal(phase), 0, 2, trend)
+            : Missing(string.Empty, "Insufficient evidence for tire phase");
+    }
+
+    private static LiveTelemetryMetricReading LastLap(LiveRaceSnapshot snapshot, IReadOnlyList<double> trend)
     {
         if (!snapshot.LastLapSeconds.HasValue) return Missing("time", "No completed lap measured yet");
         var secondary = snapshot.LastLapPaceDifferenceSeconds.HasValue
             ? $"{snapshot.LastLapPaceDifferenceSeconds.Value:+0.000;-0.000;0.000} s vs leader last lap"
             : "Leader comparison not measured";
-        return new(true, FormatLap(snapshot.LastLapSeconds.Value), secondary, "", snapshot.LastLapSeconds, null, null, string.Empty, []);
+        return new(true, FormatLap(snapshot.LastLapSeconds.Value), secondary, "time", snapshot.LastLapSeconds, null, null, string.Empty, trend);
     }
 
-    private static LiveTelemetryMetricReading Pace(LiveRaceSnapshot snapshot)
+    private static LiveTelemetryMetricReading Pace(LiveRaceSnapshot snapshot, IReadOnlyList<double> trend)
     {
         if (!snapshot.PaceTarget.MinimumSeconds.HasValue || !snapshot.PaceTarget.MaximumSeconds.HasValue)
             return Missing("time", "Insufficient evidence for a clean personal pace range");
-        return new(true, $"{FormatLap(snapshot.PaceTarget.MinimumSeconds.Value)}–{FormatLap(snapshot.PaceTarget.MaximumSeconds.Value)}", snapshot.PaceTarget.TirePhase, string.Empty, null, null, null, string.Empty, []);
+        var midpoint = (snapshot.PaceTarget.MinimumSeconds.Value + snapshot.PaceTarget.MaximumSeconds.Value) / 2;
+        return new(true, $"{FormatLap(snapshot.PaceTarget.MinimumSeconds.Value)}–{FormatLap(snapshot.PaceTarget.MaximumSeconds.Value)}", snapshot.PaceTarget.TirePhase, "time", midpoint, null, null, string.Empty, trend);
     }
 
-    private static LiveTelemetryMetricReading Pit(LiveRaceSnapshot snapshot)
+    private static LiveTelemetryMetricReading Pit(LiveRaceSnapshot snapshot, IReadOnlyList<double> trend)
     {
         if (snapshot.Pit.WindowOpensInLaps.HasValue && snapshot.Pit.WindowClosesInLaps.HasValue)
-            return new(true, $"{snapshot.Pit.WindowOpensInLaps}–{snapshot.Pit.WindowClosesInLaps}", "Strategic pit window", "laps", snapshot.Pit.WindowOpensInLaps, null, null, string.Empty, []);
+            return new(true, $"{snapshot.Pit.WindowOpensInLaps}–{snapshot.Pit.WindowClosesInLaps}", "Strategic pit window", "laps", snapshot.Pit.WindowOpensInLaps, null, null, string.Empty, trend);
         if (snapshot.Pit.FuelHardLimitLaps.HasValue)
-            return new(true, snapshot.Pit.FuelHardLimitLaps.Value.ToString(CultureInfo.CurrentCulture), "Fuel hard limit; strategic window not established", "laps", snapshot.Pit.FuelHardLimitLaps, null, null, snapshot.Pit.UnavailableReason, []);
+            return new(true, snapshot.Pit.FuelHardLimitLaps.Value.ToString(CultureInfo.CurrentCulture), "Fuel hard limit; strategic window not established", "laps", snapshot.Pit.FuelHardLimitLaps, null, null, snapshot.Pit.UnavailableReason, trend);
         return Missing("laps", "Insufficient evidence for pit guidance");
     }
 
-    private static LiveTelemetryMetricReading Position(int? value) => value is > 0
-        ? new(true, $"P{value}", string.Empty, string.Empty, value, null, null, string.Empty, [])
+    private static LiveTelemetryMetricReading Position(int? value, IReadOnlyList<double> trend) => value is > 0
+        ? new(true, $"P{value}", string.Empty, string.Empty, value, null, null, string.Empty, trend)
         : Missing(string.Empty, "Position not measured in this session");
 
-    private static LiveTelemetryMetricReading LapTime(double? value) => value is > 0
-        ? new(true, FormatLap(value.Value), string.Empty, string.Empty, value, null, null, string.Empty, [])
+    private static LiveTelemetryMetricReading LapTime(double? value, IReadOnlyList<double> trend) => value is > 0
+        ? new(true, FormatLap(value.Value), string.Empty, "time", value, null, null, string.Empty, trend)
         : Missing("time", "No completed lap measured yet");
 
-    private static LiveTelemetryMetricReading Seconds(double? value, int precision, string missing) => value.HasValue
-        ? new(true, value.Value.ToString($"F{precision}", CultureInfo.CurrentCulture), string.Empty, "s", value, null, null, string.Empty, [])
+    private static LiveTelemetryMetricReading Seconds(double? value, int precision, string missing, IReadOnlyList<double> trend) => value.HasValue
+        ? new(true, value.Value.ToString($"F{precision}", CultureInfo.CurrentCulture), string.Empty, "s", value, null, null, string.Empty, trend)
         : Missing("s", missing);
 
-    private static LiveTelemetryMetricReading Text(string value, string secondary) => Useful(value)
-        ? new(true, value, secondary, string.Empty, null, null, null, string.Empty, [])
+    private static LiveTelemetryMetricReading Text(string value, string secondary, double? numeric, double? minimum, double? maximum, IReadOnlyList<double> trend) => Useful(value)
+        ? new(true, value, secondary, string.Empty, numeric, minimum, maximum, string.Empty, trend)
         : Missing(string.Empty, "Not measured in this session");
 
     private static LiveTelemetryMetricReading Percent(double? value, int precision, IReadOnlyList<double> trend) => value.HasValue
@@ -207,6 +232,26 @@ public static class LiveTelemetryCatalog
 
     private static LiveTelemetryMetricReading Missing(string unit, string reason) => new(false, reason.StartsWith("Insufficient", StringComparison.Ordinal) ? "Insufficient evidence" : reason.StartsWith("Waiting", StringComparison.Ordinal) ? "Waiting" : "Not measured", string.Empty, unit, null, null, null, reason, []);
 
+    private static LiveTelemetryMetricReading ApplyRange(LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading)
+    {
+        if (!reading.Available || !reading.NumericValue.HasValue || !double.IsFinite(reading.NumericValue.Value)) return reading;
+
+        var finite = reading.TrendValues.Where(double.IsFinite).Append(reading.NumericValue.Value).ToArray();
+        var observedMinimum = finite.Min();
+        var observedMaximum = finite.Max();
+        var span = observedMaximum - observedMinimum;
+        var padding = span > .0001 ? span * .08 : Math.Max(1, Math.Abs(observedMaximum) * .08);
+        var minimum = reading.Minimum ?? definition.SemanticMinimum ?? observedMinimum - padding;
+        var maximum = reading.Maximum ?? definition.SemanticMaximum ?? observedMaximum + padding;
+        if (maximum <= minimum)
+        {
+            var fallback = Math.Max(1, Math.Abs(reading.NumericValue.Value) * .08);
+            if (reading.Maximum is null && definition.SemanticMaximum is null) maximum = minimum + fallback;
+            else if (reading.Minimum is null && definition.SemanticMinimum is null) minimum = maximum - fallback;
+        }
+        return reading with { Minimum = minimum, Maximum = maximum };
+    }
+
     private static IReadOnlyList<double> Trend(string metricId, IReadOnlyList<LiveTracePoint> history, LiveMonitorTrendDuration duration, string unit)
     {
         if (history.Count == 0 || TrendDurations(metricId).Count == 0) return [];
@@ -222,18 +267,50 @@ public static class LiveTelemetryCatalog
         };
         return selected.Select(point => metricId switch
         {
+            "air-temperature" => ConvertValue(point.Metrics.AirTemperatureC, value => Temperature(value, unit)),
+            "ahead-gap" => point.Metrics.AheadGapSeconds,
+            "behind-gap" => point.Metrics.BehindGapSeconds,
             "speed" => point.SpeedMph.HasValue ? Speed(point.SpeedMph.Value, unit) : null,
             "throttle" => point.Throttle * 100,
             "brake" => point.Brake * 100,
+            "brake-bias" => point.Metrics.BrakeBiasPercent,
+            "class-position" => point.Metrics.ClassPosition,
+            "coach-cue" => Ordinal(point.Metrics.CoachCuePriority),
+            "flag" => Ordinal(point.Metrics.FlagState),
+            "fuel" => ConvertValue(point.Metrics.FuelLiters, value => unit == "US gal" ? value * 0.2641720524 : value),
+            "fuel-laps" => point.Metrics.FuelLapsRemaining,
             "steering" => point.SteeringWheelAngleRadians.HasValue ? Steering(point.SteeringWheelAngleRadians.Value, unit) : null,
             "gear" => point.Gear,
+            "lap" => point.Lap,
+            "laps-remaining" => point.Metrics.LapsRemaining,
+            "last-lap" => point.LastLapSeconds,
+            "leader-gap" => point.Metrics.LeaderGapSeconds,
+            "leader-last-lap" => point.Metrics.LeaderLastLapSeconds,
+            "mandatory-repair" => point.Metrics.MandatoryRepairSeconds,
+            "on-pit-road" => point.Metrics.OnPitRoad.HasValue ? point.Metrics.OnPitRoad.Value ? 1d : 0d : null,
+            "optional-repair" => point.Metrics.OptionalRepairSeconds,
+            "pace-range" => point.Metrics.PaceMidpointSeconds,
+            "pit-window" => point.Metrics.PitWindowLaps,
+            "position" => point.Metrics.OverallPosition,
             "rpm" => point.Rpm,
             "yaw-rate" => point.YawRateDegreesPerSecond.HasValue ? Yaw(point.YawRateDegreesPerSecond.Value, unit) : null,
             "lateral-acceleration" => point.LateralAccelerationG.HasValue ? unit == "m/s²" ? point.LateralAccelerationG * 9.80665 : point.LateralAccelerationG : null,
             "longitudinal-acceleration" => point.LongitudinalAccelerationG.HasValue ? unit == "m/s²" ? point.LongitudinalAccelerationG * 9.80665 : point.LongitudinalAccelerationG : null,
+            "tire-phase" => Ordinal(point.Metrics.TirePhase),
+            "track-temperature" => ConvertValue(point.Metrics.TrackTemperatureC, value => Temperature(value, unit)),
             _ => null
         }).Where(value => value.HasValue && double.IsFinite(value.Value)).Select(value => value!.Value).ToArray();
     }
+
+    private static LiveMonitorTrendShape TrendShape(string metricId) => metricId switch
+    {
+        "class-position" or "coach-cue" or "flag" or "gear" or "lap" or "laps-remaining" or "last-lap" or
+        "leader-last-lap" or "on-pit-road" or "pit-window" or "position" or "tire-phase" => LiveMonitorTrendShape.Step,
+        _ => LiveMonitorTrendShape.Continuous
+    };
+
+    private static double? ConvertValue(double? value, Func<double, double> converter) => value.HasValue ? converter(value.Value) : null;
+    private static double? Ordinal<T>(T? value) where T : struct, Enum => value.HasValue ? System.Convert.ToDouble(value.Value, CultureInfo.InvariantCulture) : null;
 
     private static double Speed(double mph, string unit) => unit == "km/h" ? mph * 1.609344 : mph;
     private static double Temperature(double c, string unit) => unit == "°F" ? c * 9 / 5 + 32 : c;
@@ -241,4 +318,29 @@ public static class LiveTelemetryCatalog
     private static double Yaw(double degrees, string unit) => unit == "rad/s" ? degrees / 57.29577951308232 : degrees;
     private static string FormatLap(double seconds) => TimeSpan.FromSeconds(seconds).ToString(seconds >= 60 ? "m\\:ss\\.fff" : "s\\.fff", CultureInfo.CurrentCulture);
     private static bool Useful(string? value) => !string.IsNullOrWhiteSpace(value) && !value.Equals("Unavailable", StringComparison.OrdinalIgnoreCase);
+}
+
+internal static class LiveTelemetryMetricEncoding
+{
+    public static LiveFlagTrendState? Flag(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Contains("waiting", StringComparison.OrdinalIgnoreCase) || value.Contains("unavailable", StringComparison.OrdinalIgnoreCase)) return null;
+        if (value.Contains("black", StringComparison.OrdinalIgnoreCase)) return LiveFlagTrendState.Black;
+        if (value.Contains("check", StringComparison.OrdinalIgnoreCase)) return LiveFlagTrendState.Checkered;
+        if (value.Contains("red", StringComparison.OrdinalIgnoreCase)) return LiveFlagTrendState.Red;
+        if (value.Contains("yellow", StringComparison.OrdinalIgnoreCase) || value.Contains("caution", StringComparison.OrdinalIgnoreCase)) return LiveFlagTrendState.Yellow;
+        if (value.Contains("white", StringComparison.OrdinalIgnoreCase)) return LiveFlagTrendState.White;
+        if (value.Contains("blue", StringComparison.OrdinalIgnoreCase)) return LiveFlagTrendState.Blue;
+        if (value.Contains("green", StringComparison.OrdinalIgnoreCase) || value.Contains("racing", StringComparison.OrdinalIgnoreCase)) return LiveFlagTrendState.Green;
+        return LiveFlagTrendState.Other;
+    }
+
+    public static LiveTirePhaseTrendState? TirePhase(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Contains("unavailable", StringComparison.OrdinalIgnoreCase) || value.Contains("insufficient", StringComparison.OrdinalIgnoreCase)) return null;
+        if (value.Contains("early", StringComparison.OrdinalIgnoreCase)) return LiveTirePhaseTrendState.Early;
+        if (value.Contains("middle", StringComparison.OrdinalIgnoreCase) || value.Contains("mid", StringComparison.OrdinalIgnoreCase)) return LiveTirePhaseTrendState.Middle;
+        if (value.Contains("late", StringComparison.OrdinalIgnoreCase)) return LiveTirePhaseTrendState.Late;
+        return null;
+    }
 }

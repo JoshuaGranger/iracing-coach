@@ -88,6 +88,48 @@
         case "chevron-down":
             <path d="m7 10 5 5 5-5"/>
             break;
+        case "undo":
+            <path d="m9 8-4 4 4 4"/><path d="M5 12h8a5 5 0 0 1 5 5"/>
+            break;
+        case "redo":
+            <path d="m15 8 4 4-4 4"/><path d="M19 12h-8a5 5 0 0 0-5 5"/>
+            break;
+        case "grip":
+            <circle cx="8" cy="7" r=".7" fill="currentColor"/><circle cx="16" cy="7" r=".7" fill="currentColor"/><circle cx="8" cy="12" r=".7" fill="currentColor"/><circle cx="16" cy="12" r=".7" fill="currentColor"/><circle cx="8" cy="17" r=".7" fill="currentColor"/><circle cx="16" cy="17" r=".7" fill="currentColor"/>
+            break;
+        case "resize":
+            <path d="M8 4H4v4M16 20h4v-4"/><path d="m4 8 5-5M20 16l-5 5"/>
+            break;
+        case "trash":
+            <path d="M4 7h16M9 3h6l1 4M7 7l1 14h8l1-14"/><path d="M10 11v6M14 11v6"/>
+            break;
+        case "plus":
+            <path d="M12 5v14M5 12h14"/>
+            break;
+        case "duplicate":
+            <rect x="8" y="8" width="11" height="11" rx="1.5"/><path d="M5 16H4V5a1 1 0 0 1 1-1h11v1"/>
+            break;
+        case "reset":
+            <path d="M5 8V4l-3 3 3 3V8a8 8 0 1 1-1 8"/>
+            break;
+        case "search":
+            <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4.5 4.5"/>
+            break;
+        case "chart":
+            <path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 4-6"/>
+            break;
+        case "gauge":
+            <path d="M4 17a8 8 0 1 1 16 0"/><path d="m12 16 4-5"/><circle cx="12" cy="17" r="1"/>
+            break;
+        case "bar":
+            <path d="M4 8h16M4 16h16"/><path d="M4 8h11M4 16h7" stroke-width="3"/>
+            break;
+        case "status":
+            <circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>
+            break;
+        case "number":
+            <path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16"/>
+            break;
         default:
             <circle cx="12" cy="12" r="8"/>
             break;
