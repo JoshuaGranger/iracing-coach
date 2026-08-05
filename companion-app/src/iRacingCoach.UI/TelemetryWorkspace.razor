@@ -58,7 +58,7 @@
                                         @for (var sector = 0; sector < SectorStarts.Count; sector++)
                                         {
                                             var sectorState = SectorState(trace, sector);
-                                            <i class="sector-square @sectorState.Class" title="@sectorState.Title"></i>
+                                            <span class="sector-square @sectorState.Class" title="@sectorState.Title" aria-hidden="true"></span>
                                         }
                                     </span>
                                     }
