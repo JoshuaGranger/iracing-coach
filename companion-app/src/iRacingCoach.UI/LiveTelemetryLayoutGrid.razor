@@ -94,7 +94,7 @@
                             </button>
                             <div class="live-tile-actions">
                                 <button type="button" class="live-tile-action" aria-label="Configure @definition.Name" title="Widget display settings" aria-expanded="@(_openTileMenuId == tile.Id)" @onclick="() => ToggleTileMenu(tile.Id)" @onclick:stopPropagation="true"><ProductIcon Name="chevron-down" Size="15" /></button>
-                                <button type="button" class="live-tile-action remove" aria-label="Remove @definition.Name" title="Remove widget (Undo available)" @onclick="() => RemoveTile(tile.Id)" @onclick:stopPropagation="true"><ProductIcon Name="trash" Size="15" /></button>
+                                <button type="button" class="live-tile-action remove" aria-label="Remove @definition.Name" title="Remove widget" @onclick="() => RemoveTile(tile.Id)" @onclick:stopPropagation="true"><ProductIcon Name="trash" Size="15" /></button>
                             </div>
                             <span class="live-tile-heading live-tile-heading-compact" aria-hidden="true">@definition.Name</span>
                         }
@@ -226,7 +226,7 @@
                         {
                             <label>Chart history<select value="@selected.TrendDuration" @onchange="args => ChangeTileTrend(selected.Id, args)">@foreach (var duration in LiveTelemetryCatalog.TrendDurations(selected.MetricId)) { <option value="@duration">@TrendLabel(duration)</option> }</select></label>
                         }
-                        <button class="toolbox-remove-widget" @onclick="() => RemoveTile(selected.Id)"><ProductIcon Name="trash" Size="16" /> Remove widget <span>Undo available</span></button>
+                        <button class="toolbox-remove-widget" @onclick="() => RemoveTile(selected.Id)"><ProductIcon Name="trash" Size="16" /> Remove widget</button>
                     </section>
                 }
 
@@ -344,10 +344,10 @@
             State.Notify(_editorMessage);
             return;
         }
-        CompleteMutation(before, "Dashboard reset. Undo is available.");
+        CompleteMutation(before, "Dashboard reset.");
         _selectedTileId = null;
     }
-    private void DeleteLayout() { var before = Capture(); if (LiveMonitorLayouts.DeleteActive(Preferences)) { CompleteMutation(before, "Custom dashboard deleted. Undo is available."); _selectedTileId = null; } }
+    private void DeleteLayout() { var before = Capture(); if (LiveMonitorLayouts.DeleteActive(Preferences)) { CompleteMutation(before, "Dashboard deleted."); _selectedTileId = null; } }
 
     private void RenameLayout(ChangeEventArgs args)
     {
@@ -374,7 +374,7 @@
 
     private void RemoveTile(string id)
     {
-        if (TryMutation(() => LiveMonitorLayouts.RemoveTile(LiveMonitorLayouts.EnsureEditable(Preferences), id), "Widget removed. Undo is available.", "That widget is no longer present."))
+        if (TryMutation(() => LiveMonitorLayouts.RemoveTile(LiveMonitorLayouts.EnsureEditable(Preferences), id), "Widget removed.", "That widget is no longer present."))
         {
             if (_selectedTileId == id) _selectedTileId = null;
             if (_openTileMenuId == id) _openTileMenuId = null;

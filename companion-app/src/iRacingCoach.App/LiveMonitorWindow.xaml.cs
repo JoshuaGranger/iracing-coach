@@ -694,7 +694,7 @@ public partial class LiveMonitorWindow : Window
         PushUndo();
         if (!LiveMonitorLayouts.DeleteActive(Preferences)) { RollbackFailedMutation(); return; }
         _selectedTileId = null;
-        AfterLayoutChange("Custom layout deleted. Undo is available.");
+        AfterLayoutChange("Layout deleted.");
     }
 
     private void LayoutNameBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -873,7 +873,7 @@ public partial class LiveMonitorWindow : Window
         var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
         if (!LiveMonitorLayouts.RemoveTile(layout, _selectedTileId)) { RollbackFailedMutation(); return; }
         _selectedTileId = null;
-        AfterLayoutChange("Tile removed. Undo is available.");
+        AfterLayoutChange("Tile removed.");
     }
 
     private void Tile_PreviewKeyDown(object sender, KeyEventArgs e)

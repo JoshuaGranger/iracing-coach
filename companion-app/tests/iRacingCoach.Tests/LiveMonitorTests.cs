@@ -474,6 +474,7 @@ public sealed class LiveMonitorTests
         var root = CompanionAppRoot();
         var ui = Path.Combine(root, "src", "iRacingCoach.UI");
         var razor = File.ReadAllText(Path.Combine(ui, "LiveTelemetryLayoutGrid.razor"));
+        var monitorCode = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "LiveMonitorWindow.xaml.cs"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         var scriptPath = Path.Combine(ui, "wwwroot", "live-telemetry-layout.js");
         var host = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "wwwroot", "index.html"));
@@ -524,6 +525,8 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(css, "place-items: center");
         StringAssert.Contains(css, "height: clamp(");
         Assert.IsFalse(razor.Contains("live-editor-guidance", StringComparison.Ordinal), "The editor should not spend a header row on static drag instructions or success chatter.");
+        Assert.IsFalse(razor.Contains("Undo available", StringComparison.OrdinalIgnoreCase), "Undo controls already communicate recoverability; removal actions should stay concise.");
+        Assert.IsFalse(monitorCode.Contains("Undo is available", StringComparison.OrdinalIgnoreCase), "The native monitor should not add undo instructions to routine completion messages.");
         Assert.IsFalse(razor.Contains("OverallScale", StringComparison.Ordinal), "Physical scale belongs only to the pop-out monitor, not the fitted full-page dashboard.");
         Assert.IsFalse(css.Contains(".live-toolbox-backdrop { position: fixed", StringComparison.Ordinal), "The responsive drawer must not place a pointer-blocking backdrop over the editable grid.");
         Assert.IsFalse(css.Contains(".live-layout-studio.toolbox-open .live-layout-main { padding-right: 0", StringComparison.Ordinal), "Responsive edit mode must keep the grid out from under the fixed drawer.");
