@@ -393,8 +393,11 @@ public sealed class CapabilityRegistryTests
 
         var application = File.ReadAllText(Path.Combine(appRoot, "App.xaml.cs"));
         StringAssert.Contains(application, "Interlocked.Exchange(ref _exitStarted, 1)");
+        StringAssert.Contains(application, "TimeSpan.FromSeconds(5)");
+        StringAssert.Contains(application, "Shutdown(0)");
+        Assert.HasCount(2, System.Text.RegularExpressions.Regex.Matches(application, "Environment\\.Exit\\(0\\)"));
         StringAssert.Contains(application, "finally");
-        StringAssert.Contains(application, "Shutdown()");
+        Assert.IsLessThan(application.LastIndexOf("Environment.Exit(0)", StringComparison.Ordinal), application.IndexOf("Shutdown(0)", StringComparison.Ordinal));
     }
 
     [TestMethod]

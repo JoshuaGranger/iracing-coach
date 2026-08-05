@@ -13,6 +13,7 @@ public partial class App : System.Windows.Application
     private EventWaitHandle? _activationEvent;
     private RegisteredWaitHandle? _activationWait;
     private MainWindow? _mainWindow;
+    private System.Threading.Timer? _exitWatchdog;
     private int _exitStarted;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -56,6 +57,13 @@ public partial class App : System.Windows.Application
     private void ExitApplication()
     {
         if (Interlocked.Exchange(ref _exitStarted, 1) != 0) return;
+        // Service cleanup includes process and database shutdown. If one of those
+        // dependencies stalls, Exit must still mean that the desktop process ends.
+        _exitWatchdog = new System.Threading.Timer(
+            _ => Environment.Exit(0),
+            null,
+            TimeSpan.FromSeconds(5),
+            Timeout.InfiniteTimeSpan);
         try
         {
             _mainWindow?.DisposeApplication();
@@ -66,7 +74,16 @@ public partial class App : System.Windows.Application
         }
         finally
         {
-            if (!Dispatcher.HasShutdownStarted) Shutdown();
+            try
+            {
+                if (!Dispatcher.HasShutdownStarted) Shutdown(0);
+            }
+            finally
+            {
+                // WPF, WebView2, and hosted services can own foreground threads.
+                // Normal cleanup has completed at this point; terminate any residue.
+                Environment.Exit(0);
+            }
         }
     }
 
@@ -75,6 +92,7 @@ public partial class App : System.Windows.Application
         try
         {
             try { _mainWindow?.DisposeApplication(); } catch (Exception error) { Trace.WriteLine($"Final application cleanup failed: {error}"); }
+            _exitWatchdog?.Dispose();
             _activationWait?.Unregister(null);
             _activationEvent?.Dispose();
             if (_mutex is not null)
