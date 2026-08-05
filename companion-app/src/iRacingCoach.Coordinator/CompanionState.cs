@@ -46,7 +46,7 @@ public sealed class CompanionState : IDisposable
 
     public CompanionState(IBackendClient backend, ISettingsStore? settingsStore) : this(backend, settingsStore, new DisconnectedLiveTelemetrySource(), new DisabledCoachEngineSupervisor(), new PowerShellGarage61CredentialStore()) { }
 
-    public CompanionState(IBackendClient backend, ISettingsStore? settingsStore, ILiveTelemetrySource liveTelemetrySource, ICoachEngineSupervisor? coachEngine = null, IGarage61CredentialStore? garage61Credentials = null, IDurableArchiveService? archive = null, bool qaFixtureMode = false)
+    public CompanionState(IBackendClient backend, ISettingsStore? settingsStore, ILiveTelemetrySource liveTelemetrySource, ICoachEngineSupervisor? coachEngine = null, IGarage61CredentialStore? garage61Credentials = null, IDurableArchiveService? archive = null)
     {
         _backend = backend;
         _settingsStore = settingsStore;
@@ -54,7 +54,6 @@ public sealed class CompanionState : IDisposable
         _coachEngine = coachEngine ?? new DisabledCoachEngineSupervisor();
         _archive = archive ?? new DurableArchiveService();
         Settings = settingsStore?.Load() ?? new CompanionSettings();
-        QaFixtureMode = qaFixtureMode;
         Settings.LiveMonitor ??= new LiveMonitorLayout();
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
         _liveTelemetry = new LiveTelemetryService(liveTelemetrySource, Settings.LiveMonitor);
@@ -80,7 +79,6 @@ public sealed class CompanionState : IDisposable
     public event Action? RawTelemetryLocateRequested;
 
     public string CurrentPage { get; private set; } = "home";
-    public bool QaFixtureMode { get; }
     public bool RailCollapsed { get; private set; }
     public bool JobTrayOpen { get; private set; }
     public bool IsRefreshing { get; private set; }
@@ -437,11 +435,8 @@ public sealed class CompanionState : IDisposable
     private async Task<JsonElement> ExecuteBackendCallAsync(string name, object arguments, CancellationToken cancellationToken)
     {
         var garage61Call = name.Contains("garage61", StringComparison.OrdinalIgnoreCase);
-        if (!(QaFixtureMode && garage61Call))
-        {
-            if (garage61Call) Garage61RequestCount++; else LocalRequestCount++;
-            LastServiceRequest = DateTimeOffset.Now;
-        }
+        if (garage61Call) Garage61RequestCount++; else LocalRequestCount++;
+        LastServiceRequest = DateTimeOffset.Now;
         Interlocked.Increment(ref _serviceRequestsInFlight);
         RaiseChanged();
         try
@@ -985,14 +980,12 @@ public sealed class CompanionState : IDisposable
     public async Task VerifyInstallationAsync(CancellationToken cancellationToken = default)
     {
         await RefreshDataAsync(false, cancellationToken);
-        if (!QaFixtureMode) await _coachEngine.StartAsync(Settings, cancellationToken);
+        await _coachEngine.StartAsync(Settings, cancellationToken);
         var localReady = Health.Any(item => item.Id == "backend" && item.State == "ready");
-        if (localReady && (QaFixtureMode || CoachEngine.Installed))
+        if (localReady && CoachEngine.Installed)
         {
             SetupStep = 5;
-            Toast = QaFixtureMode
-                ? "Offline QA fixture passed its health check. No online service was contacted."
-                : "Installation verified. Local features are ready even when services are offline.";
+            Toast = "Installation verified. Local features are ready even when services are offline.";
         }
         else
         {
@@ -1489,7 +1482,7 @@ public sealed class CompanionState : IDisposable
         new("App", $"v{AppVersion} · Windows x64", "ready"),
         new("Race analysis service", health.Ok ? $"Ready · {BackendVersionLabel(health.ServerVersion)} · {health.ToolCount} tools" : health.Error ?? "Unavailable", health.Ok ? "ready" : "warning"),
         new("Contract compatibility", health.Ok && health.ToolCount == 16 ? "Compatible · MCP v1" : $"Expected 16 tools; found {health.ToolCount}", health.Ok && health.ToolCount == 16 ? "ready" : "warning"),
-        new("Coach Engine", QaFixtureMode ? "Disabled by the offline QA fixture" : CoachEngine.Installed ? $"{CoachEngine.RuntimeVersion} · {(CoachEngine.Running ? "running" : "stopped")}" : CoachEngine.Message, QaFixtureMode ? "neutral" : CoachEngine.Installed ? "ready" : "warning"),
+        new("Coach Engine", CoachEngine.Installed ? $"{CoachEngine.RuntimeVersion} · {(CoachEngine.Running ? "running" : "stopped")}" : CoachEngine.Message, CoachEngine.Installed ? "ready" : "warning"),
         new("ChatGPT", CoachEngine.ChatGptConnected ? "Connected" : "Not connected; deterministic features remain available", CoachEngine.ChatGptConnected ? "ready" : "neutral"),
         new("iRacing folder", Settings.IRacingRoot, Directory.Exists(Settings.IRacingRoot) ? "ready" : "warning"),
         new("iRacing installation", Settings.IRacingInstallRoot, Directory.Exists(Settings.IRacingInstallRoot) ? "ready" : "neutral"),

@@ -17,7 +17,7 @@ Both checksum sidecars were regenerated from the final artifacts and independent
 
 ## Completed work
 
-- Added a deterministic, isolated QA fixture/replay mode with its own temporary settings, credentials, archive, diagnostics, and recovery state. It cannot call Garage61 or AI services.
+- Added an isolated development harness at the time; that alternate application mode has since been removed completely.
 - Reworked the home page around useful personal information, automatic refresh, warning-only status, and human-readable wording.
 - Rebuilt race review around one-click archived sessions and the exact Overview, Telemetry, Corner Coaching, Runs & Tires, Fuel & Strategy, Damage & Repairs, and Setup & Evidence workspaces.
 - Added synchronized multi-lap telemetry with recorded timestamps, shared per-channel scales, real time delta, real slip angle, and recorded yaw/lateral/longitudinal dynamics. Missing evidence remains visibly unavailable rather than synthesized.
@@ -49,4 +49,4 @@ The same test proved that the durable iRacing Coach archive hash and the source 
 
 ## Evidence boundary
 
-The screenshot and walkthrough evidence is in `artifacts/qa/v0.9.3`. It uses the packet's isolated sanitized fixtures, not presentation-only mockups. HOME_QA still owns real live-telemetry acceptance; this release does not claim that verdict. Garage61 authorization and AI account behavior were intentionally not exercised in fixture mode, and no external requests were made.
+The historical screenshot and walkthrough evidence is in `artifacts/qa/v0.9.3`. This release did not claim real live-telemetry acceptance. Garage61 authorization and AI account behavior were intentionally not exercised, and no external requests were made.

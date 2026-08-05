@@ -60,7 +60,6 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Review protocol](07-agent-review/review-protocol.md)
   - [Finding template](07-agent-review/finding-template.md)
   - [Change impact checklist](07-agent-review/change-impact-checklist.md)
-  - [Retired remote-QA protocol](07-agent-review/home-qa-protocol.md)
 
 ## Stable requirement identifiers
 
@@ -73,7 +72,7 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 - **Conditional:** correct only when the required data, car, service, or session context exists.
 - **Not implemented:** no complete production behavior exists.
 - **Unsupported:** intentionally excluded because the source or permission contract cannot support it.
-- **Fixture verified:** proven only with the isolated sanitized QA mode.
+- **Locally verified:** proven through automated tests or direct local interaction with non-production test data.
 - **Real-system verified:** directly observed with the named executable, hardware, simulator/source, scenario, and date.
 - **Accepted:** explicitly accepted by Joshua for the named scope or release artifact.
 

@@ -1,6 +1,6 @@
 # Implementation Snapshot: 0.11.1
 
-Status: targeted live-rendering development candidate. HOME_QA has not accepted real SDK cadence or live-race usefulness.
+Status: targeted live-rendering development candidate. Real SDK cadence and live-race usefulness still require direct local validation.
 
 ## Material change from 0.11.0
 
@@ -20,4 +20,4 @@ Status: targeted live-rendering development candidate. HOME_QA has not accepted 
 - Accelerated deterministic replay delivered an effective 60 frame-per-second input to the chart. Native Windows review confirmed the canvas, chart labels, four traces, track map, controls, and full-session lap chart remained responsive.
 - Five-second open-chart sample: approximately 18.4% of one CPU core, 223.2 MB working set, and no working-set growth during the sample.
 
-The replay proves the rendering path and cadence contract, not real shared-memory acceptance. HOME_QA remains responsible for confirming actual iRacing 60 Hz behavior on the racing PC.
+The rendering test proves the chart path and cadence contract, not real shared-memory acceptance. Actual iRacing 60 Hz behavior must be confirmed directly on the racing PC.

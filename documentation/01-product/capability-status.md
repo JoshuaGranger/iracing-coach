@@ -1,19 +1,19 @@
 # Capability status
 
-This inventory describes the intended user-facing capability and current-main development reality. Acceptance is based on repository tests plus direct local fixture, replay, SDK, and recorded-data validation appropriate to the changed surface; no separate HOME_QA role owns product truth.
+This inventory describes the intended user-facing capability and current-main development reality. Acceptance is based on repository tests plus direct local SDK and recorded-data validation appropriate to the changed surface. Product truth is owned by the current development and review process.
 
 | Capability | Intended state | Current reality | Acceptance boundary |
 | --- | --- | --- | --- |
-| Home | Compact race desk, recent races, live state, next actions | Implemented; rows include supported race-shape, pace, and tire context | Fixture/local interaction verified |
-| Live Telemetry | Full-screen shared named grid, collapsible Toolbox, optional driving traces, fuel and safe cues | Implemented with SDK source and deterministic replay | Fixture interaction/replay verified; continued real SDK validation required |
+| Home | Compact race desk, recent races, live state, next actions | Implemented; rows include supported race-shape, pace, and tire context | Local interaction verified |
+| Live Telemetry | Full-screen shared named grid, collapsible Toolbox, optional driving traces, fuel and safe cues | Implemented with SDK source | Local interaction verified; continued real SDK validation required |
 | Live Monitor | Separate always-on-top view of the same portable named layouts | Implemented | Shared-layout interaction/replay verified; continued real-race validation required |
 | Race browser | Newest-first friendly event rows; whole row opens | Implemented | Kentucky behavior verified locally |
-| Full Race Analysis | Telemetry-first one-screen workspace with integrated lap/run context and compact insight rail | Implemented | Fixture and local interaction verified; real-recording breadth remains an ongoing validation target |
-| Qualifying phase | Present only when recorded and openable | Conditional | Fixture verified; real paired-event acceptance pending |
+| Full Race Analysis | Telemetry-first one-screen workspace with integrated lap/run context and compact insight rail | Implemented | Local interaction verified; real-recording breadth remains an ongoing validation target |
+| Qualifying phase | Present only when recorded and openable | Conditional | Automated coverage exists; real paired-event acceptance pending |
 | Race Planning | Manual matching-history planner and briefing | Implemented for recorded-history path | Official upcoming-event discovery not implemented |
-| Setup indexing | Internal read-only discovery used by analysis and Starting Tune | Implemented; no first-class library UI | Local/fixture verified |
-| Starting Tune package | Guided open-setup package workflow | Implemented as Event → Source → Checks → Run | Fixture verified; real baseline acceptance pending |
-| Progressive Tuning | Map-based multiple feedback cards and reversible experiment | Implemented for supported open races | Fixture verified; real clean A/B acceptance pending |
+| Setup indexing | Internal read-only discovery used by analysis and Starting Tune | Implemented; no first-class library UI | Local verification exists |
+| Starting Tune package | Guided open-setup package workflow | Implemented as Event → Source → Checks → Run | Automated coverage exists; real baseline acceptance pending |
+| Progressive Tuning | Map-based multiple feedback cards and reversible experiment | Implemented for supported open races | Automated coverage exists; real clean A/B acceptance pending |
 | Connections | Garage61 and private Coach Engine service management inside Settings | Implemented | Real Garage61/ChatGPT account acceptance pending |
 | Settings and Diagnostics | Portable settings, embedded connections, compact diagnostics, and backup preparation | Implemented | Local lifecycle/tests verified |
 | Garage61 own/team API | Protected machine credential, health, bounded sync | Conditional | Storage/status covered; real authorized sync pending |
@@ -40,4 +40,4 @@ The production `CapabilityRegistry` is the user-visible inventory. Version 0.11.
 | `CAP-006` | The capability inventory MUST match the behaviors present in production source and the traceability matrix. |
 | `CAP-007` | A permanently impossible or intentionally unsupported capability MUST have no actionable production shell. |
 | `CAP-008` | A contextual capability MUST be hidden when its prerequisite is absent unless the workflow expects that measurement; an expected but absent measurement MAY use concise `Not measured` or `Insufficient evidence` wording. |
-| `CAP-009` | Missing contextual evidence MUST NOT be converted to zero, neutral, average, false, or a fixture value. |
+| `CAP-009` | Missing contextual evidence MUST NOT be converted to zero, neutral, average, false, or manufactured data. |

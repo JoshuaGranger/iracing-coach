@@ -56,7 +56,6 @@ public partial class LiveMonitorWindow : Window
         _state = state;
         InitializeComponent();
         SizeToContent = SizeToContent.WidthAndHeight;
-        if (_state.QaFixtureMode) Title = "iRacing Coach Live Monitor · Replay / Fixture";
         _saveTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) => SavePlacement(), Dispatcher);
         _saveTimer.Stop();
         _renderTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Render, (_, _) =>

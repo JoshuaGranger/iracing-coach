@@ -4,10 +4,6 @@
 @inject IJSRuntime JS
 
 <div class="app-shell @(State.RailCollapsed ? "rail-collapsed" : "") @(State.Settings.UseReducedMotion ? "reduced-motion" : "") @(State.CurrentPage == "first-run" ? "first-run-mode" : "")">
-    @if (State.QaFixtureMode)
-    {
-        <div class="qa-fixture-watermark" role="status">QA FIXTURE · OFFLINE</div>
-    }
     @if (State.CurrentPage != "first-run")
     {
         <NavRail State="State" />

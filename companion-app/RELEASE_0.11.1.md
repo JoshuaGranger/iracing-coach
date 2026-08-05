@@ -26,4 +26,4 @@ Live telemetry no longer passes through the former 10 Hz source-polling and 4 Hz
 - Accelerated deterministic replay exercised an effective 60 incoming frames per second in the open chart.
 - Five-second open-chart sample: approximately 18.4% of one CPU core, 223.2 MB working set, and no working-set growth.
 
-The installer/upgrade/uninstall lifecycle was not re-certified because this iteration changes only live capture and rendering. The complete unchanged lifecycle boundary remains recorded in the 0.11.0 release evidence. Real 60 Hz iRacing SDK acceptance remains HOME_QA pending.
+The installer/upgrade/uninstall lifecycle was not re-certified because this iteration changes only live capture and rendering. The complete unchanged lifecycle boundary remains recorded in the 0.11.0 release evidence. Real 60 Hz iRacing SDK acceptance requires direct validation on the racing PC.

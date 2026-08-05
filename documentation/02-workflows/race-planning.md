@@ -26,7 +26,7 @@ Version 0.11.0 implements the compact manual recorded-history path. Official upc
 | `RP-024` | Identical plan requests SHOULD reuse the exact context cache and MUST NOT be triggered by rendering. |
 | `RP-025` | Missing evidence MUST remove or weaken only its dependent result. |
 
-The local 0.9.3 QA oracle is a 50-lap Kentucky-style fixture with a 49.3-lap supported all-green range. It must produce one required stop and an equal-stint target at Lap 25.
+The race-planning calculation is covered by a 50-lap Kentucky-style automated example with a 49.3-lap supported all-green range. It must produce one required stop and an equal-stint target at Lap 25.
 
 ## Briefing output
 

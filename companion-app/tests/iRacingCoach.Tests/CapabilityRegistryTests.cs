@@ -396,7 +396,6 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(disposal, "TryCleanup(Close, \"close main window\")");
         StringAssert.Contains(disposal, "TryCleanup(_state.Dispose, \"stop application services\")");
         Assert.IsLessThan(disposal.IndexOf("TryCleanup(_state.Dispose", StringComparison.Ordinal), disposal.IndexOf("TryCleanup(Close", StringComparison.Ordinal));
-        StringAssert.Contains(window, "--qa-exit-after-ready");
 
         var application = File.ReadAllText(Path.Combine(appRoot, "App.xaml.cs"));
         StringAssert.Contains(application, "Interlocked.Exchange(ref _exitStarted, 1)");

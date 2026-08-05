@@ -56,9 +56,9 @@ The Garage61 key on the development machine was loaded only for an in-memory exa
 
 ## Acceptance boundary and known limitations
 
-- HOME_QA still owns acceptance with real iRacing telemetry, a real race session, real setup files, supported multi-monitor/DPI combinations, and sustained use. This candidate does not claim that verdict.
+- Acceptance with real iRacing telemetry, a real race session, real setup files, supported multi-monitor/DPI combinations, and sustained use still requires direct local validation. This candidate does not claim that verdict.
 - Garage61 authorization and personal ChatGPT/Codex account behavior were not exercised in isolated fixture mode.
-- Live custom-layout persistence and miniature-monitor synchronization are fixture- and contract-verified; their usefulness during an actual race remains a HOME_QA decision.
-- Starting Tune and per-corner tuning are source- and contract-verified, but real-car, real-track, and real-driver usefulness remains part of HOME_QA.
+- Live custom-layout persistence and miniature-monitor synchronization are source- and interaction-tested; their usefulness during an actual race requires direct validation.
+- Starting Tune and per-corner tuning are source- and contract-verified, but real-car, real-track, and real-driver usefulness remains a direct validation target.
 - Grade and recommendation calibration against a broad set of real sessions remains an open quality item even though missing evidence, provenance, and limitations are represented truthfully.
 - The artifacts are checksum-published but not Authenticode-signed, so Windows may show an unknown-publisher warning.

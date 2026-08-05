@@ -26,7 +26,6 @@ public partial class MainWindow : Window
     private readonly Forms.ToolStripMenuItem _monitorItem;
     private readonly Forms.ToolStripMenuItem _statusItem;
     private readonly Forms.ToolStripMenuItem _pauseItem;
-    private readonly bool _qaMode;
     private bool _exitRequested;
     private bool _trayNoticeShown;
     private bool _disposed;
@@ -38,54 +37,8 @@ public partial class MainWindow : Window
         var services = new ServiceCollection();
         services.AddWpfBlazorWebView();
         var allArguments = Environment.GetCommandLineArgs();
-        var qaOptions = QaLaunchOptions.Parse(allArguments);
-        _qaMode = qaOptions.Enabled;
-        var replayFixture = allArguments.FirstOrDefault(argument => argument.StartsWith("--telemetry-replay=", StringComparison.OrdinalIgnoreCase))?.Split('=', 2)[1]?.Trim().ToLowerInvariant();
-        var qaPage = qaOptions.Page;
-        var qaScenario = qaOptions.Scenario;
-        var qaSize = qaOptions.Size;
-        var qaExitAfterReady = allArguments.Any(argument => string.Equals(argument, "--qa-exit-after-ready", StringComparison.OrdinalIgnoreCase));
-        var populatedQa = false;
-#if DEBUG
-        if (!qaOptions.Enabled)
-        {
-            qaPage = allArguments.FirstOrDefault(argument => argument.StartsWith("--qa-page=", StringComparison.OrdinalIgnoreCase))?.Split('=', 2)[1];
-            qaScenario = allArguments.FirstOrDefault(argument => argument.StartsWith("--qa-scenario=", StringComparison.OrdinalIgnoreCase))?.Split('=', 2)[1] ?? string.Empty;
-            qaSize = allArguments.FirstOrDefault(argument => argument.StartsWith("--qa-size=", StringComparison.OrdinalIgnoreCase))?.Split('=', 2)[1];
-            var legacyFixture = allArguments.FirstOrDefault(argument => argument.StartsWith("--qa-fixture=", StringComparison.OrdinalIgnoreCase))?.Split('=', 2)[1]?.ToLowerInvariant() ?? string.Empty;
-            populatedQa = legacyFixture is "populated" or "empty" or "partial" or "error";
-            var legacyLiveFixture = replayFixture ?? Environment.GetEnvironmentVariable("IRACING_COACH_DEBUG_LIVE_FIXTURE")?.Trim().ToLowerInvariant();
-            ILiveTelemetrySource legacyLiveSource = legacyLiveFixture is "green" or "caution" or "repair" or "fuel" or "brake" or "baseline" or "disconnected"
-                ? new DebugLiveTelemetrySource(legacyLiveFixture)
-                : new DisconnectedLiveTelemetrySource();
-            _state = populatedQa
-                ? new CompanionState(new DebugFixtureBackendClient(qaScenario, legacyFixture), new DebugFixtureSettingsStore(qaPage == "first-run"), legacyLiveSource, new DisabledCoachEngineSupervisor(), new DebugCredentialStore())
-                : legacyLiveFixture is not null ? new CompanionState(legacyLiveSource) : new CompanionState();
-        }
-        else
-#endif
-        if (qaOptions.Enabled)
-        {
-            ILiveTelemetrySource liveSource = qaOptions.LiveReplayPath is null
-                ? new DisconnectedLiveTelemetrySource()
-                : new ReplayFileLiveTelemetrySource(qaOptions.LiveReplayPath, qaOptions.TimeScale);
-            _state = new CompanionState(
-                new QaFixtureBackendClient(qaOptions.FixtureRoot!, qaOptions.Scenario),
-                new QaFixtureSettingsStore(qaOptions.ArchiveRoot!),
-                liveSource,
-                new DisabledCoachEngineSupervisor(),
-                new QaFixtureCredentialStore(),
-                qaFixtureMode: true);
-        }
-#if !DEBUG
-        else
-        {
-            _state = replayFixture is "green" or "caution" or "repair" or "fuel" or "brake" or "baseline" or "disconnected"
-                ? new CompanionState(new DebugLiveTelemetrySource(replayFixture))
-                : new CompanionState();
-        }
-#endif
-        var state = _state ?? throw new InvalidOperationException("The companion state was not initialized.");
+        _state = new CompanionState();
+        var state = _state;
         services.AddSingleton(state);
 #if DEBUG
         services.AddBlazorWebViewDeveloperTools();
@@ -93,13 +46,6 @@ public partial class MainWindow : Window
         _services = services.BuildServiceProvider();
         Resources.Add("services", _services);
         InitializeComponent();
-        if ((_qaMode || populatedQa) && qaSize?.Split('x', 2) is [var widthText, var heightText] &&
-            double.TryParse(widthText, out var qaWidth) && double.TryParse(heightText, out var qaHeight))
-        {
-            Width = Math.Max(MinWidth, qaWidth);
-            Height = Math.Max(MinHeight, qaHeight);
-        }
-        if (_qaMode) Title = "iRacing Coach · QA Fixture";
         _liveMonitor = new LiveMonitorWindow(state);
 
         _monitorItem = new Forms.ToolStripMenuItem("Show Live Monitor", null, (_, _) => _state.ToggleLiveMonitor());
@@ -135,80 +81,16 @@ public partial class MainWindow : Window
         _state.RawTelemetryLocateRequested += OnRawTelemetryLocateRequested;
         _state.SettingsSaved += settings =>
         {
-            if (!_qaMode && !StartupRegistration.Apply(settings.LaunchAtSignIn))
+            if (!StartupRegistration.Apply(settings.LaunchAtSignIn))
                 _state.Notify("Settings saved, but Windows sign-in startup could not be updated.");
             if (!RegisterGlobalHotkey())
                 _state.Notify("Settings saved, but that global Live Monitor hotkey is invalid or already in use.");
         };
-        if (!_qaMode) _ = StartupRegistration.Apply(_state.Settings.LaunchAtSignIn);
+        _ = StartupRegistration.Apply(_state.Settings.LaunchAtSignIn);
 
         if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--minimized", StringComparison.OrdinalIgnoreCase)))
             Loaded += (_, _) => HideToTray(false);
-        var supportedQaPage = qaPage is "home" or "live" or "analysis" or "planning" or "setup" or "tuning" or "connections" or "settings" or "first-run";
-        if (_qaMode || populatedQa)
-            Loaded += async (_, _) =>
-            {
-                await _state.InitializeAsync();
-                if (supportedQaPage) _state.Navigate(qaPage!);
-                if (qaScenario.Length > 0) await PrepareVisualQaScenarioAsync(qaScenario);
-                if (qaExitAfterReady) RequestExit();
-            };
-#if DEBUG
-        else if (supportedQaPage)
-            Loaded += (_, _) => _state.Navigate(qaPage!);
-#endif
-        if ((_qaMode && qaOptions.OpenMonitor) || allArguments.Any(argument => string.Equals(argument, "--qa-open-monitor", StringComparison.OrdinalIgnoreCase)))
-            Loaded += (_, _) => _state.SetLiveMonitorVisible(true);
         if (!IsWebView2Available()) Content = BuildRuntimeNotice();
-    }
-
-    private async Task PrepareVisualQaScenarioAsync(string scenario)
-    {
-        switch (scenario)
-        {
-            case "analysis-card":
-                if (_state.Races.FirstOrDefault() is { } analysisRace) await _state.OpenRaceAsync(analysisRace);
-                break;
-            case "planning-result":
-                await _state.GeneratePlanAsync();
-                break;
-            case "tuning-result":
-                if (_state.SelectedTuningRace is { } tuningRace) await _state.AnalyzeRaceAsync(tuningRace);
-                _state.Navigate("tuning");
-                _state.TuningRunPhase = "Late run";
-                _state.TuningCornerPhase = "Center";
-                _state.TuningBalance = "Tight / understeer";
-                _state.TuningSeverity = "Moderate";
-                _state.TuningConfidence = "High";
-                _state.TuningCorner = "Turns 3–4";
-                _state.TuningPriority = true;
-                _state.AddTuningFeedback();
-                _state.TuningRunPhase = "Early run";
-                _state.TuningCornerPhase = "Entry";
-                _state.TuningBalance = "Loose / oversteer";
-                _state.TuningSeverity = "Mild";
-                _state.TuningConfidence = "Medium";
-                _state.TuningCorner = "Turns 1–2";
-                _state.TuningPriority = false;
-                _state.AddTuningFeedback();
-                await _state.GenerateExperimentAsync();
-                break;
-            case "job-running":
-                if (_state.Races.FirstOrDefault() is { } jobRace) _ = _state.AnalyzeRaceAsync(jobRace);
-                break;
-            case "first-run-chatgpt":
-                _state.ContinueSetupWithoutConnection();
-                break;
-            case "first-run-garage61":
-                _state.ContinueSetupWithoutConnection(); _state.ContinueSetupWithoutConnection();
-                break;
-            case "first-run-verify":
-                _state.ContinueSetupWithoutConnection(); _state.ContinueSetupWithoutConnection(); _state.ContinueSetupWithoutConnection();
-                break;
-            case "first-run-ready":
-                _state.ContinueSetupWithoutConnection(); _state.ContinueSetupWithoutConnection(); _state.ContinueSetupWithoutConnection(); _state.ContinueSetupWithoutConnection();
-                break;
-        }
     }
 
     public event Action? ExitRequested;

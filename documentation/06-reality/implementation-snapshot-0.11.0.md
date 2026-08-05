@@ -1,6 +1,6 @@
 # Implementation Snapshot: 0.11.0
 
-Status: development candidate. HOME_QA has not accepted real telemetry, live-race usefulness, or real clean-run tuning.
+Status: development candidate. Real telemetry, live-race usefulness, and real clean-run tuning still require direct local validation.
 
 ## Material changes from 0.10.0
 
@@ -19,6 +19,6 @@ Status: development candidate. HOME_QA has not accepted real telemetry, live-rac
 - Release build: zero warnings and zero errors.
 - .NET: 74 passed.
 - Python: 173 passed with `unittest` discovery.
-- Interactive fixture QA exercised the shared live layout, toolbox collapse/editing, custom tile replacement, miniature-monitor synchronization, immediate race opening, chart cursor alignment, compact analysis, tuning track-zone feedback, controlled recommendation, Settings connections, Starting Tune rail, and streamlined planning output.
+- Interactive local testing exercised the shared live layout, toolbox collapse/editing, custom tile replacement, miniature-monitor synchronization, immediate race opening, chart cursor alignment, compact analysis, tuning track-zone feedback, controlled recommendation, Settings connections, Starting Tune rail, and streamlined planning output.
 
-Packaged screenshots, artifact hashes, installer lifecycle results, replay timing, and privacy checks belong in the 0.11.0 release record. Real SDK behavior remains owned by HOME_QA.
+Packaged screenshots, artifact hashes, installer lifecycle results, timing, and privacy checks belong in the 0.11.0 release record. Real SDK behavior requires direct validation on the racing PC.

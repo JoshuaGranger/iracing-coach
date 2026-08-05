@@ -78,8 +78,8 @@ internal sealed class StartupErrorWindow : Window
     }
 
     private static string FriendlyMessage(Exception error) => error is DirectoryNotFoundException or FileNotFoundException or ArgumentException
-        ? "Check the launch paths and try again. If a QA path contains spaces, pass the complete --name=value argument in quotes. Your normal Coach data was not changed."
-        : "A startup check failed before the main window opened. Your normal Coach data was not changed.";
+        ? "A required local path is unavailable. Check that the Coach data folder and iRacing installation are accessible, then reopen the app. Your data was not changed."
+        : "A startup check failed before the main window opened. Your data was not changed.";
 
     private static SolidColorBrush Brush(byte red, byte green, byte blue) => new(WpfColor.FromRgb(red, green, blue));
 

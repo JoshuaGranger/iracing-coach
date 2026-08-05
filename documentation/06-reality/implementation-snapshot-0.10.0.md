@@ -1,6 +1,6 @@
 # Implementation Snapshot: 0.10.0
 
-Status: development candidate. HOME_QA has not accepted real telemetry or real-race monitor usefulness.
+Status: development candidate. Real telemetry and real-race monitor usefulness still require direct local validation.
 
 ## Material changes from 0.9.3
 
@@ -17,4 +17,4 @@ Status: development candidate. HOME_QA has not accepted real telemetry or real-r
 - Python: 173 passed with `unittest` discovery.
 - Live Monitor tests cover layout packing, migration, corruption fallback, portability, catalog truthfulness, accessibility hooks, and an interaction performance bound.
 
-Packaged screenshots, artifact hashes, installer lifecycle results, and replay timing belong in the 0.10.0 release record. Real SDK behavior remains owned by HOME_QA.
+Packaged screenshots, artifact hashes, installer lifecycle results, and timing belong in the 0.10.0 release record. Real SDK behavior requires direct validation on the racing PC.

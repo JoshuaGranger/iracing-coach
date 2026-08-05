@@ -57,7 +57,7 @@ try {
 
     $marker = Join-Path $resolvedTarget 'old-version-marker.txt'
     Set-Content -LiteralPath $marker -Value 'This must be removed by the replacement install.' -Encoding ascii
-    $app = Start-Process -FilePath (Join-Path $resolvedTarget 'iRacing Coach.exe') -ArgumentList @('--minimized', '--qa-isolated') -PassThru
+    $app = Start-Process -FilePath (Join-Path $resolvedTarget 'iRacing Coach.exe') -ArgumentList '--minimized' -PassThru
     Start-Sleep -Seconds 5
     $app.Refresh()
     if ($app.HasExited) { throw 'The first installed app did not remain running for the upgrade test.' }

@@ -16,7 +16,6 @@ p { margin-bottom: 0; }
 small { color: var(--text-muted); font-size: 12px; line-height: 17px; }
 .mono, code, pre { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
 .app-shell { height: 100vh; display: grid; grid-template-columns: var(--nav-width) minmax(0, 1fr); background: var(--app); transition: grid-template-columns var(--motion-panel) var(--ease); }
-.qa-fixture-watermark { position: fixed; z-index: 10000; top: 10px; left: 50%; transform: translateX(-50%); padding: 5px 11px; border: 1px solid rgba(224,184,92,.65); border-radius: 999px; background: rgba(24,25,27,.94); color: #e0b85c; font-size: var(--font-size-min); font-weight: 750; letter-spacing: .12em; pointer-events: none; box-shadow: 0 4px 18px rgba(0,0,0,.28); }
 .app-shell.rail-collapsed { grid-template-columns: var(--nav-collapsed) minmax(0, 1fr); }
 .workspace { min-width: 0; height: 100vh; overflow-y: auto; scrollbar-color: var(--border-strong) var(--app); }
 .command-bar { height: 56px; position: sticky; top: 0; z-index: 12; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-6); border-bottom: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--app) 96%, transparent); backdrop-filter: blur(10px); }

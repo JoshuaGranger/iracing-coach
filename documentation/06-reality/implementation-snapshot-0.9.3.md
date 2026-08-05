@@ -24,11 +24,11 @@ This is an observed-reality snapshot, not a promise of future behavior. It recor
 | Privacy scan | Passed | Evidence for the scanned artifact, not a universal guarantee |
 | UI/visual review | Screenshots and assertion packet present | Fixture-based presentation evidence |
 | Installer lifecycle | Upgrade/rollback/preservation checks recorded | Local environment lifecycle evidence |
-| Real telemetry | HOME_QA pending | No complete real-session acceptance claim is permitted |
+| Real telemetry | Direct validation pending | No complete real-session acceptance claim is permitted |
 
 ## Partial or unaccepted areas
 
-- Real iRacing SDK behavior under actual session connect/disconnect, replay, sim shutdown, and channel variation is not HOME_QA-accepted.
+- Real iRacing SDK behavior under actual session connect/disconnect, sim shutdown, and channel variation requires direct validation.
 - Starting Tune is represented in deterministic workflows but is not yet a complete first-class desktop journey matching the intended product depth.
 - Some grade categories and detailed analysis fields have only sanitized-fixture coverage.
 - Garage61 has adapter/configuration/test coverage; real-account endpoint availability and usefulness remain environment/provider dependent.
@@ -38,7 +38,7 @@ This is an observed-reality snapshot, not a promise of future behavior. It recor
 
 ## Non-production material in the repository
 
-The Preview project, fixture clients, debug launch options, synthetic/truncated IBTs, release-development reports, and QA packets exist to support development. They are not personal history and must remain visibly separate from production behavior.
+Historical development harnesses, synthetic/truncated IBTs, and release-development reports were separate from production behavior. Alternate data-mode launch paths have since been removed from the application.
 
 ## Snapshot provenance
 

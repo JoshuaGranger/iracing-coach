@@ -232,7 +232,7 @@ public static class CapabilityRegistry
     }
 
     private static CapabilityDefinition Supported(ProductCapability id, string name, string value, string source, string temporaryFailures = "None") =>
-        new(id, name, value, source, CapabilityClass.SupportedNow, "Always", "Automated tests and native QA", temporaryFailures, "None required", "Render normally", true);
+        new(id, name, value, source, CapabilityClass.SupportedNow, "Always", "Automated tests and direct local review", temporaryFailures, "None required", "Render normally", true);
 
     private static CapabilityDefinition ConditionalDefinition(ProductCapability id, string name, string value, string source, string applies) =>
         new(id, name, value, source, CapabilityClass.ConditionallyApplicable, applies, "Capability-context tests", "None; absence outside the applicable context is expected", "Omit the element; retain evidence internally", "Render only when applicable", true);

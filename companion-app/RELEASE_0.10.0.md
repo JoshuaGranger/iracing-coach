@@ -25,7 +25,7 @@ Both SHA-256 sidecars were regenerated from the final artifacts and independentl
 - Added fuel amount and fuel percentage to the SDK snapshot contract and expanded the shared charcoal theme tokens across the monitor editor, selectors, tooltips, and native title surfaces.
 - Added the Starting Tune workflow to Setups. It uses an exact season, car, track, and setup package, exposes source and fingerprint evidence, separates race and qualifying paths, and never fabricates or rewrites an iRacing setup file.
 - Stabilized review grades at five categories. Missing evidence is shown as `Not graded`, excluded from the overall result, and accompanied by input, calibration, provenance, and limitation details.
-- Reconciled the documentation tree, capability matrix, traceability, portability, security, quality gates, and HOME_QA protocol with the 0.10 implementation.
+- Reconciled the documentation tree, capability matrix, traceability, portability, security, and quality gates with the 0.10 implementation.
 
 ## Automated verification
 
@@ -55,9 +55,8 @@ The Garage61 key on the development machine was loaded only for exact-match scan
 
 ## Acceptance boundary and known limitations
 
-- HOME_QA still owns acceptance with real iRacing telemetry, a real race session, supported multi-monitor/DPI combinations, and sustained use. This candidate does not claim that verdict.
+- Acceptance with real iRacing telemetry, a real race session, supported multi-monitor/DPI combinations, and sustained use still requires direct local validation. This candidate does not claim that verdict.
 - Garage61 authorization and personal ChatGPT/Codex account behavior were not exercised in isolated fixture mode.
-- Starting Tune is source- and contract-verified, but exact real-car and real-track usefulness remains part of HOME_QA.
+- Starting Tune is source- and contract-verified, but exact real-car and real-track usefulness remains a direct validation target.
 - Grade calibration against a broad set of real sessions remains an open quality item even though missing evidence and provenance are now represented correctly.
 - The artifacts are checksum-published but not Authenticode-signed, so Windows may show an unknown-publisher warning.
-

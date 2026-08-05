@@ -62,4 +62,4 @@ Version 0.11.0 exposes the backend package workflow as `Event → Source → Che
 | `PT-045` | Improved, Worse, No change, and Inconclusive outcomes MUST be recordable and durable. |
 | `PT-046` | Failed experiments MUST remain searchable so equivalent disproven changes are not repeated. |
 
-Version 0.11.0 fixture QA verified automatic event loading, a real track selector, zone-specific feedback, a generated controlled recommendation, and result controls. Real clean-run A/B acceptance remains pending.
+Version 0.11.0 local interaction testing covered automatic event loading, a recorded track selector, zone-specific feedback, a generated controlled recommendation, and result controls. Real clean-run A/B acceptance remains pending.

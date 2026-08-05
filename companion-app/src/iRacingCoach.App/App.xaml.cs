@@ -1,6 +1,4 @@
 using System.Windows;
-using System.Security.Cryptography;
-using System.Text;
 using System.Diagnostics;
 
 namespace iRacingCoach.App;
@@ -19,15 +17,8 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        var qaInstance = e.Args.Any(argument =>
-            string.Equals(argument, "--qa-isolated", StringComparison.OrdinalIgnoreCase) ||
-            argument.StartsWith("--qa-fixture-root", StringComparison.OrdinalIgnoreCase) ||
-            argument.StartsWith("--qa-live-replay", StringComparison.OrdinalIgnoreCase));
-        var instanceSuffix = qaInstance
-            ? ".QA." + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(AppContext.BaseDirectory + "|" + string.Join('|', e.Args))))[..12]
-            : string.Empty;
-        _mutex = new Mutex(true, MutexName + instanceSuffix, out var firstInstance);
-        _activationEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivationEventName + instanceSuffix);
+        _mutex = new Mutex(true, MutexName, out var firstInstance);
+        _activationEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivationEventName);
         if (!firstInstance)
         {
             _activationEvent.Set();
