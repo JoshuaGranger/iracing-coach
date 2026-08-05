@@ -326,6 +326,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".sector-square { box-sizing: border-box; flex: 0 0 8px;");
         StringAssert.Contains(coachCss, ".sector-square.unavailable { background: #4E5660; border: 0;");
         StringAssert.Contains(coachCss, ".lap-fuel-column { color: var(--text-primary);");
+        Assert.DoesNotContain(".lap-time.condition-hover:hover", coachCss);
         Assert.DoesNotContain("border-style: dashed", coachCss[coachCss.IndexOf(".sector-square.unavailable", StringComparison.Ordinal)..]);
         StringAssert.Contains(coachCss, ".lap-rail-scroll { overflow-x: hidden; overflow-y: auto;");
         StringAssert.Contains(coachCss, "justify-content: flex-end; gap: 2px;");
