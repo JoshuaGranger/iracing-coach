@@ -2,7 +2,7 @@
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 
-<section class="telemetry-workspace" aria-labelledby="telemetry-heading">
+<section class="telemetry-workspace" aria-labelledby="telemetry-heading" @onkeydown="HandleWorkspaceKeyDown">
     <div class="analysis-section-heading">
         <div><span class="eyebrow">Telemetry</span><h2 id="telemetry-heading">Compare laps</h2></div>
     </div>
@@ -156,8 +156,16 @@
                 <div class="cursor-readout"><strong>@((Cursor * 100).ToString("0.0"))%</strong><span>@CursorSummary</span></div>
             </div>
 
-            <div class="trace-panel">
-                <div class="panel-title"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare</span></div>
+            <div class="trace-panel @(TraceExpanded ? "trace-panel-expanded" : null)">
+                <div class="panel-title trace-panel-title">
+                    <strong>Aligned traces</strong>
+                    <div class="trace-panel-actions">
+                        <span>@Selected.Count selected · hover to compare</span>
+                        <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@TraceExpanded" @onclick="ToggleTraceExpanded">
+                            <ProductIcon Name="@(TraceExpanded ? "contract" : "expand")" Size="16" />
+                        </button>
+                    </div>
+                </div>
                 <svg @ref="ChartElement" class="trace-chart" viewBox="@($"0 0 {F(_chartWidth)} {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized speed, time delta, throttle, brake, calculated tire wear, gear, RPM, steering, rotation, and acceleration traces" @onmouseenter="ShowChartCursor" @onmouseleave="HideChartCursor" @onmousemove="ChartMoved" @onwheel="ChartWheel" @onwheel:preventDefault>
                     @for (var row = 0; row < VisiblePanels.Count; row++)
                     {
@@ -210,6 +218,7 @@
     private string Mode { get; set; } = "speed";
     private bool CleanLapsOnly { get; set; }
     private bool ChartHovered { get; set; }
+    private bool TraceExpanded { get; set; }
     private int? ActivePitLap { get; set; }
     private int? ActiveConditionsLap { get; set; }
     private double PitPopoverX { get; set; }
@@ -257,6 +266,13 @@
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender) => await MeasureChart();
+
+    private void ToggleTraceExpanded() => TraceExpanded = !TraceExpanded;
+
+    private void HandleWorkspaceKeyDown(KeyboardEventArgs args)
+    {
+        if (TraceExpanded && args.Key == "Escape") TraceExpanded = false;
+    }
 
     private void RebuildCalculatedTireWear()
     {

@@ -217,7 +217,14 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "CalculatedTireWear.Build");
         StringAssert.Contains(telemetry, "tire-wear\") return (0, Math.Max(.01");
         StringAssert.Contains(telemetry, "PanelRange(panel)");
+        StringAssert.Contains(telemetry, "trace-panel-expanded");
+        StringAssert.Contains(telemetry, "View traces full screen");
+        StringAssert.Contains(telemetry, "args.Key == \"Escape\"");
         Assert.DoesNotContain("Gear / RPM", telemetry);
+
+        var traceCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        StringAssert.Contains(traceCss, ".trace-panel.trace-panel-expanded");
+        StringAssert.Contains(traceCss, "position: fixed");
 
         var analysis = File.ReadAllText(Path.Combine(ui, "AnalysisWorkspacePage.razor"));
         Assert.DoesNotContain("<RaceCardPanel", analysis);
