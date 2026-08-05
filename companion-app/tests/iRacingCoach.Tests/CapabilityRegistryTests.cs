@@ -309,8 +309,10 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".pit-lap-popover { position: fixed");
         StringAssert.Contains(coachCss, ".lap-conditions-popover { position: fixed");
         StringAssert.Contains(coachCss, ".conditions-grid { display: grid; grid-template-columns: repeat(3");
-        StringAssert.Contains(coachCss, "grid-template-columns: 70px 42px minmax(144px,1fr) 34px 60px 26px 70px");
-        StringAssert.Contains(coachCss, "grid-template-columns: 60px 36px minmax(124px,1fr) 32px 52px 24px 66px");
+        StringAssert.Contains(coachCss, "grid-template-columns: 70px 42px 90px 34px 64px 30px 72px");
+        StringAssert.Contains(coachCss, "grid-template-columns: 64px 36px 84px 32px 58px 26px 66px");
+        StringAssert.Contains(coachCss, "justify-content: center; gap: 0 5px;");
+        StringAssert.Contains(coachCss, ".pit-badge { box-sizing: border-box; max-width: 100%; white-space: nowrap; }");
         StringAssert.Contains(coachCss, "grid-template-columns: 474px minmax(0,1fr)");
         StringAssert.Contains(coachCss, ".telemetry-workstation-grid > .telemetry-grid { align-self: start; }");
         StringAssert.Contains(coachCss, ".lap-rail { align-self: stretch; height: auto; min-height: 0; max-height: none; contain: size; }");
