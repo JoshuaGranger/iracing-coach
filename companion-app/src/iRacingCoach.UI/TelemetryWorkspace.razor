@@ -70,7 +70,7 @@
                                 <span class="lap-pit-column">
                                     @foreach (var direction in pitDirections)
                                     {
-                                        <span class="pit-badge" @onmouseenter="args => ShowPitPopover(args, trace.Lap)" @onmouseleave="HidePitPopover" @onclick:stopPropagation="true">PIT (@direction)</span>
+                                        <span class="pit-badge" @onmouseenter="args => ShowPitPopover(args, trace.Lap)" @onmouseleave="HidePitPopover" @onclick:stopPropagation="true">Pit (@direction)</span>
                                     }
                                 </span>
                                 @if (pitLap && run is not null && ActivePitLap == trace.Lap)
@@ -419,11 +419,14 @@
     }
     private IReadOnlyList<string> PitDirections(AnalysisLapTrace trace)
     {
+        var ordered = Workspace.Traces.OrderBy(item => item.Lap).ToArray();
+        if (ordered.Length > 0 && trace.Lap == ordered[0].Lap &&
+            (trace.PitEntry || trace.PitExit || trace.PitTimeSeconds.GetValueOrDefault() > 0))
+            return ["out"];
         var directions = new List<string>();
         if (trace.PitEntry) directions.Add("in");
         if (trace.PitExit) directions.Add("out");
         if (directions.Count > 0 || trace.PitTimeSeconds.GetValueOrDefault() <= 0) return directions;
-        var ordered = Workspace.Traces.OrderBy(item => item.Lap).ToArray();
         var index = Array.FindIndex(ordered, item => item.Lap == trace.Lap);
         var previousWasPit = index > 0 && ordered[index - 1].PitTimeSeconds.GetValueOrDefault() > 0;
         var nextIsPit = index >= 0 && index + 1 < ordered.Length && ordered[index + 1].PitTimeSeconds.GetValueOrDefault() > 0;

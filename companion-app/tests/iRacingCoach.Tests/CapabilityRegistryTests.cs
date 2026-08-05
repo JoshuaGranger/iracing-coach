@@ -273,10 +273,12 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "class=\"lap-fuel-column\"");
         StringAssert.Contains(telemetry, "class=\"lap-incident-column\"");
         StringAssert.Contains(telemetry, "class=\"lap-pit-column\"");
-        StringAssert.Contains(telemetry, "PIT (@direction)");
+        StringAssert.Contains(telemetry, "Pit (@direction)");
         StringAssert.Contains(telemetry, "LapFlags(trace)");
         StringAssert.Contains(telemetry, "if (!trace.Complete) return [new LapFlag(\"incomplete\", \"Incomplete lap\")]");
         StringAssert.Contains(telemetry, "states.RemoveAll(value => value.Equals(\"white\"");
+        StringAssert.Contains(telemetry, ">Pit (@direction)</span>");
+        StringAssert.Contains(telemetry, "trace.Lap == ordered[0].Lap");
         StringAssert.Contains(telemetry, "ClearSelection");
         StringAssert.Contains(telemetry, "No laps selected");
         Assert.DoesNotContain("Selected.Count >= 5", telemetry);
@@ -316,6 +318,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".lap-flag.checkered");
         StringAssert.Contains(coachCss, ".sector-square { box-sizing: border-box; flex: 0 0 8px;");
         StringAssert.Contains(coachCss, ".sector-square.unavailable { background: #4E5660; border: 0;");
+        StringAssert.Contains(coachCss, ".lap-fuel-column { color: var(--text-primary);");
         Assert.DoesNotContain("border-style: dashed", coachCss[coachCss.IndexOf(".sector-square.unavailable", StringComparison.Ordinal)..]);
         StringAssert.Contains(coachCss, ".lap-rail-scroll { overflow-x: hidden; overflow-y: auto;");
         StringAssert.Contains(coachCss, "justify-content: flex-end; gap: 2px;");
