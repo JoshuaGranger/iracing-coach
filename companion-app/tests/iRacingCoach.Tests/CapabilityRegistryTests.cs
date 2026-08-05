@@ -315,8 +315,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".pit-badge { box-sizing: border-box; max-width: 100%; white-space: nowrap; }");
         StringAssert.Contains(coachCss, "grid-template-columns: minmax(0,1fr); justify-self: end;");
         StringAssert.Contains(coachCss, ".lap-time small { display: block; width: 100%;");
-        StringAssert.Contains(coachCss, ".lap-time small { transform: translateX(-.8ch); }");
-        StringAssert.Contains(coachCss, ".lap-time { justify-self: center; }");
+        StringAssert.Contains(coachCss, ".lap-time { display: flex; flex-direction: column; align-items: flex-end; justify-self: center; }");
+        StringAssert.Contains(coachCss, ".lap-pace-value,.lap-time small { width: max-content; transform: none; }");
         StringAssert.Contains(coachCss, "grid-template-columns: 474px minmax(0,1fr)");
         StringAssert.Contains(coachCss, ".telemetry-workstation-grid > .telemetry-grid { align-self: start; }");
         StringAssert.Contains(coachCss, ".lap-rail { align-self: stretch; height: auto; min-height: 0; max-height: none; contain: size; }");
