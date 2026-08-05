@@ -394,10 +394,16 @@
     private bool IsClean(AnalysisLapTrace trace) => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && IncidentPoints(trace.Lap) == 0 && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
     private IReadOnlyList<LapFlag> LapFlags(AnalysisLapTrace trace)
     {
+        // iRacing keeps the finish state active across timing boundaries. A partial
+        // post-finish recording is not another checkered lap, and the checkered lap
+        // itself must not retain the preceding white flag.
+        if (!trace.Complete) return [new LapFlag("incomplete", "Incomplete lap")];
         var states = new List<string>(trace.FlagStates ?? []);
         if (trace.GreenFraction.GetValueOrDefault() > .001 && !states.Contains("green", StringComparer.OrdinalIgnoreCase)) states.Insert(0, "green");
         if (trace.CautionFraction.GetValueOrDefault() > .001 && !states.Any(value => value.Equals("yellow", StringComparison.OrdinalIgnoreCase) || value.Equals("caution", StringComparison.OrdinalIgnoreCase))) states.Add("yellow");
-        if (states.Count == 0) states.Add(!trace.Complete ? "incomplete" : IsCaution(trace) ? "yellow" : "green");
+        if (states.Any(value => value.Equals("checkered", StringComparison.OrdinalIgnoreCase) || value.Equals("checker", StringComparison.OrdinalIgnoreCase)))
+            states.RemoveAll(value => value.Equals("white", StringComparison.OrdinalIgnoreCase));
+        if (states.Count == 0) states.Add(IsCaution(trace) ? "yellow" : "green");
         return states
             .Select(state => state.ToLowerInvariant() switch
             {

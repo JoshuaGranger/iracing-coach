@@ -275,6 +275,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "class=\"lap-pit-column\"");
         StringAssert.Contains(telemetry, "PIT (@direction)");
         StringAssert.Contains(telemetry, "LapFlags(trace)");
+        StringAssert.Contains(telemetry, "if (!trace.Complete) return [new LapFlag(\"incomplete\", \"Incomplete lap\")]");
+        StringAssert.Contains(telemetry, "states.RemoveAll(value => value.Equals(\"white\"");
         StringAssert.Contains(telemetry, "ClearSelection");
         StringAssert.Contains(telemetry, "No laps selected");
         Assert.DoesNotContain("Selected.Count >= 5", telemetry);
