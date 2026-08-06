@@ -4,20 +4,20 @@ Date: 2026-08-05
 
 ## Current release artifacts
 
-- Source commit: `42bcbde` (`main`)
+- Source commit: `2855a80` (`main`)
 - Executable: `src/iRacingCoach.App/bin/Release/net10.0-windows10.0.17763.0/iRacing Coach.exe`
 - Installer: `artifacts/dist/v0.12.0/iRacingCoach-0.12.0-Setup.exe`
-- Installer bytes: `498866216`
-- Installer SHA-256: `67cf63be822fd5a879b0db18fb8e43ded000791de65a77ff5234b28a371afc44`
+- Installer bytes: `498870312`
+- Installer SHA-256: `6c8b4b80742f6c6dbf8c2d536831f6e688ddd5db5d431f8aff3fe9c58a5c0406`
 - Portable package: `artifacts/dist/v0.12.0/iRacingCoach-0.12.0-Portable-win-x64.zip`
-- Portable bytes: `382874133`
-- Portable SHA-256: `4aa8498686e316d4e59305c543e88eeb8a6803e4ef1193aab4790bd660f7b156`
+- Portable bytes: `382876596`
+- Portable SHA-256: `44a6d043f317e91302c9d057c8b975f3bd67ee98c221ccf62bdb4406f30a7947`
 - Payload files: `9272`
-- These artifacts were rebuilt after the final August 5 telemetry copy refinement. The focused packaging run did not repeat the unrelated installer lifecycle certification suite.
+- These artifacts were rebuilt after the August 5 in-place widget replacement refinement. The focused packaging run did not repeat the unrelated installer lifecycle certification suite.
 
 ## Live telemetry milestone
 
-Live telemetry now has a full-height fixed editor drawer and a direct-manipulation dashboard studio. Widgets can be dragged from anywhere on a library row into a targeted grid cell, moved between cells, and resized from every edge or corner. Pointer movement uses a visible snap preview, a 0.56-cell hysteresis threshold, deterministic packing, animated reflow, edge auto-scroll, pointer capture, and serialized commits.
+Live telemetry now has a full-height fixed editor drawer and a direct-manipulation dashboard studio. Widgets can be dragged from anywhere on a library row into a targeted grid cell, moved between cells, and resized from every edge or corner. Dragging library telemetry over an occupied tile highlights the complete destination in yellow, names the pending replacement, and atomically swaps the metric without moving or resizing the tile. Pointer movement uses a visible snap preview, a 0.56-cell hysteresis threshold, deterministic packing, animated reflow, edge auto-scroll, pointer capture, pointer-up target resolution, and serialized commits.
 
 The logical dashboard occupies a fixed footprint. Increasing its row or column count shrinks square cells instead of growing the panel, while the miniature pop-out has a separate physical-scale control. Editable cards use dashed boundaries and expose direct configure and remove actions. Every real metric can switch among number, gauge, bar, and chart presentations; state metrics retain status as an additional form. Boolean and categorical charts use stable numeric encodings and stepped traces, and missing evidence remains missing.
 
@@ -28,10 +28,11 @@ The telemetry catalog and layout coordinator now enforce semantic numeric ranges
 ## Verification
 
 - Release application build: zero warnings and zero errors.
-- .NET suite: 83 passed, 0 failed.
+- .NET suite: 84 passed, 0 failed.
 - Handoff verifier: passed before implementation, including its deterministic backend contract checks.
 - Repository whitespace check: passed.
 - Hands-on Windows UI verification: fixed 3 x 3 and 3 x 4 grids remained square inside the same host footprint at wide and compact widths; the temporary grid change was undone.
+- Hands-on replacement verification: a library item dropped onto its matching occupied tile resolved through the replacement path without adding a duplicate or reflowing the seven-widget dashboard; all temporary test state was restored.
 - Hands-on pop-out verification: separate Grid and Monitor size controls, independent explanatory copy, fixed square-cell workspace, universal catalog styles, Default-only protection, and ordinary custom-layout controls were inspected in the built application.
 - All temporary visual-test layout mutations were restored with the application undo path.
 

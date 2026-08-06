@@ -49,11 +49,11 @@ Scope: live telemetry only. This record completes the applicable development-mac
 ## Verification evidence
 
 - [x] Release build: 0 warnings, 0 errors.
-- [x] Full focused .NET suite: 83 passed, 0 failed.
+- [x] Full focused .NET suite: 84 passed, 0 failed.
 - [x] Handoff verifier and MCP end-to-end fixture check: passed.
 - [x] JavaScript parser check and repository whitespace check: passed.
 - [x] Hands-on normal and compact Windows UI passes: completed for the fixed square web grid, universal catalog forms, Default-only protection, and separate pop-out Grid/Monitor size controls; all temporary layout mutations were undone.
-- [x] Current Release executable, installer, and portable package were rebuilt from commit `42bcbde` after the final August 5 telemetry copy refinement; this focused packaging run did not repeat unrelated installer lifecycle certification.
+- [x] Current Release executable, installer, and portable package were rebuilt from commit `2855a80` after the August 5 in-place widget replacement refinement; this focused packaging run did not repeat unrelated installer lifecycle certification.
 
 ## Racing-PC checks still required
 
