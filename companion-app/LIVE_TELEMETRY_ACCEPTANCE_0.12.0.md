@@ -53,7 +53,7 @@ Scope: live telemetry only. This record completes the applicable development-mac
 - [x] Handoff verifier and MCP end-to-end fixture check: passed.
 - [x] JavaScript parser check and repository whitespace check: passed.
 - [x] Hands-on normal and compact Windows UI passes: completed for the fixed square web grid, universal catalog forms, Default-only protection, and separate pop-out Grid/Monitor size controls; all temporary layout mutations were undone.
-- [x] Current Release executable built directly from this source snapshot. Existing 0.12.0 installer/portable artifacts predate the final August 5 refinement and are not claimed as the current build.
+- [x] Current Release executable, installer, and portable package were rebuilt from commit `42bcbde` after the final August 5 telemetry copy refinement; this focused packaging run did not repeat unrelated installer lifecycle certification.
 
 ## Racing-PC checks still required
 

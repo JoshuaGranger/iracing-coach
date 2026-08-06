@@ -2,11 +2,18 @@
 
 Date: 2026-08-05
 
-## Current runnable build
+## Current release artifacts
 
+- Source commit: `42bcbde` (`main`)
 - Executable: `src/iRacingCoach.App/bin/Release/net10.0-windows10.0.17763.0/iRacing Coach.exe`
-- Source: the repository state recorded by this milestone
-- The installer and portable archive already present under `artifacts/dist/v0.12.0` predate the final August 5 telemetry-editor refinement. They are retained as prior build evidence, not identified as the current executable. This focused UI round intentionally did not repeat installer lifecycle certification.
+- Installer: `artifacts/dist/v0.12.0/iRacingCoach-0.12.0-Setup.exe`
+- Installer bytes: `498866216`
+- Installer SHA-256: `67cf63be822fd5a879b0db18fb8e43ded000791de65a77ff5234b28a371afc44`
+- Portable package: `artifacts/dist/v0.12.0/iRacingCoach-0.12.0-Portable-win-x64.zip`
+- Portable bytes: `382874133`
+- Portable SHA-256: `4aa8498686e316d4e59305c543e88eeb8a6803e4ef1193aab4790bd660f7b156`
+- Payload files: `9272`
+- These artifacts were rebuilt after the final August 5 telemetry copy refinement. The focused packaging run did not repeat the unrelated installer lifecycle certification suite.
 
 ## Live telemetry milestone
 
