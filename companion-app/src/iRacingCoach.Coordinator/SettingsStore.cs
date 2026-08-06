@@ -61,6 +61,8 @@ public sealed class JsonSettingsStore : ISettingsStore
 
             settings.CoachHome = Path.GetDirectoryName(_path) ?? CompanionSettings.DefaultCoachHome;
             settings.LiveMonitor ??= new LiveMonitorLayout();
+            settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
+            var repairedAnalysisTraces = AnalysisTraceLayouts.ValidateAndRepair(settings.RaceAnalysisTraces);
             var migratedMonitor = serialized is not null && settings.SettingsSchemaVersion < 4 && TryMigrateLegacyMonitor(serialized, settings.LiveMonitor);
             var migratedMachineLayout = serialized is not null && !File.Exists(_machinePath) && TryReadLegacyMachineLayout(serialized, settings.LiveMonitor);
             ApplyMachineSettings(settings.LiveMonitor);
@@ -71,7 +73,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                 var migrated = TryMigrateGarage61Credential(settings);
                 var schemaMigrated = settings.SettingsSchemaVersion < 4;
                 settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
-                if (migrated || legacyCredentialPresent || migratedMachineLayout || migratedMonitor || repairedMonitor || schemaMigrated) Save(settings);
+                if (migrated || legacyCredentialPresent || migratedMachineLayout || migratedMonitor || repairedMonitor || repairedAnalysisTraces || schemaMigrated) Save(settings);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException or PlatformNotSupportedException) { }
             return settings;
@@ -91,6 +93,8 @@ public sealed class JsonSettingsStore : ISettingsStore
         }
         settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
         _ = LiveMonitorLayouts.ValidateAndRepair(settings.LiveMonitor, out _);
+        settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
+        _ = AnalysisTraceLayouts.ValidateAndRepair(settings.RaceAnalysisTraces);
         SaveMachineSettings(settings.LiveMonitor);
         var directory = Path.GetDirectoryName(_path) ?? throw new InvalidOperationException("The settings path has no parent directory.");
         Directory.CreateDirectory(directory);

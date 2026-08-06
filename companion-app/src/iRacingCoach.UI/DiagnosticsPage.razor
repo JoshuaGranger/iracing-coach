@@ -1,11 +1,11 @@
 <section class="diagnostics-section" aria-labelledby="diagnostics-heading">
-    <div class="diagnostics-divider"></div>
     <div class="section-heading diagnostics-heading">
-        <div><span class="eyebrow">Help</span><h2 id="diagnostics-heading">Troubleshooting</h2><p class="section-copy">Open these details only when something is not working. Credentials and raw telemetry are never included.</p></div>
-        <button class="button secondary" aria-expanded="@State.DiagnosticsExpanded" @onclick="State.ToggleDiagnostics">@(State.DiagnosticsExpanded ? "Hide details" : "Show details")</button>
+        <div><ProductIcon Name="info" Size="17" /><h2 id="diagnostics-heading">Troubleshooting</h2></div>
+        <button class="text-button" aria-expanded="@State.DiagnosticsExpanded" @onclick="State.ToggleDiagnostics">@(State.DiagnosticsExpanded ? "Close" : "Open")</button>
     </div>
     @if (State.DiagnosticsExpanded)
     {
+        <p class="section-copy diagnostics-copy">Health details exclude credentials and raw telemetry.</p>
         <div class="diagnostic-grid compact-diagnostics">
             @foreach (var fact in State.Diagnostics)
             {

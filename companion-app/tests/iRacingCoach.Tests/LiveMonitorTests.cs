@@ -231,6 +231,61 @@ public sealed class LiveMonitorTests
     }
 
     [TestMethod]
+    public void ReplaceTile_MovesDraggedWidgetIntoTargetFootprintAndRemovesTargetAtomically()
+    {
+        var source = new LiveMonitorTile
+        {
+            Id = "source",
+            MetricId = "brake",
+            Row = 0,
+            Column = 0,
+            RowSpan = 1,
+            ColumnSpan = 1,
+            DisplayStyle = LiveMonitorDisplayStyle.Trend,
+            Unit = "%",
+            Precision = 2,
+            TrendDuration = LiveMonitorTrendDuration.Seconds60,
+            Accent = "coral"
+        };
+        var layout = new LiveMonitorNamedLayout
+        {
+            Id = "tile-replacement-layout",
+            Name = "Tile replacement layout",
+            Rows = 3,
+            Columns = 3,
+            Tiles =
+            [
+                source,
+                new LiveMonitorTile { Id = "target", MetricId = "speed", Row = 1, Column = 1, RowSpan = 2, ColumnSpan = 2 },
+                Tile("neighbor", "rpm", 0, 2)
+            ]
+        };
+
+        Assert.IsTrue(LiveMonitorLayouts.TryReplaceTile(layout, "source", "target"));
+
+        Assert.HasCount(2, layout.Tiles);
+        Assert.IsFalse(layout.Tiles.Any(tile => tile.Id == "target"));
+        var moved = layout.Tiles.Single(tile => tile.Id == "source");
+        Assert.AreEqual("brake", moved.MetricId);
+        Assert.AreEqual(1, moved.Row);
+        Assert.AreEqual(1, moved.Column);
+        Assert.AreEqual(2, moved.RowSpan);
+        Assert.AreEqual(2, moved.ColumnSpan);
+        Assert.AreEqual(LiveMonitorDisplayStyle.Trend, moved.DisplayStyle);
+        Assert.AreEqual("%", moved.Unit);
+        Assert.AreEqual(2, moved.Precision);
+        Assert.AreEqual(LiveMonitorTrendDuration.Seconds60, moved.TrendDuration);
+        Assert.AreEqual("coral", moved.Accent);
+        AssertNoOverlap(layout);
+
+        var beforeInvalidReplacement = LayoutFingerprint(layout);
+        Assert.IsFalse(LiveMonitorLayouts.TryReplaceTile(layout, "source", "source"));
+        Assert.IsFalse(LiveMonitorLayouts.TryReplaceTile(layout, "missing", "source"));
+        Assert.IsFalse(LiveMonitorLayouts.TryReplaceTile(layout, "source", "missing"));
+        Assert.AreEqual(beforeInvalidReplacement, LayoutFingerprint(layout));
+    }
+
+    [TestMethod]
     public void TelemetryCatalog_IsAlphabetizedTypedAndNeverSubstitutesZeroForMissingData()
     {
         var names = LiveTelemetryCatalog.All.Select(definition => definition.Name).ToArray();
@@ -318,6 +373,66 @@ public sealed class LiveMonitorTests
         Assert.AreEqual(10d, fuel.NumericValue);
         Assert.AreEqual(0d, fuel.Minimum);
         Assert.AreEqual(20d, fuel.Maximum);
+    }
+
+    [TestMethod]
+    public void TelemetryTrendValue_ConvertsAccelerationUnitsWithoutInventingMissingValues()
+    {
+        var point = new LiveTracePoint(
+            DateTimeOffset.UtcNow, 4, .5, 120, null, null, null, 3, 6400, null,
+            1, -.5, null, null, null, default);
+
+        Assert.AreEqual(9.80665, LiveTelemetryCatalog.TrendValue("lateral-acceleration", point, "m/s²")!.Value, 0.00001);
+        Assert.AreEqual(-4.903325, LiveTelemetryCatalog.TrendValue("longitudinal-acceleration", point, "m/s²")!.Value, 0.00001);
+        Assert.AreEqual(1d, LiveTelemetryCatalog.TrendValue("lateral-acceleration", point, "g"));
+        Assert.IsNull(LiveTelemetryCatalog.TrendValue("brake", point, "%"));
+    }
+
+    [TestMethod]
+    public void LiveTelemetryTrendCanvas_PreservesTruthAndBoundsDisplayWork()
+    {
+        var root = CompanionAppRoot();
+        var ui = Path.Combine(root, "src", "iRacingCoach.UI");
+        var razor = File.ReadAllText(Path.Combine(ui, "LiveTelemetryLayoutGrid.razor"));
+        var script = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-tile-charts.js"));
+
+        StringAssert.Contains(script, "value === null || value === undefined || value === \"\"");
+        StringAssert.Contains(script, "shape === \"step\"");
+        StringAssert.Contains(script, "const lap = finite(structured ? point.lap : null)");
+        StringAssert.Contains(script, "const at = finite(structured ? point.atUnixMilliseconds : null)");
+        StringAssert.Contains(script, "A structured missing sample is retained as a gap marker");
+        StringAssert.Contains(script, "if (point.value === null) continue;");
+        StringAssert.Contains(script, "if (point.value === null) {");
+        StringAssert.Contains(script, "finishSegment();");
+        StringAssert.Contains(script, "previousAt !== null && point.at !== null && point.at - previousAt > gapThreshold");
+        Assert.IsFalse(script.Contains("point.value || 0", StringComparison.Ordinal), "Missing chart samples must not be coerced to zero.");
+
+        StringAssert.Contains(script, "function stableRange(chart, observed, now)");
+        StringAssert.Contains(script, "domainShrinkDelayMilliseconds");
+        StringAssert.Contains(script, "domainDecayIntervalMilliseconds");
+        StringAssert.Contains(script, "domainDecayFactor");
+        StringAssert.Contains(script, "Never decay through a currently visible sample");
+        Assert.IsFalse(script.Contains("chart.points.map(point => point.value)", StringComparison.Ordinal), "Domain calculation must not allocate and rescale an unbounded values array per sample.");
+        Assert.IsFalse(script.Contains("Math.min(...values)", StringComparison.Ordinal), "Large telemetry histories must not be spread into function arguments.");
+
+        StringAssert.Contains(script, "function decimatedSegments(chart, studio, valueRange)");
+        StringAssert.Contains(script, "bucketCount * verticesPerPixel");
+        StringAssert.Contains(script, "bucket.first, bucket.minimum, bucket.maximum, bucket.last");
+        StringAssert.Contains(script, "preserves brief extrema");
+        StringAssert.Contains(script, "resetLapCharts(studio)");
+        StringAssert.Contains(script, "isLapRegression(studio.latestLapProgress, progress)");
+        StringAssert.Contains(script, "observeClock(studio, clockPoint, arrivedAt)) resetLapCharts(studio)");
+        StringAssert.Contains(script, "const scrolling = !studio.reducedMotion");
+        StringAssert.Contains(script, "if (!chart.dirty && !scrolling) return;");
+        StringAssert.Contains(script, "chart.palette = palette(canvas)");
+        StringAssert.Contains(script, "secondsWindow(chart.configuration)");
+        StringAssert.Contains(script, "context.translate(-shift, 0)");
+        StringAssert.Contains(razor, "tile.DisplayStyle == LiveMonitorDisplayStyle.Trend)");
+        StringAssert.Contains(razor, "seed = TrendSeed(tile)");
+        StringAssert.Contains(razor, "atUnixMilliseconds = item.Point.At.ToUnixTimeMilliseconds()");
+        StringAssert.Contains(razor, "value = item.Value");
+        Assert.IsFalse(razor.Contains(".Where(item => item.Value.HasValue)", StringComparison.Ordinal), "Seed history must preserve positioned missing samples as explicit chart gaps.");
+        Assert.IsFalse(razor.Contains("LiveMonitorDisplayStyle.Trend && reading.TrendValues.Count", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -489,34 +604,101 @@ public sealed class LiveMonitorTests
     }
 
     [TestMethod]
-    public void LiveMonitorMarkup_ExposesRequiredIconControlsAndKeyboardGuidance()
+    public void LiveMonitorMarkup_IsAReadOnlyEqualSplitViewerWithIndependentScale()
     {
         var root = CompanionAppRoot();
         var xaml = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "LiveMonitorWindow.xaml"));
-        foreach (var accessibleName in new[] { "Layout selector", "Unlock layout editing", "Grid settings", "Monitor scale", "Close live monitor", "Search telemetry catalog", "Tile decimal precision", "Chart history duration", "Tile accent color" })
+        foreach (var accessibleName in new[] { "Layout selector", "Monitor scale", "Close telemetry popout", "Overall monitor scale" })
             StringAssert.Contains(xaml, accessibleName);
-        Assert.IsFalse(xaml.Contains("Grid and scale settings", StringComparison.Ordinal), "Grid dimensions and physical pop-out scale must have separate controls.");
-        StringAssert.Contains(xaml, "x:Name=\"GridSettingsSurface\"");
         StringAssert.Contains(xaml, "x:Name=\"ScaleSettingsSurface\"");
         StringAssert.Contains(xaml, "x:Name=\"WorkspaceHost\"");
-        StringAssert.Contains(xaml, "Width=\"444\" Height=\"296\"");
-        StringAssert.Contains(xaml, "Alt+Arrow moves");
-        StringAssert.Contains(xaml, "Shift+Arrow resizes");
-        StringAssert.Contains(xaml, "ResetLayoutButton");
+        StringAssert.Contains(xaml, "Width=\"540\" Height=\"360\"");
+        StringAssert.Contains(xaml, "MouseLeftButtonDown=\"ControlStrip_MouseLeftButtonDown\"");
+        StringAssert.Contains(xaml, "TextTrimming=\"CharacterEllipsis\"");
+        StringAssert.Contains(xaml, "Topmost=\"True\"");
+        StringAssert.Contains(xaml, "Color=\"#65D0B6\"");
+        StringAssert.Contains(xaml, "AllowsTransparency=\"False\"");
+        foreach (var removedEditorContract in new[] { "Unlock layout editing", "Grid settings", "GridSettingsSurface", "EditorPanel", "Search telemetry catalog", "Telemetry catalog", "Tile display style", "AllowDrop=\"True\"", "DragGripButton" })
+            Assert.IsFalse(xaml.Contains(removedEditorContract, StringComparison.Ordinal), $"The pop-out must not duplicate main-app editing: {removedEditorContract}");
+
         var monitorCode = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "LiveMonitorWindow.xaml.cs"));
         StringAssert.Contains(monitorCode, "CheckForExternalEditorChange");
         StringAssert.Contains(monitorCode, "EditorSignature(Preferences)");
-        StringAssert.Contains(monitorCode, "Math.Min(GridViewportWidth / layout.Columns, GridViewportHeight / layout.Rows)");
+        StringAssert.Contains(monitorCode, "TileGrid.Width = GridViewportWidth");
+        StringAssert.Contains(monitorCode, "TileGrid.Height = GridViewportHeight");
+        StringAssert.Contains(monitorCode, "new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }");
+        StringAssert.Contains(monitorCode, "new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }");
         StringAssert.Contains(monitorCode, "RootScale.LayoutTransform = new ScaleTransform(scale, scale)");
-        StringAssert.Contains(monitorCode, "_gridSettingsUndoBackup = _undo.ToArray()");
-        StringAssert.Contains(monitorCode, "RestoreUndoHistory(_gridSettingsUndoBackup)");
-        StringAssert.Contains(monitorCode, "for (var index = snapshots.Count - 1; index >= 0; index--) _undo.Push(snapshots[index])");
-        StringAssert.Contains(monitorCode, "private void RollbackFailedMutation()");
-        StringAssert.Contains(monitorCode, "if (!_undo.TryPop(out var snapshot)) return;");
-        StringAssert.Contains(monitorCode, "private sealed record LayoutSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts);");
-        Assert.IsFalse(monitorCode.Contains("_undo.Pop()", StringComparison.Ordinal), "Failed edits must restore the captured layout, not merely discard its undo entry.");
-        Assert.IsFalse(monitorCode.Contains("Preferences.OverallScale = snapshot.OverallScale", StringComparison.Ordinal), "Layout undo must not change the independent monitor scale.");
-        StringAssert.Contains(monitorCode, "var retained = _undo.Take(20).Reverse().ToArray()");
+        StringAssert.Contains(monitorCode, "ScaleSlider.Value = Math.Round(Preferences.OverallScale * 100 / 10) * 10");
+        StringAssert.Contains(monitorCode, "private const double MinimumFontSize = 11.67");
+        StringAssert.Contains(monitorCode, "var dense = tileWidth < 88 || tileHeight < 64");
+        StringAssert.Contains(monitorCode, "Visibility = dense ? Visibility.Collapsed : Visibility.Visible");
+        StringAssert.Contains(monitorCode, "var showUnit = height >= 34");
+        StringAssert.Contains(monitorCode, "ControlStrip_MouseLeftButtonDown");
+        StringAssert.Contains(monitorCode, "DragMove()");
+        StringAssert.Contains(monitorCode, "FittedValue");
+        StringAssert.Contains(monitorCode, "StretchDirection = StretchDirection.DownOnly");
+        StringAssert.Contains(monitorCode, "CompositionTarget.Rendering += OnCompositionRendering");
+        StringAssert.Contains(monitorCode, "CompositionTarget.Rendering -= OnCompositionRendering");
+        StringAssert.Contains(monitorCode, "Interlocked.Exchange(ref _renderDirty, 0)");
+        StringAssert.Contains(monitorCode, "foreach (var visual in _tileVisuals)");
+        StringAssert.Contains(monitorCode, "visual.Update(reading, liveState)");
+        StringAssert.Contains(monitorCode, "private sealed class TrendBuffer");
+        StringAssert.Contains(monitorCode, "if (state.FramesRead == _lastFrame)");
+        StringAssert.Contains(monitorCode, "liveState with { History = [] }");
+        Assert.IsFalse(monitorCode.Contains("TimeSpan.FromMilliseconds(200)", StringComparison.Ordinal), "The native monitor must not cap fresh telemetry at five updates per second.");
+        Assert.AreEqual(1, monitorCode.Split("TileGrid.Children.Clear()", StringSplitOptions.None).Length - 1, "The tile tree should be rebuilt only by the layout path, not on telemetry frames.");
+        Assert.DoesNotContain("FontSize = 9,", monitorCode);
+        Assert.DoesNotContain("FontSize = 10,", monitorCode);
+        Assert.DoesNotContain("FontSize = compact ?", monitorCode);
+        foreach (var removedEditorContract in new[] { "LiveMonitorLayouts.EnsureEditable", "LiveMonitorLayouts.TryResizeGrid", "LiveMonitorLayouts.TryAddMetric", "DragDrop.DoDragDrop", "TileGrid_Drop", "RefreshCatalog", "RefreshTileEditor" })
+            Assert.IsFalse(monitorCode.Contains(removedEditorContract, StringComparison.Ordinal), $"Native layout editing belongs in the main app: {removedEditorContract}");
+    }
+
+    [TestMethod]
+    public void NativeTrendRendering_CoastsCachedGeometryAtDisplayCadenceWithoutInventingTelemetry()
+    {
+        var root = CompanionAppRoot();
+        var monitorCode = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "LiveMonitorWindow.xaml.cs"));
+
+        foreach (var displayCadenceContract in new[]
+        {
+            "Stopwatch.GetTimestamp()",
+            "Stopwatch.GetElapsedTime(_lastArrivalTimestamp, frameTimestamp)",
+            "visual.AnimateTrend(frameTimestamp, motionEnabled)",
+            "var maximumCoast = 1.5d / _sourceTickRate",
+            "var target = -motion.Shift",
+            "RenderTransform = translation",
+            "private readonly record struct TrendMotion(double Shift, bool Continue)"
+        })
+            StringAssert.Contains(monitorCode, displayCadenceContract);
+
+        foreach (var cachedGeometryContract in new[]
+        {
+            "var trace = new Path",
+            "BuildTrendGeometry(buffer, width, height",
+            "var geometry = new StreamGeometry()",
+            "trace.Data = values.Count < 2",
+            "if (!buffer.Update(reading, state)) return;"
+        })
+            StringAssert.Contains(monitorCode, cachedGeometryContract);
+
+        foreach (var sourceIntegrityContract in new[]
+        {
+            "LiveTelemetryCatalog.TrendValue(_metricId, point, _unit)",
+            "state.History ?? []",
+            "Nullable.Equals(latest.Value, value)",
+            "if (!sample.Value.HasValue || !double.IsFinite(sample.Value.Value))",
+            "sample.At - previousAt.Value > buffer.GapThreshold",
+            "lapRegressed || IsClockRegression(at, progress)"
+        })
+            StringAssert.Contains(monitorCode, sourceIntegrityContract);
+
+        StringAssert.Contains(monitorCode, "var motionEnabled = _state.LiveState.Snapshot.Connected && !_state.Settings.UseReducedMotion");
+        StringAssert.Contains(monitorCode, "if (!IsVisible || _scaleSettingsOpen) return;");
+        StringAssert.Contains(monitorCode, "if (!enabled || _activeNumericCount < 2 || _lastArrivalTimestamp <= 0)");
+        Assert.IsFalse(monitorCode.Contains("new Polyline", StringComparison.Ordinal), "A display frame should translate cached geometry instead of rebuilding a point collection.");
+        Assert.IsFalse(monitorCode.Contains("_trendTimer", StringComparison.Ordinal), "Trend motion must follow composition frames, not a coarse synthetic timer.");
     }
 
     [TestMethod]
@@ -535,13 +717,27 @@ public sealed class LiveMonitorTests
         var script = File.ReadAllText(scriptPath);
         foreach (var pointerContract in new[] { "pointerdown", "pointermove", "pointerup", "setPointerCapture", "getBoundingClientRect" })
             StringAssert.Contains(script, pointerContract);
-        foreach (var snapContract in new[] { "snapHysteresis", "data-live-resize", "CommitTilePlacement", "DropMetric", "ReplaceMetric", "requestAnimationFrame", "Escape", "placementCanPack", "state.committing", "lostpointercapture", "windowBlur", "autoScroll", "document.elementFromPoint", "tileElement.getBoundingClientRect()", "tileAtPointer", "tileAtCell", "finalTarget", "replacementTileId", "Replace ${target.name} with ${session.metricName}" })
+        foreach (var snapContract in new[] { "snapHysteresis", "data-live-resize", "CommitTilePlacement", "DropMetric", "ReplaceMetric", "ReplaceTile", "requestAnimationFrame", "Escape", "placementCanPack", "state.committing", "lostpointercapture", "windowBlur", "autoScroll", "document.elementFromPoint", "tileElement.getBoundingClientRect()", "tileAtPointer", "tileAtCell", "excludedTileId", "replacementTileId", "Replace ${target.name} with ${session.metricName}" })
             StringAssert.Contains(script, snapContract);
+        Assert.AreEqual(2, script.Split("const target = inside ? tileAtPointer", StringSplitOptions.None).Length - 1, "Both an existing widget move and a toolbox metric drop must detect an occupied target.");
+        StringAssert.Contains(script, "await state.dotnet.invokeMethodAsync(\"ReplaceTile\", session.original.id, session.replacementTileId)");
+        StringAssert.Contains(razor, "public async Task<bool> ReplaceTile(string sourceTileId, string targetTileId)");
         StringAssert.Contains(script, "event.target.closest(\"[data-live-drag-tile]\")");
         StringAssert.Contains(script, "const viewport = state.root.querySelector(\"[data-live-grid-viewport]\")");
-        StringAssert.Contains(script, "Math.min(availableWidth / columns, availableHeight / rows)");
-        StringAssert.Contains(script, "grid.style.width = `${width}px`");
-        StringAssert.Contains(script, "grid.style.height = `${height}px`");
+        StringAssert.Contains(script, "grid.style.width = \"100%\"");
+        StringAssert.Contains(script, "grid.style.height = \"100%\"");
+        StringAssert.Contains(razor, "Math.Clamp(point.LapDistancePercent ?? 0, 0, 1)");
+        var tileChartScript = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-tile-charts.js"));
+        StringAssert.Contains(tileChartScript, "clamp(point.lapDistance, 0, 1)");
+        StringAssert.Contains(razor, "State.LiveState.SessionEpoch");
+        StringAssert.Contains(tileChartScript, "nextSessionEpoch");
+        StringAssert.Contains(tileChartScript, "resetCharts(studio)");
+        StringAssert.Contains(tileChartScript, "if (!updateOptions(studio, options)) return;");
+        var liveChartScript = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-chart.js"));
+        StringAssert.Contains(liveChartScript, "nextSessionEpoch");
+        StringAssert.Contains(liveChartScript, "clearPoints(state)");
+        StringAssert.Contains(css, "repeat(var(--live-columns),minmax(0,1fr))");
+        Assert.IsFalse(script.Contains("Math.min(availableWidth / columns, availableHeight / rows)", StringComparison.Ordinal), "Dashboard rows and columns must share the full container instead of forcing square cells.");
         StringAssert.Contains(script, "replacementMessage || `${placement.columnSpan} x ${placement.rowSpan}`");
         Assert.IsFalse(script.Contains("- ready", StringComparison.OrdinalIgnoreCase), "A resize preview should show only the occupied grid size.");
         StringAssert.Contains(script, "const noDragTarget = event.target.closest(\"[data-live-no-drag]\")");
@@ -549,8 +745,8 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(script, "event.preventDefault()");
         StringAssert.Contains(host, "live-telemetry-layout.js");
         StringAssert.Contains(previewHost, "live-telemetry-layout.js");
-        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.12.0-replace-preview");
-        StringAssert.Contains(previewHost, "live-telemetry-layout.js?v=0.12.0-replace-preview");
+        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.13.0-tile-replacement");
+        StringAssert.Contains(previewHost, "live-telemetry-layout.js?v=0.13.0-tile-replacement");
 
         foreach (var interactionHook in new[]
         {
@@ -561,6 +757,9 @@ public sealed class LiveMonitorTests
 
         StringAssert.Contains(razor, "live-toolbox");
         StringAssert.Contains(razor, "live-toolbox-backdrop");
+        StringAssert.Contains(razor, "<div class=\"live-toolbox-backdrop");
+        StringAssert.Contains(razor, "private bool _editing;");
+        StringAssert.Contains(razor, "FinishCustomize");
         StringAssert.Contains(razor, "live-tile-action remove");
         StringAssert.Contains(razor, "live-tile-quick-menu");
         StringAssert.Contains(razor, "<div class=\"live-layout-viewport\" data-live-grid-viewport>");
@@ -573,16 +772,20 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(css, ".live-layout-studio.editing .live-layout-tile");
         StringAssert.Contains(css, "border-style: dashed");
         StringAssert.Contains(css, "@container (max-width: 150px)");
+        StringAssert.Contains(css, "@container (max-height: 76px)");
         StringAssert.Contains(css, "grid-template-columns: minmax(0,1fr)");
         StringAssert.Contains(css, ".live-layout-viewport");
         StringAssert.Contains(css, "place-items: center");
-        StringAssert.Contains(css, "height: clamp(");
+        StringAssert.Contains(css, ".live-layout-viewport { min-width: 0; min-height: 480px; height: calc(100dvh - 205px);");
+        Assert.IsFalse(
+            System.Text.RegularExpressions.Regex.IsMatch(css, @"\.live-layout-viewport\s*\{[^}]*height:\s*clamp\(", System.Text.RegularExpressions.RegexOptions.IgnoreCase),
+            "The full-page dashboard must not retain a height clamp at any responsive breakpoint.");
         Assert.IsFalse(razor.Contains("live-editor-guidance", StringComparison.Ordinal), "The editor should not spend a header row on static drag instructions or success chatter.");
         Assert.IsFalse(razor.Contains("Undo available", StringComparison.OrdinalIgnoreCase), "Undo controls already communicate recoverability; removal actions should stay concise.");
         Assert.IsFalse(monitorCode.Contains("Undo is available", StringComparison.OrdinalIgnoreCase), "The native monitor should not add undo instructions to routine completion messages.");
         Assert.IsFalse(razor.Contains("OverallScale", StringComparison.Ordinal), "Physical scale belongs only to the pop-out monitor, not the fitted full-page dashboard.");
-        Assert.IsFalse(css.Contains(".live-toolbox-backdrop { position: fixed", StringComparison.Ordinal), "The responsive drawer must not place a pointer-blocking backdrop over the editable grid.");
-        Assert.IsFalse(css.Contains(".live-layout-studio.toolbox-open .live-layout-main { padding-right: 0", StringComparison.Ordinal), "Responsive edit mode must keep the grid out from under the fixed drawer.");
+        StringAssert.Contains(css, ".live-toolbox-backdrop.open { opacity: 1; visibility: visible; pointer-events: none;");
+        Assert.IsFalse(css.Contains(".live-layout-studio.toolbox-open .live-layout-main", StringComparison.Ordinal), "Opening the toolbox must not shrink the dashboard canvas.");
         Assert.IsFalse(razor.Contains("Ã", StringComparison.Ordinal), "Razor markup must not contain mojibake glyphs.");
         Assert.IsFalse(razor.Contains("Â", StringComparison.Ordinal), "Razor markup must not contain mojibake glyphs.");
         Assert.IsFalse(script.Contains("Ã", StringComparison.Ordinal), "Pointer script must not contain mojibake glyphs.");

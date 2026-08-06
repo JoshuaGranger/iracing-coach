@@ -26,12 +26,14 @@ Connections manages optional services, not application users.
 | `SET-005` | Physical monitor geometry, logs, and other machine-only state MUST remain under `%LOCALAPPDATA%\iRacingCoach`. |
 | `SET-006` | A legacy credential accidentally found in portable settings MUST migrate to protected machine storage and be removed from the portable file. |
 | `SET-007` | Saving settings MUST be atomic enough to avoid a partial JSON file after interruption. |
+| `SET-008` | The primary Settings surface MUST be compact and task-oriented. Data, backup/migration, app behavior, and telemetry-popout preferences SHOULD be the first visible cards; full paths, service credentials, and health detail SHOULD remain in labeled disclosures until requested. |
+| `SET-009` | Connections MUST remain discoverable as one subordinate Settings section, but its Garage61 and optional coaching controls MUST NOT add their full visual burden to the default Settings view. |
 
 ## Diagnostics
 
 | ID | Requirement |
 | --- | --- |
-| `DIAG-001` | Diagnostics MUST be available within Settings and SHOULD be visible by default under a strong divider. |
+| `DIAG-001` | Troubleshooting MUST be discoverable within Settings under a clear divider. Its heading/control SHOULD remain visible, while detailed diagnostics MAY stay collapsed until the user asks for them or an actionable failure requires attention. |
 | `DIAG-002` | The section SHOULD show app/backend/runtime versions, contract compatibility, root validation, process health, service readiness, cache/archive state, channel coverage, and recent stage timings. |
 | `DIAG-003` | The last error MUST include a useful recovery action and a copyable redacted support reference. |
 | `DIAG-004` | Diagnostics MAY expose Health Test, Open Logs, Verify Installation, and Prepare Backup/Migration actions when each action works. |
@@ -44,4 +46,6 @@ Preparing a copy must checkpoint relevant databases, reject active durable jobs,
 
 ## Current implementation note
 
-Version 0.11.0 embeds Garage61 and ChatGPT connection controls directly in Settings. Connections is no longer a primary navigation item.
+Version 0.13.0 source presents four compact primary cards for Data, Backup or move PCs, App behavior, and Telemetry popout. Folder locations, Connections, and detailed Troubleshooting are disclosures; the portable-preferences save bar remains directly available. Garage61 and ChatGPT connection controls are still embedded and functional inside Settings rather than removed or moved back into primary navigation.
+
+This compact hierarchy is verified by current source inspection. Integrated visual, keyboard, screen-reader, Windows scaling, external-authentication, and migration cases retain their separate acceptance gates.

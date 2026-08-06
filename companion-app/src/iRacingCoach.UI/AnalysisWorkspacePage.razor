@@ -1,10 +1,9 @@
 <div class="analysis-workspace-page">
-    <header class="analysis-context-bar">
+    <header class="analysis-context-bar @(IsRaceWorkspace ? "analysis-context-compact" : null)">
         <button class="back-button" @onclick="State.CloseAnalysisWorkspace" aria-label="Back to race history">← Races</button>
         <div class="analysis-event-title">
-            <span class="eyebrow">Recorded race</span>
             <h1>@Workspace.Track <span>@Workspace.Layout</span></h1>
-            <p>@Workspace.Car · @Workspace.SetupType · @Workspace.RecordedLaps laps · @Workspace.Runs.Count runs · @Workspace.PitStops pit stops</p>
+            <p>@ContextSummary</p>
         </div>
         <div class="analysis-context-actions">
             @if (EventSessions.Count > 1)
@@ -16,11 +15,11 @@
                     }
                 </div>
             }
-            @if (Workspace.Grades.Count > 0) { <span class="analysis-grade-chip"><small>Race grade</small><strong>@Workspace.OverallGrade</strong></span> }
+            @if (!IsRaceWorkspace && Workspace.Grades.Count > 0) { <span class="analysis-grade-chip"><small>Session grade</small><strong>@Workspace.OverallGrade</strong></span> }
         </div>
     </header>
 
-    @if (Workspace.Grades.Count > 0)
+    @if (!IsRaceWorkspace && Workspace.Grades.Count > 0)
     {
         <details class="grade-drawer">
             <summary><span>Grades</span>@foreach (var grade in Workspace.Grades) { <span class="grade-summary-item @(grade.Available ? null : "unavailable")"><b>@grade.Label</b><strong>@grade.Grade</strong></span> }</summary>
@@ -37,7 +36,7 @@
 
     @if (IsRaceWorkspace)
     {
-        <div class="event-session-switch analysis-data-switch" role="tablist" aria-label="Race analysis section">
+        <div class="event-session-switch analysis-data-switch analysis-data-primary" role="tablist" aria-label="Race analysis section">
             <button class="segmented @(RaceDataSection == "telemetry" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "telemetry")" @onclick='() => RaceDataSection = "telemetry"'>Telemetry</button>
             <button class="segmented @(RaceDataSection == "review" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "review")" @onclick='() => RaceDataSection = "review"'>Race review</button>
         </div>
@@ -58,7 +57,7 @@
                     </section>
                 }
 
-                <TelemetryWorkspace Workspace="Workspace" />
+                <TelemetryWorkspace State="State" Workspace="Workspace" />
             </main>
         }
 
@@ -67,6 +66,20 @@
             <section class="@(IsRaceWorkspace ? "race-review-page" : "qualifying-review-shell")">
                 @if (IsRaceWorkspace)
                 {
+                    @if (Workspace.Grades.Count > 0)
+                    {
+                        <details class="grade-drawer race-review-grades">
+                            <summary><span>Grades</span>@foreach (var grade in Workspace.Grades) { <span class="grade-summary-item @(grade.Available ? null : "unavailable")"><b>@grade.Label</b><strong>@grade.Grade</strong></span> }</summary>
+                            <div class="grade-categories">
+                                @foreach (var grade in Workspace.Grades)
+                                {
+                                    <article class="@(grade.Available ? null : "grade-unavailable")" title="@grade.Limitation"><div><span>@grade.Label</span><strong>@grade.Grade</strong></div><p>@grade.Explanation</p><small><b>Next:</b> @grade.Improvement</small>
+                                        <details class="grade-audit"><summary>How this was graded</summary><dl><div><dt>Score</dt><dd>@(grade.Score.HasValue ? grade.Score.Value.ToString("0.0") : "Excluded — insufficient evidence")</dd></div><div><dt>Evidence</dt><dd>@grade.Evidence</dd></div><div><dt>Calibration</dt><dd>@grade.Calibration</dd></div><div><dt>Provenance</dt><dd>@grade.Provenance</dd></div></dl><p><b>Inputs:</b> @string.Join("; ", grade.Inputs ?? [])</p><p><b>Limitation:</b> @grade.Limitation</p></details>
+                                    </article>
+                                }
+                            </div>
+                        </details>
+                    }
                     <section class="analysis-focus-strip" aria-label="What matters from this race">
                         <div class="analysis-bottom-line"><span>Fastest clean lap</span><strong>@FastestCleanLap</strong></div>
                         @foreach (var action in Card.Actions.Where(UsefulAction).Take(2))
@@ -147,6 +160,9 @@
     private bool IsRaceWorkspace => SelectedEventSession is { } session
         ? !session.IsQualifying
         : string.Equals(Workspace.SessionType, "Race", StringComparison.OrdinalIgnoreCase);
+    private string ContextSummary => IsRaceWorkspace
+        ? string.Join(" · ", new[] { Workspace.Car, Workspace.SetupType }.Where(value => !string.IsNullOrWhiteSpace(value)))
+        : string.Join(" · ", new[] { Workspace.Car, Workspace.SetupType, $"{Workspace.RecordedLaps} laps" }.Where(value => !string.IsNullOrWhiteSpace(value)));
     protected override void OnParametersSet()
     {
         if (_analysisId == Workspace.AnalysisId) return;

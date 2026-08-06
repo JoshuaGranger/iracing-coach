@@ -98,6 +98,49 @@ public static class LiveTelemetryCatalog
 
     public static IReadOnlyList<LiveMonitorTrendDuration> TrendDurations(string metricId) => ById.ContainsKey(metricId) ? AllTrendDurations : [];
 
+    public static double? TrendValue(string metricId, LiveTracePoint point, string? requestedUnit = null)
+    {
+        if (!ById.TryGetValue(metricId, out var definition)) return null;
+        var unit = definition.Units.Contains(requestedUnit ?? string.Empty, StringComparer.Ordinal)
+            ? requestedUnit!
+            : definition.DefaultUnit;
+        return metricId switch
+        {
+            "air-temperature" => ConvertValue(point.Metrics.AirTemperatureC, value => Temperature(value, unit)),
+            "ahead-gap" => point.Metrics.AheadGapSeconds,
+            "behind-gap" => point.Metrics.BehindGapSeconds,
+            "speed" => point.SpeedMph.HasValue ? Speed(point.SpeedMph.Value, unit) : null,
+            "throttle" => point.Throttle * 100,
+            "brake" => point.Brake * 100,
+            "brake-bias" => point.Metrics.BrakeBiasPercent,
+            "class-position" => point.Metrics.ClassPosition,
+            "coach-cue" => Ordinal(point.Metrics.CoachCuePriority),
+            "flag" => Ordinal(point.Metrics.FlagState),
+            "fuel" => ConvertValue(point.Metrics.FuelLiters, value => unit == "US gal" ? value * 0.2641720524 : value),
+            "fuel-laps" => point.Metrics.FuelLapsRemaining,
+            "steering" => point.SteeringWheelAngleRadians.HasValue ? Steering(point.SteeringWheelAngleRadians.Value, unit) : null,
+            "gear" => point.Gear,
+            "lap" => point.Lap,
+            "laps-remaining" => point.Metrics.LapsRemaining,
+            "last-lap" => point.LastLapSeconds,
+            "leader-gap" => point.Metrics.LeaderGapSeconds,
+            "leader-last-lap" => point.Metrics.LeaderLastLapSeconds,
+            "mandatory-repair" => point.Metrics.MandatoryRepairSeconds,
+            "on-pit-road" => point.Metrics.OnPitRoad.HasValue ? point.Metrics.OnPitRoad.Value ? 1d : 0d : null,
+            "optional-repair" => point.Metrics.OptionalRepairSeconds,
+            "pace-range" => point.Metrics.PaceMidpointSeconds,
+            "pit-window" => point.Metrics.PitWindowLaps,
+            "position" => point.Metrics.OverallPosition,
+            "rpm" => point.Rpm,
+            "yaw-rate" => point.YawRateDegreesPerSecond.HasValue ? Yaw(point.YawRateDegreesPerSecond.Value, unit) : null,
+            "lateral-acceleration" => point.LateralAccelerationG.HasValue ? unit.StartsWith("m/s", StringComparison.Ordinal) ? point.LateralAccelerationG * 9.80665 : point.LateralAccelerationG : null,
+            "longitudinal-acceleration" => point.LongitudinalAccelerationG.HasValue ? unit.StartsWith("m/s", StringComparison.Ordinal) ? point.LongitudinalAccelerationG * 9.80665 : point.LongitudinalAccelerationG : null,
+            "tire-phase" => Ordinal(point.Metrics.TirePhase),
+            "track-temperature" => ConvertValue(point.Metrics.TrackTemperatureC, value => Temperature(value, unit)),
+            _ => null
+        };
+    }
+
     private static IReadOnlyList<LiveTelemetryMetricDefinition> Build()
     {
         var all = new[] { LiveMonitorDisplayStyle.Number, LiveMonitorDisplayStyle.Gauge, LiveMonitorDisplayStyle.Bar, LiveMonitorDisplayStyle.Trend };

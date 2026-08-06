@@ -1,32 +1,34 @@
 # Capability status
 
-This inventory describes the intended user-facing capability and current-main development reality. Acceptance is based on repository tests plus direct local SDK and recorded-data validation appropriate to the changed surface. Product truth is owned by the current development and review process.
+This inventory separates intended user-facing capability from current-main development reality. Reality labels are based on current source, focused automated tests, and the named local interaction evidence; they do not imply real SDK, private-library, or product acceptance unless the acceptance boundary explicitly says so. Only Joshua can accept a product scope or artifact.
 
 | Capability | Intended state | Current reality | Acceptance boundary |
 | --- | --- | --- | --- |
-| Home | Compact race desk, recent races, live state, next actions | Implemented; rows include supported race-shape, pace, and tire context | Local interaction verified |
-| Live Telemetry | Full-screen shared named grid, collapsible Toolbox, optional driving traces, fuel and safe cues | Implemented with SDK source | Local interaction verified; continued real SDK validation required |
-| Live Monitor | Separate always-on-top view of the same portable named layouts | Implemented | Shared-layout interaction/replay verified; continued real-race validation required |
-| Race browser | Newest-first friendly event rows; whole row opens | Implemented | Kentucky behavior verified locally |
-| Full Race Analysis | Telemetry-first one-screen workspace with integrated lap/run context and compact insight rail | Implemented | Local interaction verified; real-recording breadth remains an ongoing validation target |
+| Home | Compact race desk, recent races, live state, next actions | Implemented; finalized uncached races enter a quiet sequential background cache queue that yields to connected live telemetry and interactive analysis, and rows update with supported race-shape, pace, and tire/load context | Source and automated priority behavior verified; private-library breadth and combined-load measurement remain conditional |
+| Live Telemetry | Full-screen equal-share named grid, non-shrinking overlay Toolbox, configurable forms, fuel and safe cues | Implemented with SDK source and timestamped display-synchronized tile canvases; missing intervals split retained paths | Source/replay interaction verified; sustained real SDK/display cadence remains open |
+| Live Monitor | Separate always-on-top, display-only renderer and selector for the same portable named layouts | Implemented with machine-local physical scale and retained, incrementally updated tile visuals painted on the display dispatcher | Source/focused tests verify the rendering path; continued real-race, cadence, and multi-monitor validation required |
+| Race browser | Newest-first friendly event rows at least as informative as Home; whole row opens | Implemented when cached measurements exist | Local fixture behavior verified; historical source breadth pending |
+| Full Race Analysis | Telemetry/Race review split with configurable one-to-ten aligned trace rows | Implemented; any two distinct signals may share a row with independent scales, and the frame-coalesced cursor uses a tooltip-capacity marker pool without per-frame .NET rendering | Fresh raw executable presentation reviewed at 1424×900; post-change interaction, real-recording breadth, and measured cursor latency remain validation targets |
 | Qualifying phase | Present only when recorded and openable | Conditional | Automated coverage exists; real paired-event acceptance pending |
 | Race Planning | Manual matching-history planner and briefing | Implemented for recorded-history path | Official upcoming-event discovery not implemented |
 | Setup indexing | Internal read-only discovery used by analysis and Starting Tune | Implemented; no first-class library UI | Local verification exists |
 | Starting Tune package | Guided open-setup package workflow | Implemented as Event → Source → Checks → Run | Automated coverage exists; real baseline acceptance pending |
 | Progressive Tuning | Map-based multiple feedback cards and reversible experiment | Implemented for supported open races | Automated coverage exists; real clean A/B acceptance pending |
 | Connections | Garage61 and private Coach Engine service management inside Settings | Implemented | Real Garage61/ChatGPT account acceptance pending |
-| Settings and Diagnostics | Portable settings, embedded connections, compact diagnostics, and backup preparation | Implemented | Local lifecycle/tests verified |
+| Settings and Diagnostics | Compact task-first settings, subordinate Connections, portable preferences, troubleshooting, and backup preparation | Implemented | Source structure verified; integrated visual, external-auth, and accessibility acceptance remain conditional |
 | Garage61 own/team API | Protected machine credential, health, bounded sync | Conditional | Storage/status covered; real authorized sync pending |
 | Garage61 global comparison | Only with separately approved scope | Unsupported now | MUST remain absent until permission exists |
 | AI coaching | Optional bounded Coach Engine synthesis | Conditional | Runtime packaged; real account/schema interaction pending |
 | Wet-weather analysis | Only when validated wet data exists | Not implemented | Hidden from production |
 | Multiclass analysis | Class-aware scoring and context | Not implemented | Hidden from production |
 | Target/reference trace | Evidence-gated aligned comparison | Partial/conditional | Actual recorded multi-lap trace works; validated external target remains limited |
-| Tray behavior | Minimize/close options and monitor controls | Partial | Source exists; complete local tray matrix not recorded |
+| Tray behavior | Minimize/close options, monitor controls, and definitive tray Exit | Implemented in 0.13.0 source with an armed shutdown deadline and process-termination fallback | Focused automated contract passes; exact post-fix 0.13.0 runtime process-disappearance observation remains pending in the current snapshot |
 
 ## Capability registry alignment
 
-The production `CapabilityRegistry` is the user-visible inventory. Version 0.11.0 keeps setup comparison as an internal conditional capability, removes the unused library surface, and aligns shared live layouts, recorded track zones, and Starting Tune with their real implementations. Registry tests prove that incomplete and permanently unsupported capabilities remain hidden.
+The production `CapabilityRegistry` is the user-visible inventory. Current source keeps setup comparison as an internal conditional capability, removes the unused library surface, and aligns shared live layouts, recorded track zones, and Starting Tune with their real implementations. Registry tests prove the encoded visibility cases; they do not prove that every real recording supplies the prerequisite data.
+
+Vehicle sideslip retains a separate truth boundary from Yaw Rate and tire slip. The deterministic engine now derives signed sideslip in degrees from paired finite recorded `VelocityX`/`VelocityY` samples under positive-forward-velocity and 5 m/s planar-speed guards; guarded samples remain gaps, while Yaw Rate is untouched. The UI's `Slip Angle` trace is therefore a derived vehicle-sideslip series when those inputs pass, not a native `SlipAngle` field or tire-slip measurement. Focused derivation/mapping checks and one Iowa recording support that scoped path; broad cross-car/session validation remains open.
 
 ## Visibility rules
 

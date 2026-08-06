@@ -4,9 +4,11 @@
 
 <section class="home-live-strip @(State.LiveState.Snapshot.Connected ? "connected" : "waiting")" aria-label="Live telemetry connection">
     <div class="home-live-status"><span class="status-orb @(State.LiveState.Snapshot.Connected ? "ready" : "neutral")"></span><div><strong>@State.LiveState.Snapshot.ConnectionLabel</strong><small>@(State.LiveState.Snapshot.Connected ? $"{State.LiveState.Snapshot.Flag} · {State.LiveState.Snapshot.PrimaryCue.Message}" : "Start iRacing when you are ready. Live monitoring stays local.")</small></div></div>
-    <div class="home-live-actions"><button class="button secondary compact" @onclick='() => State.Navigate("live")'>Open Live telemetry</button><button class="button primary compact" title="Open or hide the always-on-top race monitor" @onclick="State.ToggleLiveMonitor">@(State.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Open Live Monitor")</button></div>
+    <div class="home-live-actions"><button class="button primary compact" title="Open the always-on-top telemetry window" @onclick='() => State.SetLiveMonitorVisible(true)'>Open live telemetry</button></div>
 </section>
 
+@if (State.HomeDataReady)
+{
 <section aria-labelledby="workflows-title">
     <div class="section-heading"><div><span class="eyebrow">Workflows</span><h2 id="workflows-title">Start here</h2></div></div>
     <div class="workflow-grid">
@@ -22,8 +24,16 @@
         }
     </div>
 </section>
+}
 
-@if (State.Races.Count == 0)
+@if (!State.HomeDataReady)
+{
+    <section class="recent-empty" aria-labelledby="recent-title">
+        <span class="empty-icon"><ProductIcon Name="race" Size="22" /></span>
+        <div><span class="eyebrow">Recent races</span><h2 id="recent-title">Loading recent races</h2><p>Checking your recorded iRacing sessions.</p></div>
+    </section>
+}
+else if (State.Races.Count == 0)
 {
     <section class="recent-empty @(AnalysisUnavailable ? "needs-attention" : "")" aria-labelledby="recent-title">
         <span class="empty-icon"><ProductIcon Name="@(AnalysisUnavailable ? "info" : "race")" Size="22" /></span>
@@ -44,9 +54,9 @@ else
                 <span class="race-main"><span class="race-title"><strong>@race.Track</strong><span>@race.Layout</span></span><small>@race.Car · @race.Date</small></span>
                 <span class="race-stat result-stat"><span>Result</span><strong>@(HasResult(race) ? Result(race) : "—")</strong><small>@race.SetupType setup</small></span>
                 <span class="race-stat race-condition-stat"><span>Race laps</span><strong><i class="metric-dot green"></i>@Metric(overview?.GreenLaps) green</strong><small><i class="metric-dot yellow"></i>@Metric(overview?.CautionLaps) caution</small></span>
-                <span class="race-stat"><span>Longest run</span><strong>@Metric(overview?.LongestGreenRun) green</strong><small>@Plural(overview?.Runs, "run") · @Plural(overview?.PitStops, "stop")</small></span>
+                <span class="race-stat"><span>Best clean lap</span><strong>@BestLap(overview)</strong><small>@Metric(overview?.LongestGreenRun) green max · @Plural(overview?.PitStops, "stop")</small></span>
                 <span class="race-stat pace-stat"><span>Pace trend</span><strong class="@PaceClass(overview)">@PaceTrend(overview)</strong><small>@Consistency(overview)</small></span>
-                <span class="race-stat tire-stat" title="@TireDetail(overview)"><span>@TireMetricLabel(overview)</span><strong>@TireMetric(overview)</strong><small>@TireMetricNote(overview)</small></span>
+                <span class="race-stat tire-stat" title="@ComparisonDetail(overview)"><span>@TireMetricLabel(overview)</span><strong>@TireMetric(overview)</strong><small>@FuelUsed(overview)</small></span>
                 <span class="race-row-arrow" aria-hidden="true"><ProductIcon Name="arrow-right" Size="16" /></span>
             </button>
         }
@@ -69,7 +79,16 @@ else
     };
     private static string Initials(string value) => string.Concat(value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(word => char.ToUpperInvariant(word[0])));
     private static string Metric(int? value) => value is > 0 ? value.Value.ToString() : "—";
-    private static string Plural(int? value, string noun) => value is > 0 ? $"{value} {noun}{(value == 1 ? string.Empty : "s")}" : $"No {noun}s";
+    private static string Plural(int? value, string noun) => value is > 0 ? $"{value} {noun}{(value == 1 ? string.Empty : "s")}" : $"— {noun}s";
+    private static string BestLap(RaceOverview? overview)
+    {
+        if (overview?.BestCleanLapSeconds is not > 0) return "—";
+        var time = TimeSpan.FromSeconds(overview.BestCleanLapSeconds.Value);
+        return time.TotalMinutes >= 1
+            ? $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}"
+            : $"{time.Seconds}.{time.Milliseconds:000}";
+    }
+    private static string FuelUsed(RaceOverview? overview) => overview?.FuelUsedGallons is > 0 ? $"{overview.FuelUsedGallons:0.00} gal fuel" : "Fuel unavailable";
     private static string PaceTrend(RaceOverview? overview) => overview?.PaceSlopeSecondsPerLap switch
     {
         > .005 => $"+{overview.PaceSlopeSecondsPerLap:0.000} s/lap",
@@ -81,6 +100,6 @@ else
     private static string Consistency(RaceOverview? overview) => overview?.PaceConsistencyPercent is { } value ? $"{value:0.0}% lap variation" : "Variation unavailable";
     private static string TireMetricLabel(RaceOverview? overview) => overview?.LowestTireRemainingPercent.HasValue == true ? "Tire left" : overview?.ControlLoadChangePercent.HasValue == true ? "Control load" : "Tire use";
     private static string TireMetric(RaceOverview? overview) => overview?.LowestTireRemainingPercent is { } remaining ? $"{overview.LowestTireName} {remaining:0.0}%" : overview?.ControlLoadChangePercent is { } load ? $"{load:0}% change" : "—";
-    private static string TireMetricNote(RaceOverview? overview) => overview?.LowestTireRemainingPercent.HasValue == true ? "Measured at a stop" : overview?.ControlLoadChangePercent.HasValue == true ? "Brake / steering work" : "No pit reading";
     private static string TireDetail(RaceOverview? overview) => overview?.LowestTireRemainingPercent is { } remaining ? $"Lowest recorded tire reading: {overview.LowestTireName} {remaining:0.0}% remaining at a pit stop." : overview?.ControlLoadChangePercent is { } load ? $"Largest early-to-late change in recorded brake or steering work: {load:0.0}%." : "No supported tire-service reading was recorded for this race.";
+    private static string ComparisonDetail(RaceOverview? overview) => $"{TireDetail(overview)} {(overview?.FuelUsedGallons is > 0 ? $"Recorded fuel used: {overview.FuelUsedGallons:0.00} gal." : "Recorded fuel use is unavailable.")}";
 }

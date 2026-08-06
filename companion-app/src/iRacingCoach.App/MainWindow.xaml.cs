@@ -48,7 +48,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _liveMonitor = new LiveMonitorWindow(state);
 
-        _monitorItem = new Forms.ToolStripMenuItem("Show Live Monitor", null, (_, _) => _state.ToggleLiveMonitor());
+        _monitorItem = new Forms.ToolStripMenuItem("Show telemetry popout", null, (_, _) => _state.ToggleLiveMonitor());
         _statusItem = new Forms.ToolStripMenuItem("Live telemetry: waiting for iRacing") { Enabled = false };
         _pauseItem = new Forms.ToolStripMenuItem("Pause live coaching", null, (_, _) => _state.ToggleLiveCoaching());
         var trayMenu = new Forms.ContextMenuStrip();
@@ -84,7 +84,7 @@ public partial class MainWindow : Window
             if (!StartupRegistration.Apply(settings.LaunchAtSignIn))
                 _state.Notify("Settings saved, but Windows sign-in startup could not be updated.");
             if (!RegisterGlobalHotkey())
-                _state.Notify("Settings saved, but that global Live Monitor hotkey is invalid or already in use.");
+                _state.Notify("Settings saved, but that telemetry-popout hotkey is invalid or already in use.");
         };
         _ = StartupRegistration.Apply(_state.Settings.LaunchAtSignIn);
 
@@ -173,7 +173,7 @@ public partial class MainWindow : Window
     {
         if (_disposed || _exitRequested) return;
         var snapshot = _state.LiveState.Snapshot;
-        _monitorItem.Text = _state.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Show Live Monitor";
+        _monitorItem.Text = _state.Settings.LiveMonitor.Visible ? "Hide telemetry popout" : "Show telemetry popout";
         _pauseItem.Text = _state.LiveCoachingPaused ? "Resume live coaching" : "Pause live coaching";
         _pauseItem.Visible = snapshot.Connected;
         _statusItem.Text = snapshot.Connected
@@ -187,6 +187,9 @@ public partial class MainWindow : Window
 
     private void RequestExit()
     {
+        // Arm the process-level deadline on the WinForms callback thread itself.
+        // This guarantees Exit even if the WPF dispatcher cannot accept the handoff.
+        App.ArmExitDeadline();
         // NotifyIcon callbacks run on the Windows Forms message loop. Move the entire
         // shutdown handoff to WPF before touching windows or application lifetime.
         if (!Dispatcher.CheckAccess())
@@ -197,7 +200,8 @@ public partial class MainWindow : Window
         }
         if (_exitRequested) return;
         _exitRequested = true;
-        HideForApplicationExit();
+        // App arms the process-level deadline synchronously in this callback
+        // before DisposeApplication hides or closes any UI.
         ExitRequested?.Invoke();
     }
 

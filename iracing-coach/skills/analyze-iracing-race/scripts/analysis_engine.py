@@ -147,6 +147,32 @@ def _finite(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _vehicle_sideslip_degrees(
+    longitudinal_velocity_m_s: Any,
+    lateral_velocity_m_s: Any,
+) -> float | None:
+    """Return chassis-frame vehicle sideslip, or ``None`` when undefined.
+
+    Recorded iRacing ``VelocityX`` and ``VelocityY`` are respectively the
+    forward and lateral velocity components in the car's frame.  Their planar
+    magnitude matches the recorded ``Speed`` channel.  ``Yaw`` and
+    ``YawNorth`` are orientation channels and are deliberately not used here.
+
+    Sideslip is unstable at very low speed and wraps toward 180 degrees while
+    travelling backwards, so those samples are gaps rather than invented
+    driving data.
+    """
+
+    longitudinal = _finite(longitudinal_velocity_m_s)
+    lateral = _finite(lateral_velocity_m_s)
+    if longitudinal is None or lateral is None:
+        return None
+    if math.hypot(longitudinal, lateral) < 5.0 or longitudinal <= 0.5:
+        return None
+    angle = math.degrees(math.atan2(lateral, longitudinal))
+    return angle if math.isfinite(angle) else None
+
+
 def _mean(values: Iterable[Any]) -> float | None:
     numbers = [number for value in values if (number := _finite(value)) is not None]
     return statistics.fmean(numbers) if numbers else None
@@ -1099,6 +1125,8 @@ def _lap_trace_payload(
     gear = table.get("Gear", default=None)
     rpm = table.get("RPM", default=None)
     yaw_rate = table.get("YawRate", default=None)
+    velocity_x = table.get("VelocityX", default=None)
+    velocity_y = table.get("VelocityY", default=None)
     lateral_accel = table.get("LatAccel", default=None)
     longitudinal_accel = table.get("LongAccel", default=None)
     latitude = table.get("Lat", default=None)
@@ -1149,6 +1177,15 @@ def _lap_trace_payload(
             gears = values(indices, gear)
             rpms = values(indices, rpm)
             yaws = [value * 180.0 / math.pi for value in values(indices, yaw_rate)]
+            sideslips: list[float] = []
+            for index in indices:
+                if index >= len(velocity_x) or index >= len(velocity_y):
+                    continue
+                sideslip = _vehicle_sideslip_degrees(
+                    velocity_x[index], velocity_y[index]
+                )
+                if sideslip is not None:
+                    sideslips.append(sideslip)
             lateral_g = [value / 9.80665 for value in values(indices, lateral_accel)]
             longitudinal_g = [value / 9.80665 for value in values(indices, longitudinal_accel)]
             latitudes = values(indices, latitude)
@@ -1183,6 +1220,7 @@ def _lap_trace_payload(
                     ),
                     "gear": int(round(_median(gears))) if gears else None,
                     "rpm": _round(_median(rpms), 0),
+                    "slip_angle_deg": _round(signed_peak(sideslips), 3),
                     "yaw_rate_deg_s": _round(signed_peak(yaws), 3),
                     "lateral_g": _round(representative_lateral_g, 4),
                     "longitudinal_g": _round(signed_peak(longitudinal_g), 4),

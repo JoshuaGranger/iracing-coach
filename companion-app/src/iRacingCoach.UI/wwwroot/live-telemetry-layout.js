@@ -32,23 +32,12 @@
     const grid = state.root.querySelector("[data-live-grid]");
     if (!viewport || !grid) return;
 
-    const viewportStyle = getComputedStyle(viewport);
-    const gridStyle = getComputedStyle(grid);
-    const columns = Math.max(1, number(grid.dataset.columns, state.options.columns));
-    const rows = Math.max(1, number(grid.dataset.rows, state.options.rows));
-    const horizontalPadding = (parseFloat(viewportStyle.paddingLeft) || 0) + (parseFloat(viewportStyle.paddingRight) || 0);
-    const verticalPadding = (parseFloat(viewportStyle.paddingTop) || 0) + (parseFloat(viewportStyle.paddingBottom) || 0);
-    const columnGap = parseFloat(gridStyle.columnGap) || 0;
-    const rowGap = parseFloat(gridStyle.rowGap) || 0;
-    const availableWidth = Math.max(1, viewport.clientWidth - horizontalPadding - columnGap * (columns - 1));
-    const availableHeight = Math.max(1, viewport.clientHeight - verticalPadding - rowGap * (rows - 1));
-    const cellSize = Math.max(1, Math.min(availableWidth / columns, availableHeight / rows));
-    const width = cellSize * columns + columnGap * (columns - 1);
-    const height = cellSize * rows + rowGap * (rows - 1);
-
-    grid.style.setProperty("--live-cell-size", `${cellSize}px`);
-    grid.style.width = `${width}px`;
-    grid.style.height = `${height}px`;
+    // CSS grid fractional tracks are the layout authority. Filling both axes
+    // lets every row and column take an equal share of the actual dashboard
+    // instead of centering a square-cell island with unused space around it.
+    grid.style.removeProperty("--live-cell-size");
+    grid.style.width = "100%";
+    grid.style.height = "100%";
   }
 
   function scheduleGridFit(state) {
@@ -106,20 +95,21 @@
     };
   }
 
-  function tileAtCell(state, row, column) {
+  function tileAtCell(state, row, column, excludedTileId = null) {
     return Array.from(state.root.querySelectorAll("[data-live-tile]"), tileData)
-      .find(tile => row >= tile.row && row < tile.row + tile.rowSpan && column >= tile.column && column < tile.column + tile.columnSpan) || null;
+      .find(tile => tile.id !== excludedTileId && row >= tile.row && row < tile.row + tile.rowSpan && column >= tile.column && column < tile.column + tile.columnSpan) || null;
   }
 
-  function tileAtPointer(state, event, row, column) {
+  function tileAtPointer(state, event, row, column, excludedTileId = null) {
     for (const tileElement of state.root.querySelectorAll("[data-live-tile]")) {
+      if (tileElement.dataset.tileId === excludedTileId) continue;
       const rect = tileElement.getBoundingClientRect();
       if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) return tileData(tileElement);
     }
     const hoveredElement = document.elementFromPoint(event.clientX, event.clientY);
     const hoveredTile = hoveredElement?.closest?.("[data-live-tile]");
-    if (hoveredTile) return tileData(hoveredTile);
-    return tileAtCell(state, row, column);
+    if (hoveredTile && hoveredTile.dataset.tileId !== excludedTileId) return tileData(hoveredTile);
+    return tileAtCell(state, row, column, excludedTileId);
   }
 
   function placementCanPack(state, session, placement, metrics) {
@@ -263,7 +253,7 @@
     session.targetColumn = placement.column;
     session.targetRow = placement.row;
     const inside = pointerInsideGrid(event, metrics);
-    const target = inside ? tileAtPointer(state, event, placement.row, placement.column) : null;
+    const target = inside ? tileAtPointer(state, event, placement.row, placement.column, session.original.id) : null;
     session.replacementTileId = target?.id || null;
     if (target) {
       const replacementPlacement = { row: target.row, column: target.column, rowSpan: target.rowSpan, columnSpan: target.columnSpan };
@@ -286,6 +276,13 @@
     session.targetColumn = placement.column;
     session.targetRow = placement.row;
     const inside = pointerInsideGrid(event, metrics);
+    const target = inside ? tileAtPointer(state, event, placement.row, placement.column) : null;
+    session.replacementTileId = target?.id || null;
+    if (target) {
+      const replacementPlacement = { row: target.row, column: target.column, rowSpan: target.rowSpan, columnSpan: target.columnSpan };
+      updatePreview(session, metrics, replacementPlacement, true, "", `Replace ${target.name} with ${session.metricName}`);
+      return;
+    }
     updatePreview(session, metrics, placement, inside && placementCanPack(state, session, placement, metrics), inside ? "No room at this size" : "Move over dashboard");
   }
 
@@ -379,20 +376,20 @@
   async function completeGesture(state, event, cancelled) {
     const session = state.session;
     if (!session || event.pointerId !== undefined && event.pointerId !== session.pointerId) return;
-    state.session = null;
-    if (!cancelled && session.active && session.kind === "metric") {
+    if (!cancelled && session.active && (session.kind === "metric" || session.kind === "tile")) {
       const metrics = gridMetrics(state);
       if (metrics && pointerInsideGrid(event, metrics)) {
-        const finalColumn = clamp(Math.floor((event.clientX - metrics.contentLeft) / metrics.columnStep), 0, metrics.columns - 1);
-        const finalRow = clamp(Math.floor((event.clientY - metrics.contentTop) / metrics.rowStep), 0, metrics.rows - 1);
-        const finalTarget = tileAtPointer(state, event, finalRow, finalColumn);
-        if (finalTarget) {
-          session.replacementTileId = finalTarget.id;
-          session.placement = { row: finalTarget.row, column: finalTarget.column, rowSpan: finalTarget.rowSpan, columnSpan: finalTarget.columnSpan };
-          session.valid = true;
-        }
+        // Pointer capture can deliver an up event at a newer position than the
+        // last move. Re-evaluate the exact drop point so the visible preview and
+        // committed action cannot disagree.
+        if (session.kind === "tile") moveTileGesture(state, event, metrics);
+        else moveMetricGesture(state, event, metrics);
+      } else {
+        session.replacementTileId = null;
+        session.valid = false;
       }
     }
+    state.session = null;
     if (cancelled || !session.active || !session.valid || !session.placement) {
       removeGestureVisuals(state, session);
       return;
@@ -408,7 +405,9 @@
         ? session.replacementTileId
           ? await state.dotnet.invokeMethodAsync("ReplaceMetric", session.replacementTileId, session.metricId)
           : await state.dotnet.invokeMethodAsync("DropMetric", session.metricId, placement.row, placement.column)
-        : await state.dotnet.invokeMethodAsync("CommitTilePlacement", session.original.id, placement.row, placement.column, placement.rowSpan, placement.columnSpan);
+        : session.kind === "tile" && session.replacementTileId
+          ? await state.dotnet.invokeMethodAsync("ReplaceTile", session.original.id, session.replacementTileId)
+          : await state.dotnet.invokeMethodAsync("CommitTilePlacement", session.original.id, placement.row, placement.column, placement.rowSpan, placement.columnSpan);
     } catch (_) {
       succeeded = false;
     }
@@ -455,7 +454,9 @@
       sourceRect: tile ? tile.getBoundingClientRect() : capture.getBoundingClientRect(),
       original,
       metricId: metricHandle ? metricHandle.dataset.liveDragMetric : null,
-      metricName: metricHandle ? metricHandle.dataset.metricName || metricHandle.closest("[data-live-catalog-item]")?.dataset.metricName || "widget" : null,
+      metricName: metricHandle
+        ? metricHandle.dataset.metricName || metricHandle.closest("[data-live-catalog-item]")?.dataset.metricName || "widget"
+        : original?.name || "widget",
       edge: resizeHandle ? resizeHandle.dataset.liveResize : null,
       targetColumn: original ? original.column : 0,
       targetRow: original ? original.row : 0,

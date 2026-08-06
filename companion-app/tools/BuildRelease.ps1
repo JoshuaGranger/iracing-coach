@@ -11,7 +11,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '0.12.0'
+$version = '0.13.0'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot '..'))
 $backendSource = Join-Path $workspaceRoot 'iracing-coach'
@@ -79,7 +79,9 @@ Copy-Item -LiteralPath (Join-Path $uninstallerOutput 'Uninstall iRacing Coach.ex
 
 $backendDestination = Join-Path $payload 'iracing-coach'
 New-Item -ItemType Directory -Path $backendDestination | Out-Null
-& robocopy $backendSource $backendDestination /E /R:1 /W:1 /XD '.git' '__pycache__' '.pytest_cache' '.validation-deps' 'tests' 'data' /XF '*.pyc' '*.pyo' | Out-Null
+& robocopy $backendSource $backendDestination /E /R:1 /W:1 `
+    /XD '.git' '__pycache__' '.pytest_cache' '.validation-deps' 'tests' 'data' 'logs' 'setups' 'backups' 'exports' 'credentials' 'auth' 'portable-settings' 'user-library' `
+    /XF '*.pyc' '*.pyo' '*.ibt' '*.log' '.env' '.env.*' 'auth.json' 'settings.json' 'portable-state.json' 'archive-manifest.json' '*.machine-local.json' | Out-Null
 if ($LASTEXITCODE -gt 7) { throw "Backend copy failed with robocopy code $LASTEXITCODE." }
 
 $pythonDestination = Join-Path $payload 'python'

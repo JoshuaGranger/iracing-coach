@@ -1,6 +1,6 @@
 # UI, Accessibility, and Performance
 
-The UI should feel like a calm professional race-engineering workspace: black/gray foundations, restrained blue accents, dense information with clear hierarchy, and human language. Success noise is suppressed; only actionable abnormal status deserves persistent prominence.
+The UI should feel like a calm professional race-engineering workspace: black/charcoal foundations, restrained translucent depth, and a small purposeful palette of mint, amber, coral, violet, and telemetry-specific colors. It should not collapse into generic gray/blue monochrome. Information remains dense but legible, hierarchy remains clear, and copy remains human. Success noise is suppressed; only actionable abnormal status deserves persistent prominence.
 
 ## Visual and interaction quality
 
@@ -20,6 +20,8 @@ The UI should feel like a calm professional race-engineering workspace: black/gr
 | `UI-012` | Controls MUST sit beside the content they affect, and labels MUST state ambiguous scope such as the selected lap or layout. |
 | `UI-013` | Recorded-race comparison SHOULD fit its primary telemetry, lap/run selection, and compact changing insights into one coherent desktop workspace without lower navigation tabs. |
 | `UI-014` | Successful background work MUST settle silently. Only running work that materially benefits from progress visibility or failed work requiring action may occupy persistent UI. |
+| `UI-015` | Color and glass effects MUST add hierarchy and character without reducing contrast or becoming decorative noise. Positive/add actions MAY use green/mint, destructive actions SHOULD use red/coral, and telemetry channels SHOULD retain distinct semantic colors; no meaning may rely on color alone. |
+| `UI-016` | Settings MUST reveal common decisions before technical detail. A user SHOULD be able to confirm data readiness, prepare a portable copy, set ordinary behavior, and configure the telemetry popout without first reading file-system, service, or diagnostic implementation detail. |
 
 ## Accessibility
 
@@ -41,5 +43,12 @@ The UI should feel like a calm professional race-engineering workspace: black/gr
 | `PERF-003` | UI work MUST avoid unbounded polling, full-library rescans on every view update, and redundant reanalysis. |
 | `PERF-004` | Expensive work MUST report meaningful progress only when it lasts long enough to matter and MUST not flood the interface with transient success messages. |
 | `PERF-005` | Performance probes MUST publish input size, environment, percentile/maximum measurements, and thresholds rather than a bare pass label. |
+| `PERF-006` | A display-synchronized telemetry renderer MUST keep source sampling cadence, data timestamp, arrival time, and display refresh conceptually separate. `requestAnimationFrame` or a high-refresh display MUST NOT be reported as a higher SDK sampling rate. Claims such as 60 Hz capture or 244 Hz presentation require measurements from the exact artifact and environment. |
+| `PERF-007` | High-rate pointer and trace interactions SHOULD coalesce redundant work to the display frame. When all required cursor data is already serialized to the rendering runtime, cursor motion SHOULD update DOM/SVG directly rather than crossing into managed component rendering per frame. Cursor marker and value-card DOM MUST be bounded by the visible tooltip capacity rather than the number of selected laps; wheel paging SHOULD rebind that fixed pool to another selected-lap slice. Aggregate calculations that explicitly cover all selected laps MAY still inspect the full selection. Any unavoidable cross-runtime callback MUST be bounded so a slow callback cannot create a queue. |
+| `PERF-008` | Opportunistic background analysis MUST yield before starting another item whenever live telemetry is connected or an interactive analysis is active. Source-level priority gating does not replace combined-load measurement on representative libraries and racing hardware. |
 
 Implementation references: `coach.css`, `theme.generated.css`, shell/page Razor components, `UI_DESIGN_SYSTEM.md`, `UI_UX_AUDIT_0.8.0.md`, and `iRacingCoach.PerformanceProbe`.
+
+Version 0.13.0 source applies the expanded palette and glass treatment app-wide, uses a compact Settings hierarchy, drives full-page live tile canvas painting through `requestAnimationFrame`, and bounds display vertices with per-pixel first/minimum/maximum/last retention. The native popout incrementally updates retained tile visuals and schedules trend painting through the display dispatcher instead of rebuilding the visual tree at 5 Hz. Race Analysis serializes cursor data when component state changes, then performs frame-coalesced crosshair, tooltip, marker, map, and readout updates entirely in JavaScript DOM/SVG without per-frame .NET callbacks. Its marker/value-card pool is bounded by tooltip capacity and rebound to the current wheel-visible lap slice, while the explicitly aggregate track summary still reads all selected laps. The Home scheduler yields queued cache analysis to live telemetry and interactive analysis before starting another item.
+
+These are implementation facts and focused-test boundaries. They are not a WCAG audit, a real-telemetry cadence measurement, a combined-load benchmark, or proof of 60 Hz capture or 244 Hz presentation on the user's display.

@@ -1,11 +1,12 @@
 @implements IAsyncDisposable
+@using System.Collections.Concurrent
 @using System.Globalization
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 
 <section @ref="_studioElement"
-         class="live-layout-studio @(_toolboxOpen ? "editing toolbox-open" : "viewing toolbox-closed")"
+         class="live-layout-studio @(_editing ? "editing" : "viewing") @(_toolboxOpen ? "toolbox-open" : "toolbox-closed")"
          data-live-layout-studio
          aria-label="Live telemetry dashboard editor"
          @onkeydown="HandleStudioKeyDown">
@@ -27,14 +28,20 @@
             </span>
 
             <div class="live-layout-toolbar-actions">
-                @if (_toolboxOpen)
+                @if (_editing)
                 {
                     <button class="icon-button" disabled="@(_undo.Count == 0)" title="Undo layout change" aria-label="Undo layout change" @onclick="Undo"><ProductIcon Name="undo" Size="17" /></button>
                     <button class="icon-button" disabled="@(_redo.Count == 0)" title="Redo layout change" aria-label="Redo layout change" @onclick="Redo"><ProductIcon Name="redo" Size="17" /></button>
                 }
-                <button class="icon-button" title="@(State.Settings.LiveMonitor.Visible ? "Hide separate Live Monitor" : "Open separate Live Monitor")" aria-label="@(State.Settings.LiveMonitor.Visible ? "Hide Live Monitor" : "Open Live Monitor")" @onclick="State.ToggleLiveMonitor"><ProductIcon Name="monitor" Size="17" /></button>
-                <button class="button @(_toolboxOpen ? "primary" : "secondary") compact toolbox-toggle" @onclick="ToggleToolbox" aria-expanded="@_toolboxOpen" aria-controls="live-telemetry-toolbox">
-                    <ProductIcon Name="@(_toolboxOpen ? "check" : "setup")" Size="16" /> @(_toolboxOpen ? "Done" : "Customize")
+                <button class="icon-button" title="@(State.Settings.LiveMonitor.Visible ? "Hide telemetry popout" : "Open telemetry popout")" aria-label="@(State.Settings.LiveMonitor.Visible ? "Hide telemetry popout" : "Open telemetry popout")" @onclick="State.ToggleLiveMonitor"><ProductIcon Name="monitor" Size="17" /></button>
+                @if (_editing)
+                {
+                    <button @ref="_toolboxToggleElement" class="button secondary compact toolbox-toggle" @onclick="ToggleToolbox" aria-expanded="@_toolboxOpen" aria-controls="live-telemetry-toolbox">
+                        <ProductIcon Name="setup" Size="16" /> @(_toolboxOpen ? "Hide tools" : "Show tools")
+                    </button>
+                }
+                <button class="button @(_editing ? "primary" : "secondary") compact toolbox-done" @onclick="ToggleCustomize">
+                    <ProductIcon Name="@(_editing ? "check" : "setup")" Size="16" /> @(_editing ? "Done" : "Customize")
                 </button>
             </div>
         </div>
@@ -46,7 +53,7 @@
                  data-rows="@Active.Rows"
                  style="--live-columns:@Active.Columns;--live-rows:@Active.Rows"
                  aria-label="@($"{Active.Name}, {Active.Columns} columns by {Active.Rows} rows")">
-            @if (_toolboxOpen)
+            @if (_editing)
             {
                 @for (var row = 0; row < Active.Rows; row++)
                 {
@@ -70,9 +77,9 @@
                 {
                 var definition = LiveTelemetryCatalog.Get(tile.MetricId);
                 var reading = Read(tile);
-                var selected = _selectedTileId == tile.Id;
+                var tileSelected = _selectedTileId == tile.Id;
                 <article @key="tile.Id"
-                         class="live-layout-tile style-@StyleClass(tile.DisplayStyle) @(!reading.Available ? "unavailable" : null) @(selected ? "selected" : null)"
+                         class="live-layout-tile style-@StyleClass(tile.DisplayStyle) @(!reading.Available ? "unavailable" : null) @(tileSelected ? "selected" : null)"
                          style="@TileStyle(tile, definition)"
                          data-live-tile
                          data-tile-id="@tile.Id"
@@ -81,13 +88,13 @@
                          data-column="@tile.Column"
                          data-row-span="@tile.RowSpan"
                          data-column-span="@tile.ColumnSpan"
-                         tabindex="@(_toolboxOpen ? "-1" : "0")"
+                         tabindex="@(_editing ? "-1" : "0")"
                          role="group"
                          aria-label="@TileAccessibleName(definition, reading, tile)"
                          title="@TileTitle(definition, reading)"
                          @onclick="() => SelectTile(tile.Id)">
                     <header class="live-tile-header">
-                        @if (_toolboxOpen)
+                        @if (_editing)
                         {
                             <button type="button" class="live-tile-drag-handle" data-live-drag-tile aria-label="Move @definition.Name" title="Drag to move @definition.Name" @onclick="() => SelectTile(tile.Id)" @onclick:stopPropagation="true" @onkeydown="args => HandleTileKeyDown(tile.Id, args)">
                                 <ProductIcon Name="grip" Size="15" />
@@ -105,7 +112,7 @@
                         }
                     </header>
 
-                    @if (_toolboxOpen && _openTileMenuId == tile.Id)
+                    @if (_editing && _openTileMenuId == tile.Id)
                     {
                         <div class="live-tile-quick-menu" role="group" aria-label="@($"{definition.Name} display settings")" @onclick:stopPropagation="true">
                             <div class="quick-menu-heading"><strong>Widget style</strong><button type="button" class="live-tile-action" aria-label="Close widget settings" @onclick="() => ToggleTileMenu(tile.Id)"><ProductIcon Name="close" Size="14" /></button></div>
@@ -128,7 +135,24 @@
                     }
 
                     <div class="live-tile-content">
-                        @if (!reading.Available)
+                        @if (tile.DisplayStyle == LiveMonitorDisplayStyle.Trend)
+                        {
+                            <div class="live-tile-chart">
+                                <canvas data-live-trend-chart
+                                        data-live-trend-id="@tile.Id"
+                                        role="img"
+                                        aria-label="@($"{definition.Name} {TrendLabel(tile.TrendDuration)} chart")"></canvas>
+                                @if (reading.Available)
+                                {
+                                    <div class="live-tile-chart-value"><span class="live-tile-value">@reading.DisplayValue</span>@if (!string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }</div>
+                                }
+                                else
+                                {
+                                    <span class="live-tile-missing live-tile-chart-missing"><strong>@reading.DisplayValue</strong><small>@reading.AvailabilityMessage</small></span>
+                                }
+                            </div>
+                        }
+                        else if (!reading.Available)
                         {
                             <span class="live-tile-missing"><strong>@reading.DisplayValue</strong><small>@reading.AvailabilityMessage</small></span>
                         }
@@ -145,13 +169,6 @@
                             <div class="live-tile-number-line"><span class="live-tile-value">@reading.DisplayValue</span>@if (!string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }</div>
                             <span class="live-tile-bar" role="meter" aria-valuemin="@(reading.Minimum ?? 0)" aria-valuemax="@(reading.Maximum ?? 100)" aria-valuenow="@reading.NumericValue"><i style="width:@PercentToken(MeterPercent(reading))%"></i></span>
                         }
-                        else if (tile.DisplayStyle == LiveMonitorDisplayStyle.Trend && reading.TrendValues.Count > 1)
-                        {
-                            <div class="live-tile-chart">
-                                <svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img" aria-label="@($"{definition.Name} {TrendLabel(tile.TrendDuration)} chart")"><path class="tile-chart-grid" d="M0 22 H100" /><path class="tile-chart-line" d="@TrendPath(reading.TrendValues, definition.TrendShape)" /></svg>
-                                <div class="live-tile-chart-value"><span class="live-tile-value">@reading.DisplayValue</span>@if (!string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }</div>
-                            </div>
-                        }
                         else
                         {
                             <div class="live-tile-number-line @(tile.DisplayStyle == LiveMonitorDisplayStyle.Status || !reading.NumericValue.HasValue ? "textual" : null)"><span class="live-tile-value">@reading.DisplayValue</span>@if (reading.NumericValue.HasValue && !string.IsNullOrWhiteSpace(reading.Unit) && reading.Unit != "time") { <span class="live-tile-unit">@reading.Unit</span> }</div>
@@ -160,7 +177,7 @@
                         @if (!string.IsNullOrWhiteSpace(reading.SecondaryValue)) { <small class="live-tile-secondary">@reading.SecondaryValue</small> }
                     </div>
 
-                    @if (_toolboxOpen)
+                    @if (_editing)
                     {
                         @foreach (var edge in ResizeEdges)
                         {
@@ -173,13 +190,14 @@
         </div>
     </div>
 
-    @if (_toolboxOpen)
-    {
-        <button type="button" class="live-toolbox-backdrop" tabindex="-1" aria-label="Close telemetry toolbox" @onclick="CloseToolbox"></button>
-        <aside id="live-telemetry-toolbox" class="live-toolbox" aria-label="Live telemetry toolbox">
+    <div class="live-toolbox-backdrop @(_toolboxOpen ? "open" : null)" aria-hidden="true"></div>
+    <aside id="live-telemetry-toolbox"
+           class="live-toolbox @(_toolboxOpen ? "open" : null)"
+           aria-hidden="@(!_toolboxOpen)"
+           aria-label="Live telemetry toolbox">
             <header class="live-toolbox-heading">
                 <div><span class="eyebrow">Live telemetry</span><h2>Customize dashboard</h2><p>Drag, resize, and tune each widget.</p></div>
-                <button class="icon-button" aria-label="Close telemetry toolbox" title="Done customizing" @onclick="CloseToolbox"><ProductIcon Name="close" Size="17" /></button>
+                <button class="icon-button" aria-label="Hide telemetry toolbox" title="Hide toolbox" @onclick="CloseToolbox"><ProductIcon Name="close" Size="17" /></button>
             </header>
 
             <div class="live-toolbox-body">
@@ -241,9 +259,10 @@
                         }
                         @foreach (var metric in FilteredCatalog)
                         {
+                            var catalogReading = LiveTelemetryCatalog.Read(metric.Id, State.LiveState, metric.DefaultUnit, metric.DefaultPrecision);
                             <article class="toolbox-metric-card" data-live-catalog-item data-live-drag-metric="@metric.Id" data-metric-id="@metric.Id" data-metric-name="@metric.Name" title="Drag @metric.Name onto the grid">
                                 <span class="metric-drag-handle" aria-hidden="true"><ProductIcon Name="grip" Size="15" /></span>
-                                <div><strong>@metric.Name</strong><small>@SourceLabel(metric.Source) - @StyleSummary(metric)</small></div>
+                                <div><strong>@metric.Name</strong><small title="@(catalogReading.Available ? metric.Description : catalogReading.AvailabilityMessage)">@SourceLabel(metric.Source) · @(catalogReading.Available ? $"{catalogReading.DisplayValue}{(string.IsNullOrWhiteSpace(catalogReading.Unit) || catalogReading.Unit == "time" ? string.Empty : $" {catalogReading.Unit}")}" : catalogReading.AvailabilityMessage)</small></div>
                                 <button type="button" class="metric-add-button" data-live-no-drag aria-label="Add @metric.Name to the first available grid space" title="Add to dashboard" @onclick="() => AddMetric(metric.Id)"><ProductIcon Name="plus" Size="16" /></button>
                             </article>
                         }
@@ -254,8 +273,7 @@
             <footer class="live-toolbox-footer">
                 <span><kbd>Alt</kbd> + arrow moves</span><span><kbd>Shift</kbd> + arrow resizes</span><span><kbd>Del</kbd> removes</span>
             </footer>
-        </aside>
-    }
+    </aside>
 </section>
 
 @code {
@@ -263,16 +281,23 @@
 
     private readonly List<LayoutSnapshot> _undo = [];
     private readonly List<LayoutSnapshot> _redo = [];
+    private readonly ConcurrentQueue<PendingTrendFrame> _pendingTrendFrames = new();
     private ElementReference _studioElement;
+    private ElementReference _toolboxToggleElement;
     private DotNetObjectReference<LiveTelemetryLayoutGrid>? _dotNetReference;
-    private bool _toolboxOpen = true;
+    private bool _editing;
+    private bool _toolboxOpen;
     private bool _jsReady;
+    private bool _tileChartsReady;
+    private bool _disposed;
+    private int _trendDrainScheduled;
     private string _metricSearch = string.Empty;
     private string _editorMessage = "Changes save automatically.";
     private string? _selectedTileId;
     private string? _openTileMenuId;
     private string? _lastKnownLayoutSignature;
     private string? _configuredInteractionSignature;
+    private string? _configuredTrendSignature;
 
     private LiveRaceSnapshot Snapshot => State.LiveState.Snapshot;
     private LiveMonitorLayout Preferences => State.Settings.LiveMonitor;
@@ -284,6 +309,8 @@
         .Where(item => string.IsNullOrWhiteSpace(_metricSearch) || item.Name.Contains(_metricSearch, StringComparison.OrdinalIgnoreCase) || SourceLabel(item.Source).Contains(_metricSearch, StringComparison.OrdinalIgnoreCase))
         .ToArray();
 
+    protected override void OnInitialized() => State.LiveTelemetryFrame += OnLiveTelemetryFrame;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         var layoutSignature = LayoutSignature();
@@ -291,11 +318,11 @@
         {
             _undo.Clear();
             _redo.Clear();
-            _editorMessage = "Dashboard changed in the Live Monitor; undo history was refreshed.";
+            _editorMessage = "Dashboard changed in the telemetry popout; undo history was refreshed.";
         }
         _lastKnownLayoutSignature = layoutSignature;
 
-        var interactionSignature = $"{layoutSignature}|{_toolboxOpen}|{State.Settings.UseReducedMotion}";
+        var interactionSignature = $"{layoutSignature}|{_editing}|{State.Settings.UseReducedMotion}";
         if (!_jsReady)
         {
             _dotNetReference = DotNetObjectReference.Create(this);
@@ -308,19 +335,172 @@
             await JS.InvokeVoidAsync("iracingCoachLiveTelemetryLayout.configure", _studioElement, InteractionOptions());
             _configuredInteractionSignature = interactionSignature;
         }
+
+        var trendSignature = $"{layoutSignature}|{State.LiveState.SourceTickRate}|{State.LiveState.SessionEpoch}|{State.Settings.UseReducedMotion}";
+        if (!_tileChartsReady || !string.Equals(_configuredTrendSignature, trendSignature, StringComparison.Ordinal))
+        {
+            await JS.InvokeVoidAsync("iracingCoachLiveTelemetryTileCharts.configure", _studioElement, TrendConfigurations(), TrendOptions());
+            _tileChartsReady = true;
+            _configuredTrendSignature = trendSignature;
+            ScheduleTrendDrain();
+        }
     }
 
-    private object InteractionOptions() => new { editing = _toolboxOpen, reducedMotion = State.Settings.UseReducedMotion, rows = Active.Rows, columns = Active.Columns };
+    private object InteractionOptions() => new { editing = _editing, reducedMotion = State.Settings.UseReducedMotion, rows = Active.Rows, columns = Active.Columns };
     private LiveTelemetryMetricReading Read(LiveMonitorTile tile) => LiveTelemetryCatalog.Read(tile.MetricId, State.LiveState, tile.Unit, tile.Precision, tile.TrendDuration);
-    private void ToggleToolbox() { _toolboxOpen = !_toolboxOpen; if (!_toolboxOpen) { _openTileMenuId = null; _selectedTileId = null; } }
-    private void CloseToolbox() { _toolboxOpen = false; _openTileMenuId = null; _selectedTileId = null; }
-    private void SelectTile(string id) { if (!_toolboxOpen) return; if (_openTileMenuId != id) _openTileMenuId = null; _selectedTileId = id; }
-    private void ToggleTileMenu(string id) { _selectedTileId = id; _openTileMenuId = _openTileMenuId == id ? null : id; }
-    private void HandleStudioKeyDown(KeyboardEventArgs args)
+
+    private object[] TrendConfigurations() => Active.Tiles
+        .Where(tile => tile.DisplayStyle == LiveMonitorDisplayStyle.Trend)
+        .Select(tile =>
+        {
+            var definition = LiveTelemetryCatalog.Get(tile.MetricId);
+            var reading = Read(tile);
+            return (object)new
+            {
+                id = tile.Id,
+                metricId = tile.MetricId,
+                unit = tile.Unit,
+                duration = tile.TrendDuration.ToString(),
+                shape = definition.TrendShape == LiveMonitorTrendShape.Step ? "step" : "continuous",
+                minimum = reading.Minimum,
+                maximum = reading.Maximum,
+                seed = TrendSeed(tile)
+            };
+        })
+        .ToArray();
+
+    private object[] TrendSeed(LiveMonitorTile tile)
     {
-        if (args.Key != "Escape" || !_toolboxOpen) return;
+        var history = State.LiveState.History ?? [];
+        if (history.Count == 0) return [];
+        IEnumerable<LiveTracePoint> selected = history;
+        var seconds = tile.TrendDuration switch
+        {
+            LiveMonitorTrendDuration.Seconds15 => 15,
+            LiveMonitorTrendDuration.Seconds30 => 30,
+            LiveMonitorTrendDuration.Seconds60 => 60,
+            _ => 0
+        };
+        if (seconds > 0)
+        {
+            var cutoff = history[^1].At - TimeSpan.FromSeconds(seconds);
+            selected = history.Where(point => point.At >= cutoff);
+        }
+        else
+        {
+            var latestIndex = -1;
+            double? latestProgress = null;
+            for (var index = history.Count - 1; index >= 0; index--)
+            {
+                if (LapProgress(history[index]) is not { } progress) continue;
+                latestIndex = index;
+                latestProgress = progress;
+                break;
+            }
+            if (latestIndex >= 0 && latestProgress.HasValue)
+            {
+                var sessionStart = 0;
+                var laterProgress = latestProgress.Value;
+                for (var index = latestIndex - 1; index >= 0; index--)
+                {
+                    if (LapProgress(history[index]) is not { } progress) continue;
+                    if (progress > laterProgress + .25)
+                    {
+                        sessionStart = index + 1;
+                        break;
+                    }
+                    laterProgress = progress;
+                }
+                var lapCount = tile.TrendDuration == LiveMonitorTrendDuration.ThreeLaps ? 3 : 1;
+                var cutoff = latestProgress.Value - lapCount;
+                selected = history.Skip(sessionStart).Where(point => LapProgress(point) is { } progress && progress >= cutoff);
+            }
+        }
+        return selected
+            .Select(point => new { Point = point, Value = LiveTelemetryCatalog.TrendValue(tile.MetricId, point, tile.Unit) })
+            .Select(item => (object)new
+            {
+                value = item.Value,
+                lap = item.Point.Lap,
+                lapDistancePercent = item.Point.LapDistancePercent,
+                atUnixMilliseconds = item.Point.At.ToUnixTimeMilliseconds()
+            })
+            .ToArray();
+    }
+
+    private object TrendOptions(long? sessionEpoch = null) => new
+    {
+        sourceRate = State.LiveState.SourceTickRate > 0 ? State.LiveState.SourceTickRate : 60,
+        sessionEpoch = sessionEpoch ?? State.LiveState.SessionEpoch,
+        reducedMotion = State.Settings.UseReducedMotion
+    };
+
+    private void OnLiveTelemetryFrame(LiveTracePoint frame)
+    {
+        if (_disposed) return;
+        _pendingTrendFrames.Enqueue(new PendingTrendFrame(frame, State.LiveState.SessionEpoch));
+        while (_pendingTrendFrames.Count > 1200 && _pendingTrendFrames.TryDequeue(out _)) { }
+        ScheduleTrendDrain();
+    }
+
+    private void ScheduleTrendDrain()
+    {
+        if (_disposed || Interlocked.Exchange(ref _trendDrainScheduled, 1) != 0) return;
+        _ = InvokeAsync(DrainTrendFramesAsync);
+    }
+
+    private async Task DrainTrendFramesAsync()
+    {
+        try
+        {
+            if (!_tileChartsReady) return;
+            while (!_disposed)
+            {
+                var sessionEpoch = State.LiveState.SessionEpoch;
+                var frames = new List<LiveTracePoint>(90);
+                while (frames.Count < 90 && _pendingTrendFrames.TryDequeue(out var pending))
+                    if (pending.SessionEpoch == sessionEpoch) frames.Add(pending.Frame);
+                if (frames.Count == 0) break;
+                var tiles = Active.Tiles.Where(tile => tile.DisplayStyle == LiveMonitorDisplayStyle.Trend).ToArray();
+                if (tiles.Length == 0) continue;
+                var payload = frames.Select(frame => new
+                {
+                    atUnixMilliseconds = frame.At.ToUnixTimeMilliseconds(),
+                    lap = frame.Lap,
+                    lapDistancePercent = frame.LapDistancePercent,
+                    values = tiles.ToDictionary(tile => tile.Id, tile => LiveTelemetryCatalog.TrendValue(tile.MetricId, frame, tile.Unit), StringComparer.Ordinal)
+                }).ToArray();
+                await JS.InvokeVoidAsync("iracingCoachLiveTelemetryTileCharts.append", _studioElement, payload, TrendOptions(sessionEpoch));
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) when (_disposed) { }
+        finally
+        {
+            Volatile.Write(ref _trendDrainScheduled, 0);
+            if (!_pendingTrendFrames.IsEmpty && _tileChartsReady && !_disposed) ScheduleTrendDrain();
+        }
+    }
+    private void ToggleCustomize() { if (_editing) FinishCustomize(); else StartCustomize(); }
+    private void StartCustomize() { _editing = true; _toolboxOpen = true; }
+    private void ToggleToolbox() { _toolboxOpen = !_toolboxOpen; if (!_toolboxOpen) _openTileMenuId = null; }
+    private async Task CloseToolbox()
+    {
+        _toolboxOpen = false;
+        _openTileMenuId = null;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        await _toolboxToggleElement.FocusAsync();
+    }
+    private void FinishCustomize() { _editing = false; _toolboxOpen = false; _openTileMenuId = null; _selectedTileId = null; }
+    private void SelectTile(string id) { if (!_editing) return; if (_openTileMenuId != id) _openTileMenuId = null; _selectedTileId = id; }
+    private void ToggleTileMenu(string id) { _selectedTileId = id; _openTileMenuId = _openTileMenuId == id ? null : id; }
+    private async Task HandleStudioKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key != "Escape" || !_editing) return;
         if (_openTileMenuId is not null) _openTileMenuId = null;
-        else CloseToolbox();
+        else if (_toolboxOpen) await CloseToolbox();
+        else FinishCustomize();
     }
 
     private void ChangeLayout(ChangeEventArgs args)
@@ -479,9 +659,30 @@
         return result;
     }
 
+    [JSInvokable]
+    public async Task<bool> ReplaceTile(string sourceTileId, string targetTileId)
+    {
+        var result = false;
+        await InvokeAsync(() =>
+        {
+            var source = Active.Tiles.FirstOrDefault(tile => tile.Id == sourceTileId);
+            var target = Active.Tiles.FirstOrDefault(tile => tile.Id == targetTileId);
+            if (source is null || target is null || source.Id == target.Id) return;
+            var sourceName = LiveTelemetryCatalog.Get(source.MetricId).Name;
+            var targetName = LiveTelemetryCatalog.Get(target.MetricId).Name;
+            result = TryMutation(
+                () => LiveMonitorLayouts.TryReplaceTile(LiveMonitorLayouts.EnsureEditable(Preferences), sourceTileId, targetTileId),
+                $"{targetName} replaced with {sourceName}.",
+                "Those widgets are no longer available.");
+            if (result) _selectedTileId = sourceTileId;
+            StateHasChanged();
+        });
+        return result;
+    }
+
     private void HandleTileKeyDown(string tileId, KeyboardEventArgs args)
     {
-        if (!_toolboxOpen) return;
+        if (!_editing) return;
         if (args.Key == "Delete") { RemoveTile(tileId); return; }
         if (args.Key is not ("ArrowLeft" or "ArrowRight" or "ArrowUp" or "ArrowDown")) return;
         var tile = Active.Tiles.FirstOrDefault(item => item.Id == tileId);
@@ -559,6 +760,9 @@
     private static string StyleClass(LiveMonitorDisplayStyle style) => style == LiveMonitorDisplayStyle.Trend ? "chart" : style.ToString().ToLowerInvariant();
     private static string StyleSummary(LiveTelemetryMetricDefinition definition) => string.Join(", ", definition.Styles.Select(StyleLabel));
     private static string TrendLabel(LiveMonitorTrendDuration duration) => duration switch { LiveMonitorTrendDuration.Seconds15 => "15 seconds", LiveMonitorTrendDuration.Seconds30 => "30 seconds", LiveMonitorTrendDuration.Seconds60 => "60 seconds", LiveMonitorTrendDuration.OneLap => "1 lap", LiveMonitorTrendDuration.ThreeLaps => "3 laps", _ => duration.ToString() };
+    private static double? LapProgress(LiveTracePoint point) => point.Lap is { } lap
+        ? lap + Math.Clamp(point.LapDistancePercent ?? 0, 0, 1)
+        : null;
     private static double MeterPercent(LiveTelemetryMetricReading reading) { var min = reading.Minimum ?? 0; var max = reading.Maximum ?? 100; return Math.Clamp((reading.NumericValue.GetValueOrDefault() - min) / Math.Max(.0001, max - min) * 100, 0, 100); }
     private static string GaugeDash(LiveTelemetryMetricReading reading) => $"{PercentToken(MeterPercent(reading))} 100";
     private static string PercentToken(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
@@ -606,6 +810,15 @@
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
+        _disposed = true;
+        State.LiveTelemetryFrame -= OnLiveTelemetryFrame;
+        if (_tileChartsReady)
+        {
+            try { await JS.InvokeVoidAsync("iracingCoachLiveTelemetryTileCharts.dispose", _studioElement); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
         if (_jsReady)
         {
             try { await JS.InvokeVoidAsync("iracingCoachLiveTelemetryLayout.dispose", _studioElement); }
@@ -616,6 +829,7 @@
     }
 
     private sealed record LayoutSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts);
+    private sealed record PendingTrendFrame(LiveTracePoint Frame, long SessionEpoch);
     private sealed record TrendPoint(int Index, double Value);
     private sealed record AccentOption(string Value, string Label);
     private static readonly string[] ResizeEdges = ["n", "e", "s", "w", "ne", "se", "sw", "nw"];

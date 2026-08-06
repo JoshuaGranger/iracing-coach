@@ -11,7 +11,10 @@ public partial class App : System.Windows.Application
     private EventWaitHandle? _activationEvent;
     private RegisteredWaitHandle? _activationWait;
     private MainWindow? _mainWindow;
-    private System.Threading.Timer? _exitWatchdog;
+    // Static by design: Application.Current can be released during WPF shutdown,
+    // but the process-level deadline must remain rooted until the process is gone.
+    private static System.Threading.Timer? _exitWatchdog;
+    private static int _exitDeadlineArmed;
     private int _exitStarted;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -48,13 +51,7 @@ public partial class App : System.Windows.Application
     private void ExitApplication()
     {
         if (Interlocked.Exchange(ref _exitStarted, 1) != 0) return;
-        // Service cleanup includes process and database shutdown. If one of those
-        // dependencies stalls, Exit must still mean that the desktop process ends.
-        _exitWatchdog = new System.Threading.Timer(
-            _ => Environment.Exit(0),
-            null,
-            TimeSpan.FromSeconds(5),
-            Timeout.InfiniteTimeSpan);
+        ArmExitDeadline();
         try
         {
             _mainWindow?.DisposeApplication();
@@ -78,12 +75,29 @@ public partial class App : System.Windows.Application
         }
     }
 
+    internal static void ArmExitDeadline()
+    {
+        if (Interlocked.Exchange(ref _exitDeadlineArmed, 1) != 0) return;
+        // Service cleanup includes process and database shutdown. If one of those
+        // dependencies stalls, Exit must still mean that the desktop process ends.
+        // MainWindow calls this directly from the WinForms menu callback, before
+        // any WPF Dispatcher handoff or UI cleanup can stall.
+        _exitWatchdog = new System.Threading.Timer(
+            static _ => ForceTerminateProcess(),
+            null,
+            TimeSpan.FromSeconds(5),
+            Timeout.InfiniteTimeSpan);
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         try
         {
             try { _mainWindow?.DisposeApplication(); } catch (Exception error) { Trace.WriteLine($"Final application cleanup failed: {error}"); }
-            _exitWatchdog?.Dispose();
+            // A normal non-tray shutdown can release the unused timer. Once an
+            // explicit Exit is armed it must remain alive until the OS process is
+            // gone; disposing it here recreated the exact background-process bug.
+            if (Volatile.Read(ref _exitDeadlineArmed) == 0) _exitWatchdog?.Dispose();
             _activationWait?.Unregister(null);
             _activationEvent?.Dispose();
             if (_mutex is not null)
@@ -93,5 +107,34 @@ public partial class App : System.Windows.Application
             }
         }
         finally { base.OnExit(e); }
+    }
+
+    private static void ForceTerminateProcess()
+    {
+        using var current = Process.GetCurrentProcess();
+        try
+        {
+            // Kill the full WebView/native child tree as well as the WPF host.
+            // This is the bounded fallback only; normal cleanup receives five
+            // seconds first and normally exits before this callback runs.
+            current.Kill(entireProcessTree: true);
+            return;
+        }
+        catch (Exception error)
+        {
+            Trace.WriteLine($"Whole-tree application-exit fallback failed: {error}");
+        }
+
+        try
+        {
+            // Tree enumeration can fail because a WebView child exits during the
+            // walk. A direct host kill still guarantees the app itself is gone.
+            current.Kill();
+        }
+        catch (Exception error)
+        {
+            Trace.WriteLine($"Direct application-exit fallback failed: {error}");
+            Environment.Exit(0);
+        }
     }
 }

@@ -161,6 +161,34 @@ public static class LiveMonitorLayouts
         return true;
     }
 
+    public static bool TryReplaceTile(LiveMonitorNamedLayout layout, string sourceTileId, string targetTileId)
+    {
+        if (string.Equals(sourceTileId, targetTileId, StringComparison.Ordinal)) return false;
+
+        var candidate = Clone(layout);
+        var source = candidate.Tiles.FirstOrDefault(item => item.Id == sourceTileId);
+        var target = candidate.Tiles.FirstOrDefault(item => item.Id == targetTileId);
+        if (source is null || target is null) return false;
+
+        var targetRow = target.Row;
+        var targetColumn = target.Column;
+        var targetRowSpan = target.RowSpan;
+        var targetColumnSpan = target.ColumnSpan;
+        candidate.Tiles.Remove(target);
+
+        // Replacement follows the footprint the user highlighted. The dragged
+        // widget keeps its metric and display choices while the occupied tile is
+        // removed, leaving the source footprint available for future widgets.
+        source.Row = targetRow;
+        source.Column = targetColumn;
+        source.RowSpan = targetRowSpan;
+        source.ColumnSpan = targetColumnSpan;
+        if (!TryPack(candidate, source.Id, targetRow, targetColumn)) return false;
+
+        CopyInto(candidate, layout);
+        return true;
+    }
+
     public static bool TryMoveTile(LiveMonitorNamedLayout layout, string tileId, int row, int column)
     {
         var tile = layout.Tiles.FirstOrDefault(item => item.Id == tileId);

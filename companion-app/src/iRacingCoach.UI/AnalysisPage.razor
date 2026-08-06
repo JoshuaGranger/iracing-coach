@@ -56,18 +56,19 @@ else
         else
         {
             <div class="race-event-table" role="list">
-                <div class="race-event-columns" aria-hidden="true"><span>Event</span><span>Result</span><span>Distance</span><span>Setup</span><span>Status</span><span></span></div>
+                <div class="race-event-columns race-analysis-columns" aria-hidden="true"><span>Event</span><span>Result</span><span>Race laps</span><span>Best / run</span><span>Pace</span><span>Tire / load</span></div>
                 @foreach (var group in State.FilteredEventGroups)
                 {
                     var race = RaceSession(group);
                     if (race is null) { continue; }
-                    <button class="race-event-row" role="listitem" @onclick="() => OpenEvent(group)">
+                    var overview = race.Overview;
+                    <button class="race-event-row race-analysis-row" role="listitem" @onclick="() => OpenEvent(group)" title="Open @group.Track race analysis">
                         <span class="event-main"><strong>@group.Track</strong><small>@EventSubtitle(group, race)</small></span>
                         <span class="event-result">@Result(race)</span>
-                        <span class="event-distance">@race.Summary</span>
-                        <span><span class="status-label neutral">@group.SetupType</span></span>
-                        <span><span class="status-label @(race.Analyzed ? "success" : "neutral")">@(race.Analyzed ? "Ready" : "Analyze")</span></span>
-                        <span class="event-open" aria-hidden="true">Open →</span>
+                        <span class="event-race-shape"><strong>@Metric(overview?.GreenLaps) green</strong><small>@Metric(overview?.CautionLaps) caution</small></span>
+                        <span class="event-long-run"><strong>@BestLap(overview)</strong><small>@RunSummary(overview)</small></span>
+                        <span class="event-pace"><strong class="@PaceClass(overview)">@PaceTrend(overview)</strong><small>@Consistency(overview)</small></span>
+                        <span class="event-tire" title="@TireDetail(overview)"><strong>@TireMetric(overview)</strong><small>@TireMetricNote(overview)</small></span>
                     </button>
                 }
             </div>
@@ -85,7 +86,8 @@ else
     private Task OpenEvent(RaceEventGroup group) => RaceSession(group) is { } race ? State.OpenRaceAsync(race) : Task.CompletedTask;
     private static string EventSubtitle(RaceEventGroup group, RecentRace race)
     {
-        var parts = new[] { group.Date, group.Layout, group.Car, race.Series, group.EventScope }.Where(value => !string.IsNullOrWhiteSpace(value));
+        var setup = string.IsNullOrWhiteSpace(group.SetupType) ? string.Empty : $"{group.SetupType} setup";
+        var parts = new[] { group.Date, group.Layout, group.Car, setup, race.Series, group.EventScope }.Where(value => !string.IsNullOrWhiteSpace(value));
         return string.Join(" · ", parts);
     }
     private static string Result(RecentRace race) => (race.StartPosition, race.FinishPosition) switch
@@ -94,5 +96,32 @@ else
         (_, > 0) => $"P{race.FinishPosition}",
         _ => "—"
     };
+    private static string Metric(int? value) => value is > 0 ? value.Value.ToString() : "—";
+    private static string Plural(int? value, string noun) => value is > 0 ? $"{value} {noun}{(value == 1 ? string.Empty : "s")}" : $"No {noun}s";
+    private static string BestLap(RaceOverview? overview) => overview?.BestCleanLapSeconds is > 0 ? FormatLap(overview.BestCleanLapSeconds.Value) : "—";
+    private static string FormatLap(double seconds) => TimeSpan.FromSeconds(seconds).ToString(seconds >= 60 ? "m\\:ss\\.fff" : "s\\.fff");
+    private static string RunSummary(RaceOverview? overview) => $"{Metric(overview?.LongestGreenRun)} green max · {Plural(overview?.Runs, "run")} · {Plural(overview?.PitStops, "stop")}";
+    private static string PaceTrend(RaceOverview? overview) => overview?.PaceSlopeSecondsPerLap switch
+    {
+        > .005 => $"+{overview.PaceSlopeSecondsPerLap:0.000} s/lap",
+        < -.005 => $"{overview.PaceSlopeSecondsPerLap:0.000} s/lap",
+        not null => "Stable",
+        _ => "—"
+    };
+    private static string PaceClass(RaceOverview? overview) => overview?.PaceSlopeSecondsPerLap switch { > .02 => "pace-falloff", < -.005 => "pace-improving", not null => "pace-stable", _ => string.Empty };
+    private static string Consistency(RaceOverview? overview) => overview?.PaceConsistencyPercent is { } value ? $"{value:0.0}% variation" : "—";
+    private static string TireMetric(RaceOverview? overview) => overview?.LowestTireRemainingPercent is { } remaining
+        ? $"{overview.LowestTireName} {remaining:0.0}%"
+        : overview?.ControlLoadChangePercent is { } load ? $"{load:0}% load change" : "—";
+    private static string TireMetricNote(RaceOverview? overview) => overview?.FuelUsedGallons is { } fuel
+        ? $"{fuel:0.00} gal fuel"
+        : overview?.LowestTireRemainingPercent.HasValue == true ? "Lowest at a stop" : overview?.ControlLoadChangePercent.HasValue == true ? "Brake / steering" : string.Empty;
+    private static string TireDetail(RaceOverview? overview)
+    {
+        var evidence = overview?.LowestTireRemainingPercent is { } remaining
+            ? $"Lowest recorded tire: {overview.LowestTireName} {remaining:0.0}% remaining."
+            : overview?.ControlLoadChangePercent is { } load ? $"Largest recorded early-to-late brake or steering change: {load:0.0}%." : "No supported tire or control-load reading was recorded.";
+        return overview?.FuelUsedGallons is { } fuel ? $"{evidence} Recorded fuel used: {fuel:0.00} gal." : evidence;
+    }
     private static string FilterLabel(RaceBrowserFilter filter) => filter switch { RaceBrowserFilter.All => "All races", RaceBrowserFilter.HostedLeague => "Hosted / League", RaceBrowserFilter.Fixed => "Fixed setup", RaceBrowserFilter.Open => "Open setup", RaceBrowserFilter.NeedsAnalysis => "Needs analysis", _ => filter.ToString() };
 }

@@ -378,6 +378,7 @@ public sealed class CompanionSettings
     public bool UseReducedMotion { get; set; }
     public bool DiagnosticIncludeConfounded { get; set; }
     public LiveMonitorLayout LiveMonitor { get; set; } = new();
+    public AnalysisTraceLayout RaceAnalysisTraces { get; set; } = new();
 
     [JsonIgnore] public string ArchiveRoot => Path.Combine(CoachHome, "data");
     [JsonIgnore] public string SetupsRoot => Path.Combine(CoachHome, "setups");
@@ -405,6 +406,18 @@ public sealed class CompanionSettings
         };
         return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
     }
+}
+
+public sealed class AnalysisTraceLayout
+{
+    public List<AnalysisTraceRow> Rows { get; set; } = [];
+}
+
+public sealed class AnalysisTraceRow
+{
+    public string Id { get; set; } = $"trace-row-{Guid.NewGuid():N}";
+    public string PrimarySignalId { get; set; } = "speed";
+    public string SecondarySignalId { get; set; } = string.Empty;
 }
 
 public enum LiveMonitorMetricSource { Recorded, Calculated, Coach }
@@ -614,7 +627,8 @@ public sealed record LiveMonitorState(
     double RenderLatencyMs,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<LiveTracePoint>? History = null,
-    int SourceTickRate = 0);
+    int SourceTickRate = 0,
+    long SessionEpoch = 0);
 
 public sealed record TrayApplicationState(
     bool MainWindowVisible,
@@ -700,7 +714,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.12.0");
+    string ClientVersion = "0.13.0");
 
 public sealed record BackendHealthResult(
     bool Ok,

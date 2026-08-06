@@ -25,6 +25,7 @@
 # .NET and release outputs
 companion-app/**/bin/
 companion-app/**/obj/
+companion-app/**/artifacts/
 companion-app/artifacts/
 companion-app/**/*.log
 companion-app/tools/installer-payload.zip

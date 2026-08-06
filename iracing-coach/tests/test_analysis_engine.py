@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ from analysis_engine import (  # noqa: E402
     _corner_tire_age_summary,
     _phase_comparison,
     _runs,
+    _vehicle_sideslip_degrees,
     analyze_telemetry,
     analyzer_bundle_sha256,
 )
@@ -643,6 +645,8 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertIn("speed_mph", first_point)
         self.assertIn("session_time_s", first_point)
         self.assertIn("brake", first_point)
+        self.assertIn("slip_angle_deg", first_point)
+        self.assertIsNone(first_point["slip_angle_deg"])
         self.assertIn("tire_stress_proxy", first_point)
         self.assertEqual(traces["tire_stress"]["evidence_class"], "proxy")
         self.assertIn("not per-lap tread wear", traces["tire_stress"]["definition"])
@@ -706,6 +710,39 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertTrue(traces[3]["pit_exit"])
         self.assertGreater(traces[2]["fuel_used_gal"], 0)
         self.assertEqual(traces[2]["conditions"]["track_usage"], "moderately high usage")
+
+    def test_lap_traces_derive_vehicle_sideslip_from_paired_velocity_channels(self) -> None:
+        self.assertAlmostEqual(
+            _vehicle_sideslip_degrees(50.0, 50.0 * math.tan(math.radians(4.0))),
+            4.0,
+            places=6,
+        )
+        self.assertIsNone(_vehicle_sideslip_degrees(3.0, 0.0))
+        self.assertIsNone(_vehicle_sideslip_degrees(-20.0, 0.0))
+        self.assertIsNone(_vehicle_sideslip_degrees(float("nan"), 1.0))
+
+        telemetry = synthetic_telemetry(lap_count=2)
+        speed = telemetry["channels"]["Speed"]
+        sideslip_radians = math.radians(-4.0)
+        telemetry["channels"]["VelocityX"] = [
+            value * math.cos(sideslip_radians) for value in speed
+        ]
+        telemetry["channels"]["VelocityY"] = [
+            value * math.sin(sideslip_radians) for value in speed
+        ]
+        telemetry["channels"]["VelocityX"][10] = 3.0
+        telemetry["channels"]["VelocityY"][10] = 0.0
+        telemetry["channels"]["VelocityX"][11] = -20.0
+        telemetry["channels"]["VelocityY"][11] = 0.0
+
+        analysis = analyze_telemetry(telemetry, source_paths=["sideslip.ibt"])
+        points = analysis["lap_traces"]["traces"][0]["points"]
+        available = [point["slip_angle_deg"] for point in points if point["slip_angle_deg"] is not None]
+        gaps = [point for point in points if point["slip_angle_deg"] is None]
+
+        self.assertTrue(available)
+        self.assertTrue(all(abs(value + 4.0) < 0.001 for value in available))
+        self.assertGreaterEqual(len(gaps), 2)
 
     def test_summarizes_setup_telemetry_in_engineering_units(self) -> None:
         analysis = analyze_telemetry(synthetic_telemetry())

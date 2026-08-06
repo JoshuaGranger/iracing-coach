@@ -69,7 +69,7 @@
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
-    private readonly ConcurrentQueue<LiveTracePoint> _pendingFrames = new();
+    private readonly ConcurrentQueue<PendingChartFrame> _pendingFrames = new();
     private ElementReference ChartElement;
     private bool _chartReady;
     private bool _disposed;
@@ -78,6 +78,7 @@
     private int _configuredHistoryLaps;
     private bool _configuredReducedMotion;
     private double? _configuredLastLap;
+    private long _configuredSessionEpoch = -1;
 
     private LiveRaceSnapshot Snapshot => State.LiveState.Snapshot;
     private IReadOnlyList<LiveTracePoint> History => State.LiveState.History ?? [];
@@ -132,7 +133,7 @@
     private void OnLiveTelemetryFrame(LiveTracePoint frame)
     {
         if (_disposed) return;
-        _pendingFrames.Enqueue(frame);
+        _pendingFrames.Enqueue(new PendingChartFrame(frame, State.LiveState.SessionEpoch));
         ScheduleDrain();
     }
 
@@ -148,11 +149,13 @@
         {
             while (!_disposed)
             {
+                var sessionEpoch = State.LiveState.SessionEpoch;
                 var batch = new List<LiveChartPoint>(120);
-                while (batch.Count < 120 && _pendingFrames.TryDequeue(out var frame)) batch.Add(ToChartPoint(frame));
+                while (batch.Count < 120 && _pendingFrames.TryDequeue(out var pending))
+                    if (pending.SessionEpoch == sessionEpoch) batch.Add(ToChartPoint(pending.Frame));
                 if (batch.Count == 0) break;
-                if (_chartReady) await JS.InvokeVoidAsync("iracingCoachLiveTelemetryChart.append", ChartElement, batch, ChartOptions());
-                if (Stopwatch.GetElapsedTime(_lastUiRefresh) >= TimeSpan.FromMilliseconds(50))
+                var chartVisible = _chartReady && await JS.InvokeAsync<bool>("iracingCoachLiveTelemetryChart.append", ChartElement, batch, ChartOptions(sessionEpoch));
+                if (chartVisible && Stopwatch.GetElapsedTime(_lastUiRefresh) >= TimeSpan.FromMilliseconds(50))
                 {
                     _lastUiRefresh = Stopwatch.GetTimestamp();
                     StateHasChanged();
@@ -169,18 +172,21 @@
         }
     }
 
-    private object ChartOptions() => new
+    private object ChartOptions(long? sessionEpoch = null) => new
     {
         historyLaps = Math.Clamp(State.Settings.LiveMonitor.HistoryLaps, 1, 10),
         lastLapSeconds = Snapshot.LastLapSeconds,
+        sourceRate = State.LiveState.SourceTickRate > 0 ? State.LiveState.SourceTickRate : 60,
+        sessionEpoch = sessionEpoch ?? State.LiveState.SessionEpoch,
         reducedMotion = State.Settings.UseReducedMotion
     };
-    private bool ConfigurationChanged() => _configuredHistoryLaps != State.Settings.LiveMonitor.HistoryLaps || _configuredReducedMotion != State.Settings.UseReducedMotion || _configuredLastLap != Snapshot.LastLapSeconds;
+    private bool ConfigurationChanged() => _configuredHistoryLaps != State.Settings.LiveMonitor.HistoryLaps || _configuredReducedMotion != State.Settings.UseReducedMotion || _configuredLastLap != Snapshot.LastLapSeconds || _configuredSessionEpoch != State.LiveState.SessionEpoch;
     private void RememberConfiguration()
     {
         _configuredHistoryLaps = State.Settings.LiveMonitor.HistoryLaps;
         _configuredReducedMotion = State.Settings.UseReducedMotion;
         _configuredLastLap = Snapshot.LastLapSeconds;
+        _configuredSessionEpoch = State.LiveState.SessionEpoch;
     }
     private static LiveChartPoint ToChartPoint(LiveTracePoint point) => new(
         point.At.ToUnixTimeMilliseconds(), point.SpeedMph, point.Throttle * 100, point.Brake * 100,
@@ -205,6 +211,7 @@
     }
 
     private sealed record LiveChartPoint(double AtUnixMilliseconds, double? SpeedMph, double? ThrottlePercent, double? BrakePercent, double? SteeringDegrees, double? LastLapSeconds);
+    private sealed record PendingChartFrame(LiveTracePoint Frame, long SessionEpoch);
     private sealed record MapPoint(double X, double Y);
     private sealed record LapPoint(int Lap, double Seconds);
 }

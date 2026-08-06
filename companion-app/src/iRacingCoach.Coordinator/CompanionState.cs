@@ -20,8 +20,8 @@ public sealed record TuningFeedbackDraft(
 
 public sealed class CompanionState : IDisposable
 {
-    private const int UiAnalysisCacheSchemaVersion = 4;
-    private const string AppVersion = "0.12.0";
+    private const int UiAnalysisCacheSchemaVersion = 5;
+    private const string AppVersion = "0.13.0";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
@@ -30,6 +30,12 @@ public sealed class CompanionState : IDisposable
     private readonly IDurableArchiveService _archive;
     private readonly Dictionary<string, CancellationTokenSource> _jobTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Lazy<Task<JsonElement>>> _inflightBackendCalls = new(StringComparer.Ordinal);
+    private readonly object _homeAnalysisSync = new();
+    private readonly Queue<RecentRace> _homeAnalysisQueue = [];
+    private readonly HashSet<string> _homeAnalysisActiveKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly CancellationTokenSource _homeAnalysisCancellation = new();
+    private Task? _homeAnalysisWorker;
+    private static readonly TimeSpan HomeAnalysisRetryDelay = TimeSpan.FromMilliseconds(250);
     private CancellationTokenSource? _coachRequest;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private Timer? _fileRefresh;
@@ -82,6 +88,7 @@ public sealed class CompanionState : IDisposable
     public bool RailCollapsed { get; private set; }
     public bool JobTrayOpen { get; private set; }
     public bool IsRefreshing { get; private set; }
+    public bool HomeDataReady { get; private set; }
     public bool PlanGenerated { get; private set; }
     public bool ExperimentGenerated { get; private set; }
     public bool DiagnosticsExpanded { get; private set; }
@@ -276,6 +283,7 @@ public sealed class CompanionState : IDisposable
                 new("Portable archive", ex.Message, "warning"),
                 new("Portable Coach folder", Settings.CoachHome, "warning")
             ];
+            HomeDataReady = true;
             RaiseChanged();
             return;
         }
@@ -397,9 +405,11 @@ public sealed class CompanionState : IDisposable
         finally
         {
             IsRefreshing = false;
+            HomeDataReady = true;
             _refreshGate.Release();
             RaiseChanged();
         }
+        QueueMissingHomeRaceAnalysis();
     }
 
     private async Task<JsonElement> SafeToolAsync(string name, object arguments, CancellationToken cancellationToken)
@@ -492,7 +502,7 @@ public sealed class CompanionState : IDisposable
             var mappedAnalysis = RuntimeMapper.Analysis(result);
             CurrentRaceCard = mappedCard;
             CurrentAnalysis = mappedAnalysis;
-            UpdateRaceOverview(race, mappedAnalysis);
+            ApplySuccessfulRaceAnalysis(race, mappedAnalysis, AnalysisPathFromResponse(result));
             SaveUiAnalysisCache(race, result);
         }, cancellationToken);
         AnalysisLoading = false;
@@ -1081,7 +1091,7 @@ public sealed class CompanionState : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "iRacingCoach",
             "Installer",
-            "iRacingCoach-0.12.0-Setup.exe");
+            "iRacingCoach-0.13.0-Setup.exe");
         if (!File.Exists(setup))
         {
             Toast = "The repair package could not be found. Run the latest iRacing Coach installer again.";
@@ -1147,7 +1157,11 @@ public sealed class CompanionState : IDisposable
     public void SetPrimaryUiVisible(bool visible)
     {
         PrimaryUiVisible = visible;
-        if (visible) RaiseChanged();
+        if (visible)
+        {
+            QueueMissingHomeRaceAnalysis();
+            RaiseChanged();
+        }
     }
     public void ToggleLiveMonitor() => SetLiveMonitorVisible(!Settings.LiveMonitor.Visible);
     public void SetLiveMonitorVisible(bool visible, bool requestHost = true)
@@ -1164,6 +1178,13 @@ public sealed class CompanionState : IDisposable
     }
     public void SaveLiveMonitorPreferences()
     {
+        PersistSettingsQuietly();
+        RaiseChanged();
+    }
+    public void SaveRaceAnalysisTracePreferences()
+    {
+        Settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
+        _ = AnalysisTraceLayouts.ValidateAndRepair(Settings.RaceAnalysisTraces);
         PersistSettingsQuietly();
         RaiseChanged();
     }
@@ -1495,7 +1516,7 @@ public sealed class CompanionState : IDisposable
         new("Garage61", Garage61.Available ? "Connected" : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
         new("Live telemetry", LiveState.Snapshot.Connected ? $"Connected · {LiveState.Snapshot.Flag} · {LiveState.Snapshot.DataAge.TotalMilliseconds:0} ms old" : "Waiting for iRacing", LiveState.Snapshot.Connected ? "ready" : "neutral"),
         new("Live update pipeline", $"{LiveState.FramesRead:N0} frames · {LiveState.DroppedFrames:N0} dropped · {LiveState.RenderLatencyMs:0.00} ms compute", LiveState.DroppedFrames == 0 ? "ready" : "warning"),
-        new("Live Monitor", Settings.LiveMonitor.Visible ? $"Visible · {LiveMonitorLayouts.Active(Settings.LiveMonitor).Layout.Name}" : "Hidden", "neutral"),
+        new("Telemetry popout", Settings.LiveMonitor.Visible ? $"Visible · {LiveMonitorLayouts.Active(Settings.LiveMonitor).Layout.Name}" : "Hidden", "neutral"),
         new("Overlay compatibility", "Works above borderless-windowed iRacing and on another monitor; exclusive fullscreen may cover it", "neutral"),
         new("Automatic discovery", "Watching files · quiet 30-second safety check", "ready"),
         new("Finalized races found", Races.Count.ToString(CultureInfo.CurrentCulture)),
@@ -1643,7 +1664,7 @@ public sealed class CompanionState : IDisposable
             }
             CurrentRaceCard = RuntimeMapper.RaceCard(response);
             CurrentAnalysis = RuntimeMapper.Analysis(response);
-            UpdateRaceOverview(race, CurrentAnalysis);
+            ApplySuccessfulRaceAnalysis(race, CurrentAnalysis, AnalysisPathFromResponse(response));
             AnalysisLoading = false;
             AnalysisMessage = string.Empty;
             ApiCacheHitCount++;
@@ -1664,7 +1685,7 @@ public sealed class CompanionState : IDisposable
             using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
             CurrentAnalysis = RuntimeMapper.ArchivedAnalysis(document.RootElement);
             CurrentRaceCard = RuntimeMapper.ArchivedRaceCard(document.RootElement);
-            UpdateRaceOverview(race, CurrentAnalysis);
+            ApplySuccessfulRaceAnalysis(race, CurrentAnalysis, race.AnalysisPath);
             AnalysisLoading = false;
             AnalysisMessage = string.Empty;
             ApiCacheHitCount++;
@@ -1699,20 +1720,75 @@ public sealed class CompanionState : IDisposable
 
     private RecentRace EnrichRaceOverview(RecentRace race)
     {
-        if (string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return race;
+        if (TryReadUiAnalysisCache(race, out var cachedOverview, out var cachedAnalysisPath))
+            return MergeRaceAnalysisState(race, cachedOverview, analyzed: true, cachedAnalysisPath);
+        return TryReadCachedRaceOverview(race, out var overview) ? race with { Overview = overview } : race;
+    }
+
+    private bool TryReadCachedRaceOverview(RecentRace race, out RaceOverview overview)
+    {
+        if (TryReadUiAnalysisCache(race, out overview)) return true;
+        overview = race.Overview ?? new RaceOverview();
+        if (string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return false;
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
-            return race with { Overview = RuntimeMapper.Overview(document.RootElement) };
+            overview = RuntimeMapper.Overview(document.RootElement);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
         {
-            ReportUnhandledException("race overview", ex);
-            return race;
+            return false;
         }
     }
 
-    private void UpdateRaceOverview(RecentRace race, AnalysisWorkspace analysis)
+    private bool TryReadUiAnalysisCache(RecentRace race, out RaceOverview overview)
+    {
+        return TryReadUiAnalysisCache(race, out overview, out _);
+    }
+
+    private bool TryReadUiAnalysisCache(RecentRace race, out RaceOverview overview, out string analysisPath)
+    {
+        overview = race.Overview ?? new RaceOverview();
+        analysisPath = race.AnalysisPath;
+        if (string.IsNullOrWhiteSpace(race.EffectiveSelector)) return false;
+        var cachePath = UiAnalysisCachePath(race);
+        if (!File.Exists(cachePath)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(cachePath));
+            var root = document.RootElement;
+            var validSchema = root.TryGetProperty("schemaVersion", out var schema)
+                && schema.ValueKind == JsonValueKind.Number
+                && schema.TryGetInt32(out var cacheSchema)
+                && cacheSchema == UiAnalysisCacheSchemaVersion;
+            var hasResponse = root.TryGetProperty("response", out var response)
+                && response.ValueKind == JsonValueKind.Object
+                && response.TryGetProperty("analysis_view", out var view)
+                && view.ValueKind == JsonValueKind.Object;
+            var cachedSourceWrite = root.TryGetProperty("sourceLastWriteUtc", out var stamp) && stamp.ValueKind == JsonValueKind.String
+                ? stamp.GetString() : null;
+            var sourceMatches = string.IsNullOrWhiteSpace(race.SourcePath) || !File.Exists(race.SourcePath)
+                || string.Equals(File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture), cachedSourceWrite, StringComparison.Ordinal);
+            if (!validSchema || !hasResponse || !sourceMatches) return false;
+            overview = RuntimeMapper.Overview(response);
+            var cachedPath = AnalysisPathFromResponse(response);
+            if (!string.IsNullOrWhiteSpace(cachedPath)) analysisPath = cachedPath;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
+        {
+            // A stale or damaged summary cache should be repaired quietly.
+            return false;
+        }
+    }
+
+    private void ApplySuccessfulRaceAnalysis(RecentRace race, AnalysisWorkspace analysis, string analysisPath)
+    {
+        ApplyRaceAnalysisState(race, BuildRaceOverview(analysis), analyzed: true, analysisPath);
+    }
+
+    private static RaceOverview BuildRaceOverview(AnalysisWorkspace analysis)
     {
         var cleanTimes = analysis.Traces.Where(trace => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0
                 && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase)
@@ -1729,21 +1805,216 @@ public sealed class CompanionState : IDisposable
         var tire = analysis.Runs.Where(run => run.TireRemainingPercent.HasValue).OrderBy(run => run.TireRemainingPercent).FirstOrDefault();
         var controlChange = analysis.Runs.SelectMany(run => new[] { run.EarlyBrakeVsLatePercent, run.EarlySteerVsLatePercent })
             .Where(value => value.HasValue).Select(value => Math.Abs(value!.Value)).DefaultIfEmpty().Max();
-        var overview = new RaceOverview(
+        return new RaceOverview(
             analysis.RecordedLaps, analysis.Runs.Sum(run => run.GreenLaps), analysis.Runs.Sum(run => run.CautionLaps),
             analysis.PitStops, analysis.Runs.Count, longest?.GreenLaps ?? 0, longest?.PaceSlopeSecondsPerLap,
             consistency, tire?.TireRemainingPercent, tire?.TireName ?? string.Empty, controlChange > 0 ? controlChange : null,
             analysis.Runs.Where(run => run.FuelUsedGallons.HasValue).Sum(run => run.FuelUsedGallons), cleanTimes.Length > 0 ? cleanTimes.Min() : null);
-        for (var index = 0; index < Races.Count; index++)
-            if (SameRace(Races[index], race)) Races[index] = Races[index] with { Overview = overview };
-        for (var index = 0; index < EventSessions.Count; index++)
-            if (SameRace(EventSessions[index], race)) EventSessions[index] = EventSessions[index] with { Overview = overview };
     }
 
-    private static bool SameRace(RecentRace candidate, RecentRace selected) =>
-        string.Equals(candidate.Id, selected.Id, StringComparison.OrdinalIgnoreCase) ||
-        (!string.IsNullOrWhiteSpace(candidate.EventKey) && string.Equals(candidate.EventKey, selected.EventKey, StringComparison.OrdinalIgnoreCase)) ||
-        (!string.IsNullOrWhiteSpace(candidate.EffectiveSelector) && string.Equals(candidate.EffectiveSelector, selected.EffectiveSelector, StringComparison.OrdinalIgnoreCase));
+    private bool ApplyRaceOverview(RecentRace race, RaceOverview overview)
+    {
+        return ApplyRaceAnalysisState(race, overview, analyzed: false, analysisPath: string.Empty);
+    }
+
+    private bool ApplySuccessfulRaceAnalysis(RecentRace race, RaceOverview overview, string analysisPath)
+    {
+        return ApplyRaceAnalysisState(race, overview, analyzed: true, analysisPath);
+    }
+
+    private bool ApplyRaceAnalysisState(RecentRace race, RaceOverview overview, bool analyzed, string analysisPath)
+    {
+        var changed = false;
+        var eventSessionsChanged = false;
+        for (var index = 0; index < Races.Count; index++)
+        {
+            if (!SameRace(Races[index], race)) continue;
+            var updated = MergeRaceAnalysisState(Races[index], overview, analyzed, analysisPath);
+            if (Equals(Races[index], updated)) continue;
+            Races[index] = updated;
+            changed = true;
+        }
+        for (var index = 0; index < EventSessions.Count; index++)
+        {
+            if (!SameRace(EventSessions[index], race)) continue;
+            var updated = MergeRaceAnalysisState(EventSessions[index], overview, analyzed, analysisPath);
+            if (Equals(EventSessions[index], updated)) continue;
+            EventSessions[index] = updated;
+            changed = true;
+            eventSessionsChanged = true;
+        }
+        if (eventSessionsChanged)
+        {
+            // RaceEventGroup is an immutable snapshot of its sessions. Rebuild it
+            // whenever a background summary replaces an EventSessions record so
+            // the Race Analysis catalog observes the new overview immediately.
+            EventGroups.Clear();
+            EventGroups.AddRange(DashboardMapper.GroupEvents(EventSessions));
+        }
+        return changed;
+    }
+
+    private static RecentRace MergeRaceAnalysisState(RecentRace race, RaceOverview overview, bool analyzed, string analysisPath)
+    {
+        if (!analyzed) return race with { Overview = overview };
+        return race with
+        {
+            Overview = overview,
+            Analyzed = true,
+            Status = "Analyzed",
+            AnalysisPath = string.IsNullOrWhiteSpace(analysisPath) ? race.AnalysisPath : analysisPath
+        };
+    }
+
+    private void QueueMissingHomeRaceAnalysis()
+    {
+        if (_disposed || !HomeDataReady) return;
+        var missing = new List<RecentRace>();
+        var changed = false;
+        var candidates = EventSessions
+            .Concat(Races)
+            .Where(race => race.IsRace && !string.IsNullOrWhiteSpace(race.EffectiveSelector))
+            .GroupBy(UiAnalysisCacheKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+        foreach (var race in candidates)
+        {
+            if (TryReadUiAnalysisCache(race, out var overview, out var analysisPath))
+            {
+                changed |= ApplySuccessfulRaceAnalysis(race, overview, analysisPath);
+                continue;
+            }
+            missing.Add(race);
+        }
+        if (changed) RaiseChanged();
+
+        lock (_homeAnalysisSync)
+        {
+            foreach (var race in missing)
+            {
+                var key = UiAnalysisCacheKey(race);
+                if (!_homeAnalysisActiveKeys.Add(key)) continue;
+                _homeAnalysisQueue.Enqueue(race);
+            }
+            if (_homeAnalysisQueue.Count > 0 && (_homeAnalysisWorker is null || _homeAnalysisWorker.IsCompleted))
+                _homeAnalysisWorker = ProcessHomeAnalysisQueueAsync();
+        }
+    }
+
+    private async Task ProcessHomeAnalysisQueueAsync()
+    {
+        // This is deliberately low-priority maintenance. Give the first render
+        // and live SDK connection a chance to settle before touching recordings.
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100), _homeAnalysisCancellation.Token);
+        }
+        catch (OperationCanceledException) when (_homeAnalysisCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        while (!_homeAnalysisCancellation.IsCancellationRequested)
+        {
+            await WaitForHomeAnalysisWindowAsync();
+            if (_homeAnalysisCancellation.IsCancellationRequested) return;
+
+            RecentRace race;
+            lock (_homeAnalysisSync)
+            {
+                if (_homeAnalysisQueue.Count == 0)
+                {
+                    _homeAnalysisWorker = null;
+                    return;
+                }
+                race = _homeAnalysisQueue.Dequeue();
+            }
+
+            try { await ProcessHomeAnalysisRaceAsync(race); }
+            catch (OperationCanceledException) when (_homeAnalysisCancellation.IsCancellationRequested) { return; }
+        }
+    }
+
+    private async Task ProcessHomeAnalysisRaceAsync(RecentRace race)
+    {
+        var key = UiAnalysisCacheKey(race);
+        try
+        {
+            if (TryReadUiAnalysisCache(race, out var cachedOverview, out var cachedAnalysisPath))
+            {
+                if (ApplySuccessfulRaceAnalysis(race, cachedOverview, cachedAnalysisPath)) RaiseChanged();
+                return;
+            }
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    // Interactive analysis and driving always win. Recheck before
+                    // every attempt because either state can change during retry delay.
+                    await WaitForHomeAnalysisWindowAsync();
+                    _homeAnalysisCancellation.Token.ThrowIfCancellationRequested();
+                    var result = await CallBackendAsync("analyze_iracing_race", new
+                    {
+                        selector = race.EffectiveSelector,
+                        iracing_root = Settings.IRacingRoot,
+                        archive_root = Settings.ArchiveRoot,
+                        target_hz = 20
+                    }, _homeAnalysisCancellation.Token);
+                    if (!result.TryGetProperty("analysis_view", out var view) || view.ValueKind != JsonValueKind.Object)
+                        throw new InvalidDataException("Background race analysis did not return an analysis view.");
+
+                    var overview = RuntimeMapper.Overview(result);
+                    SaveUiAnalysisCache(race, result);
+                    if (ApplySuccessfulRaceAnalysis(race, overview, AnalysisPathFromResponse(result))) RaiseChanged();
+                    return;
+                }
+                catch (OperationCanceledException) when (_homeAnalysisCancellation.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception) when (attempt == 0)
+                {
+                    // One short retry absorbs a transient backend/read failure while
+                    // remaining invisible to the job tray and bounded during startup.
+                    await Task.Delay(HomeAnalysisRetryDelay, _homeAnalysisCancellation.Token);
+                }
+                catch (Exception)
+                {
+                    // Release the active key below. A later refresh or file event may
+                    // schedule another bounded attempt without creating an infinite loop.
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            lock (_homeAnalysisSync) _homeAnalysisActiveKeys.Remove(key);
+        }
+    }
+
+    private async Task WaitForHomeAnalysisWindowAsync()
+    {
+        while (!_homeAnalysisCancellation.IsCancellationRequested &&
+               (AnalysisLoading || LiveState.Snapshot.Connected))
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), _homeAnalysisCancellation.Token);
+            }
+            catch (OperationCanceledException) when (_homeAnalysisCancellation.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+    }
+
+    private static bool SameRace(RecentRace candidate, RecentRace selected)
+    {
+        if (string.Equals(candidate.Id, selected.Id, StringComparison.OrdinalIgnoreCase)) return true;
+        if (!string.Equals(candidate.SessionType, selected.SessionType, StringComparison.OrdinalIgnoreCase)) return false;
+        return (!string.IsNullOrWhiteSpace(candidate.EventKey) && string.Equals(candidate.EventKey, selected.EventKey, StringComparison.OrdinalIgnoreCase)) ||
+               (!string.IsNullOrWhiteSpace(candidate.EffectiveSelector) && string.Equals(candidate.EffectiveSelector, selected.EffectiveSelector, StringComparison.OrdinalIgnoreCase));
+    }
 
     private IReadOnlyList<LocalSetup> LoadArchivedSetups()
     {
@@ -1776,6 +2047,26 @@ public sealed class CompanionState : IDisposable
             savedUtc = DateTimeOffset.UtcNow,
             response
         });
+    }
+
+    private static string AnalysisPathFromResponse(JsonElement response)
+    {
+        if (response.ValueKind != JsonValueKind.Object) return string.Empty;
+        if (response.TryGetProperty("analysis_path", out var path)
+            && path.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(path.GetString()))
+        {
+            return path.GetString()!;
+        }
+        if (response.TryGetProperty("artifacts", out var artifacts)
+            && artifacts.ValueKind == JsonValueKind.Object
+            && artifacts.TryGetProperty("analysis", out var artifactPath)
+            && artifactPath.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(artifactPath.GetString()))
+        {
+            return artifactPath.GetString()!;
+        }
+        return string.Empty;
     }
 
     private string UiAnalysisCachePath(RecentRace race) =>
@@ -1957,6 +2248,7 @@ public sealed class CompanionState : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _homeAnalysisCancellation.Cancel();
         _fileRefresh?.Dispose();
         foreach (var watcher in _watchers) watcher.Dispose();
         foreach (var token in _jobTokens.Values) { token.Cancel(); token.Dispose(); }
@@ -1979,6 +2271,7 @@ public sealed class CompanionState : IDisposable
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException) { }
+        _homeAnalysisCancellation.Dispose();
         _refreshGate.Dispose();
     }
 }

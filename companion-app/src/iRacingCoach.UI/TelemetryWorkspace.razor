@@ -1,6 +1,7 @@
 @using System.Globalization
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <section class="telemetry-workspace" aria-labelledby="telemetry-heading" @onkeydown="HandleWorkspaceKeyDown">
     <div class="analysis-section-heading">
@@ -126,7 +127,7 @@
         {
         <div class="telemetry-grid">
             <div class="track-panel">
-                <div class="panel-title track-panel-title"><div><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>@SelectedAverageLabel</span></div><label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label></div>
+                <div class="panel-title track-panel-title"><div><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div><label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label></div>
                 <svg @ref="TrackElement" class="track-map" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map" @onmousemove="TrackMoved">
                     @if (Workspace.TrackShape.Count >= 3)
                     {
@@ -134,8 +135,8 @@
                         {
                             <line x1="@F(segment.A.X)" y1="@F(segment.A.Y)" x2="@F(segment.B.X)" y2="@F(segment.B.Y)" stroke="@segment.Color" stroke-width="8" stroke-linecap="round" vector-effect="non-scaling-stroke" />
                         }
-                        <circle cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="8" class="map-cursor-halo" />
-                        <circle cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="4" class="map-cursor" />
+                        <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="8" class="map-cursor-halo" />
+                        <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="4" class="map-cursor" />
                     }
                     else
                     {
@@ -149,11 +150,11 @@
                             <line x1="@F(28 + zone.StartPercent * 364)" y1="113" x2="@F(28 + zone.StartPercent * 364)" y2="167" class="zone-marker" />
                             <svg:text x="@F(28 + zone.StartPercent * 364)" y="99" class="chart-label">@FriendlyZone(zone)</svg:text>
                         }
-                        <line x1="@F(28 + Cursor * 364)" y1="104" x2="@F(28 + Cursor * 364)" y2="176" class="map-cursor-line" />
+                        <line data-analysis-track-cursor-line x1="@F(28 + Cursor * 364)" y1="104" x2="@F(28 + Cursor * 364)" y2="176" class="map-cursor-line" />
                         <svg:text x="28" y="205" class="chart-label">Start / finish</svg:text><svg:text x="392" y="205" text-anchor="end" class="chart-label">100%</svg:text>
                     }
                 </svg>
-                <div class="cursor-readout"><strong>@((Cursor * 100).ToString("0.0"))%</strong><span>@CursorSummary</span></div>
+                <div class="cursor-readout"><strong data-analysis-track-percent>@((Cursor * 100).ToString("0.0"))%</strong><span data-analysis-track-summary>@CursorSummary</span></div>
             </div>
 
             <div class="trace-panel @(TraceExpanded ? "trace-panel-expanded" : null)">
@@ -161,48 +162,86 @@
                     <strong>Aligned traces</strong>
                     <div class="trace-panel-actions">
                         <span>@Selected.Count selected · hover to compare</span>
+                        <button type="button" class="trace-toolbox-button" title="Choose trace rows" aria-label="Choose trace rows" aria-expanded="@TraceToolboxOpen" @onclick="ToggleTraceToolbox">
+                            <ProductIcon Name="settings" Size="16" />
+                        </button>
                         <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@TraceExpanded" @onclick="ToggleTraceExpanded">
                             <ProductIcon Name="@(TraceExpanded ? "contract" : "expand")" Size="16" />
                         </button>
                     </div>
                 </div>
-                <svg @ref="ChartElement" class="trace-chart" viewBox="@($"0 0 {F(_chartWidth)} {ChartHeight}")" style="height:@($"{ChartHeight}px")" preserveAspectRatio="none" role="img" aria-label="Synchronized speed, time delta, throttle, brake, calculated tire wear, gear, RPM, steering, rotation, and acceleration traces" @onmouseenter="ShowChartCursor" @onmouseleave="HideChartCursor" @onmousemove="ChartMoved" @onwheel="ChartWheel" @onwheel:preventDefault>
-                    @for (var row = 0; row < VisiblePanels.Count; row++)
+                @if (TraceToolboxOpen)
+                {
+                    <aside class="analysis-trace-toolbox" aria-label="Trace row toolbox">
+                        <div class="trace-toolbox-heading"><div><strong>Trace rows</strong><span>@TraceRows.Count of @AnalysisTraceLayouts.MaximumRows</span></div><button type="button" class="trace-toolbox-close" aria-label="Close trace row toolbox" @onclick="ToggleTraceToolbox"><ProductIcon Name="close" Size="15" /></button></div>
+                        <div class="trace-signal-library" role="list" aria-label="Draggable telemetry signals">
+                            <span class="trace-signal-library-label">Drag a signal to a row</span>
+                            <div class="trace-signal-library-items">
+                                @foreach (var signal in AnalysisTraceLayouts.Signals)
+                                {
+                                    <button type="button" role="listitem" draggable="true" class="trace-signal-chip @(SignalRecordedInRace(signal) ? null : "unavailable")" data-group="@signal.AccentGroup" title="@(SignalRecordedInRace(signal) ? $"Drag {signal.Name} to a primary slot or pair it with any different signal" : $"{signal.Name} was not recorded in this race; the saved row will become active when it is available")" @ondragstart="() => BeginTraceSignalDrag(signal.Id)" @ondragend="EndTraceSignalDrag">
+                                        <i aria-hidden="true"></i><span>@signal.ShortLabel</span>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_traceDropFeedback))
+                        {
+                            <div class="trace-drop-feedback @(_traceDropRejected ? "rejected" : "accepted")" role="status">@_traceDropFeedback</div>
+                        }
+                        <div class="trace-row-editor-list">
+                            @foreach (var indexed in TraceLayout.Rows.Select((row, index) => new { Row = row, Index = index }))
+                            {
+                                <article class="trace-row-editor" @key="indexed.Row.Id">
+                                    <span class="trace-row-number">@(indexed.Index + 1)</span>
+                                    <label class="@TraceDropTargetClass(indexed.Row, TraceDropSlot.Primary)" @ondragenter="() => EnterTraceDropTarget(indexed.Row.Id, TraceDropSlot.Primary)" @ondragover:preventDefault @ondrop="() => DropTraceSignal(indexed.Row.Id, TraceDropSlot.Primary)">
+                                        <span class="trace-drop-slot-label">Primary</span>
+                                        <span class="sr-only">Primary signal for row @(indexed.Index + 1)</span><select value="@indexed.Row.PrimarySignalId" @onchange="args => ChangePrimarySignal(indexed.Row.Id, args.Value?.ToString())">@foreach (var signal in AnalysisTraceLayouts.Signals) { <option value="@signal.Id">@SignalOption(signal)</option> }</select>
+                                        @if (IsActiveDropTarget(indexed.Row.Id, TraceDropSlot.Primary)) { <span class="trace-drop-target-status">Replace primary</span> }
+                                    </label>
+                                    <label class="@TraceDropTargetClass(indexed.Row, TraceDropSlot.Secondary)" @ondragenter="() => EnterTraceDropTarget(indexed.Row.Id, TraceDropSlot.Secondary)" @ondragover:preventDefault @ondrop="() => DropTraceSignal(indexed.Row.Id, TraceDropSlot.Secondary)">
+                                        <span class="trace-drop-slot-label">Second</span>
+                                        <span class="sr-only">Second signal for row @(indexed.Index + 1)</span><select value="@indexed.Row.SecondarySignalId" @onchange="args => ChangeSecondarySignal(indexed.Row.Id, args.Value?.ToString())"><option value="">One signal</option>@foreach (var signal in AnalysisTraceLayouts.SecondarySignalOptions(indexed.Row.PrimarySignalId)) { <option value="@signal.Id">@SignalOption(signal)</option> }</select>
+                                        @if (IsActiveDropTarget(indexed.Row.Id, TraceDropSlot.Secondary)) { <span class="trace-drop-target-status">@(CanUseAsSecondSignal(indexed.Row) ? "Add second signal" : "Already primary")</span> }
+                                    </label>
+                                    <span class="trace-row-editor-actions">
+                                        <button type="button" disabled="@(indexed.Index == 0)" aria-label="Move row @(indexed.Index + 1) up" @onclick="() => MoveTraceRow(indexed.Row.Id, -1)">Up</button>
+                                        <button type="button" disabled="@(indexed.Index == TraceLayout.Rows.Count - 1)" aria-label="Move row @(indexed.Index + 1) down" @onclick="() => MoveTraceRow(indexed.Row.Id, 1)">Down</button>
+                                        <button type="button" disabled="@(TraceLayout.Rows.Count <= 1)" aria-label="Remove row @(indexed.Index + 1)" @onclick="() => RemoveTraceRow(indexed.Row.Id)"><ProductIcon Name="trash" Size="14" /></button>
+                                    </span>
+                                </article>
+                            }
+                        </div>
+                        <button type="button" class="trace-row-add" disabled="@(TraceLayout.Rows.Count >= AnalysisTraceLayouts.MaximumRows)" @onclick="AddTraceRow"><ProductIcon Name="plus" Size="14" /> Add row</button>
+                    </aside>
+                }
+                <svg @ref="ChartElement" class="trace-chart configurable-trace-chart" viewBox="@($"0 0 {F(_chartWidth)} {F(ChartHeight)}")" style="height:@($"{F(ChartHeight)}px")" preserveAspectRatio="none" role="img" aria-label="Configurable synchronized telemetry traces">
+                    @for (var row = 0; row < TraceRows.Count; row++)
                     {
-                        var panel = VisiblePanels[row]; var top = ChartTop + row * ChartRowHeight;
-                        <rect x="@PlotLeft" y="@top" width="@PlotWidth" height="@ChartPlotHeight" class="chart-row" />
-                        <line x1="@PlotLeft" y1="@(top + ChartPlotHeight / 2)" x2="@PlotRight" y2="@(top + ChartPlotHeight / 2)" class="chart-grid-line" />
-                        <svg:text x="8" y="@(top + 18)" class="chart-title">@panel.Label</svg:text>
-                        <svg:text x="8" y="@(top + 38)" class="chart-unit">@panel.Unit</svg:text>
+                        var panel = TraceRows[row]; var top = ChartTop + row * ChartRowHeight;
+                        <rect data-analysis-chart-row x="@PlotLeft" y="@top" width="@PlotWidth" height="@ChartPlotHeight" class="chart-row" />
+                        <line data-analysis-horizontal-grid x1="@PlotLeft" y1="@(top + ChartPlotHeight / 2)" x2="@PlotRight" y2="@(top + ChartPlotHeight / 2)" class="chart-grid-line" />
+                        <svg:text x="8" y="@(top + 18)" class="chart-title">@RowLabel(panel)</svg:text>
+                        <svg:text x="8" y="@(top + 38)" class="chart-unit">@RowSubtitle(panel)</svg:text>
+                        @if (!panel.Signals.Any(HasSignalData))
+                        {
+                            <svg:text x="@(PlotLeft + 12)" y="@(top + ChartPlotHeight / 2 + 4)" class="chart-unavailable">Not recorded for this race</svg:text>
+                        }
                         @foreach (var trace in SelectedTraces)
                         {
-                            <path d="@TracePath(trace, panel, top, false)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="1.35" vector-effect="non-scaling-stroke" />
-                            @if (panel.Second is not null)
+                            @foreach (var indexedSignal in panel.Signals.Where(HasSignalData).Select((signal, index) => new { Signal = signal, Index = index }))
                             {
-                                <path d="@TracePath(trace, panel, top, true)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="1.05" stroke-dasharray="4 3" opacity=".72" vector-effect="non-scaling-stroke" />
+                                <path data-analysis-trace-path data-row="@row" data-lap="@trace.Lap" data-signal="@indexedSignal.Signal.Id" d="@TracePath(trace, panel, indexedSignal.Signal, top)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="@(indexedSignal.Index == 0 ? "1.35" : "1.05")" stroke-dasharray="@(indexedSignal.Index == 0 ? null : "4 3")" opacity="@(indexedSignal.Index == 0 ? "1" : ".72")" vector-effect="non-scaling-stroke" />
                             }
-                            @if (ChartHovered && PanelCursorY(panel, trace, top) is { } markerY) { <circle cx="@CursorChartX" cy="@markerY" r="3.4" fill="@LapColor(trace.Lap)" class="trace-cursor-marker" /> }
-                        }
-                        @if (ChartHovered)
-                        {
-                        <g class="trace-cursor-tooltip">
-                            <rect x="@TooltipX(panel)" y="@(top + 4)" width="@TooltipWidth(panel)" height="@(14 + TooltipTraces.Count * 20)" rx="4" />
-                            @foreach (var trace in TooltipTraces.Select((value, index) => new { value, index }))
-                            {
-                                <svg:text x="@(TooltipX(panel) + 8)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-lap">@trace.value.Lap</svg:text>
-                                <rect x="@(TooltipX(panel) + 30)" y="@(top + 13 + trace.index * 20)" width="10" height="10" rx="1" fill="@LapColor(trace.value.Lap)" />
-                                <svg:text x="@(TooltipX(panel) + 47)" y="@(top + 22 + trace.index * 20)" class="trace-tooltip-value">@CursorValue(panel, trace.value)</svg:text>
-                            }
-                        </g>
                         }
                     }
                     @for (var tick = 0; tick <= 4; tick++)
                     {
                         var x = PlotLeft + tick * (PlotWidth / 4d);
-                        <line x1="@x" y1="@ChartTop" x2="@x" y2="@ChartBottom" class="chart-grid-vertical" />
-                        <svg:text x="@x" y="@(ChartHeight - 7)" text-anchor="middle" class="chart-label">@(tick * 25)%</svg:text>
+                        <line data-analysis-vertical-grid="@tick" x1="@x" y1="@ChartTop" x2="@x" y2="@ChartBottom" class="chart-grid-vertical" />
+                        <svg:text data-analysis-x-tick="@tick" x="@x" y="@(ChartHeight - 7)" text-anchor="middle" class="chart-label">@(tick * 25)%</svg:text>
                     }
-                    @if (ChartHovered) { <line x1="@CursorChartX" y1="@ChartTop" x2="@CursorChartX" y2="@ChartBottom" class="shared-cursor" /> }
+                    <g data-analysis-cursor-layer class="analysis-cursor-layer" style="display:none" aria-hidden="true"></g>
                 </svg>
             </div>
         </div>
@@ -212,13 +251,19 @@
 </section>
 
 @code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
     private readonly HashSet<int> Selected = [];
     private string? _analysisId;
     private string Mode { get; set; } = "speed";
     private bool CleanLapsOnly { get; set; }
-    private bool ChartHovered { get; set; }
     private bool TraceExpanded { get; set; }
+    private bool TraceToolboxOpen { get; set; }
+    private string? _draggedTraceSignalId;
+    private string? _activeTraceDropRowId;
+    private TraceDropSlot? _activeTraceDropSlot;
+    private string? _traceDropFeedback;
+    private bool _traceDropRejected;
     private int? ActivePitLap { get; set; }
     private int? ActiveConditionsLap { get; set; }
     private double PitPopoverX { get; set; }
@@ -230,48 +275,70 @@
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
-    private bool _chartMovePending;
     private bool _trackMovePending;
+    private bool _cursorInteropAttached;
     private double _chartWidth = 1000;
-    private int _tooltipLapOffset;
+    private string _cursorInteropSignature = string.Empty;
     private readonly Dictionary<AnalysisTracePoint, double?> _calculatedWearByPoint = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<string, (double Min, double Max)> _traceRangeCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _tracePathCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (double Min, double Max)> _trackRangeCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool> _signalAvailabilityCache = new(StringComparer.Ordinal);
+    private string _selectionSignature = string.Empty;
     private const double PlotLeft = 126;
     private const int ChartTop = 12;
-    private const int ChartRowHeight = 82;
-    private const int ChartPlotHeight = 68;
+    private const double TraceRowsHeight = 820;
     private const int TooltipRowHeight = 20;
     private const double TooltipCharacterWidth = 7.1;
     private static readonly (string Key, string Label)[] Modes = [("speed", "Speed"), ("throttle", "Throttle"), ("brake", "Brake"), ("steering", "Steering"), ("stress", "Tire load")];
-    private static readonly PanelSpec[] Panels =
+    private static readonly HeatStop[] SpeedHeatmapStops =
     [
-        new("speed", "Speed", "mph", p => p.SpeedMph),
-        new("delta", "Time Delta", "s", _ => null),
-        new("throttle", "Throttle", "%", p => p.Throttle),
-        new("brake", "Brake", "%", p => p.Brake),
-        new("tire-wear", "Calculated tire wear", "% this lap", _ => null),
-        new("gear", "Gear", "selected gear", p => p.Gear),
-        new("rpm", "RPM", "rpm", p => p.Rpm),
-        new("steering", "Steering", "left / right", p => p.SteeringRadians * 180 / Math.PI),
-        new("rotation", "Slip / yaw", "deg / deg/s", p => p.SlipAngleDegrees, p => p.YawRateDegreesPerSecond),
-        new("acceleration", "Lateral / long. G", "g", p => p.LateralG, p => p.LongitudinalG)
+        new(0.00, 71, 103, 232),
+        new(0.25, 56, 189, 248),
+        new(0.50, 66, 226, 154),
+        new(0.75, 244, 211, 94),
+        new(1.00, 255, 111, 105)
     ];
 
     protected override void OnParametersSet()
     {
+        State.Settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
+        _ = AnalysisTraceLayouts.ValidateAndRepair(State.Settings.RaceAnalysisTraces);
         if (_analysisId == Workspace.AnalysisId) return;
         _analysisId = Workspace.AnalysisId;
         ResetSelection();
-        _tooltipLapOffset = 0;
         RebuildCalculatedTireWear();
+        InvalidateTraceRender();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender) => await MeasureChart();
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Selected.Count == 0) return;
+        if (!_cursorInteropAttached && await MeasureChart()) return;
+        var signature = CursorInteropSignature;
+        if (!_cursorInteropAttached || !string.Equals(signature, _cursorInteropSignature, StringComparison.Ordinal))
+        {
+            await JS.InvokeVoidAsync("iracingCoachAnalysisCursor.initialize", ChartElement, TrackElement, BuildCursorInteropConfiguration());
+            _cursorInteropAttached = true;
+            _cursorInteropSignature = signature;
+            return;
+        }
+        await JS.InvokeVoidAsync("iracingCoachAnalysisCursor.sync", ChartElement, TrackElement);
+    }
 
-    private void ToggleTraceExpanded() => TraceExpanded = !TraceExpanded;
+    private void ToggleTraceExpanded()
+    {
+        TraceExpanded = !TraceExpanded;
+    }
+    private void ToggleTraceToolbox()
+    {
+        TraceToolboxOpen = !TraceToolboxOpen;
+        if (!TraceToolboxOpen) EndTraceSignalDrag();
+    }
 
     private void HandleWorkspaceKeyDown(KeyboardEventArgs args)
     {
-        if (TraceExpanded && args.Key == "Escape") TraceExpanded = false;
+        if (TraceExpanded && args.Key == "Escape") ToggleTraceExpanded();
     }
 
     private void RebuildCalculatedTireWear()
@@ -308,28 +375,24 @@
         }
     }
     private double FastestLapTime => Workspace.Traces.Where(trace => IsClean(trace) && trace.LapTimeSeconds.HasValue).Select(trace => trace.LapTimeSeconds!.Value).DefaultIfEmpty(double.MaxValue).Min();
-    private IReadOnlyList<PanelSpec> VisiblePanels => Panels.Where(HasPanelData).ToArray();
+    private AnalysisTraceLayout TraceLayout => State.Settings.RaceAnalysisTraces;
+    private IReadOnlyList<TracePanelRow> TraceRows => TraceLayout.Rows.Select(row => new TracePanelRow(
+        row,
+        new[] { AnalysisTraceLayouts.Signal(row.PrimarySignalId), AnalysisTraceLayouts.Signal(row.SecondarySignalId) }
+            .Where(signal => signal is not null).Cast<AnalysisTraceSignalDefinition>().ToArray())).ToArray();
     private AnalysisLapTrace PrimaryTrace => SelectedTraces.FirstOrDefault() ?? Workspace.Traces[0];
     private AnalysisLapTrace ReferenceTrace => SelectedTraces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).FirstOrDefault() ?? PrimaryTrace;
-    private string SelectedAverageLabel => $"{Selected.Count}-lap average";
-    private int ChartBottom => ChartTop + VisiblePanels.Count * ChartRowHeight - (ChartRowHeight - ChartPlotHeight);
-    private int ChartHeight => ChartBottom + 24;
-    private double PlotWidth => Math.Max(300, _chartWidth - PlotLeft - 20);
+    private double ChartRowHeight => TraceRowsHeight / Math.Max(1, TraceRows.Count);
+    private double ChartPlotHeight => Math.Max(48, ChartRowHeight - 14);
+    private double ChartBottom => ChartTop + TraceRows.Count * ChartRowHeight - (ChartRowHeight - ChartPlotHeight);
+    private double ChartHeight => ChartBottom + 24;
+    // The responsive layout normally keeps the trace pane comfortably wide, but
+    // the SVG still has to remain internally truthful while a window is being
+    // resized. A large synthetic minimum made the plot extend beyond its viewBox
+    // and left the labels and cursor scaled against stale geometry.
+    private double PlotWidth => Math.Max(40, _chartWidth - PlotLeft - 20);
     private double PlotRight => PlotLeft + PlotWidth;
-    private double CursorChartX => PlotLeft + Cursor * PlotWidth;
-    private double TooltipWidth(PanelSpec panel)
-    {
-        var widestValue = TooltipTraces.Select(trace => CursorValue(panel, trace).Length).DefaultIfEmpty(1).Max();
-        return Math.Clamp(Math.Ceiling(55 + widestValue * TooltipCharacterWidth), 102, 184);
-    }
-    private double TooltipX(PanelSpec panel)
-    {
-        var width = TooltipWidth(panel);
-        return CursorChartX - width - 12 >= PlotLeft ? CursorChartX - width - 12 : CursorChartX + 12;
-    }
-    private int TooltipCapacity => Math.Max(1, (ChartRowHeight - 18) / TooltipRowHeight);
-    private int EffectiveTooltipOffset => Math.Clamp(_tooltipLapOffset, 0, Math.Max(0, SelectedTraces.Count() - TooltipCapacity));
-    private IReadOnlyList<AnalysisLapTrace> TooltipTraces => SelectedTraces.Skip(EffectiveTooltipOffset).Take(TooltipCapacity).ToArray();
+    private int TooltipCapacity => Math.Max(1, (int)Math.Floor((ChartRowHeight - 18) / TooltipRowHeight));
     private string CursorSummary
     {
         get
@@ -343,6 +406,7 @@
     {
         if (!Selected.Remove(lap)) Selected.Add(lap);
         if (Selected.Count == 0) Selected.Add(lap);
+        InvalidateTraceRender();
     }
     private void SelectLap(int lap) => ToggleLap(lap);
     private void ShowAllLaps()
@@ -350,13 +414,13 @@
         CleanLapsOnly = false;
         Selected.Clear();
         foreach (var trace in Workspace.Traces) Selected.Add(trace.Lap);
-        _tooltipLapOffset = 0;
+        InvalidateTraceRender();
     }
-    private void ClearSelection()
+    private async Task ClearSelection()
     {
+        await DisposeCursorInteropAsync();
         Selected.Clear();
-        ChartHovered = false;
-        _tooltipLapOffset = 0;
+        InvalidateTraceRender();
     }
     private void CleanLapFilterChanged(ChangeEventArgs args)
     {
@@ -368,13 +432,116 @@
             var fastestClean = Workspace.Traces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).FirstOrDefault();
             if (fastestClean is not null) Selected.Add(fastestClean.Lap);
         }
+        InvalidateTraceRender();
     }
     private void ResetSelection()
     {
         Selected.Clear();
         foreach (var trace in Workspace.Traces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).Take(3)) Selected.Add(trace.Lap);
         if (Selected.Count == 0) foreach (var trace in Workspace.Traces.Take(3)) Selected.Add(trace.Lap);
+        InvalidateTraceRender();
     }
+
+    private void AddTraceRow()
+    {
+        if (AnalysisTraceLayouts.AddRow(TraceLayout)) SaveTraceLayout();
+    }
+    private void RemoveTraceRow(string rowId)
+    {
+        if (AnalysisTraceLayouts.RemoveRow(TraceLayout, rowId)) SaveTraceLayout();
+    }
+    private void MoveTraceRow(string rowId, int direction)
+    {
+        if (AnalysisTraceLayouts.MoveRow(TraceLayout, rowId, direction)) SaveTraceLayout();
+    }
+    private void ChangePrimarySignal(string rowId, string? signalId)
+    {
+        if (!string.IsNullOrWhiteSpace(signalId) && AnalysisTraceLayouts.SetPrimary(TraceLayout, rowId, signalId)) SaveTraceLayout();
+    }
+    private void ChangeSecondarySignal(string rowId, string? signalId)
+    {
+        if (AnalysisTraceLayouts.SetSecondary(TraceLayout, rowId, signalId)) SaveTraceLayout();
+    }
+    private void BeginTraceSignalDrag(string signalId)
+    {
+        if (AnalysisTraceLayouts.Signal(signalId) is null) return;
+        _draggedTraceSignalId = signalId;
+        _activeTraceDropRowId = null;
+        _activeTraceDropSlot = null;
+        _traceDropFeedback = null;
+        _traceDropRejected = false;
+    }
+    private void EndTraceSignalDrag()
+    {
+        _draggedTraceSignalId = null;
+        _activeTraceDropRowId = null;
+        _activeTraceDropSlot = null;
+    }
+    private void EnterTraceDropTarget(string rowId, TraceDropSlot slot)
+    {
+        if (_draggedTraceSignalId is null) return;
+        _activeTraceDropRowId = rowId;
+        _activeTraceDropSlot = slot;
+    }
+    private bool IsActiveDropTarget(string rowId, TraceDropSlot slot) =>
+        _draggedTraceSignalId is not null &&
+        string.Equals(_activeTraceDropRowId, rowId, StringComparison.Ordinal) &&
+        _activeTraceDropSlot == slot;
+    private bool CanUseAsSecondSignal(AnalysisTraceRow row) =>
+        _draggedTraceSignalId is not null &&
+        !string.Equals(row.PrimarySignalId, _draggedTraceSignalId, StringComparison.Ordinal);
+    private string TraceDropTargetClass(AnalysisTraceRow row, TraceDropSlot slot)
+    {
+        var classes = new List<string> { "trace-signal-drop-target", slot == TraceDropSlot.Primary ? "primary" : "secondary" };
+        if (_draggedTraceSignalId is null) return string.Join(' ', classes);
+        var available = slot == TraceDropSlot.Primary || CanUseAsSecondSignal(row);
+        classes.Add(available ? "drop-available" : "drop-duplicate");
+        if (IsActiveDropTarget(row.Id, slot)) classes.Add("drop-active");
+        return string.Join(' ', classes);
+    }
+    private void DropTraceSignal(string rowId, TraceDropSlot slot)
+    {
+        if (_draggedTraceSignalId is not { } signalId || AnalysisTraceLayouts.Signal(signalId) is not { } signal ||
+            TraceLayout.Rows.FirstOrDefault(row => string.Equals(row.Id, rowId, StringComparison.Ordinal)) is not { } row)
+        {
+            EndTraceSignalDrag();
+            return;
+        }
+        if (slot == TraceDropSlot.Secondary && !CanUseAsSecondSignal(row))
+        {
+            _traceDropRejected = true;
+            _traceDropFeedback = $"{signal.Name} is already the primary signal. Choose a different second signal.";
+            EndTraceSignalDrag();
+            return;
+        }
+
+        var changed = false;
+        if (slot == TraceDropSlot.Primary)
+        {
+            var priorSecondary = row.SecondarySignalId;
+            changed = AnalysisTraceLayouts.SetPrimary(TraceLayout, rowId, signalId);
+            var removedSecondary = !string.IsNullOrWhiteSpace(priorSecondary) && string.IsNullOrWhiteSpace(row.SecondarySignalId);
+            _traceDropFeedback = removedSecondary
+                ? $"{signal.Name} is now primary. The duplicate second signal was removed."
+                : $"{signal.Name} is now the primary signal for this row.";
+        }
+        else
+        {
+            changed = AnalysisTraceLayouts.SetSecondary(TraceLayout, rowId, signalId);
+            _traceDropFeedback = $"{signal.Name} was added as the second signal for this row.";
+        }
+        _traceDropRejected = !changed;
+        if (!changed) _traceDropFeedback = $"{signal.Name} could not be added to this row.";
+        EndTraceSignalDrag();
+        if (changed) SaveTraceLayout();
+    }
+    private void SaveTraceLayout()
+    {
+        InvalidateTraceRender();
+        State.SaveRaceAnalysisTracePreferences();
+    }
+    private string SignalOption(AnalysisTraceSignalDefinition signal) =>
+        SignalRecordedInRace(signal) ? signal.Name : $"{signal.Name} — not recorded in this race";
     private bool ShowPaceDelta(AnalysisLapTrace trace, bool isFastest) =>
         !isFastest && trace.LapTimeSeconds.HasValue && FastestLapTime < double.MaxValue &&
         (trace.Complete || trace.Lap != Workspace.Traces.Max(item => item.Lap));
@@ -503,38 +670,96 @@
         };
     }
     private static bool IsCaution(AnalysisLapTrace trace) => trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) || trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase);
-    private async Task ShowChartCursor()
+    private async Task<bool> MeasureChart()
     {
-        ChartHovered = true;
-        await MeasureChart();
-    }
-    private void HideChartCursor() => ChartHovered = false;
-    private void ChartWheel(WheelEventArgs args)
-    {
-        var maximum = Math.Max(0, SelectedTraces.Count() - TooltipCapacity);
-        if (maximum == 0 || Math.Abs(args.DeltaY) < .01) return;
-        _tooltipLapOffset = Math.Clamp(EffectiveTooltipOffset + (args.DeltaY > 0 ? 1 : -1), 0, maximum);
-    }
-    private async Task ChartMoved(MouseEventArgs args)
-    {
-        if (_chartMovePending) return;
-        _chartMovePending = true;
-        try
-        {
-            await MeasureChart();
-            var pointer = await JS.InvokeAsync<double>("iracingCoach.pointerFraction", ChartElement, args.ClientX);
-            Cursor = Math.Clamp((pointer * _chartWidth - PlotLeft) / PlotWidth, 0, 1);
-        }
-        finally { _chartMovePending = false; }
-    }
-    private async Task MeasureChart()
-    {
-        if (Workspace.Traces.Count == 0) return;
+        if (Workspace.Traces.Count == 0) return false;
         var size = await JS.InvokeAsync<double[]>("iracingCoach.elementSize", ChartElement);
-        if (size.Length == 0 || size[0] < 400 || Math.Abs(size[0] - _chartWidth) < .5) return;
+        if (size.Length == 0 || !double.IsFinite(size[0]) || size[0] <= 0 || Math.Abs(size[0] - _chartWidth) < .5) return false;
         _chartWidth = size[0];
+        InvalidateTraceRender();
         StateHasChanged();
+        return true;
     }
+    private async Task DisposeCursorInteropAsync()
+    {
+        if (_cursorInteropAttached)
+        {
+            try { await JS.InvokeVoidAsync("iracingCoachAnalysisCursor.dispose", ChartElement); }
+            catch (JSDisconnectedException) { }
+        }
+        _cursorInteropAttached = false;
+        _cursorInteropSignature = string.Empty;
+    }
+    private string CursorInteropSignature => string.Join('|',
+        _analysisId,
+        SelectionSignature,
+        F(_chartWidth),
+        Workspace.Traces.Sum(trace => trace.Points.Count),
+        string.Join(',', TraceRows.Select(row => row.Signature)));
+    private object BuildCursorInteropConfiguration()
+    {
+        var panels = TraceRows;
+        var availableSignals = panels
+            .Select(panel => panel.Signals.Where(HasSignalData).ToArray())
+            .ToArray();
+        var traces = SelectedTraces.ToArray();
+        var rows = panels.Select((panel, index) => new
+        {
+            top = ChartTop + index * ChartRowHeight,
+            plotHeight = ChartPlotHeight,
+            signals = availableSignals[index].Select(signal =>
+            {
+                var range = SignalRange(signal);
+                return new
+                {
+                    id = signal.Id,
+                    shortLabel = signal.ShortLabel,
+                    minimum = InteropNumber(range.Min) ?? -.5,
+                    maximum = InteropNumber(range.Max) ?? .5
+                };
+            }).ToArray()
+        }).ToArray();
+        var traceData = traces.Select(trace =>
+        {
+            var points = trace.Points.ToArray();
+            return new
+            {
+                lap = trace.Lap,
+                color = LapColor(trace.Lap),
+                percents = points.Select(point => double.IsFinite(point.LapPercent) ? Math.Clamp(point.LapPercent, 0, 1) : 0).ToArray(),
+                rowValues = availableSignals.Select(signals => signals.Select(signal =>
+                    points.Select((_, pointIndex) => InteropNumber(SmoothedValue(signal, trace, pointIndex))).ToArray()).ToArray()).ToArray(),
+                summary = new
+                {
+                    speed = points.Select(point => InteropNumber(point.SpeedMph)).ToArray(),
+                    throttle = points.Select(point => InteropNumber(point.Throttle)).ToArray(),
+                    brake = points.Select(point => InteropNumber(point.Brake)).ToArray(),
+                    delta = points.Select(point => InteropNumber(TimeDelta(trace, point))).ToArray()
+                }
+            };
+        }).ToArray();
+        return new
+        {
+            key = CursorInteropSignature,
+            initialFraction = Cursor,
+            elementWidth = _chartWidth,
+            chartHeight = ChartHeight,
+            plotLeft = PlotLeft,
+            plotWidth = PlotWidth,
+            chartTop = ChartTop,
+            chartBottom = ChartBottom,
+            tooltipCapacity = TooltipCapacity,
+            tooltipRowHeight = TooltipRowHeight,
+            tooltipCharacterWidth = TooltipCharacterWidth,
+            rows,
+            traces = traceData,
+            trackPoints = Workspace.TrackShape.Count >= 3
+                ? MapPoints.Select(point => new { percent = point.Percent, x = point.X, y = point.Y }).ToArray()
+                : [],
+            distanceStrip = Workspace.TrackShape.Count < 3
+        };
+    }
+    private static double? InteropNumber(double? value) => value is { } number && double.IsFinite(number) ? number : null;
     private async Task TrackMoved(MouseEventArgs args)
     {
         if (_trackMovePending) return;
@@ -659,23 +884,54 @@
     }
     private string MetricColor(double? value)
     {
-        if (value is null) return "#4A515A";
-        var normalized = Mode switch
-        {
-            "speed" => Math.Clamp(value.Value / 180, 0, 1),
-            "steering" => Math.Clamp(Math.Abs(value.Value) / .55, 0, 1),
-            _ => Math.Clamp(value.Value, 0, 1)
-        };
-        if (Mode != "speed" && normalized < .015) return "#3B424A";
+        if (value is null) return "#56616D";
+        var (minimum, maximum) = TrackMetricRange();
+        var plottedValue = Mode == "steering" ? Math.Abs(value.Value) : value.Value;
+        var normalized = Math.Clamp((plottedValue - minimum) / Math.Max(.000001, maximum - minimum), 0, 1);
+        normalized = Math.Pow(normalized, .72);
+        if (Mode != "speed" && normalized < .015) return "#222A33";
         return Mode switch
         {
-            "speed" => $"hsl({F(216 - normalized * 30)} {F(30 + normalized * 58)}% {F(30 + normalized * 38)}%)",
-            "brake" => $"hsl({F(8 - normalized * 5)} {F(34 + normalized * 56)}% {F(30 + normalized * 32)}%)",
-            "throttle" => $"hsl({F(150 - normalized * 12)} {F(30 + normalized * 60)}% {F(28 + normalized * 34)}%)",
-            "steering" => $"hsl({F(292 - normalized * 22)} {F(32 + normalized * 55)}% {F(31 + normalized * 35)}%)",
-            "stress" => $"hsl({F(52 - normalized * 45)} {F(42 + normalized * 48)}% {F(31 + normalized * 32)}%)",
-            _ => "#78A7EF"
+            "speed" => HeatmapColor(normalized, SpeedHeatmapStops),
+            "brake" => $"hsl({F(18 - normalized * 16)} {F(76 + normalized * 20)}% {F(33 + normalized * 31)}%)",
+            "throttle" => $"hsl({F(160 - normalized * 25)} {F(70 + normalized * 24)}% {F(31 + normalized * 32)}%)",
+            "steering" => $"hsl({F(302 - normalized * 34)} {F(72 + normalized * 22)}% {F(34 + normalized * 31)}%)",
+            "stress" => $"hsl({F(58 - normalized * 53)} {F(78 + normalized * 18)}% {F(34 + normalized * 30)}%)",
+            _ => "#75AFFF"
         };
+    }
+    private static string HeatmapColor(double normalized, IReadOnlyList<HeatStop> stops)
+    {
+        var amount = Math.Clamp(normalized, 0, 1);
+        var upperIndex = 1;
+        while (upperIndex < stops.Count - 1 && amount > stops[upperIndex].Position) upperIndex++;
+        var lower = stops[Math.Max(0, upperIndex - 1)];
+        var upper = stops[upperIndex];
+        var blend = Math.Abs(upper.Position - lower.Position) < .000001 ? 0 : (amount - lower.Position) / (upper.Position - lower.Position);
+        var red = (int)Math.Round(lower.Red + (upper.Red - lower.Red) * blend);
+        var green = (int)Math.Round(lower.Green + (upper.Green - lower.Green) * blend);
+        var blue = (int)Math.Round(lower.Blue + (upper.Blue - lower.Blue) * blend);
+        return $"rgb({red} {green} {blue})";
+    }
+    private (double Min, double Max) TrackMetricRange()
+    {
+        var key = $"{Mode}|{SelectionSignature}";
+        if (_trackRangeCache.TryGetValue(key, out var cached)) return cached;
+        if (Mode is "throttle" or "brake" or "stress") return _trackRangeCache[key] = (0, 1);
+        if (Mode == "steering")
+        {
+            var maximum = SelectedTraces.SelectMany(trace => trace.Points)
+                .Select(point => point.SteeringPeakRadians).Where(value => value.HasValue)
+                .Select(value => Math.Abs(value!.Value)).DefaultIfEmpty(.55).Max();
+            return _trackRangeCache[key] = (0, Math.Max(.05, maximum));
+        }
+        var values = SelectedTraces.SelectMany(trace => trace.Points).Select(point => point.SpeedMph)
+            .Where(value => value.HasValue).Select(value => value!.Value).ToArray();
+        if (values.Length == 0) return _trackRangeCache[key] = (0, 180);
+        var min = values.Min();
+        var max = values.Max();
+        if (max - min < 5) { min -= 2.5; max += 2.5; }
+        return _trackRangeCache[key] = (min, max);
     }
     private AggregateSample AverageAt(double percent)
     {
@@ -702,6 +958,10 @@
     {
         var points = trace.Points;
         if (points.Count == 0) return null;
+        return points[NearestIndex(points, percent)];
+    }
+    private static int NearestIndex(IReadOnlyList<AnalysisTracePoint> points, double percent)
+    {
         var low = 0;
         var high = points.Count - 1;
         while (low <= high)
@@ -710,22 +970,38 @@
             if (points[middle].LapPercent < percent) low = middle + 1;
             else high = middle - 1;
         }
-        if (low <= 0) return points[0];
-        if (low >= points.Count) return points[^1];
-        return Math.Abs(points[low].LapPercent - percent) < Math.Abs(points[low - 1].LapPercent - percent) ? points[low] : points[low - 1];
+        if (low <= 0) return 0;
+        if (low >= points.Count) return points.Count - 1;
+        return Math.Abs(points[low].LapPercent - percent) < Math.Abs(points[low - 1].LapPercent - percent) ? low : low - 1;
     }
-    private bool HasPanelData(PanelSpec panel)
+    private bool SignalRecordedInRace(AnalysisTraceSignalDefinition signal)
     {
-        if (panel.Key == "delta") return Workspace.Traces.Any(trace => trace.Points.Any(point => point.SessionTimeSeconds.HasValue));
-        if (panel.Key == "tire-wear") return _calculatedWearByPoint.Values.Any(value => value.HasValue);
-        return Workspace.Traces.Any(trace => trace.Points.Any(point => panel.First(point).HasValue || panel.Second?.Invoke(point).HasValue == true));
+        var key = $"race|{signal.Id}";
+        if (_signalAvailabilityCache.TryGetValue(key, out var cached)) return cached;
+        return _signalAvailabilityCache[key] = Workspace.Traces.Any(trace => trace.Points.Any(point => SignalPointValue(signal, trace, point).HasValue));
     }
-    private double? PanelPointValue(PanelSpec panel, AnalysisLapTrace trace, AnalysisTracePoint point, bool useSecond)
+    private bool HasSignalData(AnalysisTraceSignalDefinition signal)
     {
-        if (panel.Key == "delta") return useSecond ? null : TimeDelta(trace, point);
-        if (panel.Key == "tire-wear") return useSecond ? null : _calculatedWearByPoint.GetValueOrDefault(point);
-        return useSecond ? panel.Second?.Invoke(point) : panel.First(point);
+        var key = $"selected|{SelectionSignature}|{signal.Id}";
+        if (_signalAvailabilityCache.TryGetValue(key, out var cached)) return cached;
+        return _signalAvailabilityCache[key] = SelectedTraces.Any(trace => trace.Points.Any(point => SignalPointValue(signal, trace, point).HasValue));
     }
+    private double? SignalPointValue(AnalysisTraceSignalDefinition signal, AnalysisLapTrace trace, AnalysisTracePoint point) => signal.Id switch
+    {
+        "speed" => point.SpeedMph,
+        "delta" => TimeDelta(trace, point),
+        "throttle" => point.Throttle,
+        "brake" => point.Brake,
+        "tire-wear" => _calculatedWearByPoint.GetValueOrDefault(point),
+        "gear" => point.Gear,
+        "rpm" => point.Rpm,
+        "steering" => point.SteeringRadians * 180 / Math.PI,
+        "slip" => point.SlipAngleDegrees,
+        "yaw" => point.YawRateDegreesPerSecond,
+        "lateral-g" => point.LateralG,
+        "longitudinal-g" => point.LongitudinalG,
+        _ => null
+    };
     private double? TimeDelta(AnalysisLapTrace trace, AnalysisTracePoint point)
     {
         if (!point.SessionTimeSeconds.HasValue) return null;
@@ -736,88 +1012,71 @@
         if (!traceStart.HasValue || referencePoint?.SessionTimeSeconds is not double referenceTime || !referenceStart.HasValue) return null;
         return (point.SessionTimeSeconds.Value - traceStart.Value) - (referenceTime - referenceStart.Value);
     }
-    private string CursorValue(PanelSpec panel, AnalysisLapTrace trace)
+    private string RowLabel(TracePanelRow panel)
     {
-        var point = Nearest(trace, Cursor);
-        if (point is null) return "—";
-        var first = PanelPointValue(panel, trace, point, false);
-        var second = PanelPointValue(panel, trace, point, true);
-        if (!first.HasValue && !second.HasValue) return "—";
-        return panel.Key switch
-        {
-            "delta" => $"{first.GetValueOrDefault():+0.000;-0.000;0.000} s",
-            "gear" => $"Gear {first:0}",
-            "rpm" => $"{first:0} rpm",
-            "speed" => $"{first:0.0} mph",
-            "throttle" => $"{first.GetValueOrDefault() * 100:0}%",
-            "brake" => $"{first.GetValueOrDefault() * 100:0}%",
-            "tire-wear" => $"{first.GetValueOrDefault():0.000}% est.",
-            "steering" => DirectionalDegrees(first),
-            "rotation" => $"{first:0.0}° · {second:0.0}°/s",
-            "acceleration" => $"{first:0.00} · {second:0.00} g",
-            _ => second.HasValue ? $"{first:0.000} / {second:0.000}" : $"{first:0.000}"
-        };
+        var available = panel.Signals.Where(HasSignalData).ToArray();
+        var labels = available.Length > 0 ? available : panel.Signals;
+        return string.Join(" / ", labels.Select(signal => signal.Name));
     }
-    private static string DirectionalDegrees(double? value) => value is null ? "—" : Math.Abs(value.Value) < .05 ? "Center 0°" : value.Value > 0 ? $"Left {Math.Abs(value.Value):0.0}°" : $"Right {Math.Abs(value.Value):0.0}°";
-    private (double Min, double Max) PanelRange(PanelSpec panel)
+    private string RowSubtitle(TracePanelRow panel)
     {
-        var values = SelectedTraces.SelectMany(trace => trace.Points.SelectMany(point => new[] { PanelPointValue(panel, trace, point, false), PanelPointValue(panel, trace, point, true) })).Where(value => value.HasValue).Select(value => value!.Value).ToArray();
+        var available = panel.Signals.Where(HasSignalData).ToArray();
+        var missing = panel.Signals.Where(signal => !HasSignalData(signal)).ToArray();
+        if (available.Length == 0) return "No selected-lap values";
+        var scales = available.Length > 1
+            ? $"solid {available[0].ShortLabel} ({available[0].Unit}) · dashed {available[1].ShortLabel} ({available[1].Unit}) · independent scales"
+            : available[0].Unit;
+        return missing.Length > 0 ? $"{scales} · {string.Join(", ", missing.Select(signal => signal.ShortLabel))} not recorded" : scales;
+    }
+    private (double Min, double Max) SignalRange(AnalysisTraceSignalDefinition signal)
+    {
+        var key = $"{SelectionSignature}|{signal.Id}";
+        if (_traceRangeCache.TryGetValue(key, out var cached)) return cached;
+        var values = SelectedTraces.SelectMany(trace => trace.Points.Select(point => SignalPointValue(signal, trace, point)))
+            .Where(value => value.HasValue).Select(value => value!.Value).ToArray();
         if (values.Length == 0) return (-.5, .5);
-        if (panel.Key is "throttle" or "brake") return (0, 1);
-        if (panel.Key == "tire-wear") return (0, Math.Max(.01, values.Max() * 1.05));
-        if (panel.Key == "delta" || panel.Key == "steering")
+        if (signal.Id is "throttle" or "brake") return _traceRangeCache[key] = (0, 1);
+        if (signal.Id == "tire-wear") return _traceRangeCache[key] = (0, Math.Max(.01, values.Max() * 1.05));
+        if (signal.Id is "delta" or "steering" or "slip" or "yaw")
         {
-            var magnitude = Math.Max(panel.Key == "delta" ? .05 : 1, values.Max(value => Math.Abs(value)));
-            return (-magnitude, magnitude);
+            var minimumMagnitude = signal.Id == "delta" ? .05 : 1;
+            var magnitude = Math.Max(minimumMagnitude, values.Max(value => Math.Abs(value)));
+            return _traceRangeCache[key] = (-magnitude, magnitude);
         }
         var min = values.Min(); var max = values.Max();
         if (Math.Abs(max - min) < .0001) { min -= .5; max += .5; }
-        return (min, max);
+        return _traceRangeCache[key] = (min, max);
     }
-    private string TracePath(AnalysisLapTrace trace, PanelSpec panel, double top, bool useSecond)
+    private string TracePath(AnalysisLapTrace trace, TracePanelRow panel, AnalysisTraceSignalDefinition signal, double top)
     {
-        if (!trace.Points.Any(point => PanelPointValue(panel, trace, point, useSecond).HasValue)) return string.Empty;
-        var (min, max) = PanelRange(panel);
+        var cacheKey = $"{SelectionSignature}|{panel.Signature}|{signal.Id}|{trace.Lap}|{F(_chartWidth)}|{F(top)}|{F(ChartPlotHeight)}";
+        if (_tracePathCache.TryGetValue(cacheKey, out var cached)) return cached;
+        if (!trace.Points.Any(point => SignalPointValue(signal, trace, point).HasValue)) return _tracePathCache[cacheKey] = string.Empty;
+        var (min, max) = SignalRange(signal);
         var started = false;
         var commands = new List<string>(trace.Points.Count);
         for (var index = 0; index < trace.Points.Count; index++)
         {
-            var value = SmoothedValue(panel, trace, index, useSecond);
+            var value = SmoothedValue(signal, trace, index);
             if (!value.HasValue) { started = false; continue; }
             var x = PlotLeft + trace.Points[index].LapPercent * PlotWidth;
             var y = top + ChartPlotHeight - 4 - (value.Value - min) / (max - min) * (ChartPlotHeight - 8);
             commands.Add($"{(started ? "L" : "M")}{F(x)},{F(y)}");
             started = true;
         }
-        return string.Join(" ", commands);
+        return _tracePathCache[cacheKey] = string.Join(" ", commands);
     }
-    private double? SmoothedValue(PanelSpec panel, AnalysisLapTrace trace, int index, bool useSecond)
+    private double? SmoothedValue(AnalysisTraceSignalDefinition signal, AnalysisLapTrace trace, int index)
     {
-        var current = PanelPointValue(panel, trace, trace.Points[index], useSecond);
-        if (!current.HasValue || panel.Key is "gear" or "tire-wear") return current;
-        var neighborWeight = panel.Key is "throttle" or "brake" ? .10 : .16;
+        var current = SignalPointValue(signal, trace, trace.Points[index]);
+        if (!current.HasValue || signal.Id is "gear" or "tire-wear") return current;
+        var neighborWeight = signal.Id is "throttle" or "brake" ? .10 : .16;
         var currentWeight = 1 - neighborWeight * 2;
         var sum = current.Value * currentWeight;
         var weight = currentWeight;
-        if (index > 0 && PanelPointValue(panel, trace, trace.Points[index - 1], useSecond) is { } previous) { sum += previous * neighborWeight; weight += neighborWeight; }
-        if (index + 1 < trace.Points.Count && PanelPointValue(panel, trace, trace.Points[index + 1], useSecond) is { } next) { sum += next * neighborWeight; weight += neighborWeight; }
+        if (index > 0 && SignalPointValue(signal, trace, trace.Points[index - 1]) is { } previous) { sum += previous * neighborWeight; weight += neighborWeight; }
+        if (index + 1 < trace.Points.Count && SignalPointValue(signal, trace, trace.Points[index + 1]) is { } next) { sum += next * neighborWeight; weight += neighborWeight; }
         return sum / weight;
-    }
-    private double? PanelCursorY(PanelSpec panel, AnalysisLapTrace trace, double top)
-    {
-        if (trace.Points.Count == 0) return null;
-        var nearestIndex = 0;
-        var nearestDistance = double.MaxValue;
-        for (var index = 0; index < trace.Points.Count; index++)
-        {
-            var distance = Math.Abs(trace.Points[index].LapPercent - Cursor);
-            if (distance >= nearestDistance) continue;
-            nearestDistance = distance;
-            nearestIndex = index;
-        }
-        if (SmoothedValue(panel, trace, nearestIndex, false) is not { } value) return null;
-        var (min, max) = PanelRange(panel);
-        return top + ChartPlotHeight - 4 - (value - min) / (max - min) * (ChartPlotHeight - 8);
     }
     private static string LapRange(IReadOnlyList<int> laps) => laps.Count == 0 ? "—" : laps.Count == 1 ? laps[0].ToString() : $"{laps.Min()}–{laps.Max()}";
     private static string PaceTrend(AnalysisRun run) => run.PaceSlopeSecondsPerLap is null ? "—" : run.PaceSlopeSecondsPerLap > .005 ? $"+{run.PaceSlopeSecondsPerLap:0.000} s/lap" : run.PaceSlopeSecondsPerLap < -.005 ? $"{run.PaceSlopeSecondsPerLap:0.000} s/lap" : "Stable";
@@ -919,12 +1178,30 @@
     }
     private static string LapTime(double? seconds) => seconds is null ? "—" : TimeSpan.FromSeconds(seconds.Value).ToString(@"m\:ss\.fff");
     private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
-    private sealed record PanelSpec(string Key, string Label, string Unit, Func<AnalysisTracePoint, double?> First, Func<AnalysisTracePoint, double?>? Second = null);
+    private string SelectionSignature => _selectionSignature;
+    private void InvalidateTraceRender()
+    {
+        _selectionSignature = string.Join(",", Selected.Order());
+        _traceRangeCache.Clear();
+        _tracePathCache.Clear();
+        _trackRangeCache.Clear();
+        _signalAvailabilityCache.Clear();
+    }
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeCursorInteropAsync();
+    }
+    private sealed record TracePanelRow(AnalysisTraceRow Preferences, IReadOnlyList<AnalysisTraceSignalDefinition> Signals)
+    {
+        public string Signature => string.Join("+", Signals.Select(signal => signal.Id));
+    }
     private sealed record MapPoint(double Percent, double X, double Y);
     private sealed record MapSegment(MapPoint A, MapPoint B, string Color);
     private sealed record StripSegment(double X1, double X2, string Color);
     private sealed record LapGroup(string Label, IReadOnlyList<AnalysisLapTrace> Traces, AnalysisRun? Run);
     private sealed record SectorStatus(string Class, string Title);
     private sealed record LapFlag(string Class, string Label);
+    private sealed record HeatStop(double Position, int Red, int Green, int Blue);
     private sealed record AggregateSample(int Count, double? SpeedMph, double? Throttle, double? Brake, double? SteeringRadians, double? TireStress, double? TimeDeltaSeconds);
+    private enum TraceDropSlot { Primary, Secondary }
 }

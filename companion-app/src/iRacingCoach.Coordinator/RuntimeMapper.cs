@@ -586,8 +586,8 @@ public static class RuntimeMapper
             : null;
 
     private static int Integer(JsonElement element, string property) =>
-        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
-            ? number : 0;
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
+            ? NullableIntegerValue(value) ?? 0 : 0;
 
     private static int? NullableInteger(JsonElement element, string property) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
@@ -597,8 +597,15 @@ public static class RuntimeMapper
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
             ? NumberValue(value) : null;
 
-    private static int? NullableIntegerValue(JsonElement value) =>
-        value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : null;
+    private static int? NullableIntegerValue(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Number) return null;
+        if (value.TryGetInt32(out var integer)) return integer;
+        if (!value.TryGetDouble(out var number) || !double.IsFinite(number)) return null;
+        var rounded = Math.Round(number);
+        return Math.Abs(number - rounded) <= 1e-9 && rounded is >= int.MinValue and <= int.MaxValue
+            ? (int)rounded : null;
+    }
 
     private static double? NumberValue(JsonElement value) =>
         value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number) ? number : null;

@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using iRacingCoach.BackendClient;
 using iRacingCoach.Contracts;
@@ -279,7 +282,7 @@ public sealed class CoordinatorTests
             "kentucky", "Kentucky Speedway", "Oval", "Toyota Tundra TRD Pro", "Today",
             "Fixed", "Needs analysis", "15 laps", false, false, 8, 6, Selector: "87624987");
 
-        await state.AnalyzeRaceAsync(race);
+        await state.AnalyzeRaceAsync(race, force: true);
 
         Assert.IsNull(state.CurrentAnalysis);
         Assert.IsNotNull(state.LastRecoverableError);
@@ -300,11 +303,351 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task HomeRefresh_LoadsPortableRaceSummariesWithoutReanalyzing()
+    {
+        using var dashboard = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "dashboard-populated.json")));
+        var analysis = HomeAnalysisResponse();
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache", Guid.NewGuid().ToString("N"));
+        WriteUiAnalysisCache(root, "8001", analysis);
+        WriteUiAnalysisCache(root, "8000", analysis);
+        var backend = new FakeBackend(dashboard: dashboard.RootElement.Clone(), analysis: analysis);
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+        await Task.Delay(50);
+
+        Assert.IsTrue(state.HomeDataReady);
+        Assert.HasCount(2, state.Races);
+        Assert.IsTrue(state.Races.All(race => race.Overview?.BestCleanLapSeconds is > 0));
+        Assert.IsTrue(state.Races.All(race => race.Overview?.FuelUsedGallons is > 0));
+        Assert.AreEqual(0, backend.AnalyzeCalls, "Valid portable summaries should be used before any recording is re-read.");
+        Assert.IsEmpty(state.Jobs);
+    }
+
+    [TestMethod]
+    public async Task HomeRefresh_RegeneratesSchemaFourRaceSummaryCache()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache-upgrade", Guid.NewGuid().ToString("N"));
+        var analysis = HomeAnalysisResponse();
+        const string selector = "9001";
+        WriteUiAnalysisCache(root, selector, analysis, schemaVersion: 4);
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(1),
+            analysis: analysis);
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(
+            () => backend.AnalyzeCalls == 1 && state.Races.Single().Overview?.BestCleanLapSeconds is > 0,
+            TimeSpan.FromSeconds(3));
+
+        var cachePath = UiAnalysisCachePath(root, selector);
+        using var regenerated = JsonDocument.Parse(File.ReadAllText(cachePath));
+        Assert.AreEqual(5, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-4 cache predates derived slip telemetry and must be regenerated exactly once.");
+        Assert.IsEmpty(state.Jobs, "Cache migration remains quiet background maintenance.");
+    }
+
+    [TestMethod]
+    public void RaceOverview_AcceptsIntegralDecimalLapCountsFromBackendJson()
+    {
+        using var response = JsonDocument.Parse("""
+        {
+          "analysis_view": {
+            "race_summary": {
+              "recorded_laps": 55.0,
+              "green_laps_estimated": 29.0,
+              "caution_laps_estimated": 26.0,
+              "pit_stops_detected": 3.0
+            },
+            "runs": [],
+            "laps": []
+          }
+        }
+        """);
+
+        var overview = RuntimeMapper.Overview(response.RootElement);
+
+        Assert.AreEqual(55, overview.RecordedLaps);
+        Assert.AreEqual(29, overview.GreenLaps);
+        Assert.AreEqual(26, overview.CautionLaps);
+        Assert.AreEqual(3, overview.PitStops);
+    }
+
+    [TestMethod]
+    public async Task HomeRefresh_QueuesEveryFinalizedUncachedRaceOnce()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-background", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(8),
+            analysis: HomeAnalysisResponse(),
+            callDelay: TimeSpan.FromMilliseconds(60));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+
+        Assert.IsTrue(state.HomeDataReady);
+        Assert.IsLessThan(6, backend.AnalyzeCalls, "The catalog refresh must not await the background summary queue.");
+        Assert.IsEmpty(state.Jobs, "Automatic Home summaries are quiet maintenance, not user jobs.");
+        state.SetPrimaryUiVisible(true);
+        state.SetPrimaryUiVisible(true);
+        state.SetPrimaryUiVisible(true);
+
+        await WaitUntilAsync(() => backend.AnalyzeCalls == 8, TimeSpan.FromSeconds(3));
+        await Task.Delay(100);
+
+        Assert.AreEqual(8, backend.AnalyzeCalls, "Repeated window-open notifications must not duplicate analysis work.");
+        Assert.IsTrue(state.Races.All(race => race.Overview?.BestCleanLapSeconds is > 0));
+        Assert.IsEmpty(state.Jobs);
+    }
+
+    [TestMethod]
+    public async Task HomeRefresh_RetriesOneTransientSummaryFailureQuietly()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-background-retry", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(1),
+            analysis: HomeAnalysisResponse(),
+            analysisFailuresBeforeSuccess: 1);
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(
+            () => backend.AnalyzeCalls == 2 && state.Races.Single().Overview?.BestCleanLapSeconds is > 0,
+            TimeSpan.FromSeconds(3));
+        await Task.Delay(150);
+
+        Assert.AreEqual(2, backend.AnalyzeCalls, "A transient failure gets exactly one bounded background retry.");
+        Assert.IsNotNull(state.Races.Single().Overview);
+        Assert.IsEmpty(state.Jobs, "Automatic retry must remain quiet maintenance.");
+    }
+
+    [TestMethod]
+    public async Task InteractiveAnalysis_ImmediatelyMarksEveryMatchingRaceRecordAnalyzed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-interactive-state", Guid.NewGuid().ToString("N"));
+        var analysisPath = Path.Combine(root, "archive", "reports", "interactive", "analysis.json");
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(analysisPath));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var dashboardRace = new RecentRace(
+            "dashboard-race", "Test Track", "Oval", "Test Car", "Today", "Open",
+            "Needs analysis", "Finalized race recording", false, false, 1, 2,
+            EventKey: "9001", SessionType: "Race", Selector: "9001");
+        var eventRace = dashboardRace with { Id = "event-race" };
+        var qualifying = dashboardRace with
+        {
+            Id = "event-qualifying",
+            Status = "Recorded",
+            SessionType = "Qualifying"
+        };
+        state.Races.Add(dashboardRace);
+        state.EventSessions.Add(qualifying);
+        state.EventSessions.Add(eventRace);
+        state.EventGroups.AddRange(DashboardMapper.GroupEvents(state.EventSessions));
+
+        await state.AnalyzeRaceAsync(dashboardRace, force: true);
+
+        var updatedHomeRace = state.Races.Single();
+        var updatedEventRace = state.EventSessions.Single(session => session.IsRace);
+        var untouchedQualifying = state.EventSessions.Single(session => session.IsQualifying);
+        Assert.IsTrue(updatedHomeRace.Analyzed);
+        Assert.AreEqual("Analyzed", updatedHomeRace.Status);
+        Assert.AreEqual(analysisPath, updatedHomeRace.AnalysisPath);
+        Assert.IsNotNull(updatedHomeRace.Overview);
+        Assert.IsTrue(updatedEventRace.Analyzed);
+        Assert.AreEqual(analysisPath, updatedEventRace.AnalysisPath);
+        Assert.IsFalse(untouchedQualifying.Analyzed, "A race result must not mark the event's qualifying session analyzed.");
+        Assert.AreEqual(string.Empty, untouchedQualifying.AnalysisPath);
+        Assert.AreEqual("dashboard-race", state.TuningRaces.Single().Id,
+            "Planning and tuning selectors must see the successful analysis immediately.");
+        state.RaceFilter = RaceBrowserFilter.Analyzed;
+        Assert.AreEqual("9001", state.FilteredEventGroups.Single().Id,
+            "The rebuilt event groups must immediately reflect the analyzed filter.");
+    }
+
+    [TestMethod]
+    public async Task BackgroundAnalysis_ImmediatelyMarksCatalogAndHomeRecordsAnalyzed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-background-state", Guid.NewGuid().ToString("N"));
+        var analysisPath = Path.Combine(root, "archive", "reports", "background", "analysis.json");
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(1, isFixedSetup: false),
+            analysis: HomeAnalysisResponse(analysisPath));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(
+            () => state.Races.Single().Analyzed && state.EventSessions.Single(session => session.IsRace).Analyzed,
+            TimeSpan.FromSeconds(3));
+
+        Assert.AreEqual(1, backend.AnalyzeCalls);
+        Assert.AreEqual(analysisPath, state.Races.Single().AnalysisPath);
+        Assert.AreEqual(analysisPath, state.EventSessions.Single(session => session.IsRace).AnalysisPath);
+        Assert.IsTrue(state.EventGroups.Single().Analyzed);
+        Assert.AreEqual(state.Races.Single().Id, state.TuningRaces.Single().Id);
+        state.RaceFilter = RaceBrowserFilter.Analyzed;
+        Assert.HasCount(1, state.FilteredEventGroups.ToArray());
+        state.RaceFilter = RaceBrowserFilter.NeedsAnalysis;
+        Assert.IsEmpty(state.FilteredEventGroups.ToArray());
+        Assert.IsEmpty(state.Jobs, "Automatic state synchronization remains background maintenance.");
+    }
+
+    [TestMethod]
+    public async Task HomeRefresh_ReleasesFailedSummaryForALaterRefresh()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-background-later-retry", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(1),
+            analysis: HomeAnalysisResponse(),
+            analysisFailuresBeforeSuccess: 2);
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(() => backend.AnalyzeCalls == 2, TimeSpan.FromSeconds(3));
+        await Task.Delay(100);
+
+        Assert.IsNull(state.Races.Single().Overview?.BestCleanLapSeconds,
+            "The bounded first pass should stop after its one retry without inventing summary data.");
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(
+            () => backend.AnalyzeCalls == 3 && state.Races.Single().Overview?.BestCleanLapSeconds is > 0,
+            TimeSpan.FromSeconds(3));
+        await Task.Delay(100);
+
+        Assert.AreEqual(3, backend.AnalyzeCalls, "A later refresh may schedule the race again after the active key is released.");
+        Assert.IsEmpty(state.Jobs);
+    }
+
+    [TestMethod]
+    public async Task HomeRefresh_AnalyzesEveryDiscoveredRaceAndRefreshesImmutableEventGroups()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-discovered-background", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(2),
+            discovery: DiscoveryWithFinalizedRaces(5),
+            analysis: HomeAnalysisResponse(),
+            callDelay: TimeSpan.FromMilliseconds(50));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+
+        Assert.HasCount(2, state.Races, "The Home dashboard remains intentionally bounded.");
+        Assert.HasCount(5, state.EventGroups, "Race Analysis should include the complete discovered race catalog.");
+        var originalGroups = state.EventGroups.ToArray();
+
+        await WaitUntilAsync(() => backend.AnalyzeCalls == 5, TimeSpan.FromSeconds(4));
+        await WaitUntilAsync(
+            () => state.EventGroups.All(group => group.Sessions.Single().Overview?.BestCleanLapSeconds is > 0),
+            TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(5, backend.AnalyzeCalls, "Background analysis must cover discovered races beyond the Home limit exactly once.");
+        Assert.IsTrue(state.EventGroups.Zip(originalGroups).Any(pair => !ReferenceEquals(pair.First, pair.Second)),
+            "Immutable event-group snapshots must be rebuilt as overview results arrive.");
+        Assert.IsEmpty(state.Jobs, "Automatic catalog enrichment must not create user-facing jobs.");
+    }
+
+    [TestMethod]
+    public async Task HomeRefresh_PausesBackgroundAnalysisWhileLiveTelemetryIsConnected()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-live-background-gate", Guid.NewGuid().ToString("N"));
+        var source = new SwitchableLiveTelemetrySource { Connected = true };
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(2),
+            analysis: HomeAnalysisResponse());
+        using var state = new CompanionState(
+            backend,
+            new JsonSettingsStore(Path.Combine(root, "settings.json")),
+            source,
+            new DisabledCoachEngineSupervisor(),
+            new FakeGarage61CredentialStore(Path.Combine(root, "garage61.credential")));
+        state.Settings.CoachHome = root;
+
+        await state.InitializeAsync();
+        await WaitUntilAsync(() => state.LiveState.Snapshot.Connected, TimeSpan.FromSeconds(1));
+        await Task.Delay(300);
+
+        Assert.AreEqual(0, backend.AnalyzeCalls, "Quiet maintenance must not start while live driving telemetry is connected.");
+        Assert.IsEmpty(state.Jobs);
+
+        source.Connected = false;
+        await WaitUntilAsync(() => !state.LiveState.Snapshot.Connected, TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(() => backend.AnalyzeCalls == 2, TimeSpan.FromSeconds(3));
+
+        Assert.AreEqual(2, backend.AnalyzeCalls, "The paused queue should resume once the live session disconnects.");
+        Assert.IsEmpty(state.Jobs);
+    }
+
+    [TestMethod]
+    public async Task HomeRefresh_PausesBackgroundAnalysisWhileInteractiveAnalysisIsLoading()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-interactive-background-gate", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(2),
+            analysis: HomeAnalysisResponse(),
+            analysisDelay: TimeSpan.FromMilliseconds(400));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var interactiveRace = new RecentRace(
+            "interactive-race", "Interactive Track", "Oval", "Test Car", "Today", "Fixed",
+            "Needs analysis", "Recorded", false, false, 0, 0, Selector: "interactive-selector");
+
+        var interactiveAnalysis = state.AnalyzeRaceAsync(interactiveRace, force: true);
+        await WaitUntilAsync(() => state.AnalysisLoading && backend.AnalyzeCalls == 1, TimeSpan.FromSeconds(1));
+        await state.RefreshDashboardAsync();
+        await Task.Delay(200);
+
+        Assert.AreEqual(1, backend.AnalyzeCalls, "Quiet maintenance must wait for the user-requested analysis to finish.");
+
+        await interactiveAnalysis;
+        await WaitUntilAsync(() => backend.AnalyzeCalls == 3, TimeSpan.FromSeconds(3));
+
+        Assert.AreEqual(3, backend.AnalyzeCalls);
+        Assert.HasCount(1, state.Jobs, "Only the explicit interactive analysis should appear in the job tray.");
+    }
+
+    [TestMethod]
+    public void HomeSurface_UsesOneNativeTelemetryActionAndWaitsForStableWorkflows()
+    {
+        var home = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "HomePage.razor"));
+
+        StringAssert.Contains(home, "State.SetLiveMonitorVisible(true)");
+        StringAssert.Contains(home, "State.HomeDataReady");
+        StringAssert.Contains(home, "Best clean lap");
+        StringAssert.Contains(home, "FuelUsed(overview)");
+        Assert.DoesNotContain("State.Navigate(\"live\")", home);
+        Assert.DoesNotContain("State.ToggleLiveMonitor", home);
+    }
+
+    [TestMethod]
+    public void HomeSurface_DoesNotClaimRaceHistoryIsEmptyBeforeDiscoveryCompletes()
+    {
+        var home = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "HomePage.razor"));
+        var loadingBranch = home.IndexOf("@if (!State.HomeDataReady)", StringComparison.Ordinal);
+        var emptyBranch = home.IndexOf("else if (State.Races.Count == 0)", StringComparison.Ordinal);
+
+        Assert.IsGreaterThanOrEqualTo(0, loadingBranch);
+        Assert.IsGreaterThan(loadingBranch, emptyBranch);
+        StringAssert.Contains(home, "Loading recent races");
+    }
+
+    [TestMethod]
     public async Task NavigationAcrossEveryPageTwice_PerformsNoBackendOrGarage61Requests()
     {
         var backend = new FakeBackend();
-        using var state = new CompanionState(backend);
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-navigation", Guid.NewGuid().ToString("N"));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
         await state.RefreshDashboardAsync();
+        var backgroundAnalyses = state.Races.Count(race => race.IsRace && !string.IsNullOrWhiteSpace(race.EffectiveSelector));
+        await WaitUntilAsync(() => backend.AnalyzeCalls == backgroundAnalyses, TimeSpan.FromSeconds(3));
         var callsAfterCatalogLoad = backend.ToolCalls;
         var garageAfterCatalogLoad = backend.Garage61Calls;
 
@@ -748,6 +1091,40 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    [DoNotParallelize]
+    public async Task LiveTelemetryService_SessionEpochAdvancesOnlyAtStreamBoundaries()
+    {
+        var source = new SwitchableLiveTelemetrySource { Connected = false, Lap = 2 };
+        using var service = new LiveTelemetryService(source, new LiveMonitorLayout());
+        service.Start();
+        await WaitUntilAsync(() => service.Current.FramesRead >= 2, TimeSpan.FromSeconds(1));
+        var initialEpoch = service.Current.SessionEpoch;
+
+        source.Connected = true;
+        await WaitUntilAsync(() => service.Current.Snapshot.Connected, TimeSpan.FromSeconds(1));
+        var connectedEpoch = service.Current.SessionEpoch;
+        Assert.AreEqual(initialEpoch + 1, connectedEpoch);
+
+        source.Lap = 5;
+        await WaitUntilAsync(() => service.Current.Snapshot.Lap == 5, TimeSpan.FromSeconds(1));
+        Assert.AreEqual(connectedEpoch, service.Current.SessionEpoch, "Ordinary forward lap progress must keep the current chart session.");
+
+        source.Lap = 1;
+        await WaitUntilAsync(() => service.Current.Snapshot.Lap == 1 && service.Current.SessionEpoch > connectedEpoch, TimeSpan.FromSeconds(1));
+        var regressedEpoch = service.Current.SessionEpoch;
+        Assert.AreEqual(connectedEpoch + 1, regressedEpoch, "A lap-counter reset marks a new telemetry session.");
+
+        source.Connected = false;
+        await WaitUntilAsync(() => !service.Current.Snapshot.Connected && service.Current.SessionEpoch > regressedEpoch, TimeSpan.FromSeconds(1));
+        var disconnectedEpoch = service.Current.SessionEpoch;
+        Assert.AreEqual(regressedEpoch + 1, disconnectedEpoch);
+
+        source.Connected = true;
+        await WaitUntilAsync(() => service.Current.Snapshot.Connected && service.Current.SessionEpoch > disconnectedEpoch, TimeSpan.FromSeconds(1));
+        Assert.AreEqual(disconnectedEpoch + 1, service.Current.SessionEpoch);
+    }
+
+    [TestMethod]
     public void LiveTelemetry_DriverInputCueRequiresCleanPersonalBaselineAndPersistence()
     {
         var engine = new LiveTelemetryEngine();
@@ -841,12 +1218,135 @@ public sealed class CoordinatorTests
             File.Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)), overwrite: true);
     }
 
-    private sealed class FakeBackend(JsonElement? dashboard = null, JsonElement? tuning = null, Exception? failure = null, TimeSpan? callDelay = null) : IBackendClient
+    private static JsonElement HomeAnalysisResponse(string analysisPath = "") => JsonSerializer.SerializeToElement(new
+    {
+        ok = true,
+        analysis_id = "home-summary-test",
+        analysis_path = analysisPath,
+        race_card = new
+        {
+            title = "Recorded race",
+            bottom_line = new { evidence_type = "measured", text = "Recorded telemetry is ready." },
+            actions = Array.Empty<object>(),
+            corner_playbook = new { rows = Array.Empty<object>() },
+            race_triggers = Array.Empty<object>(),
+            evidence_appendix = Array.Empty<object>()
+        },
+        analysis_view = new
+        {
+            schema_version = 1,
+            race_summary = new
+            {
+                recorded_laps = 20,
+                green_laps_estimated = 18,
+                caution_laps_estimated = 2,
+                pit_stops_detected = 1,
+                fuel_used_gal = 6.4
+            },
+            runs = new[]
+            {
+                new
+                {
+                    green_laps = 10,
+                    pace = new { green_lap_time_slope_s_per_lap = .012 },
+                    tire_observation = new { lowest_remaining_percent = 91.5, lowest_remaining_tire = "RF" },
+                    driving_load = new { early_brake_vs_late_percent = 4.2, early_steer_vs_late_percent = -2.1 }
+                }
+            },
+            laps = new[]
+            {
+                new { complete = true, pit_time_s = 0d, flag_state = "green", lap_time_s = 30.125 },
+                new { complete = true, pit_time_s = 0d, flag_state = "green", lap_time_s = 30.250 }
+            }
+        }
+    });
+
+    private static JsonElement DashboardWithFinalizedRaces(int count, bool isFixedSetup = true) => JsonSerializer.SerializeToElement(new
+    {
+        ok = true,
+        races = Enumerable.Range(1, count).Select(index => new
+        {
+            group_id = $"subsession:{9000 + index}:1",
+            subsession_id = 9000 + index,
+            session_id = 8000 + index,
+            sim_session_type = "Race",
+            event_type = "Race",
+            is_race = true,
+            valid = true,
+            is_fixed_setup = isFixedSetup,
+            track_name = $"Recorded Track {index}",
+            track_config_name = "Oval",
+            car_path = "recorded-car",
+            start_time_utc = $"2026-08-01T{index:00}:00:00Z",
+            file_count = 1,
+            files = new[] { $"recording-{index}.ibt" },
+            analysis_status = "not_analyzed",
+            analysis = (object?)null
+        }).ToArray()
+    });
+
+    private static JsonElement DiscoveryWithFinalizedRaces(int count) => JsonSerializer.SerializeToElement(new
+    {
+        sessions = Enumerable.Range(1, count).Select(index => new
+        {
+            group_id = $"subsession:{9000 + index}:1",
+            subsession_id = 9000 + index,
+            session_id = 8000 + index,
+            sim_session_type = "Race",
+            event_type = "Race",
+            is_race = true,
+            valid = true,
+            is_fixed_setup = true,
+            track_name = $"Recorded Track {index}",
+            track_config_name = "Oval",
+            car_path = "recorded-car",
+            start_time_utc = $"2026-08-01T{index:00}:00:00Z",
+            file_count = 1,
+            files = new[] { $"recording-{index}.ibt" },
+            analysis_status = "not_analyzed",
+            analysis = (object?)null
+        }).ToArray()
+    });
+
+    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 5)
+    {
+        var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(UiAnalysisCachePath(coachHome, selector), JsonSerializer.Serialize(new
+        {
+            schemaVersion,
+            sourceLastWriteUtc = (string?)null,
+            savedUtc = DateTimeOffset.UtcNow,
+            response
+        }));
+    }
+
+    private static string UiAnalysisCachePath(string coachHome, string selector)
+    {
+        var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
+        Directory.CreateDirectory(directory);
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(selector))).ToLowerInvariant();
+        return Path.Combine(directory, key + ".json");
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (!predicate() && DateTimeOffset.UtcNow < deadline) await Task.Delay(20);
+        Assert.IsTrue(predicate(), $"Condition was not met within {timeout}.");
+    }
+
+    private static string CompanionRoot([CallerFilePath] string source = "") =>
+        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", ".."));
+
+    private sealed class FakeBackend(JsonElement? dashboard = null, JsonElement? tuning = null, Exception? failure = null, TimeSpan? callDelay = null, JsonElement? analysis = null, JsonElement? discovery = null, TimeSpan? analysisDelay = null, int analysisFailuresBeforeSuccess = 0) : IBackendClient
     {
         private int _toolCalls;
         private int _garage61Calls;
+        private int _analyzeCalls;
         public int ToolCalls => Volatile.Read(ref _toolCalls);
         public int Garage61Calls => Volatile.Read(ref _garage61Calls);
+        public int AnalyzeCalls => Volatile.Read(ref _analyzeCalls);
 
         public Task<BackendHealthResult> CheckHealthAsync(BackendConfiguration configuration, CancellationToken cancellationToken = default) =>
             Task.FromResult(new BackendHealthResult(true, "iracing-coach-local", "0.3.0", "2025-06-18", 16, TimeSpan.FromMilliseconds(4)));
@@ -855,16 +1355,24 @@ public sealed class CoordinatorTests
         {
             Interlocked.Increment(ref _toolCalls);
             if (toolName.Contains("garage61", StringComparison.OrdinalIgnoreCase)) Interlocked.Increment(ref _garage61Calls);
-            if (callDelay is { } delay) await Task.Delay(delay, cancellationToken);
+            var analysisCall = toolName == "analyze_iracing_race" ? Interlocked.Increment(ref _analyzeCalls) : 0;
+            if (toolName == "analyze_iracing_race" && analysisDelay is { } analysisPause)
+                await Task.Delay(analysisPause, cancellationToken);
+            else if (callDelay is { } delay)
+                await Task.Delay(delay, cancellationToken);
             if (failure is not null && toolName == "analyze_iracing_race") throw failure;
+            if (toolName == "analyze_iracing_race" && analysisCall <= analysisFailuresBeforeSuccess)
+                throw new IOException("Transient analysis read failure.");
             var value = toolName switch
             {
                 "iracing_companion_dashboard" when dashboard.HasValue => dashboard.Value,
                 "iracing_companion_dashboard" => JsonSerializer.SerializeToElement(new { ok = true, races = Array.Empty<object>() }),
+                "discover_iracing_sessions" when discovery.HasValue => discovery.Value,
                 "discover_iracing_sessions" => JsonSerializer.SerializeToElement(new { sessions = Array.Empty<object>() }),
                 "catalog_iracing_setups" => JsonSerializer.SerializeToElement(new { ok = true, entries = Array.Empty<object>() }),
                 "garage61_auth_status" => JsonSerializer.SerializeToElement(new { ok = false, configured = false, status = "not_configured" }),
                 "recommend_open_setup_tuning" when tuning.HasValue => tuning.Value,
+                "analyze_iracing_race" when analysis.HasValue => analysis.Value,
                 _ => JsonSerializer.SerializeToElement(new { ok = true })
             };
             return value;
@@ -940,6 +1448,30 @@ public sealed class CoordinatorTests
                 Brake = 0,
                 SteeringWheelAngleRadians = 0,
                 LateralAccelerationG = 0
+            };
+            return true;
+        }
+
+        public void Dispose() { }
+    }
+
+    private sealed class SwitchableLiveTelemetrySource : ILiveTelemetrySource
+    {
+        private int _tick;
+        public volatile bool Connected;
+        public volatile int Lap = 2;
+
+        public bool TryRead(out LiveTelemetrySample sample)
+        {
+            sample = new LiveTelemetrySample
+            {
+                Connected = Connected,
+                Timestamp = DateTimeOffset.UtcNow,
+                Tick = Interlocked.Increment(ref _tick),
+                TickRate = 60,
+                Flag = Connected ? "GREEN" : "Waiting",
+                Lap = Connected ? Lap : null,
+                LapDistancePercent = Connected ? .25 : null
             };
             return true;
         }

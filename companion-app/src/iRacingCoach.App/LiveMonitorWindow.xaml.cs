@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -6,21 +7,14 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
 using Brush = System.Windows.Media.Brush;
 using Button = System.Windows.Controls.Button;
-using DragEventArgs = System.Windows.DragEventArgs;
-using DataObject = System.Windows.DataObject;
-using DragDropEffects = System.Windows.DragDropEffects;
-using Cursors = System.Windows.Input.Cursors;
+using ComboBox = System.Windows.Controls.ComboBox;
 using FontFamily = System.Windows.Media.FontFamily;
 using HAlignment = System.Windows.HorizontalAlignment;
-using KeyEventArgs = System.Windows.Input.KeyEventArgs;
-using MouseEventArgs = System.Windows.Input.MouseEventArgs;
-using Panel = System.Windows.Controls.Panel;
 using Point = System.Windows.Point;
 using Size = System.Windows.Size;
 using iRacingCoach.Contracts;
@@ -30,32 +24,26 @@ namespace iRacingCoach.App;
 
 public partial class LiveMonitorWindow : Window
 {
-    private const double GridViewportWidth = 444;
-    private const double GridViewportHeight = 296;
-    private const double DefaultCellSize = 148;
-    private const double EditorHeight = 300;
-    private const string MetricDragFormat = "iRacingCoach.LiveMetric";
-    private const string TileDragFormat = "iRacingCoach.LiveTile";
+    private const double GridViewportWidth = 540;
+    private const double GridViewportHeight = 360;
+    private const double MinimumFontSize = 11.67;
     private readonly CompanionState _state;
     private readonly DispatcherTimer _saveTimer;
-    private readonly DispatcherTimer _renderTimer;
-    private readonly Stack<LayoutSnapshot> _undo = [];
+    private readonly List<TileVisual> _tileVisuals = [];
     private readonly Dictionary<string, (double Minimum, double Maximum)> _trendRanges = new(StringComparer.Ordinal);
     private bool _restoring;
     private bool _updatingControls;
-    private bool _gridSettingsOpen;
     private bool _scaleSettingsOpen;
     private int _renderDirty;
-    private DateTimeOffset _lastCatalogRefresh = DateTimeOffset.MinValue;
-    private string? _selectedTileId;
-    private Point _dragStart;
-    private string? _dragTileId;
-    private CatalogItem? _dragCatalogItem;
-    private Border? _dropPreview;
-    private GridSettingsSnapshot? _gridSettingsBackup;
-    private LayoutSnapshot[]? _gridSettingsUndoBackup;
+    private int _editorCheckQueued;
+    private bool _compositionRenderingAttached;
+    private bool _trendAnimationActive;
+    private bool _lastRenderedConnected;
+    private int? _lastRenderedLap;
+    private bool _trendSeedPending = true;
     private double? _scaleSettingsBackup;
-    private double _cellSize = DefaultCellSize;
+    private double _cellWidth = 180;
+    private double _cellHeight = 180;
     private string _lastKnownEditorSignature;
 
     public LiveMonitorWindow(CompanionState state)
@@ -66,11 +54,6 @@ public partial class LiveMonitorWindow : Window
         SizeToContent = SizeToContent.WidthAndHeight;
         _saveTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) => SavePlacement(), Dispatcher);
         _saveTimer.Stop();
-        _renderTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Render, (_, _) =>
-        {
-            if (Interlocked.Exchange(ref _renderDirty, 0) != 0 && IsVisible) RenderTelemetry();
-        }, Dispatcher);
-        _renderTimer.Start();
         Loaded += OnLoaded;
         SourceInitialized += (_, _) => ApplyWindowTreatment();
         LocationChanged += (_, _) => ScheduleSave();
@@ -78,7 +61,7 @@ public partial class LiveMonitorWindow : Window
         _state.LiveTelemetryChanged += OnLiveTelemetryChanged;
         Closed += (_, _) =>
         {
-            _renderTimer.Stop();
+            DetachCompositionRendering();
             _saveTimer.Stop();
             _state.Changed -= OnCompanionStateChanged;
             _state.LiveTelemetryChanged -= OnLiveTelemetryChanged;
@@ -87,6 +70,7 @@ public partial class LiveMonitorWindow : Window
 
     public void ShowMonitor()
     {
+        AttachCompositionRendering();
         if (!IsVisible) Show();
         Topmost = true;
         Activate();
@@ -96,11 +80,16 @@ public partial class LiveMonitorWindow : Window
     public void HideMonitor()
     {
         SavePlacement();
+        DetachCompositionRendering();
         Hide();
     }
 
+    private LiveMonitorLayout Preferences => _state.Settings.LiveMonitor;
+    private LiveMonitorLayoutChoice ActiveChoice => LiveMonitorLayouts.Active(Preferences);
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        AttachCompositionRendering();
         RenderAll();
         Dispatcher.BeginInvoke(RestorePlacement, DispatcherPriority.Loaded);
     }
@@ -108,32 +97,60 @@ public partial class LiveMonitorWindow : Window
     private void OnCompanionStateChanged()
     {
         Interlocked.Exchange(ref _renderDirty, 1);
-        if (Dispatcher.HasShutdownStarted) return;
-        if (Dispatcher.CheckAccess()) CheckForExternalEditorChange();
-        else Dispatcher.BeginInvoke(CheckForExternalEditorChange, DispatcherPriority.Background);
+        QueueExternalEditorCheck();
     }
 
     private void OnLiveTelemetryChanged() => Interlocked.Exchange(ref _renderDirty, 1);
+
+    private void AttachCompositionRendering()
+    {
+        if (_compositionRenderingAttached) return;
+        CompositionTarget.Rendering += OnCompositionRendering;
+        _compositionRenderingAttached = true;
+    }
+
+    private void DetachCompositionRendering()
+    {
+        if (!_compositionRenderingAttached) return;
+        CompositionTarget.Rendering -= OnCompositionRendering;
+        _compositionRenderingAttached = false;
+    }
+
+    private void OnCompositionRendering(object? sender, EventArgs e)
+    {
+        if (!IsVisible || _scaleSettingsOpen) return;
+        var sourceDirty = Interlocked.Exchange(ref _renderDirty, 0) != 0;
+        if (sourceDirty) RenderTelemetry();
+        if (!_trendAnimationActive && !sourceDirty) return;
+
+        var keepAnimating = false;
+        var frameTimestamp = Stopwatch.GetTimestamp();
+        var motionEnabled = _state.LiveState.Snapshot.Connected && !_state.Settings.UseReducedMotion;
+        foreach (var visual in _tileVisuals)
+            keepAnimating |= visual.AnimateTrend(frameTimestamp, motionEnabled);
+        _trendAnimationActive = keepAnimating;
+    }
+
+    private void QueueExternalEditorCheck()
+    {
+        if (Dispatcher.HasShutdownStarted || Interlocked.Exchange(ref _editorCheckQueued, 1) != 0) return;
+        _ = Dispatcher.BeginInvoke(() =>
+        {
+            Interlocked.Exchange(ref _editorCheckQueued, 0);
+            CheckForExternalEditorChange();
+        }, DispatcherPriority.DataBind);
+    }
 
     private void CheckForExternalEditorChange()
     {
         var signature = LiveMonitorLayouts.EditorSignature(Preferences);
         if (string.Equals(signature, _lastKnownEditorSignature, StringComparison.Ordinal)) return;
         _lastKnownEditorSignature = signature;
-        _undo.Clear();
-        _selectedTileId = null;
-        _gridSettingsBackup = null;
-        _gridSettingsUndoBackup = null;
         _scaleSettingsBackup = null;
-        _gridSettingsOpen = false;
         _scaleSettingsOpen = false;
         _trendRanges.Clear();
         RenderAll();
-        EditorMessage.Text = "Dashboard changed in the main app. Undo history was refreshed.";
     }
-
-    private LiveMonitorLayout Preferences => _state.Settings.LiveMonitor;
-    private LiveMonitorLayoutChoice ActiveChoice => LiveMonitorLayouts.Active(Preferences);
 
     private void RenderAll()
     {
@@ -142,246 +159,459 @@ public partial class LiveMonitorWindow : Window
         {
             RefreshLayoutSelector();
             ApplyScale();
+            RenderSurfaceState();
             RenderGrid();
-            RenderEditingState(immediate: true);
-            RefreshCatalog(force: true);
-            RefreshTileEditor();
+            RenderTelemetry();
         }
         finally { _updatingControls = false; }
     }
 
     private void RenderTelemetry()
     {
-        ConnectionDot.Fill = Resource<Brush>(_state.LiveState.Snapshot.Connected ? "SuccessBrush" : "UnavailableBrush");
-        RenderGrid();
-        if (!Preferences.IsLocked && DateTimeOffset.UtcNow - _lastCatalogRefresh > TimeSpan.FromSeconds(1)) RefreshCatalog(force: true);
+        var liveState = _state.LiveState;
+        var snapshot = liveState.Snapshot;
+        if (!_lastRenderedConnected && snapshot.Connected) _trendSeedPending = true;
+        if (_lastRenderedConnected && !snapshot.Connected)
+        {
+            _trendRanges.Clear();
+            foreach (var visual in _tileVisuals) visual.ResetTrend();
+        }
+        else if (snapshot.Connected && _lastRenderedLap.HasValue && snapshot.Lap.HasValue && snapshot.Lap.Value < _lastRenderedLap.Value)
+        {
+            _trendRanges.Clear();
+        }
+        _lastRenderedConnected = snapshot.Connected;
+        _lastRenderedLap = snapshot.Connected ? snapshot.Lap : null;
+        ConnectionDot.Fill = Resource<Brush>(snapshot.Connected ? "MonitorGreenBrush" : "UnavailableBrush");
+        var connectionLabel = snapshot.Connected ? $"{snapshot.Flag}, lap {snapshot.Lap}" : "Waiting for iRacing";
+        ConnectionDot.ToolTip = connectionLabel;
+        AutomationProperties.SetName(ConnectionDot, connectionLabel);
+        var lightweightState = liveState.History is { Count: > 0 } ? liveState with { History = [] } : liveState;
+        var seedTrends = _trendSeedPending && snapshot.Connected;
+        foreach (var visual in _tileVisuals)
+        {
+            var readingState = seedTrends && visual.UsesTrend ? liveState : lightweightState;
+            var reading = LiveTelemetryCatalog.Read(visual.Tile.MetricId, readingState, visual.Tile.Unit, visual.Tile.Precision, visual.Tile.TrendDuration);
+            visual.Update(reading, liveState);
+        }
+        _trendAnimationActive = snapshot.Connected && !_state.Settings.UseReducedMotion && _tileVisuals.Any(visual => visual.UsesTrend);
+        if (seedTrends) _trendSeedPending = false;
     }
 
     private void RenderGrid()
     {
         var layout = ActiveChoice.Layout;
+        var rows = Math.Max(1, layout.Rows);
+        var columns = Math.Max(1, layout.Columns);
+        _trendSeedPending = true;
+        _tileVisuals.Clear();
         TileGrid.Children.Clear();
         TileGrid.RowDefinitions.Clear();
         TileGrid.ColumnDefinitions.Clear();
-        _cellSize = Math.Min(GridViewportWidth / layout.Columns, GridViewportHeight / layout.Rows);
-        TileGrid.Width = layout.Columns * _cellSize;
-        TileGrid.Height = layout.Rows * _cellSize;
-        TileGrid.HorizontalAlignment = HAlignment.Center;
-        TileGrid.VerticalAlignment = VerticalAlignment.Center;
-        for (var row = 0; row < layout.Rows; row++) TileGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(_cellSize) });
-        for (var column = 0; column < layout.Columns; column++) TileGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_cellSize) });
+        TileGrid.Width = GridViewportWidth;
+        TileGrid.Height = GridViewportHeight;
+        _cellWidth = GridViewportWidth / columns;
+        _cellHeight = GridViewportHeight / rows;
+        for (var row = 0; row < rows; row++) TileGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        for (var column = 0; column < columns; column++) TileGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         foreach (var tile in layout.Tiles.OrderBy(item => item.Row).ThenBy(item => item.Column))
         {
             if (!LiveTelemetryCatalog.TryGet(tile.MetricId, out var definition)) continue;
-            var reading = LiveTelemetryCatalog.Read(tile.MetricId, _state.LiveState, tile.Unit, tile.Precision, tile.TrendDuration);
-            var visual = BuildTile(tile, definition, reading);
-            Grid.SetRow(visual, tile.Row);
-            Grid.SetColumn(visual, tile.Column);
-            Grid.SetRowSpan(visual, tile.RowSpan);
-            Grid.SetColumnSpan(visual, tile.ColumnSpan);
-            TileGrid.Children.Add(visual);
+            var visual = BuildTile(tile, definition);
+            Grid.SetRow(visual.Root, tile.Row);
+            Grid.SetColumn(visual.Root, tile.Column);
+            Grid.SetRowSpan(visual.Root, tile.RowSpan);
+            Grid.SetColumnSpan(visual.Root, tile.ColumnSpan);
+            TileGrid.Children.Add(visual.Root);
+            _tileVisuals.Add(visual);
+        }
+
+        if (layout.Tiles.Count == 0)
+        {
+            var empty = new TextBlock
+            {
+                Text = "Empty dashboard",
+                Foreground = Resource<Brush>("TextMutedBrush"),
+                FontSize = 14,
+                HorizontalAlignment = HAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetRowSpan(empty, rows);
+            Grid.SetColumnSpan(empty, columns);
+            TileGrid.Children.Add(empty);
         }
     }
 
-    private Border BuildTile(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading)
+    private TileVisual BuildTile(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition)
     {
-        var selected = !Preferences.IsLocked && tile.Id == _selectedTileId;
+        var tileWidth = Math.Max(1, tile.ColumnSpan * _cellWidth);
+        var tileHeight = Math.Max(1, tile.RowSpan * _cellHeight);
+        var compact = tileWidth < 132 || tileHeight < 116;
+        var dense = tileWidth < 88 || tileHeight < 64;
+        var padding = dense ? 2d : compact ? 7d : 11d;
+        var margin = dense ? 1d : 4d;
+        var accentHeight = dense ? 1d : 2d;
+        var accent = AccentFor(tile, definition);
         var border = new Border
         {
-            Tag = tile.Id,
-            Margin = new Thickness(3),
-            Padding = new Thickness(10),
-            CornerRadius = new CornerRadius(6),
+            Margin = new Thickness(margin),
+            Padding = new Thickness(padding),
+            CornerRadius = new CornerRadius(dense ? 3 : 7),
             ClipToBounds = true,
-            Background = Resource<Brush>(selected ? "AccentSubtleBrush" : "Surface1Brush"),
-            BorderBrush = Resource<Brush>(selected ? "AccentBrush" : "BorderSubtleBrush"),
-            BorderThickness = new Thickness(selected ? 2 : 1),
-            Focusable = true,
-            Cursor = Preferences.IsLocked ? Cursors.Arrow : Cursors.SizeAll
+            Background = Resource<Brush>("MonitorSurfaceBrush"),
+            BorderBrush = Resource<Brush>("MonitorBorderBrush"),
+            BorderThickness = new Thickness(1),
+            Focusable = false
         };
-        AutomationProperties.SetName(border, $"{definition.Name}. {(reading.Available ? $"{reading.DisplayValue} {reading.Unit}" : reading.AvailabilityMessage)}");
-        border.ToolTip = reading.Available ? definition.Description : reading.AvailabilityMessage;
-        border.PreviewMouseLeftButtonDown += Tile_MouseLeftButtonDown;
-        border.PreviewMouseMove += Tile_MouseMove;
-        border.MouseLeftButtonUp += Tile_MouseLeftButtonUp;
-        border.PreviewKeyDown += Tile_PreviewKeyDown;
 
         var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(accentHeight) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var header = new StackPanel();
-        header.Children.Add(new TextBlock
+        root.Children.Add(new Border { Height = accentHeight, Background = accent, CornerRadius = new CornerRadius(1), Opacity = .9 });
+
+        var header = new TextBlock
         {
             Text = definition.Name.ToUpper(CultureInfo.CurrentCulture),
-            FontSize = 10,
+            FontSize = MinimumFontSize,
             FontWeight = FontWeights.SemiBold,
             Foreground = Resource<Brush>("TextSecondaryBrush"),
-            TextWrapping = TextWrapping.Wrap,
-            TextTrimming = TextTrimming.None,
-            MaxHeight = 34
-        });
-        var source = new TextBlock
-        {
-            Text = SourceLabel(definition.Source),
-            FontSize = 9,
-            Foreground = Resource<Brush>("TextMutedBrush"),
-            HorizontalAlignment = HAlignment.Left
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.NoWrap,
+            Margin = new Thickness(0, compact ? 3 : 6, 0, 2),
+            Visibility = dense ? Visibility.Collapsed : Visibility.Visible
         };
-        header.Children.Add(source);
+        Grid.SetRow(header, 1);
         root.Children.Add(header);
 
-        var content = reading.Available ? BuildReading(tile, definition, reading) : BuildMissing(reading);
-        Grid.SetRow(content, 1);
-        root.Children.Add(content);
-        if (reading.Available && !string.IsNullOrWhiteSpace(reading.SecondaryValue))
-        {
-            var secondary = new TextBlock
-            {
-                Text = reading.SecondaryValue,
-                FontSize = 10,
-                Foreground = Resource<Brush>("TextSecondaryBrush"),
-                TextWrapping = TextWrapping.Wrap,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxHeight = tile.RowSpan > 1 ? 38 : 28
-            };
-            Grid.SetRow(secondary, 2);
-            root.Children.Add(secondary);
-        }
+        var contentWidth = Math.Max(12, tileWidth - (padding + margin) * 2);
+        var headerReserve = dense ? accentHeight : compact ? 19 : 25;
+        var contentHeight = Math.Max(12, tileHeight - (padding + margin) * 2 - headerReserve);
+        var readingVisual = BuildReading(tile, definition, contentWidth, contentHeight);
+        var missingVisual = BuildMissing(contentHeight);
+        var contentHost = new Grid();
+        contentHost.Children.Add(readingVisual.Root);
+        contentHost.Children.Add(missingVisual.Root);
+        Grid.SetRow(contentHost, 2);
+        root.Children.Add(contentHost);
 
-        if (!Preferences.IsLocked)
+        var secondary = new TextBlock
         {
-            var edit = IconButton("Edit tile", "Edit display, size, or position", "M2,12 L5,12 L13,4 L10,1 L2,9 Z M9,2 L12,5", (_, _) => SelectTile(tile.Id));
-            edit.Width = edit.Height = 28;
-            edit.Padding = new Thickness(7);
-            edit.HorizontalAlignment = HAlignment.Right;
-            edit.VerticalAlignment = VerticalAlignment.Bottom;
-            Grid.SetRow(edit, 2);
-            root.Children.Add(edit);
-        }
+            FontSize = MinimumFontSize,
+            Foreground = Resource<Brush>("TextSecondaryBrush"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.NoWrap,
+            Margin = new Thickness(0, 3, 0, 0),
+            Visibility = Visibility.Collapsed
+        };
+        Grid.SetRow(secondary, 3);
+        root.Children.Add(secondary);
 
         border.Child = root;
-        return border;
-    }
-
-    private UIElement BuildReading(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading) => tile.DisplayStyle switch
-    {
-        LiveMonitorDisplayStyle.Bar => BuildBar(reading, AccentFor(tile, definition)),
-        LiveMonitorDisplayStyle.Gauge => BuildGauge(reading, AccentFor(tile, definition)),
-        LiveMonitorDisplayStyle.Trend when reading.TrendValues.Count > 1 => BuildTrend(tile, definition, reading, AccentFor(tile, definition)),
-        LiveMonitorDisplayStyle.Status => BuildStatus(reading),
-        _ => BuildNumber(reading)
-    };
-
-    private UIElement BuildNumber(LiveTelemetryMetricReading reading)
-    {
-        var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        panel.Children.Add(new TextBlock
+        var lastAutomationName = string.Empty;
+        var lastToolTip = string.Empty;
+        var wasAvailable = false;
+        void Update(LiveTelemetryMetricReading reading, LiveMonitorState liveState)
         {
-            Text = reading.DisplayValue,
-            FontSize = 24,
-            FontWeight = FontWeights.SemiBold,
-            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+            var toolTip = reading.Available ? definition.Description : reading.AvailabilityMessage;
+            if (!string.Equals(lastToolTip, toolTip, StringComparison.Ordinal))
+            {
+                border.ToolTip = toolTip;
+                lastToolTip = toolTip;
+            }
+
+            var automationName = $"{definition.Name}. {(reading.Available ? $"{reading.DisplayValue} {reading.Unit}" : reading.AvailabilityMessage)}";
+            if (!string.Equals(lastAutomationName, automationName, StringComparison.Ordinal))
+            {
+                AutomationProperties.SetName(border, automationName);
+                lastAutomationName = automationName;
+            }
+
+            readingVisual.Root.Visibility = reading.Available ? Visibility.Visible : Visibility.Collapsed;
+            missingVisual.Root.Visibility = reading.Available ? Visibility.Collapsed : Visibility.Visible;
+            if (reading.Available)
+            {
+                readingVisual.Update(reading, liveState);
+            }
+            else
+            {
+                if (wasAvailable) readingVisual.ResetTrend();
+                missingVisual.Update(reading);
+            }
+            wasAvailable = reading.Available;
+
+            var showSecondary = !compact && reading.Available && !string.IsNullOrWhiteSpace(reading.SecondaryValue);
+            secondary.Visibility = showSecondary ? Visibility.Visible : Visibility.Collapsed;
+            if (showSecondary)
+            {
+                SetText(secondary, reading.SecondaryValue);
+                secondary.ToolTip = reading.SecondaryValue;
+            }
+        }
+
+        return new TileVisual(tile, border, Update, readingVisual.ResetTrend, readingVisual.AnimateTrend, readingVisual.UsesTrend);
+    }
+
+    private ReadingVisual BuildReading(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition, double width, double height)
+    {
+        if (width < 62 || height < 46) return BuildNumber(height);
+        return tile.DisplayStyle switch
+        {
+            LiveMonitorDisplayStyle.Bar => BuildBar(AccentFor(tile, definition), height),
+            LiveMonitorDisplayStyle.Gauge => BuildGauge(AccentFor(tile, definition), width, height),
+            LiveMonitorDisplayStyle.Trend => BuildTrend(tile, definition, AccentFor(tile, definition), width, height),
+            LiveMonitorDisplayStyle.Status => BuildStatus(height),
+            _ => BuildNumber(height)
+        };
+    }
+
+    private ReadingVisual BuildNumber(double height)
+    {
+        var showUnit = height >= 34;
+        var panel = new Grid { VerticalAlignment = VerticalAlignment.Stretch };
+        panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var fitted = FittedValue(Math.Min(32, Math.Max(17, height * .43)), FontWeights.SemiBold);
+        panel.Children.Add(fitted.Root);
+        var unit = new TextBlock
+        {
+            FontSize = MinimumFontSize,
+            Foreground = Resource<Brush>("TextMutedBrush"),
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
-        });
-        if (!string.IsNullOrWhiteSpace(reading.Unit)) panel.Children.Add(new TextBlock { Text = reading.Unit, FontSize = 10, Foreground = Resource<Brush>("TextMutedBrush") });
-        return panel;
+        };
+        Grid.SetRow(unit, 1);
+        panel.Children.Add(unit);
+        void Update(LiveTelemetryMetricReading reading, LiveMonitorState state)
+        {
+            SetText(fitted.Text, reading.DisplayValue);
+            unit.Visibility = showUnit && ShowUnit(reading.Unit) ? Visibility.Visible : Visibility.Collapsed;
+            SetText(unit, reading.Unit);
+        }
+        return new ReadingVisual(panel, Update, static () => { }, static (_, _) => false, false);
     }
 
-    private UIElement BuildStatus(LiveTelemetryMetricReading reading) => new TextBlock
+    private ReadingVisual BuildStatus(double height)
     {
-        Text = reading.DisplayValue,
-        FontSize = 16,
-        FontWeight = FontWeights.SemiBold,
-        VerticalAlignment = VerticalAlignment.Center,
-        TextWrapping = TextWrapping.Wrap,
-        TextTrimming = TextTrimming.CharacterEllipsis
-    };
-
-    private UIElement BuildMissing(LiveTelemetryMetricReading reading)
-    {
-        var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        panel.Children.Add(new TextBlock { Text = reading.DisplayValue, FontSize = 16, FontWeight = FontWeights.SemiBold, Foreground = Resource<Brush>("UnavailableBrush") });
-        panel.Children.Add(new TextBlock { Text = reading.AvailabilityMessage, FontSize = 10, Foreground = Resource<Brush>("TextMutedBrush"), TextWrapping = TextWrapping.Wrap, MaxHeight = 36 });
-        return panel;
+        var value = new TextBlock
+        {
+            FontSize = Math.Min(18, Math.Max(12, height * .23)),
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HAlignment.Center,
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxHeight = Math.Max(22, height)
+        };
+        return new ReadingVisual(value, (reading, _) => SetText(value, reading.DisplayValue), static () => { }, static (_, _) => false, false);
     }
 
-    private UIElement BuildBar(LiveTelemetryMetricReading reading, Brush accent)
+    private MissingVisual BuildMissing(double height)
     {
         var panel = new Grid { VerticalAlignment = VerticalAlignment.Center };
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(8) });
-        panel.Children.Add(BuildValueLine(reading));
-        var track = new Border { Background = Resource<Brush>("Surface3Brush"), CornerRadius = new CornerRadius(4), Margin = new Thickness(0, 7, 0, 0) };
-        Grid.SetRow(track, 1);
-        if (reading.NumericValue.HasValue && reading.Minimum.HasValue && reading.Maximum > reading.Minimum)
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var value = new TextBlock { FontSize = Math.Min(17, Math.Max(12, height * .22)), FontWeight = FontWeights.SemiBold, Foreground = Resource<Brush>("UnavailableBrush"), TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        panel.Children.Add(value);
+        TextBlock? detail = null;
+        if (height >= 58)
         {
-            var fraction = Math.Clamp((reading.NumericValue.Value - reading.Minimum.Value) / (reading.Maximum!.Value - reading.Minimum.Value), 0, 1);
-            var fill = new Border { Background = accent, CornerRadius = new CornerRadius(4), HorizontalAlignment = HAlignment.Left };
-            track.SizeChanged += (_, _) => fill.Width = track.ActualWidth * fraction;
-            track.Child = fill;
+            detail = new TextBlock { FontSize = MinimumFontSize, Foreground = Resource<Brush>("TextMutedBrush"), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 32, Margin = new Thickness(0, 3, 0, 0) };
+            Grid.SetRow(detail, 1);
+            panel.Children.Add(detail);
         }
-        panel.Children.Add(track);
-        return panel;
+        void Update(LiveTelemetryMetricReading reading)
+        {
+            SetText(value, reading.DisplayValue);
+            if (detail is not null) SetText(detail, reading.AvailabilityMessage);
+        }
+        return new MissingVisual(panel, Update);
     }
 
-    private UIElement BuildGauge(LiveTelemetryMetricReading reading, Brush accent)
+    private ReadingVisual BuildBar(Brush accent, double height)
     {
-        var size = 76d;
-        var canvas = new Canvas { Width = size, Height = size, HorizontalAlignment = HAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        canvas.Children.Add(new Ellipse { Width = size - 8, Height = size - 8, Margin = new Thickness(4), Stroke = Resource<Brush>("Surface3Brush"), StrokeThickness = 7 });
-        if (reading.NumericValue.HasValue && reading.Minimum.HasValue && reading.Maximum > reading.Minimum)
+        var panel = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(9) });
+        var value = BuildValueLine(Math.Max(20, height - 16));
+        panel.Children.Add(value.Root);
+        var track = new Border { Background = Resource<Brush>("MonitorSurface2Brush"), CornerRadius = new CornerRadius(4), Margin = new Thickness(0, 6, 0, 0) };
+        Grid.SetRow(track, 1);
+        var fill = new Border { Background = accent, CornerRadius = new CornerRadius(4), HorizontalAlignment = HAlignment.Left };
+        track.Child = fill;
+        var fraction = 0d;
+        double? stableMinimum = null;
+        double? stableMaximum = null;
+        void ResizeFill() => fill.Width = Math.Max(0, track.ActualWidth * fraction);
+        track.SizeChanged += (_, _) => ResizeFill();
+        panel.Children.Add(track);
+        void Update(LiveTelemetryMetricReading reading, LiveMonitorState state)
         {
-            var fraction = Math.Clamp((reading.NumericValue.Value - reading.Minimum.Value) / (reading.Maximum!.Value - reading.Minimum.Value), 0, .9999);
-            var start = new Point(size / 2, 7);
-            var angle = fraction * Math.PI * 2;
-            var end = new Point(size / 2 + Math.Sin(angle) * (size / 2 - 7), size / 2 - Math.Cos(angle) * (size / 2 - 7));
-            var figure = new PathFigure { StartPoint = start };
-            figure.Segments.Add(new ArcSegment(end, new Size(size / 2 - 7, size / 2 - 7), 0, fraction > .5, SweepDirection.Clockwise, true));
-            canvas.Children.Add(new Path { Data = new PathGeometry([figure]), Stroke = accent, StrokeThickness = 7, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round });
+            value.Update(reading);
+            if (reading.Minimum.HasValue) stableMinimum = stableMinimum.HasValue ? Math.Min(stableMinimum.Value, reading.Minimum.Value) : reading.Minimum;
+            if (reading.Maximum.HasValue) stableMaximum = stableMaximum.HasValue ? Math.Max(stableMaximum.Value, reading.Maximum.Value) : reading.Maximum;
+            fraction = reading.NumericValue.HasValue && stableMinimum.HasValue && stableMaximum > stableMinimum
+                ? Math.Clamp((reading.NumericValue.Value - stableMinimum.Value) / (stableMaximum!.Value - stableMinimum.Value), 0, 1)
+                : 0;
+            ResizeFill();
         }
-        var value = BuildValueLine(reading);
-        value.Width = size;
-        value.Height = size;
-        canvas.Children.Add(value);
-        return canvas;
+        void Reset() { stableMinimum = null; stableMaximum = null; fraction = 0; ResizeFill(); }
+        return new ReadingVisual(panel, Update, Reset, static (_, _) => false, false);
     }
 
-    private Grid BuildValueLine(LiveTelemetryMetricReading reading)
+    private ReadingVisual BuildGauge(Brush accent, double width, double height)
+    {
+        var size = Math.Max(34, Math.Min(108, Math.Min(width, height) - 2));
+        var canvas = new Canvas { Width = size, Height = size, HorizontalAlignment = HAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var stroke = Math.Clamp(size * .085, 4, 8);
+        var inset = stroke + 1;
+        canvas.Children.Add(new Ellipse { Width = size - inset * 2, Height = size - inset * 2, Margin = new Thickness(inset), Stroke = Resource<Brush>("MonitorSurface2Brush"), StrokeThickness = stroke });
+        var radius = size / 2 - inset;
+        var start = new Point(size / 2, inset);
+        var figure = new PathFigure { StartPoint = start };
+        var segment = new ArcSegment(start, new Size(radius, radius), 0, false, SweepDirection.Clockwise, true);
+        figure.Segments.Add(segment);
+        var arc = new Path { Data = new PathGeometry([figure]), Stroke = accent, StrokeThickness = stroke, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, Visibility = Visibility.Collapsed };
+        canvas.Children.Add(arc);
+        var value = BuildValueLine(size * .62);
+        value.Root.Width = size * .78;
+        value.Root.Height = size * .68;
+        Canvas.SetLeft(value.Root, size * .11);
+        Canvas.SetTop(value.Root, size * .18);
+        canvas.Children.Add(value.Root);
+        double? stableMinimum = null;
+        double? stableMaximum = null;
+        void Update(LiveTelemetryMetricReading reading, LiveMonitorState state)
+        {
+            value.Update(reading);
+            if (reading.Minimum.HasValue) stableMinimum = stableMinimum.HasValue ? Math.Min(stableMinimum.Value, reading.Minimum.Value) : reading.Minimum;
+            if (reading.Maximum.HasValue) stableMaximum = stableMaximum.HasValue ? Math.Max(stableMaximum.Value, reading.Maximum.Value) : reading.Maximum;
+            if (!reading.NumericValue.HasValue || !stableMinimum.HasValue || stableMaximum <= stableMinimum)
+            {
+                arc.Visibility = Visibility.Collapsed;
+                return;
+            }
+            var fraction = Math.Clamp((reading.NumericValue.Value - stableMinimum.Value) / (stableMaximum!.Value - stableMinimum.Value), 0, .9999);
+            arc.Visibility = fraction <= .0001 ? Visibility.Collapsed : Visibility.Visible;
+            var angle = fraction * Math.PI * 2;
+            segment.Point = new Point(size / 2 + Math.Sin(angle) * radius, size / 2 - Math.Cos(angle) * radius);
+            segment.Size = new Size(radius, radius);
+            segment.IsLargeArc = fraction > .5;
+        }
+        void Reset() { stableMinimum = null; stableMaximum = null; arc.Visibility = Visibility.Collapsed; }
+        return new ReadingVisual(canvas, Update, Reset, static (_, _) => false, false);
+    }
+
+    private ValueLineVisual BuildValueLine(double height)
     {
         var grid = new Grid();
-        grid.Children.Add(new TextBlock { Text = reading.DisplayValue, FontSize = 20, FontWeight = FontWeights.SemiBold, FontFamily = new FontFamily("Cascadia Mono, Consolas"), HorizontalAlignment = HAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
-        if (!string.IsNullOrWhiteSpace(reading.Unit)) grid.Children.Add(new TextBlock { Text = reading.Unit, FontSize = 9, Foreground = Resource<Brush>("TextMutedBrush"), HorizontalAlignment = HAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom });
-        return grid;
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var fitted = FittedValue(Math.Min(24, Math.Max(14, height * .48)), FontWeights.SemiBold);
+        grid.Children.Add(fitted.Root);
+        var unit = new TextBlock
+        {
+            FontSize = MinimumFontSize,
+            Foreground = Resource<Brush>("TextMutedBrush"),
+            HorizontalAlignment = HAlignment.Center,
+            TextAlignment = TextAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        Grid.SetRow(unit, 1);
+        grid.Children.Add(unit);
+        void Update(LiveTelemetryMetricReading reading)
+        {
+            SetText(fitted.Text, reading.DisplayValue);
+            unit.Visibility = ShowUnit(reading.Unit) ? Visibility.Visible : Visibility.Collapsed;
+            SetText(unit, reading.Unit);
+        }
+        return new ValueLineVisual(grid, Update);
     }
 
-    private UIElement BuildTrend(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading, Brush accent)
+    private static FittedTextVisual FittedValue(double fontSize, FontWeight weight)
     {
-        var width = Math.Max(24, tile.ColumnSpan * _cellSize - 28);
-        var height = Math.Max(18, tile.RowSpan * _cellSize - 74);
-        var canvas = new Canvas { Width = width, Height = height, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Center };
-        var range = TrendRange(tile.Id, reading.TrendValues);
-        var points = DownsampleMinMax(reading.TrendValues, Math.Max(24, (int)width / 2));
-        var collection = new PointCollection();
-        for (var index = 0; index < points.Count; index++)
+        var text = new TextBlock
         {
-            var x = points.Count == 1 ? 0 : index * width / (points.Count - 1);
-            var y = height - (points[index] - range.Minimum) / (range.Maximum - range.Minimum) * height;
-            if (definition.TrendShape == LiveMonitorTrendShape.Step && collection.Count > 0)
-                collection.Add(new Point(x, collection[^1].Y));
-            collection.Add(new Point(x, y));
-        }
+            FontSize = fontSize,
+            FontWeight = weight,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+            TextAlignment = TextAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        return new FittedTextVisual(new Viewbox
+        {
+            Stretch = Stretch.Uniform,
+            StretchDirection = StretchDirection.DownOnly,
+            HorizontalAlignment = HAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = text
+        }, text);
+    }
+
+    private static bool ShowUnit(string? unit) => !string.IsNullOrWhiteSpace(unit) && !string.Equals(unit, "time", StringComparison.OrdinalIgnoreCase);
+
+    private ReadingVisual BuildTrend(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition, Brush accent, double width, double height)
+    {
+        width = Math.Max(30, width);
+        height = Math.Max(24, height);
+        var canvas = new Canvas { Width = width, Height = height, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HAlignment.Stretch };
         canvas.Children.Add(new Line { X1 = 0, X2 = width, Y1 = height / 2, Y2 = height / 2, Stroke = Resource<Brush>("BorderSubtleBrush"), StrokeThickness = 1 });
-        canvas.Children.Add(new Polyline { Points = collection, Stroke = accent, StrokeThickness = 2, StrokeLineJoin = PenLineJoin.Round });
-        canvas.Children.Add(new TextBlock { Text = $"{reading.DisplayValue} {reading.Unit}".Trim(), FontSize = 12, FontWeight = FontWeights.SemiBold, Background = Resource<Brush>("Surface1Brush") });
-        return canvas;
+        var translation = new TranslateTransform();
+        var trace = new Path
+        {
+            Data = Geometry.Empty,
+            Stroke = accent,
+            StrokeThickness = 2,
+            StrokeLineJoin = PenLineJoin.Round,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            RenderTransform = translation
+        };
+        canvas.Children.Add(trace);
+        var label = new TextBlock { FontSize = 12, FontWeight = FontWeights.SemiBold, Background = Resource<Brush>("MonitorSurfaceBrush"), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = Math.Max(24, width - 8), Padding = new Thickness(2, 0, 3, 1) };
+        Canvas.SetLeft(label, 3);
+        Canvas.SetTop(label, 2);
+        canvas.Children.Add(label);
+        var buffer = new TrendBuffer(tile.TrendDuration, tile.MetricId, tile.Unit);
+        void Update(LiveTelemetryMetricReading reading, LiveMonitorState state)
+        {
+            SetText(label, $"{reading.DisplayValue} {(ShowUnit(reading.Unit) ? reading.Unit : string.Empty)}".Trim());
+            if (!buffer.Update(reading, state)) return;
+            translation.X = 0;
+            var values = buffer.NumericValues();
+            trace.Data = values.Count < 2
+                ? Geometry.Empty
+                : BuildTrendGeometry(buffer, width, height, TrendRange(tile.Id, values), definition.TrendShape);
+        }
+        void Reset()
+        {
+            buffer.Clear();
+            trace.Data = Geometry.Empty;
+            translation.X = 0;
+        }
+        bool Animate(long frameTimestamp, bool enabled)
+        {
+            var motion = buffer.DisplayMotion(frameTimestamp, width, enabled);
+            var target = -motion.Shift;
+            if (Math.Abs(translation.X - target) >= .01) translation.X = target;
+            return motion.Continue;
+        }
+        return new ReadingVisual(canvas, Update, Reset, Animate, true);
     }
 
     private (double Minimum, double Maximum) TrendRange(string tileId, IReadOnlyList<double> values)
     {
-        var minimum = values.Min();
-        var maximum = values.Max();
+        var minimum = values[0];
+        var maximum = values[0];
+        for (var index = 1; index < values.Count; index++)
+        {
+            minimum = Math.Min(minimum, values[index]);
+            maximum = Math.Max(maximum, values[index]);
+        }
         if (Math.Abs(maximum - minimum) < .0001) { minimum -= .5; maximum += .5; }
         var padding = (maximum - minimum) * .08;
         minimum -= padding;
@@ -395,217 +625,153 @@ public partial class LiveMonitorWindow : Window
         return (minimum, maximum);
     }
 
-    private static IReadOnlyList<double> DownsampleMinMax(IReadOnlyList<double> values, int buckets)
+    private static Geometry BuildTrendGeometry(
+        TrendBuffer buffer,
+        double width,
+        double height,
+        (double Minimum, double Maximum) range,
+        LiveMonitorTrendShape shape)
     {
-        if (values.Count <= buckets * 2) return values.ToArray();
-        var result = new List<double>(buckets * 2);
-        for (var bucket = 0; bucket < buckets; bucket++)
+        var span = Math.Max(.0001, range.Maximum - range.Minimum);
+        var top = 2d;
+        var bottom = Math.Max(top + 1, height - 2);
+        var bucketCount = Math.Max(1, (int)Math.Ceiling(width));
+        var segments = new List<List<TrendVertex>>();
+        var segment = new List<TrendVertex>();
+        TrendBucket? bucket = null;
+        DateTimeOffset? previousAt = null;
+        double? previousX = null;
+        var order = 0;
+
+        void FlushBucket()
         {
-            var start = bucket * values.Count / buckets;
-            var end = Math.Max(start + 1, (bucket + 1) * values.Count / buckets);
-            var slice = values.Skip(start).Take(end - start).ToArray();
-            var minIndex = Array.IndexOf(slice, slice.Min());
-            var maxIndex = Array.IndexOf(slice, slice.Max());
-            if (minIndex <= maxIndex) { result.Add(slice[minIndex]); if (maxIndex != minIndex) result.Add(slice[maxIndex]); }
-            else { result.Add(slice[maxIndex]); result.Add(slice[minIndex]); }
+            if (bucket is not { } current) return;
+            var candidates = new[] { current.First, current.Minimum, current.Maximum, current.Last }
+                .DistinctBy(candidate => candidate.Order)
+                .OrderBy(candidate => candidate.Order);
+            segment.AddRange(candidates);
+            bucket = null;
         }
-        return result;
+
+        void FinishSegment()
+        {
+            FlushBucket();
+            if (segment.Count > 1) segments.Add(segment);
+            segment = [];
+            previousX = null;
+        }
+
+        foreach (var sample in buffer.Samples)
+        {
+            order++;
+            if (!sample.Value.HasValue || !double.IsFinite(sample.Value.Value))
+            {
+                FinishSegment();
+                previousAt = sample.At;
+                continue;
+            }
+
+            if (previousAt.HasValue && sample.At - previousAt.Value > buffer.GapThreshold) FinishSegment();
+            previousAt = sample.At;
+            var x = buffer.PositionX(sample, width);
+            if (!x.HasValue || !double.IsFinite(x.Value))
+            {
+                FinishSegment();
+                continue;
+            }
+            if (x < -2 || x > width + 2) continue;
+            if (previousX.HasValue && x.Value + .01 < previousX.Value) FinishSegment();
+            previousX = x.Value;
+
+            var y = bottom - (sample.Value.Value - range.Minimum) / span * (bottom - top);
+            var candidate = new TrendVertex(x.Value, y, sample.Value.Value, order);
+            var bucketIndex = Math.Clamp((int)Math.Floor(x.Value), 0, bucketCount - 1);
+            if (bucket is not { } current || current.Index != bucketIndex)
+            {
+                FlushBucket();
+                bucket = new TrendBucket(bucketIndex, candidate, candidate, candidate, candidate);
+                continue;
+            }
+
+            bucket = current with
+            {
+                Minimum = candidate.Value < current.Minimum.Value ? candidate : current.Minimum,
+                Maximum = candidate.Value > current.Maximum.Value ? candidate : current.Maximum,
+                Last = candidate
+            };
+        }
+        FinishSegment();
+        if (segments.Count == 0) return Geometry.Empty;
+
+        var geometry = new StreamGeometry();
+        using (var context = geometry.Open())
+        {
+            foreach (var vertices in segments)
+            {
+                context.BeginFigure(new Point(vertices[0].X, vertices[0].Y), false, false);
+                var previous = vertices[0];
+                for (var index = 1; index < vertices.Count; index++)
+                {
+                    var next = vertices[index];
+                    if (shape == LiveMonitorTrendShape.Step)
+                        context.LineTo(new Point(next.X, previous.Y), true, false);
+                    context.LineTo(new Point(next.X, next.Y), true, true);
+                    previous = next;
+                }
+            }
+        }
+        geometry.Freeze();
+        return geometry;
+    }
+
+    private static void SetText(TextBlock target, string? value)
+    {
+        value ??= string.Empty;
+        if (!string.Equals(target.Text, value, StringComparison.Ordinal)) target.Text = value;
     }
 
     private void RefreshLayoutSelector()
     {
-        var choices = LiveMonitorLayouts.Choices(Preferences).Select(choice => new LayoutItem(choice.Layout.Id, choice.Layout.Name, choice.IsFactory)).ToArray();
+        var choices = LiveMonitorLayouts.Choices(Preferences).Select(choice => new LayoutItem(choice.Layout.Id, choice.Layout.Name)).ToArray();
         LayoutSelector.ItemsSource = choices;
         LayoutSelector.SelectedValue = Preferences.ActiveLayoutId;
-        if (LayoutSelector.SelectedIndex < 0)
-        {
-            Preferences.ActiveLayoutId = LiveMonitorLayout.FactoryDefaultId;
-            LayoutSelector.SelectedValue = Preferences.ActiveLayoutId;
-        }
-        var active = ActiveChoice;
-        LayoutNameBox.Text = active.Layout.Name;
-        LayoutNameBox.IsReadOnly = active.IsFactory;
-        DeleteLayoutButton.IsEnabled = !active.IsFactory;
-        ResetLayoutButton.IsEnabled = !active.IsFactory;
-        UndoButton.IsEnabled = _undo.Count > 0;
+        if (LayoutSelector.SelectedIndex >= 0) return;
+        Preferences.ActiveLayoutId = LiveMonitorLayout.FactoryDefaultId;
+        LayoutSelector.SelectedValue = Preferences.ActiveLayoutId;
     }
 
-    private void RefreshCatalog(bool force)
+    private void LayoutSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!force && DateTimeOffset.UtcNow - _lastCatalogRefresh < TimeSpan.FromSeconds(1)) return;
-        _lastCatalogRefresh = DateTimeOffset.UtcNow;
-        var search = CatalogSearch.Text?.Trim() ?? string.Empty;
-        CatalogList.ItemsSource = LiveTelemetryCatalog.All
-            .Where(definition => search.Length == 0 || definition.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase) || definition.Description.Contains(search, StringComparison.CurrentCultureIgnoreCase))
-            .Select(definition =>
-            {
-                var reading = LiveTelemetryCatalog.Read(definition.Id, _state.LiveState, definition.DefaultUnit, definition.DefaultPrecision);
-                var detail = reading.Available ? $"{reading.DisplayValue} {reading.Unit}".Trim() : reading.AvailabilityMessage;
-                return new CatalogItem(definition.Id, definition.Name, SourceLabel(definition.Source), detail, string.Join(" · ", definition.Styles.Select(StyleLabel)), $"Add {definition.Name}");
-            }).ToArray();
-    }
-
-    private void RefreshTileEditor()
-    {
-        var layout = ActiveChoice.Layout;
-        var tile = layout.Tiles.FirstOrDefault(item => item.Id == _selectedTileId);
-        if (tile is null || Preferences.IsLocked || _gridSettingsOpen || _scaleSettingsOpen)
-        {
-            TileEditor.Visibility = Visibility.Collapsed;
-            return;
-        }
-        var definition = LiveTelemetryCatalog.Get(tile.MetricId);
-        _updatingControls = true;
-        try
-        {
-            TileEditor.Visibility = Visibility.Visible;
-            SelectedTileName.Text = definition.Name;
-            StyleSelector.DisplayMemberPath = nameof(NamedOption<LiveMonitorDisplayStyle>.Label);
-            StyleSelector.SelectedValuePath = nameof(NamedOption<LiveMonitorDisplayStyle>.Value);
-            StyleSelector.ItemsSource = definition.Styles
-                .Select(value => new NamedOption<LiveMonitorDisplayStyle>(value, StyleLabel(value))).ToArray();
-            StyleSelector.SelectedValue = tile.DisplayStyle;
-            UnitSelector.ItemsSource = definition.Units;
-            UnitSelector.SelectedItem = tile.Unit;
-            WidthSelector.ItemsSource = Enumerable.Range(1, layout.Columns).ToArray();
-            WidthSelector.SelectedItem = tile.ColumnSpan;
-            HeightSelector.ItemsSource = Enumerable.Range(1, layout.Rows).ToArray();
-            HeightSelector.SelectedItem = tile.RowSpan;
-            PrecisionSelector.ItemsSource = Enumerable.Range(0, 4).ToArray();
-            PrecisionSelector.SelectedItem = tile.Precision;
-            TrendSelector.DisplayMemberPath = nameof(NamedOption<LiveMonitorTrendDuration>.Label);
-            TrendSelector.SelectedValuePath = nameof(NamedOption<LiveMonitorTrendDuration>.Value);
-            TrendSelector.ItemsSource = LiveTelemetryCatalog.TrendDurations(tile.MetricId)
-                .Select(value => new NamedOption<LiveMonitorTrendDuration>(value, TrendLabel(value))).ToArray();
-            TrendSelector.SelectedValue = tile.TrendDuration;
-            TrendSelector.IsEnabled = tile.DisplayStyle == LiveMonitorDisplayStyle.Trend;
-            AccentSelector.DisplayMemberPath = nameof(NamedOption<string>.Label);
-            AccentSelector.SelectedValuePath = nameof(NamedOption<string>.Value);
-            AccentSelector.ItemsSource = AccentOptions;
-            AccentSelector.SelectedValue = tile.Accent;
-        }
-        finally { _updatingControls = false; }
-    }
-
-    private void SelectTile(string tileId)
-    {
-        _selectedTileId = tileId;
-        RenderGrid();
-        RefreshTileEditor();
-    }
-
-    private void RenderEditingState(bool immediate = false)
-    {
-        var unlocked = !Preferences.IsLocked;
-        LockButton.Tag = unlocked ? "selected" : null;
-        LockButton.ToolTip = unlocked ? "Lock layout for driving" : "Unlock layout editing";
-        AutomationProperties.SetName(LockButton, unlocked ? "Lock layout for driving" : "Unlock layout editing");
-        LockIcon.Data = Geometry.Parse(unlocked
-            ? "M6,7 L6,5 C6,2 11,2 12,4 M3,7 L13,7 L13,15 L3,15 Z"
-            : "M5,7 L5,5 C5,1.5 11,1.5 11,5 L11,7 M3,7 L13,7 L13,15 L3,15 Z");
-        GridSettingsButton.Tag = _gridSettingsOpen ? "selected" : null;
-        ScaleSettingsButton.Tag = _scaleSettingsOpen ? "selected" : null;
-        GridSettingsSurface.Visibility = _gridSettingsOpen ? Visibility.Visible : Visibility.Collapsed;
-        ScaleSettingsSurface.Visibility = _scaleSettingsOpen ? Visibility.Visible : Visibility.Collapsed;
-        var settingsOpen = _gridSettingsOpen || _scaleSettingsOpen;
-        TileGrid.Visibility = settingsOpen ? Visibility.Collapsed : Visibility.Visible;
-        var showEditor = unlocked && !settingsOpen;
-        if (immediate || ReducedMotion())
-        {
-            EditorPanel.BeginAnimation(HeightProperty, null);
-            EditorPanel.Height = showEditor ? EditorHeight : 0;
-            EditorPanel.Visibility = showEditor ? Visibility.Visible : Visibility.Collapsed;
-        }
-        else if (showEditor)
-        {
-            EditorPanel.Visibility = Visibility.Visible;
-            EditorPanel.BeginAnimation(HeightProperty, new DoubleAnimation(0, EditorHeight, TimeSpan.FromMilliseconds(200)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
-            Dispatcher.BeginInvoke(EnsureEditorVisible, DispatcherPriority.ContextIdle);
-        }
-        else if (EditorPanel.Visibility == Visibility.Visible)
-        {
-            var animation = new DoubleAnimation(EditorPanel.ActualHeight, 0, TimeSpan.FromMilliseconds(180)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
-            animation.Completed += (_, _) => EditorPanel.Visibility = Visibility.Collapsed;
-            EditorPanel.BeginAnimation(HeightProperty, animation);
-        }
-        RefreshTileEditor();
-    }
-
-    private void ApplyScale()
-    {
-        var scale = Math.Clamp(Preferences.OverallScale, .7, 2);
-        RootScale.LayoutTransform = new ScaleTransform(scale, scale);
-    }
-
-    private void DragGrip_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.LeftButton != MouseButtonState.Pressed) return;
-        try { DragMove(); }
-        catch (InvalidOperationException) { }
-        e.Handled = true;
-    }
-
-    private void LockButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_gridSettingsOpen) CloseGridSettings(commit: true);
-        if (_scaleSettingsOpen) CloseScaleSettings(commit: true);
-        Preferences.IsLocked = !Preferences.IsLocked;
-        if (Preferences.IsLocked) _selectedTileId = null;
+        if (_updatingControls || LayoutSelector.SelectedValue is not string id || id == Preferences.ActiveLayoutId) return;
+        _scaleSettingsOpen = false;
+        _scaleSettingsBackup = null;
+        Preferences.ActiveLayoutId = id;
+        _trendRanges.Clear();
         SavePreferences();
-        RenderEditingState();
-        RenderGrid();
-        RefreshLayoutSelector();
+        RenderAll();
     }
 
-    private void GridSettingsButton_Click(object sender, RoutedEventArgs e)
+    private void RenderSurfaceState()
     {
-        if (_gridSettingsOpen) { CloseGridSettings(commit: true); return; }
-        if (_scaleSettingsOpen) CloseScaleSettings(commit: true);
-        _gridSettingsBackup = CaptureGridSettings();
-        _gridSettingsUndoBackup = _undo.ToArray();
-        _gridSettingsOpen = true;
-        var layout = ActiveChoice.Layout;
-        _updatingControls = true;
-        RowsSlider.Value = layout.Rows;
-        ColumnsSlider.Value = layout.Columns;
-        RowsValue.Text = layout.Rows.ToString(CultureInfo.CurrentCulture);
-        ColumnsValue.Text = layout.Columns.ToString(CultureInfo.CurrentCulture);
-        GridSettingsMessage.Text = $"{layout.Columns} × {layout.Rows}";
-        _updatingControls = false;
-        RenderEditingState();
+        ScaleSettingsButton.Tag = _scaleSettingsOpen ? "selected" : null;
+        ScaleSettingsSurface.Visibility = _scaleSettingsOpen ? Visibility.Visible : Visibility.Collapsed;
+        TileGrid.Visibility = _scaleSettingsOpen ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void ScaleSettingsButton_Click(object sender, RoutedEventArgs e)
     {
         if (_scaleSettingsOpen) { CloseScaleSettings(commit: true); return; }
-        if (_gridSettingsOpen) CloseGridSettings(commit: true);
         _scaleSettingsBackup = Preferences.OverallScale;
         _scaleSettingsOpen = true;
         _updatingControls = true;
         ScaleSlider.Value = Math.Round(Preferences.OverallScale * 100 / 10) * 10;
         ScaleValue.Text = $"{Preferences.OverallScale:P0}";
         _updatingControls = false;
-        RenderEditingState();
+        RenderSurfaceState();
     }
 
-    private void CancelGridSettings_Click(object sender, RoutedEventArgs e) => CloseGridSettings(commit: false);
-    private void ApplyGridSettings_Click(object sender, RoutedEventArgs e) => CloseGridSettings(commit: true);
     private void CancelScaleSettings_Click(object sender, RoutedEventArgs e) => CloseScaleSettings(commit: false);
     private void ApplyScaleSettings_Click(object sender, RoutedEventArgs e) => CloseScaleSettings(commit: true);
-
-    private void CloseGridSettings(bool commit)
-    {
-        if (!commit && _gridSettingsBackup is not null)
-        {
-            RestoreGridSettings(_gridSettingsBackup);
-            RestoreUndoHistory(_gridSettingsUndoBackup);
-        }
-        _gridSettingsOpen = false;
-        _gridSettingsBackup = null;
-        _gridSettingsUndoBackup = null;
-        SavePreferences();
-        RenderAll();
-    }
 
     private void CloseScaleSettings(bool commit)
     {
@@ -614,33 +780,6 @@ public partial class LiveMonitorWindow : Window
         _scaleSettingsBackup = null;
         SavePreferences();
         RenderAll();
-    }
-
-    private void GridSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (_updatingControls || !_gridSettingsOpen || !IsLoaded) return;
-        var rows = (int)Math.Round(RowsSlider.Value);
-        var columns = (int)Math.Round(ColumnsSlider.Value);
-        PushUndo();
-        var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-        if (!LiveMonitorLayouts.TryResizeGrid(layout, rows, columns, out var moved))
-        {
-            RollbackFailedMutation();
-            layout = ActiveChoice.Layout;
-            _updatingControls = true;
-            RowsSlider.Value = layout.Rows;
-            ColumnsSlider.Value = layout.Columns;
-            _updatingControls = false;
-            GridSettingsMessage.Foreground = Resource<Brush>("WarningBrush");
-            GridSettingsMessage.Text = "Those dimensions cannot hold every tile. Resize or remove a tile before shrinking the grid.";
-            return;
-        }
-        GridSettingsMessage.Foreground = Resource<Brush>("TextSecondaryBrush");
-        GridSettingsMessage.Text = $"{columns} × {rows}";
-        RowsValue.Text = rows.ToString(CultureInfo.CurrentCulture);
-        ColumnsValue.Text = columns.ToString(CultureInfo.CurrentCulture);
-        RefreshLayoutSelector();
-        RenderGrid();
     }
 
     private void ScaleSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -652,326 +791,39 @@ public partial class LiveMonitorWindow : Window
         Dispatcher.BeginInvoke(EnsureWindowVisible, DispatcherPriority.ContextIdle);
     }
 
-    private void LayoutSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ApplyScale()
     {
-        if (_updatingControls || LayoutSelector.SelectedValue is not string id || id == Preferences.ActiveLayoutId) return;
-        Preferences.ActiveLayoutId = id;
-        _selectedTileId = null;
-        _trendRanges.Clear();
-        _undo.Clear();
-        SavePreferences();
-        RenderAll();
+        var scale = Math.Clamp(Preferences.OverallScale, .7, 2);
+        RootScale.LayoutTransform = new ScaleTransform(scale, scale);
     }
 
-    private void CreateLayout_Click(object sender, RoutedEventArgs e)
+    private void ControlStrip_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        PushUndo();
-        LiveMonitorLayouts.Create(Preferences);
-        AfterLayoutChange("New layout created. Rename it in the field above.");
-    }
-
-    private void DuplicateLayout_Click(object sender, RoutedEventArgs e)
-    {
-        PushUndo();
-        LiveMonitorLayouts.Duplicate(Preferences);
-        AfterLayoutChange("Layout duplicated.");
-    }
-
-    private void ResetLayout_Click(object sender, RoutedEventArgs e)
-    {
-        PushUndo();
-        if (!LiveMonitorLayouts.ResetActive(Preferences))
-        {
-            RollbackFailedMutation();
-            EditorMessage.Text = "Factory layouts are already at their defaults.";
-            return;
-        }
-        AfterLayoutChange("Layout reset to the factory 3 × 2 grid.");
-    }
-
-    private void DeleteLayout_Click(object sender, RoutedEventArgs e)
-    {
-        PushUndo();
-        if (!LiveMonitorLayouts.DeleteActive(Preferences)) { RollbackFailedMutation(); return; }
-        _selectedTileId = null;
-        AfterLayoutChange("Layout deleted.");
-    }
-
-    private void LayoutNameBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (_updatingControls || ActiveChoice.IsFactory) return;
-        var name = LayoutNameBox.Text.Trim();
-        if (name.Length == 0 || string.Equals(name, ActiveChoice.Layout.Name, StringComparison.Ordinal)) return;
-        PushUndo();
-        ActiveChoice.Layout.Name = name;
-        AfterLayoutChange("Layout renamed.");
-    }
-
-    private void Undo_Click(object sender, RoutedEventArgs e)
-    {
-        if (_undo.TryPop(out var snapshot))
-        {
-            Restore(snapshot);
-            SavePreferences();
-            EditorMessage.Text = "Last layout change undone.";
-            RenderAll();
-        }
-    }
-
-    private void CatalogSearch_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (IsLoaded) RefreshCatalog(force: true);
-    }
-
-    private void CatalogAdd_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: string metricId }) AddMetric(metricId);
-    }
-
-    private void AddMetric(string metricId)
-    {
-        PushUndo();
-        var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-        if (!LiveMonitorLayouts.TryAddMetric(layout, metricId, out var tileId))
-        {
-            RollbackFailedMutation();
-            EditorMessage.Text = "The grid is full. Increase rows or columns, or remove a tile first.";
-            return;
-        }
-        _selectedTileId = tileId;
-        AfterLayoutChange($"{LiveTelemetryCatalog.Get(metricId).Name} added.");
-    }
-
-    private void CatalogItem_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        _dragStart = e.GetPosition(this);
-        _dragCatalogItem = (sender as FrameworkElement)?.DataContext as CatalogItem;
-    }
-
-    private void CatalogItem_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (e.LeftButton != MouseButtonState.Pressed || _dragCatalogItem is null || !MovedEnough(e.GetPosition(this))) return;
-        var data = new DataObject(MetricDragFormat, _dragCatalogItem.MetricId);
-        DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy);
-        _dragCatalogItem = null;
-    }
-
-    private void Tile_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (Preferences.IsLocked || sender is not Border { Tag: string tileId }) return;
-        _dragStart = e.GetPosition(this);
-        _dragTileId = tileId;
-        SelectTile(tileId);
-    }
-
-    private void Tile_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (Preferences.IsLocked || e.LeftButton != MouseButtonState.Pressed || _dragTileId is null || !MovedEnough(e.GetPosition(this))) return;
-        var data = new DataObject(TileDragFormat, _dragTileId);
-        DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Move);
-        _dragTileId = null;
-    }
-
-    private void Tile_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        _dragTileId = null;
-    }
-
-    private bool MovedEnough(Point current) => Math.Abs(current.X - _dragStart.X) >= SystemParameters.MinimumHorizontalDragDistance || Math.Abs(current.Y - _dragStart.Y) >= SystemParameters.MinimumVerticalDragDistance;
-
-    private void TileGrid_DragOver(object sender, DragEventArgs e)
-    {
-        if (Preferences.IsLocked) { e.Effects = DragDropEffects.None; return; }
-        var (row, column) = DropCell(e.GetPosition(TileGrid));
-        ShowDropPreview(row, column);
-        e.Effects = e.Data.GetDataPresent(MetricDragFormat) ? DragDropEffects.Copy : e.Data.GetDataPresent(TileDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+        if (e.LeftButton != MouseButtonState.Pressed || e.OriginalSource is not DependencyObject source) return;
+        if (FindAncestor<Button>(source) is not null || FindAncestor<ComboBox>(source) is not null) return;
+        try { DragMove(); }
+        catch (InvalidOperationException) { }
         e.Handled = true;
     }
 
-    private void TileGrid_DragLeave(object sender, DragEventArgs e) => RemoveDropPreview();
-
-    private void TileGrid_Drop(object sender, DragEventArgs e)
+    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
     {
-        var (row, column) = DropCell(e.GetPosition(TileGrid));
-        RemoveDropPreview();
-        if (e.Data.GetData(MetricDragFormat) is string metricId)
+        while (current is not null)
         {
-            PushUndo();
-            var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-            if (!LiveMonitorLayouts.TryAddMetric(layout, metricId, out var tileId)) { RollbackFailedMutation(); EditorMessage.Text = "The grid is full."; return; }
-            _selectedTileId = tileId;
-            _ = LiveMonitorLayouts.TryMoveTile(layout, tileId!, row, column);
-            AfterLayoutChange($"{LiveTelemetryCatalog.Get(metricId).Name} added.");
+            if (current is T match) return match;
+            try { current = VisualTreeHelper.GetParent(current); }
+            catch (InvalidOperationException) { current = LogicalTreeHelper.GetParent(current); }
         }
-        else if (e.Data.GetData(TileDragFormat) is string tileId)
-        {
-            PushUndo();
-            var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-            if (!LiveMonitorLayouts.TryMoveTile(layout, tileId, row, column)) { RollbackFailedMutation(); EditorMessage.Text = "That tile does not fit there."; return; }
-            _selectedTileId = tileId;
-            AfterLayoutChange("Tiles reflowed without overlap.");
-        }
+        return null;
     }
 
-    private (int Row, int Column) DropCell(Point point)
-    {
-        var layout = ActiveChoice.Layout;
-        return (Math.Clamp((int)(point.Y / _cellSize), 0, layout.Rows - 1), Math.Clamp((int)(point.X / _cellSize), 0, layout.Columns - 1));
-    }
-
-    private void ShowDropPreview(int row, int column)
-    {
-        RemoveDropPreview();
-        _dropPreview = new Border { Background = Resource<Brush>("AccentSubtleBrush"), BorderBrush = Resource<Brush>("FocusBrush"), BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(6), Margin = new Thickness(3), IsHitTestVisible = false, Opacity = .85 };
-        Grid.SetRow(_dropPreview, row);
-        Grid.SetColumn(_dropPreview, column);
-        Panel.SetZIndex(_dropPreview, 1000);
-        TileGrid.Children.Add(_dropPreview);
-    }
-
-    private void RemoveDropPreview()
-    {
-        if (_dropPreview is not null) TileGrid.Children.Remove(_dropPreview);
-        _dropPreview = null;
-    }
-
-    private void TileOption_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_updatingControls || _selectedTileId is null) return;
-        PushUndo();
-        var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-        var tile = layout.Tiles.FirstOrDefault(item => item.Id == _selectedTileId);
-        if (tile is null) { RollbackFailedMutation(); return; }
-        var definition = LiveTelemetryCatalog.Get(tile.MetricId);
-        if (StyleSelector.SelectedValue is LiveMonitorDisplayStyle style && definition.Styles.Contains(style)) tile.DisplayStyle = style;
-        if (UnitSelector.SelectedItem is string unit && definition.Units.Contains(unit)) tile.Unit = unit;
-        if (PrecisionSelector.SelectedItem is int precision) tile.Precision = Math.Clamp(precision, 0, 3);
-        if (TrendSelector.SelectedValue is LiveMonitorTrendDuration duration && LiveTelemetryCatalog.TrendDurations(tile.MetricId).Contains(duration)) tile.TrendDuration = duration;
-        if (AccentSelector.SelectedValue is string accent && AccentOptions.Any(option => option.Value == accent)) tile.Accent = accent;
-        AfterLayoutChange("Tile display updated.");
-    }
-
-    private void TileSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_updatingControls || _selectedTileId is null || WidthSelector.SelectedItem is not int width || HeightSelector.SelectedItem is not int height) return;
-        PushUndo();
-        var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-        if (!LiveMonitorLayouts.TryResizeTile(layout, _selectedTileId, height, width))
-        {
-            RollbackFailedMutation();
-            EditorMessage.Text = "That tile size cannot fit in the current grid.";
-            RefreshTileEditor();
-            return;
-        }
-        AfterLayoutChange($"Tile resized to {width} × {height}.");
-    }
-
-    private void RemoveTile_Click(object sender, RoutedEventArgs e)
-    {
-        if (_selectedTileId is null) return;
-        PushUndo();
-        var layout = LiveMonitorLayouts.EnsureEditable(Preferences);
-        if (!LiveMonitorLayouts.RemoveTile(layout, _selectedTileId)) { RollbackFailedMutation(); return; }
-        _selectedTileId = null;
-        AfterLayoutChange("Tile removed.");
-    }
-
-    private void Tile_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (Preferences.IsLocked || sender is not Border { Tag: string tileId }) return;
-        if (e.Key is Key.Enter or Key.Space) { SelectTile(tileId); e.Handled = true; return; }
-        if (e.Key == Key.Delete) { _selectedTileId = tileId; RemoveTile_Click(sender, e); e.Handled = true; return; }
-        var alt = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
-        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-        if (!alt && !shift) return;
-        var layout = ActiveChoice.Layout;
-        var tile = layout.Tiles.First(item => item.Id == tileId);
-        PushUndo();
-        var editable = LiveMonitorLayouts.EnsureEditable(Preferences);
-        var changed = shift
-            ? LiveMonitorLayouts.TryResizeTile(editable, tileId,
-                Math.Clamp(tile.RowSpan + (e.Key == Key.Down ? 1 : e.Key == Key.Up ? -1 : 0), 1, editable.Rows),
-                Math.Clamp(tile.ColumnSpan + (e.Key == Key.Right ? 1 : e.Key == Key.Left ? -1 : 0), 1, editable.Columns))
-            : LiveMonitorLayouts.TryMoveTile(editable, tileId,
-                tile.Row + (e.Key == Key.Down ? 1 : e.Key == Key.Up ? -1 : 0),
-                tile.Column + (e.Key == Key.Right ? 1 : e.Key == Key.Left ? -1 : 0));
-        if (!changed) { RollbackFailedMutation(); EditorMessage.Text = "That keyboard move does not fit."; }
-        else AfterLayoutChange(shift ? "Tile resized." : "Tile moved.");
-        e.Handled = true;
-    }
-
-    private void AfterLayoutChange(string message)
-    {
-        _trendRanges.Clear();
-        SavePreferences();
-        EditorMessage.Text = message;
-        _updatingControls = true;
-        RefreshLayoutSelector();
-        _updatingControls = false;
-        RenderGrid();
-        RefreshTileEditor();
-    }
-
-    private void PushUndo()
-    {
-        _undo.Push(Capture());
-        while (_undo.Count > 20)
-        {
-            var retained = _undo.Take(20).Reverse().ToArray();
-            _undo.Clear();
-            foreach (var item in retained) _undo.Push(item);
-        }
-        UndoButton.IsEnabled = true;
-    }
-
-    private void RollbackFailedMutation()
-    {
-        if (!_undo.TryPop(out var snapshot)) return;
-        var selectedTileId = _selectedTileId;
-        Restore(snapshot);
-        if (selectedTileId is not null && ActiveChoice.Layout.Tiles.Any(tile => tile.Id == selectedTileId))
-            _selectedTileId = selectedTileId;
-        UndoButton.IsEnabled = _undo.Count > 0;
-    }
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => _state.SetLiveMonitorVisible(false);
 
     private void SavePreferences()
     {
         _lastKnownEditorSignature = LiveMonitorLayouts.EditorSignature(Preferences);
         _state.SaveLiveMonitorPreferences();
     }
-
-    private LayoutSnapshot Capture() => new(
-        Preferences.ActiveLayoutId,
-        Preferences.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList());
-
-    private void Restore(LayoutSnapshot snapshot)
-    {
-        Preferences.ActiveLayoutId = snapshot.ActiveLayoutId;
-        Preferences.UserLayouts = snapshot.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList();
-        _selectedTileId = null;
-        _trendRanges.Clear();
-    }
-
-    private GridSettingsSnapshot CaptureGridSettings() => new(
-        Preferences.ActiveLayoutId,
-        Preferences.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList());
-
-    private void RestoreGridSettings(GridSettingsSnapshot snapshot)
-    {
-        Preferences.ActiveLayoutId = snapshot.ActiveLayoutId;
-        Preferences.UserLayouts = snapshot.UserLayouts.Select(LiveMonitorLayouts.Clone).ToList();
-        _selectedTileId = null;
-        _trendRanges.Clear();
-    }
-
-    private void RestoreUndoHistory(IReadOnlyList<LayoutSnapshot>? snapshots)
-    {
-        _undo.Clear();
-        if (snapshots is null) return;
-        for (var index = snapshots.Count - 1; index >= 0; index--) _undo.Push(snapshots[index]);
-    }
-
-    private void CloseButton_Click(object sender, RoutedEventArgs e) => _state.SetLiveMonitorVisible(false);
 
     private void RestorePlacement()
     {
@@ -1000,26 +852,10 @@ public partial class LiveMonitorWindow : Window
         var height = rect.Bottom - rect.Top;
         var x = Math.Clamp(rect.Left, work.Left, Math.Max(work.Left, work.Right - width));
         var y = Math.Clamp(rect.Top, work.Top, Math.Max(work.Top, work.Bottom - height));
-        if (x != rect.Left || y != rect.Top)
-        {
-            SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010);
-            Preferences.PlacementRecoveredAt = DateTimeOffset.UtcNow;
-            ScheduleSave();
-        }
-    }
-
-    private void EnsureEditorVisible()
-    {
-        if (!IsLoaded || EditorPanel.Visibility != Visibility.Visible) return;
-        var handle = new WindowInteropHelper(this).Handle;
-        if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect)) return;
-        var work = Forms.Screen.FromHandle(handle).WorkingArea;
-        var overflow = rect.Bottom - work.Bottom;
-        if (overflow > 0)
-        {
-            SetWindowPos(handle, IntPtr.Zero, rect.Left, Math.Max(work.Top, rect.Top - overflow), 0, 0, 0x0001 | 0x0004 | 0x0010);
-            ScheduleSave();
-        }
+        if (x == rect.Left && y == rect.Top) return;
+        SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010);
+        Preferences.PlacementRecoveredAt = DateTimeOffset.UtcNow;
+        ScheduleSave();
     }
 
     private void RecoverToNearestDisplay()
@@ -1027,9 +863,7 @@ public partial class LiveMonitorWindow : Window
         var screens = Forms.Screen.AllScreens;
         var target = screens.FirstOrDefault(screen => string.Equals(screen.DeviceName, Preferences.MonitorDeviceName, StringComparison.OrdinalIgnoreCase));
         if (target is null && Preferences.Left.HasValue && Preferences.Top.HasValue)
-        {
             target = screens.OrderBy(screen => DistanceSquared(Preferences.Left.Value, Preferences.Top.Value, screen.WorkingArea.Left, screen.WorkingArea.Top)).FirstOrDefault();
-        }
         target ??= Forms.Screen.PrimaryScreen ?? screens[0];
         var handle = new WindowInteropHelper(this).Handle;
         if (handle == IntPtr.Zero || !GetWindowRect(handle, out var rect)) return;
@@ -1069,87 +903,298 @@ public partial class LiveMonitorWindow : Window
         _ = DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int));
     }
 
-    private bool ReducedMotion() => _state.Settings.UseReducedMotion || !SystemParameters.ClientAreaAnimation;
-
     private Brush AccentFor(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition)
     {
         if (!string.Equals(tile.Accent, "default", StringComparison.OrdinalIgnoreCase))
             return tile.Accent.ToLowerInvariant() switch
             {
-                "blue" => Resource<Brush>("TelemetrySpeedBrush"),
-                "green" => Resource<Brush>("TelemetryThrottleBrush"),
-                "amber" => Resource<Brush>("TelemetryFuelBrush"),
-                "coral" => Resource<Brush>("TelemetryBrakeBrush"),
-                "violet" => Resource<Brush>("TelemetrySteeringBrush"),
-                _ => Resource<Brush>("AccentBrush")
+                "blue" => Resource<Brush>("MonitorMintBrush"),
+                "green" => Resource<Brush>("MonitorGreenBrush"),
+                "amber" => Resource<Brush>("MonitorAmberBrush"),
+                "coral" => Resource<Brush>("MonitorCoralBrush"),
+                "violet" => Resource<Brush>("MonitorVioletBrush"),
+                _ => Resource<Brush>("MonitorMintBrush")
             };
         return definition.Id switch
         {
-            "speed" => Resource<Brush>("TelemetrySpeedBrush"),
-            "throttle" => Resource<Brush>("TelemetryThrottleBrush"),
-            "brake" => Resource<Brush>("TelemetryBrakeBrush"),
-            "steering" => Resource<Brush>("TelemetrySteeringBrush"),
-            "fuel" or "fuel-laps" => Resource<Brush>("TelemetryFuelBrush"),
-            _ => Resource<Brush>("AccentBrush")
+            "speed" => Resource<Brush>("MonitorMintBrush"),
+            "throttle" => Resource<Brush>("MonitorGreenBrush"),
+            "brake" => Resource<Brush>("MonitorCoralBrush"),
+            "steering" => Resource<Brush>("MonitorVioletBrush"),
+            "fuel" or "fuel-laps" => Resource<Brush>("MonitorAmberBrush"),
+            _ => Resource<Brush>("MonitorMintBrush")
         };
     }
 
-    private Button IconButton(string accessibleName, string tooltip, string geometry, RoutedEventHandler click)
-    {
-        var button = new Button { Style = (Style)FindResource("CompactButton"), ToolTip = tooltip, Content = new Path { Width = 13, Height = 13, Stretch = Stretch.Uniform, Stroke = Resource<Brush>("TextSecondaryBrush"), StrokeThickness = 1.5, Data = Geometry.Parse(geometry) } };
-        AutomationProperties.SetName(button, accessibleName);
-        button.Click += click;
-        return button;
-    }
-
-    private static string SourceLabel(LiveMonitorMetricSource source) => source switch
-    {
-        LiveMonitorMetricSource.Recorded => "Recorded",
-        LiveMonitorMetricSource.Calculated => "Calculated",
-        _ => "Coach"
-    };
-
     private T Resource<T>(string key) where T : class => (T)FindResource(key);
 
-    private sealed record LayoutItem(string Id, string Name, bool IsFactory)
+    private sealed record TileVisual(
+        LiveMonitorTile Tile,
+        Border Root,
+        Action<LiveTelemetryMetricReading, LiveMonitorState> Update,
+        Action ResetTrend,
+        Func<long, bool, bool> AnimateTrend,
+        bool UsesTrend);
+
+    private sealed record ReadingVisual(
+        FrameworkElement Root,
+        Action<LiveTelemetryMetricReading, LiveMonitorState> Update,
+        Action ResetTrend,
+        Func<long, bool, bool> AnimateTrend,
+        bool UsesTrend);
+
+    private sealed record MissingVisual(FrameworkElement Root, Action<LiveTelemetryMetricReading> Update);
+    private sealed record ValueLineVisual(Grid Root, Action<LiveTelemetryMetricReading> Update);
+    private sealed record FittedTextVisual(Viewbox Root, TextBlock Text);
+
+    private readonly record struct TrendSample(double? Value, DateTimeOffset At, double? LapProgress);
+    private readonly record struct TrendMotion(double Shift, bool Continue);
+    private readonly record struct TrendVertex(double X, double Y, double Value, int Order);
+    private readonly record struct TrendBucket(int Index, TrendVertex First, TrendVertex Minimum, TrendVertex Maximum, TrendVertex Last);
+
+    private sealed class TrendBuffer
+    {
+        private readonly LiveMonitorTrendDuration _duration;
+        private readonly string _metricId;
+        private readonly string _unit;
+        private readonly List<TrendSample> _samples = [];
+        private int _start;
+        private int _activeNumericCount;
+        private bool _initialized;
+        private long _lastFrame = -1;
+        private int? _lastLap;
+        private int _sourceTickRate = 60;
+        private DateTimeOffset? _latestSourceAt;
+        private DateTimeOffset? _latestLapAt;
+        private double? _latestLapProgress;
+        private double _lapRatePerSecond;
+        private long _lastArrivalTimestamp;
+
+        public int Count => _samples.Count - _start;
+        public IEnumerable<TrendSample> Samples
+        {
+            get
+            {
+                for (var index = _start; index < _samples.Count; index++) yield return _samples[index];
+            }
+        }
+        public TimeSpan GapThreshold => TimeSpan.FromMilliseconds(Math.Max(40, 3500d / _sourceTickRate));
+
+        public TrendBuffer(LiveMonitorTrendDuration duration, string metricId, string unit)
+        {
+            _duration = duration;
+            _metricId = metricId;
+            _unit = unit;
+        }
+
+        public bool Update(LiveTelemetryMetricReading reading, LiveMonitorState state)
+        {
+            var snapshot = state.Snapshot;
+            if (!snapshot.Connected)
+            {
+                var changed = Count > 0;
+                Clear();
+                return changed;
+            }
+
+            _sourceTickRate = Math.Clamp(state.SourceTickRate > 0 ? state.SourceTickRate : 60, 1, 240);
+            var at = snapshot.SourceTimestamp > DateTimeOffset.MinValue ? snapshot.SourceTimestamp : state.UpdatedAt;
+            var progress = LapProgress(snapshot.Lap, snapshot.LapDistancePercent);
+            var changedByReset = false;
+            if (!_initialized)
+            {
+                _initialized = true;
+                Seed(state);
+                changedByReset = Count > 0;
+            }
+
+            var lapRegressed = _lastLap.HasValue && snapshot.Lap.HasValue && snapshot.Lap.Value < _lastLap.Value;
+            if (lapRegressed || IsClockRegression(at, progress))
+            {
+                ResetSamples();
+                changedByReset = true;
+            }
+
+            if (state.FramesRead == _lastFrame)
+            {
+                _lastLap = snapshot.Lap;
+                return changedByReset;
+            }
+
+            double? value = reading.NumericValue is { } numeric && double.IsFinite(numeric) ? numeric : null;
+            var duplicate = Count > 0 && _samples[^1] is var latest && latest.At == at &&
+                Nullable.Equals(latest.LapProgress, progress) && Nullable.Equals(latest.Value, value);
+            ObserveClock(at, progress);
+            if (!duplicate) AddSample(new TrendSample(value, at, progress));
+            _lastArrivalTimestamp = Stopwatch.GetTimestamp();
+            _lastFrame = state.FramesRead;
+            _lastLap = snapshot.Lap;
+            Trim();
+            return changedByReset || !duplicate;
+        }
+
+        public void Clear()
+        {
+            ResetSamples();
+            _initialized = false;
+            _lastFrame = -1;
+            _lastLap = null;
+        }
+
+        public IReadOnlyList<double> NumericValues()
+        {
+            var values = new List<double>(_activeNumericCount);
+            for (var index = _start; index < _samples.Count; index++)
+            {
+                var value = _samples[index].Value;
+                if (value.HasValue && double.IsFinite(value.Value)) values.Add(value.Value);
+            }
+            return values;
+        }
+
+        public double? PositionX(TrendSample sample, double width)
+        {
+            var seconds = DurationSeconds();
+            if (seconds.HasValue)
+            {
+                return _latestSourceAt.HasValue
+                    ? width - (_latestSourceAt.Value - sample.At).TotalSeconds / seconds.Value * width
+                    : null;
+            }
+            return _latestLapProgress.HasValue && sample.LapProgress.HasValue
+                ? width - (_latestLapProgress.Value - sample.LapProgress.Value) / LapWindow() * width
+                : null;
+        }
+
+        public TrendMotion DisplayMotion(long frameTimestamp, double width, bool enabled)
+        {
+            if (!enabled || _activeNumericCount < 2 || _lastArrivalTimestamp <= 0)
+                return new TrendMotion(0, false);
+
+            var elapsed = Math.Max(0, Stopwatch.GetElapsedTime(_lastArrivalTimestamp, frameTimestamp).TotalSeconds);
+            var maximumCoast = 1.5d / _sourceTickRate;
+            var coast = Math.Min(elapsed, maximumCoast);
+            var continueAnimating = elapsed + .00001 < maximumCoast;
+            var seconds = DurationSeconds();
+            if (seconds.HasValue && _latestSourceAt.HasValue)
+                return new TrendMotion(Math.Max(0, coast / seconds.Value * width), continueAnimating);
+            if (_latestLapProgress.HasValue && _lapRatePerSecond > 0)
+                return new TrendMotion(Math.Max(0, _lapRatePerSecond * coast / LapWindow() * width), continueAnimating);
+            return new TrendMotion(0, false);
+        }
+
+        private void Seed(LiveMonitorState state)
+        {
+            foreach (var point in state.History ?? [])
+            {
+                if (point.At <= DateTimeOffset.MinValue) continue;
+                var progress = LapProgress(point.Lap, point.LapDistancePercent);
+                if (IsClockRegression(point.At, progress)) ResetSamples();
+                ObserveClock(point.At, progress);
+                AddSample(new TrendSample(LiveTelemetryCatalog.TrendValue(_metricId, point, _unit), point.At, progress));
+            }
+            Trim();
+        }
+
+        private bool IsClockRegression(DateTimeOffset at, double? progress) =>
+            (_latestSourceAt.HasValue && at < _latestSourceAt.Value) ||
+            (_latestLapProgress.HasValue && progress.HasValue && progress.Value < _latestLapProgress.Value - .5);
+
+        private void ObserveClock(DateTimeOffset at, double? progress)
+        {
+            if (!_latestSourceAt.HasValue || at >= _latestSourceAt.Value) _latestSourceAt = at;
+            if (!progress.HasValue || _latestLapAt.HasValue && at < _latestLapAt.Value) return;
+            if (_latestLapProgress.HasValue && _latestLapAt.HasValue && at > _latestLapAt.Value)
+            {
+                var elapsed = (at - _latestLapAt.Value).TotalSeconds;
+                var delta = progress.Value - _latestLapProgress.Value;
+                _lapRatePerSecond = delta >= 0 && delta < .25 && elapsed > 0 && elapsed <= GapThreshold.TotalSeconds * 3
+                    ? Math.Clamp(delta / elapsed, 0, 10)
+                    : 0;
+            }
+            _latestLapProgress = progress;
+            _latestLapAt = at;
+        }
+
+        private void AddSample(TrendSample sample)
+        {
+            _samples.Add(sample);
+            if (sample.Value.HasValue && double.IsFinite(sample.Value.Value)) _activeNumericCount++;
+        }
+
+        private void Trim()
+        {
+            var seconds = DurationSeconds();
+            if (seconds.HasValue && _latestSourceAt.HasValue)
+            {
+                var cutoff = _latestSourceAt.Value - TimeSpan.FromSeconds(seconds.Value);
+                while (_start < _samples.Count && _samples[_start].At < cutoff) RemoveFirst();
+            }
+            else if (_latestLapProgress.HasValue)
+            {
+                var cutoff = _latestLapProgress.Value - LapWindow();
+                while (_start < _samples.Count && _samples[_start].LapProgress is { } progress && progress < cutoff) RemoveFirst();
+            }
+
+            var maximum = MaximumPointCount();
+            while (Count > maximum) RemoveFirst();
+            if (_start > 1024 && _start > _samples.Count / 2)
+            {
+                _samples.RemoveRange(0, _start);
+                _start = 0;
+            }
+        }
+
+        private void RemoveFirst()
+        {
+            if (_start >= _samples.Count) return;
+            var sample = _samples[_start++];
+            if (sample.Value.HasValue && double.IsFinite(sample.Value.Value)) _activeNumericCount--;
+        }
+
+        private void ResetSamples()
+        {
+            _samples.Clear();
+            _start = 0;
+            _activeNumericCount = 0;
+            _latestSourceAt = null;
+            _latestLapAt = null;
+            _latestLapProgress = null;
+            _lapRatePerSecond = 0;
+            _lastArrivalTimestamp = 0;
+        }
+
+        private double? DurationSeconds() => _duration switch
+        {
+            LiveMonitorTrendDuration.Seconds15 => 15,
+            LiveMonitorTrendDuration.Seconds30 => 30,
+            LiveMonitorTrendDuration.Seconds60 => 60,
+            _ => null
+        };
+
+        private double LapWindow() => _duration == LiveMonitorTrendDuration.ThreeLaps ? 3 : 1;
+
+        private int MaximumPointCount()
+        {
+            var seconds = DurationSeconds();
+            return seconds.HasValue
+                ? Math.Clamp((int)Math.Ceiling(seconds.Value * _sourceTickRate) + 8, 64, 36_000)
+                : 36_000;
+        }
+
+        private static double? LapProgress(int? lap, double? distance)
+        {
+            if (!lap.HasValue) return null;
+            if (!distance.HasValue || !double.IsFinite(distance.Value)) return lap.Value;
+            var fraction = distance.Value > 1 ? distance.Value / 100d : distance.Value;
+            return lap.Value + Math.Clamp(fraction, 0, 1);
+        }
+    }
+
+    private sealed record LayoutItem(string Id, string Name)
     {
         public override string ToString() => Name;
     }
-    private sealed record CatalogItem(string MetricId, string Name, string SourceLabel, string Detail, string StylesLabel, string AddAccessibleName);
-    private sealed record NamedOption<T>(T Value, string Label)
-    {
-        public override string ToString() => Label;
-    }
-
-    private static readonly NamedOption<string>[] AccentOptions =
-    [
-        new("default", "Automatic"),
-        new("blue", "Blue"),
-        new("green", "Green"),
-        new("amber", "Amber"),
-        new("coral", "Coral"),
-        new("violet", "Violet")
-    ];
-
-    private static string TrendLabel(LiveMonitorTrendDuration duration) => duration switch
-    {
-        LiveMonitorTrendDuration.Seconds15 => "15 seconds",
-        LiveMonitorTrendDuration.Seconds30 => "30 seconds",
-        LiveMonitorTrendDuration.Seconds60 => "60 seconds",
-        LiveMonitorTrendDuration.OneLap => "1 lap",
-        LiveMonitorTrendDuration.ThreeLaps => "3 laps",
-        _ => duration.ToString()
-    };
-    private static string StyleLabel(LiveMonitorDisplayStyle style) => style switch
-    {
-        LiveMonitorDisplayStyle.Trend => "Chart",
-        LiveMonitorDisplayStyle.Status => "Status",
-        LiveMonitorDisplayStyle.Gauge => "Gauge",
-        LiveMonitorDisplayStyle.Bar => "Bar",
-        _ => "Number"
-    };
-    private sealed record LayoutSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts);
-    private sealed record GridSettingsSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts);
 
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left; public int Top; public int Right; public int Bottom; }
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int value, int size);

@@ -205,18 +205,24 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void Corrective092_PrimaryWorkflowsContainTheQaRequiredImplementations()
+    public void PrimaryWorkflows_ContainTheCurrentRaceAnalysisAndTelemetryImplementations()
     {
         var root = CompanionRoot();
         var ui = Path.Combine(root, "src", "iRacingCoach.UI");
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var traceLayouts = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "AnalysisTraceLayouts.cs"));
+        var cursorInterop = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-telemetry-cursor.js"));
         StringAssert.Contains(telemetry, "<b>@trace.Lap</b>");
-        foreach (var channel in new[] { "Speed", "Time Delta", "Throttle", "Brake", "Calculated tire wear", "Gear", "RPM", "Steering", "Slip / yaw", "Lateral / long. G" })
-            StringAssert.Contains(telemetry, $"\"{channel}\"");
+        foreach (var channel in new[] { "Speed", "Time delta", "Throttle", "Brake", "Calculated tire wear", "Gear", "RPM", "Steering", "Slip angle", "Yaw rate", "Lateral G", "Longitudinal G" })
+            StringAssert.Contains(traceLayouts, $"\"{channel}\"");
+        StringAssert.Contains(traceLayouts, "public const int MaximumRows = 10");
+        StringAssert.Contains(traceLayouts, "Row(\"slip\", \"yaw\")");
+        StringAssert.Contains(traceLayouts, "Row(\"lateral-g\", \"longitudinal-g\")");
         Assert.DoesNotContain("Throttle / brake", telemetry);
         StringAssert.Contains(telemetry, "CalculatedTireWear.Build");
-        StringAssert.Contains(telemetry, "tire-wear\") return (0, Math.Max(.01");
-        StringAssert.Contains(telemetry, "PanelRange(panel)");
+        StringAssert.Contains(telemetry, "SignalPointValue(signal, trace, point)");
+        StringAssert.Contains(telemetry, "SignalRange(signal)");
+        StringAssert.Contains(telemetry, "independent scales");
         StringAssert.Contains(telemetry, "trace-panel-expanded");
         StringAssert.Contains(telemetry, "View traces full screen");
         StringAssert.Contains(telemetry, "args.Key == \"Escape\"");
@@ -251,10 +257,16 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(analysis, "BuildCornerAreas");
         Assert.DoesNotContain("new TrackSegment", analysis);
         StringAssert.Contains(analysis, "UsefulAction");
-        StringAssert.Contains(telemetry, "trace-cursor-tooltip");
-        StringAssert.Contains(telemetry, "@onmouseleave=\"HideChartCursor\"");
-        StringAssert.Contains(telemetry, "@if (ChartHovered)");
-        StringAssert.Contains(telemetry, "DirectionalDegrees");
+        StringAssert.Contains(telemetry, "data-analysis-cursor-layer");
+        Assert.DoesNotContain("@onmousemove=\"ChartMoved\"", telemetry);
+        StringAssert.Contains(cursorInterop, "requestAnimationFrame");
+        StringAssert.Contains(cursorInterop, "trace-cursor-tooltip");
+        StringAssert.Contains(cursorInterop, "updateTrack");
+        StringAssert.Contains(cursorInterop, "replaceChildren");
+        Assert.DoesNotContain("invokeMethodAsync", cursorInterop);
+        Assert.DoesNotContain("AnalysisCursorVisibilityChanged", cursorInterop);
+        Assert.DoesNotContain("AnalysisCursorMoved", cursorInterop);
+        Assert.DoesNotContain("ChartHovered", telemetry);
         StringAssert.Contains(telemetry, "pit-lap-popover");
         StringAssert.Contains(telemetry, "ShowConditionsPopover");
         StringAssert.Contains(telemetry, "lap-conditions-popover");
@@ -296,21 +308,27 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "var hue = 280 * fraction");
         StringAssert.Contains(telemetry, "Math.Abs(lapTime - FastestLapTime) < .0001");
         StringAssert.Contains(telemetry, "return \"#F05CDB\"");
-        StringAssert.Contains(telemetry, "@onwheel=\"ChartWheel\"");
-        StringAssert.Contains(telemetry, "@onwheel:preventDefault");
+        StringAssert.Contains(cursorInterop, "{ passive: false }");
         StringAssert.Contains(telemetry, "TooltipCapacity");
-        StringAssert.Contains(telemetry, "@SelectedAverageLabel");
+        StringAssert.Contains(telemetry, "Average of selected laps");
         StringAssert.Contains(telemetry, "private AggregateSample AverageAt(double percent)");
         StringAssert.Contains(telemetry, "Average(samples.Select(sample => sample.Point!.SpeedMph))");
         StringAssert.Contains(telemetry, "Average(samples.Select(sample => TimeDelta(sample.Trace, sample.Point!)))");
         Assert.DoesNotContain("<span>Lap @PrimaryTrace.Lap</span>", telemetry);
         StringAssert.Contains(telemetry, "TooltipCharacterWidth = 7.1");
-        StringAssert.Contains(telemetry, "private double TooltipWidth(PanelSpec panel)");
-        StringAssert.Contains(telemetry, "widestValue * TooltipCharacterWidth");
+        StringAssert.Contains(cursorInterop, "widest * state.config.tooltipCharacterWidth");
         Assert.DoesNotContain(">Lap @trace.value.Lap</svg:text>", telemetry);
-        StringAssert.Contains(telemetry, "CursorChartX - width - 12 >= PlotLeft");
-        StringAssert.Contains(telemetry, "private const int ChartRowHeight = 82");
+        StringAssert.Contains(cursorInterop, "leftCandidate >= plotStart");
+        StringAssert.Contains(cursorInterop, "getComputedTextLength()");
+        StringAssert.Contains(cursorInterop, "availableTooltipWidth");
+        StringAssert.Contains(telemetry, "private const double TraceRowsHeight = 820");
+        StringAssert.Contains(telemetry, "TraceRowsHeight / Math.Max(1, TraceRows.Count)");
         StringAssert.Contains(telemetry, "iracingCoach.elementSize");
+        StringAssert.Contains(telemetry, "trace-signal-library");
+        StringAssert.Contains(telemetry, "draggable=\"true\"");
+        StringAssert.Contains(telemetry, "@ondrop=\"() => DropTraceSignal");
+        StringAssert.Contains(telemetry, "Already primary");
+        Assert.DoesNotContain("Cannot pair with", telemetry);
         Assert.DoesNotContain("Other laps", telemetry);
         Assert.DoesNotContain("lap-focus-action", telemetry);
 
@@ -334,25 +352,33 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".race-telemetry-page { min-width: 0; container-type: inline-size; }");
         StringAssert.Contains(coachCss, "@container (max-width: 1280px)");
         StringAssert.Contains(coachCss, "grid-template-columns: minmax(424px,38%) minmax(0,1fr)");
+        StringAssert.Contains(coachCss, "@container (max-width: 1060px)");
+        StringAssert.Contains(coachCss, ".telemetry-workstation-grid { width: 100%; min-width: 0; grid-template-columns: minmax(0,1fr); }");
+        StringAssert.Contains(coachCss, "grid-template-columns: minmax(180px,30%) minmax(400px,1fr)");
         StringAssert.Contains(coachCss, "@container (max-width: 960px)");
-        StringAssert.Contains(coachCss, "width: 100%; grid-template-columns: minmax(424px,38%) minmax(0,1fr); zoom: .75;");
+        StringAssert.Contains(coachCss, ".lap-rail { min-width: 0; min-height: 0; max-height: none; contain: size; }");
+        StringAssert.Contains(coachCss, "grid-template-columns: 48px 38px minmax(70px,1fr) 34px 58px");
         StringAssert.Contains(coachCss, "@container (max-width: 760px)");
-        StringAssert.Contains(coachCss, "width: 100%; zoom: .65;");
+        StringAssert.Contains(coachCss, "grid-template-columns: minmax(150px,29%) minmax(400px,1fr)");
+        StringAssert.Contains(coachCss, "@container (max-width: 600px)");
+        Assert.DoesNotContain("zoom:", coachCss, "Responsive analysis must reflow without shrinking text below the app-wide minimum.");
         StringAssert.Contains(coachCss, ".lap-flag.checkered");
         StringAssert.Contains(coachCss, ".sector-square { box-sizing: border-box; flex: 0 0 8px;");
         StringAssert.Contains(coachCss, ".sector-square.unavailable { background: #4E5660; border: 0;");
         StringAssert.Contains(coachCss, ".lap-fuel-column { color: var(--text-primary);");
         Assert.DoesNotContain(".lap-time.condition-hover:hover", coachCss);
-        Assert.DoesNotContain("border-style: dashed", coachCss[coachCss.IndexOf(".sector-square.unavailable", StringComparison.Ordinal)..]);
+        var unavailableSectorRule = Regex.Match(coachCss, @"\.sector-square\.unavailable\s*\{(?<body>[^}]*)\}");
+        Assert.IsTrue(unavailableSectorRule.Success);
+        Assert.DoesNotContain("border-style: dashed", unavailableSectorRule.Groups["body"].Value);
         StringAssert.Contains(coachCss, ".lap-rail-scroll { overflow-x: hidden; overflow-y: auto;");
         StringAssert.Contains(coachCss, "justify-content: flex-end; gap: 2px;");
         Assert.DoesNotContain(".lap-flags .lap-flag + .lap-flag", coachCss);
         StringAssert.Contains(coachCss, ".telemetry-empty-selection");
         Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(coachCss, "font-size:\\s*(9|10)px"));
         Assert.DoesNotContain("<span class=\"lap-state", telemetry);
-        StringAssert.Contains(telemetry, "stroke-width=\"1.35\"");
+        StringAssert.Contains(telemetry, "indexedSignal.Index == 0 ? \"1.35\" : \"1.05\"");
         StringAssert.Contains(telemetry, "140 - (p.Y");
-        StringAssert.Contains(telemetry, "\"brake\" => $\"hsl");
+        StringAssert.Contains(telemetry, "HeatmapColor(normalized, SpeedHeatmapStops)");
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(css, ".event-session-switch .segmented");
         StringAssert.Contains(css, ".analysis-data-switch");
@@ -411,20 +437,44 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
-    public void TrayExit_MarshalsFromTheTrayLoopThenAlwaysReachesShutdown()
+    public void LiveDrivingTraceCanvas_CachesHistoryAndStopsRenderingWhileHidden()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var liveChart = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-chart.js"));
+        var liveVisuals = File.ReadAllText(Path.Combine(ui, "LiveTelemetryVisuals.razor"));
+
+        StringAssert.Contains(liveChart, "requestAnimationFrame");
+        StringAssert.Contains(liveChart, "lowerBound");
+        StringAssert.Contains(liveChart, "dataDirty");
+        StringAssert.Contains(liveChart, "gapThreshold");
+        StringAssert.Contains(liveChart, "cache.segments[bucket] !== previousSegment");
+        StringAssert.Contains(liveChart, "state.disclosure && !state.disclosure.open");
+        StringAssert.Contains(liveChart, "IntersectionObserver");
+        StringAssert.Contains(liveChart, "stopRendering");
+        Assert.DoesNotContain("state.points.filter", liveChart);
+        Assert.DoesNotContain("state.animationFrame = requestAnimationFrame(next => draw", liveChart);
+        StringAssert.Contains(liveVisuals, "InvokeAsync<bool>(\"iracingCoachLiveTelemetryChart.append\"");
+        StringAssert.Contains(liveVisuals, "if (chartVisible && Stopwatch.GetElapsedTime");
+    }
+
+    [TestMethod]
+    public void TrayExit_ArmsAnUncancellableHardDeadlineBeforeCleanup()
     {
         var appRoot = Path.Combine(CompanionRoot(), "src", "iRacingCoach.App");
         var window = File.ReadAllText(Path.Combine(appRoot, "MainWindow.xaml.cs"));
         var requestStart = window.IndexOf("private void RequestExit()", StringComparison.Ordinal);
         var disposeStart = window.IndexOf("public void DisposeApplication()", StringComparison.Ordinal);
         var request = window[requestStart..disposeStart];
+        StringAssert.Contains(request, "App.ArmExitDeadline();");
         StringAssert.Contains(request, "if (!Dispatcher.CheckAccess())");
         StringAssert.Contains(request, "new Action(RequestExit)");
         StringAssert.Contains(request, "if (_exitRequested) return;");
-        StringAssert.Contains(request, "HideForApplicationExit();");
+        StringAssert.Contains(request, "ExitRequested?.Invoke();");
+        Assert.DoesNotContain("HideForApplicationExit();", request);
         StringAssert.Contains(request, "Dispatcher.BeginInvoke(DispatcherPriority.Send");
 
         var disposal = window[disposeStart..window.IndexOf("private void ApplyDarkTitleBar()", disposeStart, StringComparison.Ordinal)];
+        StringAssert.Contains(disposal, "HideForApplicationExit();");
         StringAssert.Contains(disposal, "TryCleanup(Close, \"close main window\")");
         StringAssert.Contains(disposal, "TryCleanup(_state.Dispose, \"stop application services\")");
         Assert.IsLessThan(disposal.IndexOf("TryCleanup(_state.Dispose", StringComparison.Ordinal), disposal.IndexOf("TryCleanup(Close", StringComparison.Ordinal));
@@ -433,9 +483,20 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(application, "Interlocked.Exchange(ref _exitStarted, 1)");
         StringAssert.Contains(application, "TimeSpan.FromSeconds(5)");
         StringAssert.Contains(application, "Shutdown(0)");
+        StringAssert.Contains(application, "static _ => ForceTerminateProcess()");
+        StringAssert.Contains(application, "current.Kill(entireProcessTree: true)");
+        StringAssert.Contains(application, "current.Kill();");
+        StringAssert.Contains(application, "if (Volatile.Read(ref _exitDeadlineArmed) == 0) _exitWatchdog?.Dispose()");
         Assert.HasCount(2, System.Text.RegularExpressions.Regex.Matches(application, "Environment\\.Exit\\(0\\)"));
         StringAssert.Contains(application, "finally");
-        Assert.IsLessThan(application.LastIndexOf("Environment.Exit(0)", StringComparison.Ordinal), application.IndexOf("Shutdown(0)", StringComparison.Ordinal));
+        var exitStart = application.IndexOf("private void ExitApplication()", StringComparison.Ordinal);
+        var onExitStart = application.IndexOf("protected override void OnExit", exitStart, StringComparison.Ordinal);
+        var exitMethod = application[exitStart..onExitStart];
+        Assert.IsLessThan(exitMethod.IndexOf("_mainWindow?.DisposeApplication()", StringComparison.Ordinal), exitMethod.IndexOf("ArmExitDeadline();", StringComparison.Ordinal));
+        Assert.IsLessThan(request.IndexOf("if (!Dispatcher.CheckAccess())", StringComparison.Ordinal), request.IndexOf("App.ArmExitDeadline();", StringComparison.Ordinal));
+        var onExitEnd = application.IndexOf("private static void ForceTerminateProcess()", onExitStart, StringComparison.Ordinal);
+        var onExitMethod = application[onExitStart..onExitEnd];
+        Assert.DoesNotContain("\n            _exitWatchdog?.Dispose();", onExitMethod);
     }
 
     [TestMethod]

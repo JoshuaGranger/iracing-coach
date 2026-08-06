@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current implementation snapshot](06-reality/implementation-snapshot-post-0.11.1-race-analysis.md)
+7. [Current implementation snapshot](06-reality/implementation-snapshot-0.13.0.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -50,7 +50,9 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Acceptance, test, and release](05-quality/acceptance-test-and-release.md)
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
 - `06-reality`
-  - [Current-main Race Analysis snapshot](06-reality/implementation-snapshot-post-0.11.1-race-analysis.md)
+  - [Current implementation snapshot: 0.13.0](06-reality/implementation-snapshot-0.13.0.md)
+  - [Superseded post-0.12.0 development snapshot](06-reality/implementation-snapshot-post-0.12.0-major-iteration.md)
+  - [Prior current-main Race Analysis snapshot](06-reality/implementation-snapshot-post-0.11.1-race-analysis.md)
   - [Implementation snapshot: 0.11.1](06-reality/implementation-snapshot-0.11.1.md)
   - [Prior implementation snapshot: 0.11.0](06-reality/implementation-snapshot-0.11.0.md)
   - [Prior implementation snapshot: 0.10.0](06-reality/implementation-snapshot-0.10.0.md)
@@ -78,11 +80,11 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 
 ## Current baseline
 
-- Application version: post-`0.11.1` current-main development candidate; no new package version is claimed by the Race Analysis round
+- Application version: versioned `0.13.0` source baseline; final installer/package identity remains explicitly pending in the current snapshot until measured artifact fields are filled
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Local verification: 75 .NET tests plus the handoff Python/contract baseline pass on current main
-- Installer lifecycle: local guarded install/upgrade/rollback/uninstall verification passed
-- Current focused acceptance: Home and Race Analysis fixture interaction plus repository tests verified; broader real-session and packaged-release evidence remains scoped per change
+- Local verification: integrated runs recorded 108/108 .NET tests, 175/175 Python tests, four JavaScript syntax checks, and a Release application build with zero warnings and zero errors
+- Installer lifecycle: prior guarded install/upgrade/rollback/uninstall evidence is unchanged and was not rerun for every focused UI adjustment
+- Current focused evidence: equal-share live layouts, occupied-tile replacement, incremental display-only popout rendering, foreground-gated schema-5 Home cache work, responsive configurable Race Analysis traces, DOM-owned Race cursor interaction, and compact Settings have local evidence; exact post-fix tray-runtime evidence and final artifact hashes are marked pending, while real-session cadence, combined-load performance, 244 Hz, broad derived-sideslip validation, and user acceptance remain open
 
-The current Race Analysis implementation is summarized in `06-reality/implementation-snapshot-post-0.11.1-race-analysis.md`. The 0.11.1 artifact evidence remains in `06-reality/implementation-snapshot-0.11.1.md` and `companion-app/RELEASE_0.11.1.md`. Unchanged installer lifecycle behavior was deliberately not re-certified for this focused UI iteration. Build binaries and private user data are not part of the source repository.
+The current reality is summarized in `06-reality/implementation-snapshot-0.13.0.md`. Its `PENDING_FINAL_*` and `PENDING_EXACT_*` fields are explicit release blockers, not implied passes. Earlier Race Analysis and artifact evidence remain in their immutable prior snapshots and release records. Unchanged installer lifecycle behavior was deliberately not re-certified for every focused UI adjustment. Build binaries and private user data are not part of the source repository.

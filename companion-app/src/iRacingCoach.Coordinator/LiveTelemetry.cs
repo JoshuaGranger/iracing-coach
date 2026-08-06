@@ -72,6 +72,9 @@ public sealed class LiveTelemetryService : IDisposable
     private int _busy;
     private DateTimeOffset _lastPublish = DateTimeOffset.MinValue;
     private DateTimeOffset _lastHistorySnapshot = DateTimeOffset.MinValue;
+    private long _sessionEpoch;
+    private int? _lastConnectedLap;
+    private DateTimeOffset? _lastConnectedTimestamp;
 
     public LiveTelemetryService(ILiveTelemetrySource source, LiveMonitorLayout layout)
     {
@@ -109,6 +112,13 @@ public sealed class LiveTelemetryService : IDisposable
             var started = Stopwatch.GetTimestamp();
             if (_source.TryRead(out var sample))
             {
+                var sessionChanged = ObserveSessionBoundary(sample);
+                if (sessionChanged)
+                {
+                    _history.Clear();
+                    _historySnapshot = [];
+                    _lastHistorySnapshot = sample.Timestamp;
+                }
                 var snapshot = _engine.Update(sample, Current.Layout.SafeGlanceEnabled, CoachingPaused);
                 var latency = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 LiveTracePoint? tracePoint = null;
@@ -163,7 +173,7 @@ public sealed class LiveTelemetryService : IDisposable
                 }
                 lock (_gate)
                 {
-                    Current = new LiveMonitorState(snapshot, Current.Layout, CoachingPaused, ++_framesRead, _droppedFrames, latency, DateTimeOffset.UtcNow, _historySnapshot, sample.TickRate);
+                    Current = new LiveMonitorState(snapshot, Current.Layout, CoachingPaused, ++_framesRead, _droppedFrames, latency, DateTimeOffset.UtcNow, _historySnapshot, sample.TickRate, _sessionEpoch);
                 }
                 _lastPublish = DateTimeOffset.UtcNow;
                 if (tracePoint is not null) FrameCaptured?.Invoke(tracePoint);
@@ -174,11 +184,12 @@ public sealed class LiveTelemetryService : IDisposable
                 var snapshot = Current.Snapshot;
                 if (snapshot.Connected && DateTimeOffset.UtcNow - snapshot.SourceTimestamp > TimeSpan.FromSeconds(2))
                 {
+                    MarkDisconnectedBoundary();
                     snapshot = LiveTelemetryEngine.Disconnected("Live telemetry became stale.");
                 }
                 lock (_gate)
                 {
-                    Current = Current with { Snapshot = snapshot, DroppedFrames = _droppedFrames, UpdatedAt = DateTimeOffset.UtcNow };
+                    Current = Current with { Snapshot = snapshot, DroppedFrames = _droppedFrames, UpdatedAt = DateTimeOffset.UtcNow, SessionEpoch = _sessionEpoch };
                 }
                 _lastPublish = DateTimeOffset.UtcNow;
                 Updated?.Invoke(Current);
@@ -186,9 +197,10 @@ public sealed class LiveTelemetryService : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
         {
+            MarkDisconnectedBoundary();
             lock (_gate)
             {
-                Current = Current with { Snapshot = LiveTelemetryEngine.Disconnected("The local iRacing telemetry stream could not be read."), UpdatedAt = DateTimeOffset.UtcNow };
+                Current = Current with { Snapshot = LiveTelemetryEngine.Disconnected("The local iRacing telemetry stream could not be read."), UpdatedAt = DateTimeOffset.UtcNow, SessionEpoch = _sessionEpoch };
             }
             Updated?.Invoke(Current);
         }
@@ -196,6 +208,30 @@ public sealed class LiveTelemetryService : IDisposable
         {
             Volatile.Write(ref _busy, 0);
         }
+    }
+
+    private bool ObserveSessionBoundary(LiveTelemetrySample sample)
+    {
+        if (!sample.Connected)
+        {
+            MarkDisconnectedBoundary();
+            return false;
+        }
+
+        var sessionChanged = !Current.Snapshot.Connected ||
+            (_lastConnectedTimestamp.HasValue && sample.Timestamp < _lastConnectedTimestamp.Value) ||
+            (_lastConnectedLap.HasValue && sample.Lap.HasValue && sample.Lap.Value < _lastConnectedLap.Value);
+        if (sessionChanged) _sessionEpoch++;
+        _lastConnectedTimestamp = sample.Timestamp;
+        if (sample.Lap.HasValue) _lastConnectedLap = sample.Lap;
+        return sessionChanged;
+    }
+
+    private void MarkDisconnectedBoundary()
+    {
+        if (Current.Snapshot.Connected) _sessionEpoch++;
+        _lastConnectedTimestamp = null;
+        _lastConnectedLap = null;
     }
 
     public void Dispose()

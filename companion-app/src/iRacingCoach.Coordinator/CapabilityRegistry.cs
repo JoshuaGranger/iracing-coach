@@ -186,7 +186,7 @@ public static class CapabilityRegistry
         {
             Supported(ProductCapability.Home, "Home", "Choose a useful current workflow", "Local application state"),
             Supported(ProductCapability.LiveTelemetry, "Live telemetry", "See trustworthy current race data", "iRacing SDK shared memory", "Waiting for iRacing; automatic reconnect"),
-            Supported(ProductCapability.LiveMonitor, "Live Monitor", "Keep glanceable race cues above iRacing", "Validated live telemetry snapshot"),
+            Supported(ProductCapability.LiveMonitor, "Telemetry popout", "Keep glanceable race cues above iRacing", "Validated live telemetry snapshot"),
             Supported(ProductCapability.RaceAnalysis, "Race analysis", "Turn a finalized race recording into deterministic coaching", "Local IBT analysis and archived Race Cards", "Analysis in progress; background job status remains visible"),
             ConditionalDefinition(ProductCapability.RacePlanning, "Race planning", "Reuse comparable personal race history", "Analyzed local race history", "At least one recorded race"),
             Supported(ProductCapability.SetupLibrary, "Setup library", "Find and identify local setup files without modifying them", "Read-only .sto discovery"),
