@@ -76,6 +76,7 @@
                          style="@TileStyle(tile, definition)"
                          data-live-tile
                          data-tile-id="@tile.Id"
+                         data-metric-name="@definition.Name"
                          data-row="@tile.Row"
                          data-column="@tile.Column"
                          data-row-span="@tile.RowSpan"
@@ -240,7 +241,7 @@
                         }
                         @foreach (var metric in FilteredCatalog)
                         {
-                            <article class="toolbox-metric-card" data-live-catalog-item data-live-drag-metric="@metric.Id" data-metric-id="@metric.Id" title="Drag @metric.Name onto the grid">
+                            <article class="toolbox-metric-card" data-live-catalog-item data-live-drag-metric="@metric.Id" data-metric-id="@metric.Id" data-metric-name="@metric.Name" title="Drag @metric.Name onto the grid">
                                 <span class="metric-drag-handle" aria-hidden="true"><ProductIcon Name="grip" Size="15" /></span>
                                 <div><strong>@metric.Name</strong><small>@SourceLabel(metric.Source) - @StyleSummary(metric)</small></div>
                                 <button type="button" class="metric-add-button" data-live-no-drag aria-label="Add @metric.Name to the first available grid space" title="Add to dashboard" @onclick="() => AddMetric(metric.Id)"><ProductIcon Name="plus" Size="16" /></button>
@@ -453,6 +454,25 @@
         {
             string? tileId = null;
             result = TryMutation(() => LiveMonitorLayouts.TryAddMetric(LiveMonitorLayouts.EnsureEditable(Preferences), metricId, row, column, out tileId), $"{LiveTelemetryCatalog.Get(metricId).Name} added at column {column + 1}, row {row + 1}.", "That widget cannot fit in this grid.");
+            if (result) _selectedTileId = tileId;
+            StateHasChanged();
+        });
+        return result;
+    }
+
+    [JSInvokable]
+    public async Task<bool> ReplaceMetric(string tileId, string metricId)
+    {
+        var result = false;
+        await InvokeAsync(() =>
+        {
+            var current = Active.Tiles.FirstOrDefault(tile => tile.Id == tileId);
+            if (current is null || !LiveTelemetryCatalog.TryGet(current.MetricId, out var replaced) || !LiveTelemetryCatalog.TryGet(metricId, out var replacement)) return;
+            if (string.Equals(current.MetricId, metricId, StringComparison.Ordinal)) { result = true; return; }
+            result = TryMutation(
+                () => LiveMonitorLayouts.TryReplaceMetric(LiveMonitorLayouts.EnsureEditable(Preferences), tileId, metricId),
+                $"{replaced.Name} replaced with {replacement.Name}.",
+                "That widget is no longer available.");
             if (result) _selectedTileId = tileId;
             StateHasChanged();
         });

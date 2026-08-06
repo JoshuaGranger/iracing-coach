@@ -144,6 +144,23 @@ public static class LiveMonitorLayouts
         return true;
     }
 
+    public static bool TryReplaceMetric(LiveMonitorNamedLayout layout, string tileId, string metricId)
+    {
+        if (!LiveTelemetryCatalog.TryGet(metricId, out var definition)) return false;
+        var candidate = Clone(layout);
+        var tile = candidate.Tiles.FirstOrDefault(item => item.Id == tileId);
+        if (tile is null || string.Equals(tile.MetricId, metricId, StringComparison.Ordinal)) return false;
+
+        tile.MetricId = metricId;
+        tile.DisplayStyle = definition.DefaultStyle;
+        tile.Unit = definition.DefaultUnit;
+        tile.Precision = definition.DefaultPrecision;
+        tile.TrendDuration = LiveMonitorTrendDuration.Seconds30;
+        tile.Accent = "default";
+        CopyInto(candidate, layout);
+        return true;
+    }
+
     public static bool TryMoveTile(LiveMonitorNamedLayout layout, string tileId, int row, int column)
     {
         var tile = layout.Tiles.FirstOrDefault(item => item.Id == tileId);

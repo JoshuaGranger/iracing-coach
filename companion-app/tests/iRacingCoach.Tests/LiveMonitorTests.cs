@@ -180,6 +180,57 @@ public sealed class LiveMonitorTests
     }
 
     [TestMethod]
+    public void ReplaceMetric_PreservesFootprintAndResetsDisplayForTheNewTelemetry()
+    {
+        var layout = new LiveMonitorNamedLayout
+        {
+            Id = "replacement-layout",
+            Name = "Replacement layout",
+            Rows = 3,
+            Columns = 3,
+            Tiles =
+            [
+                new LiveMonitorTile
+                {
+                    Id = "target",
+                    MetricId = "speed",
+                    Row = 1,
+                    Column = 1,
+                    RowSpan = 2,
+                    ColumnSpan = 2,
+                    DisplayStyle = LiveMonitorDisplayStyle.Trend,
+                    Unit = "kph",
+                    Precision = 3,
+                    TrendDuration = LiveMonitorTrendDuration.ThreeLaps,
+                    Accent = "violet"
+                },
+                Tile("neighbor", "rpm", 0, 0)
+            ]
+        };
+        var definition = LiveTelemetryCatalog.Get("brake");
+
+        Assert.IsTrue(LiveMonitorLayouts.TryReplaceMetric(layout, "target", "brake"));
+
+        var replaced = layout.Tiles.Single(tile => tile.Id == "target");
+        Assert.AreEqual("brake", replaced.MetricId);
+        Assert.AreEqual(1, replaced.Row);
+        Assert.AreEqual(1, replaced.Column);
+        Assert.AreEqual(2, replaced.RowSpan);
+        Assert.AreEqual(2, replaced.ColumnSpan);
+        Assert.AreEqual(definition.DefaultStyle, replaced.DisplayStyle);
+        Assert.AreEqual(definition.DefaultUnit, replaced.Unit);
+        Assert.AreEqual(definition.DefaultPrecision, replaced.Precision);
+        Assert.AreEqual(LiveMonitorTrendDuration.Seconds30, replaced.TrendDuration);
+        Assert.AreEqual("default", replaced.Accent);
+        AssertNoOverlap(layout);
+
+        var beforeInvalidReplacement = LayoutFingerprint(layout);
+        Assert.IsFalse(LiveMonitorLayouts.TryReplaceMetric(layout, "missing", "throttle"));
+        Assert.IsFalse(LiveMonitorLayouts.TryReplaceMetric(layout, "target", "missing"));
+        Assert.AreEqual(beforeInvalidReplacement, LayoutFingerprint(layout));
+    }
+
+    [TestMethod]
     public void TelemetryCatalog_IsAlphabetizedTypedAndNeverSubstitutesZeroForMissingData()
     {
         var names = LiveTelemetryCatalog.All.Select(definition => definition.Name).ToArray();
@@ -484,20 +535,22 @@ public sealed class LiveMonitorTests
         var script = File.ReadAllText(scriptPath);
         foreach (var pointerContract in new[] { "pointerdown", "pointermove", "pointerup", "setPointerCapture", "getBoundingClientRect" })
             StringAssert.Contains(script, pointerContract);
-        foreach (var snapContract in new[] { "snapHysteresis", "data-live-resize", "CommitTilePlacement", "DropMetric", "requestAnimationFrame", "Escape", "placementCanPack", "state.committing", "lostpointercapture", "windowBlur", "autoScroll" })
+        foreach (var snapContract in new[] { "snapHysteresis", "data-live-resize", "CommitTilePlacement", "DropMetric", "ReplaceMetric", "requestAnimationFrame", "Escape", "placementCanPack", "state.committing", "lostpointercapture", "windowBlur", "autoScroll", "document.elementFromPoint", "tileElement.getBoundingClientRect()", "tileAtPointer", "tileAtCell", "finalTarget", "replacementTileId", "Replace ${target.name} with ${session.metricName}" })
             StringAssert.Contains(script, snapContract);
         StringAssert.Contains(script, "event.target.closest(\"[data-live-drag-tile]\")");
         StringAssert.Contains(script, "const viewport = state.root.querySelector(\"[data-live-grid-viewport]\")");
         StringAssert.Contains(script, "Math.min(availableWidth / columns, availableHeight / rows)");
         StringAssert.Contains(script, "grid.style.width = `${width}px`");
         StringAssert.Contains(script, "grid.style.height = `${height}px`");
-        StringAssert.Contains(script, "? `${placement.columnSpan} x ${placement.rowSpan}`");
+        StringAssert.Contains(script, "replacementMessage || `${placement.columnSpan} x ${placement.rowSpan}`");
         Assert.IsFalse(script.Contains("- ready", StringComparison.OrdinalIgnoreCase), "A resize preview should show only the occupied grid size.");
         StringAssert.Contains(script, "const noDragTarget = event.target.closest(\"[data-live-no-drag]\")");
         StringAssert.Contains(script, "const metricHandle = noDragTarget ? null : event.target.closest(\"[data-live-drag-metric]\")");
         StringAssert.Contains(script, "event.preventDefault()");
         StringAssert.Contains(host, "live-telemetry-layout.js");
         StringAssert.Contains(previewHost, "live-telemetry-layout.js");
+        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.12.0-replace-preview");
+        StringAssert.Contains(previewHost, "live-telemetry-layout.js?v=0.12.0-replace-preview");
 
         foreach (var interactionHook in new[]
         {

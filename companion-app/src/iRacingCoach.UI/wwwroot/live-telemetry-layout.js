@@ -98,11 +98,28 @@
   function tileData(tile) {
     return {
       id: tile.dataset.tileId,
+      name: tile.dataset.metricName || "widget",
       row: number(tile.dataset.row, 0),
       column: number(tile.dataset.column, 0),
       rowSpan: Math.max(1, number(tile.dataset.rowSpan, 1)),
       columnSpan: Math.max(1, number(tile.dataset.columnSpan, 1))
     };
+  }
+
+  function tileAtCell(state, row, column) {
+    return Array.from(state.root.querySelectorAll("[data-live-tile]"), tileData)
+      .find(tile => row >= tile.row && row < tile.row + tile.rowSpan && column >= tile.column && column < tile.column + tile.columnSpan) || null;
+  }
+
+  function tileAtPointer(state, event, row, column) {
+    for (const tileElement of state.root.querySelectorAll("[data-live-tile]")) {
+      const rect = tileElement.getBoundingClientRect();
+      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) return tileData(tileElement);
+    }
+    const hoveredElement = document.elementFromPoint(event.clientX, event.clientY);
+    const hoveredTile = hoveredElement?.closest?.("[data-live-tile]");
+    if (hoveredTile) return tileData(hoveredTile);
+    return tileAtCell(state, row, column);
   }
 
   function placementCanPack(state, session, placement, metrics) {
@@ -184,7 +201,7 @@
     };
   }
 
-  function updatePreview(session, metrics, placement, valid, invalidMessage = "No room at this size") {
+  function updatePreview(session, metrics, placement, valid, invalidMessage = "No room at this size", replacementMessage = null) {
     if (!session.preview) {
       session.preview = document.createElement("div");
       session.preview.className = "live-grid-drop-preview";
@@ -197,8 +214,9 @@
     session.preview.style.width = `${Math.round(rect.width)}px`;
     session.preview.style.height = `${Math.round(rect.height)}px`;
     session.preview.classList.toggle("invalid", !valid);
+    session.preview.classList.toggle("replacement", valid && replacementMessage !== null);
     session.preview.querySelector("span").textContent = valid
-      ? `${placement.columnSpan} x ${placement.rowSpan}`
+      ? replacementMessage || `${placement.columnSpan} x ${placement.rowSpan}`
       : invalidMessage;
     session.placement = placement;
     session.valid = valid;
@@ -245,6 +263,13 @@
     session.targetColumn = placement.column;
     session.targetRow = placement.row;
     const inside = pointerInsideGrid(event, metrics);
+    const target = inside ? tileAtPointer(state, event, placement.row, placement.column) : null;
+    session.replacementTileId = target?.id || null;
+    if (target) {
+      const replacementPlacement = { row: target.row, column: target.column, rowSpan: target.rowSpan, columnSpan: target.columnSpan };
+      updatePreview(session, metrics, replacementPlacement, true, "", `Replace ${target.name} with ${session.metricName}`);
+      return;
+    }
     updatePreview(session, metrics, placement, inside && placementCanPack(state, session, placement, metrics), inside ? "No room at this size" : "Move over dashboard");
   }
 
@@ -355,6 +380,19 @@
     const session = state.session;
     if (!session || event.pointerId !== undefined && event.pointerId !== session.pointerId) return;
     state.session = null;
+    if (!cancelled && session.active && session.kind === "metric") {
+      const metrics = gridMetrics(state);
+      if (metrics && pointerInsideGrid(event, metrics)) {
+        const finalColumn = clamp(Math.floor((event.clientX - metrics.contentLeft) / metrics.columnStep), 0, metrics.columns - 1);
+        const finalRow = clamp(Math.floor((event.clientY - metrics.contentTop) / metrics.rowStep), 0, metrics.rows - 1);
+        const finalTarget = tileAtPointer(state, event, finalRow, finalColumn);
+        if (finalTarget) {
+          session.replacementTileId = finalTarget.id;
+          session.placement = { row: finalTarget.row, column: finalTarget.column, rowSpan: finalTarget.rowSpan, columnSpan: finalTarget.columnSpan };
+          session.valid = true;
+        }
+      }
+    }
     if (cancelled || !session.active || !session.valid || !session.placement) {
       removeGestureVisuals(state, session);
       return;
@@ -367,7 +405,9 @@
     let succeeded = false;
     try {
       succeeded = session.kind === "metric"
-        ? await state.dotnet.invokeMethodAsync("DropMetric", session.metricId, placement.row, placement.column)
+        ? session.replacementTileId
+          ? await state.dotnet.invokeMethodAsync("ReplaceMetric", session.replacementTileId, session.metricId)
+          : await state.dotnet.invokeMethodAsync("DropMetric", session.metricId, placement.row, placement.column)
         : await state.dotnet.invokeMethodAsync("CommitTilePlacement", session.original.id, placement.row, placement.column, placement.rowSpan, placement.columnSpan);
     } catch (_) {
       succeeded = false;
@@ -415,6 +455,7 @@
       sourceRect: tile ? tile.getBoundingClientRect() : capture.getBoundingClientRect(),
       original,
       metricId: metricHandle ? metricHandle.dataset.liveDragMetric : null,
+      metricName: metricHandle ? metricHandle.dataset.metricName || metricHandle.closest("[data-live-catalog-item]")?.dataset.metricName || "widget" : null,
       edge: resizeHandle ? resizeHandle.dataset.liveResize : null,
       targetColumn: original ? original.column : 0,
       targetRow: original ? original.row : 0,
@@ -424,7 +465,8 @@
       valid: false,
       placement: null,
       ghost: null,
-      preview: null
+      preview: null,
+      replacementTileId: null
     };
   }
 
