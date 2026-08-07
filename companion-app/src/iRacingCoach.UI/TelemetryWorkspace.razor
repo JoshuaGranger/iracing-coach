@@ -14,12 +14,27 @@
     }
     else
     {
-        <div class="telemetry-workstation-grid">
-        <aside class="lap-rail" aria-label="Runs and laps">
+        <div class="telemetry-workstation-grid @(LapRailCollapsed ? "laps-collapsed" : null)">
+        <aside class="lap-rail" aria-labelledby="lap-rail-title">
             <div class="lap-rail-header">
-                <strong>Laps &amp; runs</strong><span>@Selected.Count selected</span>
+                <strong id="lap-rail-title">Laps &amp; runs</strong><span>@Selected.Count selected</span>
                 <label class="clean-lap-filter"><input type="checkbox" checked="@CleanLapsOnly" @onchange="CleanLapFilterChanged" /> Clean laps</label>
+                <button type="button"
+                        class="lap-rail-toggle"
+                        aria-controls="race-lap-rail-content"
+                        aria-expanded="@(!LapRailCollapsed)"
+                        aria-label="@(LapRailCollapsed ? "Show Laps and runs" : "Hide Laps and runs")"
+                        title="@(LapRailCollapsed ? "Show Laps and runs" : "Hide Laps and runs")"
+                        @onclick="ToggleLapRail">
+                    <ProductIcon Name="chevron-up" Size="15" />
+                    <span class="lap-rail-toggle-label">Laps</span>
+                    <span class="lap-rail-toggle-count">@Selected.Count</span>
+                </button>
             </div>
+            <div id="race-lap-rail-content"
+                 class="lap-rail-content"
+                 aria-hidden="@LapRailCollapsed"
+                 inert="@(LapRailCollapsed ? string.Empty : null)">
             <div class="lap-rail-scroll">
                 @foreach (var indexedGroup in LapGroups.Select((group, index) => new { Group = group, Index = index }))
                 {
@@ -119,6 +134,7 @@
                 }
             </div>
             <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ClearSelection">Clear</button><button class="text-button" @onclick="ShowAllLaps">Show all</button></div>
+            </div>
         </aside>
 
         @if (Selected.Count == 0)
@@ -244,26 +260,28 @@
                         @foreach (var panel in TraceRows)
                         {
                             var helpId = $"trace-row-help-{panel.Preferences.Id}";
-                            <div class="trace-row-label-shell @(SelectedTraceRow?.Id == panel.Preferences.Id ? "selected" : null)"
+                            <div class="trace-row-label-shell"
+                                 @key="panel.Preferences.Id"
                                  data-analysis-row-target="label"
                                  data-row-id="@panel.Preferences.Id"
                                  data-row-index="@TraceLayout.Rows.FindIndex(row => row.Id == panel.Preferences.Id)"
                                  data-row-name="@RowLabel(panel)"
                                  data-primary-name="@panel.Signals[0].Name"
                                  data-secondary-name="@(panel.Signals.Count > 1 ? panel.Signals[1].Name : string.Empty)">
-                                <button type="button"
-                                        class="trace-row-label-trigger"
-                                        data-analysis-drag-row="@panel.Preferences.Id"
-                                        data-row-id="@panel.Preferences.Id"
-                                        data-row-name="@RowLabel(panel)"
-                                        aria-describedby="@helpId"
-                                        aria-label="@RowHelp(panel)"
-                                        title=""
-                                        @onclick="() => SelectTraceRow(panel.Preferences.Id)"
-                                        @onkeydown="args => HandleTraceRowKeyDown(panel.Preferences.Id, args)">
+                                <div class="trace-row-label-trigger"
+                                     tabindex="0"
+                                     role="group"
+                                     data-analysis-drag-row="@panel.Preferences.Id"
+                                     data-row-id="@panel.Preferences.Id"
+                                     data-row-name="@RowLabel(panel)"
+                                     aria-describedby="@helpId"
+                                     aria-label="@($"{RowLabel(panel)} chart")"
+                                     title=""
+                                     @onfocus="() => ActivateTraceRow(panel.Preferences.Id)"
+                                     @onkeydown="args => HandleTraceRowKeyDown(panel.Preferences.Id, args)">
                                     @if (TraceToolboxOpen) { <ProductIcon Name="grip" Size="14" /> }
                                     <span class="trace-row-label-copy"><strong>@RowLabel(panel)</strong><span class="trace-row-unit">@RowUnit(panel)</span></span>
-                                </button>
+                                </div>
                                 <span id="@helpId" class="trace-row-label-tooltip" role="tooltip">@RowHelp(panel)</span>
                             </div>
                         }
@@ -311,6 +329,7 @@
     private string? _analysisId;
     private string Mode { get; set; } = "speed";
     private bool CleanLapsOnly { get; set; }
+    private bool LapRailCollapsed { get; set; }
     private bool TraceExpanded { get; set; }
     private bool TraceToolboxOpen { get; set; }
     private string _traceSignalSearch = string.Empty;
@@ -362,6 +381,7 @@
         _ = AnalysisTraceLayouts.ValidateAndRepair(State.Settings.RaceAnalysisTraces);
         if (_analysisId == Workspace.AnalysisId) return;
         _analysisId = Workspace.AnalysisId;
+        LapRailCollapsed = false;
         ResetSelection();
         RebuildCalculatedTireWear();
         _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
@@ -390,6 +410,7 @@
     {
         TraceExpanded = !TraceExpanded;
     }
+    private void ToggleLapRail() => LapRailCollapsed = !LapRailCollapsed;
     private void ToggleTraceToolbox()
     {
         TraceToolboxOpen = !TraceToolboxOpen;
@@ -530,7 +551,10 @@
             signal.Unit.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase))
         .ToArray();
     private TracePanelRow? PanelFor(AnalysisTraceRow row) => TraceRows.FirstOrDefault(panel => string.Equals(panel.Preferences.Id, row.Id, StringComparison.Ordinal));
-    private void SelectTraceRow(string rowId) => _selectedTraceRowId = rowId;
+    private void ActivateTraceRow(string rowId)
+    {
+        if (TraceToolboxOpen) _selectedTraceRowId = rowId;
+    }
     private void ResetTraceLayout()
     {
         TraceLayout.Rows.Clear();
@@ -564,7 +588,11 @@
         if (!args.AltKey || args.Key is not ("ArrowUp" or "ArrowDown")) return;
         var index = TraceLayout.Rows.FindIndex(row => string.Equals(row.Id, rowId, StringComparison.Ordinal));
         var target = index + (args.Key == "ArrowUp" ? -1 : 1);
-        if (AnalysisTraceLayouts.MoveRowToIndex(TraceLayout, rowId, target)) SaveTraceLayout();
+        if (AnalysisTraceLayouts.MoveRowToIndex(TraceLayout, rowId, target))
+        {
+            _selectedTraceRowId = rowId;
+            SaveTraceLayout();
+        }
     }
     private void HandleTraceSignalKeyDown(string signalId, KeyboardEventArgs args)
     {

@@ -420,8 +420,14 @@ input:hover, select:hover, textarea:hover { border-color: var(--text-muted); }
 .telemetry-mode { display: flex; border: 1px solid var(--border-strong); border-radius: var(--radius-control); overflow: hidden; }.segmented { border: 0; border-right: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-secondary); padding: 7px 11px; cursor: pointer; }.segmented:last-child { border-right: 0; }.segmented:hover { background: var(--surface-hover); }.segmented.selected { color: #fff; background: var(--accent-fill); }
 .lap-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: var(--space-3); }.picker-label { color: var(--text-muted); margin-right: 4px; }.lap-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); padding: 6px 10px; cursor: pointer; }.lap-chip small { color: var(--text-muted); }.lap-chip.selected { color: var(--text-primary); border-color: var(--border-strong); background: var(--surface-3); }.lap-color { width: 8px; height: 8px; border-radius: 50%; opacity: .35; }.lap-chip.selected .lap-color { opacity: 1; }
 .telemetry-workstation-grid { display: grid; grid-template-columns: 230px minmax(0,1fr); gap: var(--space-3); align-items: stretch; }
-.lap-rail { display: grid; grid-template-rows: auto minmax(0,1fr) auto; min-height: 610px; max-height: 720px; overflow: hidden; background: var(--chart-background); border: 1px solid var(--border-subtle); border-radius: var(--radius-control); }
-.lap-rail-header { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 8px; min-height: 42px; padding: 7px 10px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-2); }.lap-rail-header span,.lap-rail-header label { color: var(--text-muted); font-size: var(--font-size-min); }.clean-lap-filter { display: flex; align-items: center; gap: 6px; cursor: pointer; }.clean-lap-filter input { width: 14px; height: 14px; accent-color: var(--accent); }
+.lap-rail { display: grid; grid-template-rows: auto minmax(0,1fr); min-height: 610px; max-height: 720px; overflow: hidden; background: var(--chart-background); border: 1px solid var(--border-subtle); border-radius: var(--radius-control); }
+.lap-rail-header { display: grid; grid-template-columns: minmax(0,1fr) auto auto auto; align-items: center; gap: 8px; min-height: 42px; padding: 7px 10px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-2); }.lap-rail-header span,.lap-rail-header label { color: var(--text-muted); font-size: var(--font-size-min); }.clean-lap-filter { display: flex; align-items: center; gap: 6px; cursor: pointer; }.clean-lap-filter input { width: 14px; height: 14px; accent-color: var(--accent); }
+.lap-rail-content { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0,1fr) auto; overflow: hidden; opacity: 1; visibility: visible; transition: opacity 140ms var(--ease),visibility 0s linear; }
+.lap-rail-toggle { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 5px; cursor: pointer; transition: color var(--motion-hover) var(--ease),background var(--motion-hover) var(--ease),border-color var(--motion-hover) var(--ease); }
+.lap-rail-toggle:hover { color: var(--text-primary); background: var(--surface-hover); border-color: var(--border-subtle); }
+.lap-rail-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.lap-rail-toggle .product-icon { transform: rotate(-90deg); transition: transform 180ms var(--ease); }
+.lap-rail-toggle-label,.lap-rail-toggle-count { display: none; }
 .lap-rail-scroll { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 6px; }.lap-run-group { margin-bottom: 5px; }.lap-run-group summary { display: flex; justify-content: space-between; gap: 8px; padding: 7px 6px; color: var(--text-secondary); cursor: pointer; font-size: 12px; font-weight: 650; }.lap-run-group summary small { color: var(--text-muted); font-weight: 500; }
 .lap-rail-row { position: relative; width: 100%; display: grid; grid-template-columns: 42px minmax(66px,1fr) auto; grid-template-rows: 22px 18px; align-items: center; gap: 0 7px; padding: 7px 8px; margin: 2px 0; color: var(--text-secondary); text-align: left; background: transparent; border: 1px solid transparent; border-radius: 5px; cursor: pointer; }.lap-rail-row:hover { background: var(--surface-hover); }.lap-rail-row.selected { color: var(--text-primary); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle)); }.lap-rail-row.focused { box-shadow: inset 3px 0 var(--accent); }
 .lap-selection { display: flex; align-items: center; gap: 6px; }.lap-selection .lap-color { opacity: .28; }.lap-rail-row.selected .lap-color { opacity: 1; }.lap-time { font-family: var(--metric-font,Consolas,monospace); font-size: 12px; }.lap-state { justify-self: end; color: var(--text-muted); font-size: var(--font-size-min); text-transform: uppercase; }.lap-state.green { color: var(--telemetry-throttle); }.lap-state.yellow { color: var(--telemetry-fuel); }.lap-state.pit,.lap-state.affected { color: var(--telemetry-brake); }.lap-best { grid-column: 1; color: var(--telemetry-sector); font-size: var(--font-size-min); font-weight: 750; letter-spacing: .05em; }.lap-focus-action { grid-column: 2 / 4; justify-self: end; color: var(--text-muted); font-size: var(--font-size-min); }.lap-rail-row:hover .lap-focus-action { color: var(--text-secondary); }.lap-rail-footer { display: flex; justify-content: space-between; padding: 8px 10px; border-top: 1px solid var(--border-subtle); background: var(--surface-2); }.lap-rail-footer button { font-size: var(--font-size-min); }
@@ -1575,10 +1581,10 @@ input[type="range"] { accent-color: var(--accent); }
   border-radius: 4px;
   cursor: help;
   pointer-events: auto;
+  user-select: none;
 }
 .analysis-trace-studio.editing .trace-row-label-trigger { cursor: grab; touch-action: none; }
-.analysis-trace-studio.editing .trace-row-label-trigger:hover { color: var(--text-primary); background: color-mix(in srgb,var(--surface-hover) 72%,transparent); border-color: var(--border-subtle); }
-.analysis-trace-studio.editing .trace-row-label-shell.selected .trace-row-label-trigger { border-color: color-mix(in srgb,var(--focus) 62%,var(--border-subtle)); background: color-mix(in srgb,var(--accent) 8%,transparent); }
+.analysis-trace-studio.editing .trace-row-label-trigger:hover { color: var(--text-primary); }
 .trace-row-label-trigger > .product-icon { flex: 0 0 auto; margin-top: 1px; color: var(--text-muted); opacity: .72; }
 .trace-row-label-copy { min-width: 0; display: block; }
 .trace-row-label-copy > strong {
@@ -1640,6 +1646,33 @@ input[type="range"] { accent-color: var(--accent); }
 .analysis-trace-drop-preview.insertion > span { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); }
 .trace-panel-expanded .trace-chart-frame { flex: 1 1 auto; height: auto !important; min-height: 0; }
 .trace-panel-expanded .trace-chart-frame > .trace-chart { width: 100%; height: 100% !important; }
+
+/* The lap picker remains mounted so selections and scroll position survive while
+   its narrow edge handle gives the telemetry canvas back nearly all of its width. */
+.telemetry-workstation-grid { transition: grid-template-columns 200ms var(--ease); }
+.telemetry-workstation-grid.laps-collapsed { grid-template-columns: 44px minmax(0,1fr); }
+.laps-collapsed .lap-rail { grid-template-rows: minmax(0,1fr) 0fr; min-width: 0; contain: layout; }
+.laps-collapsed .lap-rail-content { min-height: 0; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 90ms var(--ease),visibility 0s linear 90ms; }
+.laps-collapsed .lap-rail-header { min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 10px; padding: 8px 6px; border-bottom: 0; }
+.laps-collapsed .lap-rail-header > strong,.laps-collapsed .lap-rail-header > span,.laps-collapsed .lap-rail-header > label { display: none; }
+.laps-collapsed .lap-rail-toggle { width: 30px; height: auto; min-height: 148px; display: flex; flex-direction: column; justify-content: flex-start; gap: 10px; padding: 8px 5px; color: var(--text-secondary); background: color-mix(in srgb,var(--surface-3) 76%,transparent); border-color: var(--border-subtle); }
+.laps-collapsed .lap-rail-toggle:hover { color: var(--text-primary); background: color-mix(in srgb,var(--accent) 10%,var(--surface-hover)); border-color: color-mix(in srgb,var(--accent) 48%,var(--border-strong)); }
+.laps-collapsed .lap-rail-toggle .product-icon { flex: 0 0 auto; transform: rotate(90deg); }
+.laps-collapsed .lap-rail-toggle-label { display: block; writing-mode: vertical-rl; transform: rotate(180deg); color: currentColor; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.laps-collapsed .lap-rail-toggle-count { min-width: 20px; height: 20px; display: grid; place-items: center; padding: 0 4px; color: var(--text-primary); background: color-mix(in srgb,var(--accent) 16%,var(--surface-3)); border: 1px solid color-mix(in srgb,var(--accent) 32%,var(--border-subtle)); border-radius: var(--radius-pill); font: 650 var(--font-size-min) var(--metric-font,Consolas,monospace); }
+
+@container (max-width: 1060px) {
+  .telemetry-workstation-grid.laps-collapsed { grid-template-columns: minmax(0,1fr); }
+  .laps-collapsed .lap-rail { height: 44px; min-height: 44px; max-height: 44px; }
+  .laps-collapsed .lap-rail-header { flex-direction: row; align-items: center; justify-content: flex-start; padding: 6px 8px; }
+  .laps-collapsed .lap-rail-toggle { width: auto; min-height: 30px; flex-direction: row; padding: 4px 8px; }
+  .laps-collapsed .lap-rail-toggle-label { writing-mode: horizontal-tb; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .telemetry-workstation-grid,.lap-rail-content,.lap-rail-toggle,.lap-rail-toggle .product-icon { transition: none !important; }
+}
+.reduced-motion .telemetry-workstation-grid,.reduced-motion .lap-rail-content,.reduced-motion .lap-rail-toggle,.reduced-motion .lap-rail-toggle .product-icon { transition: none !important; }
 
 @media (max-width: 1180px) {
   .analysis-trace-studio { --analysis-trace-toolbox-width:min(360px,calc(100vw - 96px)); }

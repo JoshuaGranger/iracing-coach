@@ -222,6 +222,14 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "aria-describedby");
         StringAssert.Contains(telemetry, "role=\"tooltip\"");
         StringAssert.Contains(telemetry, "RowUnit(panel)");
+        StringAssert.Contains(telemetry, "role=\"group\"");
+        StringAssert.Contains(telemetry, "class=\"trace-row-label-shell\"");
+        StringAssert.Contains(telemetry, "@key=\"panel.Preferences.Id\"");
+        StringAssert.Contains(telemetry, "@onfocus=\"() => ActivateTraceRow(panel.Preferences.Id)\"");
+        StringAssert.Contains(telemetry, "aria-label=\"@($\"{RowLabel(panel)} chart\")\"");
+        Assert.DoesNotContain("@onclick=\"() => SelectTraceRow", telemetry);
+        Assert.DoesNotContain("trace-row-label-shell @(SelectedTraceRow", telemetry);
+        Assert.DoesNotContain("private void SelectTraceRow", telemetry);
         Assert.DoesNotContain("draggable=\"true\"", telemetry);
         Assert.DoesNotContain("@ondragstart", telemetry);
         Assert.DoesNotContain("@ondragover", telemetry);
@@ -267,9 +275,38 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(css, ".trace-row-label-copy > strong");
         StringAssert.Contains(css, "max-inline-size: 12ch");
         StringAssert.Contains(css, ".trace-row-unit");
+        StringAssert.Contains(css, "user-select: none;");
+        Assert.DoesNotContain(".trace-row-label-shell.selected", css);
+        Assert.DoesNotContain(".trace-row-label-trigger:hover { color: var(--text-primary); background:", css);
         StringAssert.Contains(css, ".analysis-trace-studio .analysis-trace-toolbox");
         StringAssert.Contains(css, ".analysis-trace-metric-card:focus-visible");
         StringAssert.Contains(css, ".trace-selected-signal > i.unavailable");
+    }
+
+    [TestMethod]
+    public void RaceAnalysisLapRail_DefaultsOpenAndCollapsesWithoutChangingLapSelection()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(telemetry, "private bool LapRailCollapsed { get; set; }");
+        StringAssert.Contains(telemetry, "LapRailCollapsed = false;");
+        StringAssert.Contains(telemetry, "private void ToggleLapRail() => LapRailCollapsed = !LapRailCollapsed;");
+        StringAssert.Contains(telemetry, "class=\"lap-rail-toggle\"");
+        StringAssert.Contains(telemetry, "aria-controls=\"race-lap-rail-content\"");
+        StringAssert.Contains(telemetry, "aria-expanded=\"@(!LapRailCollapsed)\"");
+        StringAssert.Contains(telemetry, "aria-hidden=\"@LapRailCollapsed\"");
+        StringAssert.Contains(telemetry, "inert=\"@(LapRailCollapsed ? string.Empty : null)\"");
+        Assert.DoesNotContain("ToggleLapRail() => ResetSelection", telemetry);
+        Assert.DoesNotContain("ToggleLapRail() => ClearSelection", telemetry);
+
+        StringAssert.Contains(css, ".telemetry-workstation-grid.laps-collapsed { grid-template-columns: 44px minmax(0,1fr); }");
+        StringAssert.Contains(css, ".laps-collapsed .lap-rail-content");
+        StringAssert.Contains(css, ".lap-rail-toggle:focus-visible");
+        StringAssert.Contains(css, "@container (max-width: 1060px)");
+        StringAssert.Contains(css, ".telemetry-workstation-grid.laps-collapsed { grid-template-columns: minmax(0,1fr); }");
+        StringAssert.Contains(css, ".reduced-motion .telemetry-workstation-grid");
     }
 
     [TestMethod]
