@@ -288,6 +288,39 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public void AnalysisMapper_PreservesIndividualIncidentEventsAndExplicitZeroes()
+    {
+        using var response = JsonDocument.Parse("""
+        {"selection":{"sim_session_type":"Race"},"analysis_view":{"schema_version":1,
+          "identity":{"event_type":"Race"},"race_summary":{},"laps":[],"runs":[],
+          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{},"damage_repair":{"incident_points":{"events":[
+            {"candidate_lap":7,"points_added":1,"session_time_s":100.5,"count_before":0,"count_after":1,"source_channel":"PlayerCarMyIncidentCount"},
+            {"candidate_lap":7,"points_added":2,"session_time_s":105.25,"count_before":1,"count_after":3,"source_channel":"PlayerCarMyIncidentCount"},
+            {"candidate_lap":8,"points_added":0,"session_time_s":110,"count_before":3,"count_after":3,"source_channel":"ExplicitIncidentFeed"},
+            {"points_added":4,"session_time_s":120},
+            {"candidate_lap":9,"session_time_s":125},
+            {"candidate_lap":10,"points_added":"2","session_time_s":130}
+          ]}},"setup_telemetry":{},"data_quality":{}}}
+        """);
+
+        var incidents = RuntimeMapper.Analysis(response.RootElement).Damage.Incidents!;
+
+        Assert.HasCount(3, incidents);
+        Assert.HasCount(2, incidents.Where(item => item.Lap == 7));
+        Assert.AreEqual(1, incidents[0].Points);
+        Assert.AreEqual(100.5d, incidents[0].SessionTimeSeconds);
+        Assert.AreEqual(0d, incidents[0].CountBefore);
+        Assert.AreEqual(1d, incidents[0].CountAfter);
+        Assert.AreEqual("PlayerCarMyIncidentCount", incidents[0].SourceChannel);
+        Assert.AreEqual(2, incidents[1].Points);
+        Assert.AreEqual(105.25d, incidents[1].SessionTimeSeconds);
+        Assert.AreEqual(8, incidents[2].Lap);
+        Assert.AreEqual(0, incidents[2].Points, "An explicitly recorded zero-point event must not be discarded or synthesized.");
+        Assert.AreEqual("ExplicitIncidentFeed", incidents[2].SourceChannel);
+    }
+
+    [TestMethod]
     public void AnalysisMapper_KentuckyNullShape_MapsOptionalValuesWithoutInventingZeroes()
     {
         using var response = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "analysis-nullable-kentucky-shape.json")));

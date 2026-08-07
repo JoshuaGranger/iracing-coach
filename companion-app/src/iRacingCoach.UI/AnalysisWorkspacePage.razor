@@ -1,23 +1,50 @@
 <div class="analysis-workspace-page">
-    <header class="analysis-context-bar @(IsRaceWorkspace ? "analysis-context-compact" : null)">
-        <button class="back-button" @onclick="State.CloseAnalysisWorkspace" aria-label="Back to race history">← Races</button>
-        <div class="analysis-event-title">
-            <h1>@Workspace.Track <span>@Workspace.Layout</span></h1>
-            <p>@ContextSummary</p>
-        </div>
-        <div class="analysis-context-actions">
-            @if (EventSessions.Count > 1)
-            {
-                <div class="event-session-switch" role="group" aria-label="Event session">
-                    @foreach (var session in EventSessions)
-                    {
-                        <button class="segmented @(session.Id == State.SelectedRaceSessionId ? "selected" : null)" aria-pressed="@(session.Id == State.SelectedRaceSessionId)" @onclick="() => ShowEventSession(session)">@SessionName(session)</button>
-                    }
-                </div>
-            }
-            @if (!IsRaceWorkspace && Workspace.Grades.Count > 0) { <span class="analysis-grade-chip"><small>Session grade</small><strong>@Workspace.OverallGrade</strong></span> }
-        </div>
-    </header>
+    @if (IsRaceWorkspace)
+    {
+        <header class="analysis-context-bar race-analysis-toolbar">
+            <div class="event-session-switch analysis-data-switch analysis-data-primary" role="tablist" aria-label="Race analysis section">
+                <button class="segmented @(RaceDataSection == "telemetry" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "telemetry")" @onclick='() => RaceDataSection = "telemetry"'>Telemetry</button>
+                <button class="segmented @(RaceDataSection == "review" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "review")" @onclick='() => RaceDataSection = "review"'>Race review</button>
+            </div>
+            <div class="analysis-event-title race-analysis-title">
+                <button class="back-button race-analysis-back" @onclick="State.CloseAnalysisWorkspace" aria-label="Back to race history" title="Back to races">←</button>
+                <div><h1>@Workspace.Track <span>@Workspace.Layout</span></h1><p>@ContextSummary</p></div>
+            </div>
+            <div class="analysis-context-actions race-session-actions">
+                @if (EventSessions.Count > 1)
+                {
+                    <div class="event-session-switch" role="group" aria-label="Event session">
+                        @foreach (var session in EventSessions)
+                        {
+                            <button class="segmented @(session.Id == State.SelectedRaceSessionId ? "selected" : null)" aria-pressed="@(session.Id == State.SelectedRaceSessionId)" @onclick="() => ShowEventSession(session)">@SessionName(session)</button>
+                        }
+                    </div>
+                }
+            </div>
+        </header>
+    }
+    else
+    {
+        <header class="analysis-context-bar">
+            <button class="back-button" @onclick="State.CloseAnalysisWorkspace" aria-label="Back to race history">← Races</button>
+            <div class="analysis-event-title">
+                <h1>@Workspace.Track <span>@Workspace.Layout</span></h1>
+                <p>@ContextSummary</p>
+            </div>
+            <div class="analysis-context-actions">
+                @if (EventSessions.Count > 1)
+                {
+                    <div class="event-session-switch" role="group" aria-label="Event session">
+                        @foreach (var session in EventSessions)
+                        {
+                            <button class="segmented @(session.Id == State.SelectedRaceSessionId ? "selected" : null)" aria-pressed="@(session.Id == State.SelectedRaceSessionId)" @onclick="() => ShowEventSession(session)">@SessionName(session)</button>
+                        }
+                    </div>
+                }
+                @if (Workspace.Grades.Count > 0) { <span class="analysis-grade-chip"><small>Session grade</small><strong>@Workspace.OverallGrade</strong></span> }
+            </div>
+        </header>
+    }
 
     @if (!IsRaceWorkspace && Workspace.Grades.Count > 0)
     {
@@ -32,14 +59,6 @@
                 }
             </div>
         </details>
-    }
-
-    @if (IsRaceWorkspace)
-    {
-        <div class="event-session-switch analysis-data-switch analysis-data-primary" role="tablist" aria-label="Race analysis section">
-            <button class="segmented @(RaceDataSection == "telemetry" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "telemetry")" @onclick='() => RaceDataSection = "telemetry"'>Telemetry</button>
-            <button class="segmented @(RaceDataSection == "review" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "review")" @onclick='() => RaceDataSection = "review"'>Race review</button>
-        </div>
     }
 
     <div class="@(IsRaceWorkspace ? "race-data-workspace" : "analysis-one-screen")">

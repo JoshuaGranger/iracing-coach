@@ -18,26 +18,29 @@
         <div class="telemetry-context-column">
         <section class="track-panel telemetry-context-panel @(TrackPanelCollapsed ? "collapsed" : null)" aria-labelledby="track-panel-title">
             <div class="panel-title track-panel-title">
-                <div><strong id="track-panel-title">@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div>
+                @if (IsRaceWorkspace)
+                {
+                    <button type="button"
+                            class="context-heading-button"
+                            aria-controls="race-track-panel-content"
+                            aria-expanded="@AriaBoolean(!TrackPanelCollapsed)"
+                            aria-label="@(TrackPanelCollapsed ? "Show track position" : "Hide track position")"
+                            @onclick="ToggleTrackPanel">
+                        <span class="context-heading-copy"><strong id="track-panel-title">@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></span>
+                        <ProductIcon Name="chevron-up" Size="15" />
+                    </button>
+                }
+                else
+                {
+                    <div class="context-heading-static"><strong id="track-panel-title">@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div>
+                }
                 <div class="track-panel-actions">
                     <label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label>
-                    @if (IsRaceWorkspace)
-                    {
-                        <button type="button"
-                                class="context-panel-toggle"
-                                aria-controls="race-track-panel-content"
-                                aria-expanded="@(!TrackPanelCollapsed)"
-                                aria-label="@(TrackPanelCollapsed ? "Show track position" : "Hide track position")"
-                                title="@(TrackPanelCollapsed ? "Show track position" : "Hide track position")"
-                                @onclick="ToggleTrackPanel">
-                            <ProductIcon Name="chevron-up" Size="15" />
-                        </button>
-                    }
                 </div>
             </div>
             <div id="race-track-panel-content"
                  class="track-panel-content"
-                 aria-hidden="@TrackPanelCollapsed"
+                 aria-hidden="@AriaBoolean(TrackPanelCollapsed)"
                  inert="@(TrackPanelCollapsed ? string.Empty : null)">
                 <svg @ref="TrackElement" class="track-map" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map">
                     @if (Workspace.TrackShape.Count >= 3)
@@ -66,7 +69,8 @@
                         }
                         <line x1="28" y1="124" x2="28" y2="156" class="track-start-line-halo" />
                         <line x1="28" y1="124" x2="28" y2="156" class="track-start-line" />
-                        <line data-analysis-track-cursor-line x1="@F(28 + Cursor * 364)" y1="104" x2="@F(28 + Cursor * 364)" y2="176" class="map-cursor-line" />
+                        <circle data-analysis-track-cursor-point cx="@F(28 + Cursor * 364)" cy="140" r="8" class="map-cursor-halo" />
+                        <circle data-analysis-track-cursor-point cx="@F(28 + Cursor * 364)" cy="140" r="4" class="map-cursor" />
                         <svg:text x="28" y="205" class="chart-label">Start / finish</svg:text><svg:text x="392" y="205" text-anchor="end" class="chart-label">100%</svg:text>
                     }
                 </svg>
@@ -76,23 +80,23 @@
 
         <aside class="lap-rail telemetry-context-panel @(LapRailCollapsed ? "collapsed" : null)" aria-labelledby="lap-rail-title">
             <div class="lap-rail-header">
-                <strong id="lap-rail-title">Laps &amp; runs</strong><span>@Selected.Count selected</span>
-                <label class="clean-lap-filter"><input type="checkbox" checked="@CleanLapsOnly" @onchange="CleanLapFilterChanged" /> Clean laps</label>
                 <button type="button"
-                        class="lap-rail-toggle"
+                        class="context-heading-button"
                         aria-controls="race-lap-rail-content"
-                        aria-expanded="@(!LapRailCollapsed)"
+                        aria-expanded="@AriaBoolean(!LapRailCollapsed)"
                         aria-label="@(LapRailCollapsed ? "Show Laps and runs" : "Hide Laps and runs")"
-                        title="@(LapRailCollapsed ? "Show Laps and runs" : "Hide Laps and runs")"
                         @onclick="ToggleLapRail">
+                    <span class="context-heading-copy"><strong id="lap-rail-title">Laps &amp; runs</strong><span>@Selected.Count selected</span></span>
                     <ProductIcon Name="chevron-up" Size="15" />
-                    <span class="lap-rail-toggle-label">Laps</span>
-                    <span class="lap-rail-toggle-count">@Selected.Count</span>
                 </button>
+                <div class="lap-filter-controls" aria-label="Lap filters">
+                    <label class="green-lap-filter"><input type="checkbox" checked="@GreenLapsOnly" @onchange="GreenLapFilterChanged" /> Green laps</label>
+                    <label class="clean-lap-filter"><input type="checkbox" checked="@CleanLapsOnly" @onchange="CleanLapFilterChanged" /> Clean laps</label>
+                </div>
             </div>
             <div id="race-lap-rail-content"
                  class="lap-rail-content"
-                 aria-hidden="@LapRailCollapsed"
+                 aria-hidden="@AriaBoolean(LapRailCollapsed)"
                  inert="@(LapRailCollapsed ? string.Empty : null)">
             <div class="lap-rail-scroll">
                 @foreach (var indexedGroup in LapGroups.Select((group, index) => new { Group = group, Index = index }))
@@ -115,12 +119,14 @@
                         {
                             var pitDirections = PitDirections(trace);
                             var pitLap = pitDirections.Count > 0 || trace.PitTimeSeconds.GetValueOrDefault() > 0;
+                            var lapIncidents = LapIncidents(trace.Lap);
+                            var incidentPoints = lapIncidents.Sum(incident => incident.Points);
                             var activePitRun = ActivePitLap == trace.Lap && !string.IsNullOrWhiteSpace(ActivePitDirection)
                                 ? trace.PitServiceFor(Workspace.Runs, ActivePitDirection)
                                 : null;
                             var isFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
                             <div class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(pitLap ? "pit-lap" : null)" style="@($"--lap-color:{LapColor(trace.Lap)}")" @onclick="() => SelectLap(trace.Lap)">
-                                <button type="button" class="lap-select-button" aria-label="@($"Select lap {trace.Lap}, {LapTime(trace.LapTimeSeconds)}")" aria-pressed="@Selected.Contains(trace.Lap)" @onclick:stopPropagation="true" @onclick="() => SelectLap(trace.Lap)"></button>
+                                <button type="button" class="lap-select-button" aria-label="@($"Select lap {trace.Lap}, {LapTime(trace.LapTimeSeconds)}")" aria-pressed="@AriaBoolean(Selected.Contains(trace.Lap))" @onclick:stopPropagation="true" @onclick="() => SelectLap(trace.Lap)"></button>
                                 <span class="lap-flags" aria-label="Recorded lap flags">
                                     @foreach (var flag in LapFlags(trace))
                                     {
@@ -143,7 +149,21 @@
                                 </span>
                                 <span class="lap-fuel-column" title="@FuelConsumedTitle(trace)">@FuelConsumed(trace)</span>
                                 <span class="lap-incident-column">
-                                    @if (IncidentPoints(trace.Lap) is var points && points > 0) { <span class="incident-badge severity-@IncidentSeverity(points)" title="@($"{points} incident point{(points == 1 ? string.Empty : "s")} on lap {trace.Lap}")">@($"x{points}")</span> }
+                                    @if (lapIncidents.Count > 0)
+                                    {
+                                        <button type="button"
+                                                class="incident-badge severity-@IncidentSeverity(incidentPoints)"
+                                                aria-haspopup="true"
+                                                aria-expanded="@AriaBoolean(ActiveIncidentLap == trace.Lap)"
+                                                aria-controls="@IncidentPopoverId(trace.Lap)"
+                                                aria-label="@($"Lap {trace.Lap}, x{incidentPoints} incident details")"
+                                                @onmouseenter="args => ShowIncidentPopover(args, trace.Lap)"
+                                                @onmouseleave="HideIncidentPopover"
+                                                @onfocus="() => ShowIncidentPopoverFromFocus(trace.Lap)"
+                                                @onblur="HideIncidentPopover"
+                                                @onclick:stopPropagation="true"
+                                                @onkeydown:stopPropagation="true">@($"x{incidentPoints}")</button>
+                                    }
                                 </span>
                                 <span class="lap-pit-column">
                                     @foreach (var direction in pitDirections)
@@ -151,15 +171,17 @@
                                         <button type="button"
                                                 class="pit-badge"
                                                 aria-haspopup="dialog"
-                                                aria-expanded="@PitPopoverIsActive(trace.Lap, direction)"
+                                                aria-expanded="@AriaBoolean(PitPopoverIsActive(trace.Lap, direction))"
                                                 aria-controls="@PitPopoverId(trace.Lap, direction)"
+                                                aria-label="@($"Pit {(direction == "in" ? "entry" : "exit")} details")"
+                                                title="@(direction == "in" ? "Pit entry" : "Pit exit")"
                                                 @onmouseenter="args => ShowPitPopover(args, trace.Lap, direction)"
                                                 @onmouseleave="SchedulePitPopoverHide"
                                                 @onfocus="() => ShowPitPopoverFromFocus(trace.Lap, direction)"
                                                 @onblur="SchedulePitPopoverHide"
                                                 @onclick="args => ShowPitPopover(args, trace.Lap, direction)"
                                                 @onclick:stopPropagation="true"
-                                                @onkeydown:stopPropagation="true">Pit (@direction)</button>
+                                                @onkeydown:stopPropagation="true"><ProductIcon Name="@(direction == "in" ? "pit-in" : "pit-out")" Size="14" /></button>
                                     }
                                 </span>
                                 @if (pitLap && activePitRun?.PitStop is not null)
@@ -186,20 +208,21 @@
                                             <span class="pit-tire-grid">
                                                 @foreach (var tire in tireConditions)
                                                 {
+                                                    var bandLabels = TireBandLabels(tire.Corner);
                                                     <span class="pit-tire-card">
                                                         <span class="pit-tire-heading"><strong>@tire.Corner</strong>@if (TireChanged(activePitRun, tire.Corner)) { <em>Changed</em> }@if (tire.AverageWearPercent.HasValue) { <small>@tire.AverageWearPercent.Value.ToString("0.0")% avg wear</small> }</span>
                                                         @if (HasBandValues(tire.WearPercent))
                                                         {
-                                                            <span class="pit-band-row pit-band-head"><span></span><b>O</b><b>M</b><b>I</b></span>
-                                                            <span class="pit-band-row"><span>Wear</span><b>@BandPercent(tire.WearPercent.Outer)</b><b>@BandPercent(tire.WearPercent.Middle)</b><b>@BandPercent(tire.WearPercent.Inner)</b></span>
+                                                            <span class="pit-band-row pit-band-head"><span></span>@foreach (var label in bandLabels) { <b>@label</b> }</span>
+                                                            <span class="pit-band-row"><span>Wear</span>@foreach (var value in OrientedBands(tire.Corner, tire.WearPercent)) { <b>@BandPercent(value)</b> }</span>
                                                         }
                                                         @if (HasBandValues(tire.CarcassTemperatureF))
                                                         {
-                                                            <span class="pit-band-row"><span>Carcass</span><b>@BandTemperature(tire.CarcassTemperatureF.Outer)</b><b>@BandTemperature(tire.CarcassTemperatureF.Middle)</b><b>@BandTemperature(tire.CarcassTemperatureF.Inner)</b></span>
+                                                            <span class="pit-band-row"><span>Carcass</span>@foreach (var value in OrientedBands(tire.Corner, tire.CarcassTemperatureF)) { <b>@BandTemperature(value)</b> }</span>
                                                         }
                                                         @if (HasBandValues(tire.SurfaceTemperatureF))
                                                         {
-                                                            <span class="pit-band-row"><span>Surface</span><b>@BandTemperature(tire.SurfaceTemperatureF.Outer)</b><b>@BandTemperature(tire.SurfaceTemperatureF.Middle)</b><b>@BandTemperature(tire.SurfaceTemperatureF.Inner)</b></span>
+                                                            <span class="pit-band-row"><span>Surface</span>@foreach (var value in OrientedBands(tire.Corner, tire.SurfaceTemperatureF)) { <b>@BandTemperature(value)</b> }</span>
                                                         }
                                                         @if (tire.PressurePsi.HasValue)
                                                         {
@@ -208,7 +231,7 @@
                                                     </span>
                                                 }
                                             </span>
-                                            <small class="pit-tire-note">O / M / I = outer, middle, and inner. Values are the recorded stop snapshot.</small>
+                                            <small class="pit-tire-note">Bands read outside-to-inside across the car: O/M/I on the left, I/M/O on the right. Values are the recorded stop snapshot.</small>
                                         }
                                         <span class="pit-popover-row"><span>Fuel added</span><b>@FuelAdded(activePitRun)</b></span>
                                         <span class="pit-popover-row"><span>Fuel range at stop</span><b>@FuelRangeAtStop(activePitRun)</b></span>
@@ -235,6 +258,17 @@
                                         <span class="track-usage-row"><i aria-hidden="true"></i><strong>@TrackUsage(conditions)</strong></span>
                                     </span>
                                 }
+                                @if (ActiveIncidentLap == trace.Lap && lapIncidents.Count > 0)
+                                {
+                                    <span id="@IncidentPopoverId(trace.Lap)" class="incident-popover" style="@IncidentPopoverStyle" role="tooltip">
+                                        <strong>Lap @trace.Lap · x@incidentPoints</strong>
+                                        @foreach (var incident in lapIncidents)
+                                        {
+                                            <span>@IncidentEventDescription(trace, incident)</span>
+                                        }
+                                        <small>The recording identifies incident-point changes, not contact type. A zero-point contact appears only when the source records an explicit event.</small>
+                                    </span>
+                                }
                             </div>
                         }
                     </details>
@@ -256,20 +290,29 @@
                  class="trace-panel analysis-trace-studio @(TraceExpanded ? "trace-panel-expanded" : null) @(TraceToolboxOpen ? "editing toolbox-open" : "viewing toolbox-closed")"
                  data-analysis-trace-studio>
                 <div class="panel-title trace-panel-title">
-                    <strong>Aligned traces</strong>
+                    <div class="trace-panel-summary"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare</span></div>
+                    <div class="trace-spotlight-control">
+                        <select aria-label="Spotlight lap" value="@(SpotlightLap?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)" @onchange="SpotlightLapChanged">
+                            <option value="">Spotlight lap</option>
+                            @foreach (var trace in SpotlightCandidates)
+                            {
+                                <option value="@trace.Lap">Lap @trace.Lap · @LapTime(trace.LapTimeSeconds)</option>
+                            }
+                        </select>
+                        <button type="button" disabled="@(!SpotlightLap.HasValue)" @onclick="ClearSpotlight">Clear</button>
+                    </div>
                     <div class="trace-panel-actions">
-                        <span>@Selected.Count selected · hover to compare</span>
-                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@TraceToolboxOpen" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
-                            <ProductIcon Name="setup" Size="15" /> Customize
+                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@AriaBoolean(TraceToolboxOpen)" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
+                            <ProductIcon Name="setup" Size="15" /><span>Customize</span>
                         </button>
-                        <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@TraceExpanded" @onclick="ToggleTraceExpanded">
+                        <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@AriaBoolean(TraceExpanded)" @onclick="ToggleTraceExpanded">
                             <ProductIcon Name="@(TraceExpanded ? "contract" : "expand")" Size="16" />
                         </button>
                     </div>
                 </div>
                 <aside id="analysis-trace-toolbox"
                        class="analysis-trace-toolbox @(TraceToolboxOpen ? "open" : null)"
-                       aria-hidden="@(!TraceToolboxOpen)"
+                       aria-hidden="@AriaBoolean(!TraceToolboxOpen)"
                        inert="@(!TraceToolboxOpen ? string.Empty : null)"
                        aria-label="Race analysis trace toolbox">
                     <header class="trace-toolbox-heading">
@@ -356,7 +399,7 @@
                                      title=""
                                      @onfocus="() => ActivateTraceRow(panel.Preferences.Id)"
                                      @onkeydown="args => HandleTraceRowKeyDown(panel.Preferences.Id, args)">
-                                    @if (TraceToolboxOpen) { <ProductIcon Name="grip" Size="14" /> }
+                                    <ProductIcon Name="grip" Size="14" Class="trace-row-grip" />
                                     <span class="trace-row-label-copy"><strong>@RowLabel(panel)</strong><span class="trace-row-unit">@RowUnit(panel)</span></span>
                                 </div>
                                 <span id="@helpId" class="trace-row-label-tooltip" role="tooltip">@RowHelp(panel)</span>
@@ -374,11 +417,11 @@
                         {
                             <svg:text x="@(PlotLeft + 12)" y="@(top + ChartPlotHeight / 2 + 4)" class="chart-unavailable">Not recorded for this race</svg:text>
                         }
-                        @foreach (var trace in SelectedTraces)
+                        @foreach (var trace in RenderedSelectedTraces)
                         {
                             @foreach (var indexedSignal in panel.Signals.Where(HasSignalData).Select((signal, index) => new { Signal = signal, Index = index }))
                             {
-                                <path data-analysis-trace-path data-row="@row" data-lap="@trace.Lap" data-signal="@indexedSignal.Signal.Id" d="@TracePath(trace, panel, indexedSignal.Signal, top)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="@(indexedSignal.Index == 0 ? "1.35" : "1.05")" stroke-dasharray="@(indexedSignal.Index == 0 ? null : "4 3")" opacity="@(indexedSignal.Index == 0 ? "1" : ".72")" vector-effect="non-scaling-stroke" />
+                                <path data-analysis-trace-path data-row="@row" data-lap="@trace.Lap" data-signal="@indexedSignal.Signal.Id" data-spotlight="@(SpotlightLap == trace.Lap)" d="@TracePath(trace, panel, indexedSignal.Signal, top)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="@TraceStrokeWidth(trace, indexedSignal.Index)" stroke-dasharray="@(indexedSignal.Index == 0 ? null : "4 3")" opacity="@TraceOpacity(trace, indexedSignal.Index)" vector-effect="non-scaling-stroke" />
                             }
                         }
                         </svg:g>
@@ -407,8 +450,10 @@
     private string? _analysisId;
     private string Mode { get; set; } = "speed";
     private bool CleanLapsOnly { get; set; }
+    private bool GreenLapsOnly { get; set; }
     private bool LapRailCollapsed { get; set; }
     private bool TrackPanelCollapsed { get; set; }
+    private int? SpotlightLap { get; set; }
     private bool TraceExpanded { get; set; }
     private bool TraceToolboxOpen { get; set; }
     private string _traceSignalSearch = string.Empty;
@@ -416,6 +461,7 @@
     private int? ActivePitLap { get; set; }
     private string? ActivePitDirection { get; set; }
     private int? ActiveConditionsLap { get; set; }
+    private int? ActiveIncidentLap { get; set; }
     private double PitPopoverX { get; set; }
     private double PitPopoverY { get; set; }
     private double PitPopoverAvailableHeight { get; set; } = 680;
@@ -423,6 +469,10 @@
     private double ConditionsPopoverX { get; set; }
     private double ConditionsPopoverY { get; set; }
     private bool ConditionsPopoverAbove { get; set; }
+    private double IncidentPopoverX { get; set; }
+    private double IncidentPopoverY { get; set; }
+    private bool IncidentPopoverAbove { get; set; }
+    private bool IncidentPopoverLeft { get; set; }
     private CancellationTokenSource? _pitPopoverHideCancellation;
     private IReadOnlyList<MapPoint>? _mapPoints;
     private double Cursor { get; set; } = .25;
@@ -465,8 +515,10 @@
         KeepPitPopoverOpen();
         ActivePitLap = null;
         ActivePitDirection = null;
+        ActiveIncidentLap = null;
         _analysisId = Workspace.AnalysisId;
         _mapPoints = null;
+        SpotlightLap = null;
         LapRailCollapsed = false;
         TrackPanelCollapsed = false;
         ResetSelection();
@@ -535,11 +587,22 @@
     }
 
     private IEnumerable<AnalysisLapTrace> SelectedTraces => Workspace.Traces.Where(trace => Selected.Contains(trace.Lap));
+    private IEnumerable<AnalysisLapTrace> RenderedSelectedTraces => SelectedTraces
+        .OrderBy(trace => SpotlightLap == trace.Lap ? 1 : 0)
+        .ThenBy(trace => trace.Lap);
+    private IEnumerable<AnalysisLapTrace> CursorSelectedTraces => SelectedTraces
+        .OrderBy(trace => SpotlightLap == trace.Lap ? 0 : 1)
+        .ThenBy(trace => trace.Lap);
+    private IReadOnlyList<AnalysisLapTrace> SpotlightCandidates => Workspace.Traces
+        .Where(IsGreenLap)
+        .Where(HasUsableLapTime)
+        .OrderBy(trace => trace.Lap)
+        .ToArray();
     private IEnumerable<LapGroup> LapGroups
     {
         get
         {
-            var eligible = Workspace.Traces.Where(trace => !CleanLapsOnly || IsClean(trace)).OrderBy(trace => trace.Lap).ToArray();
+            var eligible = Workspace.Traces.Where(PassesLapFilters).OrderBy(trace => trace.Lap).ToArray();
             var runs = Workspace.Runs.Where(run => run.Laps.Count > 0).OrderBy(run => run.Laps.Min()).ToArray();
             if (runs.Length == 0)
             {
@@ -574,6 +637,18 @@
     private double PlotWidth => Math.Max(40, _chartWidth - PlotLeft - 20);
     private double PlotRight => PlotLeft + PlotWidth;
     private int TooltipCapacity => Math.Max(1, (int)Math.Floor((ChartRowHeight - 18) / TooltipRowHeight));
+    private string TraceStrokeWidth(AnalysisLapTrace trace, int signalIndex)
+    {
+        if (!SpotlightLap.HasValue) return signalIndex == 0 ? "1.35" : "1.05";
+        if (SpotlightLap == trace.Lap) return signalIndex == 0 ? "2.15" : "1.65";
+        return signalIndex == 0 ? "1.15" : ".95";
+    }
+    private string TraceOpacity(AnalysisLapTrace trace, int signalIndex)
+    {
+        if (!SpotlightLap.HasValue) return signalIndex == 0 ? "1" : ".72";
+        if (SpotlightLap == trace.Lap) return signalIndex == 0 ? "1" : ".82";
+        return signalIndex == 0 ? ".5" : ".38";
+    }
     private string CursorSummary
     {
         get
@@ -593,12 +668,32 @@
     {
         if (!Selected.Remove(lap)) Selected.Add(lap);
         if (Selected.Count == 0) Selected.Add(lap);
+        if (SpotlightLap == lap && !Selected.Contains(lap)) SpotlightLap = null;
         InvalidateTraceRender();
     }
     private void SelectLap(int lap) => ToggleLap(lap);
+    private void SpotlightLapChanged(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var lap) ||
+            SpotlightCandidates.All(trace => trace.Lap != lap))
+        {
+            ClearSpotlight();
+            return;
+        }
+        SpotlightLap = lap;
+        Selected.Add(lap);
+        InvalidateTraceRender();
+    }
+    private void ClearSpotlight()
+    {
+        if (!SpotlightLap.HasValue) return;
+        SpotlightLap = null;
+        InvalidateTraceRender();
+    }
     private void ShowAllLaps()
     {
         CleanLapsOnly = false;
+        GreenLapsOnly = false;
         Selected.Clear();
         foreach (var trace in Workspace.Traces) Selected.Add(trace.Lap);
         InvalidateTraceRender();
@@ -608,22 +703,35 @@
         await DisposeCursorInteropAsync();
         await DisposeTraceLayoutInteropAsync();
         Selected.Clear();
+        SpotlightLap = null;
         InvalidateTraceRender();
     }
     private void CleanLapFilterChanged(ChangeEventArgs args)
     {
         CleanLapsOnly = args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
-        if (!CleanLapsOnly) return;
-        Selected.RemoveWhere(lap => Workspace.Traces.FirstOrDefault(trace => trace.Lap == lap) is not { } trace || !IsClean(trace));
+        ApplyLapFilters();
+    }
+    private void GreenLapFilterChanged(ChangeEventArgs args)
+    {
+        GreenLapsOnly = args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        ApplyLapFilters();
+    }
+    private bool PassesLapFilters(AnalysisLapTrace trace) =>
+        (!CleanLapsOnly || IsClean(trace)) && (!GreenLapsOnly || IsGreenLap(trace));
+    private void ApplyLapFilters()
+    {
+        Selected.RemoveWhere(lap => Workspace.Traces.FirstOrDefault(trace => trace.Lap == lap) is not { } trace || !PassesLapFilters(trace));
+        if (SpotlightLap is { } spotlight && !Selected.Contains(spotlight)) SpotlightLap = null;
         if (Selected.Count == 0)
         {
-            var fastestClean = Workspace.Traces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).FirstOrDefault();
-            if (fastestClean is not null) Selected.Add(fastestClean.Lap);
+            var fastestEligible = Workspace.Traces.Where(PassesLapFilters).Where(HasUsableLapTime).OrderBy(trace => trace.LapTimeSeconds).ThenBy(trace => trace.Lap).FirstOrDefault();
+            if (fastestEligible is not null) Selected.Add(fastestEligible.Lap);
         }
         InvalidateTraceRender();
     }
     private void ResetSelection()
     {
+        SpotlightLap = null;
         Selected.Clear();
         foreach (var trace in Workspace.Traces.Where(IsClean).Where(HasUsableLapTime).OrderBy(trace => trace.LapTimeSeconds!.Value).ThenBy(trace => trace.Lap).Take(3))
             Selected.Add(trace.Lap);
@@ -870,6 +978,50 @@
     }
     private void HideConditionsPopover() => ActiveConditionsLap = null;
     private string ConditionsPopoverStyle => $"left:{F(ConditionsPopoverX)}px;top:{F(ConditionsPopoverY)}px;transform:{(ConditionsPopoverAbove ? "translateY(-100%)" : "none")}";
+    private async Task ShowIncidentPopover(MouseEventArgs args, int lap) =>
+        await ShowIncidentPopoverAt(args.ClientX, args.ClientY, lap);
+    private async Task ShowIncidentPopoverFromFocus(int lap)
+    {
+        var rect = await InteropArrayOrEmptyAsync("iracingCoach.activeElementRect");
+        var x = rect.Length >= 4 ? rect[2] : 24;
+        var y = rect.Length >= 4 ? (rect[1] + rect[3]) / 2 : 120;
+        await ShowIncidentPopoverAt(x, y, lap);
+    }
+    private async Task ShowIncidentPopoverAt(double clientX, double clientY, int lap)
+    {
+        if (LapIncidents(lap).Count == 0) return;
+        ActiveIncidentLap = lap;
+        IncidentPopoverX = 12;
+        IncidentPopoverY = 12;
+        IncidentPopoverAbove = false;
+        IncidentPopoverLeft = false;
+        await InvokeAsync(StateHasChanged);
+
+        var viewport = await InteropArrayOrEmptyAsync("iracingCoach.viewportSize");
+        if (ActiveIncidentLap != lap || viewport.Length < 2) return;
+        var width = Math.Max(320, viewport[0]);
+        var height = Math.Max(240, viewport[1]);
+        var x = double.IsFinite(clientX) && clientX > 0 ? clientX : 24;
+        var y = double.IsFinite(clientY) && clientY > 0 ? clientY : 120;
+        const double popoverWidth = 330;
+        IncidentPopoverLeft = x + popoverWidth + 24 > width;
+        IncidentPopoverX = Math.Clamp(x + (IncidentPopoverLeft ? -12 : 12), 12, width - 12);
+        IncidentPopoverAbove = y > height / 2;
+        IncidentPopoverY = Math.Clamp(y + (IncidentPopoverAbove ? -12 : 12), 12, height - 12);
+        await InvokeAsync(StateHasChanged);
+    }
+    private void HideIncidentPopover() => ActiveIncidentLap = null;
+    private static string IncidentPopoverId(int lap) => $"incident-details-{lap}";
+    private string IncidentPopoverStyle
+    {
+        get
+        {
+            var translateX = IncidentPopoverLeft ? "translateX(-100%)" : string.Empty;
+            var translateY = IncidentPopoverAbove ? "translateY(-100%)" : string.Empty;
+            var transform = string.Join(" ", new[] { translateX, translateY }.Where(value => value.Length > 0));
+            return $"left:{F(IncidentPopoverX)}px;top:{F(IncidentPopoverY)}px;transform:{(transform.Length > 0 ? transform : "none")}";
+        }
+    }
     private bool IsClean(AnalysisLapTrace trace) =>
         trace.Complete &&
         trace.PitTimeSeconds.GetValueOrDefault() <= 0 &&
@@ -877,6 +1029,12 @@
         !IsCaution(trace) &&
         !(trace.FlagStates ?? []).Any(state => state.Contains("yellow", StringComparison.OrdinalIgnoreCase) || state.Contains("caution", StringComparison.OrdinalIgnoreCase)) &&
         IncidentPoints(trace.Lap) == 0;
+    private static bool IsGreenLap(AnalysisLapTrace trace) =>
+        trace.Complete &&
+        trace.CautionFraction.GetValueOrDefault() <= .001 &&
+        !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) &&
+        !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase) &&
+        !(trace.FlagStates ?? []).Any(state => state.Contains("yellow", StringComparison.OrdinalIgnoreCase) || state.Contains("caution", StringComparison.OrdinalIgnoreCase));
     private static bool HasUsableLapTime(AnalysisLapTrace trace) =>
         trace.LapTimeSeconds is { } value && double.IsFinite(value) && value > 0;
     private IReadOnlyList<LapFlag> LapFlags(AnalysisLapTrace trace)
@@ -994,6 +1152,7 @@
     private string CursorInteropSignature => string.Join('|',
         _analysisId,
         SelectionSignature,
+        SpotlightLap?.ToString(CultureInfo.InvariantCulture) ?? "none",
         F(_chartWidth),
         Workspace.Traces.Sum(trace => trace.Points.Count),
         string.Join(',', TraceRows.Select(row => row.Signature)));
@@ -1003,7 +1162,7 @@
         var availableSignals = panels
             .Select(panel => panel.Signals.Where(HasSignalData).ToArray())
             .ToArray();
-        var traces = SelectedTraces.ToArray();
+        var traces = CursorSelectedTraces.ToArray();
         var rows = panels.Select((panel, index) => new
         {
             top = ChartTop + index * ChartRowHeight,
@@ -1380,6 +1539,7 @@
         return sum / weight;
     }
     private static string LapRange(IReadOnlyList<int> laps) => laps.Count == 0 ? "—" : laps.Count == 1 ? laps[0].ToString() : $"{laps.Min()}–{laps.Max()}";
+    private static string AriaBoolean(bool value) => value ? "true" : "false";
     private static string PaceTrend(AnalysisRun run) => run.PaceSlopeSecondsPerLap is null ? "—" : run.PaceSlopeSecondsPerLap > .005 ? $"+{run.PaceSlopeSecondsPerLap:0.000} s/lap" : run.PaceSlopeSecondsPerLap < -.005 ? $"{run.PaceSlopeSecondsPerLap:0.000} s/lap" : "Stable";
     private static string ControlChange(AnalysisRun run)
     {
@@ -1418,6 +1578,12 @@
         run.PitStop?.TiresChanged.Contains(corner, StringComparer.OrdinalIgnoreCase) == true;
     private static bool HasBandValues(AnalysisTireBands bands) =>
         bands.Outer.HasValue || bands.Middle.HasValue || bands.Inner.HasValue;
+    private static IReadOnlyList<string> TireBandLabels(string corner) =>
+        corner.StartsWith("R", StringComparison.OrdinalIgnoreCase) ? ["I", "M", "O"] : ["O", "M", "I"];
+    private static IReadOnlyList<double?> OrientedBands(string corner, AnalysisTireBands bands) =>
+        corner.StartsWith("R", StringComparison.OrdinalIgnoreCase)
+            ? [bands.Inner, bands.Middle, bands.Outer]
+            : [bands.Outer, bands.Middle, bands.Inner];
     private static string BandPercent(double? value) => value.HasValue ? $"{value.Value:0.0}%" : "—";
     private static string BandTemperature(double? value) => value.HasValue ? $"{value.Value:0}°F" : "—";
     private static string PressureKind(string kind) => string.IsNullOrWhiteSpace(kind) ? "Recorded" : kind;
@@ -1441,8 +1607,32 @@
         var remaining = Math.Max(0, Workspace.ScheduledLaps - lap);
         return $"{remaining} lap{(remaining == 1 ? string.Empty : "s")}";
     }
-    private int IncidentPoints(int lap) => Workspace.Damage.Incidents?.Where(item => item.Lap == lap).Sum(item => item.Points) ?? 0;
-    private static string IncidentSeverity(int points) => points >= 4 ? "high" : points >= 2 ? "medium" : "low";
+    private IReadOnlyList<AnalysisIncident> LapIncidents(int lap) =>
+        Workspace.Damage.Incidents?.Where(item => item.Lap == lap).ToArray() ?? [];
+    private int IncidentPoints(int lap) => LapIncidents(lap).Sum(item => item.Points);
+    private string IncidentEventDescription(AnalysisLapTrace trace, AnalysisIncident incident)
+    {
+        var parts = new List<string> { $"x{incident.Points}" };
+        if (IncidentLapPercent(trace, incident) is { } percent) parts.Add($"{percent * 100:0.0}% lap");
+        if (incident.SessionTimeSeconds is { } sessionTime) parts.Add($"session {FormatSessionTime(sessionTime)}");
+        if (incident.CountBefore.HasValue && incident.CountAfter.HasValue)
+            parts.Add($"total {incident.CountBefore.Value:0} to {incident.CountAfter.Value:0}");
+        return string.Join(" · ", parts);
+    }
+    private static double? IncidentLapPercent(AnalysisLapTrace trace, AnalysisIncident incident)
+    {
+        if (!incident.SessionTimeSeconds.HasValue) return null;
+        return trace.Points
+            .Where(point => point.SessionTimeSeconds.HasValue)
+            .MinBy(point => Math.Abs(point.SessionTimeSeconds!.Value - incident.SessionTimeSeconds.Value))?
+            .LapPercent;
+    }
+    private static string FormatSessionTime(double seconds)
+    {
+        var time = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss\.f") : time.ToString(@"m\:ss\.f");
+    }
+    private static string IncidentSeverity(int points) => points <= 0 ? "none" : points >= 4 ? "high" : points >= 2 ? "medium" : "low";
     private IReadOnlyList<double> SectorStarts => Workspace.SectorStartPercents?.Where(value => value >= 0 && value < 1).Distinct().Order().ToArray() ?? [];
     private SectorStatus SectorState(AnalysisLapTrace trace, int sector)
     {

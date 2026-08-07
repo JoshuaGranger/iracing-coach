@@ -304,6 +304,12 @@
         cursor.setAttribute("cx", point.x.toFixed(3));
         cursor.setAttribute("cy", point.y.toFixed(3));
       }
+    } else if (state.config.distanceStrip && state.trackPoints.length) {
+      const x = 28 + fraction * 364;
+      for (const cursor of state.trackPoints) {
+        cursor.setAttribute("cx", x.toFixed(3));
+        cursor.setAttribute("cy", "140");
+      }
     } else if (state.trackLine) {
       const x = 28 + fraction * 364;
       state.trackLine.setAttribute("x1", x.toFixed(3));

@@ -336,7 +336,13 @@ public sealed record AnalysisStrategy(
     IReadOnlyList<string> Assumptions,
     IReadOnlyList<string> Limitations);
 
-public sealed record AnalysisIncident(int Lap, int Points);
+public sealed record AnalysisIncident(
+    int Lap,
+    int Points,
+    double? SessionTimeSeconds = null,
+    double? CountBefore = null,
+    double? CountAfter = null,
+    string? SourceChannel = null);
 
 public sealed record AnalysisDamage(
     int PitRoadEpisodes,

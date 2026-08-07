@@ -390,11 +390,22 @@ public static class RuntimeMapper
         var damageSummary = Object(damage, "summary");
         var incidentPoints = Object(damage, "incident_points");
         var incidents = Array(incidentPoints, "events")
-            .Select(item => new AnalysisIncident(Integer(item, "candidate_lap"), (int)Math.Round(Number(item, "points_added") ?? 0)))
-            .Where(item => item.Lap > 0 && item.Points > 0)
-            .GroupBy(item => item.Lap)
-            .Select(group => new AnalysisIncident(group.Key, group.Sum(item => item.Points)))
-            .OrderBy(item => item.Lap)
+            .Select(item =>
+            {
+                var lap = NullableInteger(item, "candidate_lap");
+                var points = Number(item, "points_added");
+                return lap is >= 0 && points is >= 0
+                    ? new AnalysisIncident(
+                        lap.Value,
+                        (int)Math.Round(points.Value),
+                        Number(item, "session_time_s"),
+                        Number(item, "count_before"),
+                        Number(item, "count_after"),
+                        Text(item, "source_channel"))
+                    : null;
+            })
+            .Where(item => item is not null)
+            .Cast<AnalysisIncident>()
             .ToArray();
         var strategyDetails = new AnalysisStrategy(
             Number(strategy, "measured_green_fuel_gal_per_lap"), Number(strategy, "measured_caution_fuel_gal_per_lap"),
