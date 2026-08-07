@@ -848,8 +848,8 @@ public sealed class LiveMonitorTests
             StringAssert.Contains(razor, interactionHook);
 
         StringAssert.Contains(razor, "live-toolbox");
-        StringAssert.Contains(razor, "live-toolbox-backdrop");
-        StringAssert.Contains(razor, "<div class=\"live-toolbox-backdrop");
+        Assert.DoesNotContain("live-toolbox-backdrop", razor);
+        StringAssert.Contains(razor, "inert=\"@(!_toolboxOpen ? string.Empty : null)\"");
         StringAssert.Contains(razor, "private bool _editing;");
         StringAssert.Contains(razor, "FinishCustomize");
         StringAssert.Contains(razor, "live-tile-action remove");
@@ -878,8 +878,10 @@ public sealed class LiveMonitorTests
         Assert.IsFalse(razor.Contains("Undo available", StringComparison.OrdinalIgnoreCase), "Undo controls already communicate recoverability; removal actions should stay concise.");
         Assert.IsFalse(monitorCode.Contains("Undo is available", StringComparison.OrdinalIgnoreCase), "The native monitor should not add undo instructions to routine completion messages.");
         Assert.IsFalse(razor.Contains("OverallScale", StringComparison.Ordinal), "Physical scale belongs only to the pop-out monitor, not the fitted full-page dashboard.");
-        StringAssert.Contains(css, ".live-toolbox-backdrop.open { opacity: 1; visibility: visible; pointer-events: none;");
-        Assert.IsFalse(css.Contains(".live-layout-studio.toolbox-open .live-layout-main", StringComparison.Ordinal), "Opening the toolbox must not shrink the dashboard canvas.");
+        Assert.DoesNotContain(".live-toolbox-backdrop", css);
+        StringAssert.Contains(css, ".page-frame:has(.live-layout-studio.toolbox-open)");
+        StringAssert.Contains(css, "padding-right: calc(var(--space-7) + var(--side-toolbox-width));");
+        StringAssert.Contains(css, "--live-toolbox-width:var(--side-toolbox-width)");
         Assert.IsFalse(razor.Contains("Ã", StringComparison.Ordinal), "Razor markup must not contain mojibake glyphs.");
         Assert.IsFalse(razor.Contains("Â", StringComparison.Ordinal), "Razor markup must not contain mojibake glyphs.");
         Assert.IsFalse(script.Contains("Ã", StringComparison.Ordinal), "Pointer script must not contain mojibake glyphs.");

@@ -182,18 +182,18 @@
                     <strong>Aligned traces</strong>
                     <div class="trace-panel-actions">
                         <span>@Selected.Count selected · hover to compare</span>
-                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@TraceToolboxOpen" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
-                            <ProductIcon Name="settings" Size="16" />
+                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="@(TraceToolboxOpen ? "Hide trace toolbox" : "Customize trace charts")" aria-expanded="@TraceToolboxOpen" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
+                            <ProductIcon Name="setup" Size="15" /> Customize
                         </button>
                         <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@TraceExpanded" @onclick="ToggleTraceExpanded">
                             <ProductIcon Name="@(TraceExpanded ? "contract" : "expand")" Size="16" />
                         </button>
                     </div>
                 </div>
-                <div class="analysis-trace-toolbox-backdrop @(TraceToolboxOpen ? "open" : null)" aria-hidden="true"></div>
                 <aside id="analysis-trace-toolbox"
                        class="analysis-trace-toolbox @(TraceToolboxOpen ? "open" : null)"
                        aria-hidden="@(!TraceToolboxOpen)"
+                       inert="@(!TraceToolboxOpen ? string.Empty : null)"
                        aria-label="Race analysis trace toolbox">
                     <header class="trace-toolbox-heading">
                         <div><span class="eyebrow">Race analysis</span><h2>Customize traces</h2><p>Drag telemetry onto a chart. Drag a chart title to reorder.</p></div>

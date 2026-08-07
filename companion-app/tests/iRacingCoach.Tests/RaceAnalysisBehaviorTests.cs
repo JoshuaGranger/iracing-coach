@@ -204,6 +204,10 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "SpeedHeatmapStops");
         StringAssert.Contains(telemetry, "HeatmapColor(normalized, SpeedHeatmapStops)");
         StringAssert.Contains(telemetry, "analysis-trace-toolbox");
+        Assert.DoesNotContain("analysis-trace-toolbox-backdrop", telemetry);
+        StringAssert.Contains(telemetry, "inert=\"@(!TraceToolboxOpen ? string.Empty : null)\"");
+        StringAssert.Contains(telemetry, "<ProductIcon Name=\"setup\" Size=\"15\" /> Customize");
+        Assert.DoesNotContain("<ProductIcon Name=\"settings\"", telemetry);
         StringAssert.Contains(telemetry, "analysis-trace-catalog");
         StringAssert.Contains(telemetry, "data-analysis-drag-signal");
         StringAssert.Contains(telemetry, "data-analysis-drag-row");
@@ -287,6 +291,12 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain(".trace-row-label-shell.selected", css);
         Assert.DoesNotContain(".trace-row-label-trigger:hover { color: var(--text-primary); background:", css);
         StringAssert.Contains(css, ".analysis-trace-studio .analysis-trace-toolbox");
+        Assert.DoesNotContain(".analysis-trace-toolbox-backdrop", css);
+        StringAssert.Contains(css, ".analysis-page-frame:has(.analysis-trace-studio.toolbox-open)");
+        StringAssert.Contains(css, "padding-right: calc(22px + var(--side-toolbox-width));");
+        StringAssert.Contains(css, ".trace-panel.trace-panel-expanded.toolbox-open { right: var(--side-toolbox-width); }");
+        StringAssert.Contains(css, ".trace-toolbox-button {");
+        StringAssert.Contains(css, "min-width: 92px;");
         StringAssert.Contains(css, ".analysis-trace-metric-card:focus-visible");
         StringAssert.Contains(css, ".trace-selected-signal > i.unavailable");
     }

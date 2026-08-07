@@ -195,10 +195,10 @@
         </div>
     </div>
 
-    <div class="live-toolbox-backdrop @(_toolboxOpen ? "open" : null)" aria-hidden="true"></div>
     <aside id="live-telemetry-toolbox"
            class="live-toolbox @(_toolboxOpen ? "open" : null)"
            aria-hidden="@(!_toolboxOpen)"
+           inert="@(!_toolboxOpen ? string.Empty : null)"
            aria-label="Live telemetry toolbox">
             <header class="live-toolbox-heading">
                 <div><span class="eyebrow">Live telemetry</span><h2>Customize dashboard</h2><p>Drag, resize, and tune each widget.</p></div>
