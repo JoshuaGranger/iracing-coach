@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
@@ -295,7 +298,15 @@ class StorageRecentAnalysesTests(unittest.TestCase):
                         "is_fixed_setup": True,
                     },
                     "race_summary": {"scheduled_laps": 100, "recorded_laps": 80},
-                    "source": {"telemetry_files": [str(source)]},
+                    "source": {
+                        "telemetry_files": [str(source)],
+                        "selection": {
+                            "group_id": "subsession:42:1",
+                            "subsession_id": 42,
+                            "sim_session_num": 1,
+                            "sim_session_type": "Race",
+                        },
+                    },
                     "runs": [{"run_number": 1, "green_laps": green_laps}],
                 }
 
@@ -340,7 +351,15 @@ class StorageRecentAnalysesTests(unittest.TestCase):
                     "is_fixed_setup": True,
                 },
                 "race_summary": {"scheduled_laps": 100, "recorded_laps": 80},
-                "source": {"telemetry_files": [str(source)]},
+                "source": {
+                    "telemetry_files": [str(source)],
+                    "selection": {
+                        "group_id": "subsession:42:1",
+                        "subsession_id": 42,
+                        "sim_session_num": 1,
+                        "sim_session_type": "Race",
+                    },
+                },
                 "runs": [],
             }
             store.record_analysis(analysis, str(report))
@@ -355,6 +374,178 @@ class StorageRecentAnalysesTests(unittest.TestCase):
             self.assertTrue(rows[0]["race_card_available"])
             self.assertEqual(rows[0]["race_card_path"], str(race_card_path))
             self.assertTrue(rows[0]["source_available"])
+
+    def test_qualifying_and_race_are_distinct_durable_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArchiveStore(directory)
+
+            def analysis(identifier: str, phase: str, sim_session_num: int) -> dict:
+                source = Path(directory) / f"{phase.casefold()}.ibt"
+                source.write_bytes(phase.encode("utf-8"))
+                return {
+                    "analysis_id": identifier,
+                    "analyzed_at": f"2026-08-01T12:0{sim_session_num}:00+00:00",
+                    "identity": {
+                        "session_start": "2026-08-01T11:00:00+00:00",
+                        "subsession_id": 42,
+                        "session_id": 84,
+                        # Weekend EventType is intentionally not the exact phase.
+                        "event_type": "Race",
+                        "season_year": 2026,
+                        "season_quarter": 3,
+                        "car_name": "Test Car",
+                        "track_name": "Test Track",
+                        "is_fixed_setup": True,
+                    },
+                    "race_summary": {"scheduled_laps": 40, "recorded_laps": 10},
+                    "source": {
+                        "telemetry_files": [str(source)],
+                        "selection": {
+                            "group_id": f"subsession:42:{sim_session_num}",
+                            "subsession_id": 42,
+                            "sim_session_num": sim_session_num,
+                            "sim_session_type": phase,
+                        },
+                    },
+                    "runs": [{"run_number": 1, "green_laps": sim_session_num + 1}],
+                }
+
+            qualifying = analysis("analysis-qualifying", "Qualify", 0)
+            race = analysis("analysis-race", "Race", 1)
+            qualifying["analyzed_at"] = "2026-08-01T12:59:00+00:00"
+            self.assertNotEqual(
+                store.report_directory(qualifying),
+                store.report_directory(race),
+                "Two phases in one subsession must never share an artifact directory.",
+            )
+            store.record_analysis(qualifying, str(Path(directory) / "qualifying" / "report.md"))
+            store.record_analysis(race, str(Path(directory) / "race" / "report.md"))
+
+            recent = {row["session_phase"]: row for row in store.recent_analyses(limit=10)}
+            self.assertEqual(set(recent), {"qualifying", "race"})
+            self.assertEqual(recent["qualifying"]["session_group_id"], "subsession:42:0")
+            self.assertEqual(recent["race"]["session_group_id"], "subsession:42:1")
+            race_only = store.recent_analyses(limit=1, phase="race")
+            self.assertEqual(
+                [row["analysis_id"] for row in race_only],
+                ["analysis-race"],
+                "The phase predicate must run before LIMIT so newer qualifying rows cannot hide races.",
+            )
+            self.assertEqual(
+                [row["analysis_id"] for row in store.historical_runs(store.context_from_analysis(qualifying))],
+                ["analysis-qualifying"],
+            )
+            self.assertEqual(
+                [row["analysis_id"] for row in store.historical_runs(store.context_from_analysis(race))],
+                ["analysis-race"],
+            )
+
+    def test_existing_history_database_backfills_phase_identity_from_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_dir = root / "reports" / "legacy"
+            report_dir.mkdir(parents=True)
+            report_path = report_dir / "report.md"
+            report_path.write_text("# legacy\n", encoding="utf-8")
+            (report_dir / "analysis.json").write_text(
+                json.dumps({
+                    "identity": {"subsession_id": 42, "event_type": "Race"},
+                    "source": {"selection": {
+                        "group_id": "subsession:42:0",
+                        "subsession_id": 42,
+                        "sim_session_num": 0,
+                        "sim_session_type": "Qualify",
+                    }},
+                }),
+                encoding="utf-8",
+            )
+            database = sqlite3.connect(root / "history.sqlite3")
+            database.execute("""
+                CREATE TABLE sessions (
+                    analysis_id TEXT PRIMARY KEY, analyzed_at TEXT NOT NULL,
+                    session_start TEXT, subsession_id TEXT, session_id TEXT,
+                    season_key TEXT NOT NULL, car_key TEXT NOT NULL,
+                    track_key TEXT NOT NULL, setup_type TEXT NOT NULL,
+                    race_length_key TEXT NOT NULL, source_path TEXT,
+                    report_path TEXT NOT NULL, summary_json TEXT NOT NULL
+                )
+            """)
+            database.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "legacy-analysis", "2026-08-01T12:00:00+00:00", None, "42", "84",
+                    "2026s3", "test-car", "test-track", "fixed", "40-laps", None,
+                    str(report_path), "{}",
+                ),
+            )
+            database.commit()
+            database.close()
+
+            rows = ArchiveStore(root).recent_analyses(limit=10)
+
+            self.assertEqual(rows[0]["session_group_id"], "subsession:42:0")
+            self.assertEqual(rows[0]["sim_session_num"], "0")
+            self.assertEqual(rows[0]["sim_session_type"], "Qualify")
+            self.assertEqual(rows[0]["session_phase"], "qualifying")
+
+    def test_existing_history_database_migration_is_concurrent_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_dir = root / "reports" / "legacy"
+            report_dir.mkdir(parents=True)
+            report_path = report_dir / "report.md"
+            report_path.write_text("# legacy\n", encoding="utf-8")
+            (report_dir / "analysis.json").write_text(
+                json.dumps({
+                    "identity": {"subsession_id": 42},
+                    "source": {"selection": {
+                        "group_id": "subsession:42:1",
+                        "subsession_id": 42,
+                        "sim_session_num": 1,
+                        "sim_session_type": "Race",
+                    }},
+                }),
+                encoding="utf-8",
+            )
+            database = sqlite3.connect(root / "history.sqlite3")
+            database.execute("""
+                CREATE TABLE sessions (
+                    analysis_id TEXT PRIMARY KEY, analyzed_at TEXT NOT NULL,
+                    session_start TEXT, subsession_id TEXT, session_id TEXT,
+                    season_key TEXT NOT NULL, car_key TEXT NOT NULL,
+                    track_key TEXT NOT NULL, setup_type TEXT NOT NULL,
+                    race_length_key TEXT NOT NULL, source_path TEXT,
+                    report_path TEXT NOT NULL, summary_json TEXT NOT NULL
+                )
+            """)
+            database.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "legacy-analysis", "2026-08-01T12:00:00+00:00", None, "42", "84",
+                    "2026s3", "test-car", "test-track", "fixed", "40-laps", None,
+                    str(report_path), "{}",
+                ),
+            )
+            database.commit()
+            database.close()
+
+            workers = 12
+            barrier = threading.Barrier(workers)
+
+            def initialize(_: int) -> None:
+                barrier.wait()
+                ArchiveStore(root).initialize()
+
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for future in [executor.submit(initialize, index) for index in range(workers)]:
+                    future.result(timeout=35)
+
+            store = ArchiveStore(root)
+            store.initialize()
+            rows = store.recent_analyses(limit=10, phase="race")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["analysis_id"], "legacy-analysis")
+            self.assertEqual(rows[0]["session_group_id"], "subsession:42:1")
 
 
 if __name__ == "__main__":

@@ -102,7 +102,7 @@ Never pass a Garage61 token as an argument or environment variable.
 ## Data and artifact rules
 
 - Render returned `analysis_path`, `report_path`, `race_card_path`, and visual paths. Do not reconstruct archive paths.
-- Pin all follow-up operations to the exact selected SubSessionID/source after resolving `latest` once.
+- Pin all follow-up operations to the exact discovery `group_id` after resolving `latest` once. A numeric SubSessionID remains backward compatible, but it is ambiguous when Qualifying and Race share that identifier; the phase-qualified `group_id` is authoritative for an opened workspace and its cache.
 - Never open SQLite for writes from the UI. Use backend tools.
 - Raw iRacing telemetry and setup files are read-only and remain outside the archive.
 - Treat the entire iRacing installation root as read-only. The backend may inventory file/version metadata for content and physics fingerprints, but the app must never patch, replace, unpack, or write game files.

@@ -16,6 +16,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         WriteIndented = true
     };
 
+    private readonly object _saveGate = new();
     private readonly string _path;
     private readonly string _machinePath;
     private readonly IGarage61CredentialStore _credentials;
@@ -86,21 +87,20 @@ public sealed class JsonSettingsStore : ISettingsStore
 
     public void Save(CompanionSettings settings)
     {
-        if (!string.IsNullOrWhiteSpace(settings.Garage61ApiKey))
+        lock (_saveGate)
         {
-            _credentials.Store(settings.Garage61ApiKey);
-            settings.Garage61ApiKey = string.Empty;
+            if (!string.IsNullOrWhiteSpace(settings.Garage61ApiKey))
+            {
+                _credentials.Store(settings.Garage61ApiKey);
+                settings.Garage61ApiKey = string.Empty;
+            }
+            settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
+            _ = LiveMonitorLayouts.ValidateAndRepair(settings.LiveMonitor, out _);
+            settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
+            _ = AnalysisTraceLayouts.ValidateAndRepair(settings.RaceAnalysisTraces);
+            SaveMachineSettings(settings.LiveMonitor);
+            WriteAtomically(_path, JsonSerializer.Serialize(settings, JsonOptions));
         }
-        settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
-        _ = LiveMonitorLayouts.ValidateAndRepair(settings.LiveMonitor, out _);
-        settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
-        _ = AnalysisTraceLayouts.ValidateAndRepair(settings.RaceAnalysisTraces);
-        SaveMachineSettings(settings.LiveMonitor);
-        var directory = Path.GetDirectoryName(_path) ?? throw new InvalidOperationException("The settings path has no parent directory.");
-        Directory.CreateDirectory(directory);
-        var temporary = _path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(settings, JsonOptions));
-        File.Move(temporary, _path, overwrite: true);
     }
 
     private void ApplyMachineSettings(LiveMonitorLayout layout)
@@ -136,11 +136,24 @@ public sealed class JsonSettingsStore : ISettingsStore
                 PlacementRecoveredAt = layout.PlacementRecoveredAt
             }
         };
-        var directory = Path.GetDirectoryName(_machinePath) ?? throw new InvalidOperationException("The machine settings path has no parent directory.");
+        WriteAtomically(_machinePath, JsonSerializer.Serialize(local, JsonOptions));
+    }
+
+    private static void WriteAtomically(string path, string contents)
+    {
+        var directory = Path.GetDirectoryName(path) ?? throw new InvalidOperationException("The settings path has no parent directory.");
         Directory.CreateDirectory(directory);
-        var temporary = _machinePath + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(local, JsonOptions));
-        File.Move(temporary, _machinePath, overwrite: true);
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, contents);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(temporary); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 
     private bool TryMigrateGarage61Credential(CompanionSettings settings)

@@ -146,11 +146,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnMonitorVisibilityRequested(bool visible)
+    private void OnMonitorVisibilityRequested(bool visible, bool activate)
     {
         if (_disposed || _exitRequested) return;
-        if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => OnMonitorVisibilityRequested(visible)); return; }
-        if (visible) _liveMonitor.ShowMonitor(); else _liveMonitor.HideMonitor();
+        if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => OnMonitorVisibilityRequested(visible, activate)); return; }
+        if (visible && !_state.LiveMonitorVisible) return;
+        if (visible) _liveMonitor.ShowMonitor(activate); else _liveMonitor.HideMonitor();
         RefreshTrayMenu();
     }
 
@@ -220,7 +221,7 @@ public partial class MainWindow : Window
             TryCleanup(() => _windowSource.RemoveHook(WindowMessageHook), "remove window hook");
             TryCleanup(() => _ = UnregisterHotKey(_windowSource.Handle, LiveMonitorHotkeyId), "unregister Live Monitor hotkey");
         }
-        TryCleanup(_liveMonitor.Close, "close Live Monitor");
+        TryCleanup(_liveMonitor.CloseMonitor, "close Live Monitor");
         TryCleanup(Close, "close main window");
         TryCleanup(_trayIcon.Dispose, "dispose tray icon");
         TryCleanup(_state.Dispose, "stop application services");

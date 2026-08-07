@@ -232,15 +232,14 @@
     const throttle = averageAt(state, "throttle", fraction);
     const brake = averageAt(state, "brake", fraction);
     const delta = averageAt(state, "delta", fraction);
-    if (speed === null && throttle === null && brake === null) {
+    if (speed === null && throttle === null && brake === null && delta === null) {
       state.trackSummary.textContent = "No sample";
       return;
     }
-    const parts = [
-      `${(speed ?? 0).toFixed(0)} mph`,
-      `${((throttle ?? 0) * 100).toFixed(0)}% throttle`,
-      `${((brake ?? 0) * 100).toFixed(0)}% brake`
-    ];
+    const parts = [];
+    if (speed !== null) parts.push(`${speed.toFixed(0)} mph`);
+    if (throttle !== null) parts.push(`${(throttle * 100).toFixed(0)}% throttle`);
+    if (brake !== null) parts.push(`${(brake * 100).toFixed(0)}% brake`);
     if (delta !== null) parts.push(`${signed(delta, 3)} s`);
     state.trackSummary.textContent = parts.join(" · ");
   }

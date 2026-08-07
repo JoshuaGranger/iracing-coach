@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using iRacingCoach.BackendClient;
 using iRacingCoach.Contracts;
 using iRacingCoach.Coordinator;
@@ -37,7 +39,9 @@ public sealed class CoordinatorTests
     [DoNotParallelize]
     public async Task OpeningRace_ImmediatelyShowsItsTelemetryLoadingStateWithoutStaleAnalysis()
     {
-        using var state = new CompanionState(new FakeBackend(callDelay: TimeSpan.FromMilliseconds(100)));
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-opening-race", Guid.NewGuid().ToString("N"));
+        using var state = new CompanionState(new FakeBackend(callDelay: TimeSpan.FromMilliseconds(100)), new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
         var race = new RecentRace("race-loading", "Kentucky Speedway", "Oval", "Toyota Tundra", "Today", "Fixed", "Ready", "Recorded", false, true, 6, 11)
         {
             Selector = "8001"
@@ -113,7 +117,7 @@ public sealed class CoordinatorTests
         var races = DashboardMapper.Map(populated.RootElement);
         Assert.HasCount(2, races);
         Assert.AreEqual("subsession:8001:1", races[0].Id);
-        Assert.AreEqual("8001", races[0].EffectiveSelector);
+        Assert.AreEqual("subsession:8001:1", races[0].EffectiveSelector);
         Assert.AreEqual("Synthetic Speedway", races[0].Track);
         Assert.IsTrue(races[0].Analyzed);
         Assert.AreEqual(8, races[0].StartPosition);
@@ -125,6 +129,21 @@ public sealed class CoordinatorTests
 
         using var empty = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "dashboard-empty.json")));
         Assert.IsEmpty(DashboardMapper.Map(empty.RootElement));
+    }
+
+    [TestMethod]
+    public void DashboardMapper_UsesTheSameFriendlyIdentityAsTheOpenedWorkspace()
+    {
+        using var dashboard = JsonDocument.Parse("""
+        {"ok":true,"races":[{"group_id":"subsession:44:1","subsession_id":44,"sim_session_num":1,"sim_session_type":"Race","is_race":true,"track_name":"kentucky 2011 oval","track_config_name":"Oval 2011","car_path":"stockcars2 supra2019","start_time_utc":"2026-08-01T12:00:00Z"}]}
+        """);
+
+        var race = DashboardMapper.Map(dashboard.RootElement).Single();
+
+        Assert.AreEqual("Kentucky Speedway", race.Track);
+        Assert.AreEqual("Oval", race.Layout);
+        Assert.AreEqual("Toyota Supra Class B", race.Car);
+        Assert.AreEqual("subsession:44:1", race.EffectiveSelector);
     }
 
     [TestMethod]
@@ -146,6 +165,9 @@ public sealed class CoordinatorTests
         Assert.HasCount(2, groupedEvent.Sessions);
         Assert.IsTrue(groupedEvent.Sessions[0].IsQualifying);
         Assert.IsTrue(groupedEvent.Sessions[1].IsRace);
+        Assert.AreEqual("subsession:8001:0", groupedEvent.Sessions[0].EffectiveSelector);
+        Assert.AreEqual("subsession:8001:1", groupedEvent.Sessions[1].EffectiveSelector);
+        Assert.AreNotEqual(groupedEvent.Sessions[0].EffectiveSelector, groupedEvent.Sessions[1].EffectiveSelector);
         Assert.IsTrue(groupedEvent.Sessions[1].Reconnected);
         Assert.IsTrue(groupedEvent.Sessions[1].Analyzed);
     }
@@ -252,6 +274,177 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public void AnalysisMapper_PropagatesLapAndRunComparisonEligibilityIntoOverview()
+    {
+        using var response = JsonDocument.Parse("""
+        {"selection":{"sim_session_type":"Race"},"analysis_view":{"schema_version":1,
+          "identity":{"event_type":"Race"},"race_summary":{"recorded_laps":2},
+          "laps":[
+            {"lap":1,"lap_time_s":29.0,"complete":true,"flag_state":"green","pit_time_s":0,"damage_repair_context":{"automatic_coaching_reference_eligible":false,"exclusion_reason_codes":["recorded_repair_evidence"]}},
+            {"lap":2,"lap_time_s":30.0,"complete":true,"flag_state":"green","pit_time_s":0,"damage_repair_context":{"automatic_coaching_reference_eligible":true,"exclusion_reason_codes":[]}}],
+          "lap_traces":{"traces":[
+            {"lap":1,"lap_time_s":29.0,"complete":true,"flag_state":"green","pit_time_s":0,"points":[{"lap_pct":0.5,"speed_mph":140}]},
+            {"lap":2,"lap_time_s":30.0,"complete":true,"flag_state":"green","pit_time_s":0,"points":[{"lap_pct":0.5,"speed_mph":138}]}]},
+          "runs":[
+            {"run_number":1,"lap_numbers":[1],"green_laps":5,"pace":{"green_lap_time_slope_s_per_lap":0.8},"damage_repair_context":{"automatic_coaching_reference_eligible":false,"reason_codes":["recorded_repair_evidence"]}},
+            {"run_number":2,"lap_numbers":[2],"green_laps":3,"pace":{"green_lap_time_slope_s_per_lap":0.1},"damage_repair_context":{"automatic_coaching_reference_eligible":true,"reason_codes":[]}},
+            {"run_number":3,"lap_numbers":[2],"green_laps":4,"pace":{"green_lap_time_slope_s_per_lap":-2.0},"damage_repair_context":{"automatic_coaching_reference_eligible":true,"reason_codes":["manual_review_after_tow_or_repair"]}}],
+          "track_profile":{"shape":[],"detected_corner_segments":[]},"strategy":{},"damage_repair":{},"data_quality":{}}}
+        """);
+
+        var workspace = RuntimeMapper.Analysis(response.RootElement);
+        var overview = RuntimeMapper.Overview(response.RootElement);
+
+        Assert.IsFalse(workspace.Traces.Single(trace => trace.Lap == 1).ComparisonEligible);
+        StringAssert.Contains(workspace.Traces.Single(trace => trace.Lap == 1).ExclusionReason, "Recorded Repair Evidence");
+        Assert.IsTrue(workspace.Traces.Single(trace => trace.Lap == 2).IsComparable());
+        Assert.IsFalse(workspace.Runs.Single(run => run.Number == 3).ComparisonEligible);
+        Assert.AreEqual(30d, overview.BestCleanLapSeconds);
+        Assert.AreEqual(5, overview.LongestGreenRun, "Observed run length remains factual even when that run is excluded from comparison.");
+        Assert.AreEqual(.1d, overview.PaceSlopeSecondsPerLap!.Value, .0001, "Pace must come from the longest eligible run, not the longest disrupted run.");
+    }
+
+    [TestMethod]
+    public void AnalysisMapper_ExcludesRestartNonRacingOffTrackTrafficAndRepairReasonLaps()
+    {
+        using var response = JsonDocument.Parse("""
+        {"selection":{"sim_session_type":"Race"},"analysis_view":{"schema_version":1,
+          "identity":{"event_type":"Race"},"race_summary":{"recorded_laps":9},
+          "laps":[
+            {"lap":1,"lap_time_s":200,"complete":true,"flag_state":"caution","pit_time_s":0},
+            {"lap":2,"lap_time_s":10,"complete":true,"flag_state":"green","pit_time_s":0},
+            {"lap":3,"lap_time_s":60,"complete":true,"flag_state":"green","pit_time_s":0,"racing_state_fraction":1,"clean_context":{"on_track_fraction":1,"traffic_proximity_fraction":0}},
+            {"lap":4,"lap_time_s":11,"complete":true,"flag_state":"green","pit_time_s":0,"racing_state_fraction":0.5},
+            {"lap":5,"lap_time_s":12,"complete":true,"flag_state":"green","pit_time_s":0,"clean_context":{"on_track_fraction":0.5,"traffic_proximity_fraction":0}},
+            {"lap":6,"lap_time_s":13,"complete":true,"flag_state":"green","pit_time_s":0,"clean_context":{"on_track_fraction":1,"traffic_proximity_fraction":0.2}},
+            {"lap":7,"lap_time_s":60.1,"complete":true,"flag_state":"green","pit_time_s":0},
+            {"lap":8,"lap_time_s":60.2,"complete":true,"flag_state":"green","pit_time_s":0},
+            {"lap":9,"lap_time_s":9,"complete":true,"flag_state":"green","pit_time_s":0,"damage_repair_context":{"automatic_coaching_reference_eligible":true,"exclusion_reason_codes":["repair_correlated_candidate"]}}],
+          "lap_traces":{"traces":[
+            {"lap":1,"points":[]},{"lap":2,"points":[]},{"lap":3,"points":[]},
+            {"lap":4,"points":[]},{"lap":5,"points":[]},{"lap":6,"points":[]},
+            {"lap":7,"points":[]},{"lap":8,"points":[]},{"lap":9,"points":[]}]},
+          "runs":[],"track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{},"damage_repair":{},"data_quality":{}}}
+        """);
+
+        var workspace = RuntimeMapper.Analysis(response.RootElement);
+        var overview = RuntimeMapper.Overview(response.RootElement);
+
+        CollectionAssert.AreEqual(new[] { 3, 7, 8 }, workspace.Traces.Where(trace => trace.ComparisonEligible).Select(trace => trace.Lap).ToArray());
+        Assert.AreEqual(60d, overview.BestCleanLapSeconds);
+        StringAssert.Contains(workspace.Traces.Single(trace => trace.Lap == 2).ExclusionReason, "Restart");
+        StringAssert.Contains(workspace.Traces.Single(trace => trace.Lap == 6).ExclusionReason, "Close Traffic");
+    }
+
+    [TestMethod]
+    public void ArchivedAnalysis_UsesRecordedSessionPhaseInsteadOfWeekendEventType()
+    {
+        using var report = JsonDocument.Parse("""
+        {
+          "analysis_id":"qualifying-analysis",
+          "identity":{"event_type":"Race","subsession_id":55,"track_name":"Test Track","car_name":"Test Car"},
+          "source":{"selection":{"group_id":"subsession:55:0","subsession_id":55,"sim_session_num":0,"sim_session_type":"Qualify"}},
+          "race_summary":{"recorded_laps":2},
+          "laps":[],"runs":[],
+          "lap_traces":{"traces":[]},
+          "track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{},"damage_repair":{},"data_quality":{}
+        }
+        """);
+
+        var workspace = RuntimeMapper.ArchivedAnalysis(report.RootElement);
+        var race = RuntimeMapper.ArchivedRace(report.RootElement, @"C:\Coach\analysis.json");
+
+        Assert.AreEqual("Qualify", workspace.SessionType);
+        Assert.IsTrue(race.IsQualifying);
+        Assert.AreEqual("subsession:55:0", race.Id);
+        Assert.AreEqual("subsession:55:0", race.EffectiveSelector);
+        Assert.AreEqual("55", race.EventKey);
+    }
+
+    [TestMethod]
+    public void AnalysisMapper_RejectsConflictingTransportAndRecordedSessionPhases()
+    {
+        using var response = JsonDocument.Parse("""
+        {
+          "selection":{"group_id":"subsession:55:1","sim_session_type":"Race"},
+          "analysis_view":{
+            "schema_version":1,
+            "identity":{"event_type":"Race"},
+            "source":{"selection":{"group_id":"subsession:55:0","sim_session_type":"Qualify"}},
+            "race_summary":{},"laps":[],"runs":[],
+            "lap_traces":{"traces":[]},
+            "track_profile":{"shape":[],"detected_corner_segments":[]},
+            "strategy":{},"damage_repair":{},"data_quality":{}
+          }
+        }
+        """);
+
+        var error = Assert.Throws<InvalidDataException>(() => RuntimeMapper.Analysis(response.RootElement));
+
+        StringAssert.Contains(error.Message, "conflicting session phases");
+    }
+
+    [TestMethod]
+    public void AnalysisMapper_UsesRecordedSessionPhaseWhenTransportSelectionIsEmpty()
+    {
+        using var response = JsonDocument.Parse("""
+        {
+          "selection":{},
+          "analysis_view":{
+            "schema_version":1,
+            "identity":{"event_type":"Race"},
+            "source":{"selection":{"group_id":"subsession:55:0","sim_session_type":"Qualify"}},
+            "race_summary":{},"laps":[],"runs":[],
+            "lap_traces":{"traces":[]},
+            "track_profile":{"shape":[],"detected_corner_segments":[]},
+            "strategy":{},"damage_repair":{},"data_quality":{}
+          }
+        }
+        """);
+
+        var workspace = RuntimeMapper.Analysis(response.RootElement);
+
+        Assert.AreEqual("Qualify", workspace.SessionType);
+    }
+
+    [TestMethod]
+    public void AnalysisMapper_LabelsMissingLegacyGradeWeightsAsUnavailable()
+    {
+        using var response = JsonDocument.Parse("""
+        {"selection":{"sim_session_type":"Race"},"analysis_view":{"schema_version":1,
+          "identity":{"event_type":"Race"},"race_summary":{},"laps":[],"runs":[],
+          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{},"damage_repair":{},"data_quality":{},
+          "race_grades":{"rubric_version":"legacy-v1","overall_grade":"B","categories":[
+            {"key":"pace","label":"Pace execution","grade":"B","score":84,"evidence_type":"derived"}],
+            "unavailable_categories":[{"key":"consistency","label":"Consistency","reason":"Not recorded"}]}}}
+        """);
+
+        var workspace = RuntimeMapper.Analysis(response.RootElement);
+
+        StringAssert.Contains(workspace.Grades.Single(grade => grade.Key == "pace").Calibration, "configured weight unavailable");
+        StringAssert.Contains(workspace.Grades.Single(grade => grade.Key == "consistency").Calibration, "configured weight unavailable");
+        Assert.IsFalse(workspace.Grades.Any(grade => grade.Calibration.Contains("0% configured", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void PitServiceAssociation_UsesTheRunEndingAtTheStopForPitOutLaps()
+    {
+        var service = new AnalysisPitStop(31.2, 8.0, 25, ["LF", "RF"], 1, 2, 3, 4);
+        var first = new AnalysisRun(1, [1, 2, 3, 4, 5, 6, 7, 8, 9], 9, 0, 4, null, "Recorded", true, "Recorded run", null, null, null, null, "", null, null, service);
+        var second = new AnalysisRun(2, [10, 11, 12], 3, 0, 1.2, null, "Recorded", true, "Recorded run", null, null, null, null, "", null, null);
+        AnalysisRun[] runs = [first, second];
+        var pitIn = new AnalysisLapTrace(9, 31, true, "green", 1, 0, 2, [], PitEntry: true);
+        var pitOut = new AnalysisLapTrace(10, 32, true, "green", 1, 0, 1, [], PitExit: true);
+
+        Assert.AreSame(first, pitIn.PitServiceFor(runs, "in"));
+        Assert.AreSame(first, pitOut.PitServiceFor(runs, "out"));
+        Assert.AreNotSame(second, pitOut.PitServiceFor(runs, "out"));
+    }
+
+    [TestMethod]
     public void CapabilityContext_PartiallyIndexedSessions_AreExcludedWithoutThrowing()
     {
         using var state = new CompanionState(new FakeBackend());
@@ -277,7 +470,9 @@ public sealed class CoordinatorTests
     [TestMethod]
     public async Task AnalysisJob_UnexpectedMapperOrBackendFailure_IsContainedAndReported()
     {
-        using var state = new CompanionState(new FakeBackend(failure: new InvalidOperationException("nullable analysis shape")));
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-analysis-failure", Guid.NewGuid().ToString("N"));
+        using var state = new CompanionState(new FakeBackend(failure: new InvalidOperationException("nullable analysis shape")), new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
         var race = new RecentRace(
             "kentucky", "Kentucky Speedway", "Oval", "Toyota Tundra TRD Pro", "Today",
             "Fixed", "Needs analysis", "15 laps", false, false, 8, 6, Selector: "87624987");
@@ -288,6 +483,91 @@ public sealed class CoordinatorTests
         Assert.IsNotNull(state.LastRecoverableError);
         Assert.AreEqual("failed", state.Jobs.Single().Status);
         StringAssert.Contains(state.LastRecoverableError.Scope, "Kentucky");
+    }
+
+    [TestMethod]
+    public async Task AnalysisJob_RejectsTelemetryFromADifferentEventPhase()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-phase-response", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(sessionType: "Race"));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var qualifying = new RecentRace(
+            "subsession:8001:0", "Test Track", "Oval", "Test Car", "Today",
+            "Open", "Recorded", "Qualifying", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Qualify", Selector: "subsession:8001:0");
+
+        await state.AnalyzeRaceAsync(qualifying, force: true);
+
+        Assert.IsNull(state.CurrentAnalysis);
+        Assert.IsNotNull(state.LastRecoverableError);
+        StringAssert.Contains(state.LastRecoverableError.Message, "requested Qualify session");
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task AnalysisJob_RejectsTelemetryFromADifferentRecordingInTheSamePhase()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-selector-response", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: "subsession:9999:1"));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            "subsession:8001:1", "Test Track", "Oval", "Test Car", "Today",
+            "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: "subsession:8001:1");
+
+        await state.AnalyzeRaceAsync(race, force: true);
+
+        Assert.IsNull(state.CurrentAnalysis);
+        Assert.IsNotNull(state.LastRecoverableError);
+        StringAssert.Contains(state.LastRecoverableError.Message, "requested recording subsession:8001:1");
+    }
+
+    [TestMethod]
+    public async Task AnalysisCache_RejectsARaceResponseSavedUnderAQualifyingKey()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-phase-cache", Guid.NewGuid().ToString("N"));
+        const string selector = "subsession:8001:0";
+        WriteUiAnalysisCache(root, selector, HomeAnalysisResponse(sessionType: "Race"), sessionType: "Qualify");
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(sessionType: "Qualify"));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var qualifying = new RecentRace(
+            selector, "Test Track", "Oval", "Test Car", "Today",
+            "Open", "Recorded", "Qualifying", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Qualify", Selector: selector);
+
+        await state.AnalyzeRaceAsync(qualifying);
+
+        Assert.AreEqual(1, backend.AnalyzeCalls, "A wrong-phase cache must be ignored and replaced from the requested recording.");
+        Assert.AreEqual("Qualify", state.CurrentAnalysis?.SessionType);
+        using var repaired = JsonDocument.Parse(File.ReadAllText(UiAnalysisCachePath(root, selector, "Qualify")));
+        Assert.AreEqual("Qualify", repaired.RootElement.GetProperty("response").GetProperty("selection").GetProperty("sim_session_type").GetString());
+    }
+
+    [TestMethod]
+    public async Task AnalysisCache_RejectsADifferentRecordingSelectorInTheSamePhase()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-selector-cache", Guid.NewGuid().ToString("N"));
+        const string requested = "subsession:8001:1";
+        const string wrong = "subsession:9999:1";
+        WriteUiAnalysisCache(root, requested, HomeAnalysisResponse(selector: wrong), storedSelector: wrong);
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse());
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            requested, "Test Track", "Oval", "Test Car", "Today",
+            "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: requested);
+
+        await state.AnalyzeRaceAsync(race);
+
+        Assert.AreEqual(1, backend.AnalyzeCalls, "A same-phase cache for a different recording must be ignored and repaired.");
+        Assert.IsNotNull(state.CurrentAnalysis);
+        using var repaired = JsonDocument.Parse(File.ReadAllText(UiAnalysisCachePath(root, requested)));
+        Assert.AreEqual(requested, repaired.RootElement.GetProperty("selector").GetString());
+        Assert.AreEqual(requested, repaired.RootElement.GetProperty("response").GetProperty("selection").GetProperty("group_id").GetString());
     }
 
     [TestMethod]
@@ -308,8 +588,8 @@ public sealed class CoordinatorTests
         using var dashboard = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "dashboard-populated.json")));
         var analysis = HomeAnalysisResponse();
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache", Guid.NewGuid().ToString("N"));
-        WriteUiAnalysisCache(root, "8001", analysis);
-        WriteUiAnalysisCache(root, "8000", analysis);
+        WriteUiAnalysisCache(root, "subsession:8001:1", analysis);
+        WriteUiAnalysisCache(root, "subsession:8000:1", analysis);
         var backend = new FakeBackend(dashboard: dashboard.RootElement.Clone(), analysis: analysis);
         using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
         state.Settings.CoachHome = root;
@@ -326,11 +606,83 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task HomeRefresh_ProjectsSavedAnalysisOverviewIntoRaceAnalysisCatalogImmediately()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-shared-race-overview", Guid.NewGuid().ToString("N"));
+        var analysisPath = Path.Combine(root, "archive", "reports", "race-9001", "analysis.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(analysisPath)!);
+        var analysis = HomeAnalysisResponse(selector: "subsession:9001:1");
+        File.WriteAllText(analysisPath, analysis.GetProperty("analysis_view").GetRawText());
+        var dashboard = JsonSerializer.SerializeToElement(new
+        {
+            ok = true,
+            races = new[]
+            {
+                new
+                {
+                    group_id = "subsession:9001:1",
+                    subsession_id = 9001,
+                    session_id = 8001,
+                    sim_session_type = "Race",
+                    event_type = "Race",
+                    is_race = true,
+                    valid = true,
+                    is_fixed_setup = true,
+                    track_name = "New Hampshire Motor Speedway",
+                    track_config_name = "Oval",
+                    car_path = "stockcars2 camaro2019",
+                    start_time_utc = "2026-08-01T21:09:00Z",
+                    file_count = 1,
+                    files = new[] { "new-hampshire.ibt" },
+                    analysis_status = "analyzed",
+                    analysis = new
+                    {
+                        analysis_path = analysisPath,
+                        summary = new
+                        {
+                            recorded_laps = 40,
+                            green_laps_estimated = 35,
+                            caution_laps_estimated = 5,
+                            pit_stops_detected = 1,
+                            runs_detected = 2
+                        }
+                    }
+                }
+            }
+        });
+        var backend = new FakeBackend(
+            dashboard: dashboard,
+            discovery: DiscoveryWithFinalizedRaces(1),
+            analysis: analysis,
+            analysisDelay: TimeSpan.FromSeconds(2));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+
+        var homeOverview = state.Races.Single().Overview;
+        var catalogOverview = state.EventSessions.Single(session => session.IsRace).Overview;
+        var groupedOverview = state.EventGroups.Single().Sessions.Single(session => session.IsRace).Overview;
+        Assert.IsNotNull(homeOverview);
+        Assert.IsNotNull(catalogOverview);
+        Assert.IsNotNull(groupedOverview);
+        Assert.AreEqual(30.125, homeOverview.BestCleanLapSeconds);
+        Assert.AreEqual(homeOverview.BestCleanLapSeconds, catalogOverview.BestCleanLapSeconds);
+        Assert.AreEqual(homeOverview.LongestGreenRun, catalogOverview.LongestGreenRun);
+        Assert.AreEqual(homeOverview.PaceSlopeSecondsPerLap, catalogOverview.PaceSlopeSecondsPerLap);
+        Assert.AreEqual(homeOverview.LowestTireRemainingPercent, catalogOverview.LowestTireRemainingPercent);
+        Assert.AreEqual(catalogOverview, groupedOverview,
+            "The immutable Race Analysis group must be built from the enriched session projection.");
+        Assert.AreEqual(0, backend.AnalyzeCalls,
+            "Projecting an existing saved result must not start another analysis pass before the catalog can render it.");
+    }
+
+    [TestMethod]
     public async Task HomeRefresh_RegeneratesSchemaFourRaceSummaryCache()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache-upgrade", Guid.NewGuid().ToString("N"));
         var analysis = HomeAnalysisResponse();
-        const string selector = "9001";
+        const string selector = "subsession:9001:1";
         WriteUiAnalysisCache(root, selector, analysis, schemaVersion: 4);
         var backend = new FakeBackend(
             dashboard: DashboardWithFinalizedRaces(1),
@@ -345,7 +697,7 @@ public sealed class CoordinatorTests
 
         var cachePath = UiAnalysisCachePath(root, selector);
         using var regenerated = JsonDocument.Parse(File.ReadAllText(cachePath));
-        Assert.AreEqual(5, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(6, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-4 cache predates derived slip telemetry and must be regenerated exactly once.");
         Assert.IsEmpty(state.Jobs, "Cache migration remains quiet background maintenance.");
     }
@@ -362,7 +714,7 @@ public sealed class CoordinatorTests
               "caution_laps_estimated": 26.0,
               "pit_stops_detected": 3.0
             },
-            "runs": [],
+            "runs": [{"green_laps":1,"driving_load":{"early_brake_vs_late_percent":0,"early_steer_vs_late_percent":0},"damage_repair_context":{"automatic_coaching_reference_eligible":true,"reason_codes":[]}}],
             "laps": []
           }
         }
@@ -374,6 +726,7 @@ public sealed class CoordinatorTests
         Assert.AreEqual(29, overview.GreenLaps);
         Assert.AreEqual(26, overview.CautionLaps);
         Assert.AreEqual(3, overview.PitStops);
+        Assert.AreEqual(0d, overview.ControlLoadChangePercent);
     }
 
     [TestMethod]
@@ -586,6 +939,50 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    [DoNotParallelize]
+    public async Task LiveMonitorAutoReopen_ManualHideWinsUntilTheNextConnection()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-monitor-reopen", Guid.NewGuid().ToString("N"));
+        var source = new SwitchableLiveTelemetrySource { Connected = false };
+        var store = new JsonSettingsStore(
+            Path.Combine(root, "settings.json"),
+            new FakeGarage61CredentialStore(Path.Combine(root, "garage61.credential")),
+            Path.Combine(root, "machine-settings.json"));
+        using var state = new CompanionState(
+            new FakeBackend(),
+            store,
+            source,
+            new DisabledCoachEngineSupervisor(),
+            new FakeGarage61CredentialStore(Path.Combine(root, "garage61.credential")));
+        state.Settings.CoachHome = root;
+        state.Settings.LiveMonitor.ReopenOnConnect = true;
+        state.SetLiveMonitorVisible(false, requestHost: false);
+        var requests = new ConcurrentQueue<(bool Visible, bool Activate)>();
+        state.LiveMonitorVisibilityRequested += (visible, activate) => requests.Enqueue((visible, activate));
+
+        await state.InitializeAsync();
+        source.Connected = true;
+        await WaitUntilAsync(() => state.LiveState.Snapshot.Connected && state.LiveMonitorVisible, TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(() => requests.Any(request => request.Visible), TimeSpan.FromSeconds(1));
+
+        state.SetLiveMonitorVisible(false);
+        var automaticOpenCount = requests.Count(request => request.Visible);
+        await Task.Delay(150);
+
+        Assert.IsFalse(state.LiveMonitorVisible, "A user close must suppress repeated auto-open requests for the active connection.");
+        Assert.AreEqual(automaticOpenCount, requests.Count(request => request.Visible));
+        Assert.IsFalse(store.Load().LiveMonitor.Visible, "The manual close must be the durable final setting.");
+
+        source.Connected = false;
+        await WaitUntilAsync(() => !state.LiveState.Snapshot.Connected, TimeSpan.FromSeconds(1));
+        source.Connected = true;
+        await WaitUntilAsync(() => state.LiveMonitorVisible && requests.Count(request => request.Visible) > automaticOpenCount, TimeSpan.FromSeconds(1));
+
+        var reconnectRequest = requests.Last(request => request.Visible);
+        Assert.IsFalse(reconnectRequest.Activate, "Automatic reopening must not steal focus.");
+    }
+
+    [TestMethod]
     public async Task HomeRefresh_PausesBackgroundAnalysisWhileInteractiveAnalysisIsLoading()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-interactive-background-gate", Guid.NewGuid().ToString("N"));
@@ -735,6 +1132,31 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task SettingsStore_ConcurrentSavesAreAtomicAndDoNotShareTemporaryFiles()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "iracing-coach-settings-concurrency", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "settings.json");
+        var machine = Path.Combine(directory, "machine.json");
+        var store = new JsonSettingsStore(path, new FakeGarage61CredentialStore(Path.Combine(directory, "credential.dpapi")), machine);
+
+        var saves = Enumerable.Range(0, 32).Select(index => Task.Run(() =>
+        {
+            var settings = new CompanionSettings { CoachHome = directory, FirstRunComplete = index % 2 == 0 };
+            settings.LiveMonitor.ActiveLayoutId = LiveMonitorLayouts.FactoryRaceId;
+            settings.LiveMonitor.OverallScale = 1 + index % 5 * .1;
+            store.Save(settings);
+        })).ToArray();
+
+        await Task.WhenAll(saves);
+
+        using var portable = JsonDocument.Parse(File.ReadAllText(path));
+        using var local = JsonDocument.Parse(File.ReadAllText(machine));
+        Assert.AreEqual(JsonValueKind.Object, portable.RootElement.ValueKind);
+        Assert.AreEqual(JsonValueKind.Object, local.RootElement.ValueKind);
+        Assert.IsEmpty(Directory.EnumerateFiles(directory, "*.tmp"), "Atomic settings writes must clean every unique temporary file.");
+    }
+
+    [TestMethod]
     public void SettingsStore_KeepsPhysicalMonitorPlacementOnOnePcOnly()
     {
         var directory = Path.Combine(Path.GetTempPath(), "iracing-coach-tests", Guid.NewGuid().ToString("N"));
@@ -809,6 +1231,34 @@ public sealed class CoordinatorTests
         Assert.IsTrue(File.Exists(Path.Combine(destination, DurableArchiveService.PortableStateFileName)));
         Assert.DoesNotContain(source, File.ReadAllText(Path.Combine(destination, DurableArchiveService.ManifestFileName)));
         Assert.IsTrue(File.Exists(Path.Combine(destination, "data", "reports", "race-1", "garage61", "csv", "comparison.csv")));
+    }
+
+    [TestMethod]
+    public async Task DurableArchive_ConcurrentStateWritesAreSerializedAndLeaveNoTemporaryFiles()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-archive-concurrency", Guid.NewGuid().ToString("N"), "iRacing Coach");
+        var initialized = new DurableArchiveService().Initialize(root, "0.14.0", "test");
+        var start = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writers = Enumerable.Range(0, 32).Select(_ => Task.Run(async () =>
+        {
+            var service = new DurableArchiveService();
+            await start.Task;
+            for (var attempt = 0; attempt < 8; attempt++)
+                service.MarkActive(root);
+        })).ToArray();
+
+        start.SetResult(true);
+        await Task.WhenAll(writers);
+
+        var statePath = Path.Combine(root, DurableArchiveService.PortableStateFileName);
+        using var state = JsonDocument.Parse(File.ReadAllText(statePath));
+        Assert.AreEqual(DurableArchiveService.CurrentSchemaVersion, state.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(initialized.ArchiveId, state.RootElement.GetProperty("archiveId").GetString());
+        Assert.IsFalse(state.RootElement.GetProperty("safeToCopy").GetBoolean());
+        Assert.AreEqual(
+            0,
+            Directory.EnumerateFiles(root, "*.tmp", SearchOption.AllDirectories).Count(),
+            "Every temporary file must be removed after concurrent same-destination writes.");
     }
 
     [TestMethod]
@@ -972,7 +1422,9 @@ public sealed class CoordinatorTests
     [TestMethod]
     public async Task HomeRaceAction_OpensTheMatchingEventSession()
     {
-        using var state = new CompanionState(new FakeBackend());
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-race-action", Guid.NewGuid().ToString("N"));
+        using var state = new CompanionState(new FakeBackend(), new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
         var dashboardRace = new RecentRace("dashboard-row", "Track", "Oval", "Car", "Today", "Open", "Analyzed", "Recorded", false, true, 4, 2)
         {
             EventKey = "8001",
@@ -1020,9 +1472,10 @@ public sealed class CoordinatorTests
     {
         var engine = new LiveTelemetryEngine();
         var start = DateTimeOffset.UtcNow.AddSeconds(-3);
-        _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start, Flag = "GREEN", Lap = 1, FuelLiters = 5, LastLapSeconds = 31, Brake = 0 }, true, false);
-        _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(1), Flag = "GREEN", Lap = 2, FuelLiters = 4, LastLapSeconds = 31, Brake = 0 }, true, false);
-        var snapshot = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(2), Flag = "GREEN", Lap = 3, FuelLiters = 3, LastLapSeconds = 31, Brake = 0 }, true, false);
+        _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start, Flag = "GREEN", Lap = 1, FuelLiters = 6, LastLapSeconds = 31, Brake = 0 }, true, false);
+        _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(1), Flag = "GREEN", Lap = 2, FuelLiters = 5, LastLapSeconds = 31, Brake = 0 }, true, false);
+        _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(2), Flag = "GREEN", Lap = 3, FuelLiters = 4, LastLapSeconds = 31, Brake = 0 }, true, false);
+        var snapshot = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(3), Flag = "GREEN", Lap = 4, FuelLiters = 3, LastLapSeconds = 31, Brake = 0 }, true, false);
 
         Assert.AreEqual(2, snapshot.Pit.FuelHardLimitLaps);
         Assert.IsNull(snapshot.Pit.WindowOpensInLaps);
@@ -1038,7 +1491,8 @@ public sealed class CoordinatorTests
         _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start, Flag = "GREEN", Lap = 1, LastLapSeconds = 31.1, LeaderLastLapSeconds = 30.4, GapToLeaderSeconds = 4.2 }, true, false);
         _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(1), Flag = "GREEN", Lap = 2, LastLapSeconds = 31.0, LeaderLastLapSeconds = 30.4, GapToLeaderSeconds = 4.3 }, true, false);
         _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(2), Flag = "GREEN", Lap = 3, LastLapSeconds = 30.9, LeaderLastLapSeconds = 30.4, GapToLeaderSeconds = 4.4 }, true, false);
-        var snapshot = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(3), Flag = "GREEN", Lap = 4, LastLapSeconds = 30.8, LeaderLastLapSeconds = 30.4, GapToLeaderSeconds = 4.5 }, true, false);
+        _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(3), Flag = "GREEN", Lap = 4, LastLapSeconds = 30.8, LeaderLastLapSeconds = 30.4, GapToLeaderSeconds = 4.5 }, true, false);
+        var snapshot = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(4), Flag = "GREEN", Lap = 5, LastLapSeconds = 30.8, LeaderLastLapSeconds = 30.4, GapToLeaderSeconds = 4.5 }, true, false);
 
         Assert.IsNotNull(snapshot.PaceTarget.MinimumSeconds);
         Assert.IsNotNull(snapshot.PaceTarget.MaximumSeconds);
@@ -1060,6 +1514,130 @@ public sealed class CoordinatorTests
         Assert.AreEqual(LiveCueSuppressionReason.SafeGlanceDelay, corner.PrimaryCue.SuppressionReason);
         StringAssert.Contains(straight.PrimaryCue.Message, "ahead");
         Assert.AreEqual(LiveCueSuppressionReason.None, straight.PrimaryCue.SuppressionReason);
+    }
+
+    [TestMethod]
+    public void LiveTelemetry_MissingDynamicsCannotBeAssumedToBeAStraight()
+    {
+        var engine = new LiveTelemetryEngine();
+        var start = DateTimeOffset.UtcNow.AddSeconds(-5);
+        var initial = engine.Update(new LiveTelemetrySample
+        {
+            Connected = true, Timestamp = start, Flag = "GREEN", Lap = 8, GapToAheadSeconds = 1.2,
+            Brake = 0, SteeringWheelAngleRadians = 0, LateralAccelerationG = 0
+        }, true, false);
+        var missingDynamics = engine.Update(new LiveTelemetrySample
+        {
+            Connected = true, Timestamp = start.AddSeconds(4), Flag = "GREEN", Lap = 8, GapToAheadSeconds = .7
+        }, true, false);
+        var measuredStraight = engine.Update(new LiveTelemetrySample
+        {
+            Connected = true, Timestamp = start.AddSeconds(4.2), Flag = "GREEN", Lap = 8, GapToAheadSeconds = .68,
+            Brake = 0, SteeringWheelAngleRadians = 0, LateralAccelerationG = .05
+        }, true, false);
+
+        Assert.AreEqual(initial.PrimaryCue.Message, missingDynamics.PrimaryCue.Message);
+        Assert.IsFalse(missingDynamics.SafeGlance.IsGlanceOpportunity);
+        Assert.AreEqual(LiveCueSuppressionReason.SafeGlanceDelay, missingDynamics.PrimaryCue.SuppressionReason);
+        StringAssert.Contains(measuredStraight.PrimaryCue.Message, "ahead");
+    }
+
+    [TestMethod]
+    public void LiveTelemetry_UsesOnlyFullyObservedCleanLapsForPaceAndFuelEvidence()
+    {
+        var engine = new LiveTelemetryEngine();
+        var start = DateTimeOffset.UtcNow.AddSeconds(-10);
+        LiveRaceSnapshot Sample(int lap, int second, double fuel, bool caution = false) => engine.Update(new LiveTelemetrySample
+        {
+            Connected = true,
+            Timestamp = start.AddSeconds(second),
+            Flag = caution ? "YELLOW" : "GREEN",
+            UnderCaution = caution,
+            Lap = lap,
+            LastLapSeconds = 30,
+            FuelLiters = fuel,
+            Brake = 0,
+            SteeringWheelAngleRadians = 0,
+            LateralAccelerationG = 0
+        }, true, false);
+
+        _ = Sample(10, 0, 10); // Connection began mid-lap; lap 10 is deliberately ineligible.
+        var partialBoundary = Sample(11, 1, 9);
+        var firstCleanLap = Sample(12, 2, 8);
+        _ = Sample(12, 3, 7.8, caution: true);
+        var confoundedBoundary = Sample(13, 4, 7);
+        var secondCleanLap = Sample(14, 5, 6);
+        var thirdCleanLap = Sample(15, 6, 5);
+
+        Assert.IsNull(partialBoundary.FuelLapsRemaining, "A partial first lap must not seed fuel range.");
+        Assert.IsNull(firstCleanLap.FuelLapsRemaining, "One measured burn is not a sufficient fuel baseline.");
+        Assert.IsNull(confoundedBoundary.FuelLapsRemaining, "A caution observed anywhere on the lap must exclude that lap.");
+        Assert.IsNotNull(secondCleanLap.FuelLapsRemaining, "Two fully observed clean burns support a range estimate.");
+        Assert.IsNull(secondCleanLap.PaceTarget.MinimumSeconds, "Only two fully observed clean laps exist at this point.");
+        Assert.IsNotNull(thirdCleanLap.PaceTarget.MinimumSeconds);
+    }
+
+    [TestMethod]
+    public void LiveTelemetry_CurrentRunPhaseResetsWhenPitRoadIsObserved()
+    {
+        var engine = new LiveTelemetryEngine();
+        var start = DateTimeOffset.UtcNow.AddSeconds(-10);
+        LiveRaceSnapshot Lap(int lap, bool onPitRoad = false) => engine.Update(new LiveTelemetrySample
+        {
+            Connected = true,
+            Timestamp = start.AddSeconds(lap),
+            Flag = "GREEN",
+            Lap = lap,
+            LastLapSeconds = 30,
+            FuelLiters = 20 - lap,
+            OnPitRoad = onPitRoad,
+            Brake = 0,
+            SteeringWheelAngleRadians = 0,
+            LateralAccelerationG = 0
+        }, true, false);
+
+        _ = Lap(1); _ = Lap(2); _ = Lap(3); _ = Lap(4); _ = Lap(5); _ = Lap(6);
+        var establishedRun = Lap(7);
+        var pitEntry = Lap(7, onPitRoad: true);
+
+        Assert.AreEqual(5, establishedRun.GreenLapsOnTires);
+        Assert.AreEqual("Middle run", establishedRun.TirePhase);
+        Assert.AreEqual(0, pitEntry.GreenLapsOnTires);
+        Assert.AreEqual(0, pitEntry.TotalLapsOnTires);
+        Assert.AreEqual("Early run", pitEntry.TirePhase);
+    }
+
+    [TestMethod]
+    public void LiveTelemetry_RunPhaseCountsOnlyFullyObservedCleanGreenLaps()
+    {
+        var engine = new LiveTelemetryEngine();
+        var start = DateTimeOffset.UtcNow.AddSeconds(-8);
+        LiveRaceSnapshot Sample(int lap, int second, bool repair = false, bool caution = false) => engine.Update(new LiveTelemetrySample
+        {
+            Connected = true,
+            Timestamp = start.AddSeconds(second),
+            Flag = caution ? "YELLOW" : "GREEN",
+            Lap = lap,
+            LastLapSeconds = 30,
+            RepairFlag = repair,
+            UnderCaution = caution,
+            Brake = 0,
+            SteeringWheelAngleRadians = 0,
+            LateralAccelerationG = 0
+        }, true, false);
+
+        _ = Sample(1, 0); // Deliberately partial first lap.
+        _ = Sample(2, 1);
+        _ = Sample(2, 2, repair: true);
+        var afterRepairLap = Sample(3, 3);
+        _ = Sample(3, 4, caution: true);
+        var afterCautionLap = Sample(4, 5);
+        var afterCleanLap = Sample(5, 6);
+
+        Assert.AreEqual(0, afterRepairLap.GreenLapsOnTires, "Repair-confounded laps cannot advance a clean run phase.");
+        Assert.AreEqual(0, afterCautionLap.GreenLapsOnTires, "Caution-confounded laps cannot advance a clean run phase.");
+        Assert.AreEqual(1, afterCleanLap.GreenLapsOnTires);
+        Assert.AreEqual(1, afterCleanLap.CautionLapsOnTires);
     }
 
     [TestMethod]
@@ -1092,6 +1670,54 @@ public sealed class CoordinatorTests
 
     [TestMethod]
     [DoNotParallelize]
+    public async Task LiveTelemetryService_CapturesA240HzSourceWithoutTheOld125HzPollingCeiling()
+    {
+        using var service = new LiveTelemetryService(new CadencedLiveTelemetrySource(240), new LiveMonitorLayout());
+        service.Start();
+        var timer = Stopwatch.StartNew();
+        await WaitUntilAsync(() => service.Current.FramesRead >= 170, TimeSpan.FromSeconds(1.25));
+        timer.Stop();
+
+        Assert.IsGreaterThanOrEqualTo(170, service.Current.FramesRead,
+            "A 240 Hz SDK stream must not be capped near the previous 125 Hz polling rate.");
+        Assert.IsLessThan(1.25, timer.Elapsed.TotalSeconds);
+        Assert.AreEqual(240, service.Current.SourceTickRate);
+        Assert.IsLessThanOrEqualTo(8, service.Current.DroppedFrames,
+            "Normal scheduler jitter may lose a few ticks, but sustained source loss is not acceptable.");
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task LiveTelemetryService_CountsSkippedSdkTicksAsDroppedFrames()
+    {
+        using var service = new LiveTelemetryService(new SkippingLiveTelemetrySource(), new LiveMonitorLayout());
+        service.Start();
+        await WaitUntilAsync(() => service.Current.FramesRead >= 5, TimeSpan.FromSeconds(1));
+
+        Assert.IsGreaterThan(0, service.Current.DroppedFrames);
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task LiveTelemetryService_UsesLowCostDiscoveryCadenceAndStopsCleanly()
+    {
+        var source = new CountingDisconnectedLiveTelemetrySource();
+        var service = new LiveTelemetryService(source, new LiveMonitorLayout());
+        service.Start();
+        await Task.Delay(260);
+
+        Assert.IsGreaterThanOrEqualTo(3, source.ReadCount, "Disconnected discovery should continue checking for iRacing.");
+        Assert.IsLessThanOrEqualTo(10, source.ReadCount, "Disconnected discovery must not spin at the connected 500 Hz polling cadence.");
+
+        service.Dispose();
+        var readsAtDispose = source.ReadCount;
+        await Task.Delay(80);
+        Assert.AreEqual(readsAtDispose, source.ReadCount, "Disposal must stop and join the telemetry worker before returning.");
+        Assert.IsTrue(source.Disposed);
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
     public async Task LiveTelemetryService_SessionEpochAdvancesOnlyAtStreamBoundaries()
     {
         var source = new SwitchableLiveTelemetrySource { Connected = false, Lap = 2 };
@@ -1105,14 +1731,21 @@ public sealed class CoordinatorTests
         var connectedEpoch = service.Current.SessionEpoch;
         Assert.AreEqual(initialEpoch + 1, connectedEpoch);
 
-        source.Lap = 5;
-        await WaitUntilAsync(() => service.Current.Snapshot.Lap == 5, TimeSpan.FromSeconds(1));
+        foreach (var lap in Enumerable.Range(3, 4))
+        {
+            source.Lap = lap;
+            await WaitUntilAsync(() => service.Current.Snapshot.Lap == lap, TimeSpan.FromSeconds(1));
+        }
         Assert.AreEqual(connectedEpoch, service.Current.SessionEpoch, "Ordinary forward lap progress must keep the current chart session.");
+        Assert.IsNotNull(service.Current.Snapshot.PaceTarget.MinimumSeconds, "The pre-reset session should establish a clean pace baseline.");
+        Assert.IsNotNull(service.Current.Snapshot.FuelLapsRemaining, "The pre-reset session should establish a fuel baseline.");
 
         source.Lap = 1;
         await WaitUntilAsync(() => service.Current.Snapshot.Lap == 1 && service.Current.SessionEpoch > connectedEpoch, TimeSpan.FromSeconds(1));
         var regressedEpoch = service.Current.SessionEpoch;
         Assert.AreEqual(connectedEpoch + 1, regressedEpoch, "A lap-counter reset marks a new telemetry session.");
+        Assert.IsNull(service.Current.Snapshot.PaceTarget.MinimumSeconds, "Session-boundary resets must also clear engine evidence.");
+        Assert.IsNull(service.Current.Snapshot.FuelLapsRemaining, "Fuel evidence must not cross a session boundary.");
 
         source.Connected = false;
         await WaitUntilAsync(() => !service.Current.Snapshot.Connected && service.Current.SessionEpoch > regressedEpoch, TimeSpan.FromSeconds(1));
@@ -1149,10 +1782,11 @@ public sealed class CoordinatorTests
         _ = Lap(1, .5);
         _ = Lap(2, .5);
         _ = Lap(3, .5);
-        _ = Lap(4, .8);
-        var transient = Lap(5, .8);
-        _ = Lap(6, .8);
-        var persistent = Lap(7, .8);
+        _ = Lap(4, .5);
+        _ = Lap(5, .8);
+        var transient = Lap(6, .8);
+        _ = Lap(7, .8);
+        var persistent = Lap(8, .8);
 
         Assert.AreNotEqual(LiveCuePriority.Coaching, transient.PrimaryCue.Priority, "One unusual pass must not trigger a driving cue.");
         Assert.AreEqual(LiveCuePriority.Coaching, persistent.PrimaryCue.Priority);
@@ -1200,9 +1834,10 @@ public sealed class CoordinatorTests
         _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start, Lap = 1, LastLapSeconds = 30, Flag = "GREEN" }, true, false);
         _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(1), Lap = 2, LastLapSeconds = 30, Flag = "GREEN" }, true, false);
         _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(2), Lap = 3, LastLapSeconds = 30, Flag = "GREEN" }, true, false);
-        var established = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(3), Lap = 4, LastLapSeconds = 30, Flag = "GREEN" }, true, false);
-        _ = engine.Update(new LiveTelemetrySample { Connected = false, Timestamp = start.AddSeconds(4) }, true, false);
-        var reconnected = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(5), Lap = 1, LastLapSeconds = 35, Flag = "GREEN" }, true, false);
+        _ = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(3), Lap = 4, LastLapSeconds = 30, Flag = "GREEN" }, true, false);
+        var established = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(4), Lap = 5, LastLapSeconds = 30, Flag = "GREEN" }, true, false);
+        _ = engine.Update(new LiveTelemetrySample { Connected = false, Timestamp = start.AddSeconds(5) }, true, false);
+        var reconnected = engine.Update(new LiveTelemetrySample { Connected = true, Timestamp = start.AddSeconds(6), Lap = 1, LastLapSeconds = 35, Flag = "GREEN" }, true, false);
 
         Assert.IsNotNull(established.PaceTarget.MinimumSeconds);
         Assert.IsNull(reconnected.PaceTarget.MinimumSeconds);
@@ -1218,11 +1853,12 @@ public sealed class CoordinatorTests
             File.Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)), overwrite: true);
     }
 
-    private static JsonElement HomeAnalysisResponse(string analysisPath = "") => JsonSerializer.SerializeToElement(new
+    private static JsonElement HomeAnalysisResponse(string analysisPath = "", string sessionType = "Race", string? selector = null) => JsonSerializer.SerializeToElement(new
     {
         ok = true,
         analysis_id = "home-summary-test",
         analysis_path = analysisPath,
+        selection = new { sim_session_type = sessionType, group_id = selector },
         race_card = new
         {
             title = "Recorded race",
@@ -1235,6 +1871,7 @@ public sealed class CoordinatorTests
         analysis_view = new
         {
             schema_version = 1,
+            identity = new { event_type = sessionType, track_name = "Recorded Track", car_name = "Recorded Car" },
             race_summary = new
             {
                 recorded_laps = 20,
@@ -1308,25 +1945,44 @@ public sealed class CoordinatorTests
         }).ToArray()
     });
 
-    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 5)
+    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 6, string sessionType = "Race", string? storedSelector = null)
     {
         var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
         Directory.CreateDirectory(directory);
-        File.WriteAllText(UiAnalysisCachePath(coachHome, selector), JsonSerializer.Serialize(new
+        var persistedSelector = storedSelector ?? selector;
+        response = WithRequestedSelector(response, persistedSelector);
+        File.WriteAllText(UiAnalysisCachePath(coachHome, selector, sessionType), JsonSerializer.Serialize(new
         {
             schemaVersion,
+            sessionPhase = SessionPhase(sessionType),
+            selector = persistedSelector,
             sourceLastWriteUtc = (string?)null,
             savedUtc = DateTimeOffset.UtcNow,
             response
         }));
     }
 
-    private static string UiAnalysisCachePath(string coachHome, string selector)
+    private static string UiAnalysisCachePath(string coachHome, string selector, string sessionType = "Race")
     {
         var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
         Directory.CreateDirectory(directory);
-        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(selector))).ToLowerInvariant();
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{SessionPhase(sessionType)}|{selector}"))).ToLowerInvariant();
         return Path.Combine(directory, key + ".json");
+    }
+
+    private static string SessionPhase(string sessionType) =>
+        sessionType.Contains("qual", StringComparison.OrdinalIgnoreCase) ? "qualifying" : sessionType.ToLowerInvariant();
+
+    private static JsonElement WithRequestedSelector(JsonElement response, string selector)
+    {
+        var root = JsonNode.Parse(response.GetRawText())?.AsObject() ?? new JsonObject();
+        if (root["selection"] is not JsonObject selection)
+        {
+            selection = new JsonObject();
+            root["selection"] = selection;
+        }
+        if (selection["group_id"] is null) selection["group_id"] = selector;
+        return JsonSerializer.SerializeToElement(root);
     }
 
     private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)
@@ -1372,10 +2028,18 @@ public sealed class CoordinatorTests
                 "catalog_iracing_setups" => JsonSerializer.SerializeToElement(new { ok = true, entries = Array.Empty<object>() }),
                 "garage61_auth_status" => JsonSerializer.SerializeToElement(new { ok = false, configured = false, status = "not_configured" }),
                 "recommend_open_setup_tuning" when tuning.HasValue => tuning.Value,
-                "analyze_iracing_race" when analysis.HasValue => analysis.Value,
+                "analyze_iracing_race" when analysis.HasValue => WithRequestedSelector(analysis.Value, RequestedSelector(arguments)),
                 _ => JsonSerializer.SerializeToElement(new { ok = true })
             };
             return value;
+        }
+
+        private static string RequestedSelector(object arguments)
+        {
+            var serialized = JsonSerializer.SerializeToElement(arguments);
+            return serialized.TryGetProperty("selector", out var selector) && selector.ValueKind == JsonValueKind.String
+                ? selector.GetString() ?? string.Empty
+                : string.Empty;
         }
     }
 
@@ -1471,11 +2135,81 @@ public sealed class CoordinatorTests
                 TickRate = 60,
                 Flag = Connected ? "GREEN" : "Waiting",
                 Lap = Connected ? Lap : null,
-                LapDistancePercent = Connected ? .25 : null
+                LapDistancePercent = Connected ? .25 : null,
+                LastLapSeconds = Connected ? 30 : null,
+                FuelLiters = Connected ? 30 - Lap : null,
+                Brake = Connected ? 0 : null,
+                SteeringWheelAngleRadians = Connected ? 0 : null,
+                LateralAccelerationG = Connected ? 0 : null
             };
             return true;
         }
 
         public void Dispose() { }
     }
+
+    private sealed class CadencedLiveTelemetrySource(int rate) : ILiveTelemetrySource
+    {
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private int _lastTick = -1;
+
+        public bool TryRead(out LiveTelemetrySample sample)
+        {
+            var tick = (int)Math.Floor(_clock.Elapsed.TotalSeconds * rate);
+            if (tick <= _lastTick)
+            {
+                sample = new LiveTelemetrySample();
+                return false;
+            }
+            _lastTick = tick;
+            sample = ConnectedSample(tick, rate);
+            return true;
+        }
+
+        public void Dispose() { }
+    }
+
+    private sealed class CountingDisconnectedLiveTelemetrySource : ILiveTelemetrySource
+    {
+        private int _readCount;
+        public int ReadCount => Volatile.Read(ref _readCount);
+        public bool Disposed { get; private set; }
+
+        public bool TryRead(out LiveTelemetrySample sample)
+        {
+            Interlocked.Increment(ref _readCount);
+            sample = new LiveTelemetrySample();
+            return false;
+        }
+
+        public void Dispose() => Disposed = true;
+    }
+
+    private sealed class SkippingLiveTelemetrySource : ILiveTelemetrySource
+    {
+        private int _tick;
+        public bool TryRead(out LiveTelemetrySample sample)
+        {
+            _tick += 3;
+            sample = ConnectedSample(_tick, 240);
+            return true;
+        }
+
+        public void Dispose() { }
+    }
+
+    private static LiveTelemetrySample ConnectedSample(int tick, int tickRate) => new()
+    {
+        Connected = true,
+        Timestamp = DateTimeOffset.UtcNow,
+        Tick = tick,
+        TickRate = tickRate,
+        Flag = "GREEN",
+        Lap = 2,
+        LastLapSeconds = 30,
+        FuelLiters = 20,
+        Brake = 0,
+        SteeringWheelAngleRadians = 0,
+        LateralAccelerationG = 0
+    };
 }

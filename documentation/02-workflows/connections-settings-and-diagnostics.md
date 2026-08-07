@@ -46,6 +46,6 @@ Preparing a copy must checkpoint relevant databases, reject active durable jobs,
 
 ## Current implementation note
 
-Version 0.13.0 source presents four compact primary cards for Data, Backup or move PCs, App behavior, and Telemetry popout. Folder locations, Connections, and detailed Troubleshooting are disclosures; the portable-preferences save bar remains directly available. Garage61 and ChatGPT connection controls are still embedded and functional inside Settings rather than removed or moved back into primary navigation.
+Version 0.14.0 source presents four compact primary cards for Data, Backup or move PCs, App behavior, and Telemetry popout. Folder locations, Connections, and detailed Troubleshooting are disclosures; the portable-preferences save bar remains directly available. Garage61 and ChatGPT connection controls are still embedded and functional inside Settings rather than removed or moved back into primary navigation.
 
 This compact hierarchy is verified by current source inspection. Integrated visual, keyboard, screen-reader, Windows scaling, external-authentication, and migration cases retain their separate acceptance gates.

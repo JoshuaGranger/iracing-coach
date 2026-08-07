@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current implementation snapshot](06-reality/implementation-snapshot-0.13.0.md)
+7. [Current implementation snapshot](06-reality/implementation-snapshot-0.14.0.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -50,7 +50,8 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Acceptance, test, and release](05-quality/acceptance-test-and-release.md)
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
 - `06-reality`
-  - [Current implementation snapshot: 0.13.0](06-reality/implementation-snapshot-0.13.0.md)
+  - [Current implementation snapshot: 0.14.0](06-reality/implementation-snapshot-0.14.0.md)
+  - [Prior implementation snapshot: 0.13.0](06-reality/implementation-snapshot-0.13.0.md)
   - [Superseded post-0.12.0 development snapshot](06-reality/implementation-snapshot-post-0.12.0-major-iteration.md)
   - [Prior current-main Race Analysis snapshot](06-reality/implementation-snapshot-post-0.11.1-race-analysis.md)
   - [Implementation snapshot: 0.11.1](06-reality/implementation-snapshot-0.11.1.md)
@@ -80,11 +81,11 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 
 ## Current baseline
 
-- Application version: versioned `0.13.0` source baseline; final installer/package identity remains explicitly pending in the current snapshot until measured artifact fields are filled
+- Application version: `0.14.0` corrective robustness release
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Local verification: integrated runs recorded 108/108 .NET tests, 175/175 Python tests, four JavaScript syntax checks, and a Release application build with zero warnings and zero errors
+- Local verification: integrated runs recorded 138/138 .NET tests, 187/187 Python tests, four JavaScript syntax checks, and a Release application build with zero warnings and zero errors
 - Installer lifecycle: prior guarded install/upgrade/rollback/uninstall evidence is unchanged and was not rerun for every focused UI adjustment
-- Current focused evidence: equal-share live layouts, occupied-tile replacement, incremental display-only popout rendering, foreground-gated schema-5 Home cache work, responsive configurable Race Analysis traces, DOM-owned Race cursor interaction, and compact Settings have local evidence; exact post-fix tray-runtime evidence and final artifact hashes are marked pending, while real-session cadence, combined-load performance, 244 Hz, broad derived-sideslip validation, and user acceptance remain open
+- Current focused evidence: session-reset live coaching, conservative complete-lap fuel/pace evidence, a dedicated high-resolution live reader, bounded latest-value telemetry backpressure, lazy detailed traces, non-activating automatic popout behavior, phase-qualified Race/Qualifying identity, schema-6 phase-safe UI caches, schema-2 deterministic backend indexing, comparable-lap filtering, and versioned evidence-weighted grading have local evidence. A synthetic 240 Hz source exercises the reader above its former polling ceiling, but real-session cadence, combined-load performance, 244 Hz presentation, broad derived-sideslip validation, a genuine tray-menu Exit click, and user acceptance remain open.
 
-The current reality is summarized in `06-reality/implementation-snapshot-0.13.0.md`. Its `PENDING_FINAL_*` and `PENDING_EXACT_*` fields are explicit release blockers, not implied passes. Earlier Race Analysis and artifact evidence remain in their immutable prior snapshots and release records. Unchanged installer lifecycle behavior was deliberately not re-certified for every focused UI adjustment. Build binaries and private user data are not part of the source repository.
+The current reality is summarized in `06-reality/implementation-snapshot-0.14.0.md`. Earlier Race Analysis and artifact evidence remain in their immutable prior snapshots and release records. Unchanged installer lifecycle behavior was deliberately not re-certified for this corrective iteration. Build binaries and private user data are not part of the source repository.

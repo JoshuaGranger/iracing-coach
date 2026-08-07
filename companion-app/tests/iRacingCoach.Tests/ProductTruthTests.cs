@@ -9,18 +9,23 @@ public sealed class ProductTruthTests
     [TestMethod]
     public void RaceGrades_AlwaysExposeFiveCategoriesAndDoNotScoreMissingEvidence()
     {
-        using var response = JsonDocument.Parse("""{"analysis_id":"grade-test","analysis_view":{"race_grades":{"overall_grade":"B","categories":[{"key":"pace","label":"Pace execution","grade":"B","score":84,"evidence_type":"derived","explanation":"Supported pace evidence.","improvement":"Review pace.","limitations":"Local only."}]}}}""");
+        using var response = JsonDocument.Parse("""{"analysis_id":"grade-test","analysis_view":{"race_grades":{"overall_grade":"B","rubric_version":"race-execution-v2","categories":[{"key":"pace","label":"Pace execution","grade":"B","score":84,"evidence_type":"derived","weight_percent":30,"effective_weight":0.6,"explanation":"Supported pace evidence.","improvement":"Review pace.","limitations":"Local only."}],"unavailable_categories":[{"key":"strategy","label":"Pit and strategy execution","weight_percent":15,"reason":"Pit count alone does not establish decision quality."}]}}}""");
 
         var workspace = RuntimeMapper.Analysis(response.RootElement);
 
         Assert.HasCount(5, workspace.Grades);
         Assert.AreEqual("B", workspace.OverallGrade);
         Assert.IsTrue(workspace.Grades.Single(grade => grade.Key == "pace").Available);
+        StringAssert.Contains(workspace.Grades.Single(grade => grade.Key == "pace").Calibration, "30% configured");
+        StringAssert.Contains(workspace.Grades.Single(grade => grade.Key == "pace").Calibration, "60% of available evidence");
         var missing = workspace.Grades.Single(grade => grade.Key == "strategy");
         Assert.IsFalse(missing.Available);
         Assert.IsNull(missing.Score);
         Assert.AreEqual("Not graded", missing.Grade);
-        StringAssert.Contains(missing.Limitation, "does not affect");
+        StringAssert.Contains(missing.Explanation, "does not establish decision quality");
+        StringAssert.Contains(missing.Calibration, "15% configured");
+        StringAssert.Contains(missing.Limitation, "excluded rather than converted");
+        StringAssert.Contains(missing.Provenance, "race-execution-v2");
     }
 
     [TestMethod]

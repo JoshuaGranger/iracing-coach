@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "bundle": "iracing-coach-companion-app-build-inputs",
   "scope": "clean build inputs; private data and credentials excluded",
-  "generated_at_utc": "2026-08-04T16:43:12.623250Z",
+  "generated_at_utc": "2026-08-07T16:23:20.180075Z",
   "excluded": [
     "data/ (optional private regression corpus)",
     ".git/",
@@ -69,8 +69,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/analysis_engine.py",
-      "bytes": 239034,
-      "sha256": "5fe6ab46fc47ee267acd00950113bc6ff0e1c532e4618f38417eae5155ba9edd"
+      "bytes": 245800,
+      "sha256": "0b0aceb7214495e71ea407437f97a96b327b054828aeba88ee4fabede3048d50"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/coach_cli.py",
@@ -99,8 +99,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py",
-      "bytes": 39871,
-      "sha256": "8b2ad9ca24b19d5d1ff6dde50a9a025e5f91afc9eefdc70b4bd9ad311853d090"
+      "bytes": 40156,
+      "sha256": "110258362525d8eed419d7bab406704bbb6981cd6a4af8b7aa9705dcbb2a4aa5"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/native_events.py",
@@ -139,8 +139,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/storage.py",
-      "bytes": 53924,
-      "sha256": "5ba36cdf60f4db0741b3fd62b3e158cced459b3159dac9f9a0ce931d8fdcc963"
+      "bytes": 62262,
+      "sha256": "48853e5af1d842aaad3fcf1db88ec9f700d90d9fed1c2366e4af7d03d54b2fe5"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/tuning_engine.py",
@@ -154,8 +154,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/workflow.py",
-      "bytes": 145737,
-      "sha256": "31379ca9c255f7777f5a4876ee9be8d1bbc41c6bde56dac2b12cfd09ee963e44"
+      "bytes": 150393,
+      "sha256": "c24287187d85a8b31534dd603d6ee71b8f04c334b3950995e41d9ba23a8c685c"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/SKILL.md",
@@ -164,8 +164,8 @@
     },
     {
       "path": "iracing-coach/tests/test_analysis_engine.py",
-      "bytes": 34728,
-      "sha256": "b525ae08718c7be06abe76cbebe90ceccbccc000c4296a999d127284bf243d09"
+      "bytes": 44387,
+      "sha256": "30de67928ad31f533c0b778006f516b594fd6d02bc62ef8dfdcaf41a7be5aa32"
     },
     {
       "path": "iracing-coach/tests/test_coach_cli.py",
@@ -244,8 +244,8 @@
     },
     {
       "path": "iracing-coach/tests/test_storage.py",
-      "bytes": 14399,
-      "sha256": "d1954de95ddebe478165fdc82747b03e5a5a66d08fb74993ba62a33692bb17a3"
+      "bytes": 23497,
+      "sha256": "bb4d7d162e623af896b0407854a5778677faeaccfb1c5e86dedaf313b72baa82"
     },
     {
       "path": "iracing-coach/tests/test_telemetry_profile.py",
@@ -264,8 +264,8 @@
     },
     {
       "path": "iracing-coach/tests/test_workflow.py",
-      "bytes": 28300,
-      "sha256": "f70d0420ccf8a2bd4e8a6bd381a8e14aef03f4cd541638e2868abec6d0427c93"
+      "bytes": 35135,
+      "sha256": "376a0164daec2b74034f042ba494d960ab73ef97158b0bb075d4d4a16578836c"
     },
     {
       "path": "companion-app-handoff/ACCEPTANCE_CHECKLIST.md",
@@ -289,8 +289,8 @@
     },
     {
       "path": "companion-app-handoff/BACKEND_INTEGRATION.md",
-      "bytes": 6739,
-      "sha256": "1b2d7fb4f086f5357a3aff66781a436ab8ebbb0e3e78e318ddfd8b1fcb565d05"
+      "bytes": 6938,
+      "sha256": "13c2b2c1acb007c1a0ed3d82389c7f80f16d75d8bb540ec669a1baf5cac0fe02"
     },
     {
       "path": "companion-app-handoff/BUILD_SPEC.md",
@@ -359,8 +359,8 @@
     },
     {
       "path": "companion-app-handoff/contracts/mcp-tools.v1.json",
-      "bytes": 17929,
-      "sha256": "890cda80a6e7502a8ffce957f3191becaf9468feb0b79dc02424fd16c87ca8a9"
+      "bytes": 17589,
+      "sha256": "ab7eb1c10e47c4a0cf016be52ab73f8d0bcb440fb0be4b4af644614173efbcf3"
     },
     {
       "path": "companion-app-handoff/contracts/race-card-v1.schema.json",
@@ -560,6 +560,6 @@
   ],
   "totals": {
     "file_count": 109,
-    "bytes": 1967268
+    "bytes": 2012764
   }
 }

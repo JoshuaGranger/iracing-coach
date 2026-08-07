@@ -33,6 +33,17 @@ The source repository contains application source, deterministic engine source, 
 
 Implementation references: `SettingsStore.cs`, `Garage61CredentialStore.cs`, `DurableArchive.cs`, `secure_store.py`, `path_security.py`, and `.gitignore`.
 
+## Schema namespaces
+
+The schema numbers in the portable tree are independent contracts and MUST NOT be compared or upgraded as though they were one global counter:
+
+- The top-level `Documents\iRacing Coach\archive-manifest.json` is owned by the C# `DurableArchiveService` and remains durable-archive manifest schema **1**. Its compatibility and migration journal protect the portable folder as a whole.
+- Portable application settings remain settings schema **4**.
+- The coordinator's portable `ui-analysis-cache` entries use UI cache schema **6**, including exact selector and phase validation.
+- The deterministic Python backend uses archive/index/cache schema **2** for its cache manifests and history/index migration. Schema 2 adds durable event-phase fields and concurrent-safe SQLite migration; it does not change the top-level archive manifest to schema 2.
+
+An implementation or support report must name the contract before naming its version. Saying only "archive schema 2" is ambiguous and would incorrectly imply that the top-level portable manifest changed.
+
 ## Credential portability decision
 
 External-service credentials are deliberately machine-bound. Copying `Documents\iRacing Coach` restores user-created state and ordinary preferences, but Garage61 and AI require one reconnection on the destination Windows account. This resolves the earlier portability/security tension in favor of preventing portable secrets.

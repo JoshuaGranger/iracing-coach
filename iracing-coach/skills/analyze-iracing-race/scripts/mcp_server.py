@@ -400,7 +400,7 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "selector": {
                     "type": "string",
-                    "description": "'latest', an IBT path within the configured iRacing root, or a SubSessionID.",
+                    "description": "'latest', an IBT path within the configured iRacing root, a SubSessionID, or a discovery group_id such as 'subsession:<id>:<sim_session_num>' to pin the exact event phase.",
                     "default": "latest",
                 },
                 "iracing_root": {"type": "string"},
@@ -445,7 +445,7 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "selector": {
                     "type": "string",
-                    "description": "'latest', an IBT path within the configured iRacing root, or a SubSessionID.",
+                    "description": "'latest', an IBT path within the configured iRacing root, a SubSessionID, or a discovery group_id such as 'subsession:<id>:<sim_session_num>' to pin the exact event phase.",
                     "default": "latest",
                 },
                 "iracing_root": {"type": "string"},
@@ -487,7 +487,7 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "selector": {"type": "string", "description": "'latest', an IBT path, or a SubSessionID.", "default": "latest"},
+                "selector": {"type": "string", "description": "'latest', an IBT path, a SubSessionID, or a discovery group_id such as 'subsession:<id>:<sim_session_num>' to pin the exact event phase.", "default": "latest"},
                 "iracing_root": {"type": "string"},
                 "archive_root": {"type": "string"},
                 "target_hz": {"type": "number", "minimum": 1, "maximum": 60, "default": 20},

@@ -46,6 +46,14 @@ KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
 ANALYSIS_PROFILE_VERSION = "post-race-damage-repair-corner-phase-v8"
 ANALYZER_SOURCE_FILES = ("analysis_engine.py", "groove_analysis.py", "ibt_reader.py")
+RACE_GRADE_RUBRIC_VERSION = "race-execution-v2"
+RACE_GRADE_CATEGORY_WEIGHTS = {
+    "pace": 30,
+    "consistency": 20,
+    "tire_management": 20,
+    "strategy": 15,
+    "racecraft": 15,
+}
 
 # These are recorded SDK states, not a vehicle-health model.  In particular,
 # incident points and pace loss never prove physical damage.  Repair timers,
@@ -3565,16 +3573,18 @@ def _corner_lap_exclusion_reasons(
     if previous_flag == "caution" and flag == "green":
         reasons.append("restart")
     damage_context = lap.get("damage_repair_context")
-    if (
-        isinstance(damage_context, Mapping)
-        and damage_context.get("automatic_coaching_reference_eligible") is False
-    ):
-        reason_codes = [
-            str(item)
-            for item in damage_context.get("exclusion_reason_codes") or ()
-            if str(item)
-        ]
-        reasons.extend(reason_codes or ["damage_repair_context"])
+    if isinstance(damage_context, Mapping):
+        raw_reason_codes = damage_context.get("exclusion_reason_codes") or ()
+        if isinstance(raw_reason_codes, str):
+            raw_reason_codes = (raw_reason_codes,)
+        elif not isinstance(raw_reason_codes, Sequence):
+            raw_reason_codes = (raw_reason_codes,) if raw_reason_codes else ()
+        reason_codes = [str(item) for item in raw_reason_codes if str(item).strip()]
+        if (
+            damage_context.get("automatic_coaching_reference_eligible") is False
+            or reason_codes
+        ):
+            reasons.extend(reason_codes or ["damage_repair_context"])
     return reasons
 
 
@@ -5105,9 +5115,9 @@ def _race_grades(
 ) -> dict[str, Any]:
     """Create strict, race-specific execution grades from recorded evidence.
 
-    The local grade deliberately caps pace without an external or field-strength
-    reference.  That prevents a tidy but slow race from earning an A+ merely
-    because its laps were repeatable.
+    The local grade deliberately blocks A+ without comparable field-strength
+    evidence.  It also leaves strategy and racecraft unavailable rather than
+    grading outcomes that the current telemetry cannot attribute to the driver.
     """
 
     def letter(score: float) -> str:
@@ -5117,17 +5127,86 @@ def _race_grades(
         )
         return next((grade for minimum, grade in thresholds if score >= minimum), "F")
 
+    def damage_context_excluded(context: Any) -> bool:
+        if not isinstance(context, Mapping):
+            return False
+        raw_reason_codes = (
+            context.get("exclusion_reason_codes")
+            or context.get("reason_codes")
+            or ()
+        )
+        if isinstance(raw_reason_codes, str):
+            reason_codes: Sequence[Any] = (raw_reason_codes,)
+        elif isinstance(raw_reason_codes, Sequence):
+            reason_codes = raw_reason_codes
+        else:
+            # A malformed non-empty reason field remains conservative evidence
+            # for exclusion, but is never iterated as a string or mapping.
+            reason_codes = (raw_reason_codes,) if raw_reason_codes else ()
+        return (
+            context.get("automatic_coaching_reference_eligible") is False
+            or any(str(reason).strip() for reason in reason_codes)
+        )
+
+    # The deterministic post-race analyzer does not currently receive a usable
+    # comparable field-strength cohort.  Keep this gate explicit so A+ cannot
+    # appear accidentally if a component formula changes later.
+    a_plus_gate = {
+        "eligible": False,
+        "status": "blocked_missing_external_comparable_field_strength",
+        "required_evidence": (
+            "A usable condition- and setup-comparable field-strength cohort plus "
+            "high-confidence evidence across every material category."
+        ),
+        "available_evidence": "Local recorded telemetry only.",
+    }
+
+    unavailable_categories: dict[str, dict[str, Any]] = {
+        "pace": {
+            "key": "pace",
+            "label": "Pace execution",
+            "weight_percent": RACE_GRADE_CATEGORY_WEIGHTS["pace"],
+            "reason": "At least three complete, clean green laps are required.",
+        },
+        "consistency": {
+            "key": "consistency",
+            "label": "Consistency and execution",
+            "weight_percent": RACE_GRADE_CATEGORY_WEIGHTS["consistency"],
+            "reason": "At least three complete, clean green laps are required.",
+        },
+        "tire_management": {
+            "key": "tire_management",
+            "label": "Tire management",
+            "weight_percent": RACE_GRADE_CATEGORY_WEIGHTS["tire_management"],
+            "reason": "No damage-screened run exposed a usable clean-lap pace trend.",
+        },
+        "strategy": {
+            "key": "strategy",
+            "label": "Pit and strategy execution",
+            "weight_percent": RACE_GRADE_CATEGORY_WEIGHTS["strategy"],
+            "reason": (
+                "Pit count, fuel arithmetic, tow, and repair records do not establish "
+                "whether a pit decision was well executed."
+            ),
+        },
+        "racecraft": {
+            "key": "racecraft",
+            "label": "Racecraft and adaptability",
+            "weight_percent": RACE_GRADE_CATEGORY_WEIGHTS["racecraft"],
+            "reason": (
+                "Start-to-finish position and incident records do not establish field "
+                "strength, avoidability, traffic context, or driver-controlled racecraft."
+            ),
+        },
+    }
+
     clean = []
-    for lap in laps:
-        context = lap.get("damage_repair_context") or {}
-        if (
-            lap.get("complete")
-            and str(lap.get("flag_state") or "").lower() == "green"
-            and (_finite(lap.get("pit_time_s")) or 0) < 1.0
-            and context.get("automatic_coaching_reference_eligible") is not False
-            and (_finite(lap.get("lap_time_s")) or 0) > 0
-        ):
+    previous_flag: str | None = None
+    for lap in sorted(laps, key=lambda item: _finite(item.get("lap")) or -1.0):
+        exclusion_reasons = _corner_lap_exclusion_reasons(lap, previous_flag)
+        if not exclusion_reasons and (_finite(lap.get("lap_time_s")) or 0) > 0:
             clean.append(lap)
+        previous_flag = str(lap.get("flag_state") or "")
     times = [float(lap["lap_time_s"]) for lap in clean]
     categories: list[dict[str, Any]] = []
     if len(times) >= 3:
@@ -5138,24 +5217,39 @@ def _race_grades(
         categories.append({
             "key": "pace", "label": "Pace execution", "score": _round(pace_score, 1),
             "grade": letter(pace_score), "evidence_type": "derived",
+            "weight_percent": RACE_GRADE_CATEGORY_WEIGHTS["pace"],
             "explanation": f"The median clean lap was {median - best:.3f} s from the fastest clean lap across {len(times)} usable laps.",
             "improvement": "Reduce the repeatable losses shown in the slowest load zones before chasing a more aggressive target.",
             "limitations": "Local telemetry has no field-strength or external reference, so pace is capped below A+.",
         })
+        unavailable_categories.pop("pace", None)
         mean = statistics.fmean(times)
         deviation = statistics.pstdev(times) / mean if mean > 0 else 1.0
         consistency_score = min(97.0, max(45.0, 98.0 - deviation * 1200.0))
+        if not a_plus_gate["eligible"]:
+            consistency_score = min(consistency_score, 96.9)
         categories.append({
             "key": "consistency", "label": "Consistency and execution", "score": _round(consistency_score, 1),
             "grade": letter(consistency_score), "evidence_type": "derived",
+            "weight_percent": RACE_GRADE_CATEGORY_WEIGHTS["consistency"],
             "explanation": f"Clean-lap variation was {deviation * 100:.2f}% across {len(times)} usable laps.",
             "improvement": "Make brake release and throttle pickup repeatable at the high-variation sections.",
-            "limitations": "Caution, pit, traffic-screened, and recorded repair-confounded laps are excluded when the channels support that screening.",
+            "limitations": (
+                "Caution, pit, traffic-screened, and recorded repair-confounded laps are "
+                "excluded when the channels support that screening; A+ is blocked without "
+                "external comparable field-strength evidence."
+            ),
         })
+        unavailable_categories.pop("consistency", None)
 
+    eligible_runs = [
+        run
+        for run in runs
+        if not damage_context_excluded(run.get("damage_repair_context"))
+    ]
     slopes = [
         _finite((run.get("pace") or {}).get("green_lap_time_slope_s_per_lap"))
-        for run in runs
+        for run in eligible_runs
     ]
     slopes = [value for value in slopes if value is not None]
     if slopes:
@@ -5164,50 +5258,91 @@ def _race_grades(
         categories.append({
             "key": "tire_management", "label": "Tire management", "score": _round(management_score, 1),
             "grade": letter(management_score), "evidence_type": "proxy",
-            "explanation": f"The median clean-run pace trend was {slope:+.3f} s per lap.",
+            "weight_percent": RACE_GRADE_CATEGORY_WEIGHTS["tire_management"],
+            "explanation": (
+                f"The median damage-screened clean-run pace trend was {slope:+.3f} s per "
+                f"lap across {len(slopes)} eligible run(s)."
+            ),
             "improvement": "Use the tire-stress map to reduce early-run braking and steering load where pace fell away.",
             "limitations": "Pace trend and control load are proxies; tire wear is measured only at recorded service endpoints.",
         })
+        unavailable_categories.pop("tire_management", None)
 
-    start = _finite(race_summary.get("starting_position"))
-    finish = _finite(race_summary.get("final_recorded_position"))
-    if start is not None and finish is not None:
-        gained = start - finish
-        outcome_score = min(94.0, max(45.0, 82.0 + gained * 2.5 + (5 if finish <= 5 else 0)))
-        categories.append({
-            "key": "racecraft", "label": "Racecraft and adaptability", "score": _round(outcome_score, 1),
-            "grade": letter(outcome_score), "evidence_type": "derived",
-            "explanation": f"Recorded position changed from P{int(start)} to P{int(finish)} ({gained:+.0f}).",
-            "improvement": "Review the race timeline around the largest position changes and traffic interruptions.",
-            "limitations": "Position change does not isolate driver performance from field strength, cautions, attrition, or strategy.",
-        })
+    # Keep these parameters in the stable call contract.  Their current fields
+    # provide useful race context, but not enough attributable evidence to score
+    # strategy or racecraft.  In particular, tow/repair is never a strategy
+    # penalty and raw finishing-position change is never a racecraft grade.
+    _ = race_summary, damage_repair
 
-    if int(_finite(race_summary.get("pit_stops_detected")) or 0) > 0:
-        summary = damage_repair.get("summary") or {}
-        tow = int(_finite(summary.get("tow_episodes")) or 0)
-        repair = int(_finite(summary.get("recorded_repair_episodes")) or 0)
-        strategy_score = max(45.0, 88.0 - tow * 18.0 - repair * 6.0)
-        categories.append({
-            "key": "strategy", "label": "Pit and strategy execution", "score": _round(strategy_score, 1),
-            "grade": letter(strategy_score), "evidence_type": "derived",
-            "explanation": f"Telemetry detected {int(race_summary.get('pit_stops_detected') or 0)} pit stop(s), {tow} tow episode(s), and {repair} recorded repair episode(s).",
-            "improvement": "Separate planned service time from repair or tow loss, then review the pit trigger against the recorded fuel window.",
-            "limitations": "This grades recorded execution, not whether an unknowable alternate caution strategy would have been optimal.",
-        })
+    def rubric_payload() -> dict[str, Any]:
+        available_weight = sum(
+            RACE_GRADE_CATEGORY_WEIGHTS[item["key"]]
+            for item in categories
+        )
+        normalized = {
+            item["key"]: _round(
+                RACE_GRADE_CATEGORY_WEIGHTS[item["key"]] / available_weight,
+                6,
+            )
+            for item in categories
+        } if available_weight else {}
+        return {
+            "version": RACE_GRADE_RUBRIC_VERSION,
+            "category_weights_percent": dict(RACE_GRADE_CATEGORY_WEIGHTS),
+            "normalization": "Configured weights are renormalized across available categories only; unavailable categories contribute no neutral score.",
+            "available_weight_percent": available_weight,
+            "normalized_available_weights": normalized,
+            "a_plus_gate": dict(a_plus_gate),
+        }
 
     if len(categories) < 2:
         return {
             "status": "insufficient_comparable_laps", "overall_grade": None,
             "categories": categories,
             "message": "At least three usable green laps and two supported categories are required for a race grade.",
+            "rubric_version": RACE_GRADE_RUBRIC_VERSION,
+            "rubric": rubric_payload(),
+            "unavailable_categories": list(unavailable_categories.values()),
         }
-    overall_score = statistics.fmean(float(item["score"]) for item in categories)
+
+    rubric = rubric_payload()
+    effective_weights = rubric["normalized_available_weights"]
+    for item in categories:
+        item["effective_weight"] = effective_weights[item["key"]]
+    weighted_score = sum(
+        float(item["score"]) * effective_weights[item["key"]]
+        for item in categories
+    )
+    overall_score = weighted_score
+    applied_gates: list[dict[str, Any]] = []
     if len(times) < 10:
         overall_score = min(overall_score, 89.9)
+        applied_gates.append({
+            "gate": "minimum_usable_laps_for_A_range",
+            "threshold": 10,
+            "observed": len(times),
+            "maximum_score": 89.9,
+        })
+    if not a_plus_gate["eligible"]:
+        overall_score = min(overall_score, 96.9)
+        applied_gates.append({
+            "gate": "external_comparable_field_strength_required_for_A_plus",
+            "maximum_score": 96.9,
+            "status": a_plus_gate["status"],
+        })
     return {
         "status": "graded", "overall_score": _round(overall_score, 1), "overall_grade": letter(overall_score),
         "categories": categories,
-        "standard": "Strict race-specific execution grade; A+ requires exceptional evidence and cannot be earned from consistency alone.",
+        "rubric_version": RACE_GRADE_RUBRIC_VERSION,
+        "rubric": rubric,
+        "weighted_score_before_gates": _round(weighted_score, 1),
+        "applied_gates": applied_gates,
+        "unavailable_categories": list(unavailable_categories.values()),
+        "standard": (
+            "Strict race-specific execution grade using versioned 30/20/20/15/15 "
+            "category weights; only available categories are normalized into the total, "
+            "and A+ requires external comparable field-strength evidence."
+        ),
     }
 
 

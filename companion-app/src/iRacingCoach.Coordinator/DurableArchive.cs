@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -128,6 +129,7 @@ public sealed class DurableArchiveService : IDurableArchiveService
     {
         WriteIndented = true
     };
+    private static readonly ConcurrentDictionary<string, object> AtomicWriteGates = new(StringComparer.OrdinalIgnoreCase);
 
     public ArchiveStatus Initialize(string root, string appVersion, string backendVersion = "unknown")
     {
@@ -440,10 +442,34 @@ public sealed class DurableArchiveService : IDurableArchiveService
 
     private static void WriteAtomic<T>(string path, T value)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temporary = path + $".{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(value, JsonOptions), new UTF8Encoding(false));
-        File.Move(temporary, path, overwrite: true);
+        var destination = Path.GetFullPath(path);
+        var contents = JsonSerializer.Serialize(value, JsonOptions);
+        var gate = AtomicWriteGates.GetOrAdd(destination, static _ => new object());
+        lock (gate)
+        {
+            string? temporary = null;
+            Exception? writeFailure = null;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                temporary = destination + $".{Guid.NewGuid():N}.tmp";
+                File.WriteAllText(temporary, contents, new UTF8Encoding(false));
+                File.Move(temporary, destination, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                writeFailure = ex;
+                throw;
+            }
+            finally
+            {
+                if (temporary is not null)
+                {
+                    try { File.Delete(temporary); }
+                    catch when (writeFailure is not null) { }
+                }
+            }
+        }
     }
 
     private static string CanonicalRoot(string root)

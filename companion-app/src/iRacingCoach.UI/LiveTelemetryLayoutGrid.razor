@@ -22,10 +22,13 @@
                 </select>
             </label>
 
-            <span class="live-layout-state" title="Live iRacing connection state">
-                <span class="status-orb @(Snapshot.Connected ? "ready" : "neutral")" aria-hidden="true"></span>
-                <span>@(Snapshot.Connected ? $"{Snapshot.Flag} - Lap {Snapshot.Lap}" : "Waiting for iRacing")</span>
-            </span>
+            @if (Snapshot.Connected)
+            {
+                <span class="live-layout-state" title="Live iRacing connection state">
+                    <span class="status-orb ready" aria-hidden="true"></span>
+                    <span>@Snapshot.Flag - Lap @Snapshot.Lap</span>
+                </span>
+            }
 
             <div class="live-layout-toolbar-actions">
                 @if (_editing)
@@ -148,13 +151,15 @@
                                 }
                                 else
                                 {
-                                    <span class="live-tile-missing live-tile-chart-missing"><strong>@reading.DisplayValue</strong><small>@reading.AvailabilityMessage</small></span>
+                                    <span class="live-tile-placeholder live-tile-chart-missing" aria-hidden="true">&mdash;</span>
+                                    <span class="sr-only">@reading.AvailabilityMessage</span>
                                 }
                             </div>
                         }
                         else if (!reading.Available)
                         {
-                            <span class="live-tile-missing"><strong>@reading.DisplayValue</strong><small>@reading.AvailabilityMessage</small></span>
+                            <span class="live-tile-placeholder" aria-hidden="true">&mdash;</span>
+                            <span class="sr-only">@reading.AvailabilityMessage</span>
                         }
                         else if (tile.DisplayStyle == LiveMonitorDisplayStyle.Gauge && reading.NumericValue.HasValue)
                         {
@@ -259,10 +264,10 @@
                         }
                         @foreach (var metric in FilteredCatalog)
                         {
-                            var catalogReading = LiveTelemetryCatalog.Read(metric.Id, State.LiveState, metric.DefaultUnit, metric.DefaultPrecision);
+                            var catalogReading = LiveTelemetryCatalog.Read(metric.Id, State.LiveState, metric.DefaultUnit, metric.DefaultPrecision, includeTrend: false);
                             <article class="toolbox-metric-card" data-live-catalog-item data-live-drag-metric="@metric.Id" data-metric-id="@metric.Id" data-metric-name="@metric.Name" title="Drag @metric.Name onto the grid">
                                 <span class="metric-drag-handle" aria-hidden="true"><ProductIcon Name="grip" Size="15" /></span>
-                                <div><strong>@metric.Name</strong><small title="@(catalogReading.Available ? metric.Description : catalogReading.AvailabilityMessage)">@SourceLabel(metric.Source) · @(catalogReading.Available ? $"{catalogReading.DisplayValue}{(string.IsNullOrWhiteSpace(catalogReading.Unit) || catalogReading.Unit == "time" ? string.Empty : $" {catalogReading.Unit}")}" : catalogReading.AvailabilityMessage)</small></div>
+                                <div><strong>@metric.Name</strong><small title="@(catalogReading.Available ? metric.Description : catalogReading.AvailabilityMessage)">@SourceLabel(metric.Source)@if (catalogReading.Available) { <text> · @catalogReading.DisplayValue@(string.IsNullOrWhiteSpace(catalogReading.Unit) || catalogReading.Unit == "time" ? string.Empty : $" {catalogReading.Unit}")</text> }</small></div>
                                 <button type="button" class="metric-add-button" data-live-no-drag aria-label="Add @metric.Name to the first available grid space" title="Add to dashboard" @onclick="() => AddMetric(metric.Id)"><ProductIcon Name="plus" Size="16" /></button>
                             </article>
                         }
@@ -279,9 +284,14 @@
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
 
+    private const int MaximumPendingTrendFrames = 4096;
+    private const int MaximumTrendTransferFrames = 180;
+    private const int MaximumTrendSeedPoints = 4096;
+
     private readonly List<LayoutSnapshot> _undo = [];
     private readonly List<LayoutSnapshot> _redo = [];
     private readonly ConcurrentQueue<PendingTrendFrame> _pendingTrendFrames = new();
+    private readonly Dictionary<TrendProjectionKey, object[]> _trendSeedCache = [];
     private ElementReference _studioElement;
     private ElementReference _toolboxToggleElement;
     private DotNetObjectReference<LiveTelemetryLayoutGrid>? _dotNetReference;
@@ -298,6 +308,9 @@
     private string? _lastKnownLayoutSignature;
     private string? _configuredInteractionSignature;
     private string? _configuredTrendSignature;
+    private long _trendSeedSessionEpoch = -1;
+    private int _trendSeedHistoryCount = -1;
+    private DateTimeOffset _trendSeedLatestAt = DateTimeOffset.MinValue;
 
     private LiveRaceSnapshot Snapshot => State.LiveState.Snapshot;
     private LiveMonitorLayout Preferences => State.Settings.LiveMonitor;
@@ -347,7 +360,7 @@
     }
 
     private object InteractionOptions() => new { editing = _editing, reducedMotion = State.Settings.UseReducedMotion, rows = Active.Rows, columns = Active.Columns };
-    private LiveTelemetryMetricReading Read(LiveMonitorTile tile) => LiveTelemetryCatalog.Read(tile.MetricId, State.LiveState, tile.Unit, tile.Precision, tile.TrendDuration);
+    private LiveTelemetryMetricReading Read(LiveMonitorTile tile) => LiveTelemetryCatalog.Read(tile.MetricId, State.LiveState, tile.Unit, tile.Precision, tile.TrendDuration, includeTrend: false);
 
     private object[] TrendConfigurations() => Active.Tiles
         .Where(tile => tile.DisplayStyle == LiveMonitorDisplayStyle.Trend)
@@ -373,59 +386,31 @@
     {
         var history = State.LiveState.History ?? [];
         if (history.Count == 0) return [];
-        IEnumerable<LiveTracePoint> selected = history;
-        var seconds = tile.TrendDuration switch
-        {
-            LiveMonitorTrendDuration.Seconds15 => 15,
-            LiveMonitorTrendDuration.Seconds30 => 30,
-            LiveMonitorTrendDuration.Seconds60 => 60,
-            _ => 0
-        };
-        if (seconds > 0)
-        {
-            var cutoff = history[^1].At - TimeSpan.FromSeconds(seconds);
-            selected = history.Where(point => point.At >= cutoff);
-        }
-        else
-        {
-            var latestIndex = -1;
-            double? latestProgress = null;
-            for (var index = history.Count - 1; index >= 0; index--)
+        RefreshTrendSeedCache(history);
+        var key = new TrendProjectionKey(tile.MetricId, tile.Unit, tile.TrendDuration);
+        if (_trendSeedCache.TryGetValue(key, out var cached)) return cached;
+        var projected = LiveTelemetryCatalog.ProjectTrend(tile.MetricId, history, tile.TrendDuration, tile.Unit, MaximumTrendSeedPoints)
+            .Select(point => (object)new
             {
-                if (LapProgress(history[index]) is not { } progress) continue;
-                latestIndex = index;
-                latestProgress = progress;
-                break;
-            }
-            if (latestIndex >= 0 && latestProgress.HasValue)
-            {
-                var sessionStart = 0;
-                var laterProgress = latestProgress.Value;
-                for (var index = latestIndex - 1; index >= 0; index--)
-                {
-                    if (LapProgress(history[index]) is not { } progress) continue;
-                    if (progress > laterProgress + .25)
-                    {
-                        sessionStart = index + 1;
-                        break;
-                    }
-                    laterProgress = progress;
-                }
-                var lapCount = tile.TrendDuration == LiveMonitorTrendDuration.ThreeLaps ? 3 : 1;
-                var cutoff = latestProgress.Value - lapCount;
-                selected = history.Skip(sessionStart).Where(point => LapProgress(point) is { } progress && progress >= cutoff);
-            }
-        }
-        return selected
-            .Select(point => new { Point = point, Value = LiveTelemetryCatalog.TrendValue(tile.MetricId, point, tile.Unit) })
-            .Select(item => (object)new
-            {
-                value = item.Value,
-                lap = item.Point.Lap,
-                lapDistancePercent = item.Point.LapDistancePercent,
-                atUnixMilliseconds = item.Point.At.ToUnixTimeMilliseconds()
+                value = point.Value,
+                lap = point.Lap,
+                lapDistancePercent = point.LapDistancePercent,
+                atUnixMilliseconds = point.At.ToUnixTimeMilliseconds()
             })
             .ToArray();
+        if (_trendSeedCache.Count >= 64) _trendSeedCache.Clear();
+        _trendSeedCache[key] = projected;
+        return projected;
+    }
+
+    private void RefreshTrendSeedCache(IReadOnlyList<LiveTracePoint> history)
+    {
+        var latestAt = history.Count > 0 ? history[^1].At : DateTimeOffset.MinValue;
+        if (_trendSeedSessionEpoch == State.LiveState.SessionEpoch && _trendSeedHistoryCount == history.Count && _trendSeedLatestAt == latestAt) return;
+        _trendSeedCache.Clear();
+        _trendSeedSessionEpoch = State.LiveState.SessionEpoch;
+        _trendSeedHistoryCount = history.Count;
+        _trendSeedLatestAt = latestAt;
     }
 
     private object TrendOptions(long? sessionEpoch = null) => new
@@ -439,7 +424,7 @@
     {
         if (_disposed) return;
         _pendingTrendFrames.Enqueue(new PendingTrendFrame(frame, State.LiveState.SessionEpoch));
-        while (_pendingTrendFrames.Count > 1200 && _pendingTrendFrames.TryDequeue(out _)) { }
+        while (_pendingTrendFrames.Count > MaximumPendingTrendFrames && _pendingTrendFrames.TryDequeue(out _)) { }
         ScheduleTrendDrain();
     }
 
@@ -457,12 +442,13 @@
             while (!_disposed)
             {
                 var sessionEpoch = State.LiveState.SessionEpoch;
-                var frames = new List<LiveTracePoint>(90);
-                while (frames.Count < 90 && _pendingTrendFrames.TryDequeue(out var pending))
-                    if (pending.SessionEpoch == sessionEpoch) frames.Add(pending.Frame);
-                if (frames.Count == 0) break;
+                var pendingFrames = new List<LiveTracePoint>(Math.Min(_pendingTrendFrames.Count, MaximumPendingTrendFrames));
+                while (_pendingTrendFrames.TryDequeue(out var pending))
+                    if (pending.SessionEpoch == sessionEpoch) pendingFrames.Add(pending.Frame);
+                if (pendingFrames.Count == 0) break;
                 var tiles = Active.Tiles.Where(tile => tile.DisplayStyle == LiveMonitorDisplayStyle.Trend).ToArray();
                 if (tiles.Length == 0) continue;
+                var frames = CompactPendingFrames(pendingFrames, tiles, MaximumTrendTransferFrames);
                 var payload = frames.Select(frame => new
                 {
                     atUnixMilliseconds = frame.At.ToUnixTimeMilliseconds(),
@@ -480,6 +466,16 @@
             Volatile.Write(ref _trendDrainScheduled, 0);
             if (!_pendingTrendFrames.IsEmpty && _tileChartsReady && !_disposed) ScheduleTrendDrain();
         }
+    }
+
+    private static IReadOnlyList<LiveTracePoint> CompactPendingFrames(IReadOnlyList<LiveTracePoint> frames, IReadOnlyList<LiveMonitorTile> tiles, int maximumFrames)
+    {
+        var selectors = tiles
+            .GroupBy(tile => (tile.MetricId, tile.Unit))
+            .Select(group => group.First())
+            .Select<LiveMonitorTile, Func<LiveTracePoint, double?>>(tile => frame => LiveTelemetryCatalog.TrendValue(tile.MetricId, frame, tile.Unit))
+            .ToArray();
+        return LiveTelemetryFrameCompaction.Compact(frames, maximumFrames, selectors);
     }
     private void ToggleCustomize() { if (_editing) FinishCustomize(); else StartCustomize(); }
     private void StartCustomize() { _editing = true; _toolboxOpen = true; }
@@ -760,9 +756,6 @@
     private static string StyleClass(LiveMonitorDisplayStyle style) => style == LiveMonitorDisplayStyle.Trend ? "chart" : style.ToString().ToLowerInvariant();
     private static string StyleSummary(LiveTelemetryMetricDefinition definition) => string.Join(", ", definition.Styles.Select(StyleLabel));
     private static string TrendLabel(LiveMonitorTrendDuration duration) => duration switch { LiveMonitorTrendDuration.Seconds15 => "15 seconds", LiveMonitorTrendDuration.Seconds30 => "30 seconds", LiveMonitorTrendDuration.Seconds60 => "60 seconds", LiveMonitorTrendDuration.OneLap => "1 lap", LiveMonitorTrendDuration.ThreeLaps => "3 laps", _ => duration.ToString() };
-    private static double? LapProgress(LiveTracePoint point) => point.Lap is { } lap
-        ? lap + Math.Clamp(point.LapDistancePercent ?? 0, 0, 1)
-        : null;
     private static double MeterPercent(LiveTelemetryMetricReading reading) { var min = reading.Minimum ?? 0; var max = reading.Maximum ?? 100; return Math.Clamp((reading.NumericValue.GetValueOrDefault() - min) / Math.Max(.0001, max - min) * 100, 0, 100); }
     private static string GaugeDash(LiveTelemetryMetricReading reading) => $"{PercentToken(MeterPercent(reading))} 100";
     private static string PercentToken(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
@@ -830,6 +823,7 @@
 
     private sealed record LayoutSnapshot(string ActiveLayoutId, IReadOnlyList<LiveMonitorNamedLayout> UserLayouts);
     private sealed record PendingTrendFrame(LiveTracePoint Frame, long SessionEpoch);
+    private sealed record TrendProjectionKey(string MetricId, string Unit, LiveMonitorTrendDuration Duration);
     private sealed record TrendPoint(int Index, double Value);
     private sealed record AccentOption(string Value, string Label);
     private static readonly string[] ResizeEdges = ["n", "e", "s", "w", "ne", "se", "sw", "nw"];

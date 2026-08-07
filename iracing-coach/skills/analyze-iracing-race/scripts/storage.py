@@ -12,6 +12,7 @@ import os
 import re
 import sqlite3
 import tempfile
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,6 +60,60 @@ def safe_slug(value: Any, fallback: str = "unknown") -> str:
 def stable_hash(value: Any, length: int = 16) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
+
+
+def session_phase(value: Any) -> str:
+    """Normalize a simulator session label without inventing a phase."""
+
+    normalized = str(value or "").strip().casefold()
+    if "qual" in normalized:
+        return "qualifying"
+    if normalized == "race" or normalized.startswith("race "):
+        return "race"
+    return normalized or "unknown"
+
+
+def _analysis_session_identity(analysis: Mapping[str, Any]) -> dict[str, str | None]:
+    identity = analysis.get("identity")
+    identity = identity if isinstance(identity, Mapping) else {}
+    source = analysis.get("source")
+    source = source if isinstance(source, Mapping) else {}
+    selection = source.get("selection")
+    selection = selection if isinstance(selection, Mapping) else {}
+
+    subsession_value = selection.get("subsession_id")
+    if subsession_value in (None, ""):
+        subsession_value = identity.get("subsession_id")
+    subsession_id = (
+        str(subsession_value).strip()
+        if subsession_value not in (None, "")
+        else None
+    )
+    sim_session_value = selection.get("sim_session_num")
+    sim_session_num = (
+        str(sim_session_value).strip()
+        if sim_session_value not in (None, "")
+        else None
+    )
+    sim_session_type_value = selection.get("sim_session_type")
+    sim_session_type = (
+        str(sim_session_type_value).strip()
+        if sim_session_type_value not in (None, "")
+        else None
+    )
+    group_value = selection.get("group_id")
+    session_group_id = (
+        str(group_value).strip() if group_value not in (None, "") else None
+    )
+    if session_group_id is None and subsession_id is not None and sim_session_num is not None:
+        session_group_id = f"subsession:{subsession_id}:{sim_session_num}"
+    return {
+        "session_group_id": session_group_id,
+        "subsession_id": subsession_id,
+        "sim_session_num": sim_session_num,
+        "sim_session_type": sim_session_type,
+        "session_phase": session_phase(sim_session_type),
+    }
 
 
 def file_sha256(path: Path, block_size: int = 1024 * 1024) -> str:
@@ -183,8 +238,8 @@ class ArchiveStore:
         self.initialize()
         connection = sqlite3.connect(self.db_path, timeout=30)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout = 30000")
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
         try:
             yield connection
             connection.commit()
@@ -192,9 +247,25 @@ class ArchiveStore:
             connection.close()
 
     def _initialize_db(self) -> None:
+        deadline = time.monotonic() + 30.0
+        while True:
+            try:
+                self._initialize_db_once()
+                return
+            except sqlite3.OperationalError as exc:
+                if (
+                    not any(token in str(exc).casefold() for token in ("locked", "busy"))
+                    or time.monotonic() >= deadline
+                ):
+                    raise
+                time.sleep(0.05)
+
+    def _initialize_db_once(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.db_path, timeout=30)
+        connection.row_factory = sqlite3.Row
         try:
+            connection.execute("PRAGMA busy_timeout = 30000")
             connection.executescript(
                 """
                 PRAGMA journal_mode = WAL;
@@ -204,6 +275,10 @@ class ArchiveStore:
                     session_start TEXT,
                     subsession_id TEXT,
                     session_id TEXT,
+                    session_group_id TEXT,
+                    sim_session_num TEXT,
+                    sim_session_type TEXT,
+                    session_phase TEXT,
                     season_key TEXT NOT NULL,
                     car_key TEXT NOT NULL,
                     track_key TEXT NOT NULL,
@@ -284,9 +359,77 @@ class ArchiveStore:
                     );
                 """
             )
-            connection.commit()
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                self._migrate_session_identity(connection)
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
         finally:
             connection.close()
+
+    def _migrate_session_identity(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        additions = {
+            "session_group_id": "TEXT",
+            "sim_session_num": "TEXT",
+            "sim_session_type": "TEXT",
+            "session_phase": "TEXT",
+        }
+        for name, column_type in additions.items():
+            if name not in columns:
+                connection.execute(f"ALTER TABLE sessions ADD COLUMN {name} {column_type}")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_group ON sessions(session_group_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_phase ON sessions(subsession_id, session_phase)"
+        )
+
+        rows = connection.execute(
+            """
+            SELECT analysis_id, subsession_id, report_path
+            FROM sessions
+            WHERE session_group_id IS NULL
+              AND sim_session_num IS NULL
+              AND sim_session_type IS NULL
+              AND session_phase IS NULL
+            """
+        ).fetchall()
+        for row in rows:
+            details: dict[str, str | None] = {
+                "session_group_id": None,
+                "subsession_id": str(row["subsession_id"]) if row["subsession_id"] not in (None, "") else None,
+                "sim_session_num": None,
+                "sim_session_type": None,
+                "session_phase": "unknown",
+            }
+            try:
+                analysis_path = Path(str(row["report_path"])).with_name("analysis.json")
+                decoded = json.loads(analysis_path.read_text(encoding="utf-8"))
+                if isinstance(decoded, Mapping):
+                    details = _analysis_session_identity(decoded)
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+            connection.execute(
+                """
+                UPDATE sessions
+                SET session_group_id = ?, sim_session_num = ?,
+                    sim_session_type = ?, session_phase = ?
+                WHERE analysis_id = ?
+                """,
+                (
+                    details["session_group_id"],
+                    details["sim_session_num"],
+                    details["sim_session_type"],
+                    details["session_phase"] or "unknown",
+                    row["analysis_id"],
+                ),
+            )
 
     @staticmethod
     def context_from_analysis(analysis: Mapping[str, Any]) -> dict[str, str]:
@@ -327,6 +470,7 @@ class ArchiveStore:
             "track_key": track_key,
             "setup_type": setup_type,
             "race_length_key": race_length_key,
+            "session_phase": _analysis_session_identity(analysis)["session_phase"] or "unknown",
         }
 
     def cache_key(self, context: Mapping[str, str]) -> str:
@@ -730,9 +874,15 @@ class ArchiveStore:
     def report_directory(self, analysis: Mapping[str, Any]) -> Path:
         identity = analysis.get("identity", {})
         context = self.context_from_analysis(analysis)
-        subsession = identity.get("subsession_id") or identity.get("session_id") or "offline"
+        session_identity = _analysis_session_identity(analysis)
+        subsession = session_identity["subsession_id"] or identity.get("session_id") or "offline"
+        session_key = session_identity["session_group_id"] or (
+            f"{subsession}-{session_identity['session_phase']}"
+            if session_identity["session_phase"] not in (None, "", "unknown")
+            else str(subsession)
+        )
         stamp = safe_slug(analysis.get("analyzed_at") or utc_now())
-        return self.reports_dir / context["season_key"] / safe_slug(subsession) / stamp
+        return self.reports_dir / context["season_key"] / safe_slug(session_key) / stamp
 
     def save_report_artifacts(
         self,
@@ -764,6 +914,7 @@ class ArchiveStore:
         self.initialize()
         context = self.context_from_analysis(analysis)
         identity = analysis.get("identity", {})
+        session_identity = _analysis_session_identity(analysis)
         race = analysis.get("race_summary", {})
         analysis_id = str(analysis["analysis_id"])
         summary_json = json.dumps(race, separators=(",", ":"), default=str)
@@ -773,10 +924,25 @@ class ArchiveStore:
             # One recorded session may be re-analyzed after the deterministic
             # engine changes.  Supersede its old index rows so a code revision
             # cannot masquerade as additional historical races or stints.
-            if identity.get("subsession_id") is not None:
+            if session_identity["session_group_id"] is not None:
                 connection.execute(
-                    "DELETE FROM sessions WHERE analysis_id <> ? AND subsession_id = ?",
-                    (analysis_id, str(identity.get("subsession_id"))),
+                    "DELETE FROM sessions WHERE analysis_id <> ? AND session_group_id = ?",
+                    (analysis_id, session_identity["session_group_id"]),
+                )
+            elif (
+                session_identity["subsession_id"] is not None
+                and session_identity["session_phase"] not in (None, "", "unknown")
+            ):
+                connection.execute(
+                    """
+                    DELETE FROM sessions
+                    WHERE analysis_id <> ? AND subsession_id = ? AND session_phase = ?
+                    """,
+                    (
+                        analysis_id,
+                        session_identity["subsession_id"],
+                        session_identity["session_phase"],
+                    ),
                 )
             elif source_path:
                 connection.execute(
@@ -787,18 +953,29 @@ class ArchiveStore:
                 """
                 INSERT INTO sessions(
                     analysis_id, analyzed_at, session_start, subsession_id, session_id,
+                    session_group_id, sim_session_num, sim_session_type, session_phase,
                     season_key, car_key, track_key, setup_type, race_length_key,
                     source_path, report_path, summary_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(analysis_id) DO UPDATE SET
                     analyzed_at=excluded.analyzed_at,
+                    session_start=excluded.session_start,
+                    subsession_id=excluded.subsession_id,
+                    session_id=excluded.session_id,
+                    session_group_id=excluded.session_group_id,
+                    sim_session_num=excluded.sim_session_num,
+                    sim_session_type=excluded.sim_session_type,
+                    session_phase=excluded.session_phase,
+                    source_path=excluded.source_path,
                     report_path=excluded.report_path,
                     summary_json=excluded.summary_json
                 """,
                 (
                     analysis_id, analysis.get("analyzed_at", utc_now()),
-                    identity.get("session_start"), identity.get("subsession_id"),
-                    identity.get("session_id"), context["season_key"],
+                    identity.get("session_start"), session_identity["subsession_id"],
+                    identity.get("session_id"), session_identity["session_group_id"],
+                    session_identity["sim_session_num"], session_identity["sim_session_type"],
+                    session_identity["session_phase"], context["season_key"],
                     context["car_key"], context["track_key"], context["setup_type"],
                     context["race_length_key"], source_path, report_path, summary_json,
                 ),
@@ -823,22 +1000,37 @@ class ArchiveStore:
                     ),
                 )
 
-    def recent_analyses(self, *, limit: int = 20) -> list[dict[str, Any]]:
+    def recent_analyses(
+        self,
+        *,
+        limit: int = 20,
+        phase: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Return compact recent-session records for dashboards and selectors."""
 
         self.initialize()
         bounded_limit = max(1, min(int(limit), 200))
+        normalized_phase = session_phase(phase) if phase is not None else None
+        where = "WHERE session_phase = ?" if normalized_phase not in (None, "unknown") else ""
+        arguments: tuple[Any, ...] = (
+            (normalized_phase, bounded_limit)
+            if where
+            else (bounded_limit,)
+        )
         with self.connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT analysis_id, analyzed_at, session_start, subsession_id,
-                       session_id, season_key, car_key, track_key, setup_type,
+                       session_id, session_group_id, sim_session_num,
+                       sim_session_type, session_phase,
+                       season_key, car_key, track_key, setup_type,
                        race_length_key, source_path, report_path, summary_json
                 FROM sessions
+                {where}
                 ORDER BY COALESCE(session_start, analyzed_at) DESC, analyzed_at DESC
                 LIMIT ?
                 """,
-                (bounded_limit,),
+                arguments,
             ).fetchall()
         result: list[dict[str, Any]] = []
         root = self.root.resolve()
@@ -894,10 +1086,15 @@ class ArchiveStore:
         if not include_other_seasons:
             where.append("s.season_key = ?")
             args.append(context["season_key"])
+        phase = session_phase(context.get("session_phase"))
+        if phase != "unknown":
+            where.append("s.session_phase = ?")
+            args.append(phase)
         args.append(max(1, min(int(limit), 1000)))
         query = f"""
             SELECT s.analysis_id, s.analyzed_at, s.session_start,
-                   s.subsession_id, s.session_id, s.source_path,
+                   s.subsession_id, s.session_id, s.session_group_id,
+                   s.sim_session_num, s.sim_session_type, s.session_phase, s.source_path,
                    s.season_key, s.report_path,
                    r.run_number, r.green_laps, r.caution_laps, r.total_laps,
                    r.fuel_used_l, r.fuel_end_l, r.lap_time_slope,
@@ -914,7 +1111,9 @@ class ArchiveStore:
         for row in rows:
             item = dict(row)
             recording_key = (
-                f"subsession:{item.get('subsession_id')}"
+                f"group:{item.get('session_group_id')}"
+                if item.get("session_group_id")
+                else f"subsession:{item.get('subsession_id')}:{item.get('session_phase') or 'unknown'}"
                 if item.get("subsession_id") not in (None, "")
                 else f"source:{str(item.get('source_path') or '').casefold()}"
                 if item.get("source_path")

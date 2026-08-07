@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -32,6 +33,7 @@ public partial class LiveMonitorWindow : Window
     private readonly List<TileVisual> _tileVisuals = [];
     private readonly Dictionary<string, (double Minimum, double Maximum)> _trendRanges = new(StringComparer.Ordinal);
     private bool _restoring;
+    private bool _allowClose;
     private bool _updatingControls;
     private bool _scaleSettingsOpen;
     private int _renderDirty;
@@ -55,6 +57,7 @@ public partial class LiveMonitorWindow : Window
         _saveTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) => SavePlacement(), Dispatcher);
         _saveTimer.Stop();
         Loaded += OnLoaded;
+        Closing += OnClosing;
         SourceInitialized += (_, _) => ApplyWindowTreatment();
         LocationChanged += (_, _) => ScheduleSave();
         _state.Changed += OnCompanionStateChanged;
@@ -68,12 +71,13 @@ public partial class LiveMonitorWindow : Window
         };
     }
 
-    public void ShowMonitor()
+    public void ShowMonitor(bool activate = true)
     {
         AttachCompositionRendering();
+        ShowActivated = activate;
         if (!IsVisible) Show();
         Topmost = true;
-        Activate();
+        if (activate) Activate();
         RenderAll();
     }
 
@@ -82,6 +86,19 @@ public partial class LiveMonitorWindow : Window
         SavePlacement();
         DetachCompositionRendering();
         Hide();
+    }
+
+    public void CloseMonitor()
+    {
+        _allowClose = true;
+        Close();
+    }
+
+    private void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (_allowClose) return;
+        e.Cancel = true;
+        _state.SetLiveMonitorVisible(false);
     }
 
     private LiveMonitorLayout Preferences => _state.Settings.LiveMonitor;
@@ -191,7 +208,7 @@ public partial class LiveMonitorWindow : Window
         foreach (var visual in _tileVisuals)
         {
             var readingState = seedTrends && visual.UsesTrend ? liveState : lightweightState;
-            var reading = LiveTelemetryCatalog.Read(visual.Tile.MetricId, readingState, visual.Tile.Unit, visual.Tile.Precision, visual.Tile.TrendDuration);
+            var reading = LiveTelemetryCatalog.Read(visual.Tile.MetricId, readingState, visual.Tile.Unit, visual.Tile.Precision, visual.Tile.TrendDuration, includeTrend: false);
             visual.Update(reading, liveState);
         }
         _trendAnimationActive = snapshot.Connected && !_state.Settings.UseReducedMotion && _tileVisuals.Any(visual => visual.UsesTrend);
@@ -413,23 +430,9 @@ public partial class LiveMonitorWindow : Window
     private MissingVisual BuildMissing(double height)
     {
         var panel = new Grid { VerticalAlignment = VerticalAlignment.Center };
-        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var value = new TextBlock { FontSize = Math.Min(17, Math.Max(12, height * .22)), FontWeight = FontWeights.SemiBold, Foreground = Resource<Brush>("UnavailableBrush"), TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        var value = new TextBlock { Text = "—", FontSize = Math.Min(22, Math.Max(14, height * .28)), FontWeight = FontWeights.Normal, Foreground = Resource<Brush>("UnavailableBrush"), TextAlignment = TextAlignment.Center };
         panel.Children.Add(value);
-        TextBlock? detail = null;
-        if (height >= 58)
-        {
-            detail = new TextBlock { FontSize = MinimumFontSize, Foreground = Resource<Brush>("TextMutedBrush"), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 32, Margin = new Thickness(0, 3, 0, 0) };
-            Grid.SetRow(detail, 1);
-            panel.Children.Add(detail);
-        }
-        void Update(LiveTelemetryMetricReading reading)
-        {
-            SetText(value, reading.DisplayValue);
-            if (detail is not null) SetText(detail, reading.AvailabilityMessage);
-        }
-        return new MissingVisual(panel, Update);
+        return new MissingVisual(panel, _ => { });
     }
 
     private ReadingVisual BuildBar(Brush accent, double height)

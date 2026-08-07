@@ -22,7 +22,7 @@ This inventory separates intended user-facing capability from current-main devel
 | Wet-weather analysis | Only when validated wet data exists | Not implemented | Hidden from production |
 | Multiclass analysis | Class-aware scoring and context | Not implemented | Hidden from production |
 | Target/reference trace | Evidence-gated aligned comparison | Partial/conditional | Actual recorded multi-lap trace works; validated external target remains limited |
-| Tray behavior | Minimize/close options, monitor controls, and definitive tray Exit | Implemented in 0.13.0 source with an armed shutdown deadline and process-termination fallback | Focused automated contract passes; exact post-fix 0.13.0 runtime process-disappearance observation remains pending in the current snapshot |
+| Tray behavior | Minimize/close options, monitor controls, popout hide/show, and definitive tray Exit | Implemented in 0.14.0 source with non-activating automatic show, connected-session manual-hide suppression, explicit popout destruction during app exit, and an armed shutdown deadline | Focused automated contract passes; a genuine mouse-driven tray Exit against the exact 0.14.0 package remains pending |
 
 ## Capability registry alignment
 

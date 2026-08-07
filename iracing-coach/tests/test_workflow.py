@@ -133,6 +133,94 @@ class WorkflowLocalTests(unittest.TestCase):
         self.assertEqual(len(first), 64)
         int(first, 16)
 
+    def test_group_selector_distinguishes_qualifying_from_race_in_one_subsession(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            sessions = [
+                {
+                    "kind": "session",
+                    "group_id": "subsession:8001:0",
+                    "subsession_id": 8001,
+                    "sim_session_num": 0,
+                    "sim_session_type": "Qualify",
+                    "is_race": False,
+                    "files": [str(Path(directory) / "qualify.ibt")],
+                },
+                {
+                    "kind": "session",
+                    "group_id": "subsession:8001:1",
+                    "subsession_id": 8001,
+                    "sim_session_num": 1,
+                    "sim_session_type": "Race",
+                    "is_race": True,
+                    "files": [str(Path(directory) / "race.ibt")],
+                },
+            ]
+            with mock.patch.object(workflow, "discover_sessions", return_value=sessions):
+                qualifying = workflow._resolve_session_selection(
+                    "subsession:8001:0", directory
+                )
+                race = workflow._resolve_session_selection("subsession:8001:1", directory)
+                numeric = workflow._resolve_session_selection("8001", directory)
+
+            self.assertEqual(qualifying["selector_type"], "group_id")
+            self.assertEqual(qualifying["sim_session_type"], "Qualify")
+            self.assertFalse(qualifying["is_race"])
+            self.assertEqual(race["selector_type"], "group_id")
+            self.assertEqual(race["sim_session_type"], "Race")
+            self.assertTrue(race["is_race"])
+            self.assertEqual(numeric["selector_type"], "subsession_id")
+            self.assertTrue(numeric["is_race"], "Legacy numeric selectors must continue to prefer Race.")
+
+    def test_shared_source_analysis_identity_is_qualified_by_exact_event_phase(self) -> None:
+        qualifying = {
+            "group_id": "subsession:8001:0",
+            "subsession_id": 8001,
+            "sim_session_num": 0,
+            "sim_session_type": "Qualify",
+        }
+        qualifying_file_selector = {
+            "group_id": None,
+            "subsession_id": 8001,
+            "sim_session_num": 0,
+            "sim_session_type": "Qualify",
+        }
+        race = {
+            "group_id": "subsession:8001:1",
+            "subsession_id": 8001,
+            "sim_session_num": 1,
+            "sim_session_type": "Race",
+        }
+
+        qualifying_id = workflow._phase_qualified_analysis_id("source-analysis", qualifying)
+        race_id = workflow._phase_qualified_analysis_id("source-analysis", race)
+
+        self.assertNotEqual(qualifying_id, race_id)
+        self.assertEqual(
+            qualifying_id,
+            workflow._phase_qualified_analysis_id("source-analysis", qualifying_file_selector),
+            "Selecting the same phase by group or file must retain one durable identity.",
+        )
+
+    def test_shared_source_cache_identity_is_qualified_by_exact_event_phase(self) -> None:
+        fingerprints = [{"sha256": "a" * 64}]
+        qualifying = {
+            "group_id": "subsession:8001:0",
+            "subsession_id": 8001,
+            "sim_session_num": 0,
+            "sim_session_type": "Qualify",
+        }
+        race = {
+            "group_id": "subsession:8001:1",
+            "subsession_id": 8001,
+            "sim_session_num": 1,
+            "sim_session_type": "Race",
+        }
+
+        self.assertNotEqual(
+            workflow._analysis_cache_identity(fingerprints, 20.0, "pipeline", qualifying),
+            workflow._analysis_cache_identity(fingerprints, 20.0, "pipeline", race),
+        )
+
     def test_saved_setup_prefers_exact_identity_car_path_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -251,6 +339,12 @@ class WorkflowLocalTests(unittest.TestCase):
 
             self.assertEqual(discovery_result["latest_race"]["subsession_id"], 55)
             self.assertEqual(result["selection"]["group_id"], "race")
+            self.assertEqual(
+                result["analysis_id"],
+                workflow._phase_qualified_analysis_id(
+                    "workflow-test-analysis", result["selection"]
+                ),
+            )
             self.assertEqual(result["source_files"], [str(race_file.resolve())])
             self.assertTrue(result["source_channel_coverage"]["catalog_complete"])
             self.assertTrue(Path(result["analysis_path"]).is_file())
@@ -424,6 +518,71 @@ class WorkflowLocalTests(unittest.TestCase):
         self.assertTrue(result["capabilities"]["corner_phase_coaching"])
         self.assertTrue(result["capabilities"]["groove_migration"])
         self.assertTrue(result["capabilities"]["damage_repair_awareness"])
+
+    def test_companion_dashboard_never_cross_joins_qualifying_and_race(self) -> None:
+        sessions = {
+            "root": "telemetry",
+            "latest_race": {"group_id": "subsession:55:1"},
+            "sessions": [
+                {
+                    "kind": "session",
+                    "group_id": "legacy-weekend:0",
+                    "subsession_id": 55,
+                    "sim_session_num": 0,
+                    "sim_session_type": "Qualify",
+                    "files": ["weekend.ibt"],
+                },
+                {
+                    "kind": "session",
+                    "group_id": "legacy-weekend:1",
+                    "subsession_id": 55,
+                    "sim_session_num": 1,
+                    "sim_session_type": "Race",
+                    "is_race": True,
+                    "files": ["weekend.ibt"],
+                },
+            ],
+            "errors": [],
+        }
+        recent = [
+            {
+                "analysis_id": "analysis-qualifying",
+                "session_group_id": "subsession:55:0",
+                "subsession_id": "55",
+                "sim_session_type": "Qualify",
+                "session_phase": "qualifying",
+                "source_path": "weekend.ibt",
+                "summary": {"recorded_laps": 2},
+            },
+            {
+                "analysis_id": "analysis-race",
+                "session_group_id": "subsession:55:1",
+                "subsession_id": "55",
+                "sim_session_type": "Race",
+                "session_phase": "race",
+                "source_path": "weekend.ibt",
+                "summary": {"recorded_laps": 40},
+            },
+        ]
+        store = mock.Mock()
+        store.auth_dir = Path("auth")
+        store.recent_analyses.return_value = recent
+        store.list_tuning_packages.return_value = []
+        with (
+            mock.patch.object(workflow, "discover_sessions_workflow", return_value=sessions),
+            mock.patch.object(workflow, "ArchiveStore", return_value=store),
+            mock.patch.object(workflow, "_read_json_file", return_value={}),
+            mock.patch.object(workflow, "credential_exists", return_value=False),
+        ):
+            result = workflow.companion_dashboard_workflow(limit=10)
+
+        store.recent_analyses.assert_called_once_with(limit=10, phase="race")
+
+        by_group = {item["group_id"]: item for item in result["races"]}
+        self.assertEqual(by_group["legacy-weekend:0"]["analysis"]["analysis_id"], "analysis-qualifying")
+        self.assertEqual(by_group["legacy-weekend:0"]["analysis"]["summary"]["recorded_laps"], 2)
+        self.assertEqual(by_group["legacy-weekend:1"]["analysis"]["analysis_id"], "analysis-race")
+        self.assertEqual(by_group["legacy-weekend:1"]["analysis"]["summary"]["recorded_laps"], 40)
 
 
 class _FakeGarage61Client:

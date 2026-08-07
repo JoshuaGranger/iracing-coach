@@ -8,16 +8,27 @@
 
 @if (!snapshot.Connected)
 {
-    <div class="inline-alert neutral-alert live-waiting"><span class="status-orb neutral"></span><div><strong>Waiting for iRacing</strong><span>The dashboard connects automatically when a session starts.</span></div></div>
+    <div class="inline-alert neutral-alert live-waiting" role="status"><span class="status-orb neutral"></span><div><strong>Waiting for iRacing</strong><span>Start a session and telemetry appears here automatically.</span></div></div>
 }
 
 <LiveTelemetryLayoutGrid State="State" />
 
-<details class="live-driving-disclosure">
-    <summary><ProductIcon Name="analysis" Size="16" /> Driving traces</summary>
-    <LiveTelemetryVisuals State="State" />
-</details>
+<section class="live-driving-disclosure">
+    <button type="button" class="live-driving-toggle" aria-expanded="@_tracesExpanded" aria-controls="live-driving-traces" @onclick="ToggleTraces">
+        <ProductIcon Name="analysis" Size="16" />
+        <span>Driving traces</span>
+        <ProductIcon Name="chevron-down" Size="15" />
+    </button>
+    @if (_tracesExpanded)
+    {
+        <div id="live-driving-traces">
+            <LiveTelemetryVisuals State="State" />
+        </div>
+    }
+</section>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private bool _tracesExpanded;
+    private void ToggleTraces() => _tracesExpanded = !_tracesExpanded;
 }

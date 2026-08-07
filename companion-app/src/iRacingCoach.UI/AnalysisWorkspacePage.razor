@@ -98,7 +98,7 @@
                     <div class="pace"><span>Longest run</span><strong>@LongestRun</strong></div>
                     <div class="tire"><span>@TireHeading</span><strong>@TireReading</strong></div>
                 </div>
-                @if (LongestRunDetail is { } run)
+                @if (LongestComparableRunDetail is { } run)
                 {
                     <div class="compact-run-trend"><span>Pace trend</span><strong class="@TrendClass(run.PaceSlopeSecondsPerLap)">@Trend(run.PaceSlopeSecondsPerLap)</strong><small>@RunChange(run)</small></div>
                 }
@@ -156,6 +156,7 @@
     [Parameter, EditorRequired] public RaceCard Card { get; set; } = null!;
     private string RaceDataSection { get; set; } = "telemetry";
     private string? _analysisId;
+    private IReadOnlyList<RaceReviewCornerSummary> _cornerAreas = [];
     private RecentRace? SelectedEventSession => EventSessions.FirstOrDefault(session => session.Id == State.SelectedRaceSessionId);
     private bool IsRaceWorkspace => SelectedEventSession is { } session
         ? !session.IsQualifying
@@ -167,6 +168,7 @@
     {
         if (_analysisId == Workspace.AnalysisId) return;
         _analysisId = Workspace.AnalysisId;
+        _cornerAreas = RaceReviewMetrics.BuildCornerSummaries(Workspace);
         RaceDataSection = "telemetry";
     }
     private IReadOnlyList<RecentRace> EventSessions => State.EventGroups.OfType<RaceEventGroup>().FirstOrDefault(group => group.Sessions?.OfType<RecentRace>().Any(session => session.Id == State.SelectedRaceSessionId) == true)?.Sessions?.OfType<RecentRace>().Where(session => session.IsRace || session.IsQualifying).GroupBy(session => session.IsQualifying ? "qualifying" : "race").Select(group => group.First()).OrderBy(session => session.IsQualifying ? 0 : 1).ToArray() ?? [];
@@ -185,6 +187,7 @@
     private int GreenLaps => Workspace.Runs.Sum(run => run.GreenLaps);
     private int CautionLaps => Workspace.Runs.Sum(run => run.CautionLaps);
     private AnalysisRun? LongestRunDetail => Workspace.Runs.OrderByDescending(run => run.GreenLaps).FirstOrDefault();
+    private AnalysisRun? LongestComparableRunDetail => Workspace.Runs.Where(run => run.ComparisonEligible).OrderByDescending(run => run.GreenLaps).FirstOrDefault();
     private string LongestRun => LongestRunDetail is { } run ? $"{run.GreenLaps} green" : "—";
     private AnalysisRun? LowestTireRun => Workspace.Runs.Where(run => run.TireRemainingPercent.HasValue).OrderBy(run => run.TireRemainingPercent).FirstOrDefault();
     private string TireHeading => LowestTireRun is not null ? "Lowest tire" : "Tire reading";
@@ -192,9 +195,9 @@
     private bool HasStrategy => Workspace.Strategy.GreenFuelGallonsPerLap.HasValue || Workspace.Strategy.AllGreenRangeLaps.HasValue || Workspace.PitStops > 0;
     private bool HasPitActivity => Workspace.Damage.PitRoadEpisodes > 0 || Workspace.Damage.TowEpisodes > 0 || Workspace.Damage.RepairEpisodes > 0 || Workspace.Damage.FastRepairUses > 0;
     private IReadOnlyList<AnalysisLap> PitTimeline => Workspace.Laps.Where(lap => lap.Lap > 0 && lap.PitTimeSeconds is > 0).ToArray();
-    private IReadOnlyList<CornerComparison> CornerAreas => BuildCornerAreas();
-    private static bool IsClean(AnalysisLapTrace trace) => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0 && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase);
-    private static bool IsClean(AnalysisLap lap) => lap.Complete && !lap.Confounded && lap.PitTimeSeconds.GetValueOrDefault() <= 0 && !lap.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase) && !lap.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase);
+    private IReadOnlyList<RaceReviewCornerSummary> CornerAreas => _cornerAreas;
+    private bool IsClean(AnalysisLapTrace trace) => trace.IsComparable() && !(Workspace.Damage.Incidents ?? []).Any(incident => incident.Lap == trace.Lap && incident.Points > 0);
+    private bool IsClean(AnalysisLap lap) => lap.IsComparable() && !(Workspace.Damage.Incidents ?? []).Any(incident => incident.Lap == lap.Lap && incident.Points > 0);
     private static bool UsefulAction(RaceAction action) => CapabilityRegistry.IsSupported(action.Claim)
         && !string.IsNullOrWhiteSpace(action.Label)
         && !string.IsNullOrWhiteSpace(action.Claim.Text)
@@ -211,23 +214,4 @@
         if (run.TireRemainingPercent.HasValue) parts.Add($"{run.TireName} {run.TireRemainingPercent.Value:0.0}% left");
         return string.Join(" · ", parts);
     }
-    private IReadOnlyList<CornerComparison> BuildCornerAreas()
-    {
-        if (Workspace.Segments.Count == 0 || Workspace.Traces.Count == 0) return [];
-        var ordered = Workspace.Traces.Where(trace => trace.Points.Count > 0).OrderBy(trace => trace.Lap).ToArray();
-        if (ordered.Length == 0) return [];
-        var phaseSize = Math.Max(1, (int)Math.Ceiling(ordered.Length / 3d));
-        return Workspace.Segments.Take(4).Select(zone => new CornerComparison(
-            FriendlyZone(zone), ZoneSummary(ordered.Take(phaseSize), zone), ZoneSummary(ordered.Skip(Math.Max(0, ordered.Length - phaseSize)), zone))).ToArray();
-    }
-    private static string FriendlyZone(TrackSegment zone) => string.IsNullOrWhiteSpace(zone.Label) || zone.Label.StartsWith("Load zone", StringComparison.OrdinalIgnoreCase) ? $"Corner area {zone.Number}" : zone.Label;
-    private static string ZoneSummary(IEnumerable<AnalysisLapTrace> traces, TrackSegment zone)
-    {
-        var points = traces.SelectMany(trace => trace.Points).Where(point => zone.WrapsStartFinish ? point.LapPercent >= zone.StartPercent || point.LapPercent <= zone.EndPercent : point.LapPercent >= zone.StartPercent && point.LapPercent <= zone.EndPercent).ToArray();
-        if (points.Length == 0) return "No samples";
-        var speed = points.Where(point => point.SpeedMph.HasValue).Select(point => point.SpeedMph!.Value).DefaultIfEmpty().Average();
-        var brake = points.Where(point => point.Brake.HasValue).Select(point => point.Brake!.Value).DefaultIfEmpty().Average() * 100;
-        return $"{speed:0} mph · {brake:0}% brake";
-    }
-    private sealed record CornerComparison(string Label, string Early, string Late);
 }

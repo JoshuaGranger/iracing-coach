@@ -16,6 +16,7 @@ from analysis_engine import (  # noqa: E402
     _corner_phase_coaching,
     _corner_tire_age_summary,
     _phase_comparison,
+    _race_grades,
     _runs,
     _vehicle_sideslip_degrees,
     analyze_telemetry,
@@ -680,6 +681,213 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertGreaterEqual(len(grades["categories"]), 2)
         self.assertTrue(all(item["explanation"] and item["improvement"] for item in grades["categories"]))
         self.assertTrue(any("capped below A+" in item.get("limitations", "") for item in grades["categories"] if item["key"] == "pace"))
+
+    def test_race_grades_exclude_damage_confounded_run_slopes(self) -> None:
+        laps = [
+            {
+                "lap": number,
+                "complete": True,
+                "flag_state": "green",
+                "pit_time_s": 0.0,
+                "lap_time_s": 60.0 + (number % 3) * 0.1,
+                "damage_repair_context": {
+                    "automatic_coaching_reference_eligible": True,
+                    "exclusion_reason_codes": [],
+                },
+            }
+            for number in range(1, 13)
+        ]
+        # Even an explicitly eligible flag cannot override an exclusion reason.
+        laps.append({
+            **laps[-1],
+            "lap": 13,
+            "lap_time_s": 10.0,
+            "damage_repair_context": {
+                "automatic_coaching_reference_eligible": True,
+                "exclusion_reason_codes": ["repair_correlated_candidate"],
+            },
+        })
+        runs = [
+            {
+                "pace": {"green_lap_time_slope_s_per_lap": 0.2},
+                "damage_repair_context": {
+                    "automatic_coaching_reference_eligible": True,
+                    "reason_codes": [],
+                },
+            },
+            {
+                "pace": {"green_lap_time_slope_s_per_lap": -1.5},
+                "damage_repair_context": {
+                    "automatic_coaching_reference_eligible": False,
+                    "reason_codes": [],
+                },
+            },
+            {
+                "pace": {"green_lap_time_slope_s_per_lap": -2.0},
+                "damage_repair_context": {
+                    "automatic_coaching_reference_eligible": True,
+                    "reason_codes": ["manual_review_after_tow_or_repair"],
+                },
+            },
+            {
+                "pace": {"green_lap_time_slope_s_per_lap": -3.0},
+                "damage_repair_context": {
+                    "automatic_coaching_reference_eligible": True,
+                    "reason_codes": "malformed_but_nonempty_reason",
+                },
+            },
+        ]
+
+        result = _race_grades(laps, runs, {}, {})
+        categories = {item["key"]: item for item in result["categories"]}
+
+        self.assertIn("across 12 usable laps", categories["pace"]["explanation"])
+        self.assertIn("+0.200 s per lap across 1 eligible run(s)", categories["tire_management"]["explanation"])
+        self.assertEqual(categories["tire_management"]["score"], 83.0)
+
+    def test_race_grades_exclude_restart_non_racing_off_track_and_traffic_laps(self) -> None:
+        def lap(number: int, time: float, **extra: object) -> dict:
+            result = {
+                "lap": number,
+                "complete": True,
+                "flag_state": "green",
+                "pit_time_s": 0.0,
+                "lap_time_s": time,
+                "racing_state_fraction": 1.0,
+                "clean_context": {
+                    "on_track_fraction": 1.0,
+                    "traffic_proximity_fraction": 0.0,
+                },
+                "damage_repair_context": {
+                    "automatic_coaching_reference_eligible": True,
+                    "exclusion_reason_codes": [],
+                },
+            }
+            result.update(extra)
+            return result
+
+        laps = [
+            lap(1, 200.0, flag_state="caution"),
+            lap(2, 10.0),  # Restart lap after caution.
+            lap(3, 60.0),
+            lap(4, 11.0, racing_state_fraction=0.5),
+            lap(
+                5,
+                12.0,
+                clean_context={
+                    "on_track_fraction": 0.5,
+                    "traffic_proximity_fraction": 0.0,
+                },
+            ),
+            lap(
+                6,
+                13.0,
+                clean_context={
+                    "on_track_fraction": 1.0,
+                    "traffic_proximity_fraction": 0.2,
+                },
+            ),
+            lap(7, 60.1),
+            lap(8, 60.2),
+            lap(
+                9,
+                9.0,
+                damage_repair_context={
+                    "automatic_coaching_reference_eligible": True,
+                    "exclusion_reason_codes": ["repair_correlated_candidate"],
+                },
+            ),
+        ]
+
+        result = _race_grades(laps, [], {}, {})
+        categories = {item["key"]: item for item in result["categories"]}
+
+        self.assertIn("across 3 usable laps", categories["pace"]["explanation"])
+        self.assertIn("across 3 usable laps", categories["consistency"]["explanation"])
+
+    def test_race_grades_leave_strategy_and_racecraft_unavailable(self) -> None:
+        laps = [
+            {
+                "lap": number,
+                "complete": True,
+                "flag_state": "green",
+                "pit_time_s": 0.0,
+                "lap_time_s": 60.0 + number * 0.02,
+            }
+            for number in range(1, 13)
+        ]
+        race_summary = {
+            "starting_position": 30,
+            "final_recorded_position": 1,
+            "pit_stops_detected": 4,
+        }
+        damage_repair = {
+            "summary": {"tow_episodes": 3, "recorded_repair_episodes": 2},
+        }
+
+        result = _race_grades(laps, [], race_summary, damage_repair)
+        available = {item["key"] for item in result["categories"]}
+        unavailable = {item["key"]: item for item in result["unavailable_categories"]}
+
+        self.assertNotIn("strategy", available)
+        self.assertNotIn("racecraft", available)
+        self.assertIn("strategy", unavailable)
+        self.assertIn("racecraft", unavailable)
+        self.assertIn("do not establish", unavailable["strategy"]["reason"])
+        self.assertIn("do not establish", unavailable["racecraft"]["reason"])
+
+    def test_race_grades_normalize_versioned_weights_across_available_categories(self) -> None:
+        laps = [
+            {
+                "lap": number,
+                "complete": True,
+                "flag_state": "green",
+                "pit_time_s": 0.0,
+                "lap_time_s": 60.0 + (number % 4) * 0.4,
+            }
+            for number in range(1, 13)
+        ]
+
+        result = _race_grades(laps, [], {}, {})
+        categories = {item["key"]: item for item in result["categories"]}
+        rubric = result["rubric"]
+
+        self.assertEqual(result["rubric_version"], "race-execution-v2")
+        self.assertEqual(
+            rubric["category_weights_percent"],
+            {"pace": 30, "consistency": 20, "tire_management": 20, "strategy": 15, "racecraft": 15},
+        )
+        self.assertEqual(rubric["available_weight_percent"], 50)
+        self.assertEqual(rubric["normalized_available_weights"], {"pace": 0.6, "consistency": 0.4})
+        expected = categories["pace"]["score"] * 0.6 + categories["consistency"]["score"] * 0.4
+        self.assertAlmostEqual(result["overall_score"], round(expected, 1), places=1)
+
+    def test_race_grades_explicitly_gate_a_plus_without_external_cohort(self) -> None:
+        laps = [
+            {
+                "lap": number,
+                "complete": True,
+                "flag_state": "green",
+                "pit_time_s": 0.0,
+                "lap_time_s": 60.0,
+            }
+            for number in range(1, 13)
+        ]
+        runs = [{"pace": {"green_lap_time_slope_s_per_lap": -1.0}}]
+
+        result = _race_grades(laps, runs, {}, {})
+
+        self.assertFalse(result["rubric"]["a_plus_gate"]["eligible"])
+        self.assertEqual(
+            result["rubric"]["a_plus_gate"]["status"],
+            "blocked_missing_external_comparable_field_strength",
+        )
+        self.assertNotEqual(result["overall_grade"], "A+")
+        self.assertTrue(all(item["grade"] != "A+" for item in result["categories"]))
+        self.assertTrue(any(
+            gate["gate"] == "external_comparable_field_strength_required_for_A_plus"
+            for gate in result["applied_gates"]
+        ))
 
     def test_lap_traces_preserve_mixed_flags_pit_direction_and_fuel(self) -> None:
         telemetry = synthetic_telemetry(lap_count=3)

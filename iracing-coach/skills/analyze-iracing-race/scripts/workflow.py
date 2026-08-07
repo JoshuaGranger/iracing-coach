@@ -52,7 +52,7 @@ try:  # Support package imports and direct execution from the scripts folder.
     from .race_card import build_race_card, render_race_card
     from .reporting import render_report, render_visuals
     from .secure_store import SecureStoreError, credential_exists
-    from .storage import ArchiveStore, safe_slug, stable_hash, utc_now
+    from .storage import ArchiveStore, safe_slug, session_phase, stable_hash, utc_now
 except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading.
     from analysis_engine import analyze_telemetry, analyzer_bundle_sha256
     from garage61_client import (
@@ -79,7 +79,7 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
     from race_card import build_race_card, render_race_card
     from reporting import render_report, render_visuals
     from secure_store import SecureStoreError, credential_exists
-    from storage import ArchiveStore, safe_slug, stable_hash, utc_now
+    from storage import ArchiveStore, safe_slug, session_phase, stable_hash, utc_now
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -421,19 +421,59 @@ def companion_dashboard_workflow(
         races_only=True,
     )
     store = ArchiveStore(archive_root)
-    recent_analyses = store.recent_analyses(limit=bounded_limit)
-    by_subsession: dict[str, dict[str, Any]] = {}
+    recent_analyses = store.recent_analyses(limit=bounded_limit, phase="race")
+    by_group: dict[str, dict[str, Any]] = {}
+    by_subsession_phase: dict[tuple[str, str], dict[str, Any]] = {}
+    by_source_phase: dict[tuple[str, str], dict[str, Any]] = {}
+    legacy_by_source: dict[str, dict[str, Any]] = {}
+    legacy_by_subsession: dict[str, dict[str, Any]] = {}
     for item in recent_analyses:
-        key = str(item.get("subsession_id") or "").strip()
-        if key and key not in by_subsession:
-            by_subsession[key] = item
+        group_key = str(item.get("session_group_id") or "").strip().casefold()
+        if group_key and group_key not in by_group:
+            by_group[group_key] = item
+        subsession_key = str(item.get("subsession_id") or "").strip()
+        phase_key = session_phase(item.get("session_phase") or item.get("sim_session_type"))
+        if subsession_key and phase_key != "unknown" and (subsession_key, phase_key) not in by_subsession_phase:
+            by_subsession_phase[(subsession_key, phase_key)] = item
+        elif subsession_key and subsession_key not in legacy_by_subsession:
+            legacy_by_subsession[subsession_key] = item
+        source_key = str(item.get("source_path") or "").strip()
+        if source_key:
+            try:
+                source_key = str(Path(source_key).resolve()).casefold()
+            except (OSError, ValueError):
+                source_key = source_key.casefold()
+            if phase_key != "unknown":
+                if (source_key, phase_key) not in by_source_phase:
+                    by_source_phase[(source_key, phase_key)] = item
+            elif source_key not in legacy_by_source:
+                legacy_by_source[source_key] = item
     races: list[dict[str, Any]] = []
     for raw_session in discovery.get("sessions", ()) or ():
         if not isinstance(raw_session, Mapping):
             continue
         session = dict(raw_session)
         key = str(session.get("subsession_id") or "").strip()
-        archived = by_subsession.get(key)
+        group_key = str(session.get("group_id") or "").strip().casefold()
+        phase_key = session_phase(session.get("sim_session_type"))
+        archived = by_group.get(group_key) if group_key else None
+        if archived is None and key and phase_key != "unknown":
+            archived = by_subsession_phase.get((key, phase_key))
+        if archived is None:
+            for source in session.get("files", ()) or ():
+                try:
+                    source_key = str(Path(str(source)).resolve()).casefold()
+                except (OSError, ValueError):
+                    source_key = str(source).casefold()
+                archived = (
+                    by_source_phase.get((source_key, phase_key))
+                    if phase_key != "unknown"
+                    else legacy_by_source.get(source_key)
+                )
+                if archived is not None:
+                    break
+        if archived is None and key and not group_key and phase_key == "unknown":
+            archived = legacy_by_subsession.get(key)
         session["analysis_status"] = "analyzed" if archived else "not_analyzed"
         session["analysis"] = (
             {
@@ -939,6 +979,67 @@ def _subsession_value(selector: str) -> str | None:
     return None
 
 
+def _selection_archive_identity(selection: Mapping[str, Any]) -> dict[str, str]:
+    """Return the stable event-phase identity that qualifies durable analysis data."""
+
+    subsession_value = selection.get("subsession_id")
+    sim_session_value = selection.get("sim_session_num")
+    subsession = (
+        str(subsession_value).strip()
+        if subsession_value not in (None, "")
+        else ""
+    )
+    sim_session = (
+        str(sim_session_value).strip()
+        if sim_session_value not in (None, "")
+        else ""
+    )
+    raw_group = str(selection.get("group_id") or "").strip()
+    group = (
+        f"subsession:{subsession}:{sim_session}"
+        if subsession and sim_session
+        else raw_group
+    )
+    return {
+        "group_id": group.casefold(),
+        "subsession_id": subsession,
+        "sim_session_num": sim_session,
+        "session_phase": session_phase(selection.get("sim_session_type")),
+    }
+
+
+def _analysis_cache_identity(
+    source_fingerprints: Sequence[Mapping[str, Any]],
+    rate: float,
+    pipeline_sha256: str,
+    selection: Mapping[str, Any],
+) -> str:
+    return stable_hash(
+        {
+            "cache_schema": 4,
+            "source_sha256": [item["sha256"] for item in source_fingerprints],
+            "target_hz": rate,
+            "pipeline_sha256": pipeline_sha256,
+            "session": _selection_archive_identity(selection),
+        },
+        64,
+    )
+
+
+def _phase_qualified_analysis_id(
+    analysis_id: Any,
+    selection: Mapping[str, Any],
+) -> str:
+    base = str(analysis_id or "").strip()
+    identity = _selection_archive_identity(selection)
+    if not identity["group_id"] and identity["session_phase"] == "unknown":
+        return base
+    return stable_hash(
+        {"base_analysis_id": base, "session": identity},
+        24,
+    )
+
+
 def _resolve_session_selection(
     selector: str,
     iracing_root: str | os.PathLike[str] | None,
@@ -968,10 +1069,25 @@ def _resolve_session_selection(
             )
         return {**match, "selector_type": "latest", "selector": "latest"}
 
+    group_match = next(
+        (
+            item
+            for item in sessions
+            if str(item.get("group_id") or "").casefold() == normalized.casefold()
+        ),
+        None,
+    )
+    if group_match is not None:
+        return {
+            **group_match,
+            "selector_type": "group_id",
+            "selector": str(group_match.get("group_id") or normalized),
+        }
+
     subsession = _subsession_value(normalized)
     if subsession is None:
         raise SessionSelectionError(
-            "Session selector must be 'latest', an existing .ibt path, or a SubSessionID."
+            "Session selector must be 'latest', an existing .ibt path, a discovery group ID, or a SubSessionID."
         )
     matches = [
         item
@@ -1581,14 +1697,11 @@ def analyze_race_workflow(
             )
     selection_verified = time.perf_counter()
     pipeline_sha256 = _analysis_pipeline_sha256()
-    analysis_cache_key = stable_hash(
-        {
-            "cache_schema": 3,
-            "source_sha256": [item["sha256"] for item in source_fingerprints],
-            "target_hz": rate,
-            "pipeline_sha256": pipeline_sha256,
-        },
-        64,
+    analysis_cache_key = _analysis_cache_identity(
+        source_fingerprints,
+        rate,
+        pipeline_sha256,
+        selection,
     )
     analysis_cache_path = store.root / "analysis-cache" / f"{analysis_cache_key}.json"
     cached_payload: Any = None
@@ -1641,10 +1754,14 @@ def analyze_race_workflow(
         if not isinstance(analysis, Mapping):
             raise WorkflowError("The telemetry analysis engine returned an invalid result.")
         analysis = dict(analysis)
+        analysis["analysis_id"] = _phase_qualified_analysis_id(
+            analysis.get("analysis_id"),
+            selection,
+        )
         _write_json_cache(
             analysis_cache_path,
             {
-                "cache_schema": 3,
+                "cache_schema": 4,
                 "cache_key": analysis_cache_key,
                 "created_at": utc_now(),
                 "analysis_sha256": stable_hash(analysis, 64),

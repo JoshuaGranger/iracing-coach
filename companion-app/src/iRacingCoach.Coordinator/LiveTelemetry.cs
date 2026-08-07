@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using iRacingCoach.Contracts;
 
 namespace iRacingCoach.Coordinator;
@@ -57,13 +58,19 @@ public sealed record LiveTelemetrySample
 
 public sealed class LiveTelemetryService : IDisposable
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(8);
+    // The Windows thread-pool timer is typically quantized too coarsely to
+    // observe a 240 Hz SDK stream reliably. A dedicated worker blocks on a
+    // high-resolution waitable timer while connected and drops to a cheap
+    // discovery cadence while iRacing is not running.
+    private const int ConnectedPollIntervalMilliseconds = 2;
+    private const int DisconnectedPollIntervalMilliseconds = 40;
     private static readonly TimeSpan HistorySnapshotInterval = TimeSpan.FromMilliseconds(100);
     private const int MaximumHistoryPoints = 36_000;
     private readonly ILiveTelemetrySource _source;
     private readonly LiveTelemetryEngine _engine = new();
     private readonly object _gate = new();
-    private Timer? _timer;
+    private readonly object _lifecycleGate = new();
+    private Thread? _pollThread;
     private bool _disposed;
     private long _framesRead;
     private long _droppedFrames;
@@ -75,6 +82,7 @@ public sealed class LiveTelemetryService : IDisposable
     private long _sessionEpoch;
     private int? _lastConnectedLap;
     private DateTimeOffset? _lastConnectedTimestamp;
+    private int? _lastSourceTick;
 
     public LiveTelemetryService(ILiveTelemetrySource source, LiveMonitorLayout layout)
     {
@@ -87,7 +95,19 @@ public sealed class LiveTelemetryService : IDisposable
     public LiveMonitorState Current { get; private set; }
     public bool CoachingPaused { get; private set; }
 
-    public void Start() => _timer ??= new Timer(Poll, null, TimeSpan.Zero, PollInterval);
+    public void Start()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_disposed || _pollThread is not null) return;
+            _pollThread = new Thread(PollLoop)
+            {
+                IsBackground = true,
+                Name = "iRacing Coach telemetry reader"
+            };
+            _pollThread.Start();
+        }
+    }
 
     public void SetCoachingPaused(bool paused)
     {
@@ -99,11 +119,45 @@ public sealed class LiveTelemetryService : IDisposable
         Updated?.Invoke(Current);
     }
 
-    private void Poll(object? state)
+    private void PollLoop()
+    {
+        var timer = NativeWaitableTimer.TryCreate();
+        try
+        {
+            var interval = DisconnectedPollIntervalMilliseconds;
+            while (!Volatile.Read(ref _disposed))
+            {
+                if (timer != IntPtr.Zero)
+                {
+                    if (!NativeWaitableTimer.Wait(timer, interval))
+                    {
+                        NativeWaitableTimer.Close(timer);
+                        timer = IntPtr.Zero;
+                        continue;
+                    }
+                }
+                else
+                {
+                    Thread.Sleep(interval);
+                }
+
+                if (Volatile.Read(ref _disposed)) break;
+                Poll();
+                interval = Current.Snapshot.Connected
+                    ? ConnectedPollIntervalMilliseconds
+                    : DisconnectedPollIntervalMilliseconds;
+            }
+        }
+        finally
+        {
+            if (timer != IntPtr.Zero) NativeWaitableTimer.Close(timer);
+        }
+    }
+
+    private void Poll()
     {
         if (Interlocked.Exchange(ref _busy, 1) != 0)
         {
-            Interlocked.Increment(ref _droppedFrames);
             return;
         }
 
@@ -115,10 +169,12 @@ public sealed class LiveTelemetryService : IDisposable
                 var sessionChanged = ObserveSessionBoundary(sample);
                 if (sessionChanged)
                 {
+                    _engine.ResetSession();
                     _history.Clear();
                     _historySnapshot = [];
                     _lastHistorySnapshot = sample.Timestamp;
                 }
+                ObserveSourceTicks(sample, sessionChanged);
                 var snapshot = _engine.Update(sample, Current.Layout.SafeGlanceEnabled, CoachingPaused);
                 var latency = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
                 LiveTracePoint? tracePoint = null;
@@ -227,19 +283,99 @@ public sealed class LiveTelemetryService : IDisposable
         return sessionChanged;
     }
 
+    private void ObserveSourceTicks(LiveTelemetrySample sample, bool sessionChanged)
+    {
+        if (!sample.Connected)
+        {
+            _lastSourceTick = null;
+            return;
+        }
+        if (sessionChanged || !_lastSourceTick.HasValue)
+        {
+            _lastSourceTick = sample.Tick;
+            return;
+        }
+
+        // Tick is a signed SDK counter that can eventually wrap. Interpreting
+        // the delta as unsigned handles a normal wrap while rejecting a large
+        // backwards reset as a new baseline rather than billions of losses.
+        var delta = unchecked((uint)(sample.Tick - _lastSourceTick.Value));
+        if (delta is > 1 and < 0x80000000u)
+            _droppedFrames += delta - 1;
+        _lastSourceTick = sample.Tick;
+    }
+
     private void MarkDisconnectedBoundary()
     {
         if (Current.Snapshot.Connected) _sessionEpoch++;
         _lastConnectedTimestamp = null;
         _lastConnectedLap = null;
+        _lastSourceTick = null;
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _timer?.Dispose();
+        Thread? pollThread;
+        lock (_lifecycleGate)
+        {
+            if (_disposed) return;
+            Volatile.Write(ref _disposed, true);
+            pollThread = _pollThread;
+            _pollThread = null;
+        }
+        if (pollThread is not null && pollThread != Thread.CurrentThread)
+            pollThread.Join(TimeSpan.FromMilliseconds(250));
         _source.Dispose();
+    }
+
+    private static class NativeWaitableTimer
+    {
+        private const uint CreateWaitableTimerHighResolution = 0x00000002;
+        private const uint TimerModifyState = 0x0002;
+        private const uint Synchronize = 0x00100000;
+        private const uint WaitObject0 = 0;
+
+        public static IntPtr TryCreate()
+        {
+            if (!OperatingSystem.IsWindows()) return IntPtr.Zero;
+            var timer = CreateWaitableTimerEx(IntPtr.Zero, null, CreateWaitableTimerHighResolution, TimerModifyState | Synchronize);
+            return timer != IntPtr.Zero
+                ? timer
+                : CreateWaitableTimerEx(IntPtr.Zero, null, 0, TimerModifyState | Synchronize);
+        }
+
+        public static bool Wait(IntPtr timer, int milliseconds)
+        {
+            var dueTime = -Math.Max(1, milliseconds) * 10_000L;
+            return SetWaitableTimer(timer, ref dueTime, 0, IntPtr.Zero, IntPtr.Zero, false) &&
+                   WaitForSingleObject(timer, (uint)(milliseconds + 100)) == WaitObject0;
+        }
+
+        public static void Close(IntPtr timer) => CloseHandle(timer);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateWaitableTimerEx(
+            IntPtr timerAttributes,
+            string? timerName,
+            uint flags,
+            uint desiredAccess);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetWaitableTimer(
+            IntPtr timer,
+            ref long dueTime,
+            int period,
+            IntPtr completionRoutine,
+            IntPtr argument,
+            [MarshalAs(UnmanagedType.Bool)] bool resume);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
     }
 }
 
@@ -250,14 +386,19 @@ public sealed class LiveTelemetryEngine
     private readonly Queue<double> _fuelPerLap = new();
     private int? _lastLap;
     private double? _fuelAtLapStart;
-    private int _greenLaps;
-    private int _cautionLaps;
+    private int _observedRunGreenLaps;
+    private int _observedRunCautionLaps;
     private double? _initialTrackTemperature;
     private LiveDriverCue? _displayedCue;
     private readonly Dictionary<int, Queue<double>> _brakePeakBaseline = [];
     private readonly Dictionary<int, double> _currentLapBrakePeaks = [];
     private readonly Dictionary<int, int> _brakePeakStreaks = [];
+    private bool _currentLapFullyObserved;
+    private bool _currentLapSessionConfounded;
     private bool _currentLapInputConfounded;
+    private bool _currentLapUnderCaution;
+    private bool _currentLapWasOnPitRoad;
+    private bool _wasOnPitRoad;
     private LiveDriverCue? _persistentDriverCue;
     private bool _wasConnected;
 
@@ -271,39 +412,38 @@ public sealed class LiveTelemetryEngine
         }
         _wasConnected = true;
 
-        var lapCompleted = _lastLap.HasValue && sample.Lap.HasValue && sample.Lap.Value > _lastLap.Value;
-        if (lapCompleted) CompleteDriverInputLap(sample);
-        CaptureDriverInput(sample);
-        if (lapCompleted)
+        var lapAdvanced = _lastLap.HasValue && sample.Lap.HasValue && sample.Lap.Value > _lastLap.Value;
+        var sequentialLap = lapAdvanced && sample.Lap!.Value == _lastLap!.Value + 1;
+        if (lapAdvanced)
         {
-            if (sample.UnderCaution) _cautionLaps++; else _greenLaps++;
-            if (!sample.UnderCaution && !sample.OnPitRoad && !sample.RepairFlag && sample.LastLapSeconds is > 0)
-            {
-                EnqueueBounded(_cleanLapTimes, sample.LastLapSeconds.Value, 8);
-            }
-            if (_fuelAtLapStart.HasValue && sample.FuelLiters.HasValue)
-            {
-                var used = _fuelAtLapStart.Value - sample.FuelLiters.Value;
-                if (used is > 0.05 and < 20) EnqueueBounded(_fuelPerLap, used, 8);
-            }
-            _fuelAtLapStart = sample.FuelLiters;
+            CompleteObservedLap(sample, sequentialLap);
+            BeginObservedLap(sample, sequentialLap);
         }
         else if (!_lastLap.HasValue)
         {
-            _fuelAtLapStart = sample.FuelLiters;
+            BeginObservedLap(sample, fullyObserved: false);
         }
-        _lastLap = sample.Lap;
+        else if (sample.Lap.HasValue && sample.Lap.Value < _lastLap.Value)
+        {
+            ResetSessionState();
+            _wasConnected = true;
+            BeginObservedLap(sample, fullyObserved: false);
+        }
+        ObserveCurrentLap(sample);
+        if (sample.Lap.HasValue) _lastLap = sample.Lap;
         _initialTrackTemperature ??= sample.TrackTemperatureC;
 
         var leader = BuildGap("leader", "Leader", sample.GapToLeaderSeconds, sample, sample.LeaderGapUnavailableReason);
         var classLeader = BuildGap("classLeader", "Class leader", sample.GapToClassLeaderSeconds, sample, sample.LeaderGapUnavailableReason);
         var ahead = BuildGap("ahead", "Ahead", sample.GapToAheadSeconds, sample, sample.AheadGapUnavailableReason);
         var behind = BuildGap("behind", "Behind", sample.GapToBehindSeconds, sample, sample.BehindGapUnavailableReason);
-        var tirePhase = _greenLaps < 5 ? "Early run" : _greenLaps < 20 ? "Middle run" : "Late run";
-        var pace = BuildPaceTarget(sample, tirePhase);
+        var runPhase = _observedRunGreenLaps < 5 ? "Early run" : _observedRunGreenLaps < 20 ? "Middle run" : "Late run";
+        var pace = BuildPaceTarget(sample, runPhase);
         var pit = BuildPit(sample);
-        var glanceOpportunity = sample.UnderCaution || sample.OnPitRoad || lapCompleted ||
-            ((sample.Brake ?? 0) < 0.05 && Math.Abs(sample.SteeringWheelAngleRadians ?? 0) < 0.12 && Math.Abs(sample.LateralAccelerationG ?? 0) < 0.35);
+        var measuredStraight = sample.Brake is { } brake && double.IsFinite(brake) && brake < 0.05 &&
+            sample.SteeringWheelAngleRadians is { } steering && double.IsFinite(steering) && Math.Abs(steering) < 0.12 &&
+            sample.LateralAccelerationG is { } lateralAcceleration && double.IsFinite(lateralAcceleration) && Math.Abs(lateralAcceleration) < 0.35;
+        var glanceOpportunity = sample.UnderCaution || sample.OnPitRoad || lapAdvanced || measuredStraight;
         var candidate = BuildCue(sample, ahead, pit, pace, _persistentDriverCue, coachingPaused);
         var urgent = candidate.Priority >= LiveCuePriority.Strategy;
         var suppression = LiveCueSuppressionReason.None;
@@ -325,13 +465,14 @@ public sealed class LiveTelemetryEngine
         double? paceDelta = sample.LastLapSeconds.HasValue && sample.LeaderLastLapSeconds.HasValue
             ? sample.LastLapSeconds.Value - sample.LeaderLastLapSeconds.Value
             : null;
-        var avgFuel = Median(_fuelPerLap);
-        double? fuelLaps = avgFuel.HasValue && sample.FuelLiters.HasValue ? Math.Max(0, sample.FuelLiters.Value / avgFuel.Value) : null;
+        var avgFuel = _fuelPerLap.Count >= 2 ? Median(_fuelPerLap) : null;
+        var currentFuel = sample.FuelLiters is { } fuel && double.IsFinite(fuel) && fuel >= 0 ? fuel : (double?)null;
+        double? fuelLaps = avgFuel.HasValue && currentFuel.HasValue ? Math.Max(0, currentFuel.Value / avgFuel.Value) : null;
 
         return new LiveRaceSnapshot(
             true, "Connected", sample.Flag, sample.Lap, sample.LapsRemaining, sample.OverallPosition, sample.ClassPosition,
             leader, classLeader, ahead, behind, sample.LastLapSeconds, sample.LeaderLastLapSeconds, paceDelta, pace, pit,
-            _greenLaps, _greenLaps + _cautionLaps, _cautionLaps, tirePhase, fuelLaps,
+            _observedRunGreenLaps, _observedRunGreenLaps + _observedRunCautionLaps, _observedRunCautionLaps, runPhase, fuelLaps,
             sample.TrackTemperatureC,
             sample.TrackTemperatureC.HasValue && _initialTrackTemperature.HasValue ? sample.TrackTemperatureC.Value - _initialTrackTemperature.Value : null,
             sample.AirTemperatureC, sample.BrakeBiasPercent, sample.OnPitRoad, sample.MandatoryRepairSeconds, sample.OptionalRepairSeconds,
@@ -374,20 +515,21 @@ public sealed class LiveTelemetryEngine
         return new LiveGapState(label, value, trend, sample.Timestamp, DateTimeOffset.UtcNow - sample.Timestamp, EvidenceKind.Measured, 0.9, sample.Source);
     }
 
-    private LivePaceTarget BuildPaceTarget(LiveTelemetrySample sample, string tirePhase)
+    private LivePaceTarget BuildPaceTarget(LiveTelemetrySample sample, string runPhase)
     {
         if (_cleanLapTimes.Count < 3)
-            return new LivePaceTarget(null, null, "Unavailable", tirePhase, EvidenceKind.Unavailable, 0, sample.Timestamp, "Three clean in-session laps are required for a defensible baseline.");
+            return new LivePaceTarget(null, null, "Unavailable", runPhase, EvidenceKind.Unavailable, 0, sample.Timestamp, "Three clean in-session laps are required for a defensible baseline.");
         var baseline = Median(_cleanLapTimes)!.Value;
         var halfBand = Math.Max(0.15, baseline * 0.005);
-        return new LivePaceTarget(baseline - halfBand, baseline + halfBand, "Clean in-session baseline", tirePhase, EvidenceKind.Derived, 0.72, sample.Timestamp);
+        return new LivePaceTarget(baseline - halfBand, baseline + halfBand, "Clean in-session baseline", runPhase, EvidenceKind.Derived, 0.72, sample.Timestamp);
     }
 
     private LivePitRecommendation BuildPit(LiveTelemetrySample sample)
     {
-        var averageUse = Median(_fuelPerLap);
-        var hardLimit = averageUse.HasValue && sample.FuelLiters.HasValue
-            ? Math.Max(0, (int)Math.Floor((sample.FuelLiters.Value - Math.Min(0.5, averageUse.Value * 0.5)) / averageUse.Value))
+        var averageUse = _fuelPerLap.Count >= 2 ? Median(_fuelPerLap) : null;
+        var currentFuel = sample.FuelLiters is { } fuel && double.IsFinite(fuel) && fuel >= 0 ? fuel : (double?)null;
+        var hardLimit = averageUse.HasValue && currentFuel.HasValue
+            ? Math.Max(0, (int)Math.Floor((currentFuel.Value - Math.Min(0.5, averageUse.Value * 0.5)) / averageUse.Value))
             : (int?)null;
         var recommendation = hardLimit switch
         {
@@ -418,22 +560,72 @@ public sealed class LiveTelemetryEngine
         return Cue("No action: pace and race state within the supported band", LiveCuePriority.Information, EvidenceKind.Derived, sample, pace.Source);
     }
 
-    private void CaptureDriverInput(LiveTelemetrySample sample)
+    private void BeginObservedLap(LiveTelemetrySample sample, bool fullyObserved)
     {
-        _currentLapInputConfounded |= sample.UnderCaution || sample.OnPitRoad || sample.RepairFlag || sample.Towing || sample.BlackFlag ||
-            sample.GapToAheadSeconds is < 1.5 || sample.GapToBehindSeconds is < 0.75;
+        _currentLapFullyObserved = fullyObserved;
+        _currentLapSessionConfounded = false;
+        _currentLapInputConfounded = false;
+        _currentLapUnderCaution = false;
+        _currentLapWasOnPitRoad = false;
+        _currentLapBrakePeaks.Clear();
+        _fuelAtLapStart = fullyObserved ? sample.FuelLiters : null;
+    }
+
+    private void ObserveCurrentLap(LiveTelemetrySample sample)
+    {
+        if (sample.OnPitRoad && !_wasOnPitRoad)
+        {
+            _observedRunGreenLaps = 0;
+            _observedRunCautionLaps = 0;
+        }
+        _wasOnPitRoad = sample.OnPitRoad;
+
+        var sessionConfounded = sample.UnderCaution || sample.OnPitRoad || sample.RepairFlag || sample.Towing || sample.BlackFlag;
+        _currentLapSessionConfounded |= sessionConfounded;
+        _currentLapInputConfounded |= sessionConfounded || sample.GapToAheadSeconds is < 1.5 || sample.GapToBehindSeconds is < 0.75;
+        _currentLapUnderCaution |= sample.UnderCaution;
+        _currentLapWasOnPitRoad |= sample.OnPitRoad;
+
         if (sample.LapDistancePercent is not >= 0 or >= 1 || sample.Brake is not >= 0) return;
         var zone = Math.Clamp((int)(sample.LapDistancePercent.Value * 20), 0, 19);
         if (!_currentLapBrakePeaks.TryGetValue(zone, out var peak) || sample.Brake.Value > peak)
             _currentLapBrakePeaks[zone] = sample.Brake.Value;
     }
 
-    private void CompleteDriverInputLap(LiveTelemetrySample sample)
+    private void CompleteObservedLap(LiveTelemetrySample sample, bool sequentialLap)
     {
-        if (_currentLapInputConfounded || _currentLapBrakePeaks.Count == 0)
+        var fullyObserved = sequentialLap && _currentLapFullyObserved;
+        var boundarySessionConfounded = sample.UnderCaution || sample.OnPitRoad || sample.RepairFlag || sample.Towing || sample.BlackFlag;
+        var cleanSessionLap = fullyObserved && !_currentLapSessionConfounded && !boundarySessionConfounded;
+        var completedUnderCaution = _currentLapUnderCaution || sample.UnderCaution;
+        var completedOnPitRoad = _currentLapWasOnPitRoad || sample.OnPitRoad;
+        if (cleanSessionLap && !completedOnPitRoad)
+        {
+            _observedRunGreenLaps++;
+        }
+        else if (fullyObserved && !completedOnPitRoad && completedUnderCaution)
+        {
+            _observedRunCautionLaps++;
+        }
+
+        if (cleanSessionLap && sample.LastLapSeconds is > 0 and < 3600 && double.IsFinite(sample.LastLapSeconds.Value))
+            EnqueueBounded(_cleanLapTimes, sample.LastLapSeconds.Value, 8);
+
+        if (cleanSessionLap && _fuelAtLapStart is { } startFuel && startFuel >= 0 && double.IsFinite(startFuel) &&
+            sample.FuelLiters is { } endFuel && endFuel >= 0 && double.IsFinite(endFuel))
+        {
+            var used = startFuel - endFuel;
+            if (used is > 0.05 and < 20) EnqueueBounded(_fuelPerLap, used, 8);
+        }
+
+        CompleteDriverInputLap(sample, fullyObserved && !_currentLapInputConfounded && !boundarySessionConfounded);
+    }
+
+    private void CompleteDriverInputLap(LiveTelemetrySample sample, bool eligible)
+    {
+        if (!eligible || _currentLapBrakePeaks.Count == 0)
         {
             _currentLapBrakePeaks.Clear();
-            _currentLapInputConfounded = false;
             return;
         }
 
@@ -480,7 +672,12 @@ public sealed class LiveTelemetryEngine
         }
         _persistentDriverCue = newCue;
         _currentLapBrakePeaks.Clear();
-        _currentLapInputConfounded = false;
+    }
+
+    internal void ResetSession()
+    {
+        ResetSessionState();
+        _wasConnected = false;
     }
 
     private void ResetSessionState()
@@ -493,12 +690,17 @@ public sealed class LiveTelemetryEngine
         _brakePeakStreaks.Clear();
         _lastLap = null;
         _fuelAtLapStart = null;
-        _greenLaps = 0;
-        _cautionLaps = 0;
+        _observedRunGreenLaps = 0;
+        _observedRunCautionLaps = 0;
         _initialTrackTemperature = null;
         _displayedCue = null;
         _persistentDriverCue = null;
+        _currentLapFullyObserved = false;
+        _currentLapSessionConfounded = false;
         _currentLapInputConfounded = false;
+        _currentLapUnderCaution = false;
+        _currentLapWasOnPitRoad = false;
+        _wasOnPitRoad = false;
     }
 
     private static LiveDriverCue Cue(string message, LiveCuePriority priority, EvidenceKind evidence, LiveTelemetrySample sample, string basis) =>

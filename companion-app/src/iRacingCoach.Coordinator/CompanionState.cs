@@ -20,8 +20,8 @@ public sealed record TuningFeedbackDraft(
 
 public sealed class CompanionState : IDisposable
 {
-    private const int UiAnalysisCacheSchemaVersion = 5;
-    private const string AppVersion = "0.13.0";
+    private const int UiAnalysisCacheSchemaVersion = 6;
+    private const string AppVersion = "0.14.0";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
@@ -31,6 +31,8 @@ public sealed class CompanionState : IDisposable
     private readonly Dictionary<string, CancellationTokenSource> _jobTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Lazy<Task<JsonElement>>> _inflightBackendCalls = new(StringComparer.Ordinal);
     private readonly object _homeAnalysisSync = new();
+    private readonly object _liveMonitorVisibilityGate = new();
+    private readonly object _settingsPersistenceGate = new();
     private readonly Queue<RecentRace> _homeAnalysisQueue = [];
     private readonly HashSet<string> _homeAnalysisActiveKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _homeAnalysisCancellation = new();
@@ -42,6 +44,8 @@ public sealed class CompanionState : IDisposable
     private readonly List<FileSystemWatcher> _watchers = [];
     private bool _initialized;
     private bool _disposed;
+    private bool _liveMonitorAutoReopenSuppressed;
+    private bool _liveMonitorWasConnected;
     private DateTimeOffset _lastPrimaryUiLiveUpdate = DateTimeOffset.MinValue;
     private int _serviceRequestsInFlight;
     private BackendHealthResult _lastBackendHealth = new(false, "unknown", "unknown", "unknown", 0, TimeSpan.Zero, "Not checked");
@@ -81,7 +85,7 @@ public sealed class CompanionState : IDisposable
     public event Action? LiveTelemetryChanged;
     public event Action<LiveTracePoint>? LiveTelemetryFrame;
     public event Action<CompanionSettings>? SettingsSaved;
-    public event Action<bool>? LiveMonitorVisibilityRequested;
+    public event Action<bool, bool>? LiveMonitorVisibilityRequested;
     public event Action? RawTelemetryLocateRequested;
 
     public string CurrentPage { get; private set; } = "home";
@@ -291,7 +295,7 @@ public sealed class CompanionState : IDisposable
         ConfigureWatchers();
         _liveTelemetry.Start();
         _ = InitializeCoachEngineAsync();
-        if (Settings.LiveMonitor.Visible) LiveMonitorVisibilityRequested?.Invoke(true);
+        if (Settings.LiveMonitor.Visible) LiveMonitorVisibilityRequested?.Invoke(true, false);
     }
 
     public Task RefreshDashboardAsync(CancellationToken cancellationToken = default) => RefreshDataAsync(true, cancellationToken);
@@ -338,11 +342,18 @@ public sealed class CompanionState : IDisposable
             if (dashboard.ValueKind == JsonValueKind.Object)
             {
                 var mapped = DashboardMapper.Map(dashboard);
+                var homeRaces = mapped.Select((race, index) => index < 6 ? EnrichRaceOverview(race) : race).ToArray();
                 Races.Clear();
-                Races.AddRange(mapped.Select((race, index) => index < 6 ? EnrichRaceOverview(race) : race));
+                Races.AddRange(homeRaces);
                 var discovery = await discoveryTask;
                 EventSessions.Clear();
-                EventSessions.AddRange(DashboardMapper.MapEvents(dashboard, discovery));
+                EventSessions.AddRange(DashboardMapper.MapEvents(dashboard, discovery).Select(session =>
+                {
+                    var homeRace = homeRaces.FirstOrDefault(candidate => SameRace(candidate, session));
+                    return homeRace?.Overview is { } overview
+                        ? MergeRaceAnalysisState(session, overview, homeRace.Analyzed, homeRace.AnalysisPath)
+                        : session;
+                }));
                 foreach (var archived in LoadArchivedRaces())
                 {
                     if (Races.All(race => !string.Equals(race.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) Races.Add(archived);
@@ -498,8 +509,10 @@ public sealed class CompanionState : IDisposable
                 archive_root = Settings.ArchiveRoot,
                 target_hz = 20
             }, token);
+            EnsureResponseMatchesSession(race, result);
             var mappedCard = RuntimeMapper.RaceCard(result);
             var mappedAnalysis = RuntimeMapper.Analysis(result);
+            EnsureAnalysisMatchesSession(race, mappedAnalysis);
             CurrentRaceCard = mappedCard;
             CurrentAnalysis = mappedAnalysis;
             ApplySuccessfulRaceAnalysis(race, mappedAnalysis, AnalysisPathFromResponse(result));
@@ -526,9 +539,10 @@ public sealed class CompanionState : IDisposable
     public async Task OpenRaceFromHomeAsync(RecentRace race, CancellationToken cancellationToken = default)
     {
         var session = EventSessions.FirstOrDefault(candidate =>
-            string.Equals(candidate.Id, race.Id, StringComparison.OrdinalIgnoreCase) ||
-            (race.EventKey.Length > 0 && string.Equals(candidate.EventKey, race.EventKey, StringComparison.OrdinalIgnoreCase)) ||
-            (race.EffectiveSelector.Length > 0 && string.Equals(candidate.EffectiveSelector, race.EffectiveSelector, StringComparison.OrdinalIgnoreCase))) ?? race;
+            SameSessionPhase(candidate, race) &&
+            (string.Equals(candidate.Id, race.Id, StringComparison.OrdinalIgnoreCase) ||
+             (race.EventKey.Length > 0 && string.Equals(candidate.EventKey, race.EventKey, StringComparison.OrdinalIgnoreCase)) ||
+             (race.EffectiveSelector.Length > 0 && string.Equals(candidate.EffectiveSelector, race.EffectiveSelector, StringComparison.OrdinalIgnoreCase)))) ?? race;
 
         Navigate("analysis");
         SelectRaceSession(session);
@@ -717,8 +731,11 @@ public sealed class CompanionState : IDisposable
                 archive_root = Settings.ArchiveRoot,
                 target_hz = 20
             }, cancellationToken);
+            EnsureResponseMatchesSession(race, result);
             CurrentRaceCard = RuntimeMapper.RaceCard(result);
-            CurrentAnalysis = RuntimeMapper.Analysis(result);
+            var analysis = RuntimeMapper.Analysis(result);
+            EnsureAnalysisMatchesSession(race, analysis);
+            CurrentAnalysis = analysis;
             SaveUiAnalysisCache(race, result);
             TuningMessage = "Click a recorded corner, then describe what the car did.";
         }
@@ -897,7 +914,7 @@ public sealed class CompanionState : IDisposable
                 Garage61KeyInput = string.Empty;
             }
             EnsureRepository();
-            _settingsStore?.Save(Settings);
+            SaveSettingsToStore();
             SettingsMessage = "Portable preferences were saved. Account connections stay protected on this Windows user.";
             Toast = "Settings saved.";
             SettingsSaved?.Invoke(Settings);
@@ -960,7 +977,7 @@ public sealed class CompanionState : IDisposable
             _garage61Credentials.Store(Garage61KeyInput);
             Garage61KeyInput = string.Empty;
             Settings.Garage61ApiKey = string.Empty;
-            _settingsStore?.Save(Settings);
+            SaveSettingsToStore();
             await RefreshDataAsync(false, cancellationToken);
             SetupStep = Math.Max(SetupStep, 4);
             Toast = "Garage61 is connected for this Windows user.";
@@ -1079,7 +1096,7 @@ public sealed class CompanionState : IDisposable
     {
         Settings.FirstRunComplete = true;
         Settings.SettingsSchemaVersion = Math.Max(Settings.SettingsSchemaVersion, 2);
-        _settingsStore?.Save(Settings);
+        SaveSettingsToStore();
         CurrentPage = "home";
         Toast = "iRacing Coach is ready.";
         RaiseChanged();
@@ -1091,7 +1108,7 @@ public sealed class CompanionState : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "iRacingCoach",
             "Installer",
-            "iRacingCoach-0.13.0-Setup.exe");
+            "iRacingCoach-0.14.0-Setup.exe");
         if (!File.Exists(setup))
         {
             Toast = "The repair package could not be found. Run the latest iRacing Coach installer again.";
@@ -1121,7 +1138,11 @@ public sealed class CompanionState : IDisposable
         Settings.UseReducedMotion = false;
         Settings.DiagnosticIncludeConfounded = false;
         var liveDefaults = new LiveMonitorLayout();
-        Settings.LiveMonitor.Visible = liveDefaults.Visible;
+        lock (_liveMonitorVisibilityGate)
+        {
+            Settings.LiveMonitor.Visible = liveDefaults.Visible;
+            _liveMonitorAutoReopenSuppressed = false;
+        }
         Settings.LiveMonitor.ActiveLayoutId = liveDefaults.ActiveLayoutId;
         Settings.LiveMonitor.IsLocked = liveDefaults.IsLocked;
         Settings.LiveMonitor.UserLayouts = [];
@@ -1133,7 +1154,7 @@ public sealed class CompanionState : IDisposable
         Settings.LiveMonitor.MonitorDeviceName = liveDefaults.MonitorDeviceName;
         Settings.LiveMonitor.PlacementRecoveredAt = null;
         Settings.LiveMonitor.GlobalHotkey = liveDefaults.GlobalHotkey;
-        LiveMonitorVisibilityRequested?.Invoke(false);
+        LiveMonitorVisibilityRequested?.Invoke(false, false);
         SettingsMessage = "App preferences were restored. Protected account connections and racing history were kept.";
         RaiseChanged();
     }
@@ -1163,12 +1184,21 @@ public sealed class CompanionState : IDisposable
             RaiseChanged();
         }
     }
-    public void ToggleLiveMonitor() => SetLiveMonitorVisible(!Settings.LiveMonitor.Visible);
-    public void SetLiveMonitorVisible(bool visible, bool requestHost = true)
+    public bool LiveMonitorVisible
     {
-        Settings.LiveMonitor.Visible = visible;
+        get { lock (_liveMonitorVisibilityGate) return Settings.LiveMonitor.Visible; }
+    }
+    public void ToggleLiveMonitor() => SetLiveMonitorVisible(!LiveMonitorVisible);
+    public void SetLiveMonitorVisible(bool visible, bool requestHost = true, bool userInitiated = true)
+    {
+        lock (_liveMonitorVisibilityGate)
+        {
+            if (userInitiated)
+                _liveMonitorAutoReopenSuppressed = !visible && LiveState.Snapshot.Connected;
+            Settings.LiveMonitor.Visible = visible;
+        }
         PersistSettingsQuietly();
-        if (requestHost) LiveMonitorVisibilityRequested?.Invoke(visible);
+        if (requestHost) LiveMonitorVisibilityRequested?.Invoke(visible, visible && userInitiated);
         RaiseChanged();
     }
     public void ToggleLiveCoaching()
@@ -1654,7 +1684,9 @@ public sealed class CompanionState : IDisposable
                 || schema.ValueKind != JsonValueKind.Number
                 || !schema.TryGetInt32(out var cacheSchema)
                 || cacheSchema != UiAnalysisCacheSchemaVersion) return false;
+            if (!CacheMatchesSession(root, race)) return false;
             if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.Object) return false;
+            if (!ResponseMatchesSession(response, race)) return false;
             var cachedSourceWrite = root.TryGetProperty("sourceLastWriteUtc", out var stamp) && stamp.ValueKind == JsonValueKind.String
                 ? stamp.GetString() : null;
             if (!string.IsNullOrWhiteSpace(race.SourcePath) && File.Exists(race.SourcePath))
@@ -1662,9 +1694,11 @@ public sealed class CompanionState : IDisposable
                 var current = File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture);
                 if (!string.Equals(current, cachedSourceWrite, StringComparison.Ordinal)) return false;
             }
+            var analysis = RuntimeMapper.Analysis(response);
+            EnsureAnalysisMatchesSession(race, analysis);
             CurrentRaceCard = RuntimeMapper.RaceCard(response);
-            CurrentAnalysis = RuntimeMapper.Analysis(response);
-            ApplySuccessfulRaceAnalysis(race, CurrentAnalysis, AnalysisPathFromResponse(response));
+            CurrentAnalysis = analysis;
+            ApplySuccessfulRaceAnalysis(race, analysis, AnalysisPathFromResponse(response));
             AnalysisLoading = false;
             AnalysisMessage = string.Empty;
             ApiCacheHitCount++;
@@ -1683,7 +1717,9 @@ public sealed class CompanionState : IDisposable
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
-            CurrentAnalysis = RuntimeMapper.ArchivedAnalysis(document.RootElement);
+            var analysis = RuntimeMapper.ArchivedAnalysis(document.RootElement);
+            if (!AnalysisMatchesSession(race, analysis)) return false;
+            CurrentAnalysis = analysis;
             CurrentRaceCard = RuntimeMapper.ArchivedRaceCard(document.RootElement);
             ApplySuccessfulRaceAnalysis(race, CurrentAnalysis, race.AnalysisPath);
             AnalysisLoading = false;
@@ -1733,6 +1769,8 @@ public sealed class CompanionState : IDisposable
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
+            var archived = RuntimeMapper.ArchivedAnalysis(document.RootElement);
+            if (!AnalysisMatchesSession(race, archived)) return false;
             overview = RuntimeMapper.Overview(document.RootElement);
             return true;
         }
@@ -1770,7 +1808,7 @@ public sealed class CompanionState : IDisposable
                 ? stamp.GetString() : null;
             var sourceMatches = string.IsNullOrWhiteSpace(race.SourcePath) || !File.Exists(race.SourcePath)
                 || string.Equals(File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture), cachedSourceWrite, StringComparison.Ordinal);
-            if (!validSchema || !hasResponse || !sourceMatches) return false;
+            if (!validSchema || !hasResponse || !sourceMatches || !CacheMatchesSession(root, race) || !ResponseMatchesSession(response, race)) return false;
             overview = RuntimeMapper.Overview(response);
             var cachedPath = AnalysisPathFromResponse(response);
             if (!string.IsNullOrWhiteSpace(cachedPath)) analysisPath = cachedPath;
@@ -1790,9 +1828,9 @@ public sealed class CompanionState : IDisposable
 
     private static RaceOverview BuildRaceOverview(AnalysisWorkspace analysis)
     {
-        var cleanTimes = analysis.Traces.Where(trace => trace.Complete && trace.PitTimeSeconds.GetValueOrDefault() <= 0
-                && !trace.FlagState.Contains("yellow", StringComparison.OrdinalIgnoreCase)
-                && !trace.FlagState.Contains("caution", StringComparison.OrdinalIgnoreCase)
+        var incidentLaps = (analysis.Damage.Incidents ?? []).Where(incident => incident.Points > 0).Select(incident => incident.Lap).ToHashSet();
+        var cleanTimes = analysis.Traces.Where(trace => trace.IsComparable()
+                && !incidentLaps.Contains(trace.Lap)
                 && trace.LapTimeSeconds is > 0)
             .Select(trace => trace.LapTimeSeconds!.Value).ToArray();
         double? consistency = null;
@@ -1801,15 +1839,17 @@ public sealed class CompanionState : IDisposable
             var mean = cleanTimes.Average();
             if (mean > 0) consistency = Math.Sqrt(cleanTimes.Sum(value => Math.Pow(value - mean, 2)) / cleanTimes.Length) / mean * 100;
         }
-        var longest = analysis.Runs.OrderByDescending(run => run.GreenLaps).FirstOrDefault();
+        var longest = analysis.Runs.Where(run => run.ComparisonEligible).OrderByDescending(run => run.GreenLaps).FirstOrDefault();
         var tire = analysis.Runs.Where(run => run.TireRemainingPercent.HasValue).OrderBy(run => run.TireRemainingPercent).FirstOrDefault();
-        var controlChange = analysis.Runs.SelectMany(run => new[] { run.EarlyBrakeVsLatePercent, run.EarlySteerVsLatePercent })
-            .Where(value => value.HasValue).Select(value => Math.Abs(value!.Value)).DefaultIfEmpty().Max();
+        var controlChanges = analysis.Runs.Where(run => run.ComparisonEligible).SelectMany(run => new[] { run.EarlyBrakeVsLatePercent, run.EarlySteerVsLatePercent })
+            .Where(value => value.HasValue).Select(value => Math.Abs(value!.Value)).ToArray();
+        var controlChange = controlChanges.Length > 0 ? controlChanges.Max() : (double?)null;
+        var recordedFuel = analysis.Runs.Where(run => run.FuelUsedGallons.HasValue).Select(run => run.FuelUsedGallons!.Value).ToArray();
         return new RaceOverview(
             analysis.RecordedLaps, analysis.Runs.Sum(run => run.GreenLaps), analysis.Runs.Sum(run => run.CautionLaps),
-            analysis.PitStops, analysis.Runs.Count, longest?.GreenLaps ?? 0, longest?.PaceSlopeSecondsPerLap,
-            consistency, tire?.TireRemainingPercent, tire?.TireName ?? string.Empty, controlChange > 0 ? controlChange : null,
-            analysis.Runs.Where(run => run.FuelUsedGallons.HasValue).Sum(run => run.FuelUsedGallons), cleanTimes.Length > 0 ? cleanTimes.Min() : null);
+            analysis.PitStops, analysis.Runs.Count, analysis.Runs.Select(run => run.GreenLaps).DefaultIfEmpty().Max(), longest?.PaceSlopeSecondsPerLap,
+            consistency, tire?.TireRemainingPercent, tire?.TireName ?? string.Empty, controlChange,
+            recordedFuel.Length > 0 ? recordedFuel.Sum() : null, cleanTimes.Length > 0 ? cleanTimes.Min() : null);
     }
 
     private bool ApplyRaceOverview(RecentRace race, RaceOverview overview)
@@ -1962,6 +2002,7 @@ public sealed class CompanionState : IDisposable
                     }, _homeAnalysisCancellation.Token);
                     if (!result.TryGetProperty("analysis_view", out var view) || view.ValueKind != JsonValueKind.Object)
                         throw new InvalidDataException("Background race analysis did not return an analysis view.");
+                    EnsureResponseMatchesSession(race, result);
 
                     var overview = RuntimeMapper.Overview(result);
                     SaveUiAnalysisCache(race, result);
@@ -2011,9 +2052,132 @@ public sealed class CompanionState : IDisposable
     private static bool SameRace(RecentRace candidate, RecentRace selected)
     {
         if (string.Equals(candidate.Id, selected.Id, StringComparison.OrdinalIgnoreCase)) return true;
-        if (!string.Equals(candidate.SessionType, selected.SessionType, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!SameSessionPhase(candidate, selected)) return false;
         return (!string.IsNullOrWhiteSpace(candidate.EventKey) && string.Equals(candidate.EventKey, selected.EventKey, StringComparison.OrdinalIgnoreCase)) ||
                (!string.IsNullOrWhiteSpace(candidate.EffectiveSelector) && string.Equals(candidate.EffectiveSelector, selected.EffectiveSelector, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool SameSessionPhase(RecentRace first, RecentRace second) =>
+        string.Equals(SessionPhase(first.SessionType), SessionPhase(second.SessionType), StringComparison.Ordinal);
+
+    private static string SessionPhase(string? sessionType) =>
+        sessionType?.Contains("qual", StringComparison.OrdinalIgnoreCase) == true
+            ? "qualifying"
+            : string.Equals(sessionType, "race", StringComparison.OrdinalIgnoreCase)
+                ? "race"
+                : sessionType?.Trim().ToLowerInvariant() ?? string.Empty;
+
+    private static void EnsureAnalysisMatchesSession(RecentRace race, AnalysisWorkspace analysis)
+    {
+        if (AnalysisMatchesSession(race, analysis)) return;
+        throw new InvalidDataException($"The analysis returned {analysis.SessionType} telemetry instead of the requested {race.SessionType} session.");
+    }
+
+    private static bool AnalysisMatchesSession(RecentRace race, AnalysisWorkspace analysis) =>
+        string.Equals(SessionPhase(race.SessionType), SessionPhase(analysis.SessionType), StringComparison.Ordinal);
+
+    private static bool CacheMatchesSession(JsonElement cache, RecentRace race) =>
+        cache.TryGetProperty("sessionPhase", out var phase) &&
+        phase.ValueKind == JsonValueKind.String &&
+        string.Equals(phase.GetString(), SessionPhase(race.SessionType), StringComparison.Ordinal) &&
+        cache.TryGetProperty("selector", out var selector) &&
+        selector.ValueKind == JsonValueKind.String &&
+        string.Equals(NormalizeSessionSelector(selector.GetString()), NormalizeSessionSelector(race.EffectiveSelector), StringComparison.Ordinal);
+
+    private static void EnsureResponseMatchesSession(RecentRace race, JsonElement response)
+    {
+        var types = ResponseSessionTypes(response);
+        if (types.Count == 0 || types.Any(type =>
+                !string.Equals(SessionPhase(type), SessionPhase(race.SessionType), StringComparison.Ordinal)))
+            throw new InvalidDataException($"Analysis returned {ResponseSessionType(response) ?? "an unknown session"} instead of the requested {race.SessionType} session.");
+
+        var requestedSelector = NormalizeSessionSelector(race.EffectiveSelector);
+        var selectors = ResponseSessionSelectors(response);
+        if (requestedSelector.Length == 0 || selectors.Count == 0 || selectors.Any(selector =>
+                !string.Equals(NormalizeSessionSelector(selector), requestedSelector, StringComparison.Ordinal)))
+            throw new InvalidDataException($"Analysis returned telemetry for {string.Join(" / ", selectors.DefaultIfEmpty("an unknown recording"))} instead of the requested recording {race.EffectiveSelector}.");
+    }
+
+    private static bool ResponseMatchesSession(JsonElement response, RecentRace race)
+    {
+        var types = ResponseSessionTypes(response);
+        var requestedSelector = NormalizeSessionSelector(race.EffectiveSelector);
+        var selectors = ResponseSessionSelectors(response);
+        return types.Count > 0 && types.All(type =>
+                string.Equals(SessionPhase(type), SessionPhase(race.SessionType), StringComparison.Ordinal)) &&
+            requestedSelector.Length > 0 && selectors.Count > 0 && selectors.All(selector =>
+                string.Equals(NormalizeSessionSelector(selector), requestedSelector, StringComparison.Ordinal));
+    }
+
+    private static string? ResponseSessionType(JsonElement response) =>
+        ResponseSessionTypes(response) is { Count: > 0 } types ? string.Join(" / ", types) : null;
+
+    private static IReadOnlyList<string> ResponseSessionTypes(JsonElement response)
+    {
+        if (response.ValueKind != JsonValueKind.Object) return [];
+        var types = new List<string>(2);
+        if (response.TryGetProperty("selection", out var selection) && selection.ValueKind == JsonValueKind.Object &&
+            selection.TryGetProperty("sim_session_type", out var selectedType) && selectedType.ValueKind == JsonValueKind.String)
+        {
+            if (!string.IsNullOrWhiteSpace(selectedType.GetString())) types.Add(selectedType.GetString()!);
+        }
+        if (response.TryGetProperty("analysis_view", out var view) && view.ValueKind == JsonValueKind.Object &&
+            view.TryGetProperty("source", out var source) && source.ValueKind == JsonValueKind.Object &&
+            source.TryGetProperty("selection", out var recordedSelection) && recordedSelection.ValueKind == JsonValueKind.Object &&
+            recordedSelection.TryGetProperty("sim_session_type", out var recordedType) && recordedType.ValueKind == JsonValueKind.String)
+        {
+            if (!string.IsNullOrWhiteSpace(recordedType.GetString())) types.Add(recordedType.GetString()!);
+        }
+        if (types.Count == 0 && response.TryGetProperty("analysis_view", out view) && view.ValueKind == JsonValueKind.Object &&
+            view.TryGetProperty("identity", out var identity) && identity.ValueKind == JsonValueKind.Object &&
+            identity.TryGetProperty("event_type", out var eventType) && eventType.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(eventType.GetString()))
+            types.Add(eventType.GetString()!);
+        return types.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static IReadOnlyList<string> ResponseSessionSelectors(JsonElement response)
+    {
+        if (response.ValueKind != JsonValueKind.Object) return [];
+        var selectors = new List<string>(2);
+        if (response.TryGetProperty("selection", out var selection) && selection.ValueKind == JsonValueKind.Object &&
+            SessionSelectionGroup(selection) is { Length: > 0 } selectedGroup)
+            selectors.Add(selectedGroup);
+        if (response.TryGetProperty("analysis_view", out var view) && view.ValueKind == JsonValueKind.Object &&
+            view.TryGetProperty("source", out var source) && source.ValueKind == JsonValueKind.Object &&
+            source.TryGetProperty("selection", out var recordedSelection) && recordedSelection.ValueKind == JsonValueKind.Object &&
+            SessionSelectionGroup(recordedSelection) is { Length: > 0 } recordedGroup)
+            selectors.Add(recordedGroup);
+        return selectors.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static string? SessionSelectionGroup(JsonElement selection)
+    {
+        if (selection.TryGetProperty("group_id", out var group) && JsonScalarText(group) is { Length: > 0 } groupId)
+            return groupId;
+        var subsession = selection.TryGetProperty("subsession_id", out var subsessionValue) ? JsonScalarText(subsessionValue) : null;
+        var simSession = selection.TryGetProperty("sim_session_num", out var simSessionValue) ? JsonScalarText(simSessionValue) : null;
+        return string.IsNullOrWhiteSpace(subsession) || string.IsNullOrWhiteSpace(simSession)
+            ? null
+            : $"subsession:{subsession}:{simSession}";
+    }
+
+    private static string? JsonScalarText(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString()?.Trim(),
+        JsonValueKind.Number => value.GetRawText(),
+        _ => null
+    };
+
+    private static string NormalizeSessionSelector(string? value)
+    {
+        var normalized = value?.Trim().Replace('\\', '/').TrimEnd('/').ToLowerInvariant() ?? string.Empty;
+        var parts = normalized.Split(':');
+        return parts.Length == 3 && parts[0] == "subsession" &&
+               long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var subsession) &&
+               int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var simSession)
+            ? $"subsession:{subsession}:{simSession}"
+            : normalized;
     }
 
     private IReadOnlyList<LocalSetup> LoadArchivedSetups()
@@ -2041,6 +2205,8 @@ public sealed class CompanionState : IDisposable
         PersistPortableArtifact("ui-analysis-cache", UiAnalysisCacheKey(race), new
         {
             schemaVersion = UiAnalysisCacheSchemaVersion,
+            sessionPhase = SessionPhase(race.SessionType),
+            selector = race.EffectiveSelector,
             sourceLastWriteUtc = !string.IsNullOrWhiteSpace(race.SourcePath) && File.Exists(race.SourcePath)
                 ? File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture)
                 : null,
@@ -2073,7 +2239,7 @@ public sealed class CompanionState : IDisposable
         Path.Combine(Settings.ArchiveRoot, "ui-analysis-cache", UiAnalysisCacheKey(race) + ".json");
 
     private static string UiAnalysisCacheKey(RecentRace race) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(race.EffectiveSelector))).ToLowerInvariant();
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{SessionPhase(race.SessionType)}|{race.EffectiveSelector}"))).ToLowerInvariant();
 
     private void PersistPortableArtifact(string component, string name, object value)
     {
@@ -2123,10 +2289,22 @@ public sealed class CompanionState : IDisposable
 
     private void OnLiveTelemetryUpdated(LiveMonitorState state)
     {
-        if (state.Snapshot.Connected && Settings.LiveMonitor.ReopenOnConnect && !Settings.LiveMonitor.Visible)
+        var connected = state.Snapshot.Connected;
+        var openMonitor = false;
+        lock (_liveMonitorVisibilityGate)
         {
-            Settings.LiveMonitor.Visible = true;
-            LiveMonitorVisibilityRequested?.Invoke(true);
+            if (!connected || !_liveMonitorWasConnected) _liveMonitorAutoReopenSuppressed = false;
+            _liveMonitorWasConnected = connected;
+            if (connected && Settings.LiveMonitor.ReopenOnConnect && !Settings.LiveMonitor.Visible && !_liveMonitorAutoReopenSuppressed)
+            {
+                Settings.LiveMonitor.Visible = true;
+                openMonitor = true;
+            }
+        }
+        if (openMonitor)
+        {
+            PersistSettingsQuietly();
+            LiveMonitorVisibilityRequested?.Invoke(true, false);
         }
         LiveTelemetryChanged?.Invoke();
         var now = DateTimeOffset.UtcNow;
@@ -2204,12 +2382,21 @@ public sealed class CompanionState : IDisposable
         }
     }
 
+    private void SaveSettingsToStore()
+    {
+        lock (_settingsPersistenceGate)
+            _settingsStore?.Save(Settings);
+    }
+
     private void PersistSettingsQuietly()
     {
         try
         {
-            _archive.MarkActive(Settings.CoachHome);
-            _settingsStore?.Save(Settings);
+            lock (_settingsPersistenceGate)
+            {
+                _archive.MarkActive(Settings.CoachHome);
+                _settingsStore?.Save(Settings);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { }
     }

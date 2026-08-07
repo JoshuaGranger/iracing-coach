@@ -98,6 +98,8 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "trace-drop-feedback");
         StringAssert.Contains(telemetry, "Not recorded for this race");
         StringAssert.Contains(telemetry, "BuildCursorInteropConfiguration");
+        StringAssert.Contains(telemetry, "ToString(\"+0.000;-0.000;0.000\")");
+        Assert.DoesNotContain("<small>(+@((trace.LapTimeSeconds", telemetry);
         StringAssert.Contains(telemetry, "data-analysis-cursor-layer");
         StringAssert.Contains(telemetry, "data-analysis-trace-path");
         StringAssert.Contains(telemetry, "await DisposeCursorInteropAsync();");
@@ -114,6 +116,13 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(cursor, "setAttribute(\"viewBox\"");
         StringAssert.Contains(cursor, "window.removeEventListener(\"scroll\", state.scrolled, true)");
         StringAssert.Contains(cursor, "getBoundingClientRect");
+        StringAssert.Contains(cursor, "if (speed !== null) parts.push");
+        StringAssert.Contains(cursor, "if (throttle !== null) parts.push");
+        StringAssert.Contains(cursor, "if (brake !== null) parts.push");
+        StringAssert.Contains(cursor, "brake === null && delta === null");
+        Assert.DoesNotContain("speed ?? 0", cursor);
+        Assert.DoesNotContain("throttle ?? 0", cursor);
+        Assert.DoesNotContain("brake ?? 0", cursor);
         Assert.DoesNotContain("invokeMethodAsync", cursor);
         Assert.DoesNotContain("inFlight", cursor);
         StringAssert.Contains(css, ".trace-signal-drop-target.drop-duplicate.drop-active");

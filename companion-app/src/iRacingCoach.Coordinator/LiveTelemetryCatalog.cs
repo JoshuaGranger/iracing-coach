@@ -28,6 +28,12 @@ public sealed record LiveTelemetryMetricReading(
     string AvailabilityMessage,
     IReadOnlyList<double> TrendValues);
 
+public sealed record LiveTelemetryTrendProjection(
+    DateTimeOffset At,
+    int? Lap,
+    double? LapDistancePercent,
+    double? Value);
+
 public static class LiveTelemetryCatalog
 {
     private static readonly IReadOnlyList<LiveMonitorTrendDuration> AllTrendDurations =
@@ -47,7 +53,13 @@ public static class LiveTelemetryCatalog
     public static LiveTelemetryMetricDefinition Get(string id) => ById[id];
     public static bool TryGet(string id, out LiveTelemetryMetricDefinition definition) => ById.TryGetValue(id, out definition!);
 
-    public static LiveTelemetryMetricReading Read(string metricId, LiveMonitorState state, string? requestedUnit = null, int? requestedPrecision = null, LiveMonitorTrendDuration duration = LiveMonitorTrendDuration.Seconds30)
+    public static LiveTelemetryMetricReading Read(
+        string metricId,
+        LiveMonitorState state,
+        string? requestedUnit = null,
+        int? requestedPrecision = null,
+        LiveMonitorTrendDuration duration = LiveMonitorTrendDuration.Seconds30,
+        bool includeTrend = true)
     {
         var definition = Get(metricId);
         var snapshot = state.Snapshot;
@@ -56,7 +68,7 @@ public static class LiveTelemetryCatalog
         if (!snapshot.Connected)
             return Missing(unit, "Waiting for iRacing");
 
-        var trend = Trend(metricId, state.History ?? [], duration, unit);
+        var trend = includeTrend ? Trend(metricId, state.History ?? [], duration, unit) : [];
         var reading = metricId switch
         {
             "air-temperature" => Number(snapshot.AirTemperatureC, unit, precision, trend, value => Temperature(value, unit)),
@@ -97,6 +109,70 @@ public static class LiveTelemetryCatalog
     }
 
     public static IReadOnlyList<LiveMonitorTrendDuration> TrendDurations(string metricId) => ById.ContainsKey(metricId) ? AllTrendDurations : [];
+
+    public static IReadOnlyList<LiveTelemetryTrendProjection> ProjectTrend(
+        string metricId,
+        IReadOnlyList<LiveTracePoint> history,
+        LiveMonitorTrendDuration duration,
+        string? requestedUnit = null,
+        int maximumPoints = 4096)
+    {
+        if (!ById.TryGetValue(metricId, out var definition) || history.Count == 0) return [];
+        maximumPoints = Math.Clamp(maximumPoints, 5, 36_000);
+        var unit = definition.Units.Contains(requestedUnit ?? string.Empty, StringComparer.Ordinal)
+            ? requestedUnit!
+            : definition.DefaultUnit;
+        var start = TrendWindowStart(history, duration);
+        var count = history.Count - start;
+        if (count <= 0) return [];
+
+        LiveTelemetryTrendProjection Project(int index)
+        {
+            var point = history[index];
+            return new(point.At, point.Lap, point.LapDistancePercent, TrendValue(metricId, point, unit));
+        }
+
+        if (count <= maximumPoints)
+        {
+            var projected = new LiveTelemetryTrendProjection[count];
+            for (var offset = 0; offset < count; offset++) projected[offset] = Project(start + offset);
+            return projected;
+        }
+
+        // Chart seeds cross the WebView boundary only on mount or reconfigure.
+        // Preserve first/last, extrema and a missing sample per time bucket so
+        // brief peaks and truthful gaps survive in a strictly bounded payload.
+        var bucketCount = Math.Max(1, maximumPoints / 5);
+        var selectedIndices = new SortedSet<int>();
+        for (var bucket = 0; bucket < bucketCount; bucket++)
+        {
+            var bucketStart = start + (int)((long)count * bucket / bucketCount);
+            var bucketEnd = start + (int)((long)count * (bucket + 1) / bucketCount);
+            if (bucketEnd <= bucketStart) continue;
+            var minimumIndex = -1;
+            var maximumIndex = -1;
+            var missingIndex = -1;
+            double minimum = 0;
+            double maximum = 0;
+            for (var index = bucketStart; index < bucketEnd; index++)
+            {
+                var value = TrendValue(metricId, history[index], unit);
+                if (!value.HasValue || !double.IsFinite(value.Value))
+                {
+                    if (missingIndex < 0) missingIndex = index;
+                    continue;
+                }
+                if (minimumIndex < 0 || value.Value < minimum) { minimum = value.Value; minimumIndex = index; }
+                if (maximumIndex < 0 || value.Value > maximum) { maximum = value.Value; maximumIndex = index; }
+            }
+            selectedIndices.Add(bucketStart);
+            selectedIndices.Add(bucketEnd - 1);
+            if (minimumIndex >= 0) selectedIndices.Add(minimumIndex);
+            if (maximumIndex >= 0) selectedIndices.Add(maximumIndex);
+            if (missingIndex >= 0) selectedIndices.Add(missingIndex);
+        }
+        return selectedIndices.Take(maximumPoints).Select(Project).ToArray();
+    }
 
     public static double? TrendValue(string metricId, LiveTracePoint point, string? requestedUnit = null)
     {
@@ -175,7 +251,7 @@ public static class LiveTelemetryCatalog
             DWithDefault("speed", "Speed", "Recorded vehicle speed.", LiveMonitorMetricSource.Recorded, "mph", ["mph", "km/h"], all, LiveMonitorDisplayStyle.Trend, 1, 0),
             DWithDefault("steering", "Steering", "Recorded steering-wheel angle.", LiveMonitorMetricSource.Recorded, "deg", ["deg", "rad"], all, LiveMonitorDisplayStyle.Trend, 1),
             DWithDefault("throttle", "Throttle", "Recorded throttle-pedal input.", LiveMonitorMetricSource.Recorded, "%", ["%"], all, LiveMonitorDisplayStyle.Gauge, 0, 0, 100),
-            D("tire-phase", "Tire / run phase", "Local phase label from current clean-run evidence.", LiveMonitorMetricSource.Coach, string.Empty, [string.Empty], status, 0),
+            D("tire-phase", "Run phase", "Early, middle, or late segment derived from observed clean laps since pit-road entry; tire service is not confirmed.", LiveMonitorMetricSource.Coach, string.Empty, [string.Empty], status, 0),
             D("track-temperature", "Track temperature", "Recorded track temperature.", LiveMonitorMetricSource.Recorded, "°C", ["°C", "°F"], all, 1),
             DWithDefault("yaw-rate", "Yaw rate", "Recorded yaw rate.", LiveMonitorMetricSource.Recorded, "deg/s", ["deg/s", "rad/s"], all, LiveMonitorDisplayStyle.Trend, 1)
         ];
@@ -212,7 +288,7 @@ public static class LiveTelemetryCatalog
     {
         var phase = LiveTelemetryMetricEncoding.TirePhase(snapshot.TirePhase);
         return phase.HasValue
-            ? Text(snapshot.TirePhase, "Calculated from current clean-run evidence", Ordinal(phase), 0, 2, trend)
+            ? Text(snapshot.TirePhase, "Observed clean laps since pit road", Ordinal(phase), 0, 2, trend)
             : Missing(string.Empty, "Insufficient evidence for tire phase");
     }
 
@@ -308,7 +384,7 @@ public static class LiveTelemetryCatalog
             LiveMonitorTrendDuration.ThreeLaps when newest.Lap.HasValue => history.Where(point => point.Lap >= newest.Lap - 2),
             _ => history
         };
-        return selected.Select(point => metricId switch
+        return selected.TakeLast(4096).Select(point => metricId switch
         {
             "air-temperature" => ConvertValue(point.Metrics.AirTemperatureC, value => Temperature(value, unit)),
             "ahead-gap" => point.Metrics.AheadGapSeconds,
@@ -343,6 +419,44 @@ public static class LiveTelemetryCatalog
             "track-temperature" => ConvertValue(point.Metrics.TrackTemperatureC, value => Temperature(value, unit)),
             _ => null
         }).Where(value => value.HasValue && double.IsFinite(value.Value)).Select(value => value!.Value).ToArray();
+    }
+
+    private static int TrendWindowStart(IReadOnlyList<LiveTracePoint> history, LiveMonitorTrendDuration duration)
+    {
+        var newest = history[^1];
+        if (duration is LiveMonitorTrendDuration.Seconds15 or LiveMonitorTrendDuration.Seconds30 or LiveMonitorTrendDuration.Seconds60)
+        {
+            var seconds = duration == LiveMonitorTrendDuration.Seconds15 ? 15 : duration == LiveMonitorTrendDuration.Seconds30 ? 30 : 60;
+            var cutoff = newest.At - TimeSpan.FromSeconds(seconds);
+            var start = history.Count - 1;
+            while (start > 0 && history[start - 1].At >= cutoff) start--;
+            return start;
+        }
+
+        var newestProgress = LapProgress(newest);
+        if (!newestProgress.HasValue) return 0;
+        var lapWindow = duration == LiveMonitorTrendDuration.ThreeLaps ? 3 : 1;
+        var progressCutoff = newestProgress.Value - lapWindow;
+        var result = history.Count - 1;
+        var laterProgress = newestProgress.Value;
+        while (result > 0)
+        {
+            var priorProgress = LapProgress(history[result - 1]);
+            if (!priorProgress.HasValue) { result--; continue; }
+            if (priorProgress.Value > laterProgress + .25 || priorProgress.Value < progressCutoff) break;
+            laterProgress = priorProgress.Value;
+            result--;
+        }
+        return result;
+    }
+
+    private static double? LapProgress(LiveTracePoint point)
+    {
+        if (!point.Lap.HasValue) return null;
+        var distance = point.LapDistancePercent;
+        if (!distance.HasValue || !double.IsFinite(distance.Value)) return point.Lap.Value;
+        var fraction = distance.Value > 1 ? distance.Value / 100d : distance.Value;
+        return point.Lap.Value + Math.Clamp(fraction, 0, 1);
     }
 
     private static LiveMonitorTrendShape TrendShape(string metricId) => metricId switch

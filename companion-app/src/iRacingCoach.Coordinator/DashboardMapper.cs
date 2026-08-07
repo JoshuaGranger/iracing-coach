@@ -80,13 +80,13 @@ public static class DashboardMapper
             : default;
 
         var groupId = Text(session, "group_id");
-        var selector = Text(session, "subsession_id") ?? Text(session, "source_path") ?? FirstFile(session) ?? string.Empty;
+        var selector = groupId ?? GroupSelector(session) ?? Text(session, "subsession_id") ?? Text(session, "source_path") ?? FirstFile(session) ?? string.Empty;
         var id = groupId ?? selector;
         if (string.IsNullOrWhiteSpace(id)) id = Guid.NewGuid().ToString("N");
         var eventKey = Text(session, "subsession_id") ?? Text(session, "session_id") ?? id;
-        var track = Text(session, "track_name") ?? "Unknown track";
-        var layout = Text(session, "track_config_name") ?? "Unknown layout";
-        var car = Humanize(Text(session, "car_path")) ?? "Unknown car";
+        var track = RuntimeMapper.DisplayTrack(Text(session, "track_name") ?? Text(session, "track_path")) ?? "Unknown track";
+        var layout = RuntimeMapper.DisplayLayout(Text(session, "track_config_name") ?? Text(session, "track_config"));
+        var car = RuntimeMapper.DisplayCar(Text(session, "car_name") ?? Text(session, "car_path")) ?? "Unknown car";
         var fixedSetup = Boolean(session, "is_fixed_setup");
         var sessionType = Text(session, "sim_session_type") ?? Text(session, "event_type") ?? "Recorded session";
         var isRace = string.Equals(sessionType, "Race", StringComparison.OrdinalIgnoreCase) || Boolean(session, "is_race") == true;
@@ -171,6 +171,15 @@ public static class DashboardMapper
             if (file.ValueKind == JsonValueKind.String) return file.GetString();
         }
         return null;
+    }
+
+    private static string? GroupSelector(JsonElement session)
+    {
+        var subsession = Text(session, "subsession_id");
+        var simSession = Text(session, "sim_session_num");
+        return string.IsNullOrWhiteSpace(subsession) || string.IsNullOrWhiteSpace(simSession)
+            ? null
+            : $"subsession:{subsession}:{simSession}";
     }
 
     private static string? Text(JsonElement element, string property)

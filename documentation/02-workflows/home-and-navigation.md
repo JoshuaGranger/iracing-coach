@@ -12,7 +12,7 @@ The final-product navigation order is:
 6. Progressive Tuning
 7. Settings
 
-Version 0.11.0 uses this order. Connection management is a Settings section rather than a primary destination.
+Current source uses this order. Connection management is a Settings section rather than a primary destination.
 
 ## Navigation requirements
 
@@ -45,6 +45,6 @@ Home is a race desk, not a generic card dashboard.
 
 ## Current implementation note
 
-Version 0.13.0 source implements one Home action for the native telemetry popout, gates the workflow-card set on completed Home discovery, and queues every finalized Race without a valid schema-5 UI cache whose source timestamp matches when that source still exists. A failed identity receives one quiet retry, then leaves the active set so a later refresh or application run can retry it. Successful results are written to the portable analysis cache and immediately update the relevant Race session plus immutable event-group projections used by Home and Race Analysis. The queue checks a shared priority gate before each item and waits while live telemetry is connected or an interactive analysis is active, then resumes sequential catch-up after the foreground activity ends.
+Version 0.14.0 source implements one Home action for the native telemetry popout, gates the workflow-card set on completed Home discovery, and queues every finalized Race without a valid schema-6 UI cache whose selector, phase, and source timestamp match when that source still exists. Discovery `group_id` is the primary selector, so Race and Qualifying within one SubSessionID remain separate; same-phase responses for another selector are rejected as well. A failed identity receives one quiet retry, then leaves the active set so a later refresh or application run can retry it. Successful results are written to the portable UI analysis cache and immediately update the relevant Race session plus immutable event-group projections used by Home and Race Analysis. The queue checks a shared priority gate before each item and waits while live telemetry is connected or an interactive analysis is active, then resumes sequential catch-up after the foreground activity ends.
 
 Current Home also implements whole-row recent-race opening and real analysis-derived race summaries. Tire remaining is labeled as measured only when a recorded service observation supports it; otherwise the field is omitted or replaced by a supported control-load comparison. The priority gate and background queue are source/test-verified behavior, not evidence that every historical private recording can be analyzed successfully or that contention is eliminated on Joshua's hardware. `GAP-015` is closed in current source while representative combined-load measurement remains under the broader performance gap. Upcoming official event discovery and a computed single highest-value next action are not complete first-class surfaces.

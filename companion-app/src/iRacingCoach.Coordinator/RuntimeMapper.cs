@@ -10,8 +10,12 @@ public static class RuntimeMapper
     public static RecentRace ArchivedRace(JsonElement report, string analysisPath)
     {
         var identity = Object(report, "identity");
+        var selection = Object(Object(report, "source"), "selection");
         var summary = Object(report, "race_summary");
-        var id = Text(identity, "subsession_id") ?? Text(report, "analysis_id") ?? Path.GetFileName(Path.GetDirectoryName(analysisPath)) ?? analysisPath;
+        var eventKey = Text(selection, "subsession_id") ?? Text(identity, "subsession_id") ?? Text(report, "analysis_id") ?? analysisPath;
+        var groupId = SelectionGroup(selection, identity);
+        var id = groupId ?? Text(report, "analysis_id") ?? Path.GetFileName(Path.GetDirectoryName(analysisPath)) ?? analysisPath;
+        var sessionType = Text(selection, "sim_session_type") ?? Text(identity, "event_type") ?? "Race";
         var start = Text(identity, "session_start") ?? Text(report, "analyzed_at") ?? string.Empty;
         var date = DateTimeOffset.TryParse(start, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
             ? parsed.ToLocalTime().ToString("MMM d · h:mm tt", CultureInfo.CurrentCulture) : "Archived race";
@@ -22,8 +26,8 @@ public static class RuntimeMapper
             Boolean(identity, "is_fixed_setup") == true ? "Fixed" : "Open", "Analyzed",
             scheduled > 0 ? $"{recorded} of {scheduled} laps" : $"{recorded} recorded laps", false, true,
             Integer(summary, "starting_position"), Integer(summary, "final_recorded_position"), Text(identity, "car_path") ?? string.Empty,
-            analysisPath, string.Empty, start, id, Text(identity, "event_type") ?? "Race", "Archived", 1,
-            Text(identity, "series_name") ?? string.Empty, Text(identity, "season_name") ?? string.Empty, analysisPath,
+            analysisPath, string.Empty, start, eventKey, sessionType, "Archived", 1,
+            Text(identity, "series_name") ?? string.Empty, Text(identity, "season_name") ?? string.Empty, groupId ?? analysisPath,
             Overview(report));
     }
 
@@ -36,14 +40,23 @@ public static class RuntimeMapper
         var runs = Array(analysis, "runs");
         var laps = Array(analysis, "laps");
 
-        var cleanTimes = laps.Where(lap => Boolean(lap, "complete") == true
-                && (Number(lap, "pit_time_s") ?? 0) <= 0
-                && !string.Equals(Text(lap, "flag_state"), "yellow", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(Text(lap, "flag_state"), "caution", StringComparison.OrdinalIgnoreCase))
-            .Select(lap => Number(lap, "lap_time_s"))
+        var incidentLaps = Array(Object(Object(analysis, "damage_repair"), "incident_points"), "events")
+            .Select(item => NullableInteger(item, "candidate_lap"))
             .Where(value => value is > 0)
             .Select(value => value!.Value)
-            .ToArray();
+            .ToHashSet();
+        var cleanTimeValues = new List<double>();
+        string? previousLapFlag = null;
+        foreach (var lap in laps.OrderBy(lap => Integer(lap, "lap")))
+        {
+            var lapTime = Number(lap, "lap_time_s");
+            if (ComparableLap(lap, previousLapFlag) &&
+                !incidentLaps.Contains(Integer(lap, "lap")) &&
+                lapTime is > 0)
+                cleanTimeValues.Add(lapTime.Value);
+            previousLapFlag = Text(lap, "flag_state")?.Trim().ToLowerInvariant();
+        }
+        var cleanTimes = cleanTimeValues.ToArray();
         double? consistency = null;
         if (cleanTimes.Length >= 2)
         {
@@ -56,6 +69,7 @@ public static class RuntimeMapper
             var pace = Object(run, "pace");
             var tire = Object(run, "tire_observation");
             var load = Object(run, "driving_load");
+            var comparisonContext = Object(run, "damage_repair_context");
             return new
             {
                 Green = (int)Math.Round(Number(run, "green_laps") ?? 0),
@@ -63,19 +77,21 @@ public static class RuntimeMapper
                 Tire = Number(tire, "lowest_remaining_percent"),
                 TireName = Text(tire, "lowest_remaining_tire") ?? string.Empty,
                 BrakeChange = Number(load, "early_brake_vs_late_percent"),
-                SteerChange = Number(load, "early_steer_vs_late_percent")
+                SteerChange = Number(load, "early_steer_vs_late_percent"),
+                ComparisonEligible = ComparisonContextEligible(comparisonContext)
             };
         }).ToArray();
-        var longest = runDetails.OrderByDescending(run => run.Green).FirstOrDefault();
+        var longestComparable = runDetails.Where(run => run.ComparisonEligible).OrderByDescending(run => run.Green).FirstOrDefault();
         var tireReading = runDetails.Where(run => run.Tire.HasValue).OrderBy(run => run.Tire).FirstOrDefault();
-        var controlChange = runDetails.SelectMany(run => new[] { run.BrakeChange, run.SteerChange })
-            .Where(value => value.HasValue).Select(value => Math.Abs(value!.Value)).DefaultIfEmpty().Max();
+        var controlChanges = runDetails.Where(run => run.ComparisonEligible).SelectMany(run => new[] { run.BrakeChange, run.SteerChange })
+            .Where(value => value.HasValue).Select(value => Math.Abs(value!.Value)).ToArray();
+        var controlChange = controlChanges.Length > 0 ? controlChanges.Max() : (double?)null;
 
         return new RaceOverview(
             Integer(summary, "recorded_laps"), Integer(summary, "green_laps_estimated"), Integer(summary, "caution_laps_estimated"),
             Integer(summary, "pit_stops_detected"), runs.Count(), runDetails.Select(run => run.Green).DefaultIfEmpty().Max(),
-            longest?.Slope, consistency, tireReading?.Tire, tireReading?.TireName ?? string.Empty,
-            controlChange > 0 ? controlChange : null, Number(summary, "fuel_used_gal"), cleanTimes.Length > 0 ? cleanTimes.Min() : null);
+            longestComparable?.Slope, consistency, tireReading?.Tire, tireReading?.TireName ?? string.Empty,
+            controlChange, Number(summary, "fuel_used_gal"), cleanTimes.Length > 0 ? cleanTimes.Min() : null);
     }
 
     public static AnalysisWorkspace ArchivedAnalysis(JsonElement report)
@@ -219,6 +235,7 @@ public static class RuntimeMapper
             throw new InvalidDataException("The analysis response did not include the telemetry workspace.");
         }
 
+        var selection = AnalysisSelection(response, view);
         var identity = Object(view, "identity");
         var summary = Object(view, "race_summary");
         var traceRoot = Object(view, "lap_traces");
@@ -231,40 +248,50 @@ public static class RuntimeMapper
         var gradesRoot = Object(view, "race_grades");
         var timing = Object(response, "timing");
 
-        var laps = Array(view, "laps").Select(lap =>
+        string? previousMappedLapFlag = null;
+        var laps = Array(view, "laps").OrderBy(lap => Integer(lap, "lap")).Select(lap =>
         {
             var position = Object(lap, "position");
-            var damageContext = Object(lap, "damage_repair_context");
-            var reasons = Array(damageContext, "exclusion_reason_codes").Select(Value).Where(value => value.Length > 0).ToArray();
+            var reasons = LapComparisonExclusionReasons(lap, previousMappedLapFlag);
+            previousMappedLapFlag = Text(lap, "flag_state")?.Trim().ToLowerInvariant();
             return new AnalysisLap(
                 Integer(lap, "lap"), Number(lap, "lap_time_s"), Boolean(lap, "complete") == true,
                 Text(lap, "flag_state") ?? "unknown", Number(lap, "green_fraction"), Number(lap, "caution_fraction"),
                 Number(lap, "pit_time_s"), NullableInteger(position, "start"), NullableInteger(position, "end"),
-                Boolean(damageContext, "automatic_coaching_reference_eligible") == false || reasons.Length > 0,
+                reasons.Length > 0,
                 string.Join(", ", reasons.Select(Humanize).Where(value => value is not null)));
         }).ToArray();
 
-        var traces = Array(traceRoot, "traces").Select(trace => new AnalysisLapTrace(
-            Integer(trace, "lap"), Number(trace, "lap_time_s"), Boolean(trace, "complete") == true,
-            Text(trace, "flag_state") ?? "unknown", Number(trace, "green_fraction"), Number(trace, "caution_fraction"),
-            Number(trace, "pit_time_s"),
-            Array(trace, "points").Select(point => new AnalysisTracePoint(
-                Number(point, "lap_pct") ?? 0, Number(point, "session_time_s"), Number(point, "speed_mph"), Number(point, "speed_min_mph"), Number(point, "speed_max_mph"),
-                Number(point, "throttle"), Number(point, "throttle_min"), Number(point, "brake"), Number(point, "brake_mean"),
-                Number(point, "steering_rad"), Number(point, "steering_peak_rad"), Number(point, "slip_angle_deg"), NullableInteger(point, "gear"), Number(point, "rpm"),
-                Number(point, "yaw_rate_deg_s"), Number(point, "lateral_g"), Number(point, "longitudinal_g"),
-                Number(point, "lat"), Number(point, "lon"), Number(point, "tire_stress_proxy"))).ToArray(),
-            Array(trace, "flag_states").Select(Value).Where(value => value.Length > 0).ToArray(),
-            Boolean(trace, "pit_entry") == true, Boolean(trace, "pit_exit") == true,
-            Number(trace, "fuel_used_gal"),
-            Object(trace, "conditions") is var conditions ? new AnalysisLapConditions(
-                Text(conditions, "sky"), Number(conditions, "track_temperature_f"), Number(conditions, "air_temperature_f"),
-                Number(conditions, "wind_speed_mph"), Number(conditions, "wind_direction_degrees"),
-                Number(conditions, "relative_humidity_percent"), Number(conditions, "fog_percent"),
-                Number(conditions, "air_pressure_inhg"), Number(conditions, "air_density_lb_ft3"),
-                Number(conditions, "precipitation_percent"), Number(conditions, "track_wetness_state"),
-                Number(conditions, "track_usage_percent"), Text(conditions, "track_usage"),
-                Boolean(conditions, "weather_declared_wet")) : null)).ToArray();
+        var lapsByNumber = laps.GroupBy(lap => lap.Lap).ToDictionary(group => group.Key, group => group.First());
+        var traces = Array(traceRoot, "traces").Select(trace =>
+        {
+            var lapNumber = Integer(trace, "lap");
+            var conditions = Object(trace, "conditions");
+            var hasLapEligibility = lapsByNumber.TryGetValue(lapNumber, out var lapEligibility);
+            return new AnalysisLapTrace(
+                lapNumber, Number(trace, "lap_time_s"), Boolean(trace, "complete") == true,
+                Text(trace, "flag_state") ?? "unknown", Number(trace, "green_fraction"), Number(trace, "caution_fraction"),
+                Number(trace, "pit_time_s"),
+                Array(trace, "points").Select(point => new AnalysisTracePoint(
+                    Number(point, "lap_pct") ?? 0, Number(point, "session_time_s"), Number(point, "speed_mph"), Number(point, "speed_min_mph"), Number(point, "speed_max_mph"),
+                    Number(point, "throttle"), Number(point, "throttle_min"), Number(point, "brake"), Number(point, "brake_mean"),
+                    Number(point, "steering_rad"), Number(point, "steering_peak_rad"), Number(point, "slip_angle_deg"), NullableInteger(point, "gear"), Number(point, "rpm"),
+                    Number(point, "yaw_rate_deg_s"), Number(point, "lateral_g"), Number(point, "longitudinal_g"),
+                    Number(point, "lat"), Number(point, "lon"), Number(point, "tire_stress_proxy"))).ToArray(),
+                Array(trace, "flag_states").Select(Value).Where(value => value.Length > 0).ToArray(),
+                Boolean(trace, "pit_entry") == true, Boolean(trace, "pit_exit") == true,
+                Number(trace, "fuel_used_gal"),
+                conditions.ValueKind == JsonValueKind.Object ? new AnalysisLapConditions(
+                    Text(conditions, "sky"), Number(conditions, "track_temperature_f"), Number(conditions, "air_temperature_f"),
+                    Number(conditions, "wind_speed_mph"), Number(conditions, "wind_direction_degrees"),
+                    Number(conditions, "relative_humidity_percent"), Number(conditions, "fog_percent"),
+                    Number(conditions, "air_pressure_inhg"), Number(conditions, "air_density_lb_ft3"),
+                    Number(conditions, "precipitation_percent"), Number(conditions, "track_wetness_state"),
+                    Number(conditions, "track_usage_percent"), Text(conditions, "track_usage"),
+                    Boolean(conditions, "weather_declared_wet")) : null,
+                hasLapEligibility && !lapEligibility!.Confounded,
+                hasLapEligibility ? lapEligibility!.ExclusionReason : "Lap comparison eligibility was not recorded");
+        }).ToArray();
 
         var runs = Array(view, "runs").Select(run =>
         {
@@ -300,7 +327,7 @@ public static class RuntimeMapper
                 runNumber, Array(run, "lap_numbers").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray(),
                 (int)Math.Round(Number(run, "green_laps") ?? 0), (int)Math.Round(Number(run, "caution_laps") ?? 0), Number(fuel, "used_gal"),
                 Number(pace, "green_lap_time_slope_s_per_lap"), Humanize(Text(run, "tire_measurement_status")) ?? "Tire reading unavailable",
-                Boolean(damageContext, "automatic_coaching_reference_eligible") != false,
+                ComparisonContextEligible(damageContext),
                 reasons.Length == 0 ? "Recorded run" : string.Join(", ", reasons.Select(Humanize).Where(value => value is not null)),
                 Number(pace, "early_average_lap_s"), Number(pace, "late_average_lap_s"), Number(pace, "early_to_late_delta_s"),
                 Number(tire, "lowest_remaining_percent"), Text(tire, "lowest_remaining_tire") ?? string.Empty,
@@ -313,6 +340,8 @@ public static class RuntimeMapper
             Integer(segment, "segment"), Number(segment, "start_pct") ?? 0, Number(segment, "end_pct") ?? 0,
             Boolean(segment, "wraps_start_finish") == true, Text(segment, "label") ?? $"Load zone {Integer(segment, "segment")}" )).ToArray();
         var suppliedGrades = Array(gradesRoot, "categories").ToDictionary(item => Text(item, "key") ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+        var unavailableGrades = Array(gradesRoot, "unavailable_categories").ToDictionary(item => Text(item, "key") ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+        var rubricVersion = Text(gradesRoot, "rubric_version") ?? Text(Object(gradesRoot, "rubric"), "version") ?? "race-execution-v1";
         var gradeDefinitions = new[]
         {
             ("pace", "Pace execution", "Clean completed green laps; fastest and median lap time"),
@@ -321,19 +350,36 @@ public static class RuntimeMapper
             ("racecraft", "Racecraft and adaptability", "Recorded start/finish position and race timeline"),
             ("strategy", "Pit and strategy execution", "Recorded pit, tow, repair, and fuel-window evidence")
         };
-        var grades = gradeDefinitions.Select(definition => suppliedGrades.TryGetValue(definition.Item1, out var item)
-            ? new RaceGrade(
-                definition.Item1, Text(item, "label") ?? definition.Item2, Text(item, "grade") ?? "Not graded",
-                Number(item, "score"), Evidence(Text(item, "evidence_type")), Text(item, "explanation") ?? "The available recorded evidence was graded.",
-                Text(item, "improvement") ?? "Review the supporting telemetry before choosing the next action.",
-                Text(item, "limitations") ?? "This local grade is bounded by the recorded channels.", true, [definition.Item3],
-                definition.Item1 == "pace" ? "Pace is capped below A+ without an external field-strength reference." : "Strict race-specific execution scale.")
-            : new RaceGrade(
-                definition.Item1, definition.Item2, "Not graded", null, EvidenceKind.Unavailable,
-                "There is not enough supported recorded evidence for this category.",
-                "Record a longer, clean run with the required channels available.",
-                "Missing evidence is not converted to a neutral score and does not affect the overall grade.", false, [definition.Item3],
-                "Excluded from the overall grade until evidence exists.")).ToArray();
+        var grades = gradeDefinitions.Select(definition =>
+        {
+            if (suppliedGrades.TryGetValue(definition.Item1, out var item))
+            {
+                var configuredWeight = Number(item, "weight_percent");
+                var effectiveWeight = Number(item, "effective_weight");
+                var configuredWeightText = ConfiguredWeightText(configuredWeight);
+                var calibration = effectiveWeight.HasValue
+                    ? $"{rubricVersion} · {configuredWeightText}; {effectiveWeight.Value * 100:0.#}% of available evidence"
+                    : $"{rubricVersion} · {configuredWeightText}";
+                return new RaceGrade(
+                    definition.Item1, Text(item, "label") ?? definition.Item2, Text(item, "grade") ?? "Not graded",
+                    Number(item, "score"), Evidence(Text(item, "evidence_type")), Text(item, "explanation") ?? "The available recorded evidence was graded.",
+                    Text(item, "improvement") ?? "Review the supporting telemetry before choosing the next action.",
+                    Text(item, "limitations") ?? "This local grade is bounded by the recorded channels.", true, [definition.Item3],
+                    calibration, $"Deterministic local analysis · {rubricVersion}");
+            }
+
+            unavailableGrades.TryGetValue(definition.Item1, out var unavailable);
+            var unavailableWeight = unavailable.ValueKind == JsonValueKind.Object ? Number(unavailable, "weight_percent") : null;
+            var reason = unavailable.ValueKind == JsonValueKind.Object ? Text(unavailable, "reason") : null;
+            return new RaceGrade(
+                definition.Item1, unavailable.ValueKind == JsonValueKind.Object ? Text(unavailable, "label") ?? definition.Item2 : definition.Item2,
+                "Not graded", null, EvidenceKind.Unavailable,
+                reason ?? "There is not enough supported recorded evidence for this category.",
+                "Record the specific comparable evidence required for this category.",
+                $"{reason ?? "Required evidence is unavailable"} Missing evidence is excluded rather than converted to a neutral score.", false, [definition.Item3],
+                $"{rubricVersion} · {ConfiguredWeightText(unavailableWeight)}; excluded from the overall grade",
+                $"Deterministic local analysis · {rubricVersion}");
+        }).ToArray();
 
         var damageSummary = Object(damage, "summary");
         var incidentPoints = Object(damage, "incident_points");
@@ -362,7 +408,7 @@ public static class RuntimeMapper
             Integer(view, "schema_version"), Text(response, "analysis_id") ?? string.Empty,
             DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")) ?? "Recorded track", DisplayLayout(Text(identity, "track_config")),
             DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
-            Boolean(identity, "is_fixed_setup") == true ? "Fixed" : "Open", Text(identity, "event_type") ?? "Race",
+            Boolean(identity, "is_fixed_setup") == true ? "Fixed" : "Open", Text(selection, "sim_session_type") ?? Text(identity, "event_type") ?? "Race",
             Integer(summary, "recorded_laps"), Integer(summary, "scheduled_laps"), Integer(summary, "pit_stops_detected"),
             runs, laps, traces, shape, segments, shape.Length >= 3 ? "track_shape" : "normalized_distance_strip",
             Text(traceRoot, "tire_stress_definition") ?? "A relative controls-and-load proxy; not measured tire wear.",
@@ -637,7 +683,89 @@ public static class RuntimeMapper
         return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(spaced);
     }
 
-    private static string? DisplayCar(string? value)
+    private static bool ComparableLap(JsonElement lap, string? previousFlag) =>
+        LapComparisonExclusionReasons(lap, previousFlag).Length == 0;
+
+    private static string[] LapComparisonExclusionReasons(JsonElement lap, string? previousFlag)
+    {
+        var reasons = new List<string>();
+        var flag = Text(lap, "flag_state")?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (Boolean(lap, "complete") != true) reasons.Add("partial");
+        if (!string.Equals(flag, "green", StringComparison.Ordinal)) reasons.Add("caution_or_mixed");
+        if ((Number(lap, "pit_time_s") ?? 0) >= 1) reasons.Add("pit");
+        if (Number(lap, "racing_state_fraction") is { } racingFraction && racingFraction < .98)
+            reasons.Add("not_racing_state");
+        var cleanContext = Object(lap, "clean_context");
+        if (Number(cleanContext, "on_track_fraction") is { } onTrackFraction && onTrackFraction < .98)
+            reasons.Add("off_track");
+        if (Number(cleanContext, "traffic_proximity_fraction") is { } trafficFraction && trafficFraction >= .10)
+            reasons.Add("close_traffic");
+        if (string.Equals(previousFlag, "caution", StringComparison.Ordinal) && string.Equals(flag, "green", StringComparison.Ordinal))
+            reasons.Add("restart");
+        var comparisonContext = Object(lap, "damage_repair_context");
+        var contextReasons = ReasonCodes(comparisonContext, "exclusion_reason_codes");
+        if (Boolean(comparisonContext, "automatic_coaching_reference_eligible") == false || contextReasons.Length > 0)
+            reasons.AddRange(contextReasons.Length > 0 ? contextReasons : ["damage_repair_context"]);
+        return reasons.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static bool ComparisonContextEligible(JsonElement context) =>
+        Boolean(context, "automatic_coaching_reference_eligible") != false &&
+        ReasonCodes(context, "exclusion_reason_codes").Length == 0 &&
+        ReasonCodes(context, "reason_codes").Length == 0;
+
+    private static string[] ReasonCodes(JsonElement context, string property)
+    {
+        if (context.ValueKind != JsonValueKind.Object || !context.TryGetProperty(property, out var value)) return [];
+        if (value.ValueKind == JsonValueKind.String)
+            return string.IsNullOrWhiteSpace(value.GetString()) ? [] : [value.GetString()!];
+        if (value.ValueKind != JsonValueKind.Array) return value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? [] : [value.GetRawText()];
+        return value.EnumerateArray()
+            .Where(item => item.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            .Select(item => !string.IsNullOrWhiteSpace(Value(item)) ? Value(item) : item.GetRawText())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToArray();
+    }
+
+    private static string ConfiguredWeightText(double? weight) =>
+        weight.HasValue ? $"{weight.Value:0.#}% configured" : "configured weight unavailable";
+
+    private static JsonElement AnalysisSelection(JsonElement response, JsonElement view)
+    {
+        var transport = Object(response, "selection");
+        var recorded = Object(Object(view, "source"), "selection");
+        var transportPhase = Text(transport, "sim_session_type");
+        var recordedPhase = Text(recorded, "sim_session_type");
+        if (!string.IsNullOrWhiteSpace(transportPhase) && !string.IsNullOrWhiteSpace(recordedPhase) &&
+            !string.Equals(SessionPhase(transportPhase), SessionPhase(recordedPhase), StringComparison.Ordinal))
+            throw new InvalidDataException($"The analysis response identified conflicting session phases ({transportPhase} and {recordedPhase}).");
+
+        var transportGroup = SelectionGroup(transport, default);
+        var recordedGroup = SelectionGroup(recorded, default);
+        if (!string.IsNullOrWhiteSpace(transportGroup) && !string.IsNullOrWhiteSpace(recordedGroup) &&
+            !string.Equals(transportGroup, recordedGroup, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("The analysis response identified conflicting recorded session groups.");
+        return !string.IsNullOrWhiteSpace(transportPhase) ? transport : recorded;
+    }
+
+    private static string? SelectionGroup(JsonElement selection, JsonElement identity)
+    {
+        if (Text(selection, "group_id") is { Length: > 0 } groupId) return groupId;
+        var subsession = Text(selection, "subsession_id") ?? Text(identity, "subsession_id");
+        var simSession = Text(selection, "sim_session_num");
+        return string.IsNullOrWhiteSpace(subsession) || string.IsNullOrWhiteSpace(simSession)
+            ? null
+            : $"subsession:{subsession}:{simSession}";
+    }
+
+    private static string SessionPhase(string? value) =>
+        value?.Contains("qual", StringComparison.OrdinalIgnoreCase) == true
+            ? "qualifying"
+            : string.Equals(value, "race", StringComparison.OrdinalIgnoreCase)
+                ? "race"
+                : value?.Trim().ToLowerInvariant() ?? string.Empty;
+
+    internal static string? DisplayCar(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var normalized = Regex.Replace(value.ToLowerInvariant(), "[^a-z0-9]+", string.Empty);
@@ -652,7 +780,7 @@ public static class RuntimeMapper
         return Humanize(leaf);
     }
 
-    private static string? DisplayTrack(string? value)
+    internal static string? DisplayTrack(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var normalized = Regex.Replace(value.ToLowerInvariant(), "[^a-z0-9]+", string.Empty);
@@ -663,7 +791,7 @@ public static class RuntimeMapper
         return Humanize(friendly);
     }
 
-    private static string DisplayLayout(string? value) => string.IsNullOrWhiteSpace(value) ? string.Empty : Humanize(Regex.Replace(value, "\\b(19|20)\\d{2}\\b", string.Empty).Trim()) ?? string.Empty;
+    internal static string DisplayLayout(string? value) => string.IsNullOrWhiteSpace(value) ? string.Empty : Humanize(Regex.Replace(value, "\\b(19|20)\\d{2}\\b", string.Empty).Trim()) ?? string.Empty;
 
     private static string DisplaySetupRole(string? value)
     {

@@ -32,9 +32,22 @@
     const grid = state.root.querySelector("[data-live-grid]");
     if (!viewport || !grid) return;
 
-    // CSS grid fractional tracks are the layout authority. Filling both axes
-    // lets every row and column take an equal share of the actual dashboard
-    // instead of centering a square-cell island with unused space around it.
+    // Measure from the viewport's real top edge instead of subtracting a fixed
+    // header estimate. This keeps the grid inside narrow, short and disconnected
+    // layouts where the toolbar or connection message wraps to another line.
+    const scrollHost = state.root.closest(".workspace");
+    const hostRect = scrollHost ? scrollHost.getBoundingClientRect() : null;
+    const viewportTop = viewport.getBoundingClientRect().top;
+    const hostTop = hostRect ? hostRect.top : 0;
+    const hostBottom = hostRect ? hostRect.bottom : window.innerHeight;
+    const visibleTop = Math.max(0, viewportTop, hostTop);
+    const visibleBottom = Math.min(window.innerHeight, hostBottom);
+    const availableHeight = Math.max(180, visibleBottom - visibleTop - 14);
+    viewport.style.height = `${availableHeight}px`;
+    viewport.style.minHeight = `${Math.min(320, availableHeight)}px`;
+
+    // CSS fractional tracks remain the sole grid authority. Every row and
+    // column receives an equal share of the measured container on both axes.
     grid.style.removeProperty("--live-cell-size");
     grid.style.width = "100%";
     grid.style.height = "100%";

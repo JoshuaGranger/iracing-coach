@@ -228,7 +228,9 @@ public sealed record AnalysisLapTrace(
     bool PitEntry = false,
     bool PitExit = false,
     double? FuelUsedGallons = null,
-    AnalysisLapConditions? Conditions = null);
+    AnalysisLapConditions? Conditions = null,
+    bool ComparisonEligible = true,
+    string ExclusionReason = "");
 
 public sealed record AnalysisLap(
     int Lap,
@@ -242,6 +244,39 @@ public sealed record AnalysisLap(
     int? EndPosition,
     bool Confounded,
     string ExclusionReason);
+
+public static class AnalysisEligibility
+{
+    public static bool IsComparable(this AnalysisLapTrace trace) =>
+        trace.ComparisonEligible &&
+        trace.Complete &&
+        trace.PitTimeSeconds.GetValueOrDefault() <= 0 &&
+        trace.CautionFraction.GetValueOrDefault() <= .001 &&
+        !IsCaution(trace.FlagState) &&
+        !(trace.FlagStates ?? []).Any(IsCaution);
+
+    public static bool IsComparable(this AnalysisLap lap) =>
+        !lap.Confounded &&
+        lap.Complete &&
+        lap.PitTimeSeconds.GetValueOrDefault() <= 0 &&
+        lap.CautionFraction.GetValueOrDefault() <= .001 &&
+        !IsCaution(lap.FlagState);
+
+    public static AnalysisRun? PitServiceFor(this AnalysisLapTrace trace, IReadOnlyList<AnalysisRun> runs, string direction)
+    {
+        var exact = runs.FirstOrDefault(run => run.Laps.Contains(trace.Lap));
+        if (direction.Equals("in", StringComparison.OrdinalIgnoreCase) && exact?.PitStop is not null) return exact;
+        if (direction.Equals("out", StringComparison.OrdinalIgnoreCase) && trace.PitEntry && trace.PitExit && exact?.PitStop is not null) return exact;
+        return runs
+            .Where(run => run.PitStop is not null && run.Laps.Count > 0 && trace.Lap >= run.Laps.Max() && trace.Lap - run.Laps.Max() <= 2)
+            .OrderByDescending(run => run.Laps.Max())
+            .FirstOrDefault();
+    }
+
+    private static bool IsCaution(string? flagState) =>
+        flagState?.Contains("yellow", StringComparison.OrdinalIgnoreCase) == true ||
+        flagState?.Contains("caution", StringComparison.OrdinalIgnoreCase) == true;
+}
 
 public sealed record AnalysisPitStop(
     double? ServiceSeconds,
@@ -714,7 +749,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.13.0");
+    string ClientVersion = "0.14.0");
 
 public sealed record BackendHealthResult(
     bool Ok,

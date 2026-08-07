@@ -254,7 +254,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(analysis, "RaceDataSection == \"review\"");
         StringAssert.Contains(analysis, "analysis-review-grid");
         StringAssert.Contains(analysis, "qualifying-review-shell");
-        StringAssert.Contains(analysis, "BuildCornerAreas");
+        StringAssert.Contains(analysis, "RaceReviewMetrics.BuildCornerSummaries");
         Assert.DoesNotContain("new TrackSegment", analysis);
         StringAssert.Contains(analysis, "UsefulAction");
         StringAssert.Contains(telemetry, "data-analysis-cursor-layer");
@@ -301,7 +301,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "if (!trace.Complete) return [new LapFlag(\"incomplete\", \"Incomplete lap\")]");
         StringAssert.Contains(telemetry, "states.RemoveAll(value => value.Equals(\"white\"");
         StringAssert.Contains(telemetry, ">Pit (@direction)</span>");
-        StringAssert.Contains(telemetry, "trace.Lap == ordered[0].Lap");
+        StringAssert.Contains(telemetry, "trace.Lap <= 0");
+        StringAssert.Contains(telemetry, "trace.PitServiceFor(Workspace.Runs, direction)");
         StringAssert.Contains(telemetry, "ClearSelection");
         StringAssert.Contains(telemetry, "No laps selected");
         Assert.DoesNotContain("Selected.Count >= 5", telemetry);

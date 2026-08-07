@@ -120,7 +120,7 @@
           },
           "selector": {
             "default": "latest",
-            "description": "'latest', an IBT path within the configured iRacing root, or a SubSessionID.",
+            "description": "'latest', an IBT path within the configured iRacing root, a SubSessionID, or a discovery group_id such as 'subsession:<id>:<sim_session_num>' to pin the exact event phase.",
             "type": "string"
           },
           "start_record": {
@@ -210,7 +210,7 @@
           },
           "selector": {
             "default": "latest",
-            "description": "'latest', an IBT path within the configured iRacing root, or a SubSessionID.",
+            "description": "'latest', an IBT path within the configured iRacing root, a SubSessionID, or a discovery group_id such as 'subsession:<id>:<sim_session_num>' to pin the exact event phase.",
             "type": "string"
           },
           "session_time_end": {
@@ -244,7 +244,7 @@
           },
           "selector": {
             "default": "latest",
-            "description": "'latest', an IBT path, or a SubSessionID.",
+            "description": "'latest', an IBT path, a SubSessionID, or a discovery group_id such as 'subsession:<id>:<sim_session_num>' to pin the exact event phase.",
             "type": "string"
           },
           "target_hz": {

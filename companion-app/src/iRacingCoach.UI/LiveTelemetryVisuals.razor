@@ -69,6 +69,8 @@
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private const int MaximumPendingFrames = 4096;
+    private const int MaximumTransferFrames = 240;
     private readonly ConcurrentQueue<PendingChartFrame> _pendingFrames = new();
     private ElementReference ChartElement;
     private bool _chartReady;
@@ -79,36 +81,24 @@
     private bool _configuredReducedMotion;
     private double? _configuredLastLap;
     private long _configuredSessionEpoch = -1;
+    private IReadOnlyList<LiveTracePoint>? _cachedHistorySource;
+    private IReadOnlyList<LiveTracePoint> _visibleHistory = [];
+    private IReadOnlyList<MapPoint> _physicalPoints = [];
+    private IReadOnlyList<LapPoint> _lapHistory = [];
+    private int _cachedHistoryCount = -1;
+    private int _cachedHistoryLaps = -1;
 
     private LiveRaceSnapshot Snapshot => State.LiveState.Snapshot;
     private IReadOnlyList<LiveTracePoint> History => State.LiveState.History ?? [];
-    private IReadOnlyList<LiveTracePoint> VisibleHistory
-    {
-        get
-        {
-            var laps = History.Where(point => point.Lap.HasValue).Select(point => point.Lap!.Value).Distinct().OrderDescending().Take(Math.Clamp(State.Settings.LiveMonitor.HistoryLaps, 1, 10)).ToHashSet();
-            return laps.Count == 0 ? History.TakeLast(3600).ToArray() : History.Where(point => point.Lap.HasValue && laps.Contains(point.Lap.Value)).TakeLast(36_000).ToArray();
-        }
-    }
+    private IReadOnlyList<LiveTracePoint> VisibleHistory { get { EnsureHistoryProjection(); return _visibleHistory; } }
     private string ChartRateLabel => State.LiveState.SourceTickRate > 0
         ? $"{State.LiveState.SourceTickRate} Hz source · display-synced"
         : "Local SDK · display-synced";
-    private bool HasPhysicalLine => VisibleHistory.Count(point => point.Latitude.HasValue && point.Longitude.HasValue) >= 3;
-    private IReadOnlyList<MapPoint> PhysicalPoints
-    {
-        get
-        {
-            var points = VisibleHistory.Where(point => point.Latitude.HasValue && point.Longitude.HasValue).TakeLast(600).ToArray();
-            if (points.Length == 0) return [];
-            var minX = points.Min(p => p.Longitude!.Value); var maxX = points.Max(p => p.Longitude!.Value);
-            var minY = points.Min(p => p.Latitude!.Value); var maxY = points.Max(p => p.Latitude!.Value);
-            var scale = Math.Min(360 / Math.Max(.0000001, maxX - minX), 210 / Math.Max(.0000001, maxY - minY));
-            return points.Select(p => new MapPoint(220 + (p.Longitude!.Value - (minX + maxX) / 2) * scale, 135 - (p.Latitude!.Value - (minY + maxY) / 2) * scale)).ToArray();
-        }
-    }
+    private bool HasPhysicalLine => PhysicalPoints.Count >= 3;
+    private IReadOnlyList<MapPoint> PhysicalPoints { get { EnsureHistoryProjection(); return _physicalPoints; } }
     private string PhysicalPath => string.Join(" ", PhysicalPoints.Select((point, index) => $"{(index == 0 ? "M" : "L")}{F(point.X)},{F(point.Y)}"));
     private MapPoint CurrentMap => PhysicalPoints.LastOrDefault() ?? new MapPoint(220, 135);
-    private IReadOnlyList<LapPoint> LapHistory => History.Where(point => point.Lap.HasValue && point.LastLapSeconds is > 0).GroupBy(point => point.Lap!.Value).Select(group => new LapPoint(group.Key, group.Last().LastLapSeconds!.Value)).OrderBy(point => point.Lap).ToArray();
+    private IReadOnlyList<LapPoint> LapHistory { get { EnsureHistoryProjection(); return _lapHistory; } }
     private string LapTrendPath => string.Join(" ", LapHistory.Select((point, index) => $"{(index == 0 ? "M" : "L")}{F(LapX(point))},{F(LapY(point))}"));
 
     protected override void OnInitialized() => State.LiveTelemetryFrame += OnLiveTelemetryFrame;
@@ -118,7 +108,7 @@
         var options = ChartOptions();
         if (firstRender)
         {
-            await JS.InvokeVoidAsync("iracingCoachLiveTelemetryChart.initialize", ChartElement, History.Select(ToChartPoint).ToArray(), options);
+            await JS.InvokeVoidAsync("iracingCoachLiveTelemetryChart.initialize", ChartElement, VisibleHistory.Select(ToChartPoint).ToArray(), options);
             _chartReady = true;
             RememberConfiguration();
             ScheduleDrain();
@@ -134,6 +124,7 @@
     {
         if (_disposed) return;
         _pendingFrames.Enqueue(new PendingChartFrame(frame, State.LiveState.SessionEpoch));
+        while (_pendingFrames.Count > MaximumPendingFrames && _pendingFrames.TryDequeue(out _)) { }
         ScheduleDrain();
     }
 
@@ -150,10 +141,11 @@
             while (!_disposed)
             {
                 var sessionEpoch = State.LiveState.SessionEpoch;
-                var batch = new List<LiveChartPoint>(120);
-                while (batch.Count < 120 && _pendingFrames.TryDequeue(out var pending))
-                    if (pending.SessionEpoch == sessionEpoch) batch.Add(ToChartPoint(pending.Frame));
-                if (batch.Count == 0) break;
+                var pendingFrames = new List<LiveTracePoint>(Math.Min(_pendingFrames.Count, MaximumPendingFrames));
+                while (_pendingFrames.TryDequeue(out var pending))
+                    if (pending.SessionEpoch == sessionEpoch) pendingFrames.Add(pending.Frame);
+                if (pendingFrames.Count == 0) break;
+                var batch = CompactPendingFrames(pendingFrames, MaximumTransferFrames).Select(ToChartPoint).ToArray();
                 var chartVisible = _chartReady && await JS.InvokeAsync<bool>("iracingCoachLiveTelemetryChart.append", ChartElement, batch, ChartOptions(sessionEpoch));
                 if (chartVisible && Stopwatch.GetElapsedTime(_lastUiRefresh) >= TimeSpan.FromMilliseconds(50))
                 {
@@ -170,6 +162,48 @@
             Volatile.Write(ref _drainScheduled, 0);
             if (!_pendingFrames.IsEmpty) ScheduleDrain();
         }
+    }
+
+    private void EnsureHistoryProjection()
+    {
+        var history = History;
+        var historyLaps = Math.Clamp(State.Settings.LiveMonitor.HistoryLaps, 1, 10);
+        if (ReferenceEquals(_cachedHistorySource, history) && _cachedHistoryCount == history.Count && _cachedHistoryLaps == historyLaps) return;
+        _cachedHistorySource = history;
+        _cachedHistoryCount = history.Count;
+        _cachedHistoryLaps = historyLaps;
+
+        var laps = history.Where(point => point.Lap.HasValue).Select(point => point.Lap!.Value).Distinct().OrderDescending().Take(historyLaps).ToHashSet();
+        _visibleHistory = laps.Count == 0
+            ? history.TakeLast(3600).ToArray()
+            : history.Where(point => point.Lap.HasValue && laps.Contains(point.Lap.Value)).TakeLast(36_000).ToArray();
+
+        var physical = _visibleHistory.Where(point => point.Latitude.HasValue && point.Longitude.HasValue).TakeLast(600).ToArray();
+        if (physical.Length == 0) _physicalPoints = [];
+        else
+        {
+            var minX = physical.Min(point => point.Longitude!.Value); var maxX = physical.Max(point => point.Longitude!.Value);
+            var minY = physical.Min(point => point.Latitude!.Value); var maxY = physical.Max(point => point.Latitude!.Value);
+            var scale = Math.Min(360 / Math.Max(.0000001, maxX - minX), 210 / Math.Max(.0000001, maxY - minY));
+            _physicalPoints = physical.Select(point => new MapPoint(220 + (point.Longitude!.Value - (minX + maxX) / 2) * scale, 135 - (point.Latitude!.Value - (minY + maxY) / 2) * scale)).ToArray();
+        }
+        _lapHistory = history.Where(point => point.Lap.HasValue && point.LastLapSeconds is > 0)
+            .GroupBy(point => point.Lap!.Value)
+            .Select(group => new LapPoint(group.Key, group.Last().LastLapSeconds!.Value))
+            .OrderBy(point => point.Lap)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<LiveTracePoint> CompactPendingFrames(IReadOnlyList<LiveTracePoint> frames, int maximumFrames)
+    {
+        Func<LiveTracePoint, double?>[] selectors =
+        {
+            point => point.SpeedMph,
+            point => point.Throttle,
+            point => point.Brake,
+            point => point.SteeringWheelAngleRadians
+        };
+        return LiveTelemetryFrameCompaction.Compact(frames, maximumFrames, selectors);
     }
 
     private object ChartOptions(long? sessionEpoch = null) => new
