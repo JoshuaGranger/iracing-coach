@@ -45,14 +45,14 @@ The shared scrollable workspace uses `scrollbar-gutter: stable`, reserving verti
 
 ## Artifact record
 
-- Source commit: `PENDING_SOURCE_COMMIT`
+- Source commit: `301d7f4b1d5e81c8391b168a982034883aa4fb07`
 - Installer: `companion-app/artifacts/dist/v0.14.1/iRacingCoach-0.14.1-Setup.exe`
-- Installer bytes: `PENDING`
-- Installer SHA-256: `PENDING`
+- Installer bytes: `498956328`
+- Installer SHA-256: `c643529b3896eae74a53171a87c370c033260406ec49d5df1ebe465005dfdde3`
 - Portable package: `companion-app/artifacts/dist/v0.14.1/iRacingCoach-0.14.1-Portable-win-x64.zip`
-- Portable bytes: `PENDING`
-- Portable SHA-256: `PENDING`
-- Static payload identity and hygiene: `PENDING`
+- Portable bytes: `382961822`
+- Portable SHA-256: `a4c9eeeea7cb478fd347005eb0920eded38c81142eda5cbe42f0753fcc02886f`
+- Static payload identity and hygiene: 9,278 payload files; ZIP contains 9,278 files plus 24 directory entries; one root application executable; one coach manifest identifying application `0.14.1`; runtime `0.146.0-alpha.9.2`; measured and manifested runtime SHA-256 both `ecd7a3eaff5e42723dbba03b5c91514b3986b5db5cbca8f34619620b5356f31f`; installer file version `0.14.1.0`; installer product version `0.14.1+301d7f4b1d5e81c8391b168a982034883aa4fb07`; no unsafe paths, raw telemetry, secrets, private settings/auth files, or backend user-data directories found.
 
 ## Open acceptance boundaries
 

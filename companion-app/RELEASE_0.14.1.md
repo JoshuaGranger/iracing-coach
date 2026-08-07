@@ -4,13 +4,15 @@ Date: 2026-08-07
 
 ## Artifact identity
 
-- Source commit: `PENDING_SOURCE_COMMIT`
+- Source commit: `301d7f4b1d5e81c8391b168a982034883aa4fb07`
 - Installer: `artifacts/dist/v0.14.1/iRacingCoach-0.14.1-Setup.exe`
-- Installer bytes: `PENDING`
-- Installer SHA-256: `PENDING`
+- Installer bytes: `498956328`
+- Installer SHA-256: `c643529b3896eae74a53171a87c370c033260406ec49d5df1ebe465005dfdde3`
 - Portable package: `artifacts/dist/v0.14.1/iRacingCoach-0.14.1-Portable-win-x64.zip`
-- Portable bytes: `PENDING`
-- Portable SHA-256: `PENDING`
+- Portable bytes: `382961822`
+- Portable SHA-256: `a4c9eeeea7cb478fd347005eb0920eded38c81142eda5cbe42f0753fcc02886f`
+
+The package contains 9,278 payload files. The ZIP contains those 9,278 files plus 24 directory entries, with one root application executable and one coach manifest. The packaged runtime is `0.146.0-alpha.9.2`; its measured SHA-256 `ecd7a3eaff5e42723dbba03b5c91514b3986b5db5cbca8f34619620b5356f31f` matches the manifest. The installer reports file version `0.14.1.0` and product version `0.14.1+301d7f4b1d5e81c8391b168a982034883aa4fb07`. Static inspection found no unsafe paths, raw telemetry, secrets, private settings/auth files, or backend user-data directories.
 
 The measured values above are completed only after packaging from the named source commit. This release does not claim a repeated installer lifecycle matrix for unchanged installer behavior.
 
