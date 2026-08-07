@@ -51,7 +51,7 @@ small { color: var(--text-muted); font-size: 12px; line-height: 17px; }
 .mono, code, pre { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
 .app-shell { height: 100vh; display: grid; grid-template-columns: var(--nav-width) minmax(0, 1fr); background: transparent; transition: grid-template-columns var(--motion-panel) var(--ease); }
 .app-shell.rail-collapsed { grid-template-columns: var(--nav-collapsed) minmax(0, 1fr); }
-.workspace { min-width: 0; height: 100vh; overflow-y: auto; scrollbar-color: var(--border-strong) var(--app); background: linear-gradient(150deg,color-mix(in srgb,var(--accent) 2.6%,transparent),transparent 34%),linear-gradient(25deg,color-mix(in srgb,var(--warning) 1.8%,transparent),transparent 42%); }
+.workspace { min-width: 0; height: 100vh; overflow-y: auto; scrollbar-gutter: stable; scrollbar-color: var(--border-strong) var(--app); background: linear-gradient(150deg,color-mix(in srgb,var(--accent) 2.6%,transparent),transparent 34%),linear-gradient(25deg,color-mix(in srgb,var(--warning) 1.8%,transparent),transparent 42%); }
 .command-bar { height: 56px; position: sticky; top: 0; z-index: 12; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-6); border-bottom: 1px solid color-mix(in srgb,var(--border-strong) 78%,transparent); background: color-mix(in srgb,var(--app) 84%,transparent); box-shadow: inset 0 -1px 0 color-mix(in srgb,var(--accent) 5%,transparent); backdrop-filter: blur(18px) saturate(118%); }
 .crumb, .command-actions, .heading-actions, .toolbar-group, .gallery-row { display: flex; align-items: center; gap: var(--space-3); }
 .crumb .eyebrow { color: var(--text-primary); }
@@ -1024,8 +1024,8 @@ input[type="range"] { accent-color: var(--accent); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.race-analysis-row .event-race-shape strong { color: var(--success); }
-.race-analysis-row .event-race-shape small { color: var(--warning); }
+.race-analysis-row .event-race-shape strong { color: var(--text-primary); }
+.race-analysis-row .event-race-shape small { color: var(--text-muted); }
 .race-analysis-row .event-long-run strong { color: var(--telemetry-speed); }
 .race-analysis-row .event-tire strong { color: var(--telemetry-steering); }
 .race-analysis-row .event-race-shape small,

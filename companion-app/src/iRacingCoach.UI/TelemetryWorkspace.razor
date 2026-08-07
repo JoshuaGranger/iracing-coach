@@ -130,7 +130,7 @@
         <div class="telemetry-grid">
             <div class="track-panel">
                 <div class="panel-title track-panel-title"><div><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div><label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label></div>
-                <svg @ref="TrackElement" class="track-map" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map" @onmousemove="TrackMoved">
+                <svg @ref="TrackElement" class="track-map" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map">
                     @if (Workspace.TrackShape.Count >= 3)
                     {
                         @foreach (var segment in MapSegments)
@@ -278,7 +278,6 @@
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
-    private bool _trackMovePending;
     private bool _cursorInteropAttached;
     private double _chartWidth = 1000;
     private string _cursorInteropSignature = string.Empty;
@@ -446,8 +445,11 @@
     private void ResetSelection()
     {
         Selected.Clear();
-        foreach (var trace in Workspace.Traces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).Take(3)) Selected.Add(trace.Lap);
-        if (Selected.Count == 0) foreach (var trace in Workspace.Traces.Take(3)) Selected.Add(trace.Lap);
+        foreach (var trace in Workspace.Traces.Where(IsClean).Where(HasUsableLapTime).OrderBy(trace => trace.LapTimeSeconds!.Value).ThenBy(trace => trace.Lap).Take(3))
+            Selected.Add(trace.Lap);
+        if (Selected.Count == 0)
+            foreach (var trace in Workspace.Traces.Where(HasUsableLapTime).OrderBy(trace => trace.LapTimeSeconds!.Value).ThenBy(trace => trace.Lap).Take(3))
+                Selected.Add(trace.Lap);
         InvalidateTraceRender();
     }
 
@@ -597,7 +599,15 @@
     }
     private void HideConditionsPopover() => ActiveConditionsLap = null;
     private string ConditionsPopoverStyle => $"left:{F(ConditionsPopoverX)}px;top:{F(ConditionsPopoverY)}px;transform:{(ConditionsPopoverAbove ? "translateY(-100%)" : "none")}";
-    private bool IsClean(AnalysisLapTrace trace) => trace.IsComparable() && IncidentPoints(trace.Lap) == 0;
+    private bool IsClean(AnalysisLapTrace trace) =>
+        trace.Complete &&
+        trace.PitTimeSeconds.GetValueOrDefault() <= 0 &&
+        trace.CautionFraction.GetValueOrDefault() <= .001 &&
+        !IsCaution(trace) &&
+        !(trace.FlagStates ?? []).Any(state => state.Contains("yellow", StringComparison.OrdinalIgnoreCase) || state.Contains("caution", StringComparison.OrdinalIgnoreCase)) &&
+        IncidentPoints(trace.Lap) == 0;
+    private static bool HasUsableLapTime(AnalysisLapTrace trace) =>
+        trace.LapTimeSeconds is { } value && double.IsFinite(value) && value > 0;
     private IReadOnlyList<LapFlag> LapFlags(AnalysisLapTrace trace)
     {
         // iRacing keeps the finish state active across timing boundaries. A partial
@@ -767,19 +777,6 @@
         };
     }
     private static double? InteropNumber(double? value) => value is { } number && double.IsFinite(number) ? number : null;
-    private async Task TrackMoved(MouseEventArgs args)
-    {
-        if (_trackMovePending) return;
-        _trackMovePending = true;
-        try
-        {
-            var pointer = await JS.InvokeAsync<double[]>("iracingCoach.pointerViewBox", TrackElement, args.ClientX, args.ClientY, 420, 280);
-            if (Workspace.TrackShape.Count < 3) { Cursor = Math.Clamp((pointer[0] - 28) / 364d, 0, 1); return; }
-            Cursor = ProjectedMapPercent(pointer[0], pointer[1]);
-        }
-        finally { _trackMovePending = false; }
-    }
-
     private IReadOnlyList<MapPoint> MapPoints
     {
         get
@@ -816,28 +813,6 @@
                 yield return new MapSegment(a, b, MetricColor(MetricAt(SegmentPercent(a.Percent, b.Percent, .5))));
             }
         }
-    }
-    private double ProjectedMapPercent(double pointerX, double pointerY)
-    {
-        var points = MapPoints;
-        var bestDistance = double.MaxValue;
-        var bestPercent = Cursor;
-        for (var index = 0; index < points.Count; index++)
-        {
-            var a = points[index];
-            var b = points[(index + 1) % points.Count];
-            var dx = b.X - a.X;
-            var dy = b.Y - a.Y;
-            var lengthSquared = dx * dx + dy * dy;
-            var t = lengthSquared <= .000001 ? 0 : Math.Clamp(((pointerX - a.X) * dx + (pointerY - a.Y) * dy) / lengthSquared, 0, 1);
-            var projectedX = a.X + dx * t;
-            var projectedY = a.Y + dy * t;
-            var distance = Math.Pow(pointerX - projectedX, 2) + Math.Pow(pointerY - projectedY, 2);
-            if (distance >= bestDistance) continue;
-            bestDistance = distance;
-            bestPercent = SegmentPercent(a.Percent, b.Percent, t);
-        }
-        return bestPercent;
     }
     private MapPoint MapPointAt(double percent)
     {

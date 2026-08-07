@@ -142,6 +142,29 @@ public sealed class RaceAnalysisBehaviorTests
     }
 
     [TestMethod]
+    public void TrackAndChartCursors_ShareOneFrameSynchronizedBrowserOwner()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var cursor = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-telemetry-cursor.js"));
+
+        Assert.DoesNotContain("@onmousemove=\"TrackMoved\"", telemetry,
+            "The track must not retain a second, asynchronous Blazor cursor owner.");
+        Assert.DoesNotContain("private async Task TrackMoved", telemetry);
+        Assert.DoesNotContain("iracingCoach.pointerViewBox", telemetry);
+
+        StringAssert.Contains(cursor, "state.trackElement.addEventListener(\"pointermove\", state.trackMove)");
+        StringAssert.Contains(cursor, "state.boundTrackElement.removeEventListener(\"pointermove\", state.trackMove)");
+        StringAssert.Contains(cursor, "getScreenCTM");
+        StringAssert.Contains(cursor, "projectedTrackFraction");
+        StringAssert.Contains(cursor, "state.trackInside = true");
+        StringAssert.Contains(cursor, "if (!cursorActive(state)) return");
+        StringAssert.Contains(cursor, "if (!state.chartInside || !state.layer)");
+        StringAssert.Contains(cursor, "state.layer.style.display = \"none\"");
+        StringAssert.Contains(cursor, "requestAnimationFrame(() => renderCursor(state))");
+    }
+
+    [TestMethod]
     public void RaceAnalysisResponsiveLayoutAndCursorTooltipsHonorNarrowWindowGeometry()
     {
         var root = CompanionRoot();

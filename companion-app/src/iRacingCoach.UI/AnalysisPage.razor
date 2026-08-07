@@ -65,7 +65,7 @@ else
                     <button class="race-event-row race-analysis-row" role="listitem" @onclick="() => OpenEvent(group)" title="Open @group.Track race analysis">
                         <span class="event-main"><strong>@group.Track</strong><small>@EventSubtitle(group, race)</small></span>
                         <span class="event-result">@Result(race)</span>
-                        <span class="event-race-shape"><strong>@Metric(overview?.GreenLaps) green</strong><small>@Metric(overview?.CautionLaps) caution</small></span>
+                        <span class="event-race-shape race-condition-stat"><strong><i class="metric-dot green"></i>@Metric(overview?.GreenLaps) green</strong><small><i class="metric-dot yellow"></i>@Metric(overview?.CautionLaps) caution</small></span>
                         <span class="event-long-run"><strong>@BestLap(overview)</strong><small>@RunSummary(overview)</small></span>
                         <span class="event-pace"><strong class="@PaceClass(overview)">@PaceTrend(overview)</strong><small>@Consistency(overview)</small></span>
                         <span class="event-tire" title="@TireDetail(overview)"><strong>@TireMetric(overview)</strong><small>@TireMetricNote(overview)</small></span>

@@ -271,7 +271,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "ShowConditionsPopover");
         StringAssert.Contains(telemetry, "lap-conditions-popover");
         StringAssert.Contains(telemetry, "TrackUsage(conditions)");
-        StringAssert.Contains(telemetry, "ProjectedMapPercent");
+        StringAssert.Contains(cursorInterop, "projectedTrackFraction");
         StringAssert.Contains(telemetry, "MapPointAt(Cursor)");
         StringAssert.Contains(telemetry, "CleanLapFilterChanged");
         StringAssert.Contains(telemetry, "Selected.RemoveWhere");
@@ -508,6 +508,31 @@ public sealed class CapabilityRegistryTests
         CollectionAssert.AreEquivalent(new[] { "summary", "actions", "followUpNeeded" }, required);
         var classes = schema.RootElement.GetProperty("$defs").GetProperty("evidenceClass").GetProperty("enum").EnumerateArray().Select(item => item.GetString()).ToArray();
         CollectionAssert.DoesNotContain(classes, "unavailable");
+    }
+
+    [TestMethod]
+    public void RaceAnalysis_DefaultSelectionAndViewportWidthRemainStable()
+    {
+        var root = CompanionRoot();
+        var ui = Path.Combine(root, "src", "iRacingCoach.UI");
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var raceBrowser = File.ReadAllText(Path.Combine(ui, "AnalysisPage.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(telemetry, "Workspace.Traces.Where(IsClean).Where(HasUsableLapTime).OrderBy(trace => trace.LapTimeSeconds!.Value).ThenBy(trace => trace.Lap).Take(3)");
+        StringAssert.Contains(telemetry, "trace.LapTimeSeconds is { } value && double.IsFinite(value) && value > 0");
+        Assert.DoesNotContain("trace.IsComparable() && IncidentPoints(trace.Lap) == 0", telemetry,
+            "The visual Best three selection must not inherit stricter coaching-reference exclusions.");
+
+        var workspaceRule = Regex.Match(css, @"\.workspace\s*\{(?<body>[^}]*)\}");
+        Assert.IsTrue(workspaceRule.Success);
+        StringAssert.Contains(workspaceRule.Groups["body"].Value, "scrollbar-gutter: stable");
+
+        StringAssert.Contains(raceBrowser, "event-race-shape race-condition-stat");
+        StringAssert.Contains(raceBrowser, "metric-dot green");
+        StringAssert.Contains(raceBrowser, "metric-dot yellow");
+        StringAssert.Contains(css, ".race-analysis-row .event-race-shape strong { color: var(--text-primary); }");
+        StringAssert.Contains(css, ".race-analysis-row .event-race-shape small { color: var(--text-muted); }");
     }
 
     private static CapabilityContext FullyPopulated() => new()

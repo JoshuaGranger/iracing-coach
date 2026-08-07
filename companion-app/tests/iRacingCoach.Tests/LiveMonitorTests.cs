@@ -837,8 +837,8 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(script, "event.preventDefault()");
         StringAssert.Contains(host, "live-telemetry-layout.js");
         StringAssert.Contains(previewHost, "live-telemetry-layout.js");
-        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.14.0-tile-replacement");
-        StringAssert.Contains(previewHost, "live-telemetry-layout.js?v=0.14.0-tile-replacement");
+        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.14.1-tile-replacement");
+        StringAssert.Contains(previewHost, "live-telemetry-layout.js?v=0.14.1-tile-replacement");
 
         foreach (var interactionHook in new[]
         {

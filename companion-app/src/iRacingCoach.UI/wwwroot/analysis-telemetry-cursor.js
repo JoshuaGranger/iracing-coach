@@ -180,12 +180,43 @@
   }
 
   function updateDomReferences(state, trackElement) {
+    if (state.trackElement !== trackElement) unbindTrackElement(state);
     state.trackElement = trackElement;
     const panel = trackElement?.closest(".track-panel");
     state.trackPoints = trackElement ? Array.from(trackElement.querySelectorAll("[data-analysis-track-cursor-point]")) : [];
     state.trackLine = trackElement?.querySelector("[data-analysis-track-cursor-line]") || null;
     state.trackPercent = panel?.querySelector("[data-analysis-track-percent]") || null;
     state.trackSummary = panel?.querySelector("[data-analysis-track-summary]") || null;
+    bindTrackElement(state);
+  }
+
+  function bindTrackElement(state) {
+    if (!state.trackElement || !state.trackEnter || state.boundTrackElement === state.trackElement) return;
+    unbindTrackElement(state);
+    state.trackElement.addEventListener("pointerenter", state.trackEnter);
+    state.trackElement.addEventListener("pointermove", state.trackMove);
+    state.trackElement.addEventListener("pointerleave", state.trackLeave);
+    state.boundTrackElement = state.trackElement;
+  }
+
+  function unbindTrackElement(state) {
+    if (!state.boundTrackElement || !state.trackEnter) return;
+    state.boundTrackElement.removeEventListener("pointerenter", state.trackEnter);
+    state.boundTrackElement.removeEventListener("pointermove", state.trackMove);
+    state.boundTrackElement.removeEventListener("pointerleave", state.trackLeave);
+    state.boundTrackElement = null;
+  }
+
+  function cursorActive(state) {
+    return state.chartInside || state.trackInside;
+  }
+
+  function hideCursorIfInactive(state) {
+    if (cursorActive(state)) return;
+    state.lapOffset = 0;
+    if (state.frame) cancelAnimationFrame(state.frame);
+    state.frame = 0;
+    if (state.layer) state.layer.style.display = "none";
   }
 
   function mapPointAt(points, fraction) {
@@ -202,6 +233,58 @@
       return { x: first.x + (second.x - first.x) * amount, y: first.y + (second.y - first.y) * amount };
     }
     return points[0];
+  }
+
+  function svgPointFromClient(element, clientX, clientY) {
+    if (!element) return null;
+    try {
+      const matrix = element.getScreenCTM?.();
+      if (matrix && typeof element.createSVGPoint === "function") {
+        const point = element.createSVGPoint();
+        point.x = clientX;
+        point.y = clientY;
+        const transformed = point.matrixTransform(matrix.inverse());
+        if (finite(transformed.x) && finite(transformed.y)) return transformed;
+      }
+    } catch {
+      // Fall through to the viewBox mapping used by headless/test hosts.
+    }
+    const rect = element.getBoundingClientRect?.();
+    const viewBox = element.viewBox?.baseVal;
+    if (!rect || rect.width < 1 || rect.height < 1 || !viewBox || viewBox.width < 1 || viewBox.height < 1) return null;
+    return {
+      x: viewBox.x + (clientX - rect.left) / rect.width * viewBox.width,
+      y: viewBox.y + (clientY - rect.top) / rect.height * viewBox.height
+    };
+  }
+
+  function segmentFraction(start, end, amount) {
+    const adjustedEnd = end <= start ? end + 1 : end;
+    const value = start + (adjustedEnd - start) * amount;
+    return ((value % 1) + 1) % 1;
+  }
+
+  function projectedTrackFraction(points, pointerX, pointerY, fallback) {
+    if (!points?.length) return fallback;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestFraction = fallback;
+    for (let index = 0; index < points.length; index++) {
+      const first = points[index];
+      const second = points[(index + 1) % points.length];
+      const dx = second.x - first.x;
+      const dy = second.y - first.y;
+      const lengthSquared = dx * dx + dy * dy;
+      const amount = lengthSquared <= 0.000001
+        ? 0
+        : clamp(((pointerX - first.x) * dx + (pointerY - first.y) * dy) / lengthSquared, 0, 1);
+      const projectedX = first.x + dx * amount;
+      const projectedY = first.y + dy * amount;
+      const distance = (pointerX - projectedX) ** 2 + (pointerY - projectedY) ** 2;
+      if (distance >= bestDistance) continue;
+      bestDistance = distance;
+      bestFraction = segmentFraction(first.percent, second.percent, amount);
+    }
+    return bestFraction;
   }
 
   function averageAt(state, property, fraction) {
@@ -246,8 +329,13 @@
 
   function renderCursor(state) {
     state.frame = 0;
-    if (!state.inside || !state.layer) return;
+    if (!cursorActive(state)) return;
     const fraction = state.fraction;
+    if (!state.chartInside || !state.layer) {
+      if (state.layer) state.layer.style.display = "none";
+      updateTrack(state, fraction);
+      return;
+    }
     const cursorX = state.plotLeft + fraction * state.plotWidth;
     state.layer.style.display = "";
     state.sharedLine.setAttribute("x1", cursorX.toFixed(3));
@@ -345,6 +433,16 @@
     state.fraction = clamp((svgX - state.plotLeft) / Math.max(1, state.plotWidth), 0, 1);
   }
 
+  function updateFractionFromTrackPointer(state) {
+    const point = svgPointFromClient(state.trackElement, state.trackClientX, state.trackClientY);
+    if (!point) return;
+    if (state.config.trackPoints?.length) {
+      state.fraction = projectedTrackFraction(state.config.trackPoints, point.x, point.y, state.fraction);
+      return;
+    }
+    state.fraction = clamp((point.x - 28) / 364, 0, 1);
+  }
+
   function initialize(element, trackElement, config) {
     if (!element || !config) return;
     const existing = sessions.get(element);
@@ -355,7 +453,7 @@
       updateDomReferences(existing, trackElement);
       resizeChartDom(existing, element.getBoundingClientRect().width, true);
       buildOverlay(existing);
-      if (existing.inside) schedule(existing);
+      if (cursorActive(existing)) schedule(existing);
       else updateTrack(existing, existing.fraction);
       return;
     }
@@ -365,8 +463,12 @@
       trackElement,
       config,
       frame: 0,
-      inside: false,
+      chartInside: false,
+      trackInside: false,
       clientX: 0,
+      trackClientX: 0,
+      trackClientY: 0,
+      boundTrackElement: null,
       fraction: clamp(config.initialFraction ?? 0.25, 0, 1),
       lapOffset: 0,
       rect: element.getBoundingClientRect(),
@@ -379,23 +481,39 @@
     if (!buildOverlay(state)) return;
 
     state.enter = (event) => {
-      state.inside = true;
+      state.chartInside = true;
       state.rect = element.getBoundingClientRect();
       state.clientX = event.clientX;
       updateFractionFromPointer(state);
       schedule(state);
     };
     state.move = (event) => {
+      state.chartInside = true;
       state.clientX = event.clientX;
       updateFractionFromPointer(state);
       schedule(state);
     };
     state.leave = () => {
-      state.inside = false;
-      state.lapOffset = 0;
-      if (state.frame) cancelAnimationFrame(state.frame);
-      state.frame = 0;
-      if (state.layer) state.layer.style.display = "none";
+      state.chartInside = false;
+      hideCursorIfInactive(state);
+    };
+    state.trackEnter = (event) => {
+      state.trackInside = true;
+      state.trackClientX = event.clientX;
+      state.trackClientY = event.clientY;
+      updateFractionFromTrackPointer(state);
+      schedule(state);
+    };
+    state.trackMove = (event) => {
+      state.trackInside = true;
+      state.trackClientX = event.clientX;
+      state.trackClientY = event.clientY;
+      updateFractionFromTrackPointer(state);
+      schedule(state);
+    };
+    state.trackLeave = () => {
+      state.trackInside = false;
+      hideCursorIfInactive(state);
     };
     state.wheel = (event) => {
       if (Math.abs(event.deltaY) < 0.01) return;
@@ -408,14 +526,14 @@
     state.resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
       state.rect = element.getBoundingClientRect();
       resizeChartDom(state, state.rect.width, false);
-      if (state.inside) {
+      if (state.chartInside) {
         updateFractionFromPointer(state);
         schedule(state);
       }
     }) : null;
     state.scrolled = () => {
       state.rect = element.getBoundingClientRect();
-      if (state.inside) {
+      if (state.chartInside) {
         updateFractionFromPointer(state);
         schedule(state);
       }
@@ -426,6 +544,7 @@
     element.addEventListener("pointerleave", state.leave);
     element.addEventListener("wheel", state.wheel, { passive: false });
     window.addEventListener("scroll", state.scrolled, true);
+    bindTrackElement(state);
     state.resizeObserver?.observe(element);
     sessions.set(element, state);
     updateTrack(state, state.fraction);
@@ -438,7 +557,7 @@
     state.rect = element.getBoundingClientRect();
     resizeChartDom(state, state.rect.width, true);
     if (!state.element.querySelector("[data-analysis-cursor-layer] > *")) buildOverlay(state);
-    if (state.inside) schedule(state);
+    if (cursorActive(state)) schedule(state);
     else updateTrack(state, state.fraction);
   }
 
@@ -451,6 +570,7 @@
     element.removeEventListener("pointermove", state.move);
     element.removeEventListener("pointerleave", state.leave);
     element.removeEventListener("wheel", state.wheel);
+    unbindTrackElement(state);
     window.removeEventListener("scroll", state.scrolled, true);
     sessions.delete(element);
   }
