@@ -166,7 +166,7 @@
                     <strong>Aligned traces</strong>
                     <div class="trace-panel-actions">
                         <span>@Selected.Count selected · hover to compare</span>
-                        <button type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@TraceToolboxOpen" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
+                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@TraceToolboxOpen" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
                             <ProductIcon Name="settings" Size="16" />
                         </button>
                         <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@TraceExpanded" @onclick="ToggleTraceExpanded">
@@ -181,7 +181,7 @@
                        aria-label="Race analysis trace toolbox">
                     <header class="trace-toolbox-heading">
                         <div><span class="eyebrow">Race analysis</span><h2>Customize traces</h2><p>Drag telemetry onto a chart. Drag a chart title to reorder.</p></div>
-                        <button type="button" class="trace-toolbox-close" aria-label="Hide trace toolbox" title="Hide toolbox" @onclick="ToggleTraceToolbox"><ProductIcon Name="close" Size="17" /></button>
+                        <button type="button" class="trace-toolbox-close" aria-label="Hide trace toolbox" title="Hide toolbox" @onclick="CloseTraceToolbox"><ProductIcon Name="close" Size="17" /></button>
                     </header>
                     <div class="analysis-trace-toolbox-body">
                         <section class="trace-toolbox-layout-section">
@@ -190,13 +190,17 @@
                         </section>
                         @if (SelectedTraceRow is { } selectedRow && PanelFor(selectedRow) is { } selectedPanel)
                         {
+                            var renderedSignalIds = selectedPanel.Signals.Where(HasSignalData).Select(signal => signal.Id).ToArray();
                             <section class="trace-toolbox-inspector-section">
                                 <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Selected chart</span><strong>@RowLabel(selectedPanel)</strong></div><span>@selectedPanel.Signals.Count trace@(selectedPanel.Signals.Count == 1 ? string.Empty : "s")</span></div>
                                 <div class="trace-selected-signals">
                                     @foreach (var indexedSignal in selectedPanel.Signals.Select((signal, index) => new { Signal = signal, Index = index }))
                                     {
+                                        var renderedIndex = Array.IndexOf(renderedSignalIds, indexedSignal.Signal.Id);
+                                        var traceStyle = renderedIndex < 0 ? "unavailable" : renderedIndex == 0 ? "solid" : "dashed";
+                                        var traceStyleTitle = renderedIndex < 0 ? "Not recorded in this race" : renderedIndex == 0 ? "Solid trace" : "Dashed trace";
                                         <div class="trace-selected-signal">
-                                            <i class="@(indexedSignal.Index == 0 ? "solid" : "dashed")" title="@(indexedSignal.Index == 0 ? "Solid trace" : "Dashed trace")" aria-hidden="true"></i>
+                                            <i class="@traceStyle" title="@traceStyleTitle" aria-hidden="true"></i>
                                             <span><strong>@indexedSignal.Signal.Name</strong><small>@indexedSignal.Signal.Unit</small></span>
                                             <button type="button" data-analysis-no-drag aria-label="Remove @indexedSignal.Signal.Name from this chart" title="Remove this trace" @onclick="() => RemoveTraceSignal(selectedRow.Id, indexedSignal.Signal.Id)"><ProductIcon Name="close" Size="14" /></button>
                                         </div>
@@ -218,13 +222,16 @@
                                     var recorded = SignalRecordedInRace(signal);
                                     <article class="toolbox-metric-card analysis-trace-metric-card @(!recorded ? "unavailable" : null)"
                                              role="listitem"
+                                             tabindex="0"
                                              data-analysis-drag-signal="@signal.Id"
                                              data-signal-id="@signal.Id"
                                              data-signal-name="@signal.Name"
+                                             aria-label="@($"{signal.Name}, {signal.Unit}. Drag onto a chart, or press Enter to pair or replace it in the selected chart.")"
+                                             @onkeydown="args => HandleTraceSignalKeyDown(signal.Id, args)"
                                              title="@(recorded ? $"Drag {signal.Name} onto a chart" : $"{signal.Name} was not recorded in this race; the saved chart will activate when data is available")">
                                         <span class="metric-drag-handle" aria-hidden="true"><ProductIcon Name="grip" Size="15" /></span>
                                         <div><strong>@signal.Name</strong><small>@signal.Unit@(!recorded ? " · not recorded" : string.Empty)</small></div>
-                                        <button type="button" class="metric-add-button" data-analysis-no-drag disabled="@(TraceRows.Count >= AnalysisTraceLayouts.MaximumRows)" aria-label="Add @signal.Name as a new chart" title="Add as a new chart" @onclick="() => AddTraceSignal(signal.Id)"><ProductIcon Name="plus" Size="16" /></button>
+                                        <button type="button" class="metric-add-button" data-analysis-no-drag disabled="@(TraceRows.Count >= AnalysisTraceLayouts.MaximumRows)" aria-label="Add @signal.Name as a new chart" title="Add as a new chart" @onkeydown:stopPropagation="true" @onclick="() => AddTraceSignal(signal.Id)"><ProductIcon Name="plus" Size="16" /></button>
                                     </article>
                                 }
                             </div>
@@ -321,6 +328,7 @@
     private ElementReference ChartElement;
     private ElementReference TrackElement;
     private ElementReference TraceStudioElement;
+    private ElementReference TraceToolboxButtonElement;
     private DotNetObjectReference<TelemetryWorkspace>? _traceLayoutDotNetReference;
     private bool _cursorInteropAttached;
     private bool _traceLayoutInteropAttached;
@@ -388,10 +396,19 @@
         if (TraceToolboxOpen && SelectedTraceRow is null) _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
     }
 
-    private void HandleWorkspaceKeyDown(KeyboardEventArgs args)
+    private async Task CloseTraceToolbox()
+    {
+        if (!TraceToolboxOpen) return;
+        TraceToolboxOpen = false;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        await TraceToolboxButtonElement.FocusAsync();
+    }
+
+    private async Task HandleWorkspaceKeyDown(KeyboardEventArgs args)
     {
         if (args.Key != "Escape") return;
-        if (TraceToolboxOpen) ToggleTraceToolbox();
+        if (TraceToolboxOpen) await CloseTraceToolbox();
         else if (TraceExpanded) ToggleTraceExpanded();
     }
 
@@ -548,6 +565,13 @@
         var index = TraceLayout.Rows.FindIndex(row => string.Equals(row.Id, rowId, StringComparison.Ordinal));
         var target = index + (args.Key == "ArrowUp" ? -1 : 1);
         if (AnalysisTraceLayouts.MoveRowToIndex(TraceLayout, rowId, target)) SaveTraceLayout();
+    }
+    private void HandleTraceSignalKeyDown(string signalId, KeyboardEventArgs args)
+    {
+        if (args.Key is not ("Enter" or " " or "Spacebar") || SelectedTraceRow is not { } selectedRow) return;
+        if (!AnalysisTraceLayouts.PlaceSignal(TraceLayout, selectedRow.Id, signalId)) return;
+        _selectedTraceRowId = selectedRow.Id;
+        SaveTraceLayout();
     }
     [JSInvokable]
     public async Task<bool> MoveTraceRowToIndex(string rowId, int targetIndex)

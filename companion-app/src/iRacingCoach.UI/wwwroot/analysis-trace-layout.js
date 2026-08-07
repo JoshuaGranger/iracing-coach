@@ -34,6 +34,12 @@
     return null;
   }
 
+  function pointerIsOverToolbox(root, event) {
+    const toolbox = root.querySelector("#analysis-trace-toolbox");
+    const topmost = document.elementFromPoint(event.clientX, event.clientY);
+    return !!(toolbox && topmost && toolbox.contains(topmost));
+  }
+
   function chartBounds(root) {
     return root.querySelector("[data-analysis-trace-chart]")?.getBoundingClientRect() || null;
   }
@@ -162,6 +168,10 @@
   }
 
   function updateTarget(state, session, event) {
+    if (pointerIsOverToolbox(state.root, event)) {
+      invalidate(session, "Move over a visible trace chart");
+      return;
+    }
     const target = elementAtPointer(state.root, event) || chartTargetAtPointer(state.root, event);
     if (target) { targetPreview(state, session, target, event); return; }
     const insertion = insertionAtPointer(state.root, event);
@@ -233,6 +243,8 @@
   async function completeGesture(state, event, cancelled) {
     const session = state.session;
     if (!session || event.pointerId !== undefined && event.pointerId !== session.pointerId) return;
+    if (!cancelled && session.active && Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
+      updateTarget(state, session, event);
     state.session = null;
     if (cancelled || !session.active || !session.valid || !session.action) {
       removeGestureVisuals(state, session);

@@ -210,6 +210,13 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "MoveTraceRowToIndex");
         StringAssert.Contains(telemetry, "InsertTraceSignalRow");
         StringAssert.Contains(telemetry, "PlaceTraceSignal");
+        StringAssert.Contains(telemetry, "tabindex=\"0\"");
+        StringAssert.Contains(telemetry, "HandleTraceSignalKeyDown");
+        StringAssert.Contains(telemetry, "@onkeydown:stopPropagation=\"true\"");
+        StringAssert.Contains(telemetry, "CloseTraceToolbox");
+        StringAssert.Contains(telemetry, "TraceToolboxButtonElement.FocusAsync");
+        StringAssert.Contains(telemetry, "renderedSignalIds");
+        StringAssert.Contains(telemetry, "\"unavailable\"");
         StringAssert.Contains(telemetry, "trace-chart-frame");
         StringAssert.Contains(telemetry, "trace-label-column");
         StringAssert.Contains(telemetry, "aria-describedby");
@@ -252,12 +259,17 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain("inFlight", cursor);
         foreach (var hook in new[] { "setPointerCapture", "dragThreshold = 5", "analysis-trace-drag-ghost", "analysis-trace-drop-preview", "autoScroll", "captureRects", "animateReflow", "lostpointercapture", "window.addEventListener(\"blur\"", "MoveTraceRowToIndex", "InsertTraceSignalRow", "PlaceTraceSignal" })
             StringAssert.Contains(traceLayout, hook);
+        StringAssert.Contains(traceLayout, "document.elementFromPoint");
+        StringAssert.Contains(traceLayout, "toolbox.contains(topmost)");
+        StringAssert.Contains(traceLayout, "updateTarget(state, session, event);");
         StringAssert.Contains(traceLayout, "state.committing");
         StringAssert.Contains(traceLayout, "prefers-reduced-motion: reduce");
         StringAssert.Contains(css, ".trace-row-label-copy > strong");
         StringAssert.Contains(css, "max-inline-size: 12ch");
         StringAssert.Contains(css, ".trace-row-unit");
         StringAssert.Contains(css, ".analysis-trace-studio .analysis-trace-toolbox");
+        StringAssert.Contains(css, ".analysis-trace-metric-card:focus-visible");
+        StringAssert.Contains(css, ".trace-selected-signal > i.unavailable");
     }
 
     [TestMethod]
