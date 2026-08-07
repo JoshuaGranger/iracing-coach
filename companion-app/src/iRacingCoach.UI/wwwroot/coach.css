@@ -1679,11 +1679,25 @@ input[type="range"] { accent-color: var(--accent); }
 
 /* These toolboxes are non-modal side panels. Reserve their viewport width in the
    owning page so charts and controls reflow beside them instead of being covered. */
+.page-frame:has(.live-layout-studio),
+.analysis-page-frame:has(.analysis-trace-studio) {
+  transition: padding-right 260ms var(--ease);
+}
 .page-frame:has(.live-layout-studio.toolbox-open) {
   padding-right: calc(var(--space-7) + var(--side-toolbox-width));
 }
 .analysis-page-frame:has(.analysis-trace-studio.toolbox-open) {
   padding-right: calc(22px + var(--side-toolbox-width));
 }
+.trace-panel.trace-panel-expanded { transition: right 260ms var(--ease); }
 .trace-panel.trace-panel-expanded.toolbox-open { right: var(--side-toolbox-width); }
 .analysis-trace-studio.trace-panel-expanded .analysis-trace-toolbox { top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-frame:has(.live-layout-studio),
+  .analysis-page-frame:has(.analysis-trace-studio),
+  .trace-panel.trace-panel-expanded { transition: none !important; }
+}
+.reduced-motion .page-frame:has(.live-layout-studio),
+.reduced-motion .analysis-page-frame:has(.analysis-trace-studio),
+.reduced-motion .trace-panel.trace-panel-expanded { transition: none !important; }

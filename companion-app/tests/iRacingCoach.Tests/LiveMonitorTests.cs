@@ -879,6 +879,8 @@ public sealed class LiveMonitorTests
         Assert.IsFalse(monitorCode.Contains("Undo is available", StringComparison.OrdinalIgnoreCase), "The native monitor should not add undo instructions to routine completion messages.");
         Assert.IsFalse(razor.Contains("OverallScale", StringComparison.Ordinal), "Physical scale belongs only to the pop-out monitor, not the fitted full-page dashboard.");
         Assert.DoesNotContain(".live-toolbox-backdrop", css);
+        StringAssert.Contains(css, ".page-frame:has(.live-layout-studio),");
+        StringAssert.Contains(css, "transition: padding-right 260ms var(--ease);");
         StringAssert.Contains(css, ".page-frame:has(.live-layout-studio.toolbox-open)");
         StringAssert.Contains(css, "padding-right: calc(var(--space-7) + var(--side-toolbox-width));");
         StringAssert.Contains(css, "--live-toolbox-width:var(--side-toolbox-width)");

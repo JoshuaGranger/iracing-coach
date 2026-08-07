@@ -182,7 +182,7 @@
                     <strong>Aligned traces</strong>
                     <div class="trace-panel-actions">
                         <span>@Selected.Count selected · hover to compare</span>
-                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="@(TraceToolboxOpen ? "Hide trace toolbox" : "Customize trace charts")" aria-expanded="@TraceToolboxOpen" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
+                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@TraceToolboxOpen" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
                             <ProductIcon Name="setup" Size="15" /> Customize
                         </button>
                         <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@TraceExpanded" @onclick="ToggleTraceExpanded">

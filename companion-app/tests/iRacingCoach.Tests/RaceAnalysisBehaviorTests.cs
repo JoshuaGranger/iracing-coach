@@ -207,6 +207,8 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain("analysis-trace-toolbox-backdrop", telemetry);
         StringAssert.Contains(telemetry, "inert=\"@(!TraceToolboxOpen ? string.Empty : null)\"");
         StringAssert.Contains(telemetry, "<ProductIcon Name=\"setup\" Size=\"15\" /> Customize");
+        StringAssert.Contains(telemetry, "aria-label=\"Customize trace charts\"");
+        Assert.DoesNotContain("aria-label=\"@(TraceToolboxOpen ? \"Hide trace toolbox\"", telemetry);
         Assert.DoesNotContain("<ProductIcon Name=\"settings\"", telemetry);
         StringAssert.Contains(telemetry, "analysis-trace-catalog");
         StringAssert.Contains(telemetry, "data-analysis-drag-signal");
@@ -294,6 +296,7 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain(".analysis-trace-toolbox-backdrop", css);
         StringAssert.Contains(css, ".analysis-page-frame:has(.analysis-trace-studio.toolbox-open)");
         StringAssert.Contains(css, "padding-right: calc(22px + var(--side-toolbox-width));");
+        StringAssert.Contains(css, ".trace-panel.trace-panel-expanded { transition: right 260ms var(--ease); }");
         StringAssert.Contains(css, ".trace-panel.trace-panel-expanded.toolbox-open { right: var(--side-toolbox-width); }");
         StringAssert.Contains(css, ".trace-toolbox-button {");
         StringAssert.Contains(css, "min-width: 92px;");
