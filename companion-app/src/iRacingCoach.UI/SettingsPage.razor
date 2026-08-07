@@ -55,6 +55,29 @@
 
     <section class="surface-card settings-hub-card" aria-labelledby="behavior-heading">
         <div class="settings-hub-heading"><div><ProductIcon Name="settings" Size="18" /><h2 id="behavior-heading">App behavior</h2></div></div>
+        <fieldset class="theme-color-field">
+            <legend>Theme color</legend>
+            <div class="theme-color-row">
+                <div class="theme-color-options" role="group" aria-label="Theme color">
+                    @foreach (var color in ThemeColors.Choices)
+                    {
+                        var selected = string.Equals(ThemeColors.Normalize(State.Settings.ThemeColor), color.Id, StringComparison.Ordinal);
+                        <button type="button"
+                                class="theme-color-swatch @ThemeColors.CssClass(color.Id) @(selected ? "active" : null)"
+                                aria-label="@color.Name"
+                                aria-pressed="@selected"
+                                title="@color.Name"
+                                @onclick="() => State.SetThemeColor(color.Id)">
+                            @if (selected)
+                            {
+                                <ProductIcon Name="check" Size="13" />
+                            }
+                        </button>
+                    }
+                </div>
+                <strong>@ThemeColors.Get(State.Settings.ThemeColor).Name</strong>
+            </div>
+        </fieldset>
         <div class="settings-toggle-stack">
             <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LaunchAtSignIn" /><span><strong>Open when I sign in</strong><small>Starts minimized and watches for completed recordings.</small></span></label>
             <label class="toggle-row"><input type="checkbox" @bind="State.Settings.UseReducedMotion" /><span><strong>Reduce motion</strong><small>Turns off nonessential transitions and interpolation.</small></span></label>

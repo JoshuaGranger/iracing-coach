@@ -22,6 +22,7 @@ The UI should feel like a calm professional race-engineering workspace: black/ch
 | `UI-014` | Successful background work MUST settle silently. Only running work that materially benefits from progress visibility or failed work requiring action may occupy persistent UI. |
 | `UI-015` | Color and glass effects MUST add hierarchy and character without reducing contrast or becoming decorative noise. Positive/add actions MAY use green/mint, destructive actions SHOULD use red/coral, and telemetry channels SHOULD retain distinct semantic colors; no meaning may rely on color alone. |
 | `UI-016` | Settings MUST reveal common decisions before technical detail. A user SHOULD be able to confirm data readiness, prepare a portable copy, set ordinary behavior, and configure the telemetry popout without first reading file-system, service, or diagnostic implementation detail. |
+| `UI-017` | A user-selected primary theme color MUST influence accent, selected, hover, and keyboard-focus treatment consistently across the web shell and native telemetry popout. Palette changes MUST preserve text/focus contrast and MUST NOT recolor semantic telemetry channels or status meanings into ambiguity. |
 
 ## Accessibility
 

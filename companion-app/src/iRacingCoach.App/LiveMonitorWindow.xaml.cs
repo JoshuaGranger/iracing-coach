@@ -47,11 +47,12 @@ public partial class LiveMonitorWindow : Window
     private double _cellWidth = 180;
     private double _cellHeight = 180;
     private string _lastKnownEditorSignature;
+    private string _appliedThemeColor = string.Empty;
 
     public LiveMonitorWindow(CompanionState state)
     {
         _state = state;
-        _lastKnownEditorSignature = LiveMonitorLayouts.EditorSignature(Preferences);
+        _lastKnownEditorSignature = VisualSignature();
         InitializeComponent();
         SizeToContent = SizeToContent.WidthAndHeight;
         _saveTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) => SavePlacement(), Dispatcher);
@@ -160,7 +161,7 @@ public partial class LiveMonitorWindow : Window
 
     private void CheckForExternalEditorChange()
     {
-        var signature = LiveMonitorLayouts.EditorSignature(Preferences);
+        var signature = VisualSignature();
         if (string.Equals(signature, _lastKnownEditorSignature, StringComparison.Ordinal)) return;
         _lastKnownEditorSignature = signature;
         _scaleSettingsBackup = null;
@@ -174,6 +175,7 @@ public partial class LiveMonitorWindow : Window
         _updatingControls = true;
         try
         {
+            ApplyTheme();
             RefreshLayoutSelector();
             ApplyScale();
             RenderSurfaceState();
@@ -182,6 +184,22 @@ public partial class LiveMonitorWindow : Window
         }
         finally { _updatingControls = false; }
     }
+
+    private string VisualSignature() => $"{LiveMonitorLayouts.EditorSignature(Preferences)}|theme:{ThemeColors.Normalize(_state.Settings.ThemeColor)}";
+
+    private void ApplyTheme()
+    {
+        var theme = ThemeColors.Get(_state.Settings.ThemeColor);
+        if (string.Equals(_appliedThemeColor, theme.Id, StringComparison.Ordinal)) return;
+        Resources["MonitorAccentBrush"] = ThemeBrush(theme.Accent);
+        Resources["MonitorAccentFillBrush"] = ThemeBrush(theme.Fill);
+        Resources["MonitorAccentSubtleBrush"] = ThemeBrush(theme.Subtle);
+        Resources["MonitorFocusBrush"] = ThemeBrush(theme.Focus);
+        _appliedThemeColor = theme.Id;
+    }
+
+    private static SolidColorBrush ThemeBrush(string value) =>
+        new((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(value));
 
     private void RenderTelemetry()
     {
@@ -916,7 +934,7 @@ public partial class LiveMonitorWindow : Window
                 "amber" => Resource<Brush>("MonitorAmberBrush"),
                 "coral" => Resource<Brush>("MonitorCoralBrush"),
                 "violet" => Resource<Brush>("MonitorVioletBrush"),
-                _ => Resource<Brush>("MonitorMintBrush")
+                _ => Resource<Brush>("MonitorAccentBrush")
             };
         return definition.Id switch
         {
@@ -925,7 +943,7 @@ public partial class LiveMonitorWindow : Window
             "brake" => Resource<Brush>("MonitorCoralBrush"),
             "steering" => Resource<Brush>("MonitorVioletBrush"),
             "fuel" or "fuel-laps" => Resource<Brush>("MonitorAmberBrush"),
-            _ => Resource<Brush>("MonitorMintBrush")
+            _ => Resource<Brush>("MonitorAccentBrush")
         };
     }
 

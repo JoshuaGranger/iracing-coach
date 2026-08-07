@@ -28,6 +28,7 @@ Connections manages optional services, not application users.
 | `SET-007` | Saving settings MUST be atomic enough to avoid a partial JSON file after interruption. |
 | `SET-008` | The primary Settings surface MUST be compact and task-oriented. Data, backup/migration, app behavior, and telemetry-popout preferences SHOULD be the first visible cards; full paths, service credentials, and health detail SHOULD remain in labeled disclosures until requested. |
 | `SET-009` | Connections MUST remain discoverable as one subordinate Settings section, but its Garage61 and optional coaching controls MUST NOT add their full visual burden to the default Settings view. |
+| `SET-010` | App behavior MUST offer a compact, keyboard-accessible primary theme-color choice. The selected palette MUST preview immediately, persist in portable `settings.json` only when Settings is saved, restore on the next launch, and apply to both the main shell and native telemetry popout. Invalid or removed palette identifiers MUST repair to the documented default. Theme choice MUST alter primary accent/focus hierarchy without replacing semantic telemetry, success, warning, incident, or danger colors. |
 
 ## Diagnostics
 

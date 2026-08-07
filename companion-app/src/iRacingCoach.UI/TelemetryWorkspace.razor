@@ -14,8 +14,67 @@
     }
     else
     {
-        <div class="telemetry-workstation-grid @(LapRailCollapsed ? "laps-collapsed" : null)">
-        <aside class="lap-rail" aria-labelledby="lap-rail-title">
+        <div class="telemetry-workstation-grid @(IsRaceWorkspace ? "race-workstation" : "qualifying-workstation") @ContextColumnState">
+        <div class="telemetry-context-column">
+        <section class="track-panel telemetry-context-panel @(TrackPanelCollapsed ? "collapsed" : null)" aria-labelledby="track-panel-title">
+            <div class="panel-title track-panel-title">
+                <div><strong id="track-panel-title">@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div>
+                <div class="track-panel-actions">
+                    <label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label>
+                    @if (IsRaceWorkspace)
+                    {
+                        <button type="button"
+                                class="context-panel-toggle"
+                                aria-controls="race-track-panel-content"
+                                aria-expanded="@(!TrackPanelCollapsed)"
+                                aria-label="@(TrackPanelCollapsed ? "Show track position" : "Hide track position")"
+                                title="@(TrackPanelCollapsed ? "Show track position" : "Hide track position")"
+                                @onclick="ToggleTrackPanel">
+                            <ProductIcon Name="chevron-up" Size="15" />
+                        </button>
+                    }
+                </div>
+            </div>
+            <div id="race-track-panel-content"
+                 class="track-panel-content"
+                 aria-hidden="@TrackPanelCollapsed"
+                 inert="@(TrackPanelCollapsed ? string.Empty : null)">
+                <svg @ref="TrackElement" class="track-map" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map">
+                    @if (Workspace.TrackShape.Count >= 3)
+                    {
+                        var startFinishLine = StartFinishLine;
+                        @foreach (var segment in MapSegments)
+                        {
+                            <line x1="@F(segment.A.X)" y1="@F(segment.A.Y)" x2="@F(segment.B.X)" y2="@F(segment.B.Y)" stroke="@segment.Color" stroke-width="8" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+                        }
+                        <line x1="@F(startFinishLine.X1)" y1="@F(startFinishLine.Y1)" x2="@F(startFinishLine.X2)" y2="@F(startFinishLine.Y2)" class="track-start-line-halo" />
+                        <line x1="@F(startFinishLine.X1)" y1="@F(startFinishLine.Y1)" x2="@F(startFinishLine.X2)" y2="@F(startFinishLine.Y2)" class="track-start-line" />
+                        <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="8" class="map-cursor-halo" />
+                        <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="4" class="map-cursor" />
+                    }
+                    else
+                    {
+                        <line x1="28" y1="140" x2="392" y2="140" class="distance-base" />
+                        @foreach (var segment in StripSegments)
+                        {
+                            <line x1="@F(segment.X1)" y1="140" x2="@F(segment.X2)" y2="140" stroke="@segment.Color" stroke-width="14" stroke-linecap="round" />
+                        }
+                        @foreach (var zone in Workspace.Segments)
+                        {
+                            <line x1="@F(28 + zone.StartPercent * 364)" y1="113" x2="@F(28 + zone.StartPercent * 364)" y2="167" class="zone-marker" />
+                            <svg:text x="@F(28 + zone.StartPercent * 364)" y="99" class="chart-label">@FriendlyZone(zone)</svg:text>
+                        }
+                        <line x1="28" y1="124" x2="28" y2="156" class="track-start-line-halo" />
+                        <line x1="28" y1="124" x2="28" y2="156" class="track-start-line" />
+                        <line data-analysis-track-cursor-line x1="@F(28 + Cursor * 364)" y1="104" x2="@F(28 + Cursor * 364)" y2="176" class="map-cursor-line" />
+                        <svg:text x="28" y="205" class="chart-label">Start / finish</svg:text><svg:text x="392" y="205" text-anchor="end" class="chart-label">100%</svg:text>
+                    }
+                </svg>
+                <div class="cursor-readout"><strong data-analysis-track-percent>@((Cursor * 100).ToString("0.0"))%</strong><span data-analysis-track-summary>@CursorSummary</span></div>
+            </div>
+        </section>
+
+        <aside class="lap-rail telemetry-context-panel @(LapRailCollapsed ? "collapsed" : null)" aria-labelledby="lap-rail-title">
             <div class="lap-rail-header">
                 <strong id="lap-rail-title">Laps &amp; runs</strong><span>@Selected.Count selected</span>
                 <label class="clean-lap-filter"><input type="checkbox" checked="@CleanLapsOnly" @onchange="CleanLapFilterChanged" /> Clean laps</label>
@@ -44,7 +103,7 @@
                             <span class="run-summary-name">@group.Label</span>
                             @if (group.Run is { } summaryRun)
                             {
-                                <span class="run-summary-metrics">@summaryRun.GreenLaps green · @summaryRun.CautionLaps caution</span>
+                                <span class="run-summary-metrics"><span><i class="metric-dot green" aria-hidden="true"></i>@summaryRun.GreenLaps green</span><span><i class="metric-dot yellow" aria-hidden="true"></i>@summaryRun.CautionLaps caution</span></span>
                                 <span class="run-insight" tabindex="0" aria-label="Run @summaryRun.Number details" @onclick:stopPropagation="true">i<span class="run-tooltip" role="tooltip"><strong>Run @summaryRun.Number · laps @LapRange(summaryRun.Laps)</strong>@if (HasOfficialPace(summaryRun)) { <span>Early pace <b>@LapTime(summaryRun.EarlyAverageLapSeconds)</b></span><span>Late pace <b>@LapTime(summaryRun.LateAverageLapSeconds)</b></span><span>Pace trend <b>@PaceTrend(summaryRun)</b></span> } else { <span>Observed green pace <b>@ObservedPaceRange(summaryRun)</b></span><span>Coaching comparison <b>Excluded</b></span> }@if (summaryRun.FuelUsedGallons.HasValue) { <span>Fuel used <b>@summaryRun.FuelUsedGallons.Value.ToString("0.00") gal</b></span> }@if (summaryRun.TireRemainingPercent.HasValue) { <span>Lowest tire <b>@summaryRun.TireName @summaryRun.TireRemainingPercent.Value.ToString("0.0")%</b></span> }<small>@(HasOfficialPace(summaryRun) ? ControlChange(summaryRun) : summaryRun.Status)</small></span></span>
                             }
                             else
@@ -60,7 +119,8 @@
                                 ? trace.PitServiceFor(Workspace.Runs, ActivePitDirection)
                                 : null;
                             var isFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
-                            <button class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(pitLap ? "pit-lap" : null)" style="@($"--lap-color:{LapColor(trace.Lap)}")" aria-pressed="@Selected.Contains(trace.Lap)" @onclick="() => SelectLap(trace.Lap)">
+                            <div class="lap-rail-row @(Selected.Contains(trace.Lap) ? "selected" : null) @(pitLap ? "pit-lap" : null)" style="@($"--lap-color:{LapColor(trace.Lap)}")" @onclick="() => SelectLap(trace.Lap)">
+                                <button type="button" class="lap-select-button" aria-label="@($"Select lap {trace.Lap}, {LapTime(trace.LapTimeSeconds)}")" aria-pressed="@Selected.Contains(trace.Lap)" @onclick:stopPropagation="true" @onclick="() => SelectLap(trace.Lap)"></button>
                                 <span class="lap-flags" aria-label="Recorded lap flags">
                                     @foreach (var flag in LapFlags(trace))
                                     {
@@ -88,25 +148,72 @@
                                 <span class="lap-pit-column">
                                     @foreach (var direction in pitDirections)
                                     {
-                                        <span class="pit-badge" @onmouseenter="args => ShowPitPopover(args, trace.Lap, direction)" @onmouseleave="HidePitPopover" @onclick:stopPropagation="true">Pit (@direction)</span>
+                                        <button type="button"
+                                                class="pit-badge"
+                                                aria-haspopup="dialog"
+                                                aria-expanded="@PitPopoverIsActive(trace.Lap, direction)"
+                                                aria-controls="@PitPopoverId(trace.Lap, direction)"
+                                                @onmouseenter="args => ShowPitPopover(args, trace.Lap, direction)"
+                                                @onmouseleave="SchedulePitPopoverHide"
+                                                @onfocus="() => ShowPitPopoverFromFocus(trace.Lap, direction)"
+                                                @onblur="SchedulePitPopoverHide"
+                                                @onclick="args => ShowPitPopover(args, trace.Lap, direction)"
+                                                @onclick:stopPropagation="true"
+                                                @onkeydown:stopPropagation="true">Pit (@direction)</button>
                                     }
                                 </span>
                                 @if (pitLap && activePitRun?.PitStop is not null)
                                 {
-                                    <span class="pit-lap-popover" style="@PitPopoverStyle" role="tooltip">
-                                        <span class="pit-popover-heading"><strong>Pit lap @trace.Lap</strong><small>@PitServiceTime(activePitRun)</small></span>
-                                        <span class="pit-popover-row"><span>Tires changed</span><b>@ChangedTires(activePitRun)</b></span>
-                                        <span class="pit-popover-label">Recorded tire wear</span>
-                                        <span class="pit-wear-grid">
-                                            <span>LF <b>@TireWear(activePitRun.PitStop.LeftFrontTireWearPercent)</b></span>
-                                            <span>RF <b>@TireWear(activePitRun.PitStop.RightFrontTireWearPercent)</b></span>
-                                            <span>LR <b>@TireWear(activePitRun.PitStop.LeftRearTireWearPercent)</b></span>
-                                            <span>RR <b>@TireWear(activePitRun.PitStop.RightRearTireWearPercent)</b></span>
-                                        </span>
+                                    var tireConditions = PitTireConditions(activePitRun.PitStop);
+                                    <span id="@PitPopoverId(trace.Lap, ActivePitDirection!)"
+                                          class="pit-lap-popover"
+                                          style="@PitPopoverStyle"
+                                          role="dialog"
+                                          aria-label="@($"Pit lap {trace.Lap} details")"
+                                          tabindex="0"
+                                          @onmouseenter="KeepPitPopoverOpen"
+                                          @onmouseleave="SchedulePitPopoverHide"
+                                          @onfocus="KeepPitPopoverOpen"
+                                          @onblur="SchedulePitPopoverHide"
+                                          @onclick:stopPropagation="true"
+                                          @onkeydown:stopPropagation="true"
+                                          @onwheel:stopPropagation="true">
+                                        <span class="pit-popover-heading"><strong>Pit lap @trace.Lap</strong><small>@PitServiceWindow(activePitRun)</small></span>
+                                        <span class="pit-popover-row"><span>Confirmed tires changed</span><b>@ChangedTires(activePitRun)</b></span>
+                                        @if (tireConditions.Count > 0)
+                                        {
+                                            <span class="pit-popover-label">Measured tire condition</span>
+                                            <span class="pit-tire-grid">
+                                                @foreach (var tire in tireConditions)
+                                                {
+                                                    <span class="pit-tire-card">
+                                                        <span class="pit-tire-heading"><strong>@tire.Corner</strong>@if (TireChanged(activePitRun, tire.Corner)) { <em>Changed</em> }@if (tire.AverageWearPercent.HasValue) { <small>@tire.AverageWearPercent.Value.ToString("0.0")% avg wear</small> }</span>
+                                                        @if (HasBandValues(tire.WearPercent))
+                                                        {
+                                                            <span class="pit-band-row pit-band-head"><span></span><b>O</b><b>M</b><b>I</b></span>
+                                                            <span class="pit-band-row"><span>Wear</span><b>@BandPercent(tire.WearPercent.Outer)</b><b>@BandPercent(tire.WearPercent.Middle)</b><b>@BandPercent(tire.WearPercent.Inner)</b></span>
+                                                        }
+                                                        @if (HasBandValues(tire.CarcassTemperatureF))
+                                                        {
+                                                            <span class="pit-band-row"><span>Carcass</span><b>@BandTemperature(tire.CarcassTemperatureF.Outer)</b><b>@BandTemperature(tire.CarcassTemperatureF.Middle)</b><b>@BandTemperature(tire.CarcassTemperatureF.Inner)</b></span>
+                                                        }
+                                                        @if (HasBandValues(tire.SurfaceTemperatureF))
+                                                        {
+                                                            <span class="pit-band-row"><span>Surface</span><b>@BandTemperature(tire.SurfaceTemperatureF.Outer)</b><b>@BandTemperature(tire.SurfaceTemperatureF.Middle)</b><b>@BandTemperature(tire.SurfaceTemperatureF.Inner)</b></span>
+                                                        }
+                                                        @if (tire.PressurePsi.HasValue)
+                                                        {
+                                                            <span class="pit-tire-pressure"><span>@PressureKind(tire.PressureKind) pressure</span><b>@tire.PressurePsi.Value.ToString("0.0") psi</b></span>
+                                                        }
+                                                    </span>
+                                                }
+                                            </span>
+                                            <small class="pit-tire-note">O / M / I = outer, middle, and inner. Values are the recorded stop snapshot.</small>
+                                        }
                                         <span class="pit-popover-row"><span>Fuel added</span><b>@FuelAdded(activePitRun)</b></span>
                                         <span class="pit-popover-row"><span>Fuel range at stop</span><b>@FuelRangeAtStop(activePitRun)</b></span>
                                         <span class="pit-popover-row"><span>Race remaining</span><b>@RaceLapsRemaining(trace.Lap)</b></span>
-                                        @if (activePitRun.PitStop.DamageRepairedSeconds is { } repaired) { <span class="pit-popover-row"><span>Damage repaired</span><b>@repaired.ToString("0.0") s</b></span> }
+                                        @if (activePitRun.PitStop.DamageRepairedSeconds is { } repaired) { <span class="pit-popover-row"><span>Recorded repair work</span><b>@repaired.ToString("0.0") s</b></span> }
                                         @if (activePitRun.PitStop.PenaltyServedSeconds is { } penalty) { <span class="pit-popover-row"><span>Penalty served</span><b>@penalty.ToString("0.0") s</b></span> }
                                     </span>
                                 }
@@ -128,7 +235,7 @@
                                         <span class="track-usage-row"><i aria-hidden="true"></i><strong>@TrackUsage(conditions)</strong></span>
                                     </span>
                                 }
-                            </button>
+                            </div>
                         }
                     </details>
                 }
@@ -136,6 +243,7 @@
             <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ClearSelection">Clear</button><button class="text-button" @onclick="ShowAllLaps">Show all</button></div>
             </div>
         </aside>
+        </div>
 
         @if (Selected.Count == 0)
         {
@@ -144,37 +252,6 @@
         else
         {
         <div class="telemetry-grid">
-            <div class="track-panel">
-                <div class="panel-title track-panel-title"><div><strong>@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div><label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label></div>
-                <svg @ref="TrackElement" class="track-map" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map">
-                    @if (Workspace.TrackShape.Count >= 3)
-                    {
-                        @foreach (var segment in MapSegments)
-                        {
-                            <line x1="@F(segment.A.X)" y1="@F(segment.A.Y)" x2="@F(segment.B.X)" y2="@F(segment.B.Y)" stroke="@segment.Color" stroke-width="8" stroke-linecap="round" vector-effect="non-scaling-stroke" />
-                        }
-                        <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="8" class="map-cursor-halo" />
-                        <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="4" class="map-cursor" />
-                    }
-                    else
-                    {
-                        <line x1="28" y1="140" x2="392" y2="140" class="distance-base" />
-                        @foreach (var segment in StripSegments)
-                        {
-                            <line x1="@F(segment.X1)" y1="140" x2="@F(segment.X2)" y2="140" stroke="@segment.Color" stroke-width="14" stroke-linecap="round" />
-                        }
-                        @foreach (var zone in Workspace.Segments)
-                        {
-                            <line x1="@F(28 + zone.StartPercent * 364)" y1="113" x2="@F(28 + zone.StartPercent * 364)" y2="167" class="zone-marker" />
-                            <svg:text x="@F(28 + zone.StartPercent * 364)" y="99" class="chart-label">@FriendlyZone(zone)</svg:text>
-                        }
-                        <line data-analysis-track-cursor-line x1="@F(28 + Cursor * 364)" y1="104" x2="@F(28 + Cursor * 364)" y2="176" class="map-cursor-line" />
-                        <svg:text x="28" y="205" class="chart-label">Start / finish</svg:text><svg:text x="392" y="205" text-anchor="end" class="chart-label">100%</svg:text>
-                    }
-                </svg>
-                <div class="cursor-readout"><strong data-analysis-track-percent>@((Cursor * 100).ToString("0.0"))%</strong><span data-analysis-track-summary>@CursorSummary</span></div>
-            </div>
-
             <div @ref="TraceStudioElement"
                  class="trace-panel analysis-trace-studio @(TraceExpanded ? "trace-panel-expanded" : null) @(TraceToolboxOpen ? "editing toolbox-open" : "viewing toolbox-closed")"
                  data-analysis-trace-studio>
@@ -325,11 +402,13 @@
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
+    [Parameter] public bool IsRaceWorkspace { get; set; }
     private readonly HashSet<int> Selected = [];
     private string? _analysisId;
     private string Mode { get; set; } = "speed";
     private bool CleanLapsOnly { get; set; }
     private bool LapRailCollapsed { get; set; }
+    private bool TrackPanelCollapsed { get; set; }
     private bool TraceExpanded { get; set; }
     private bool TraceToolboxOpen { get; set; }
     private string _traceSignalSearch = string.Empty;
@@ -339,10 +418,13 @@
     private int? ActiveConditionsLap { get; set; }
     private double PitPopoverX { get; set; }
     private double PitPopoverY { get; set; }
+    private double PitPopoverAvailableHeight { get; set; } = 680;
     private bool PitPopoverAbove { get; set; }
     private double ConditionsPopoverX { get; set; }
     private double ConditionsPopoverY { get; set; }
     private bool ConditionsPopoverAbove { get; set; }
+    private CancellationTokenSource? _pitPopoverHideCancellation;
+    private IReadOnlyList<MapPoint>? _mapPoints;
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
@@ -380,8 +462,13 @@
         State.Settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
         _ = AnalysisTraceLayouts.ValidateAndRepair(State.Settings.RaceAnalysisTraces);
         if (_analysisId == Workspace.AnalysisId) return;
+        KeepPitPopoverOpen();
+        ActivePitLap = null;
+        ActivePitDirection = null;
         _analysisId = Workspace.AnalysisId;
+        _mapPoints = null;
         LapRailCollapsed = false;
+        TrackPanelCollapsed = false;
         ResetSelection();
         RebuildCalculatedTireWear();
         _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
@@ -410,7 +497,9 @@
     {
         TraceExpanded = !TraceExpanded;
     }
+    private string ContextColumnState => $"{(LapRailCollapsed ? "laps-collapsed" : "laps-open")} {(TrackPanelCollapsed ? "track-collapsed" : "track-open")} {(LapRailCollapsed && TrackPanelCollapsed ? "context-collapsed" : null)}";
     private void ToggleLapRail() => LapRailCollapsed = !LapRailCollapsed;
+    private void ToggleTrackPanel() => TrackPanelCollapsed = !TrackPanelCollapsed;
     private void ToggleTraceToolbox()
     {
         TraceToolboxOpen = !TraceToolboxOpen;
@@ -682,25 +771,93 @@
         if (times.Length == 1) return LapTime(times[0]);
         return $"{LapTime(times.Min())}–{LapTime(times.Max())}";
     }
-    private async Task ShowPitPopover(MouseEventArgs args, int lap, string direction)
+    private async Task ShowPitPopover(MouseEventArgs args, int lap, string direction) =>
+        await ShowPitPopoverAt(args.ClientX, args.ClientY, lap, direction);
+    private async Task ShowPitPopoverFromFocus(int lap, string direction)
+    {
+        var rect = await InteropArrayOrEmptyAsync("iracingCoach.activeElementRect");
+        var x = rect.Length >= 4 ? rect[2] : 24;
+        var y = rect.Length >= 4 ? (rect[1] + rect[3]) / 2 : 120;
+        await ShowPitPopoverAt(x, y, lap, direction);
+    }
+    private async Task ShowPitPopoverAt(double clientX, double clientY, int lap, string direction)
     {
         var trace = Workspace.Traces.FirstOrDefault(item => item.Lap == lap);
         if (trace is null || trace.PitServiceFor(Workspace.Runs, direction)?.PitStop is null) return;
-        var viewport = await JS.InvokeAsync<double[]>("iracingCoach.viewportSize");
-        var width = viewport.Length > 0 ? viewport[0] : 1280;
-        var height = viewport.Length > 1 ? viewport[1] : 800;
-        PitPopoverX = Math.Clamp(args.ClientX + 14, 12, Math.Max(12, width - 326));
-        PitPopoverAbove = args.ClientY > height / 2;
-        PitPopoverY = PitPopoverAbove ? args.ClientY - 12 : args.ClientY + 12;
+        KeepPitPopoverOpen();
+
+        // Do not make visibility depend on optional browser geometry. The safe
+        // fallback is rendered immediately, then moved beside the trigger when
+        // WebView supplies a valid viewport.
+        PitPopoverX = 12;
+        PitPopoverY = 12;
+        PitPopoverAbove = false;
+        PitPopoverAvailableHeight = 680;
         ActivePitLap = lap;
         ActivePitDirection = direction;
+        await InvokeAsync(StateHasChanged);
+
+        var viewport = await InteropArrayOrEmptyAsync("iracingCoach.viewportSize");
+        if (!PitPopoverIsActive(lap, direction) || viewport.Length < 2) return;
+        ApplyPitPopoverPlacement(clientX, clientY, viewport[0], viewport[1]);
+        await InvokeAsync(StateHasChanged);
     }
-    private void HidePitPopover()
+    private void ApplyPitPopoverPlacement(double clientX, double clientY, double viewportWidth, double viewportHeight)
     {
-        ActivePitLap = null;
-        ActivePitDirection = null;
+        var width = double.IsFinite(viewportWidth) ? Math.Max(320, viewportWidth) : 1280;
+        var height = double.IsFinite(viewportHeight) ? Math.Max(240, viewportHeight) : 800;
+        var x = double.IsFinite(clientX) && clientX > 0 ? clientX : 24;
+        var y = double.IsFinite(clientY) && clientY > 0 ? clientY : 120;
+        var popoverWidth = Math.Min(540, Math.Max(280, width - 24));
+        PitPopoverX = Math.Clamp(x + 14, 12, Math.Max(12, width - popoverWidth - 12));
+        PitPopoverAbove = y > height / 2;
+        PitPopoverY = PitPopoverAbove ? y - 12 : y + 12;
+        PitPopoverAvailableHeight = Math.Max(96, PitPopoverAbove ? y - 24 : height - y - 24);
     }
-    private string PitPopoverStyle => $"left:{F(PitPopoverX)}px;top:{F(PitPopoverY)}px;transform:{(PitPopoverAbove ? "translateY(-100%)" : "none")}";
+    private async Task<double[]> InteropArrayOrEmptyAsync(string identifier)
+    {
+        try
+        {
+            return await JS.InvokeAsync<double[]>(identifier);
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or OperationCanceledException)
+        {
+            return [];
+        }
+    }
+    private bool PitPopoverIsActive(int lap, string direction) =>
+        ActivePitLap == lap && string.Equals(ActivePitDirection, direction, StringComparison.OrdinalIgnoreCase);
+    private static string PitPopoverId(int lap, string direction) => $"pit-details-{lap}-{direction}";
+    private void KeepPitPopoverOpen()
+    {
+        _pitPopoverHideCancellation?.Cancel();
+        _pitPopoverHideCancellation?.Dispose();
+        _pitPopoverHideCancellation = null;
+    }
+    private async Task SchedulePitPopoverHide()
+    {
+        KeepPitPopoverOpen();
+        var cancellation = new CancellationTokenSource();
+        _pitPopoverHideCancellation = cancellation;
+        try
+        {
+            await Task.Delay(180, cancellation.Token);
+            if (cancellation.IsCancellationRequested) return;
+            ActivePitLap = null;
+            ActivePitDirection = null;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_pitPopoverHideCancellation, cancellation))
+                _pitPopoverHideCancellation = null;
+            cancellation.Dispose();
+        }
+    }
+    private string PitPopoverStyle => $"left:{F(PitPopoverX)}px;top:{F(PitPopoverY)}px;max-height:{F(PitPopoverAvailableHeight)}px;transform:{(PitPopoverAbove ? "translateY(-100%)" : "none")}";
     private async Task ShowConditionsPopover(MouseEventArgs args, int lap)
     {
         var viewport = await JS.InvokeAsync<double[]>("iracingCoach.viewportSize");
@@ -908,10 +1065,12 @@
     {
         get
         {
+            if (_mapPoints is not null) return _mapPoints;
+            if (Workspace.TrackShape.Count < 3) return _mapPoints = Array.Empty<MapPoint>();
             var minX = Workspace.TrackShape.Min(p => p.X); var maxX = Workspace.TrackShape.Max(p => p.X);
             var minY = Workspace.TrackShape.Min(p => p.Y); var maxY = Workspace.TrackShape.Max(p => p.Y);
             var scale = Math.Min(350 / Math.Max(.0001, maxX - minX), 218 / Math.Max(.0001, maxY - minY));
-            return Workspace.TrackShape.OrderBy(p => p.LapPercent).Select(p => new MapPoint(WrapPercent(p.LapPercent), 210 + (p.X - (minX + maxX) / 2) * scale, 140 - (p.Y - (minY + maxY) / 2) * scale)).ToArray();
+            return _mapPoints = Workspace.TrackShape.OrderBy(p => p.LapPercent).Select(p => new MapPoint(WrapPercent(p.LapPercent), 210 + (p.X - (minX + maxX) / 2) * scale, 140 - (p.Y - (minY + maxY) / 2) * scale)).ToArray();
         }
     }
     private string TrackViewBox
@@ -929,6 +1088,24 @@
         }
     }
     private MapPoint CursorMapPoint => MapPointAt(Cursor);
+    private MapLine StartFinishLine
+    {
+        get
+        {
+            var points = MapPoints;
+            var center = MapPointAt(0, points);
+            var before = MapPointAt(.995, points);
+            var after = MapPointAt(.005, points);
+            var tangentX = after.X - before.X;
+            var tangentY = after.Y - before.Y;
+            var length = Math.Sqrt(tangentX * tangentX + tangentY * tangentY);
+            if (length < .0001) return new MapLine(center.X, center.Y - 13, center.X, center.Y + 13);
+            const double halfLength = 13;
+            var normalX = -tangentY / length * halfLength;
+            var normalY = tangentX / length * halfLength;
+            return new MapLine(center.X - normalX, center.Y - normalY, center.X + normalX, center.Y + normalY);
+        }
+    }
     private IEnumerable<MapSegment> MapSegments
     {
         get
@@ -941,9 +1118,9 @@
             }
         }
     }
-    private MapPoint MapPointAt(double percent)
+    private MapPoint MapPointAt(double percent) => MapPointAt(percent, MapPoints);
+    private static MapPoint MapPointAt(double percent, IReadOnlyList<MapPoint> points)
     {
-        var points = MapPoints;
         if (points.Count == 0) return new MapPoint(WrapPercent(percent), 210, 140);
         var target = WrapPercent(percent);
         for (var index = 0; index < points.Count; index++)
@@ -1211,14 +1388,39 @@
         if (run.EarlySteerVsLatePercent.HasValue) parts.Add($"steering work {run.EarlySteerVsLatePercent.Value:+0;-0;0}%");
         return parts.Count > 0 ? string.Join(" · ", parts) : "Control-load comparison unavailable";
     }
-    private static string PitServiceTime(AnalysisRun run) => run.PitStop?.ServiceSeconds is { } seconds ? $"{seconds:0.0}s service" : "Recorded stop";
+    private static string PitServiceWindow(AnalysisRun run) => run.PitStop?.ServiceSeconds is { } seconds ? $"{seconds:0.0}s detected service window" : "Recorded stop";
     private static string ChangedTires(AnalysisRun run)
     {
         var tires = run.PitStop?.TiresChanged;
         if (tires is null || tires.Count == 0) return "None recorded";
         return new[] { "LF", "RF", "LR", "RR" }.All(tire => tires.Contains(tire, StringComparer.OrdinalIgnoreCase)) ? "All four" : string.Join(", ", tires);
     }
-    private static string TireWear(double? wear) => wear.HasValue ? $"{wear.Value:0.0}%" : "—";
+    private static IReadOnlyList<AnalysisTireCondition> PitTireConditions(AnalysisPitStop pit)
+    {
+        var order = new[] { "LF", "RF", "LR", "RR" };
+        if (pit.TireConditions is { Count: > 0 })
+            return order.Where(pit.TireConditions.ContainsKey).Select(corner => pit.TireConditions[corner]).ToArray();
+
+        var legacy = new Dictionary<string, double?>
+        {
+            ["LF"] = pit.LeftFrontTireWearPercent,
+            ["RF"] = pit.RightFrontTireWearPercent,
+            ["LR"] = pit.LeftRearTireWearPercent,
+            ["RR"] = pit.RightRearTireWearPercent
+        };
+        var emptyBands = new AnalysisTireBands(null, null, null);
+        return order
+            .Where(corner => legacy[corner].HasValue)
+            .Select(corner => new AnalysisTireCondition(corner, legacy[corner], emptyBands, emptyBands, emptyBands, null, string.Empty))
+            .ToArray();
+    }
+    private static bool TireChanged(AnalysisRun run, string corner) =>
+        run.PitStop?.TiresChanged.Contains(corner, StringComparer.OrdinalIgnoreCase) == true;
+    private static bool HasBandValues(AnalysisTireBands bands) =>
+        bands.Outer.HasValue || bands.Middle.HasValue || bands.Inner.HasValue;
+    private static string BandPercent(double? value) => value.HasValue ? $"{value.Value:0.0}%" : "—";
+    private static string BandTemperature(double? value) => value.HasValue ? $"{value.Value:0}°F" : "—";
+    private static string PressureKind(string kind) => string.IsNullOrWhiteSpace(kind) ? "Recorded" : kind;
     private static string FuelAdded(AnalysisRun run) => run.PitStop?.FuelAddedGallons switch
     {
         null => "Not recorded",
@@ -1313,6 +1515,7 @@
     }
     public async ValueTask DisposeAsync()
     {
+        KeepPitPopoverOpen();
         await DisposeCursorInteropAsync();
         await DisposeTraceLayoutInteropAsync();
     }
@@ -1321,6 +1524,7 @@
         public string Signature => string.Join("+", Signals.Select(signal => signal.Id));
     }
     private sealed record MapPoint(double Percent, double X, double Y);
+    private sealed record MapLine(double X1, double Y1, double X2, double Y2);
     private sealed record MapSegment(MapPoint A, MapPoint B, string Color);
     private sealed record StripSegment(double X1, double X2, string Color);
     private sealed record LapGroup(string Label, IReadOnlyList<AnalysisLapTrace> Traces, AnalysisRun? Run);

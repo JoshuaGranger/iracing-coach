@@ -20,7 +20,7 @@ public sealed record TuningFeedbackDraft(
 
 public sealed class CompanionState : IDisposable
 {
-    private const int UiAnalysisCacheSchemaVersion = 6;
+    private const int UiAnalysisCacheSchemaVersion = 7;
     private const string AppVersion = "0.14.2";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
@@ -1134,6 +1134,7 @@ public sealed class CompanionState : IDisposable
         var defaults = new CompanionSettings();
         Settings.IRacingRoot = defaults.IRacingRoot;
         Settings.IRacingInstallRoot = defaults.IRacingInstallRoot;
+        Settings.ThemeColor = ThemeColors.DefaultId;
         Settings.LaunchAtSignIn = false;
         Settings.UseReducedMotion = false;
         Settings.DiagnosticIncludeConfounded = false;
@@ -1156,6 +1157,14 @@ public sealed class CompanionState : IDisposable
         Settings.LiveMonitor.GlobalHotkey = liveDefaults.GlobalHotkey;
         LiveMonitorVisibilityRequested?.Invoke(false, false);
         SettingsMessage = "App preferences were restored. Protected account connections and racing history were kept.";
+        RaiseChanged();
+    }
+
+    public void SetThemeColor(string colorId)
+    {
+        var normalized = ThemeColors.Normalize(colorId);
+        if (string.Equals(Settings.ThemeColor, normalized, StringComparison.Ordinal)) return;
+        Settings.ThemeColor = normalized;
         RaiseChanged();
     }
 

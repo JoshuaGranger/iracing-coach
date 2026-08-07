@@ -653,6 +653,7 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertIn("not per-lap tread wear", traces["tire_stress"]["definition"])
         self.assertEqual(traces["sector_start_pcts"], [0.0, 0.333333, 0.666667])
         self.assertIsNotNone(traces["traces"][0]["fuel_used_gal"])
+
         conditions = traces["traces"][0]["conditions"]
         self.assertEqual(conditions["sky"], "Partly cloudy")
         self.assertAlmostEqual(conditions["track_temperature_f"], 104.4, places=1)
@@ -681,6 +682,24 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertGreaterEqual(len(grades["categories"]), 2)
         self.assertTrue(all(item["explanation"] and item["improvement"] for item in grades["categories"]))
         self.assertTrue(any("capped below A+" in item.get("limitations", "") for item in grades["categories"] if item["key"] == "pace"))
+
+    def test_tire_temperature_respects_source_unit(self) -> None:
+        telemetry = synthetic_telemetry()
+        telemetry["channels"]["LFtempCL"] = [212.0] * len(
+            telemetry["channels"]["LFtempCL"]
+        )
+        for variable in telemetry["variables"]:
+            if variable["name"] == "LFtempCL":
+                variable["unit"] = "F"
+
+        analysis = analyze_telemetry(telemetry, source_paths=["synthetic.ibt"])
+
+        self.assertEqual(
+            analysis["analysis_profile_version"],
+            "post-race-damage-repair-corner-phase-v9",
+        )
+        observed = analysis["runs"][0]["tire_observation"]["tires"]["LF"]
+        self.assertEqual(observed["carcass_temperature_f"]["CL"], 212.0)
 
     def test_race_grades_exclude_damage_confounded_run_slopes(self) -> None:
         laps = [

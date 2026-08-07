@@ -12,9 +12,11 @@
         <SolidColorBrush x:Key="MonitorSurface2Brush" Color="#20292A"/>
         <SolidColorBrush x:Key="MonitorSurfaceHoverBrush" Color="#293536"/>
         <SolidColorBrush x:Key="MonitorBorderBrush" Color="#344345"/>
+        <SolidColorBrush x:Key="MonitorAccentBrush" Color="#65D0B6"/>
+        <SolidColorBrush x:Key="MonitorAccentFillBrush" Color="#287565"/>
+        <SolidColorBrush x:Key="MonitorAccentSubtleBrush" Color="#17302C"/>
+        <SolidColorBrush x:Key="MonitorFocusBrush" Color="#91E8D3"/>
         <SolidColorBrush x:Key="MonitorMintBrush" Color="#65D0B6"/>
-        <SolidColorBrush x:Key="MonitorMintFillBrush" Color="#275F55"/>
-        <SolidColorBrush x:Key="MonitorMintSubtleBrush" Color="#1E3633"/>
         <SolidColorBrush x:Key="MonitorAmberBrush" Color="#FFC857"/>
         <SolidColorBrush x:Key="MonitorGreenBrush" Color="#5DE59C"/>
         <SolidColorBrush x:Key="MonitorCoralBrush" Color="#FF6F7D"/>
@@ -38,9 +40,9 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{StaticResource MonitorSurfaceHoverBrush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/></Trigger>
-                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{StaticResource MonitorMintSubtleBrush}"/></Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource MonitorMintBrush}"/><Setter TargetName="Chrome" Property="BorderThickness" Value="2"/></Trigger>
-                            <Trigger Property="Tag" Value="selected"><Setter TargetName="Chrome" Property="Background" Value="{StaticResource MonitorMintSubtleBrush}"/><Setter Property="Foreground" Value="{StaticResource MonitorMintBrush}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MonitorAccentSubtleBrush}"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource MonitorFocusBrush}"/><Setter TargetName="Chrome" Property="BorderThickness" Value="2"/></Trigger>
+                            <Trigger Property="Tag" Value="selected"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MonitorAccentSubtleBrush}"/><Setter Property="Foreground" Value="{DynamicResource MonitorAccentBrush}"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -69,7 +71,7 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ComboChrome" Property="Background" Value="{StaticResource MonitorSurfaceHoverBrush}"/></Trigger>
-                                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ComboChrome" Property="BorderBrush" Value="{StaticResource MonitorMintBrush}"/></Trigger>
+                                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ComboChrome" Property="BorderBrush" Value="{DynamicResource MonitorFocusBrush}"/></Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </ToggleButton.Template>
@@ -84,7 +86,7 @@
                 </Setter.Value>
             </Setter>
         </Style>
-        <Style TargetType="ComboBoxItem"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="Padding" Value="10,7"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Style.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="{StaticResource MonitorSurfaceHoverBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{StaticResource MonitorMintSubtleBrush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/></Trigger></Style.Triggers></Style>
+        <Style TargetType="ComboBoxItem"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="Padding" Value="10,7"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Style.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="{StaticResource MonitorSurfaceHoverBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource MonitorAccentSubtleBrush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/></Trigger></Style.Triggers></Style>
         <Style TargetType="ToolTip"><Setter Property="Background" Value="{StaticResource MonitorSurface2Brush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{StaticResource MonitorBorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8,5"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToolTip"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border></ControlTemplate></Setter.Value></Setter></Style>
         <Style TargetType="Slider"><Setter Property="Margin" Value="8,2"/></Style>
         <Style x:Key="ActionButton" TargetType="Button">
@@ -123,7 +125,7 @@
                         </Grid>
                         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
                             <Button Style="{StaticResource ActionButton}" Margin="0,0,8,0" Content="Cancel" Click="CancelScaleSettings_Click"/>
-                            <Button Style="{StaticResource ActionButton}" Background="{StaticResource MonitorMintFillBrush}" BorderBrush="{StaticResource MonitorMintBrush}" Content="Done" Click="ApplyScaleSettings_Click"/>
+                            <Button Style="{StaticResource ActionButton}" Background="{DynamicResource MonitorAccentFillBrush}" BorderBrush="{DynamicResource MonitorAccentBrush}" Content="Done" Click="ApplyScaleSettings_Click"/>
                         </StackPanel>
                     </Grid>
                 </Border>

@@ -313,6 +313,11 @@ public static class RuntimeMapper
                     .Select(NullableIntegerValue).Any(number => number == runNumber))
                 .Select(episode => Number(Object(episode, "timing"), "repair_work_completed_s") ?? 0)
                 .Sum();
+            var tireConditions = new[] { "LF", "RF", "LR", "RR" }
+                .Select(corner => TireCondition(tires, corner))
+                .Where(condition => condition is not null)
+                .Cast<AnalysisTireCondition>()
+                .ToDictionary(condition => condition.Corner, StringComparer.OrdinalIgnoreCase);
             var pitStop = hasPitStop
                 ? new AnalysisPitStop(
                     serviceStart.HasValue && serviceEnd.HasValue ? Math.Max(0, serviceEnd.Value - serviceStart.Value) : null,
@@ -321,7 +326,8 @@ public static class RuntimeMapper
                     Array(pitService, "tires_changed_observed").Select(Value).Where(value => value.Length > 0).ToArray(),
                     TireWearPercent(tires, "LF"), TireWearPercent(tires, "RF"), TireWearPercent(tires, "LR"), TireWearPercent(tires, "RR"),
                     repairCompletedSeconds > .005 ? repairCompletedSeconds : null,
-                    Number(pitService, "penalty_served_s"))
+                    Number(pitService, "penalty_served_s"),
+                    tireConditions)
                 : null;
             return new AnalysisRun(
                 runNumber, Array(run, "lap_numbers").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray(),
@@ -586,6 +592,44 @@ public static class RuntimeMapper
         var remaining = Number(Object(tires, corner), "average_remaining_percent");
         return remaining.HasValue ? Math.Clamp(100d - remaining.Value, 0d, 100d) : null;
     }
+
+    private static AnalysisTireCondition? TireCondition(JsonElement tires, string corner)
+    {
+        var tire = Object(tires, corner);
+        if (tire.ValueKind != JsonValueKind.Object) return null;
+        var pressure = Object(tire, "pressure");
+        double? averageWear = Number(tire, "average_remaining_percent") is { } averageRemaining
+            ? Math.Clamp(100d - averageRemaining, 0d, 100d)
+            : null;
+        var wear = TireBands(Object(tire, "remaining_percent"), corner, string.Empty, remaining =>
+            remaining.HasValue ? Math.Clamp(100d - remaining.Value, 0d, 100d) : null);
+        var carcass = TireBands(Object(tire, "carcass_temperature_f"), corner, "C", value => value);
+        var surface = TireBands(Object(tire, "surface_temperature_f"), corner, string.Empty, value => value);
+        var pressurePsi = Number(pressure, "psi");
+        if (!averageWear.HasValue && !HasValue(wear) && !HasValue(carcass) && !HasValue(surface) && !pressurePsi.HasValue) return null;
+        return new AnalysisTireCondition(
+            corner,
+            averageWear,
+            wear,
+            carcass,
+            surface,
+            pressurePsi,
+            Humanize(Text(pressure, "kind")) ?? string.Empty);
+    }
+
+    private static AnalysisTireBands TireBands(JsonElement values, string corner, string prefix, Func<double?, double?> convert)
+    {
+        var leftSide = corner.StartsWith('L');
+        var outerKey = prefix + (leftSide ? "L" : "R");
+        var innerKey = prefix + (leftSide ? "R" : "L");
+        return new AnalysisTireBands(
+            convert(Number(values, outerKey)),
+            convert(Number(values, prefix + "M")),
+            convert(Number(values, innerKey)));
+    }
+
+    private static bool HasValue(AnalysisTireBands values) =>
+        values.Outer.HasValue || values.Middle.HasValue || values.Inner.HasValue;
 
     private static JsonElement Object(JsonElement element, string property) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Object

@@ -44,7 +44,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-damage-repair-corner-phase-v8"
+ANALYSIS_PROFILE_VERSION = "post-race-damage-repair-corner-phase-v9"
 ANALYZER_SOURCE_FILES = ("analysis_engine.py", "groove_analysis.py", "ibt_reader.py")
 RACE_GRADE_RUBRIC_VERSION = "race-execution-v2"
 RACE_GRADE_CATEGORY_WEIGHTS = {
@@ -2656,16 +2656,26 @@ def _tire_observation(table: TelemetryTable, index: int) -> dict[str, Any] | Non
                 measured_wear_points += 1
         temps: dict[str, float] = {}
         for position in ("CL", "CM", "CR"):
-            channel = channels.get(f"{tire}_{position}_temp")
+            channel_name, channel = table.resolve(
+                f"{tire}temp{position}", f"{tire}Temp{position}",
+                f"{tire}tireTemp{position}", f"{tire}TireTemp{position}",
+                default=None,
+            )
             value = _finite(channel[index]) if channel and index < len(channel) else None
             if value is not None:
-                temps[position] = round(value * 9.0 / 5.0 + 32.0, 1)
+                temps[position] = round(
+                    _convert_setup_value(value, "temperature", table.unit(channel_name)), 1
+                )
         surface_temps: dict[str, float] = {}
         for position in POSITIONS:
-            channel = channels.get(f"{tire}_{position}_surface_temp")
+            channel_name, channel = table.resolve(
+                *_tire_temperature_aliases(tire, position), default=None
+            )
             value = _finite(channel[index]) if channel and index < len(channel) else None
             if value is not None:
-                surface_temps[position] = round(value * 9.0 / 5.0 + 32.0, 1)
+                surface_temps[position] = round(
+                    _convert_setup_value(value, "temperature", table.unit(channel_name)), 1
+                )
         pressure_kind: str | None = None
         pressure_name, pressure_channel = table.resolve(
             *_tire_pressure_aliases(tire), default=None

@@ -249,6 +249,45 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public void AnalysisMapper_MapsMeasuredPitTireBandsIntoDriverFacingOuterMiddleInnerOrder()
+    {
+        using var response = JsonDocument.Parse("""
+        {"selection":{"sim_session_type":"Race"},"analysis_view":{"schema_version":1,
+          "identity":{"event_type":"Race"},"race_summary":{"recorded_laps":1},"laps":[],
+          "runs":[{"run_number":1,"lap_numbers":[1],"green_laps":1,"caution_laps":0,"ended_with_pit_stop":true,
+            "pit_service":{"start_time":100,"end_time":112,"tires_changed_observed":["LF","RF"]},
+            "tire_observation":{"tires":{
+              "LF":{"average_remaining_percent":90,"remaining_percent":{"L":91,"M":90,"R":89},"carcass_temperature_f":{"CL":180,"CM":185,"CR":190},"surface_temperature_f":{"L":175,"M":181,"R":188},"pressure":{"kind":"live","psi":28.4}},
+              "RF":{"average_remaining_percent":88,"remaining_percent":{"L":85,"M":88,"R":91},"carcass_temperature_f":{"CL":195,"CM":190,"CR":182},"surface_temperature_f":{"L":198,"M":191,"R":184},"pressure":{"kind":"cold","psi":25.2}}
+            }}}],
+          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{"pit_assessments":[]},"damage_repair":{"episodes":[]},"setup_telemetry":{},"data_quality":{}}}
+        """);
+
+        var pitStop = RuntimeMapper.Analysis(response.RootElement).Runs.Single().PitStop!;
+        Assert.AreEqual(12d, pitStop.ServiceSeconds);
+        Assert.AreEqual(10d, pitStop.LeftFrontTireWearPercent);
+        Assert.AreEqual(12d, pitStop.RightFrontTireWearPercent);
+        Assert.IsNotNull(pitStop.TireConditions);
+
+        var leftFront = pitStop.TireConditions["LF"];
+        Assert.AreEqual(9d, leftFront.WearPercent.Outer);
+        Assert.AreEqual(10d, leftFront.WearPercent.Middle);
+        Assert.AreEqual(11d, leftFront.WearPercent.Inner);
+        Assert.AreEqual(180d, leftFront.CarcassTemperatureF.Outer);
+        Assert.AreEqual(190d, leftFront.CarcassTemperatureF.Inner);
+        Assert.AreEqual(28.4d, leftFront.PressurePsi);
+        Assert.AreEqual("Live", leftFront.PressureKind);
+
+        var rightFront = pitStop.TireConditions["RF"];
+        Assert.AreEqual(9d, rightFront.WearPercent.Outer, "The outside of a right-side tire is its recorded R band.");
+        Assert.AreEqual(15d, rightFront.WearPercent.Inner, "The inside of a right-side tire is its recorded L band.");
+        Assert.AreEqual(182d, rightFront.CarcassTemperatureF.Outer);
+        Assert.AreEqual(195d, rightFront.CarcassTemperatureF.Inner);
+        Assert.AreEqual("Cold", rightFront.PressureKind);
+    }
+
+    [TestMethod]
     public void AnalysisMapper_KentuckyNullShape_MapsOptionalValuesWithoutInventingZeroes()
     {
         using var response = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "analysis-nullable-kentucky-shape.json")));
@@ -678,12 +717,12 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
-    public async Task HomeRefresh_RegeneratesSchemaFourRaceSummaryCache()
+    public async Task HomeRefresh_RegeneratesSchemaSixRaceSummaryCacheAfterTireTemperatureCorrection()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache-upgrade", Guid.NewGuid().ToString("N"));
         var analysis = HomeAnalysisResponse();
         const string selector = "subsession:9001:1";
-        WriteUiAnalysisCache(root, selector, analysis, schemaVersion: 4);
+        WriteUiAnalysisCache(root, selector, analysis, schemaVersion: 6);
         var backend = new FakeBackend(
             dashboard: DashboardWithFinalizedRaces(1),
             analysis: analysis);
@@ -697,8 +736,8 @@ public sealed class CoordinatorTests
 
         var cachePath = UiAnalysisCachePath(root, selector);
         using var regenerated = JsonDocument.Parse(File.ReadAllText(cachePath));
-        Assert.AreEqual(6, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-4 cache predates derived slip telemetry and must be regenerated exactly once.");
+        Assert.AreEqual(7, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-6 cache predates source-unit-aware tire temperatures and must be regenerated exactly once.");
         Assert.IsEmpty(state.Jobs, "Cache migration remains quiet background maintenance.");
     }
 
@@ -1080,6 +1119,7 @@ public sealed class CoordinatorTests
             CoachHome = directory,
             IRacingRoot = @"C:\Local\iRacing",
             Garage61ApiKey = "portable-test-key",
+            ThemeColor = "coral",
             LaunchAtSignIn = true,
             UseReducedMotion = true,
             LiveMonitor = new LiveMonitorLayout
@@ -1117,6 +1157,7 @@ public sealed class CoordinatorTests
         Assert.IsTrue(File.Exists(path + ".machine-local.json"));
         Assert.IsTrue(actual.LaunchAtSignIn);
         Assert.IsTrue(actual.UseReducedMotion);
+        Assert.AreEqual("coral", actual.ThemeColor);
         Assert.AreEqual("layout-personal", actual.LiveMonitor.ActiveLayoutId);
         Assert.IsFalse(actual.LiveMonitor.IsLocked);
         Assert.AreEqual("Personal Race", actual.LiveMonitor.UserLayouts.Single(layout => layout.Id == "layout-personal").Name);
@@ -1945,7 +1986,7 @@ public sealed class CoordinatorTests
         }).ToArray()
     });
 
-    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 6, string sessionType = "Race", string? storedSelector = null)
+    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 7, string sessionType = "Race", string? storedSelector = null)
     {
         var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
         Directory.CreateDirectory(directory);

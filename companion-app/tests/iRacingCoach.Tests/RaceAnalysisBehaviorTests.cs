@@ -305,15 +305,29 @@ public sealed class RaceAnalysisBehaviorTests
     }
 
     [TestMethod]
-    public void RaceAnalysisLapRail_DefaultsOpenAndCollapsesWithoutChangingLapSelection()
+    public void RaceAnalysisContextColumn_StacksTrackAboveLapsAndCollapsesEachPanelSmoothly()
     {
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
 
         StringAssert.Contains(telemetry, "private bool LapRailCollapsed { get; set; }");
+        StringAssert.Contains(telemetry, "private bool TrackPanelCollapsed { get; set; }");
         StringAssert.Contains(telemetry, "LapRailCollapsed = false;");
+        StringAssert.Contains(telemetry, "TrackPanelCollapsed = false;");
         StringAssert.Contains(telemetry, "private void ToggleLapRail() => LapRailCollapsed = !LapRailCollapsed;");
+        StringAssert.Contains(telemetry, "private void ToggleTrackPanel() => TrackPanelCollapsed = !TrackPanelCollapsed;");
+        StringAssert.Contains(telemetry, "[Parameter] public bool IsRaceWorkspace { get; set; }");
+        StringAssert.Contains(telemetry, "IsRaceWorkspace ? \"race-workstation\" : \"qualifying-workstation\"");
+        StringAssert.Contains(telemetry, "<div class=\"telemetry-context-column\">");
+        Assert.IsLessThan(
+            telemetry.IndexOf("<aside class=\"lap-rail telemetry-context-panel", StringComparison.Ordinal),
+            telemetry.IndexOf("<section class=\"track-panel telemetry-context-panel", StringComparison.Ordinal),
+            "Track position must be mounted above laps and runs in the shared context column.");
+        StringAssert.Contains(telemetry, "aria-controls=\"race-track-panel-content\"");
+        StringAssert.Contains(telemetry, "aria-expanded=\"@(!TrackPanelCollapsed)\"");
+        StringAssert.Contains(telemetry, "aria-hidden=\"@TrackPanelCollapsed\"");
+        StringAssert.Contains(telemetry, "inert=\"@(TrackPanelCollapsed ? string.Empty : null)\"");
         StringAssert.Contains(telemetry, "class=\"lap-rail-toggle\"");
         StringAssert.Contains(telemetry, "aria-controls=\"race-lap-rail-content\"");
         StringAssert.Contains(telemetry, "aria-expanded=\"@(!LapRailCollapsed)\"");
@@ -322,12 +336,63 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain("ToggleLapRail() => ResetSelection", telemetry);
         Assert.DoesNotContain("ToggleLapRail() => ClearSelection", telemetry);
 
-        StringAssert.Contains(css, ".telemetry-workstation-grid.laps-collapsed { grid-template-columns: 44px minmax(0,1fr); }");
-        StringAssert.Contains(css, ".laps-collapsed .lap-rail-content");
+        StringAssert.Contains(css, ".telemetry-context-column {");
+        StringAssert.Contains(css, "flex-direction: column;");
+        StringAssert.Contains(css, ".telemetry-context-column .track-panel.collapsed");
+        StringAssert.Contains(css, ".track-open.laps-collapsed .track-panel");
+        StringAssert.Contains(css, ".laps-open.track-collapsed .lap-rail");
+        StringAssert.Contains(css, "transition: flex-grow 250ms var(--ease),flex-basis 250ms var(--ease)");
+        StringAssert.Contains(css, ".track-panel-content {");
+        StringAssert.Contains(css, "transition: opacity 180ms var(--ease) 45ms,transform 220ms var(--ease) 25ms");
         StringAssert.Contains(css, ".lap-rail-toggle:focus-visible");
         StringAssert.Contains(css, "@container (max-width: 1060px)");
-        StringAssert.Contains(css, ".telemetry-workstation-grid.laps-collapsed { grid-template-columns: minmax(0,1fr); }");
-        StringAssert.Contains(css, ".reduced-motion .telemetry-workstation-grid");
+        StringAssert.Contains(css, ".reduced-motion .telemetry-context-panel");
+        StringAssert.Contains(css, ".telemetry-workstation-grid.qualifying-workstation {");
+        StringAssert.Contains(css, ".qualifying-workstation .track-panel { grid-column: 2; grid-row: 1; }");
+    }
+
+    [TestMethod]
+    public void RaceAnalysisTrackAndRunSummary_ShowStartFinishAndSemanticFlagCounts()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(telemetry, "class=\"track-start-line-halo\"");
+        StringAssert.Contains(telemetry, "class=\"track-start-line\"");
+        StringAssert.Contains(telemetry, "private MapLine StartFinishLine");
+        StringAssert.Contains(css, ".track-start-line {");
+        StringAssert.Contains(css, ".track-start-line-halo {");
+        StringAssert.Contains(telemetry, "<i class=\"metric-dot green\"");
+        StringAssert.Contains(telemetry, "@summaryRun.GreenLaps green");
+        StringAssert.Contains(telemetry, "<i class=\"metric-dot yellow\"");
+        StringAssert.Contains(telemetry, "@summaryRun.CautionLaps caution");
+        StringAssert.Contains(css, ".run-summary-metrics .metric-dot");
+    }
+
+    [TestMethod]
+    public void PitStopPopover_ShowsMeasuredOmiConditionWithoutInventingMissingRows()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(telemetry, "var tireConditions = PitTireConditions(activePitRun.PitStop);");
+        StringAssert.Contains(telemetry, "Measured tire condition");
+        StringAssert.Contains(telemetry, "<b>O</b><b>M</b><b>I</b>");
+        StringAssert.Contains(telemetry, "HasBandValues(tire.WearPercent)");
+        StringAssert.Contains(telemetry, "HasBandValues(tire.CarcassTemperatureF)");
+        StringAssert.Contains(telemetry, "HasBandValues(tire.SurfaceTemperatureF)");
+        StringAssert.Contains(telemetry, "@PressureKind(tire.PressureKind) pressure");
+        StringAssert.Contains(telemetry, "Recorded repair work");
+        StringAssert.Contains(telemetry, "role=\"dialog\"");
+        StringAssert.Contains(telemetry, "aria-controls=\"@PitPopoverId(trace.Lap, direction)\"");
+        StringAssert.Contains(telemetry, "@onfocus=\"() => ShowPitPopoverFromFocus(trace.Lap, direction)\"");
+        StringAssert.Contains(telemetry, "private async Task SchedulePitPopoverHide()");
+        StringAssert.Contains(css, ".pit-tire-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr));");
+        StringAssert.Contains(css, ".pit-band-row {");
+        StringAssert.Contains(css, "pointer-events: auto;");
+        Assert.DoesNotContain("Hot pressure", telemetry);
     }
 
     [TestMethod]
@@ -377,8 +442,8 @@ public sealed class RaceAnalysisBehaviorTests
 
         StringAssert.Contains(mainWindow, "MinWidth=\"900\"");
         StringAssert.Contains(css, "@container (max-width: 1060px)");
-        StringAssert.Contains(css, ".telemetry-workstation-grid { width: 100%; min-width: 0; grid-template-columns: minmax(0,1fr); }");
-        StringAssert.Contains(css, ".telemetry-grid { min-width: 0; grid-template-columns: minmax(180px,30%) minmax(400px,1fr); }");
+        StringAssert.Contains(css, ".telemetry-workstation-grid { grid-template-columns: minmax(410px,40%) minmax(0,1fr); }");
+        StringAssert.Contains(css, ".telemetry-grid { grid-template-columns: minmax(0,1fr); }");
         StringAssert.Contains(css, "@container (max-width: 600px)");
         Assert.DoesNotContain("grid-template-columns: minmax(280px,38%)", css);
 

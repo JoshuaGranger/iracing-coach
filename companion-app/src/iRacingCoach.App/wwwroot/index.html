@@ -42,6 +42,12 @@
       viewportSize: function () {
         return [window.innerWidth || 0, window.innerHeight || 0];
       },
+      activeElementRect: function () {
+        const element = document.activeElement;
+        if (!element || !element.getBoundingClientRect) return [];
+        const bounds = element.getBoundingClientRect();
+        return [bounds.left || 0, bounds.top || 0, bounds.right || 0, bounds.bottom || 0];
+      },
       elementSize: function (element) {
         if (!element) return [0, 0];
         const bounds = element.getBoundingClientRect();

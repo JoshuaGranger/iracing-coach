@@ -39,7 +39,7 @@ The schema numbers in the portable tree are independent contracts and MUST NOT b
 
 - The top-level `Documents\iRacing Coach\archive-manifest.json` is owned by the C# `DurableArchiveService` and remains durable-archive manifest schema **1**. Its compatibility and migration journal protect the portable folder as a whole.
 - Portable application settings remain settings schema **4**.
-- The coordinator's portable `ui-analysis-cache` entries use UI cache schema **6**, including exact selector and phase validation.
+- The coordinator's portable `ui-analysis-cache` entries use UI cache schema **7**, including exact selector and phase validation. Schema 7 invalidates responses produced before tire temperatures respected each recorded channel's source unit.
 - The deterministic Python backend uses archive/index/cache schema **2** for its cache manifests and history/index migration. Schema 2 adds durable event-phase fields and concurrent-safe SQLite migration; it does not change the top-level archive manifest to schema 2.
 
 An implementation or support report must name the contract before naming its version. Saying only "archive schema 2" is ambiguous and would incorrectly imply that the top-level portable manifest changed.

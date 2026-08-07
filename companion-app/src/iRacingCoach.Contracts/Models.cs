@@ -278,6 +278,20 @@ public static class AnalysisEligibility
         flagState?.Contains("caution", StringComparison.OrdinalIgnoreCase) == true;
 }
 
+public sealed record AnalysisTireBands(
+    double? Outer,
+    double? Middle,
+    double? Inner);
+
+public sealed record AnalysisTireCondition(
+    string Corner,
+    double? AverageWearPercent,
+    AnalysisTireBands WearPercent,
+    AnalysisTireBands CarcassTemperatureF,
+    AnalysisTireBands SurfaceTemperatureF,
+    double? PressurePsi,
+    string PressureKind);
+
 public sealed record AnalysisPitStop(
     double? ServiceSeconds,
     double? FuelAddedGallons,
@@ -288,7 +302,8 @@ public sealed record AnalysisPitStop(
     double? LeftRearTireWearPercent,
     double? RightRearTireWearPercent,
     double? DamageRepairedSeconds = null,
-    double? PenaltyServedSeconds = null);
+    double? PenaltyServedSeconds = null,
+    IReadOnlyDictionary<string, AnalysisTireCondition>? TireConditions = null);
 
 public sealed record AnalysisRun(
     int Number,
@@ -411,6 +426,7 @@ public sealed class CompanionSettings
     public string PythonPath => ResolvePackagedExecutable("python", "python.exe");
     public bool LaunchAtSignIn { get; set; }
     public bool UseReducedMotion { get; set; }
+    public string ThemeColor { get; set; } = "mint";
     public bool DiagnosticIncludeConfounded { get; set; }
     public LiveMonitorLayout LiveMonitor { get; set; } = new();
     public AnalysisTraceLayout RaceAnalysisTraces { get; set; } = new();
