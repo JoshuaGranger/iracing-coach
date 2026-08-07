@@ -4,18 +4,18 @@ Date: 2026-08-07
 
 ## Artifact identity
 
-- Source commit: `PENDING_FINAL_SOURCE_COMMIT`
+- Source commit: `43eb62b050961483a2603b0ac2b08b7a84cd8dd0`
 - Executable: `src/iRacingCoach.App/bin/Release/net10.0-windows10.0.17763.0/iRacing Coach.exe`
 - Installer: `artifacts/dist/v0.14.0/iRacingCoach-0.14.0-Setup.exe`
-- Installer bytes: `PENDING_FINAL_INSTALLER_BYTES`
-- Installer SHA-256: `PENDING_FINAL_INSTALLER_SHA256`
+- Installer bytes: `498952232`
+- Installer SHA-256: `df41a55781c41b932a3ea849107e87fab56cd7b903481bf3bd8cb59377d50621`
 - Portable package: `artifacts/dist/v0.14.0/iRacingCoach-0.14.0-Portable-win-x64.zip`
-- Portable bytes: `PENDING_FINAL_PORTABLE_BYTES`
-- Portable SHA-256: `PENDING_FINAL_PORTABLE_SHA256`
-- Payload and embedded-runtime identity: `PENDING_FINAL_PAYLOAD_IDENTITY`
-- Installer product revision: `PENDING_FINAL_PRODUCT_REVISION`
+- Portable bytes: `382959531`
+- Portable SHA-256: `9ad2c85cf92d788c1f3acc8091a75c70deaef807a4d57244774d22ffa17250e2`
+- Payload and embedded-runtime identity: `9278 files`; ZIP contains the same 9278 file entries plus 24 directory entries; one root `iRacing Coach.exe` and one `coach-engine/coach-engine-manifest.json`; manifest app version `0.14.0`; embedded Codex runtime `0.146.0-alpha.9.2`; embedded runtime SHA-256 `ecd7a3eaff5e42723dbba03b5c91514b3986b5db5cbca8f34619620b5356f31f` matches the manifest
+- Installer product revision: `0.14.0+43eb62b050961483a2603b0ac2b08b7a84cd8dd0`
 
-These placeholders are release blockers. They must be filled from the final measured package and must not reuse values from 0.13.0.
+The final package was measured from the exact source commit above. Both SHA-256 sidecars match; the installer file version is `0.14.0.0`; the portable ZIP has no unsafe paths; and the payload scan found no `.ibt`, `.log`, private settings, credentials, authentication state, or portable archive-state files.
 
 ## Release focus
 
@@ -69,8 +69,9 @@ These numbers belong to separate schema namespaces. Backend schema 2 does not me
 - Release application build: zero warnings, zero errors.
 - Synthetic high-rate reader: approximately 170 frames captured in approximately 810 ms from a synthetic 240 Hz source, demonstrating removal of the former approximately 125 Hz structural polling ceiling.
 - Fresh source-tree Release UI walkthrough covered Home, Race browser, automatic Race/Qualifying telemetry loading, Race Telemetry/Review, trace configuration/fullscreen, Live Telemetry customization, native popout, Settings, and maximized/normal layouts.
+- The packaged payload executable launched successfully and rendered Home and the enriched Race Analysis catalog from the same local recordings.
 
-The synthetic cadence result is not a real iRacing SDK measurement and is not acceptance of 244 Hz presentation. Final package hashes, payload inspection, and source revision remain pending above.
+The synthetic cadence result is not a real iRacing SDK measurement and is not acceptance of 244 Hz presentation. Package identity and static payload hygiene are recorded above; installer lifecycle and real-session acceptance remain separate.
 
 ## Known limits and acceptance pending
 

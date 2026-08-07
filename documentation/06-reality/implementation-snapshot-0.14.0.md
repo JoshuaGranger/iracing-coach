@@ -66,20 +66,22 @@ The executable identity matters. Screenshots or observations from an installed o
 | Release application build | 0 warnings, 0 errors | Fresh source-tree Release executable, not yet the final packaged artifact |
 | Synthetic high-rate reader check | Approximately 170 frames captured in approximately 810 ms from a synthetic 240 Hz source | Demonstrates that the reader is not structurally capped near the former 125 Hz loop; not iRacing, display, latency, or 244 Hz acceptance |
 | Fresh Release UI walkthrough | Home, Race browser, automatic Race/Qualifying telemetry loading, Race Telemetry/Review, trace Toolbox/fullscreen, Live Telemetry editor, native popout, Settings disclosures, maximized and normal layouts exercised | Development executable and available local recordings; not exhaustive DPI/accessibility or packaged-app acceptance |
+| Packaged-payload smoke | Exact staged `iRacing Coach.exe` launched and rendered Home plus the enriched Race Analysis catalog | Startup/navigation evidence for the packaged payload; not an installer lifecycle, tray Exit, or real-session test |
 
 ## Final artifact record
 
-These values are deliberately unresolved until the final `BuildRelease.ps1` output is measured. Do not replace them with estimates or reuse 0.13.0 hashes.
+The following values were measured from the final `BuildRelease.ps1` output built from the named source commit.
 
-- Source commit: `PENDING_FINAL_SOURCE_COMMIT`
+- Source commit: `43eb62b050961483a2603b0ac2b08b7a84cd8dd0`
 - Installer: `companion-app/artifacts/dist/v0.14.0/iRacingCoach-0.14.0-Setup.exe`
-- Installer bytes: `PENDING_FINAL_INSTALLER_BYTES`
-- Installer SHA-256: `PENDING_FINAL_INSTALLER_SHA256`
+- Installer bytes: `498952232`
+- Installer SHA-256: `df41a55781c41b932a3ea849107e87fab56cd7b903481bf3bd8cb59377d50621`
 - Portable package: `companion-app/artifacts/dist/v0.14.0/iRacingCoach-0.14.0-Portable-win-x64.zip`
-- Portable bytes: `PENDING_FINAL_PORTABLE_BYTES`
-- Portable SHA-256: `PENDING_FINAL_PORTABLE_SHA256`
-- Packaged payload count and manifest/runtime identity: `PENDING_FINAL_PAYLOAD_IDENTITY`
-- Installer product revision: `PENDING_FINAL_PRODUCT_REVISION`
+- Portable bytes: `382959531`
+- Portable SHA-256: `9ad2c85cf92d788c1f3acc8091a75c70deaef807a4d57244774d22ffa17250e2`
+- Packaged payload count and manifest/runtime identity: `9278 files`; ZIP has 9278 file entries and 24 directory entries; one root app executable; one coach-engine manifest; manifest app `0.14.0`; runtime `0.146.0-alpha.9.2`; runtime SHA-256 `ecd7a3eaff5e42723dbba03b5c91514b3986b5db5cbca8f34619620b5356f31f` matches the embedded signed Codex executable
+- Installer product revision: `0.14.0+43eb62b050961483a2603b0ac2b08b7a84cd8dd0`
+- Static package hygiene: both sidecars match; installer file version is `0.14.0.0`; ZIP has no unsafe paths; payload contains no `.ibt`, `.log`, private settings, credentials, authentication state, or portable archive-state files
 
 ## Open acceptance boundaries
 
