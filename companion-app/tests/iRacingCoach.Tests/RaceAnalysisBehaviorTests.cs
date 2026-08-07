@@ -235,7 +235,14 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain("@ondragover", telemetry);
         Assert.DoesNotContain("RowSubtitle(panel)", telemetry);
         StringAssert.Contains(telemetry, "SignalRange(signal)");
-        StringAssert.Contains(telemetry, "Each line uses its own vertical scale");
+        StringAssert.Contains(telemetry, "RowHelp(panel)");
+        StringAssert.Contains(telemetry, "rendered.Length == 1");
+        StringAssert.Contains(telemetry, "$\"{item.Signal.Name} ({item.Signal.Unit}).\"");
+        StringAssert.Contains(telemetry, "$\"Solid: {rendered[0].Signal.Name} ({rendered[0].Signal.Unit}).\"");
+        StringAssert.Contains(telemetry, "$\"Dashed: {rendered[1].Signal.Name} ({rendered[1].Signal.Unit}).\"");
+        StringAssert.Contains(telemetry, "parts.Add(\"Each line uses its own vertical scale.\");");
+        StringAssert.Contains(telemetry, "return string.Join('\\n', parts);");
+        Assert.DoesNotContain(". Each line uses its own vertical scale.\");", telemetry);
         StringAssert.Contains(telemetry, "Not recorded for this race");
         StringAssert.Contains(telemetry, "BuildCursorInteropConfiguration");
         StringAssert.Contains(telemetry, "ToString(\"+0.000;-0.000;0.000\")");
@@ -275,6 +282,7 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(css, ".trace-row-label-copy > strong");
         StringAssert.Contains(css, "max-inline-size: 12ch");
         StringAssert.Contains(css, ".trace-row-unit");
+        StringAssert.Contains(css, "white-space: pre-line;");
         StringAssert.Contains(css, "user-select: none;");
         Assert.DoesNotContain(".trace-row-label-shell.selected", css);
         Assert.DoesNotContain(".trace-row-label-trigger:hover { color: var(--text-primary); background:", css);

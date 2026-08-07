@@ -1623,6 +1623,7 @@ input[type="range"] { accent-color: var(--accent); }
   box-shadow: 0 8px 24px var(--shadow);
   font-size: 12px;
   line-height: 16px;
+  white-space: pre-line;
   pointer-events: none;
   transition: opacity 120ms var(--ease),transform 120ms var(--ease),visibility 0s linear 120ms;
 }

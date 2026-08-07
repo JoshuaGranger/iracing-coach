@@ -1129,14 +1129,28 @@
         string.Join(" / ", panel.Signals.Select(signal => signal.Unit).Distinct(StringComparer.OrdinalIgnoreCase));
     private string RowHelp(TracePanelRow panel)
     {
-        var rendered = panel.Signals.Where(HasSignalData).ToArray();
+        var rendered = panel.Signals
+            .Select((signal, index) => new { Signal = signal, Index = index })
+            .Where(item => HasSignalData(item.Signal))
+            .ToArray();
         var missing = panel.Signals.Where(signal => !HasSignalData(signal)).ToArray();
         var parts = new List<string>();
-        if (rendered.Length > 0) parts.Add($"Solid: {rendered[0].Name} ({rendered[0].Unit}).");
-        if (rendered.Length > 1) parts.Add($"Dashed: {rendered[1].Name} ({rendered[1].Unit}). Each line uses its own vertical scale.");
+        if (rendered.Length == 1)
+        {
+            var item = rendered[0];
+            parts.Add(item.Index == 0
+                ? $"{item.Signal.Name} ({item.Signal.Unit})."
+                : $"Dashed: {item.Signal.Name} ({item.Signal.Unit}).");
+        }
+        else if (rendered.Length > 1)
+        {
+            parts.Add($"Solid: {rendered[0].Signal.Name} ({rendered[0].Signal.Unit}).");
+            parts.Add($"Dashed: {rendered[1].Signal.Name} ({rendered[1].Signal.Unit}).");
+            parts.Add("Each line uses its own vertical scale.");
+        }
         if (missing.Length > 0) parts.Add($"Not recorded for the selected laps: {string.Join(", ", missing.Select(signal => signal.Name))}.");
         if (parts.Count == 0) parts.Add("No values were recorded for the selected laps.");
-        return string.Join(' ', parts);
+        return string.Join('\n', parts);
     }
     private (double Min, double Max) SignalRange(AnalysisTraceSignalDefinition signal)
     {
