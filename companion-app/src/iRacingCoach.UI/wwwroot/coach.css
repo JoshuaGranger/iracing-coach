@@ -1403,3 +1403,246 @@ input[type="range"] { accent-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .analysis-trace-toolbox { animation: none; }
 }
+
+/* Race-analysis trace editor: the chart is the one-column canvas and the
+   toolbox follows the Live Telemetry pointer/side-drawer interaction model. */
+.analysis-trace-studio { --analysis-trace-toolbox-width: 380px; }
+.analysis-trace-studio .analysis-trace-toolbox-backdrop {
+  position: fixed;
+  z-index: 1249;
+  inset: 56px 0 0 var(--nav-width);
+  opacity: 0;
+  visibility: hidden;
+  background: color-mix(in srgb,var(--app) 18%,transparent);
+  pointer-events: none;
+  transition: opacity 220ms var(--ease),visibility 0s linear 220ms;
+}
+.rail-collapsed .analysis-trace-studio .analysis-trace-toolbox-backdrop { left: var(--nav-collapsed); }
+.analysis-trace-studio .analysis-trace-toolbox-backdrop.open { opacity: 1; visibility: visible; transition-delay: 0s; }
+.analysis-trace-studio .analysis-trace-toolbox {
+  position: fixed;
+  z-index: 1250;
+  inset: 56px 0 0 auto;
+  width: var(--analysis-trace-toolbox-width);
+  max-height: none;
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr) auto;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  color: var(--text-secondary);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(calc(100% + 18px));
+  background: color-mix(in srgb,var(--surface-1) 94%,transparent);
+  border: 0;
+  border-left: 1px solid var(--border-strong);
+  border-radius: 0;
+  box-shadow: -12px 0 30px transparent;
+  backdrop-filter: blur(18px) saturate(118%);
+  pointer-events: none;
+  animation: none;
+  transition: opacity 220ms var(--ease),transform 260ms var(--ease),box-shadow 260ms var(--ease),visibility 0s linear 260ms;
+}
+.analysis-trace-studio .analysis-trace-toolbox.open {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  box-shadow: -12px 0 34px var(--shadow);
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+.analysis-trace-studio .trace-toolbox-heading {
+  min-height: 82px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 14px 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.analysis-trace-studio .trace-toolbox-heading > div { min-width: 0; display: block; }
+.analysis-trace-studio .trace-toolbox-heading h2 { margin: 0; color: var(--text-primary); font-size: 18px; line-height: 23px; }
+.analysis-trace-studio .trace-toolbox-heading p { margin: 2px 0 0; color: var(--text-muted); font-size: 12px; }
+.analysis-trace-studio .trace-toolbox-heading .eyebrow { display: block; margin-bottom: 1px; }
+.analysis-trace-studio .analysis-trace-toolbox-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 12px;
+  scrollbar-color: var(--border-strong) var(--surface-1);
+}
+.analysis-trace-studio .analysis-trace-toolbox-body > section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+.trace-layout-reset {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 9px;
+  color: var(--text-secondary);
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.trace-layout-reset:hover { color: var(--text-primary); background: var(--surface-hover); border-color: var(--border-strong); }
+.trace-selected-signals { display: grid; gap: 5px; }
+.trace-selected-signal {
+  min-width: 0;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 28px minmax(0,1fr) 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+}
+.trace-selected-signal > i { width: 20px; height: 0; justify-self: center; border-top: 2px solid var(--accent); }
+.trace-selected-signal > i.dashed { border-top-style: dashed; opacity: .78; }
+.trace-selected-signal > span { min-width: 0; display: grid; }
+.trace-selected-signal strong,.trace-selected-signal small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trace-selected-signal strong { color: var(--text-primary); font-size: 12px; }
+.trace-selected-signal small { color: var(--text-muted); font-size: var(--font-size-min); }
+.trace-selected-signal button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.trace-selected-signal button:hover { color: var(--danger); background: color-mix(in srgb,var(--danger) 8%,var(--surface-hover)); border-color: color-mix(in srgb,var(--danger) 30%,var(--border-subtle)); }
+.analysis-trace-catalog { flex: 1; align-content: start; }
+.analysis-trace-metric-card { touch-action: none; }
+.analysis-trace-metric-card.unavailable { opacity: .68; }
+.analysis-trace-metric-card.is-gesture-source,.trace-row-label-trigger.is-gesture-source { opacity: .28; }
+.trace-toolbox-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  padding: 10px 13px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-min);
+}
+.trace-toolbox-footer span { white-space: nowrap; }
+.trace-toolbox-footer kbd { min-width: 22px; display: inline-grid; place-items: center; padding: 1px 4px; color: var(--text-secondary); background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 3px; font: var(--font-size-min) var(--metric-font,Consolas,monospace); }
+
+.trace-chart-frame { position: relative; width: 100%; min-width: 0; min-height: 0; overflow: visible; }
+.trace-chart-frame > .trace-chart { position: absolute; inset: 0; width: 100%; max-width: none; height: 100%; }
+.trace-label-column {
+  position: absolute;
+  z-index: 4;
+  top: var(--trace-label-top);
+  bottom: var(--trace-label-bottom);
+  left: 8px;
+  width: 112px;
+  display: grid;
+  grid-template-rows: repeat(var(--trace-row-count),minmax(0,1fr));
+  pointer-events: none;
+}
+.trace-row-label-shell { position: relative; min-width: 0; min-height: 0; align-self: stretch; }
+.trace-row-label-trigger {
+  width: 100%;
+  max-height: calc(100% - 8px);
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  overflow: visible;
+  padding: 4px 2px;
+  color: var(--text-secondary);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: help;
+  pointer-events: auto;
+}
+.analysis-trace-studio.editing .trace-row-label-trigger { cursor: grab; touch-action: none; }
+.analysis-trace-studio.editing .trace-row-label-trigger:hover { color: var(--text-primary); background: color-mix(in srgb,var(--surface-hover) 72%,transparent); border-color: var(--border-subtle); }
+.analysis-trace-studio.editing .trace-row-label-shell.selected .trace-row-label-trigger { border-color: color-mix(in srgb,var(--focus) 62%,var(--border-subtle)); background: color-mix(in srgb,var(--accent) 8%,transparent); }
+.trace-row-label-trigger > .product-icon { flex: 0 0 auto; margin-top: 1px; color: var(--text-muted); opacity: .72; }
+.trace-row-label-copy { min-width: 0; display: block; }
+.trace-row-label-copy > strong {
+  max-inline-size: 12ch;
+  display: block;
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
+  color: currentColor;
+  font: 650 13px/15px var(--ui-font,"Segoe UI Variable Text","Segoe UI",sans-serif);
+  letter-spacing: normal;
+}
+.trace-row-unit {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font: 400 var(--font-size-min)/14px var(--ui-font,"Segoe UI Variable Text","Segoe UI",sans-serif);
+  letter-spacing: normal;
+  white-space: normal;
+}
+.trace-row-label-tooltip {
+  position: absolute;
+  z-index: 15;
+  top: 2px;
+  left: calc(100% + 8px);
+  width: max-content;
+  max-width: min(280px,calc(100vw - 210px));
+  padding: 7px 9px;
+  color: var(--text-secondary);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-3px);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: none;
+  transition: opacity 120ms var(--ease),transform 120ms var(--ease),visibility 0s linear 120ms;
+}
+.trace-row-label-trigger:hover + .trace-row-label-tooltip,
+.trace-row-label-trigger:focus-visible + .trace-row-label-tooltip { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.trace-row-label-trigger:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.analysis-trace-gesture-active,.analysis-trace-gesture-active * { cursor: grabbing !important; user-select: none; }
+.analysis-trace-gesture-active .trace-row-label-tooltip { display: none; }
+.analysis-trace-drag-ghost {
+  min-width: 170px;
+  max-width: 280px;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+}
+.analysis-trace-drag-ghost > span { color: var(--text-muted); font: 700 12px var(--metric-font,Consolas,monospace); letter-spacing: -2px; }
+.analysis-trace-drag-ghost > strong { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.analysis-trace-drop-preview.insertion { overflow: visible; min-height: 4px; border-radius: var(--radius-pill); }
+.analysis-trace-drop-preview.insertion > span { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+.trace-panel-expanded .trace-chart-frame { flex: 1 1 auto; height: auto !important; min-height: 0; }
+.trace-panel-expanded .trace-chart-frame > .trace-chart { width: 100%; height: 100% !important; }
+
+@media (max-width: 1180px) {
+  .analysis-trace-studio { --analysis-trace-toolbox-width:min(360px,calc(100vw - 96px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .analysis-trace-studio .analysis-trace-toolbox,.analysis-trace-drop-preview,.analysis-trace-drag-ghost { animation: none !important; transition: none !important; }
+}
+.reduced-motion .analysis-trace-studio .analysis-trace-toolbox,.reduced-motion .analysis-trace-drop-preview,.reduced-motion .analysis-trace-drag-ghost { animation: none !important; transition: none !important; }

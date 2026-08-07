@@ -222,10 +222,10 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "CalculatedTireWear.Build");
         StringAssert.Contains(telemetry, "SignalPointValue(signal, trace, point)");
         StringAssert.Contains(telemetry, "SignalRange(signal)");
-        StringAssert.Contains(telemetry, "independent scales");
+        StringAssert.Contains(telemetry, "Each line uses its own vertical scale");
         StringAssert.Contains(telemetry, "trace-panel-expanded");
         StringAssert.Contains(telemetry, "View traces full screen");
-        StringAssert.Contains(telemetry, "args.Key == \"Escape\"");
+        StringAssert.Contains(telemetry, "args.Key != \"Escape\"");
         Assert.DoesNotContain("Gear / RPM", telemetry);
 
         var traceCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
@@ -325,11 +325,12 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "private const double TraceRowsHeight = 820");
         StringAssert.Contains(telemetry, "TraceRowsHeight / Math.Max(1, TraceRows.Count)");
         StringAssert.Contains(telemetry, "iracingCoach.elementSize");
-        StringAssert.Contains(telemetry, "trace-signal-library");
-        StringAssert.Contains(telemetry, "draggable=\"true\"");
-        StringAssert.Contains(telemetry, "@ondrop=\"() => DropTraceSignal");
-        StringAssert.Contains(telemetry, "Already primary");
-        Assert.DoesNotContain("Cannot pair with", telemetry);
+        StringAssert.Contains(telemetry, "analysis-trace-catalog");
+        StringAssert.Contains(telemetry, "data-analysis-drag-signal");
+        StringAssert.Contains(telemetry, "data-analysis-drag-row");
+        StringAssert.Contains(telemetry, "PlaceTraceSignal");
+        Assert.DoesNotContain("draggable=\"true\"", telemetry);
+        Assert.DoesNotContain("@ondrop", telemetry);
         Assert.DoesNotContain("Other laps", telemetry);
         Assert.DoesNotContain("lap-focus-action", telemetry);
 

@@ -159,12 +159,14 @@
                 <div class="cursor-readout"><strong data-analysis-track-percent>@((Cursor * 100).ToString("0.0"))%</strong><span data-analysis-track-summary>@CursorSummary</span></div>
             </div>
 
-            <div class="trace-panel @(TraceExpanded ? "trace-panel-expanded" : null)">
+            <div @ref="TraceStudioElement"
+                 class="trace-panel analysis-trace-studio @(TraceExpanded ? "trace-panel-expanded" : null) @(TraceToolboxOpen ? "editing toolbox-open" : "viewing toolbox-closed")"
+                 data-analysis-trace-studio>
                 <div class="panel-title trace-panel-title">
                     <strong>Aligned traces</strong>
                     <div class="trace-panel-actions">
                         <span>@Selected.Count selected · hover to compare</span>
-                        <button type="button" class="trace-toolbox-button" title="Choose trace rows" aria-label="Choose trace rows" aria-expanded="@TraceToolboxOpen" @onclick="ToggleTraceToolbox">
+                        <button type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@TraceToolboxOpen" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
                             <ProductIcon Name="settings" Size="16" />
                         </button>
                         <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@TraceExpanded" @onclick="ToggleTraceExpanded">
@@ -172,59 +174,100 @@
                         </button>
                     </div>
                 </div>
-                @if (TraceToolboxOpen)
-                {
-                    <aside class="analysis-trace-toolbox" aria-label="Trace row toolbox">
-                        <div class="trace-toolbox-heading"><div><strong>Trace rows</strong><span>@TraceRows.Count of @AnalysisTraceLayouts.MaximumRows</span></div><button type="button" class="trace-toolbox-close" aria-label="Close trace row toolbox" @onclick="ToggleTraceToolbox"><ProductIcon Name="close" Size="15" /></button></div>
-                        <div class="trace-signal-library" role="list" aria-label="Draggable telemetry signals">
-                            <span class="trace-signal-library-label">Drag a signal to a row</span>
-                            <div class="trace-signal-library-items">
-                                @foreach (var signal in AnalysisTraceLayouts.Signals)
+                <div class="analysis-trace-toolbox-backdrop @(TraceToolboxOpen ? "open" : null)" aria-hidden="true"></div>
+                <aside id="analysis-trace-toolbox"
+                       class="analysis-trace-toolbox @(TraceToolboxOpen ? "open" : null)"
+                       aria-hidden="@(!TraceToolboxOpen)"
+                       aria-label="Race analysis trace toolbox">
+                    <header class="trace-toolbox-heading">
+                        <div><span class="eyebrow">Race analysis</span><h2>Customize traces</h2><p>Drag telemetry onto a chart. Drag a chart title to reorder.</p></div>
+                        <button type="button" class="trace-toolbox-close" aria-label="Hide trace toolbox" title="Hide toolbox" @onclick="ToggleTraceToolbox"><ProductIcon Name="close" Size="17" /></button>
+                    </header>
+                    <div class="analysis-trace-toolbox-body">
+                        <section class="trace-toolbox-layout-section">
+                            <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Charts</span><strong>One-column layout</strong></div><span>@TraceRows.Count / @AnalysisTraceLayouts.MaximumRows</span></div>
+                            <button type="button" class="trace-layout-reset" title="Restore the default trace charts" @onclick="ResetTraceLayout"><ProductIcon Name="reset" Size="15" /> Reset charts</button>
+                        </section>
+                        @if (SelectedTraceRow is { } selectedRow && PanelFor(selectedRow) is { } selectedPanel)
+                        {
+                            <section class="trace-toolbox-inspector-section">
+                                <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Selected chart</span><strong>@RowLabel(selectedPanel)</strong></div><span>@selectedPanel.Signals.Count trace@(selectedPanel.Signals.Count == 1 ? string.Empty : "s")</span></div>
+                                <div class="trace-selected-signals">
+                                    @foreach (var indexedSignal in selectedPanel.Signals.Select((signal, index) => new { Signal = signal, Index = index }))
+                                    {
+                                        <div class="trace-selected-signal">
+                                            <i class="@(indexedSignal.Index == 0 ? "solid" : "dashed")" title="@(indexedSignal.Index == 0 ? "Solid trace" : "Dashed trace")" aria-hidden="true"></i>
+                                            <span><strong>@indexedSignal.Signal.Name</strong><small>@indexedSignal.Signal.Unit</small></span>
+                                            <button type="button" data-analysis-no-drag aria-label="Remove @indexedSignal.Signal.Name from this chart" title="Remove this trace" @onclick="() => RemoveTraceSignal(selectedRow.Id, indexedSignal.Signal.Id)"><ProductIcon Name="close" Size="14" /></button>
+                                        </div>
+                                    }
+                                </div>
+                                <button type="button" class="toolbox-remove-widget" data-analysis-no-drag disabled="@(TraceRows.Count <= 1)" @onclick="() => RemoveTraceRow(selectedRow.Id)"><ProductIcon Name="trash" Size="16" /> Remove chart</button>
+                            </section>
+                        }
+                        <section class="toolbox-metric-catalog analysis-trace-catalog">
+                            <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Trace library</span><strong>Add telemetry</strong></div><span>@FilteredTraceSignals.Count</span></div>
+                            <label class="toolbox-search"><span class="sr-only">Search trace telemetry</span><ProductIcon Name="search" Size="16" /><input type="search" placeholder="Search speed, pedals, load..." @bind="_traceSignalSearch" @bind:event="oninput" /></label>
+                            <div class="toolbox-metric-list" role="list" aria-label="Telemetry traces">
+                                @if (FilteredTraceSignals.Count == 0)
                                 {
-                                    <button type="button" role="listitem" draggable="true" class="trace-signal-chip @(SignalRecordedInRace(signal) ? null : "unavailable")" data-group="@signal.AccentGroup" title="@(SignalRecordedInRace(signal) ? $"Drag {signal.Name} to a primary slot or pair it with any different signal" : $"{signal.Name} was not recorded in this race; the saved row will become active when it is available")" @ondragstart="() => BeginTraceSignalDrag(signal.Id)" @ondragend="EndTraceSignalDrag">
-                                        <i aria-hidden="true"></i><span>@signal.ShortLabel</span>
-                                    </button>
+                                    <div class="toolbox-search-empty"><strong>No matching telemetry</strong><span>Try a shorter name or unit.</span></div>
+                                }
+                                @foreach (var signal in FilteredTraceSignals)
+                                {
+                                    var recorded = SignalRecordedInRace(signal);
+                                    <article class="toolbox-metric-card analysis-trace-metric-card @(!recorded ? "unavailable" : null)"
+                                             role="listitem"
+                                             data-analysis-drag-signal="@signal.Id"
+                                             data-signal-id="@signal.Id"
+                                             data-signal-name="@signal.Name"
+                                             title="@(recorded ? $"Drag {signal.Name} onto a chart" : $"{signal.Name} was not recorded in this race; the saved chart will activate when data is available")">
+                                        <span class="metric-drag-handle" aria-hidden="true"><ProductIcon Name="grip" Size="15" /></span>
+                                        <div><strong>@signal.Name</strong><small>@signal.Unit@(!recorded ? " · not recorded" : string.Empty)</small></div>
+                                        <button type="button" class="metric-add-button" data-analysis-no-drag disabled="@(TraceRows.Count >= AnalysisTraceLayouts.MaximumRows)" aria-label="Add @signal.Name as a new chart" title="Add as a new chart" @onclick="() => AddTraceSignal(signal.Id)"><ProductIcon Name="plus" Size="16" /></button>
+                                    </article>
                                 }
                             </div>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(_traceDropFeedback))
+                        </section>
+                    </div>
+                    <footer class="trace-toolbox-footer"><span>Drop between charts to add</span><span>Drop on a chart to pair</span><span><kbd>Alt</kbd> + arrow reorders</span></footer>
+                </aside>
+                <div class="trace-chart-frame" style="@TraceChartFrameStyle">
+                    <div class="trace-label-column" aria-label="Trace chart labels">
+                        @foreach (var panel in TraceRows)
                         {
-                            <div class="trace-drop-feedback @(_traceDropRejected ? "rejected" : "accepted")" role="status">@_traceDropFeedback</div>
+                            var helpId = $"trace-row-help-{panel.Preferences.Id}";
+                            <div class="trace-row-label-shell @(SelectedTraceRow?.Id == panel.Preferences.Id ? "selected" : null)"
+                                 data-analysis-row-target="label"
+                                 data-row-id="@panel.Preferences.Id"
+                                 data-row-index="@TraceLayout.Rows.FindIndex(row => row.Id == panel.Preferences.Id)"
+                                 data-row-name="@RowLabel(panel)"
+                                 data-primary-name="@panel.Signals[0].Name"
+                                 data-secondary-name="@(panel.Signals.Count > 1 ? panel.Signals[1].Name : string.Empty)">
+                                <button type="button"
+                                        class="trace-row-label-trigger"
+                                        data-analysis-drag-row="@panel.Preferences.Id"
+                                        data-row-id="@panel.Preferences.Id"
+                                        data-row-name="@RowLabel(panel)"
+                                        aria-describedby="@helpId"
+                                        aria-label="@RowHelp(panel)"
+                                        title=""
+                                        @onclick="() => SelectTraceRow(panel.Preferences.Id)"
+                                        @onkeydown="args => HandleTraceRowKeyDown(panel.Preferences.Id, args)">
+                                    @if (TraceToolboxOpen) { <ProductIcon Name="grip" Size="14" /> }
+                                    <span class="trace-row-label-copy"><strong>@RowLabel(panel)</strong><span class="trace-row-unit">@RowUnit(panel)</span></span>
+                                </button>
+                                <span id="@helpId" class="trace-row-label-tooltip" role="tooltip">@RowHelp(panel)</span>
+                            </div>
                         }
-                        <div class="trace-row-editor-list">
-                            @foreach (var indexed in TraceLayout.Rows.Select((row, index) => new { Row = row, Index = index }))
-                            {
-                                <article class="trace-row-editor" @key="indexed.Row.Id">
-                                    <span class="trace-row-number">@(indexed.Index + 1)</span>
-                                    <label class="@TraceDropTargetClass(indexed.Row, TraceDropSlot.Primary)" @ondragenter="() => EnterTraceDropTarget(indexed.Row.Id, TraceDropSlot.Primary)" @ondragover:preventDefault @ondrop="() => DropTraceSignal(indexed.Row.Id, TraceDropSlot.Primary)">
-                                        <span class="trace-drop-slot-label">Primary</span>
-                                        <span class="sr-only">Primary signal for row @(indexed.Index + 1)</span><select value="@indexed.Row.PrimarySignalId" @onchange="args => ChangePrimarySignal(indexed.Row.Id, args.Value?.ToString())">@foreach (var signal in AnalysisTraceLayouts.Signals) { <option value="@signal.Id">@SignalOption(signal)</option> }</select>
-                                        @if (IsActiveDropTarget(indexed.Row.Id, TraceDropSlot.Primary)) { <span class="trace-drop-target-status">Replace primary</span> }
-                                    </label>
-                                    <label class="@TraceDropTargetClass(indexed.Row, TraceDropSlot.Secondary)" @ondragenter="() => EnterTraceDropTarget(indexed.Row.Id, TraceDropSlot.Secondary)" @ondragover:preventDefault @ondrop="() => DropTraceSignal(indexed.Row.Id, TraceDropSlot.Secondary)">
-                                        <span class="trace-drop-slot-label">Second</span>
-                                        <span class="sr-only">Second signal for row @(indexed.Index + 1)</span><select value="@indexed.Row.SecondarySignalId" @onchange="args => ChangeSecondarySignal(indexed.Row.Id, args.Value?.ToString())"><option value="">One signal</option>@foreach (var signal in AnalysisTraceLayouts.SecondarySignalOptions(indexed.Row.PrimarySignalId)) { <option value="@signal.Id">@SignalOption(signal)</option> }</select>
-                                        @if (IsActiveDropTarget(indexed.Row.Id, TraceDropSlot.Secondary)) { <span class="trace-drop-target-status">@(CanUseAsSecondSignal(indexed.Row) ? "Add second signal" : "Already primary")</span> }
-                                    </label>
-                                    <span class="trace-row-editor-actions">
-                                        <button type="button" disabled="@(indexed.Index == 0)" aria-label="Move row @(indexed.Index + 1) up" @onclick="() => MoveTraceRow(indexed.Row.Id, -1)">Up</button>
-                                        <button type="button" disabled="@(indexed.Index == TraceLayout.Rows.Count - 1)" aria-label="Move row @(indexed.Index + 1) down" @onclick="() => MoveTraceRow(indexed.Row.Id, 1)">Down</button>
-                                        <button type="button" disabled="@(TraceLayout.Rows.Count <= 1)" aria-label="Remove row @(indexed.Index + 1)" @onclick="() => RemoveTraceRow(indexed.Row.Id)"><ProductIcon Name="trash" Size="14" /></button>
-                                    </span>
-                                </article>
-                            }
-                        </div>
-                        <button type="button" class="trace-row-add" disabled="@(TraceLayout.Rows.Count >= AnalysisTraceLayouts.MaximumRows)" @onclick="AddTraceRow"><ProductIcon Name="plus" Size="14" /> Add row</button>
-                    </aside>
-                }
-                <svg @ref="ChartElement" class="trace-chart configurable-trace-chart" viewBox="@($"0 0 {F(_chartWidth)} {F(ChartHeight)}")" style="height:@($"{F(ChartHeight)}px")" preserveAspectRatio="none" role="img" aria-label="Configurable synchronized telemetry traces">
+                    </div>
+                <svg @ref="ChartElement" class="trace-chart configurable-trace-chart" data-analysis-trace-chart viewBox="@($"0 0 {F(_chartWidth)} {F(ChartHeight)}")" preserveAspectRatio="none" role="img" aria-label="Configurable synchronized telemetry traces">
                     @for (var row = 0; row < TraceRows.Count; row++)
                     {
                         var panel = TraceRows[row]; var top = ChartTop + row * ChartRowHeight;
-                        <rect data-analysis-chart-row x="@PlotLeft" y="@top" width="@PlotWidth" height="@ChartPlotHeight" class="chart-row" />
+                        <svg:g @key="panel.Preferences.Id" data-analysis-render-row data-row-id="@panel.Preferences.Id">
+                        <rect data-analysis-chart-row data-analysis-row-target="chart" data-row-id="@panel.Preferences.Id" data-row-index="@row" data-row-name="@RowLabel(panel)" data-primary-name="@panel.Signals[0].Name" data-secondary-name="@(panel.Signals.Count > 1 ? panel.Signals[1].Name : string.Empty)" x="@PlotLeft" y="@top" width="@PlotWidth" height="@ChartPlotHeight" class="chart-row" />
                         <line data-analysis-horizontal-grid x1="@PlotLeft" y1="@(top + ChartPlotHeight / 2)" x2="@PlotRight" y2="@(top + ChartPlotHeight / 2)" class="chart-grid-line" />
-                        <svg:text x="8" y="@(top + 18)" class="chart-title">@RowLabel(panel)</svg:text>
-                        <svg:text x="8" y="@(top + 38)" class="chart-unit">@RowSubtitle(panel)</svg:text>
                         @if (!panel.Signals.Any(HasSignalData))
                         {
                             <svg:text x="@(PlotLeft + 12)" y="@(top + ChartPlotHeight / 2 + 4)" class="chart-unavailable">Not recorded for this race</svg:text>
@@ -236,6 +279,7 @@
                                 <path data-analysis-trace-path data-row="@row" data-lap="@trace.Lap" data-signal="@indexedSignal.Signal.Id" d="@TracePath(trace, panel, indexedSignal.Signal, top)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="@(indexedSignal.Index == 0 ? "1.35" : "1.05")" stroke-dasharray="@(indexedSignal.Index == 0 ? null : "4 3")" opacity="@(indexedSignal.Index == 0 ? "1" : ".72")" vector-effect="non-scaling-stroke" />
                             }
                         }
+                        </svg:g>
                     }
                     @for (var tick = 0; tick <= 4; tick++)
                     {
@@ -245,6 +289,7 @@
                     }
                     <g data-analysis-cursor-layer class="analysis-cursor-layer" style="display:none" aria-hidden="true"></g>
                 </svg>
+                </div>
             </div>
         </div>
         }
@@ -261,11 +306,8 @@
     private bool CleanLapsOnly { get; set; }
     private bool TraceExpanded { get; set; }
     private bool TraceToolboxOpen { get; set; }
-    private string? _draggedTraceSignalId;
-    private string? _activeTraceDropRowId;
-    private TraceDropSlot? _activeTraceDropSlot;
-    private string? _traceDropFeedback;
-    private bool _traceDropRejected;
+    private string _traceSignalSearch = string.Empty;
+    private string? _selectedTraceRowId;
     private int? ActivePitLap { get; set; }
     private string? ActivePitDirection { get; set; }
     private int? ActiveConditionsLap { get; set; }
@@ -278,9 +320,13 @@
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
+    private ElementReference TraceStudioElement;
+    private DotNetObjectReference<TelemetryWorkspace>? _traceLayoutDotNetReference;
     private bool _cursorInteropAttached;
+    private bool _traceLayoutInteropAttached;
     private double _chartWidth = 1000;
     private string _cursorInteropSignature = string.Empty;
+    private string _traceLayoutInteropSignature = string.Empty;
     private readonly Dictionary<AnalysisTracePoint, double?> _calculatedWearByPoint = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, (double Min, double Max)> _traceRangeCache = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _tracePathCache = new(StringComparer.Ordinal);
@@ -310,6 +356,7 @@
         _analysisId = Workspace.AnalysisId;
         ResetSelection();
         RebuildCalculatedTireWear();
+        _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
         InvalidateTraceRender();
     }
 
@@ -323,9 +370,12 @@
             await JS.InvokeVoidAsync("iracingCoachAnalysisCursor.initialize", ChartElement, TrackElement, BuildCursorInteropConfiguration());
             _cursorInteropAttached = true;
             _cursorInteropSignature = signature;
-            return;
         }
-        await JS.InvokeVoidAsync("iracingCoachAnalysisCursor.sync", ChartElement, TrackElement);
+        else
+        {
+            await JS.InvokeVoidAsync("iracingCoachAnalysisCursor.sync", ChartElement, TrackElement);
+        }
+        await ConfigureTraceLayoutInteropAsync();
     }
 
     private void ToggleTraceExpanded()
@@ -335,12 +385,14 @@
     private void ToggleTraceToolbox()
     {
         TraceToolboxOpen = !TraceToolboxOpen;
-        if (!TraceToolboxOpen) EndTraceSignalDrag();
+        if (TraceToolboxOpen && SelectedTraceRow is null) _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
     }
 
     private void HandleWorkspaceKeyDown(KeyboardEventArgs args)
     {
-        if (TraceExpanded && args.Key == "Escape") ToggleTraceExpanded();
+        if (args.Key != "Escape") return;
+        if (TraceToolboxOpen) ToggleTraceToolbox();
+        else if (TraceExpanded) ToggleTraceExpanded();
     }
 
     private void RebuildCalculatedTireWear()
@@ -427,6 +479,7 @@
     private async Task ClearSelection()
     {
         await DisposeCursorInteropAsync();
+        await DisposeTraceLayoutInteropAsync();
         Selected.Clear();
         InvalidateTraceRender();
     }
@@ -453,106 +506,115 @@
         InvalidateTraceRender();
     }
 
-    private void AddTraceRow()
+    private AnalysisTraceRow? SelectedTraceRow => TraceLayout.Rows.FirstOrDefault(row => string.Equals(row.Id, _selectedTraceRowId, StringComparison.Ordinal));
+    private IReadOnlyList<AnalysisTraceSignalDefinition> FilteredTraceSignals => AnalysisTraceLayouts.Signals
+        .Where(signal => string.IsNullOrWhiteSpace(_traceSignalSearch) ||
+            signal.Name.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase) ||
+            signal.Unit.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+    private TracePanelRow? PanelFor(AnalysisTraceRow row) => TraceRows.FirstOrDefault(panel => string.Equals(panel.Preferences.Id, row.Id, StringComparison.Ordinal));
+    private void SelectTraceRow(string rowId) => _selectedTraceRowId = rowId;
+    private void ResetTraceLayout()
     {
-        if (AnalysisTraceLayouts.AddRow(TraceLayout)) SaveTraceLayout();
+        TraceLayout.Rows.Clear();
+        _ = AnalysisTraceLayouts.ValidateAndRepair(TraceLayout);
+        _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
+        SaveTraceLayout();
+    }
+    private void AddTraceSignal(string signalId)
+    {
+        if (!AnalysisTraceLayouts.InsertSignal(TraceLayout, signalId, TraceLayout.Rows.Count)) return;
+        _selectedTraceRowId = TraceLayout.Rows.LastOrDefault()?.Id;
+        SaveTraceLayout();
     }
     private void RemoveTraceRow(string rowId)
     {
-        if (AnalysisTraceLayouts.RemoveRow(TraceLayout, rowId)) SaveTraceLayout();
+        var index = TraceLayout.Rows.FindIndex(row => string.Equals(row.Id, rowId, StringComparison.Ordinal));
+        if (!AnalysisTraceLayouts.RemoveRow(TraceLayout, rowId)) return;
+        _selectedTraceRowId = TraceLayout.Rows.ElementAtOrDefault(Math.Clamp(index, 0, Math.Max(0, TraceLayout.Rows.Count - 1)))?.Id;
+        SaveTraceLayout();
     }
-    private void MoveTraceRow(string rowId, int direction)
+    private void RemoveTraceSignal(string rowId, string signalId)
     {
-        if (AnalysisTraceLayouts.MoveRow(TraceLayout, rowId, direction)) SaveTraceLayout();
+        if (!AnalysisTraceLayouts.RemoveSignal(TraceLayout, rowId, signalId)) return;
+        if (SelectedTraceRow is null) _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
+        SaveTraceLayout();
     }
-    private void ChangePrimarySignal(string rowId, string? signalId)
+    private void HandleTraceRowKeyDown(string rowId, KeyboardEventArgs args)
     {
-        if (!string.IsNullOrWhiteSpace(signalId) && AnalysisTraceLayouts.SetPrimary(TraceLayout, rowId, signalId)) SaveTraceLayout();
+        if (!TraceToolboxOpen) return;
+        if (args.Key == "Delete") { RemoveTraceRow(rowId); return; }
+        if (!args.AltKey || args.Key is not ("ArrowUp" or "ArrowDown")) return;
+        var index = TraceLayout.Rows.FindIndex(row => string.Equals(row.Id, rowId, StringComparison.Ordinal));
+        var target = index + (args.Key == "ArrowUp" ? -1 : 1);
+        if (AnalysisTraceLayouts.MoveRowToIndex(TraceLayout, rowId, target)) SaveTraceLayout();
     }
-    private void ChangeSecondarySignal(string rowId, string? signalId)
+    [JSInvokable]
+    public async Task<bool> MoveTraceRowToIndex(string rowId, int targetIndex)
     {
-        if (AnalysisTraceLayouts.SetSecondary(TraceLayout, rowId, signalId)) SaveTraceLayout();
-    }
-    private void BeginTraceSignalDrag(string signalId)
-    {
-        if (AnalysisTraceLayouts.Signal(signalId) is null) return;
-        _draggedTraceSignalId = signalId;
-        _activeTraceDropRowId = null;
-        _activeTraceDropSlot = null;
-        _traceDropFeedback = null;
-        _traceDropRejected = false;
-    }
-    private void EndTraceSignalDrag()
-    {
-        _draggedTraceSignalId = null;
-        _activeTraceDropRowId = null;
-        _activeTraceDropSlot = null;
-    }
-    private void EnterTraceDropTarget(string rowId, TraceDropSlot slot)
-    {
-        if (_draggedTraceSignalId is null) return;
-        _activeTraceDropRowId = rowId;
-        _activeTraceDropSlot = slot;
-    }
-    private bool IsActiveDropTarget(string rowId, TraceDropSlot slot) =>
-        _draggedTraceSignalId is not null &&
-        string.Equals(_activeTraceDropRowId, rowId, StringComparison.Ordinal) &&
-        _activeTraceDropSlot == slot;
-    private bool CanUseAsSecondSignal(AnalysisTraceRow row) =>
-        _draggedTraceSignalId is not null &&
-        !string.Equals(row.PrimarySignalId, _draggedTraceSignalId, StringComparison.Ordinal);
-    private string TraceDropTargetClass(AnalysisTraceRow row, TraceDropSlot slot)
-    {
-        var classes = new List<string> { "trace-signal-drop-target", slot == TraceDropSlot.Primary ? "primary" : "secondary" };
-        if (_draggedTraceSignalId is null) return string.Join(' ', classes);
-        var available = slot == TraceDropSlot.Primary || CanUseAsSecondSignal(row);
-        classes.Add(available ? "drop-available" : "drop-duplicate");
-        if (IsActiveDropTarget(row.Id, slot)) classes.Add("drop-active");
-        return string.Join(' ', classes);
-    }
-    private void DropTraceSignal(string rowId, TraceDropSlot slot)
-    {
-        if (_draggedTraceSignalId is not { } signalId || AnalysisTraceLayouts.Signal(signalId) is not { } signal ||
-            TraceLayout.Rows.FirstOrDefault(row => string.Equals(row.Id, rowId, StringComparison.Ordinal)) is not { } row)
-        {
-            EndTraceSignalDrag();
-            return;
-        }
-        if (slot == TraceDropSlot.Secondary && !CanUseAsSecondSignal(row))
-        {
-            _traceDropRejected = true;
-            _traceDropFeedback = $"{signal.Name} is already the primary signal. Choose a different second signal.";
-            EndTraceSignalDrag();
-            return;
-        }
-
         var changed = false;
-        if (slot == TraceDropSlot.Primary)
+        await InvokeAsync(() =>
         {
-            var priorSecondary = row.SecondarySignalId;
-            changed = AnalysisTraceLayouts.SetPrimary(TraceLayout, rowId, signalId);
-            var removedSecondary = !string.IsNullOrWhiteSpace(priorSecondary) && string.IsNullOrWhiteSpace(row.SecondarySignalId);
-            _traceDropFeedback = removedSecondary
-                ? $"{signal.Name} is now primary. The duplicate second signal was removed."
-                : $"{signal.Name} is now the primary signal for this row.";
-        }
-        else
+            changed = AnalysisTraceLayouts.MoveRowToIndex(TraceLayout, rowId, targetIndex);
+            if (changed) { _selectedTraceRowId = rowId; SaveTraceLayout(); }
+        });
+        return changed;
+    }
+    [JSInvokable]
+    public async Task<bool> InsertTraceSignalRow(string signalId, int targetIndex)
+    {
+        var changed = false;
+        await InvokeAsync(() =>
         {
-            changed = AnalysisTraceLayouts.SetSecondary(TraceLayout, rowId, signalId);
-            _traceDropFeedback = $"{signal.Name} was added as the second signal for this row.";
-        }
-        _traceDropRejected = !changed;
-        if (!changed) _traceDropFeedback = $"{signal.Name} could not be added to this row.";
-        EndTraceSignalDrag();
-        if (changed) SaveTraceLayout();
+            changed = AnalysisTraceLayouts.InsertSignal(TraceLayout, signalId, targetIndex);
+            if (changed)
+            {
+                _selectedTraceRowId = TraceLayout.Rows.ElementAtOrDefault(Math.Clamp(targetIndex, 0, TraceLayout.Rows.Count - 1))?.Id;
+                SaveTraceLayout();
+            }
+        });
+        return changed;
+    }
+    [JSInvokable]
+    public async Task<bool> PlaceTraceSignal(string rowId, string signalId)
+    {
+        var changed = false;
+        await InvokeAsync(() =>
+        {
+            changed = AnalysisTraceLayouts.PlaceSignal(TraceLayout, rowId, signalId);
+            if (changed) { _selectedTraceRowId = rowId; SaveTraceLayout(); }
+        });
+        return changed;
     }
     private void SaveTraceLayout()
     {
         InvalidateTraceRender();
         State.SaveRaceAnalysisTracePreferences();
+        StateHasChanged();
     }
-    private string SignalOption(AnalysisTraceSignalDefinition signal) =>
-        SignalRecordedInRace(signal) ? signal.Name : $"{signal.Name} — not recorded in this race";
+    private async Task ConfigureTraceLayoutInteropAsync()
+    {
+        var signature = $"{TraceToolboxOpen}|{TraceExpanded}|{State.Settings.UseReducedMotion}|{string.Join(',', TraceLayout.Rows.Select(row => $"{row.Id}:{row.PrimarySignalId}:{row.SecondarySignalId}"))}";
+        if (!_traceLayoutInteropAttached)
+        {
+            _traceLayoutDotNetReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("iracingCoachAnalysisTraceLayout.initialize", TraceStudioElement, _traceLayoutDotNetReference, TraceLayoutInteractionOptions());
+            _traceLayoutInteropAttached = true;
+            _traceLayoutInteropSignature = signature;
+            return;
+        }
+        if (string.Equals(signature, _traceLayoutInteropSignature, StringComparison.Ordinal)) return;
+        await JS.InvokeVoidAsync("iracingCoachAnalysisTraceLayout.configure", TraceStudioElement, TraceLayoutInteractionOptions());
+        _traceLayoutInteropSignature = signature;
+    }
+    private object TraceLayoutInteractionOptions() => new
+    {
+        editing = TraceToolboxOpen,
+        reducedMotion = State.Settings.UseReducedMotion,
+        rowCount = TraceLayout.Rows.Count,
+        maximumRows = AnalysisTraceLayouts.MaximumRows
+    };
+    private string TraceChartFrameStyle => $"height:{F(ChartHeight)}px;--trace-label-top:{F(ChartTop / ChartHeight * 100)}%;--trace-label-bottom:{F((ChartHeight - ChartTop - TraceRowsHeight) / ChartHeight * 100)}%;--trace-row-count:{TraceRows.Count}";
     private bool ShowPaceDelta(AnalysisLapTrace trace, bool isFastest) =>
         !isFastest && trace.LapTimeSeconds.HasValue && FastestLapTime < double.MaxValue &&
         (trace.Complete || trace.Lap != Workspace.Traces.Max(item => item.Lap));
@@ -706,6 +768,19 @@
         }
         _cursorInteropAttached = false;
         _cursorInteropSignature = string.Empty;
+    }
+    private async Task DisposeTraceLayoutInteropAsync()
+    {
+        if (_traceLayoutInteropAttached)
+        {
+            try { await JS.InvokeVoidAsync("iracingCoachAnalysisTraceLayout.dispose", TraceStudioElement); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        _traceLayoutInteropAttached = false;
+        _traceLayoutInteropSignature = string.Empty;
+        _traceLayoutDotNetReference?.Dispose();
+        _traceLayoutDotNetReference = null;
     }
     private string CursorInteropSignature => string.Join('|',
         _analysisId,
@@ -996,19 +1071,20 @@
     }
     private string RowLabel(TracePanelRow panel)
     {
-        var available = panel.Signals.Where(HasSignalData).ToArray();
-        var labels = available.Length > 0 ? available : panel.Signals;
-        return string.Join(" / ", labels.Select(signal => signal.Name));
+        return string.Join(" / ", panel.Signals.Select(signal => signal.Name));
     }
-    private string RowSubtitle(TracePanelRow panel)
+    private static string RowUnit(TracePanelRow panel) =>
+        string.Join(" / ", panel.Signals.Select(signal => signal.Unit).Distinct(StringComparer.OrdinalIgnoreCase));
+    private string RowHelp(TracePanelRow panel)
     {
-        var available = panel.Signals.Where(HasSignalData).ToArray();
+        var rendered = panel.Signals.Where(HasSignalData).ToArray();
         var missing = panel.Signals.Where(signal => !HasSignalData(signal)).ToArray();
-        if (available.Length == 0) return "No selected-lap values";
-        var scales = available.Length > 1
-            ? $"solid {available[0].ShortLabel} ({available[0].Unit}) · dashed {available[1].ShortLabel} ({available[1].Unit}) · independent scales"
-            : available[0].Unit;
-        return missing.Length > 0 ? $"{scales} · {string.Join(", ", missing.Select(signal => signal.ShortLabel))} not recorded" : scales;
+        var parts = new List<string>();
+        if (rendered.Length > 0) parts.Add($"Solid: {rendered[0].Name} ({rendered[0].Unit}).");
+        if (rendered.Length > 1) parts.Add($"Dashed: {rendered[1].Name} ({rendered[1].Unit}). Each line uses its own vertical scale.");
+        if (missing.Length > 0) parts.Add($"Not recorded for the selected laps: {string.Join(", ", missing.Select(signal => signal.Name))}.");
+        if (parts.Count == 0) parts.Add("No values were recorded for the selected laps.");
+        return string.Join(' ', parts);
     }
     private (double Min, double Max) SignalRange(AnalysisTraceSignalDefinition signal)
     {
@@ -1172,6 +1248,7 @@
     public async ValueTask DisposeAsync()
     {
         await DisposeCursorInteropAsync();
+        await DisposeTraceLayoutInteropAsync();
     }
     private sealed record TracePanelRow(AnalysisTraceRow Preferences, IReadOnlyList<AnalysisTraceSignalDefinition> Signals)
     {
@@ -1185,5 +1262,4 @@
     private sealed record LapFlag(string Class, string Label);
     private sealed record HeatStop(double Position, int Red, int Green, int Blue);
     private sealed record AggregateSample(int Count, double? SpeedMph, double? Throttle, double? Brake, double? SteeringRadians, double? TireStress, double? TimeDeltaSeconds);
-    private enum TraceDropSlot { Primary, Secondary }
 }

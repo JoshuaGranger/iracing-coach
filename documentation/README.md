@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current implementation snapshot](06-reality/implementation-snapshot-0.14.1.md)
+7. [Current implementation snapshot](06-reality/implementation-snapshot-0.14.2.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -50,7 +50,8 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Acceptance, test, and release](05-quality/acceptance-test-and-release.md)
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
 - `06-reality`
-  - [Current implementation snapshot: 0.14.1](06-reality/implementation-snapshot-0.14.1.md)
+  - [Current implementation snapshot: 0.14.2](06-reality/implementation-snapshot-0.14.2.md)
+  - [Prior implementation snapshot: 0.14.1](06-reality/implementation-snapshot-0.14.1.md)
   - [Prior implementation snapshot: 0.14.0](06-reality/implementation-snapshot-0.14.0.md)
   - [Prior implementation snapshot: 0.13.0](06-reality/implementation-snapshot-0.13.0.md)
   - [Superseded post-0.12.0 development snapshot](06-reality/implementation-snapshot-post-0.12.0-major-iteration.md)
@@ -82,11 +83,11 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 
 ## Current baseline
 
-- Application version: `0.14.1` focused Race Analysis regression repair
+- Application version: `0.14.2` focused Race Analysis trace-editor parity repair
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Local verification: integrated runs recorded 140/140 .NET tests, 187/187 Python tests, four JavaScript syntax checks, a Release application build with zero warnings and zero errors, and a mouse-driven saved-race regression walkthrough
+- Local verification: 144/144 .NET tests, 187/187 Python tests, five JavaScript syntax checks, the required handoff verifier, a Release build with zero warnings/errors, and a mouse-driven saved-race trace-editor walkthrough passed
 - Installer lifecycle: prior guarded install/upgrade/rollback/uninstall evidence is unchanged and was not rerun for every focused UI adjustment
 - Current focused evidence: session-reset live coaching, conservative complete-lap fuel/pace evidence, a dedicated high-resolution live reader, bounded latest-value telemetry backpressure, lazy detailed traces, non-activating automatic popout behavior, phase-qualified Race/Qualifying identity, schema-6 phase-safe UI caches, schema-2 deterministic backend indexing, comparable-lap filtering, and versioned evidence-weighted grading have local evidence. A synthetic 240 Hz source exercises the reader above its former polling ceiling, but real-session cadence, combined-load performance, 244 Hz presentation, broad derived-sideslip validation, a genuine tray-menu Exit click, and user acceptance remain open.
 
-The current reality is summarized in `06-reality/implementation-snapshot-0.14.1.md`. Earlier Race Analysis and artifact evidence remain in their immutable prior snapshots and release records. Unchanged installer lifecycle behavior was deliberately not re-certified for this corrective iteration. Build binaries and private user data are not part of the source repository.
+The current reality is summarized in `06-reality/implementation-snapshot-0.14.2.md`. Earlier Race Analysis and artifact evidence remain in their immutable prior snapshots and release records. Unchanged installer lifecycle behavior is deliberately not re-certified for this corrective iteration. Build binaries and private user data are not part of the source repository.

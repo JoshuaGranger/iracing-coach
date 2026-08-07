@@ -749,7 +749,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.14.1");
+    string ClientVersion = "0.14.2");
 
 public sealed record BackendHealthResult(
     bool Ok,
