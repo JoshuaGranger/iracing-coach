@@ -52,6 +52,11 @@
     const at = finite(structured ? point.atUnixMilliseconds : null);
     const lap = finite(structured ? point.lap : null);
     const lapDistance = finite(structured ? point.lapDistancePercent : null);
+    const rawAbsActive = structured ? point.brakeAbsActive : null;
+    // BrakeABSactive is the SDK's explicit intervention state. A cut percentage
+    // can remain non-zero while that state is false, so it is never promoted
+    // into an activation event.
+    const absActive = rawAbsActive === true;
     // A structured missing sample is retained as a gap marker. Raw nulls do
     // not carry a position and therefore cannot truthfully be plotted.
     if (value === null && (!structured || at === null && lap === null)) return null;
@@ -59,7 +64,8 @@
       value,
       at,
       lap,
-      lapDistance
+      lapDistance,
+      absActive
     };
   }
 
@@ -146,6 +152,7 @@
       if (secondsWindow(chart.configuration) !== null) continue;
       chart.points.length = 0;
       chart.path = null;
+      chart.absPath = null;
       chart.pathAnchorAt = null;
       chart.pathAnchorLap = null;
       chart.pathDirty = true;
@@ -163,6 +170,7 @@
     for (const chart of studio.charts.values()) {
       chart.points.length = 0;
       chart.path = null;
+      chart.absPath = null;
       chart.pathAnchorAt = null;
       chart.pathAnchorLap = null;
       chart.pathDirty = true;
@@ -186,6 +194,7 @@
       configuration,
       points: [],
       path: null,
+      absPath: null,
       pathAnchorAt: null,
       pathAnchorLap: null,
       width: 0,
@@ -367,8 +376,8 @@
     const flushBucket = () => {
       if (!bucket) return;
       const unique = new Map();
-      for (const candidate of [bucket.first, bucket.minimum, bucket.maximum, bucket.last])
-        unique.set(candidate.order, candidate);
+      for (const candidate of [bucket.first, bucket.minimum, bucket.maximum, bucket.absFirst, bucket.absLast, bucket.last])
+        if (candidate) unique.set(candidate.order, candidate);
       const ordered = Array.from(unique.values()).sort((left, right) => left.order - right.order);
       for (const candidate of ordered) segment.push(candidate);
       bucket = null;
@@ -390,15 +399,25 @@
       previousAt = point.at;
       const x = pointX(chart, point, windowMilliseconds);
       if (x === null || x < -2 || x > chart.width + 2) continue;
-      const candidate = { x, y: y(point.value), value: point.value, order };
+      const candidate = {
+        x,
+        y: y(point.value),
+        value: point.value,
+        order,
+        absActive: point.absActive === true
+      };
       const bucketIndex = clamp(Math.floor(x), 0, bucketCount - 1);
       if (!bucket || bucket.index !== bucketIndex) {
         flushBucket();
-        bucket = { index: bucketIndex, first: candidate, minimum: candidate, maximum: candidate, last: candidate };
+        bucket = { index: bucketIndex, first: candidate, minimum: candidate, maximum: candidate, last: candidate, absFirst: candidate.absActive ? candidate : null, absLast: candidate.absActive ? candidate : null };
       } else {
         bucket.last = candidate;
         if (candidate.value < bucket.minimum.value) bucket.minimum = candidate;
         if (candidate.value > bucket.maximum.value) bucket.maximum = candidate;
+        if (candidate.absActive) {
+          if (!bucket.absFirst) bucket.absFirst = candidate;
+          bucket.absLast = candidate;
+        }
       }
     }
     finishSegment();
@@ -423,6 +442,7 @@
     const observed = observedRange(chart);
     if (!observed) {
       chart.path = null;
+      chart.absPath = null;
       chart.pathAnchorAt = null;
       chart.pathAnchorLap = null;
       chart.pathDirty = false;
@@ -432,21 +452,43 @@
     chart.pathAnchorLap = studio.latestLapProgress ?? lapProgress(chart.points[chart.points.length - 1]);
     const segments = decimatedSegments(chart, studio, stableRange(chart, observed, now));
     const path = new Path2D();
+    const absPath = new Path2D();
     let vertexCount = 0;
+    let absVertexCount = 0;
     for (const segment of segments) {
       if (segment.length === 0) continue;
       path.moveTo(segment[0].x, segment[0].y);
       vertexCount++;
       let previous = segment[0];
+      let absRunOpen = false;
+      if (segment[0].absActive) {
+        absPath.moveTo(segment[0].x, segment[0].y);
+        absPath.lineTo(segment[0].x + 0.01, segment[0].y);
+        absRunOpen = true;
+        absVertexCount += 2;
+      }
       for (let index = 1; index < segment.length; index++) {
         const next = segment[index];
         if (chart.configuration.shape === "step") path.lineTo(next.x, previous.y);
         path.lineTo(next.x, next.y);
         vertexCount += chart.configuration.shape === "step" ? 2 : 1;
+        if (next.absActive) {
+          if (!absRunOpen) {
+            absPath.moveTo(previous.x, previous.y);
+            absRunOpen = true;
+            absVertexCount++;
+          }
+          if (chart.configuration.shape === "step") absPath.lineTo(next.x, previous.y);
+          absPath.lineTo(next.x, next.y);
+          absVertexCount += chart.configuration.shape === "step" ? 2 : 1;
+        } else {
+          absRunOpen = false;
+        }
         previous = next;
       }
     }
     chart.path = vertexCount > 1 ? path : null;
+    chart.absPath = chart.configuration.highlightAbs && absVertexCount > 1 ? absPath : null;
     chart.pathDirty = false;
   }
 
@@ -481,7 +523,7 @@
       if (!canvas) continue;
       retained.add(configuration.id);
       let chart = studio.charts.get(configuration.id);
-      const identity = `${configuration.metricId}|${configuration.unit}|${configuration.duration}|${configuration.shape}`;
+      const identity = `${configuration.metricId}|${configuration.unit}|${configuration.duration}|${configuration.shape}|${!!configuration.highlightAbs}`;
       if (!chart || chart.canvas !== canvas) {
         if (chart) chart.resizeObserver.disconnect();
         chart = createChart(canvas, configuration);
@@ -515,7 +557,8 @@
         value: 0,
         atUnixMilliseconds: frame.atUnixMilliseconds,
         lap: frame.lap,
-        lapDistancePercent: frame.lapDistancePercent
+        lapDistancePercent: frame.lapDistancePercent,
+        brakeAbsActive: frame.brakeAbsActive
       });
       if (clockPoint && observeClock(studio, clockPoint, arrivedAt)) resetLapCharts(studio);
       for (const [id, chart] of studio.charts) {
@@ -523,7 +566,8 @@
           value: frame.values && frame.values[id],
           atUnixMilliseconds: frame.atUnixMilliseconds,
           lap: frame.lap,
-          lapDistancePercent: frame.lapDistancePercent
+          lapDistancePercent: frame.lapDistancePercent,
+          brakeAbsActive: frame.brakeAbsActive
         });
         if (!point) continue;
         chart.points.push(point);
@@ -572,6 +616,11 @@
       context.lineJoin = "round";
       context.lineCap = "round";
       context.stroke(chart.path);
+      if (chart.absPath) {
+        context.strokeStyle = "#f4c24f";
+        context.lineWidth = 2.2;
+        context.stroke(chart.absPath);
+      }
       context.restore();
     }
     chart.dirty = false;

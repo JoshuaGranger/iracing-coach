@@ -55,7 +55,7 @@ Use `target_hz: null` for a follow-up native-rate slice around the returned even
 
 After resolving `latest`, pin every specialist query to the returned exact `source_files` path or SubSessionID. Do not query `latest` again because a new recording could change the target between calls. For grouped or reconnected sessions, query each returned source file separately; record bounds are per source and the returned-sample budget is shared. Analysis-table lap indices are not native IBT record indices, so locate a native event window with recorded `SessionTime`, `Lap`, and `LapDistPct` rather than reusing a routine lap index.
 
-The archive stores derived artifacts, full catalogs, compact profiles, and source fingerprints. Raw IBTs remain referenced in the user's iRacing telemetry directory and are not silently duplicated. If a raw file is later moved or deleted, archived summaries remain available but new slices cannot be decoded.
+The companion app permanently retains every accepted finalized raw IBT as an atomic, verified, content-addressed copy under its portable Documents data home. Originals remain read-only, identical bytes are deduplicated, and analysis records retain both source and durable-copy provenance. A raw-copy failure must remain retryable and explicit; it must not mutate the original or pretend that future raw-channel queries are durable.
 
 Use `race_timeline` for sampled race-control periods and confirmed/requested service chronology. Use `strategy_forecast` as a fuel-feasibility forecast: it may estimate all-green and observed-caution-mix range, reserve, minimum stops, and equal-stint targets, but it does not prove the optimal pit call without position, pit-loss, future-caution, and rule evidence.
 

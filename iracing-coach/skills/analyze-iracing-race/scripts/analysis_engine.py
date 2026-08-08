@@ -20,8 +20,14 @@ from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
 try:  # Package import and direct script loading are both supported.
     from .groove_analysis import analyze_groove_evolution
+    from .race_foundations import (
+        build_race_replay,
+        build_tire_learning,
+        build_track_geometry,
+    )
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from groove_analysis import analyze_groove_evolution
+    from race_foundations import build_race_replay, build_tire_learning, build_track_geometry
 
 
 CAUTION_FLAGS = 0x0008 | 0x0100 | 0x0200 | 0x4000 | 0x8000
@@ -44,8 +50,13 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-damage-repair-corner-phase-v9"
-ANALYZER_SOURCE_FILES = ("analysis_engine.py", "groove_analysis.py", "ibt_reader.py")
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v11"
+ANALYZER_SOURCE_FILES = (
+    "analysis_engine.py",
+    "groove_analysis.py",
+    "ibt_reader.py",
+    "race_foundations.py",
+)
 RACE_GRADE_RUBRIC_VERSION = "race-execution-v2"
 RACE_GRADE_CATEGORY_WEIGHTS = {
     "pace": 30,
@@ -81,6 +92,13 @@ PIT_SERVICE_STATUS_LABELS = {
     103: "too_far_back",
     104: "bad_angle",
     105: "cant_fix_that",
+}
+TRACK_LOCATION_LABELS = {
+    -1: "Not in world",
+    0: "Off track",
+    1: "In pit stall",
+    2: "Approaching pits",
+    3: "On track",
 }
 
 PLATFORM_CHANNEL_ALIASES = {
@@ -1111,6 +1129,272 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     return summaries
 
 
+def _additional_trace_sources(
+    table: TelemetryTable,
+) -> tuple[list[dict[str, Any]], dict[str, list[float | None]], dict[str, str], dict[str, int]]:
+    """Resolve optional distance-domain signals without manufacturing gaps.
+
+    The catalog contains only channels that are actually present and contain at
+    least one finite value. Derived wheel slip is published only when both the
+    individual wheel-speed channel and vehicle speed were recorded.
+    """
+
+    catalog: list[dict[str, Any]] = []
+    series: dict[str, list[float | None]] = {}
+    reducers: dict[str, str] = {}
+    digits: dict[str, int] = {}
+
+    def register(
+        signal_id: str,
+        name: str,
+        unit: str,
+        category: str,
+        evidence_type: str,
+        description: str,
+        source_channels: Sequence[str],
+        values: Sequence[Any],
+        *,
+        reducer: str = "median",
+        precision: int = 3,
+    ) -> None:
+        normalized = [_finite(value) for value in values]
+        if not any(value is not None for value in normalized):
+            return
+        series[signal_id] = normalized
+        reducers[signal_id] = reducer
+        digits[signal_id] = precision
+        catalog.append(
+            {
+                "id": signal_id,
+                "name": name,
+                "unit": unit,
+                "category": category,
+                "evidence_type": evidence_type,
+                "description": description,
+                "source_channels": list(source_channels),
+            }
+        )
+
+    def add(
+        signal_id: str,
+        name: str,
+        unit: str,
+        category: str,
+        aliases: Sequence[str],
+        transform: Any = None,
+        *,
+        reducer: str = "median",
+        precision: int = 3,
+        description: str = "Recorded iRacing telemetry.",
+    ) -> tuple[str | None, list[Any]]:
+        channel, raw = table.resolve(*aliases, default=None)
+        if channel is None:
+            return None, raw
+        converted = [
+            transform(value, channel) if transform is not None else _finite(value)
+            for value in raw
+        ]
+        register(
+            signal_id,
+            name,
+            unit,
+            category,
+            "measured",
+            description,
+            [channel],
+            converted,
+            reducer=reducer,
+            precision=precision,
+        )
+        return channel, raw
+
+    def average_channels(
+        signal_id: str,
+        name: str,
+        unit: str,
+        category: str,
+        alias_groups: Sequence[Sequence[str]],
+        transform: Any,
+        description: str,
+    ) -> None:
+        resolved = [table.resolve(*aliases, default=None) for aliases in alias_groups]
+        available = [(channel, values) for channel, values in resolved if channel is not None]
+        if not available:
+            return
+        values: list[float | None] = []
+        for index in range(table.length):
+            samples = [
+                converted
+                for channel, raw in available
+                if index < len(raw)
+                and (converted := transform(raw[index], channel)) is not None
+            ]
+            values.append(_mean(samples))
+        register(
+            signal_id,
+            name,
+            unit,
+            category,
+            "measured",
+            description,
+            [channel for channel, _ in available],
+            values,
+            precision=2,
+        )
+
+    percent = lambda value, _channel: (
+        fraction * 100.0 if (fraction := _fraction(value)) is not None else None
+    )
+    binary = lambda value, _channel: (
+        None if value is None else (1.0 if _bool(value) else 0.0)
+    )
+    temperature_f = lambda value, channel: _convert_setup_value(
+        value, "temperature", table.unit(channel)
+    )
+    pressure_psi = lambda value, channel: _convert_setup_value(
+        value, "pressure", table.unit(channel)
+    )
+    distance_in = lambda value, channel: _convert_setup_value(
+        value, "distance", table.unit(channel)
+    )
+    velocity_in_s = lambda value, channel: _convert_setup_value(
+        value, "velocity", table.unit(channel)
+    )
+
+    def degrees(value: Any, channel: str) -> float | None:
+        number = _finite(value)
+        if number is None:
+            return None
+        return number if "deg" in _normalized_unit(table.unit(channel)) else math.degrees(number)
+
+    def speed_mph(value: Any, channel: str) -> float | None:
+        number = _finite(value)
+        if number is None:
+            return None
+        unit = _normalized_unit(table.unit(channel))
+        if unit in {"mph", "mi/h"}:
+            return number
+        if unit in {"km/h", "kph"}:
+            return number / 1.609344
+        return number * 2.236936
+
+    def gallons(value: Any, channel: str) -> float | None:
+        number = _finite(value)
+        if number is None:
+            return None
+        return number if "gal" in _normalized_unit(table.unit(channel)) else number / 3.785411784
+
+    def acceleration_g(value: Any, channel: str) -> float | None:
+        number = _finite(value)
+        if number is None:
+            return None
+        return number if _normalized_unit(table.unit(channel)) == "g" else number / 9.80665
+
+    add("clutch", "Clutch", "%", "Controls", ("Clutch",), percent, description="Recorded clutch position.")
+    add("abs-active", "ABS active", "on / off", "Controls", ("BrakeABSactive",), binary, reducer="max", precision=0, description="Recorded ABS-active state.")
+    add("abs-cut", "ABS intervention", "%", "Controls", ("BrakeABScutPct",), percent, reducer="max", precision=2, description="Recorded ABS brake-cut percentage.")
+    add("brake-bias", "Brake bias", "%", "Controls", ("dcBrakeBias",), percent, precision=2, description="Recorded in-car brake-bias setting.")
+    add("steering-torque", "Steering torque", "Nm", "Controls", ("SteeringWheelTorque",), reducer="signed_peak", description="Recorded steering-wheel torque.")
+
+    add("vertical-g", "Vertical G", "g", "Vehicle", ("VertAccel",), acceleration_g, reducer="signed_peak", description="Recorded vertical acceleration.")
+    add("pitch", "Pitch", "deg", "Vehicle", ("Pitch",), degrees, reducer="signed_peak", description="Recorded chassis pitch angle.")
+    add("roll", "Roll", "deg", "Vehicle", ("Roll",), degrees, reducer="signed_peak", description="Recorded chassis roll angle.")
+    add("pitch-rate", "Pitch rate", "deg/s", "Vehicle", ("PitchRate",), degrees, reducer="signed_peak", description="Recorded chassis pitch rate.")
+    add("roll-rate", "Roll rate", "deg/s", "Vehicle", ("RollRate",), degrees, reducer="signed_peak", description="Recorded chassis roll rate.")
+
+    speed_channel, vehicle_speed = table.resolve("Speed", default=None)
+    for tire in TIRES:
+        wheel_channel, wheel_speed = add(
+            f"{tire.lower()}-wheel-speed",
+            f"{tire} wheel speed",
+            "mph",
+            "Tires",
+            (f"{tire}speed",),
+            speed_mph,
+            description="Recorded individual wheel speed.",
+        )
+        if wheel_channel is not None and speed_channel is not None:
+            slip: list[float | None] = []
+            for index in range(table.length):
+                car = _finite(vehicle_speed[index]) if index < len(vehicle_speed) else None
+                wheel = _finite(wheel_speed[index]) if index < len(wheel_speed) else None
+                if car is None or wheel is None or car < 10.0:
+                    slip.append(None)
+                    continue
+                ratio = (wheel - car) / max(car, 1e-9)
+                slip.append(ratio * 100.0 if abs(ratio) <= 2.0 else None)
+            register(
+                f"{tire.lower()}-wheel-slip",
+                f"{tire} wheel slip",
+                "%",
+                "Tires",
+                "derived",
+                "Wheel speed relative to recorded vehicle speed; positive is spin and negative is lock.",
+                [wheel_channel, speed_channel],
+                slip,
+                reducer="signed_peak",
+                precision=2,
+            )
+        add(
+            f"{tire.lower()}-pressure",
+            f"{tire} pressure",
+            "psi",
+            "Tires",
+            _tire_pressure_aliases(tire),
+            pressure_psi,
+            precision=2,
+            description="Recorded live tire pressure; it does not establish tire wear.",
+        )
+        average_channels(
+            f"{tire.lower()}-carcass-temp",
+            f"{tire} carcass temperature",
+            "deg F",
+            "Tires",
+            [_tire_temperature_aliases(tire, position) for position in ("CL", "CM", "CR")],
+            temperature_f,
+            "Average of the recorded inner, middle, and outer carcass temperatures.",
+        )
+        average_channels(
+            f"{tire.lower()}-surface-temp",
+            f"{tire} surface temperature",
+            "deg F",
+            "Tires",
+            [_tire_temperature_aliases(tire, position) for position in POSITIONS],
+            temperature_f,
+            "Average of the recorded inner, middle, and outer surface temperatures.",
+        )
+
+    add("fuel-level", "Fuel level", "gal", "Fuel", ("FuelLevel",), gallons, precision=3, description="Recorded fuel level.")
+    add("fuel-use-rate", "Fuel use rate", "kg/h", "Fuel", ("FuelUsePerHour",), precision=3, description="Recorded instantaneous engine fuel-use mass rate.")
+
+    add("center-front-ride-height", "Center-front ride height", "in", "Chassis", PLATFORM_CHANNEL_ALIASES["center_front_splitter"], distance_in, reducer="signed_peak", description="Recorded center-front or splitter ride height.")
+    for tire in TIRES:
+        add(f"{tire.lower()}-ride-height", f"{tire} ride height", "in", "Chassis", PLATFORM_CHANNEL_ALIASES[tire], distance_in, reducer="signed_peak", description="Recorded corner ride height.")
+        add(f"{tire.lower()}-shock-deflection", f"{tire} shock deflection", "in", "Chassis", _shock_channel_aliases(tire, "deflection"), distance_in, reducer="signed_peak", description="Recorded shock or damper deflection.")
+        add(f"{tire.lower()}-shock-velocity", f"{tire} shock velocity", "in/s", "Chassis", _shock_channel_aliases(tire, "velocity"), velocity_in_s, reducer="signed_peak", description="Recorded shock or damper velocity.")
+
+    add("track-temperature", "Track temperature", "deg F", "Conditions", ("TrackTempCrew", "TrackTemp"), temperature_f, precision=1, description="Recorded track temperature.")
+    add("air-temperature", "Air temperature", "deg F", "Conditions", ("AirTemp",), temperature_f, precision=1, description="Recorded air temperature.")
+    add("wind-speed", "Wind speed", "mph", "Conditions", ("WindVel",), speed_mph, precision=1, description="Recorded wind speed.")
+    add("humidity", "Relative humidity", "%", "Conditions", ("RelativeHumidity",), percent, precision=1, description="Recorded relative humidity.")
+    add("fog", "Fog", "%", "Conditions", ("FogLevel",), percent, precision=1, description="Recorded fog level.")
+    add("precipitation", "Precipitation", "%", "Conditions", ("Precipitation",), percent, precision=2, description="Recorded precipitation level.")
+    add("air-pressure", "Air pressure", "inHg", "Conditions", ("AirPressure",), lambda value, _channel: ((_finite(value) or 0.0) * 0.00029529983071445 if _finite(value) is not None else None), precision=2, description="Recorded ambient air pressure.")
+    add("air-density", "Air density", "lb/ft3", "Conditions", ("AirDensity",), lambda value, _channel: ((_finite(value) or 0.0) * 0.0624279606 if _finite(value) is not None else None), precision=4, description="Recorded ambient air density.")
+    add("track-wetness", "Track wetness", "state", "Conditions", ("TrackWetness",), precision=0, reducer="last", description="Recorded iRacing categorical track-wetness state.")
+    add("track-usage", "Track usage", "%", "Conditions", ("TrackUsage",), percent, precision=1, description="Recorded track-usage percentage.")
+    add("weather-wet", "Wet declared", "on / off", "Conditions", ("WeatherDeclaredWet",), binary, precision=0, reducer="max", description="Recorded weather-declared-wet state.")
+
+    add("overall-position", "Overall position", "position", "Race", ("PlayerCarPosition",), precision=0, reducer="last", description="Recorded overall race position.")
+    add("class-position", "Class position", "position", "Race", ("PlayerCarClassPosition",), precision=0, reducer="last", description="Recorded class position.")
+    add("distance-ahead", "Distance ahead", "ft", "Race", ("CarDistAhead",), lambda value, _channel: ((_finite(value) or 0.0) * 3.280839895 if _finite(value) is not None else None), precision=1, description="Recorded distance to the car ahead.")
+    add("distance-behind", "Distance behind", "ft", "Race", ("CarDistBehind",), lambda value, _channel: ((_finite(value) or 0.0) * 3.280839895 if _finite(value) is not None else None), precision=1, description="Recorded distance to the car behind.")
+    add("on-pit-road", "On pit road", "on / off", "Race", ("OnPitRoad",), binary, precision=0, reducer="max", description="Recorded pit-road state.")
+    add("track-surface", "Track surface", "state", "Race", ("PlayerTrackSurface",), precision=0, reducer="last", description="Recorded iRacing player track-location state.")
+
+    return catalog, series, reducers, digits
+
+
 def _lap_trace_payload(
     table: TelemetryTable,
     laps: Sequence[Mapping[str, Any]],
@@ -1159,6 +1443,9 @@ def _lap_trace_payload(
     def signed_peak(items: Sequence[float]) -> float | None:
         return max(items, key=abs) if items else None
 
+    additional_catalog, additional_series, additional_reducers, additional_digits = (
+        _additional_trace_sources(table)
+    )
     traces: list[dict[str, Any]] = []
     for lap in laps:
         start = int(_finite(lap.get("start_index")) or 0)
@@ -1199,6 +1486,23 @@ def _lap_trace_payload(
             latitudes = values(indices, latitude)
             longitudes = values(indices, longitude)
             session_times = values(indices, session_time)
+            additional_signals: dict[str, float] = {}
+            for signal_id, signal_series in additional_series.items():
+                samples = values(indices, signal_series)
+                if not samples:
+                    continue
+                reducer = additional_reducers[signal_id]
+                if reducer == "max":
+                    representative = max(samples)
+                elif reducer == "signed_peak":
+                    representative = signed_peak(samples)
+                elif reducer == "last":
+                    representative = samples[-1]
+                else:
+                    representative = _median(samples)
+                rounded = _round(representative, additional_digits[signal_id])
+                if rounded is not None:
+                    additional_signals[signal_id] = rounded
 
             representative_speed = _median(speeds)
             representative_steering = signed_peak(steerings)
@@ -1240,6 +1544,7 @@ def _lap_trace_payload(
                         + 0.30 * stress_terms[2],
                         4,
                     ),
+                    "additional_signals": additional_signals,
                     "samples": len(indices),
                 }
             )
@@ -1262,7 +1567,8 @@ def _lap_trace_payload(
                 }
             )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "additional_signal_catalog": additional_catalog,
         "distance_bins_per_lap": maximum_bins,
         "sector_start_pcts": [_round(value, 6) for value in sector_start_pcts],
         "trace_count": len(traces),
@@ -1469,6 +1775,17 @@ def _damage_repair_summary(
     incident_channel, incident_points = resolved(
         "incident_points", DAMAGE_REPAIR_CHANNEL_ALIASES["incident_points"]
     )
+    track_location_channel, track_location = table.resolve(
+        "PlayerTrackSurface", default=None
+    )
+    speed_channel, incident_speed = table.resolve("Speed", default=None)
+    yaw_channel, incident_yaw = table.resolve("YawRate", default=None)
+    velocity_x_channel, incident_velocity_x = table.resolve(
+        "VelocityX", default=None
+    )
+    velocity_y_channel, incident_velocity_y = table.resolve(
+        "VelocityY", default=None
+    )
     session_flags_channel, session_flags = resolved(
         "repair_required_flag", ("SessionFlags",), default=0
     )
@@ -1533,19 +1850,43 @@ def _damage_repair_summary(
             if previous is None or current is None or current <= previous:
                 continue
             lap_number = _finite(lap_trace[index])
-            incident_events.append(
-                {
-                    "event_id": f"incident-points-{len(incident_events) + 1:03d}",
-                    "sample_index": index,
-                    "session_time_s": _round(times[index]),
-                    "candidate_lap": int(lap_number) if lap_number is not None else None,
-                    "points_added": _round(current - previous, 0),
-                    "count_before": _round(previous, 0),
-                    "count_after": _round(current, 0),
-                    "source_channel": incident_channel,
-                    "damage_proof": False,
-                }
-            )
+            event = {
+                "event_id": f"incident-points-{len(incident_events) + 1:03d}",
+                "sample_index": index,
+                "session_time_s": _round(times[index]),
+                "candidate_lap": int(lap_number) if lap_number is not None else None,
+                "points_added": _round(current - previous, 0),
+                "count_before": _round(previous, 0),
+                "count_after": _round(current, 0),
+                "source_channel": incident_channel,
+                "damage_proof": False,
+            }
+            if track_location_channel and index < len(track_location):
+                location = _finite(track_location[index])
+                if location is not None and int(location) in TRACK_LOCATION_LABELS:
+                    event["track_location"] = TRACK_LOCATION_LABELS[int(location)]
+            if on_pit_channel and index < len(on_pit):
+                event["on_pit_road"] = _bool(on_pit[index])
+            if speed_channel and index < len(incident_speed):
+                speed_m_s = _finite(incident_speed[index])
+                if speed_m_s is not None:
+                    event["speed_mph"] = _round(speed_m_s * 2.236936, 1)
+            if yaw_channel and index < len(incident_yaw):
+                yaw_rad_s = _finite(incident_yaw[index])
+                if yaw_rad_s is not None:
+                    event["yaw_rate_deg_s"] = _round(math.degrees(yaw_rad_s), 1)
+            if (
+                velocity_x_channel
+                and velocity_y_channel
+                and index < len(incident_velocity_x)
+                and index < len(incident_velocity_y)
+            ):
+                slip = _vehicle_sideslip_degrees(
+                    incident_velocity_x[index], incident_velocity_y[index]
+                )
+                if slip is not None:
+                    event["slip_angle_deg"] = _round(slip, 1)
+            incident_events.append(event)
 
     fast_increment_indices: set[int] = set()
     if fast_used_channel:
@@ -4697,11 +5038,54 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
         if _finite(run.get("pace", {}).get("green_lap_time_slope_s_per_lap")) is not None
     ]
     pit_assessments = []
-    for run in runs:
+    scheduled_laps = _finite(race.get("scheduled_laps"))
+    for run_index, run in enumerate(runs):
         fuel_end = _finite(run.get("fuel", {}).get("end_l"))
         reserve_laps = fuel_end / green_burn if fuel_end is not None and green_burn not in (None, 0.0) else None
+        run_end_lap = _finite(run.get("end_lap"))
+        race_laps_remaining = (
+            max(0.0, scheduled_laps - run_end_lap)
+            if scheduled_laps is not None and run_end_lap is not None
+            else None
+        )
+        all_green_surplus_laps = (
+            reserve_laps - race_laps_remaining
+            if reserve_laps is not None and race_laps_remaining is not None
+            else None
+        )
         tire = run.get("tire_observation") or {}
         lowest = _finite(tire.get("lowest_remaining_percent"))
+        next_run = runs[run_index + 1] if run_index + 1 < len(runs) else None
+        post_stop_fuel_l = (
+            _finite((next_run.get("fuel") or {}).get("start_l"))
+            if next_run is not None and run.get("ended_with_pit_stop")
+            else None
+        )
+        post_stop_range_laps = (
+            post_stop_fuel_l / green_burn
+            if post_stop_fuel_l is not None and green_burn not in (None, 0.0)
+            else None
+        )
+        next_run_start_lap = (
+            _finite(next_run.get("start_lap")) if next_run is not None else None
+        )
+        race_laps_remaining_after_stop = (
+            max(0.0, scheduled_laps - next_run_start_lap)
+            if scheduled_laps is not None and next_run_start_lap is not None
+            else None
+        )
+        post_stop_all_green_surplus_laps = (
+            post_stop_range_laps - race_laps_remaining_after_stop
+            if post_stop_range_laps is not None
+            and race_laps_remaining_after_stop is not None
+            else None
+        )
+        position_before_stop = _finite((run.get("position") or {}).get("end"))
+        position_after_stop = (
+            _finite((next_run.get("position") or {}).get("start"))
+            if next_run is not None and run.get("ended_with_pit_stop")
+            else None
+        )
         pit_assessments.append(
             {
                 "run_number": run["run_number"],
@@ -4710,6 +5094,25 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
                 "ended_under_caution": run.get("ended_under_caution"),
                 "position_at_end": run.get("position", {}).get("end"),
                 "fuel_laps_remaining_at_end": _round(reserve_laps, 2),
+                "scheduled_race_laps_remaining": _round(race_laps_remaining, 2),
+                "all_green_fuel_surplus_laps": _round(all_green_surplus_laps, 2),
+                "post_stop_fuel_l": _round(post_stop_fuel_l),
+                "post_stop_all_green_range_laps": _round(post_stop_range_laps, 2),
+                "scheduled_race_laps_remaining_after_stop": _round(
+                    race_laps_remaining_after_stop, 2
+                ),
+                "post_stop_all_green_surplus_laps": _round(
+                    post_stop_all_green_surplus_laps, 2
+                ),
+                "position_before_stop": _round(position_before_stop, 0),
+                "position_after_stop": _round(position_after_stop, 0),
+                "pit_cycle_position_change": _round(
+                    position_before_stop - position_after_stop
+                    if position_before_stop is not None
+                    and position_after_stop is not None
+                    else None,
+                    0,
+                ),
                 "lowest_tire_remaining_percent": _round(lowest, 2),
                 "evidence": "complete" if fuel_end is not None and lowest is not None else "partial",
             }
@@ -4721,7 +5124,6 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
         limitations.append(
             "Final-run tire wear is unknown unless the car returned for a tire-reading update."
         )
-    scheduled_laps = _finite(race.get("scheduled_laps"))
     green_equivalents = _finite(race.get("green_lap_equivalents"))
     caution_equivalents = _finite(race.get("caution_lap_equivalents"))
     exposure_total = (green_equivalents or 0.0) + (caution_equivalents or 0.0)
@@ -4809,6 +5211,435 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
         "confidence": "medium" if green_burn is not None and measured_tire_runs else "low",
         "limitations": limitations,
     }
+
+
+def build_technical_insights(
+    laps: Sequence[Mapping[str, Any]],
+    runs: Sequence[Mapping[str, Any]],
+    race: Mapping[str, Any],
+    strategy: Mapping[str, Any],
+    damage: Mapping[str, Any],
+    tire_learning: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Build compact, event-specific findings from recorded or bounded evidence."""
+
+    def metric(
+        label: str,
+        value: Any,
+        unit: str = "",
+        evidence: str = "measured",
+        *,
+        signed: bool = False,
+    ) -> dict[str, Any]:
+        if isinstance(value, float):
+            rendered = f"{value:.3f}".rstrip("0").rstrip(".")
+            if signed and value > 0:
+                rendered = f"+{rendered}"
+        elif isinstance(value, int) and signed and value > 0:
+            rendered = f"+{value}"
+        else:
+            rendered = str(value)
+        return {
+            "label": label,
+            "value": f"{rendered}{(' ' + unit) if unit else ''}",
+            "numeric_value": value if isinstance(value, (int, float)) else None,
+            "unit": unit or None,
+            "evidence_type": evidence,
+        }
+
+    pit_runs = [run for run in runs if run.get("ended_with_pit_stop")]
+    service_seconds: list[float] = []
+    penalty_seconds: list[float] = []
+    for run in pit_runs:
+        service = run.get("pit_service") or {}
+        start, end = _finite(service.get("start_time")), _finite(service.get("end_time"))
+        if start is not None and end is not None and end >= start:
+            service_seconds.append(end - start)
+        if (penalty := _finite(service.get("penalty_served_s"))) is not None and penalty > 0:
+            penalty_seconds.append(penalty)
+    damage_summary = damage.get("summary") or {}
+    pit_assessments = [
+        item for item in (strategy.get("pit_assessments") or ())
+        if isinstance(item, Mapping) and item.get("was_pit_stop")
+    ]
+    cycle_changes = [
+        value for item in pit_assessments
+        if (value := _finite(item.get("pit_cycle_position_change"))) is not None
+    ]
+    post_stop_margins = [
+        value for item in pit_assessments
+        if (value := _finite(item.get("post_stop_all_green_surplus_laps"))) is not None
+    ]
+    pit_metrics: list[dict[str, Any]] = []
+    if cycle_changes:
+        pit_metrics.append(
+            metric(
+                "Pit-cycle net",
+                int(round(sum(cycle_changes))),
+                "positions",
+                "derived",
+                signed=True,
+            )
+        )
+    elif pit_runs:
+        pit_metrics.append(metric("Stops", len(pit_runs)))
+    if service_seconds:
+        pit_metrics.append(metric("Recorded service", round(sum(service_seconds), 2), "s"))
+    repair = _finite(damage_summary.get("total_repair_work_completed_s"))
+    if repair is not None and repair > 0:
+        pit_metrics.append(metric("Repair work", round(repair, 2), "s"))
+    elif penalty_seconds:
+        pit_metrics.append(metric("Penalty service", round(sum(penalty_seconds), 2), "s"))
+    elif post_stop_margins:
+        pit_metrics.append(
+            metric(
+                "Tightest fuel margin",
+                round(min(post_stop_margins), 1),
+                "green laps",
+                "derived",
+                signed=True,
+            )
+        )
+    if penalty_seconds:
+        pit_takeaway = f"Recorded penalty service totaled {sum(penalty_seconds):.1f} s across {len(pit_runs)} stop(s)."
+    elif cycle_changes and sum(cycle_changes) < 0:
+        pit_takeaway = f"Pit cycles returned the car {abs(int(round(sum(cycle_changes))))} position(s) worse overall."
+    elif cycle_changes and sum(cycle_changes) > 0:
+        pit_takeaway = f"Pit cycles returned the car {int(round(sum(cycle_changes)))} position(s) better overall."
+    elif post_stop_margins and min(post_stop_margins) < 0:
+        pit_takeaway = f"The tightest recorded stop was {abs(min(post_stop_margins)):.1f} all-green lap(s) short of scheduled distance."
+    elif service_seconds:
+        pit_takeaway = f"Recorded service totaled {sum(service_seconds):.1f} s across {len(pit_runs)} stop(s)."
+    else:
+        pit_takeaway = "No complete pit-cycle comparison was recorded."
+    pit_insight = {
+        "key": "pit",
+        "label": "Pit strategy",
+        "status": "available" if pit_runs else "unavailable",
+        "rating": "measured" if pit_runs and (service_seconds or cycle_changes) else "partial" if pit_runs else "unavailable",
+        "takeaway": pit_takeaway if pit_runs else "No pit stop was recorded.",
+        "metrics": pit_metrics[:3] if pit_runs else [],
+        "evidence": (
+            (["pit-road state"] if pit_runs else [])
+            + (["position before and after pit cycle"] if cycle_changes else [])
+            + (["recorded service timing"] if service_seconds else [])
+            + (["repair timers"] if repair is not None and repair > 0 else [])
+            + (["recorded post-stop fuel level"] if post_stop_margins else [])
+        ),
+        "unavailable_reasons": [] if pit_runs else ["No run ended with a recorded pit stop."],
+    }
+
+    measured_tire_runs = [run for run in runs if isinstance(run.get("tire_observation"), Mapping)]
+
+    def omi_band(corner: str, raw_band: str) -> str | None:
+        band = raw_band.upper()
+        if band == "M":
+            return "middle"
+        if corner.upper().startswith("L"):
+            return {"L": "outer", "R": "inner"}.get(band)
+        return {"L": "inner", "R": "outer"}.get(band)
+
+    measured_bands: list[tuple[float, str, str, int | None]] = []
+    for run in measured_tire_runs:
+        observation = run.get("tire_observation") or {}
+        for corner, details in (observation.get("tires") or {}).items():
+            if not isinstance(details, Mapping):
+                continue
+            for raw_band, raw_value in (details.get("remaining_percent") or {}).items():
+                value = _finite(raw_value)
+                band = omi_band(str(corner), str(raw_band))
+                if value is not None and band:
+                    run_number = _finite(run.get("run_number"))
+                    measured_bands.append(
+                        (value, str(corner).upper(), band, int(run_number) if run_number is not None else None)
+                    )
+
+    pace_runs = [
+        run for run in runs
+        if _finite((run.get("pace") or {}).get("early_to_late_delta_s")) is not None
+    ]
+    representative_run = max(
+        pace_runs,
+        key=lambda item: (
+            _finite((item.get("pace") or {}).get("green_laps_used"))
+            or _finite(item.get("green_laps"))
+            or 0.0
+        ),
+        default=None,
+    )
+    pace_delta = (
+        _finite((representative_run.get("pace") or {}).get("early_to_late_delta_s"))
+        if representative_run is not None else None
+    )
+    representative_run_number = (
+        int(_finite(representative_run.get("run_number")) or 0)
+        if representative_run is not None else None
+    )
+
+    load_changes: list[tuple[float, str]] = []
+    if representative_run is not None:
+        load = representative_run.get("driving_load") or {}
+        for label, early_key, late_key in (
+            ("brake load", "early_brake_energy_proxy", "late_brake_energy_proxy"),
+            ("steering load", "early_steering_work_proxy", "late_steering_work_proxy"),
+        ):
+            early, late = _finite(load.get(early_key)), _finite(load.get(late_key))
+            if early not in (None, 0.0) and late is not None:
+                load_changes.append(((late / early - 1.0) * 100.0, label))
+    strongest_load = max(load_changes, key=lambda item: abs(item[0]), default=None)
+
+    tire_metrics: list[dict[str, Any]] = []
+    tire_prediction = tire_learning.get("prediction") or {}
+    if measured_bands:
+        lowest_value, corner, band, run_number = min(measured_bands, key=lambda item: item[0])
+        run_suffix = f" · run {run_number}" if run_number else ""
+        tire_metrics.append(
+            metric(f"Lowest O/M/I: {corner} {band}{run_suffix}", round(lowest_value, 1), "%")
+        )
+    if pace_delta is not None:
+        tire_metrics.append(
+            metric(
+                f"Run {representative_run_number} early→late" if representative_run_number else "Early→late pace",
+                round(pace_delta, 3),
+                "s",
+                "derived",
+                signed=True,
+            )
+        )
+    predicted_life = _finite(tire_prediction.get("laps_remaining"))
+    if tire_prediction.get("status") == "predicted" and predicted_life is not None:
+        tire_metrics.append(metric("Modeled life", round(predicted_life, 1), "green laps", "predicted"))
+    elif strongest_load is not None:
+        tire_metrics.append(
+            metric(
+                f"Late {strongest_load[1]}",
+                round(strongest_load[0], 1),
+                "% vs early",
+                "derived",
+                signed=True,
+            )
+        )
+    tire_takeaway_parts: list[str] = []
+    if pace_delta is not None and representative_run_number:
+        direction = "slower" if pace_delta > 0 else "faster"
+        tire_takeaway_parts.append(f"Run {representative_run_number} was {abs(pace_delta):.3f} s {direction} late")
+    if strongest_load is not None:
+        direction = "higher" if strongest_load[0] > 0 else "lower"
+        tire_takeaway_parts.append(
+            f"late {strongest_load[1]} was {abs(strongest_load[0]):.1f}% {direction}"
+        )
+    if predicted_life is not None and tire_prediction.get("status") == "predicted":
+        tire_takeaway_parts.append(f"matched local life is {predicted_life:.1f} green laps")
+    tire_takeaway = "; ".join(tire_takeaway_parts)
+    if tire_takeaway:
+        tire_takeaway = tire_takeaway[0].upper() + tire_takeaway[1:] + "."
+    elif measured_bands:
+        lowest_value, corner, band, _ = min(measured_bands, key=lambda item: item[0])
+        tire_takeaway = f"Lowest measured band was {corner} {band} at {lowest_value:.1f}% remaining."
+    else:
+        tire_takeaway = "No measured tire endpoint or comparable run trend was available."
+    tire_insight = {
+        "key": "tires",
+        "label": "Tires",
+        "status": "available" if tire_metrics else "unavailable",
+        "rating": (
+            "measured+modeled" if measured_bands and tire_prediction.get("status") == "predicted"
+            else "measured" if measured_bands
+            else "derived" if tire_metrics
+            else "unavailable"
+        ),
+        "takeaway": tire_takeaway,
+        "metrics": tire_metrics[:3],
+        "evidence": (
+            (["measured pit-service O/M/I wear"] if measured_bands else [])
+            + (["clean-run early and late pace"] if pace_delta is not None else [])
+            + (["recorded controls/load"] if strongest_load is not None else [])
+            + (["matched local tire observations"] if tire_prediction.get("status") == "predicted" else [])
+        ),
+        "unavailable_reasons": (
+            [] if measured_bands else ["No confirmed measured O/M/I tire endpoint was recorded."]
+        ) + (
+            [str(tire_prediction.get("reason"))]
+            if tire_prediction.get("status") == "unavailable" and tire_prediction.get("reason") else []
+        ),
+    }
+
+    forecast = strategy.get("forecast") or {}
+    green_burn = _finite(strategy.get("measured_green_fuel_gal_per_lap"))
+    caution_burn = _finite(strategy.get("measured_caution_fuel_gal_per_lap"))
+    range_laps = _finite(forecast.get("all_green_range_laps"))
+    fuel_metrics: list[dict[str, Any]] = []
+    if green_burn is not None:
+        fuel_metrics.append(metric("Green-lap use", round(green_burn, 4), "gal/lap"))
+    if range_laps is not None:
+        fuel_metrics.append(metric("All-green range", round(range_laps, 1), "laps", "derived"))
+    final_run = runs[-1] if runs else None
+    scheduled_laps = _finite(race.get("scheduled_laps"))
+    final_run_end_lap = _finite(final_run.get("end_lap")) if final_run else None
+    final_fuel_l = _finite((final_run.get("fuel") or {}).get("end_l")) if final_run else None
+    green_burn_l = _finite(strategy.get("measured_green_fuel_l_per_lap"))
+    finish_reserve_laps = (
+        final_fuel_l / green_burn_l
+        if final_fuel_l is not None
+        and green_burn_l not in (None, 0.0)
+        and scheduled_laps is not None
+        and final_run_end_lap is not None
+        and final_run_end_lap >= scheduled_laps
+        else None
+    )
+    if finish_reserve_laps is not None:
+        fuel_metrics.append(metric("Finish reserve", round(finish_reserve_laps, 1), "green laps", "derived"))
+    elif post_stop_margins:
+        fuel_metrics.append(
+            metric(
+                "Tightest stop margin",
+                round(min(post_stop_margins), 1),
+                "green laps",
+                "derived",
+                signed=True,
+            )
+        )
+    if post_stop_margins and min(post_stop_margins) < 0:
+        fuel_takeaway = f"Tightest post-stop all-green projection was {abs(min(post_stop_margins)):.1f} lap(s) short."
+    elif finish_reserve_laps is not None:
+        fuel_takeaway = f"Recorded finish fuel equaled {finish_reserve_laps:.1f} green lap(s) at measured burn."
+    elif post_stop_margins:
+        fuel_takeaway = f"Every recorded post-stop all-green projection retained at least {min(post_stop_margins):.1f} lap(s)."
+    elif fuel_metrics:
+        fuel_takeaway = "Measured burn supports a range estimate; no complete post-stop margin was recorded."
+    else:
+        fuel_takeaway = "Fuel use could not be measured."
+    fuel_insight = {
+        "key": "fuel",
+        "label": "Fuel",
+        "status": "available" if fuel_metrics else "unavailable",
+        "rating": "usable" if green_burn is not None and range_laps is not None else "partial" if fuel_metrics else "unavailable",
+        "takeaway": fuel_takeaway,
+        "metrics": fuel_metrics[:3],
+        "evidence": (
+            (["recorded fuel-level change"] if fuel_metrics else [])
+            + (["recorded post-stop fuel level"] if post_stop_margins else [])
+            + (["recorded finish fuel"] if finish_reserve_laps is not None else [])
+        ),
+        "unavailable_reasons": [] if fuel_metrics else ["Fuel level or comparable lap exposure was unavailable."],
+    }
+
+    completed = sorted(
+        [lap for lap in laps if lap.get("complete")],
+        key=lambda item: _finite(item.get("lap")) or -1.0,
+    )
+    usable_times = [
+        value for lap in completed
+        if lap.get("flag_state") == "green"
+        and (value := _finite(lap.get("lap_time_s"))) is not None
+        and (_finite(lap.get("pit_time_s")) or 0.0) < 1.0
+    ]
+    start_position = _finite(race.get("starting_position"))
+    finish_position = _finite(race.get("final_recorded_position"))
+    racecraft_metrics: list[dict[str, Any]] = []
+    position_evidence = start_position is not None and finish_position is not None
+    if position_evidence:
+        racecraft_metrics.append(
+            metric(
+                "Net positions",
+                int(round(start_position - finish_position)),
+                "positions",
+                signed=True,
+            )
+        )
+
+    positioned_laps = [
+        lap for lap in completed
+        if _finite((lap.get("position") or {}).get("start")) is not None
+        and _finite((lap.get("position") or {}).get("end")) is not None
+    ]
+    restart_laps: list[Mapping[str, Any]] = []
+    regular_green_laps: list[Mapping[str, Any]] = []
+    previous_flag: str | None = None
+    for lap in positioned_laps:
+        flag = str(lap.get("flag_state") or "")
+        if flag == "green":
+            if previous_flag == "caution":
+                restart_laps.append(lap)
+            else:
+                regular_green_laps.append(lap)
+        previous_flag = flag
+
+    phases: list[tuple[str, float]] = []
+    if restart_laps:
+        restart_change = sum(
+            float(_finite((lap.get("position") or {}).get("start")) or 0.0)
+            - float(_finite((lap.get("position") or {}).get("end")) or 0.0)
+            for lap in restart_laps
+        )
+        phases.append(("Restarts", restart_change))
+    if regular_green_laps:
+        buckets: dict[str, list[Mapping[str, Any]]] = {"Early": [], "Middle": [], "Late": []}
+        labels = tuple(buckets)
+        for index, lap in enumerate(regular_green_laps):
+            bucket_index = min(2, index * 3 // len(regular_green_laps))
+            buckets[labels[bucket_index]].append(lap)
+        for label in labels:
+            phase_laps = buckets[label]
+            if not phase_laps:
+                continue
+            first_position = _finite((phase_laps[0].get("position") or {}).get("start"))
+            last_position = _finite((phase_laps[-1].get("position") or {}).get("end"))
+            if first_position is not None and last_position is not None:
+                phases.append((label, first_position - last_position))
+    strongest_phase = max(phases, key=lambda item: item[1], default=None)
+    weakest_phase = min(phases, key=lambda item: item[1], default=None)
+    if strongest_phase is not None:
+        racecraft_metrics.append(
+            metric(
+                f"Best phase: {strongest_phase[0]}",
+                int(round(strongest_phase[1])),
+                "positions",
+                "derived",
+                signed=True,
+            )
+        )
+    if weakest_phase is not None and weakest_phase != strongest_phase:
+        racecraft_metrics.append(
+            metric(
+                f"Weakest phase: {weakest_phase[0]}",
+                int(round(weakest_phase[1])),
+                "positions",
+                "derived",
+                signed=True,
+            )
+        )
+    elif usable_times and len(racecraft_metrics) < 3:
+        racecraft_metrics.append(metric("Fastest clean", round(min(usable_times), 3), "s"))
+    if weakest_phase is not None and weakest_phase[1] < 0:
+        racecraft_takeaway = f"Recorded {weakest_phase[0].lower()} running lost {abs(int(round(weakest_phase[1])))} position(s); compare those laps in Telemetry."
+    elif strongest_phase is not None and strongest_phase[1] > 0:
+        racecraft_takeaway = f"Recorded {strongest_phase[0].lower()} running gained {int(round(strongest_phase[1]))} position(s)."
+    elif position_evidence:
+        net = int(round(start_position - finish_position))
+        racecraft_takeaway = f"Recorded start-to-finish position change was {net:+d}."
+    elif usable_times:
+        racecraft_takeaway = f"Fastest clean green lap was {min(usable_times):.3f} s."
+    else:
+        racecraft_takeaway = "No position progression or clean pace was recorded."
+    racecraft_insight = {
+        "key": "racecraft",
+        "label": "Racecraft & pace",
+        "status": "available" if racecraft_metrics else "unavailable",
+        "rating": "measured" if position_evidence and phases else "partial" if racecraft_metrics else "unavailable",
+        "takeaway": racecraft_takeaway,
+        "metrics": racecraft_metrics[:3],
+        "evidence": (
+            (["player position endpoints"] if position_evidence else [])
+            + (["lap-by-lap player position and flags"] if phases else [])
+            + (["clean green lap timing"] if usable_times else [])
+        ),
+        "unavailable_reasons": (
+            ([] if position_evidence else ["Start and finish position endpoints were not both recorded."])
+            + ([] if phases else ["Lap-by-lap position phases were unavailable."])
+        ),
+    }
+    return [pit_insight, tire_insight, fuel_insight, racecraft_insight]
 
 
 def _race_evidence_timeline(
@@ -5492,6 +6323,18 @@ def analyze_telemetry(
     }
     fingerprints = [dict(item) for item in source_fingerprints if isinstance(item, Mapping)]
     fingerprint = _analysis_fingerprint(table, fingerprints, profile)
+    track_geometry = build_track_geometry(
+        table.channels,
+        table.metadata,
+        identity,
+        fingerprints,
+    )
+    race_replay = build_race_replay(
+        table.channels,
+        table.session_info,
+        table.metadata,
+    )
+    tire_learning = build_tire_learning(identity, runs, laps, fingerprint)
     required = {
         "time": table.has("SessionTime"),
         "lap": table.has("Lap"),
@@ -5570,6 +6413,15 @@ def analyze_telemetry(
     conditions = _conditions_summary(table)
     driver_adjustments = _driver_adjustments_summary(table)
     coaching_signals = _coaching_signals(runs)
+    strategy = _strategy(runs, race_summary)
+    technical_insights = build_technical_insights(
+        laps,
+        runs,
+        race_summary,
+        strategy,
+        damage_repair,
+        tire_learning,
+    )
     catalog = table.available_catalog()
     loaded_names = sorted(table.channels)
     catalog_names = sorted(
@@ -5624,9 +6476,9 @@ def analyze_telemetry(
                 "sampling_policy": "selective routine analysis; native/chunked passes available on demand",
             },
             "raw_source_policy": {
-                "mode": "reference-originals",
+                "mode": "portable-copy-pending",
                 "durably_copied": False,
-                "note": "Raw IBTs remain in the user's iRacing telemetry directory; derived artifacts and SHA-256 fingerprints are archived.",
+                "note": "The workflow must verify a content-addressed portable copy before report persistence; originals remain untouched.",
             },
         },
         "identity": identity,
@@ -5638,12 +6490,16 @@ def analyze_telemetry(
         "laps": laps,
         "lap_traces": lap_traces,
         "track_profile": track_profile,
+        "track_geometry": track_geometry,
+        "race_replay": race_replay,
+        "tire_learning": tire_learning,
         "groove_evolution": groove_evolution,
         "corner_tire_age": corner_tire_age,
         "setup_telemetry": setup_telemetry,
         "conditions": conditions,
         "driver_adjustments": driver_adjustments,
-        "strategy": _strategy(runs, race_summary),
+        "strategy": strategy,
+        "technical_insights": technical_insights,
         "coaching_signals": coaching_signals,
         "data_quality": {
             "channels": required,

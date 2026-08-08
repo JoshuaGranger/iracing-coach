@@ -157,6 +157,7 @@ public static class LiveMonitorLayouts
         tile.Precision = definition.DefaultPrecision;
         tile.TrendDuration = LiveMonitorTrendDuration.Seconds30;
         tile.Accent = "default";
+        tile.HighlightAbsIntervention = false;
         CopyInto(candidate, layout);
         return true;
     }
@@ -345,12 +346,13 @@ public static class LiveMonitorLayouts
             Unit = tile.Unit,
             Precision = tile.Precision,
             TrendDuration = tile.TrendDuration,
-            Accent = tile.Accent
+            Accent = tile.Accent,
+            HighlightAbsIntervention = tile.HighlightAbsIntervention
         }).ToList()
     };
 
     public static string EditorSignature(LiveMonitorLayout preferences) =>
-        $"{preferences.BuiltInDashboardsInitialized}/{preferences.ActiveLayoutId}|{string.Join(";", preferences.UserLayouts.Select(layout => $"{layout.Id}/{layout.Name}/{layout.Rows}/{layout.Columns}:{string.Join(",", layout.Tiles.Select(tile => $"{tile.Id}/{tile.MetricId}/{tile.Row}/{tile.Column}/{tile.RowSpan}/{tile.ColumnSpan}/{tile.DisplayStyle}/{tile.Unit}/{tile.Precision}/{tile.TrendDuration}/{tile.Accent}"))}"))}";
+        $"{preferences.BuiltInDashboardsInitialized}/{preferences.ActiveLayoutId}|{string.Join(";", preferences.UserLayouts.Select(layout => $"{layout.Id}/{layout.Name}/{layout.Rows}/{layout.Columns}:{string.Join(",", layout.Tiles.Select(tile => $"{tile.Id}/{tile.MetricId}/{tile.Row}/{tile.Column}/{tile.RowSpan}/{tile.ColumnSpan}/{tile.DisplayStyle}/{tile.Unit}/{tile.Precision}/{tile.TrendDuration}/{tile.Accent}/{tile.HighlightAbsIntervention}"))}"))}";
 
     private static bool InitializeBuiltInDashboards(LiveMonitorLayout preferences)
     {

@@ -202,7 +202,8 @@ public sealed class LiveMonitorTests
                     Unit = "kph",
                     Precision = 3,
                     TrendDuration = LiveMonitorTrendDuration.ThreeLaps,
-                    Accent = "violet"
+                    Accent = "violet",
+                    HighlightAbsIntervention = true
                 },
                 Tile("neighbor", "rpm", 0, 0)
             ]
@@ -222,6 +223,7 @@ public sealed class LiveMonitorTests
         Assert.AreEqual(definition.DefaultPrecision, replaced.Precision);
         Assert.AreEqual(LiveMonitorTrendDuration.Seconds30, replaced.TrendDuration);
         Assert.AreEqual("default", replaced.Accent);
+        Assert.IsFalse(replaced.HighlightAbsIntervention, "A metric replacement must not retain Brake-only ABS highlighting on unrelated telemetry.");
         AssertNoOverlap(layout);
 
         var beforeInvalidReplacement = LayoutFingerprint(layout);
@@ -245,7 +247,8 @@ public sealed class LiveMonitorTests
             Unit = "%",
             Precision = 2,
             TrendDuration = LiveMonitorTrendDuration.Seconds60,
-            Accent = "coral"
+            Accent = "coral",
+            HighlightAbsIntervention = true
         };
         var layout = new LiveMonitorNamedLayout
         {
@@ -276,6 +279,7 @@ public sealed class LiveMonitorTests
         Assert.AreEqual(2, moved.Precision);
         Assert.AreEqual(LiveMonitorTrendDuration.Seconds60, moved.TrendDuration);
         Assert.AreEqual("coral", moved.Accent);
+        Assert.IsTrue(moved.HighlightAbsIntervention, "Moving the configured Brake tile must preserve its explicit ABS overlay preference.");
         AssertNoOverlap(layout);
 
         var beforeInvalidReplacement = LayoutFingerprint(layout);
@@ -447,7 +451,7 @@ public sealed class LiveMonitorTests
 
         StringAssert.Contains(script, "function decimatedSegments(chart, studio, valueRange)");
         StringAssert.Contains(script, "bucketCount * verticesPerPixel");
-        StringAssert.Contains(script, "bucket.first, bucket.minimum, bucket.maximum, bucket.last");
+        StringAssert.Contains(script, "bucket.first, bucket.minimum, bucket.maximum, bucket.absFirst, bucket.absLast, bucket.last");
         StringAssert.Contains(script, "preserves brief extrema");
         StringAssert.Contains(script, "resetLapCharts(studio)");
         StringAssert.Contains(script, "isLapRegression(studio.latestLapProgress, progress)");
@@ -467,6 +471,33 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(razor, "LiveTelemetryFrameCompaction.Compact");
         Assert.IsFalse(razor.Contains(".Where(item => item.Value.HasValue)", StringComparison.Ordinal), "Seed history must preserve positioned missing samples as explicit chart gaps.");
         Assert.IsFalse(razor.Contains("LiveMonitorDisplayStyle.Trend && reading.TrendValues.Count", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void BrakeAbsHighlight_UsesOnlyExplicitSdkEvidenceAndPaintsRecordedSegmentsYellow()
+    {
+        var root = CompanionAppRoot();
+        var ui = Path.Combine(root, "src", "iRacingCoach.UI");
+        var razor = File.ReadAllText(Path.Combine(ui, "LiveTelemetryLayoutGrid.razor"));
+        var script = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-tile-charts.js"));
+        var sdk = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "IRacingSdkTelemetrySource.cs"));
+
+        StringAssert.Contains(sdk, "ReadBool(\"BrakeABSactive\", bestOffset)");
+        StringAssert.Contains(sdk, "ReadDouble(\"BrakeABSactive\", bestOffset)");
+        StringAssert.Contains(sdk, "Percentage(ReadDouble(\"BrakeABScutPct\", bestOffset))");
+        StringAssert.Contains(razor, "private bool HasAbsHistory => (State.LiveState.History ?? []).Any(point => point.Metrics.BrakeAbsActive.HasValue)");
+        StringAssert.Contains(razor, "highlightAbs = IsBrakeTrend(tile) && tile.HighlightAbsIntervention && HasAbsHistory");
+        StringAssert.Contains(razor, "disabled=\"@(!HasAbsHistory)\"");
+        StringAssert.Contains(razor, "brakeAbsActive = frame.Metrics.BrakeAbsActive");
+
+        StringAssert.Contains(script, "const absActive = rawAbsActive === true;");
+        StringAssert.Contains(script, "absActive: point.absActive === true");
+        StringAssert.Contains(script, "chart.absPath = chart.configuration.highlightAbs && absVertexCount > 1 ? absPath : null");
+        StringAssert.Contains(script, "context.strokeStyle = \"#f4c24f\"");
+        Assert.DoesNotContain("absCut", script, "A cut percentage must never be promoted into an ABS activation event.");
+        Assert.DoesNotContain("brakeAbsCutPercent", razor, "The chart renderer needs only the explicit BrakeABSactive evidence channel.");
+        Assert.DoesNotContain("brake >", script, "ABS intervention must not be inferred from pedal pressure.");
+        Assert.DoesNotContain("wheelSlip", script, "The yellow overlay is gated by explicit ABS channels, not wheel-slip heuristics.");
     }
 
     [TestMethod]
@@ -610,7 +641,8 @@ public sealed class LiveMonitorTests
                     Unit = "km/h",
                     Precision = 2,
                     TrendDuration = LiveMonitorTrendDuration.ThreeLaps,
-                    Accent = "violet"
+                    Accent = "violet",
+                    HighlightAbsIntervention = true
                 }
             ]
         };
@@ -641,6 +673,46 @@ public sealed class LiveMonitorTests
         Assert.AreEqual(2, restored.Precision);
         Assert.AreEqual(LiveMonitorTrendDuration.ThreeLaps, restored.TrendDuration);
         Assert.AreEqual("violet", restored.Accent);
+        Assert.IsTrue(restored.HighlightAbsIntervention);
+    }
+
+    [TestMethod]
+    public void BrakeAbsHighlight_PersistsThroughCloneAndInvalidatesTheEditorSignature()
+    {
+        var layout = new LiveMonitorNamedLayout
+        {
+            Id = "abs-layout",
+            Name = "ABS review",
+            Rows = 1,
+            Columns = 1,
+            Tiles =
+            [
+                new LiveMonitorTile
+                {
+                    Id = "brake-chart",
+                    MetricId = "brake",
+                    DisplayStyle = LiveMonitorDisplayStyle.Trend,
+                    Unit = "%",
+                    HighlightAbsIntervention = false
+                }
+            ]
+        };
+        var preferences = new LiveMonitorLayout
+        {
+            ActiveLayoutId = layout.Id,
+            BuiltInDashboardsInitialized = true,
+            UserLayouts = [layout]
+        };
+        var before = LiveMonitorLayouts.EditorSignature(preferences);
+
+        layout.Tiles.Single().HighlightAbsIntervention = true;
+        var after = LiveMonitorLayouts.EditorSignature(preferences);
+        var clone = LiveMonitorLayouts.Clone(layout);
+
+        Assert.AreNotEqual(before, after, "Changing the ABS overlay must invalidate the rendered-layout signature.");
+        Assert.IsTrue(clone.Tiles.Single().HighlightAbsIntervention);
+        clone.Tiles.Single().HighlightAbsIntervention = false;
+        Assert.IsTrue(layout.Tiles.Single().HighlightAbsIntervention, "Cloning must not share mutable tile state.");
     }
 
     [TestMethod]
@@ -837,8 +909,11 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(script, "event.preventDefault()");
         StringAssert.Contains(host, "live-telemetry-layout.js");
         StringAssert.Contains(previewHost, "live-telemetry-layout.js");
-        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.14.2-tile-replacement");
-        StringAssert.Contains(previewHost, "live-telemetry-layout.js?v=0.14.2-tile-replacement");
+        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.15.0-fluid-grid");
+        StringAssert.Contains(previewHost, "@Assets[\"_content/iRacingCoach.UI/live-telemetry-layout.js\"]");
+        StringAssert.Contains(previewHost, "@Assets[\"_content/iRacingCoach.UI/coach.css\"]");
+        Assert.DoesNotContain("?v=0.15.0", previewHost,
+            "The Preview host uses generated static-asset fingerprints instead of manual query-string versions.");
 
         foreach (var interactionHook in new[]
         {
@@ -927,7 +1002,7 @@ public sealed class LiveMonitorTests
         layout.Columns,
         string.Join(";", layout.Tiles.Select(tile => string.Join(",",
             tile.Id, tile.MetricId, tile.Row, tile.Column, tile.RowSpan, tile.ColumnSpan,
-            tile.DisplayStyle, tile.Unit, tile.Precision, tile.TrendDuration, tile.Accent))));
+            tile.DisplayStyle, tile.Unit, tile.Precision, tile.TrendDuration, tile.Accent, tile.HighlightAbsIntervention))));
 
     private static LiveMonitorTile Tile(string id, string metricId, int row, int column) => new()
     {

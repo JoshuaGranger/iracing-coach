@@ -33,7 +33,18 @@ class LocalPathSecurityTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "local path"):
                 path_security.local_path(value, "test path")
 
-    def test_environment_roots_reject_unc_paths(self) -> None:
+    def test_environment_roots_override_defaults_and_reject_unc_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            expected = Path(directory).resolve()
+            with mock.patch.dict(
+                os.environ, {"IRACING_COACH_DATA": directory}, clear=True
+            ):
+                self.assertEqual(storage.default_archive_root(), expected)
+            with mock.patch.dict(
+                os.environ, {"IRACING_COACH_IRACING_ROOT": directory}, clear=True
+            ):
+                self.assertEqual(tuning_workflow._default_iracing_root(), expected)
+
         with mock.patch.dict(os.environ, {"IRACING_COACH_DATA": r"\\server\archive"}):
             with self.assertRaisesRegex(ValueError, "IRACING_COACH_DATA"):
                 storage.default_archive_root()
@@ -45,11 +56,26 @@ class LocalPathSecurityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "IRACING_COACH_IRACING_ROOT"):
                 tuning_workflow._default_iracing_root()
 
-    def test_local_existing_root_is_resolved(self) -> None:
+    def test_local_roots_and_portable_document_defaults_are_resolved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             expected = Path(directory).resolve()
             self.assertEqual(path_security.local_path(directory, "root", strict=True), expected)
             self.assertEqual(workflow._resolved_root(directory), expected)
+
+            home = expected / "profile"
+            with (
+                mock.patch.dict(os.environ, {}, clear=True),
+                mock.patch.object(storage.Path, "home", return_value=home),
+                mock.patch.object(tuning_workflow, "_defaults", return_value={}),
+            ):
+                self.assertEqual(
+                    storage.default_archive_root(),
+                    (home / "Documents" / "iRacing Coach" / "data").resolve(),
+                )
+                self.assertEqual(
+                    tuning_workflow._default_iracing_root(),
+                    (home / "Documents" / "iRacing").resolve(),
+                )
 
 
 if __name__ == "__main__":

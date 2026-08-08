@@ -48,6 +48,13 @@
         const bounds = element.getBoundingClientRect();
         return [bounds.left || 0, bounds.top || 0, bounds.right || 0, bounds.bottom || 0];
       },
+      blurActiveElement: function () {
+        const element = document.activeElement;
+        if (element && typeof element.blur === 'function') element.blur();
+      },
+      elementContainsActiveElement: function (element) {
+        return !!element && !!document.activeElement && element.contains(document.activeElement);
+      },
       elementSize: function (element) {
         if (!element) return [0, 0];
         const bounds = element.getBoundingClientRect();
@@ -55,11 +62,11 @@
       }
     };
   </script>
-  <script src="_content/iRacingCoach.UI/live-telemetry-chart.js?v=0.14.2-smooth"></script>
-  <script src="_content/iRacingCoach.UI/live-telemetry-tile-charts.js?v=0.14.2-smooth"></script>
-  <script src="_content/iRacingCoach.UI/live-telemetry-layout.js?v=0.14.2-tile-replacement"></script>
-  <script src="_content/iRacingCoach.UI/analysis-telemetry-cursor.js?v=0.14.2-unified-cursor"></script>
-  <script src="_content/iRacingCoach.UI/analysis-trace-layout.js?v=0.14.2-pointer-parity"></script>
+  <script src="_content/iRacingCoach.UI/live-telemetry-chart.js?v=0.15.0-glide"></script>
+  <script src="_content/iRacingCoach.UI/live-telemetry-tile-charts.js?v=0.15.0-abs-truth"></script>
+  <script src="_content/iRacingCoach.UI/live-telemetry-layout.js?v=0.15.0-fluid-grid"></script>
+  <script src="_content/iRacingCoach.UI/analysis-telemetry-cursor.js?v=0.15.0-resize-settle"></script>
+  <script src="_content/iRacingCoach.UI/analysis-trace-layout.js?v=0.15.0-layouts"></script>
   <script src="_framework/blazor.webview.js"></script>
 </body>
 </html>

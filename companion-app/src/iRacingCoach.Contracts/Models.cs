@@ -197,7 +197,17 @@ public sealed record AnalysisTracePoint(
     double? LongitudinalG,
     double? Latitude,
     double? Longitude,
-    double? TireStressProxy);
+    double? TireStressProxy,
+    IReadOnlyDictionary<string, double>? AdditionalSignals = null);
+
+public sealed record AnalysisTraceSignal(
+    string Id,
+    string Name,
+    string Unit,
+    string Category,
+    EvidenceKind Evidence,
+    string Description,
+    IReadOnlyList<string> SourceChannels);
 
 public sealed record AnalysisLapConditions(
     string? Sky,
@@ -322,7 +332,8 @@ public sealed record AnalysisRun(
     string TireName,
     double? EarlyBrakeVsLatePercent,
     double? EarlySteerVsLatePercent,
-    AnalysisPitStop? PitStop = null);
+    AnalysisPitStop? PitStop = null,
+    int CoachingReferenceLapCount = 0);
 
 public sealed record AnalysisStrategy(
     double? GreenFuelGallonsPerLap,
@@ -342,7 +353,14 @@ public sealed record AnalysisIncident(
     double? SessionTimeSeconds = null,
     double? CountBefore = null,
     double? CountAfter = null,
-    string? SourceChannel = null);
+    string? SourceChannel = null,
+    string? EventType = null,
+    string? ContactTarget = null,
+    string? TrackLocation = null,
+    bool? OnPitRoad = null,
+    double? SpeedMph = null,
+    double? YawRateDegreesPerSecond = null,
+    double? SlipAngleDegrees = null);
 
 public sealed record AnalysisDamage(
     int PitRoadEpisodes,
@@ -369,6 +387,250 @@ public sealed record RaceGrade(
     IReadOnlyList<string>? Inputs = null,
     string Calibration = "Strict local execution scale",
     string Provenance = "Deterministic local analysis");
+
+public sealed record AnalysisVectorPoint(
+    double X,
+    double Y,
+    double? LapPercent = null,
+    int Observations = 0);
+
+public sealed record AnalysisVectorLine(
+    AnalysisVectorPoint A,
+    AnalysisVectorPoint B);
+
+public sealed record AnalysisGeometrySourceBounds(
+    double MinimumX,
+    double MaximumX,
+    double MinimumY,
+    double MaximumY);
+
+public sealed record AnalysisGeometryTransform(
+    AnalysisGeometrySourceBounds? SourceBounds,
+    double? NormalizationScale)
+{
+    public bool IsUsable => SourceBounds is not null
+        && NormalizationScale is > 0
+        && double.IsFinite(NormalizationScale.Value)
+        && double.IsFinite(SourceBounds.MinimumX)
+        && double.IsFinite(SourceBounds.MaximumX)
+        && double.IsFinite(SourceBounds.MinimumY)
+        && double.IsFinite(SourceBounds.MaximumY)
+        && SourceBounds.MaximumX >= SourceBounds.MinimumX
+        && SourceBounds.MaximumY >= SourceBounds.MinimumY;
+
+    public bool TryNormalize(double sourceX, double sourceY, out double normalizedX, out double normalizedY)
+    {
+        normalizedX = 0;
+        normalizedY = 0;
+        if (!IsUsable || !double.IsFinite(sourceX) || !double.IsFinite(sourceY)) return false;
+        var bounds = SourceBounds!;
+        var scale = NormalizationScale!.Value;
+        normalizedX = (sourceX - bounds.MinimumX) / scale;
+        normalizedY = (bounds.MaximumY - sourceY) / scale;
+        return double.IsFinite(normalizedX) && double.IsFinite(normalizedY);
+    }
+}
+
+public sealed record AnalysisGeometryObservation(
+    string ObservationId,
+    IReadOnlyList<string> SourceSha256,
+    AnalysisGeometryTransform? Transform,
+    string? GeometryFingerprint,
+    DateTimeOffset? ObservedAt,
+    IReadOnlyDictionary<string, double> Quality);
+
+public sealed record AnalysisGeometryProvenance(
+    string? SelectedObservationId,
+    AnalysisGeometryTransform? NormalizationTransform,
+    IReadOnlyList<AnalysisGeometryObservation> Observations);
+
+public sealed record AnalysisTrackGeometryQuality(
+    bool? MainLoopComplete,
+    double? LapPercentCoverage,
+    double? MaximumLapPercentGap,
+    double? ClosureDistance);
+
+public sealed record AnalysisTrackGeometry(
+    string Status,
+    string TrackConfigurationKey,
+    string CoordinateSystem,
+    IReadOnlyList<AnalysisVectorPoint> MainPath,
+    IReadOnlyList<AnalysisVectorPoint> PitLane,
+    IReadOnlyList<AnalysisVectorPoint> PitEntryPath,
+    IReadOnlyList<AnalysisVectorPoint> PitExitPath,
+    AnalysisVectorLine? StartFinishLine,
+    AnalysisVectorLine? PitCommitmentLine,
+    AnalysisVectorLine? PitMergeLine,
+    IReadOnlyList<string> UnavailableReasons,
+    IReadOnlyList<string> SourceSha256,
+    IReadOnlyList<string>? ObservedSourceSha256 = null,
+    AnalysisGeometryTransform? Transform = null,
+    AnalysisGeometryProvenance? GeometryProvenance = null,
+    AnalysisTrackGeometryQuality? Quality = null,
+    string? GeometryHash = null);
+
+public sealed record AnalysisReplayCoverage(
+    string Channel,
+    string Status,
+    string? Reason,
+    int? RecordedSegmentCount = null,
+    int? SegmentCount = null,
+    double? RecordedFraction = null,
+    bool? AllSegmentsRecorded = null,
+    int? TemporalGapCount = null);
+
+public sealed record AnalysisReplayTemporalCoverage(
+    string Status,
+    int? RecordedFrameCount,
+    int? ExpectedFrameCount,
+    double? RecordedFraction,
+    int? GapCount,
+    double? LargestGapSeconds,
+    double? StartSessionTimeSeconds,
+    double? EndSessionTimeSeconds);
+
+public sealed record AnalysisReplayParticipantCoverage(
+    int CarIndex,
+    string Status,
+    int? RecordedFrameCount,
+    int? TotalFrameCount,
+    double? RecordedFraction,
+    int? RecordedSegmentCount,
+    int? SegmentCount,
+    double? FirstSessionTimeSeconds,
+    double? LastSessionTimeSeconds);
+
+public sealed record AnalysisReplayParticipant(
+    int CarIndex,
+    string? CarNumber,
+    int? ClassId,
+    string? ClassName,
+    string? CarName,
+    string? DriverName,
+    string? TeamName,
+    bool IsPlayer,
+    bool IsSpectator);
+
+public sealed record AnalysisReplayCarState(
+    int CarIndex,
+    double LapPercent,
+    int? Lap,
+    int? CompletedLaps,
+    int? OverallPosition,
+    int? ClassPosition,
+    bool? OnPitRoad,
+    int? TrackSurface,
+    string? TrackSurfaceLabel,
+    int? PaceFlags,
+    double? LastLapSeconds,
+    double? BestLapSeconds);
+
+public sealed record AnalysisReplayFrame(
+    double SessionTimeSeconds,
+    string SessionState,
+    long GlobalFlags,
+    IReadOnlyList<string> GlobalFlagLabels,
+    IReadOnlyList<AnalysisReplayCarState> Cars);
+
+public sealed record AnalysisRaceReplay(
+    string Status,
+    IReadOnlyList<string> UnavailableReasons,
+    IReadOnlyList<string> Limitations,
+    IReadOnlyList<AnalysisReplayCoverage> Coverage,
+    IReadOnlyList<AnalysisReplayParticipant> Participants,
+    IReadOnlyList<AnalysisReplayFrame> Frames,
+    double? SampleRateHz,
+    int? PlayerCarIndex,
+    string Interpolation,
+    AnalysisReplayTemporalCoverage? TemporalCoverage = null,
+    IReadOnlyList<AnalysisReplayParticipantCoverage>? ParticipantCoverage = null);
+
+public sealed record AnalysisTireBandPrediction(
+    double? RemainingPercent,
+    double? LowPercent,
+    double? HighPercent,
+    double? WearRatePercentPerGreenLap,
+    double? LapsRemainingToZero);
+
+public sealed record AnalysisTireCornerPrediction(
+    string Corner,
+    IReadOnlyDictionary<string, AnalysisTireBandPrediction> Bands);
+
+public sealed record AnalysisTireLearningPrediction(
+    string Status,
+    string? Reason,
+    string? EvidenceClass,
+    string? Confidence,
+    int EligibleObservations,
+    int MatchingSessions,
+    double? LapsRemaining,
+    double? PaceCostSeconds,
+    double? PaceCostLowSeconds,
+    double? PaceCostHighSeconds,
+    double? PaceSlopeSecondsPerGreenLap,
+    double? CapabilityPaceSeconds,
+    double? CapabilityPaceLowSeconds,
+    double? CapabilityPaceHighSeconds,
+    IReadOnlyList<AnalysisTireCornerPrediction> Tires,
+    string? ModelPath,
+    int PersistentObservationCount,
+    string? ModelVersion,
+    string? ObservationSetFingerprint,
+    int TotalObservations,
+    int ExcludedObservations,
+    double? EffectiveMatchedObservations,
+    double? MedianFeatureDistance,
+    int ComparableFeatureCount,
+    IReadOnlyList<string> MatchedFeatures,
+    IReadOnlyList<string> ExclusionReasons,
+    string? MatchingScope,
+    IReadOnlyDictionary<string, string> MatchingContext);
+
+public sealed record AnalysisGarage61ReferenceLap(
+    string Id,
+    double? LapTimeSeconds,
+    string SetupType,
+    string ComparisonRole,
+    bool TelemetryAvailable,
+    string Driver,
+    string Provider = "Garage61",
+    DateTimeOffset? RetrievedAt = null,
+    string? SourceSha256 = null,
+    IReadOnlyList<string>? AvailableSignals = null,
+    string? AlignmentStatus = null,
+    bool? AlignmentUsable = null,
+    int? AlignedBins = null,
+    double? AlignmentCoverageFraction = null);
+
+public sealed record AnalysisGarage61References(
+    string Status,
+    string? Reason,
+    string? ComparisonScope,
+    IReadOnlyList<AnalysisGarage61ReferenceLap> Laps,
+    string Provider = "Garage61",
+    DateTimeOffset? RetrievedAt = null,
+    string? SourceSha256 = null,
+    IReadOnlyList<string>? AvailableSignals = null,
+    string? ComparisonStatus = null,
+    string? ComparisonReason = null,
+    string? SetupScope = null,
+    int? UsableReferenceLaps = null,
+    double? MedianCoverageFraction = null);
+
+public sealed record AnalysisTechnicalMetric(
+    string Label,
+    string Value,
+    EvidenceKind Evidence);
+
+public sealed record AnalysisTechnicalInsight(
+    string Key,
+    string Label,
+    string Status,
+    string Rating,
+    string Takeaway,
+    IReadOnlyList<AnalysisTechnicalMetric> Metrics,
+    IReadOnlyList<string> Evidence,
+    IReadOnlyList<string> UnavailableReasons);
 
 public sealed record AnalysisWorkspace(
     int SchemaVersion,
@@ -397,7 +659,15 @@ public sealed record AnalysisWorkspace(
     double BackendElapsedMilliseconds,
     string OverallGrade,
     IReadOnlyList<RaceGrade> Grades,
-    IReadOnlyList<double>? SectorStartPercents = null);
+    IReadOnlyList<double>? SectorStartPercents = null,
+    IReadOnlyList<AnalysisTraceSignal>? AdditionalTraceSignals = null,
+    AnalysisTrackGeometry? VectorGeometry = null,
+    AnalysisRaceReplay? Replay = null,
+    AnalysisTireLearningPrediction? TirePrediction = null,
+    AnalysisGarage61References? Garage61References = null,
+    IReadOnlyList<AnalysisTechnicalInsight>? TechnicalInsights = null,
+    TuningSessionIdentity? TuningIdentity = null,
+    TuningMapView? TuningMap = null);
 
 public sealed class JobItem
 {
@@ -436,6 +706,7 @@ public sealed class CompanionSettings
     public bool DiagnosticIncludeConfounded { get; set; }
     public LiveMonitorLayout LiveMonitor { get; set; } = new();
     public AnalysisTraceLayout RaceAnalysisTraces { get; set; } = new();
+    public AnalysisTraceLayoutSet RaceAnalysisTraceLayouts { get; set; } = new();
 
     [JsonIgnore] public string ArchiveRoot => Path.Combine(CoachHome, "data");
     [JsonIgnore] public string SetupsRoot => Path.Combine(CoachHome, "setups");
@@ -531,6 +802,7 @@ public sealed class LiveMonitorTile
     public int Precision { get; set; } = 1;
     public LiveMonitorTrendDuration TrendDuration { get; set; } = LiveMonitorTrendDuration.Seconds30;
     public string Accent { get; set; } = "default";
+    public bool HighlightAbsIntervention { get; set; }
 }
 
 public sealed record LiveGapState(
@@ -584,7 +856,9 @@ public readonly record struct LiveMetricHistoryFrame(
     int? PitWindowLaps,
     int? OverallPosition,
     LiveTirePhaseTrendState? TirePhase,
-    double? TrackTemperatureC);
+    double? TrackTemperatureC,
+    bool? BrakeAbsActive = null,
+    double? BrakeAbsCutPercent = null);
 
 public sealed record LivePaceTarget(
     double? MinimumSeconds,
@@ -771,7 +1045,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.14.2");
+    string ClientVersion = "0.15.0");
 
 public sealed record BackendHealthResult(
     bool Ok,

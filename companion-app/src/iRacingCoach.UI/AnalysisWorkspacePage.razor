@@ -4,11 +4,14 @@
         <header class="analysis-context-bar race-analysis-toolbar">
             <div class="event-session-switch analysis-data-switch analysis-data-primary" role="tablist" aria-label="Race analysis section">
                 <button class="segmented @(RaceDataSection == "telemetry" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "telemetry")" @onclick='() => RaceDataSection = "telemetry"'>Telemetry</button>
-                <button class="segmented @(RaceDataSection == "review" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "review")" @onclick='() => RaceDataSection = "review"'>Race review</button>
+                <button class="segmented @(RaceDataSection == "technical" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "technical")" @onclick='() => RaceDataSection = "technical"'>Technical data</button>
+                <button class="segmented @(RaceDataSection == "replay" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "replay")" @onclick='() => RaceDataSection = "replay"'>Race replay</button>
             </div>
             <div class="analysis-event-title race-analysis-title">
-                <button class="back-button race-analysis-back" @onclick="State.CloseAnalysisWorkspace" aria-label="Back to race history" title="Back to races">←</button>
-                <div><h1>@Workspace.Track <span>@Workspace.Layout</span></h1><p>@ContextSummary</p></div>
+                <div class="race-analysis-title-cluster">
+                    <button class="back-button race-analysis-back" @onclick="State.CloseAnalysisWorkspace" aria-label="Back to race history" title="Back to races"><span aria-hidden="true">←</span><span>Back</span></button>
+                    <div class="race-analysis-title-copy"><h1>@Workspace.Track <span>@Workspace.Layout</span></h1><p>@ContextSummary</p></div>
+                </div>
             </div>
             <div class="analysis-context-actions race-session-actions">
                 @if (EventSessions.Count > 1)
@@ -80,35 +83,16 @@
             </main>
         }
 
-        @if (!IsRaceWorkspace || RaceDataSection == "review")
+        @if (!IsRaceWorkspace || RaceDataSection == "technical")
         {
             <section class="@(IsRaceWorkspace ? "race-review-page" : "qualifying-review-shell")">
                 @if (IsRaceWorkspace)
                 {
-                    @if (Workspace.Grades.Count > 0)
-                    {
-                        <details class="grade-drawer race-review-grades">
-                            <summary><span>Grades</span>@foreach (var grade in Workspace.Grades) { <span class="grade-summary-item @(grade.Available ? null : "unavailable")"><b>@grade.Label</b><strong>@grade.Grade</strong></span> }</summary>
-                            <div class="grade-categories">
-                                @foreach (var grade in Workspace.Grades)
-                                {
-                                    <article class="@(grade.Available ? null : "grade-unavailable")" title="@grade.Limitation"><div><span>@grade.Label</span><strong>@grade.Grade</strong></div><p>@grade.Explanation</p><small><b>Next:</b> @grade.Improvement</small>
-                                        <details class="grade-audit"><summary>How this was graded</summary><dl><div><dt>Score</dt><dd>@(grade.Score.HasValue ? grade.Score.Value.ToString("0.0") : "Excluded — insufficient evidence")</dd></div><div><dt>Evidence</dt><dd>@grade.Evidence</dd></div><div><dt>Calibration</dt><dd>@grade.Calibration</dd></div><div><dt>Provenance</dt><dd>@grade.Provenance</dd></div></dl><p><b>Inputs:</b> @string.Join("; ", grade.Inputs ?? [])</p><p><b>Limitation:</b> @grade.Limitation</p></details>
-                                    </article>
-                                }
-                            </div>
-                        </details>
-                    }
-                    <section class="analysis-focus-strip" aria-label="What matters from this race">
-                        <div class="analysis-bottom-line"><span>Fastest clean lap</span><strong>@FastestCleanLap</strong></div>
-                        @foreach (var action in Card.Actions.Where(UsefulAction).Take(2))
-                        {
-                            <article title="@action.Claim.Text"><b>@action.Label</b><span>@action.Claim.Text</span></article>
-                        }
-                    </section>
+                    <RaceTechnicalData Workspace="Workspace" Card="Card" />
                 }
-
-                <aside class="@(IsRaceWorkspace ? "analysis-review-grid" : "analysis-insight-rail")" aria-label="Race summary">
+                else
+                {
+                <aside class="analysis-insight-rail" aria-label="Session summary">
             <section class="analysis-insight-card race-shape-card">
                 <div class="insight-heading"><div><span class="eyebrow">Race shape</span><h2>At a glance</h2></div></div>
                 <div class="insight-stat-grid">
@@ -164,7 +148,13 @@
                 </section>
             }
                 </aside>
+                }
             </section>
+        }
+
+        @if (IsRaceWorkspace && RaceDataSection == "replay")
+        {
+            <RaceReplayWorkspace Workspace="Workspace" />
         }
     </div>
 </div>

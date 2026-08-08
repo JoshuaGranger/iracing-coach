@@ -1,57 +1,387 @@
 @using System.Globalization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
 
-<section class="tuning-track-selector" aria-labelledby="tuning-zone-heading">
-    <div><span class="eyebrow">Track location</span><h3 id="tuning-zone-heading">Choose the affected zone</h3></div>
-    <div class="tuning-track-visual">
-        @if (Workspace.TrackShape.Count >= 3)
+<section class="tuning-turn-map" aria-labelledby="tuning-map-heading">
+    <header class="tuning-turn-map-header">
+        <div>
+            <span class="eyebrow">Track feedback</span>
+            <h2 id="tuning-map-heading">@Workspace.Track <small>@Workspace.Layout</small></h2>
+        </div>
+        <div class="tuning-map-source" title="@SourceTitle">
+            <span class="status-label @(Resolution.Verified ? "success" : "neutral")">@(Resolution.Verified ? "Verified map" : "Needs verification")</span>
+            <small>@Resolution.SourceLabel</small>
+        </div>
+    </header>
+
+    <div class="tuning-map-stage">
+        @if (Projection.Available)
         {
-            <svg viewBox="0 0 420 240" role="img" aria-label="Selectable recorded track map">
-                <polyline points="@ShapePoints" class="tuning-track-line" />
-                @foreach (var zone in Zones)
+            <svg @ref="_mapElement"
+                 class="tuning-map-svg @(_correctionOpen ? "correction-mode" : null)"
+                 viewBox="@Projection.ViewBox"
+                 preserveAspectRatio="xMidYMid meet"
+                 role="img"
+                 aria-label="@MapAccessibleName"
+                 @onclick="SetCorrectionFromPointer">
+                <path d="@Projection.MainPathData" class="tuning-map-track-halo" />
+                <path d="@Projection.MainPathData" class="tuning-map-track" />
+
+                @if (!string.IsNullOrWhiteSpace(Projection.PitLaneData))
                 {
-                    var point = PointAt(zone.CenterPercent);
-                    <g class="tuning-zone-target" role="button" tabindex="0" @onclick="() => Select(zone.Label)">
-                        <circle cx="@F(point.X)" cy="@F(point.Y)" r="18" class="tuning-zone-hit" />
-                        <circle cx="@F(point.X)" cy="@F(point.Y)" r="@(Selected == zone.Label ? 12 : 9)" class="tuning-zone-dot @(Selected == zone.Label ? "selected" : null)" />
-                        <svg:text x="@F(point.X)" y="@F(point.Y - 16)" text-anchor="middle">@zone.Label</svg:text>
-                    </g>
+                    <path d="@Projection.PitLaneData" class="tuning-map-pit-halo" />
+                    <path d="@Projection.PitLaneData" class="tuning-map-pit" />
+                }
+                @if (!string.IsNullOrWhiteSpace(Projection.PitEntryData))
+                {
+                    <path d="@Projection.PitEntryData" class="tuning-map-pit-entry" />
+                }
+                @if (!string.IsNullOrWhiteSpace(Projection.PitExitData))
+                {
+                    <path d="@Projection.PitExitData" class="tuning-map-pit-exit" />
+                }
+
+                @foreach (var turn in Turns)
+                {
+                    var path = ProgressiveTrackProjection.PathForRange(Projection.MainPath, turn.StartPct, turn.EndPct);
+                    var marker = ProgressiveTrackProjection.PointAt(Projection.MainPath, turn.ApexPct);
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        <path d="@path" class="tuning-turn-segment @TurnStateClass(turn)" aria-hidden="true" />
+                        <path d="@path"
+                              class="tuning-turn-hit"
+                              role="button"
+                              tabindex="0"
+                              aria-label="@TurnAccessibleName(turn)"
+                              aria-pressed="@AriaBoolean(IsSelected(turn))"
+                              @onclick="args => HandleTurnClick(args, turn)"
+                              @onclick:stopPropagation="true"
+                              @onmouseenter="() => Hover(turn.CornerId)"
+                              @onmouseleave="ClearHover"
+                              @onfocus="() => Hover(turn.CornerId)"
+                              @onblur="ClearHover"
+                              @onkeydown="args => HandleTurnKeyDown(args, turn)" />
+                        <g class="tuning-turn-marker @TurnStateClass(turn)" aria-hidden="true">
+                            <circle cx="@F(marker.X)" cy="@F(marker.Y)" r="15" />
+                            <svg:text x="@F(marker.X)" y="@F(marker.Y + 4)" text-anchor="middle">@ShortLabel(turn.Label)</svg:text>
+                        </g>
+                    }
+                }
+
+                @if (_correctionOpen && SelectedTurn is not null)
+                {
+                    @foreach (var handle in CorrectionHandles)
+                    {
+                        <g class="tuning-correction-handle @(_activeCorrectionHandle == handle.Key ? "active" : null)"
+                           role="button"
+                           tabindex="0"
+                           aria-label="@($"Adjust {handle.Label.ToLowerInvariant()} point")"
+                           @onclick="() => ActivateCorrectionHandle(handle.Key)"
+                           @onclick:stopPropagation="true"
+                           @onkeydown="args => HandleCorrectionKeyDown(args, handle.Key)">
+                            <circle cx="@F(handle.Point.X)" cy="@F(handle.Point.Y)" r="12" />
+                            <svg:text x="@F(handle.Point.X)" y="@F(handle.Point.Y + 4)" text-anchor="middle">@handle.ShortLabel</svg:text>
+                        </g>
+                    }
+                }
+
+                @if (Projection.StartFinish is { } startFinish)
+                {
+                    <line x1="@F(startFinish.X1)" y1="@F(startFinish.Y1)" x2="@F(startFinish.X2)" y2="@F(startFinish.Y2)" class="tuning-map-start-halo" />
+                    <line x1="@F(startFinish.X1)" y1="@F(startFinish.Y1)" x2="@F(startFinish.X2)" y2="@F(startFinish.Y2)" class="tuning-map-start" />
                 }
             </svg>
         }
-        @if (Zones.Count > 0)
-        {
-            <div class="tuning-zone-list" role="group" aria-label="Recorded corner and load zones">@foreach (var zone in Zones) { <button type="button" aria-pressed="@(Selected == zone.Label)" class="@(Selected == zone.Label ? "selected" : null)" @onclick="() => Select(zone.Label)"><strong>@zone.Label</strong><small>@($"{zone.StartPercent:P0}–{zone.EndPercent:P0}")</small></button> }</div>
-        }
         else
         {
-            <div class="empty-state compact-empty"><h3>No recorded corner zones</h3><p>Use Whole lap; the app will not invent corner labels.</p></div>
+            <div class="tuning-map-empty">
+                <ProductIcon Name="analysis" Size="24" />
+                <strong>Track shape unavailable</strong>
+                <span>Select a load zone from the list when recorded zones are available.</span>
+            </div>
         }
+
+        <div class="tuning-turn-list" role="list" aria-label="Selectable corners and load zones">
+            @if (Turns.Count > 0)
+            {
+                @foreach (var turn in Turns)
+                {
+                    <button type="button"
+                            role="listitem"
+                            class="@(IsSelected(turn) ? "selected" : null)"
+                            aria-pressed="@AriaBoolean(IsSelected(turn))"
+                            title="@TurnAccessibleName(turn)"
+                            @onmouseenter="() => Hover(turn.CornerId)"
+                            @onmouseleave="ClearHover"
+                            @onfocus="() => Hover(turn.CornerId)"
+                            @onblur="ClearHover"
+                            @onclick="() => Select(turn)">
+                        <strong>@turn.Label</strong>
+                        <small>@TurnStatus(turn)</small>
+                    </button>
+                }
+            }
+            else
+            {
+                <span class="tuning-turn-list-empty">No selectable zones</span>
+            }
+        </div>
     </div>
+
+    <footer class="tuning-map-footer">
+        <div class="tuning-map-key" aria-label="Map key">
+            <span><i class="pit"></i>Pit road</span>
+            <span><i class="entry"></i>Pit entry</span>
+            <span><i class="exit"></i>Pit exit</span>
+            <span><i class="start"></i>Start / finish</span>
+        </div>
+        @if (!Resolution.Verified)
+        {
+            <button type="button" class="text-button tuning-correction-toggle" disabled="@(SelectedTurn is null)" @onclick="OpenCorrection">
+                Correct selected zone
+            </button>
+        }
+    </footer>
+
+    @if (_correctionOpen && SelectedTurn is { } correctionTurn)
+    {
+        <form class="tuning-turn-correction" @onsubmit="SaveCorrection" @onsubmit:preventDefault="true">
+            <div class="tuning-correction-heading">
+                <div><strong>Verify this turn</strong><small>Saved with your portable Coach data.</small></div>
+                <button type="button" aria-label="Close correction" @onclick="CloseCorrection"><ProductIcon Name="close" Size="15" /></button>
+            </div>
+            <p class="tuning-correction-instruction">Click the track for <strong>@CorrectionHandleLabel(_activeCorrectionHandle)</strong>. Select a handle to adjust it again.</p>
+            <label>Corner label<input maxlength="48" autocomplete="off" @bind="_correctionLabel" /></label>
+            <div class="tuning-boundary-fields">
+                <label>Entry <input type="range" min="0" max="99.9" step="0.1" @bind="_correctionStart" @bind:event="oninput" @bind:after="ClearCorrectionError" /><output>@_correctionStart.ToString("0.0")%</output></label>
+                <label>Apex <input type="range" min="0" max="99.9" step="0.1" @bind="_correctionApex" @bind:event="oninput" @bind:after="ClearCorrectionError" /><output>@_correctionApex.ToString("0.0")%</output></label>
+                <label>Exit <input type="range" min="0" max="99.9" step="0.1" @bind="_correctionEnd" @bind:event="oninput" @bind:after="ClearCorrectionError" /><output>@_correctionEnd.ToString("0.0")%</output></label>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_correctionError))
+            {
+                <p class="tuning-correction-error" role="alert">@_correctionError</p>
+            }
+            <button type="submit" class="button secondary compact" disabled="@string.IsNullOrWhiteSpace(_correctionLabel)">Save correction</button>
+        </form>
+    }
 </section>
 
 @code {
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
+    [Parameter] public TuningMapView? Map { get; set; }
     [Parameter] public string Selected { get; set; } = string.Empty;
     [Parameter] public EventCallback<string> SelectedChanged { get; set; }
-    private IReadOnlyList<Zone> Zones => Workspace.Segments
-        .Where(zone => !string.IsNullOrWhiteSpace(zone.Label))
-        .Take(12)
-        .Select(zone => new Zone(zone.Label, zone.StartPercent, zone.EndPercent, zone.WrapsStartFinish)).ToArray();
-    private async Task Select(string value) { Selected = value; await SelectedChanged.InvokeAsync(value); }
-    private string ShapePoints => string.Join(" ", MapPoints.Select(point => $"{F(point.X)},{F(point.Y)}")) + (MapPoints.Count > 0 ? $" {F(MapPoints[0].X)},{F(MapPoints[0].Y)}" : string.Empty);
-    private IReadOnlyList<MapPoint> MapPoints
+    [Parameter] public EventCallback<TuningTurn> TurnSelected { get; set; }
+    [Parameter] public Func<ProgressiveTurnCorrectionRequest, Task<bool>>? CorrectionRequested { get; set; }
+
+    private ProgressiveProjectedTrack Projection { get; set; } = new(false, "Geometry unavailable", "0 0 720 420", [], [], [], [], null);
+    private ProgressiveTurnMapResolution Resolution { get; set; } = new("", "telemetry-derived", "Recorded telemetry", null, "low", false, false, "", []);
+    private IReadOnlyList<ProgressiveTurnAnnotation> Turns { get; set; } = [];
+    private ElementReference _mapElement;
+    private string? _hoveredCornerId;
+    private bool _correctionOpen;
+    private string _correctionLabel = string.Empty;
+    private double _correctionStart;
+    private double _correctionApex;
+    private double _correctionEnd;
+    private string _activeCorrectionHandle = "entry";
+    private string _correctionError = string.Empty;
+
+    protected override void OnParametersSet()
     {
-        get
+        Projection = ProgressiveTrackProjection.Create(Workspace);
+        Resolution = Map is null ? ProgressiveTurnCatalog.Default.Resolve(Workspace) : FromContract(Map);
+        Turns = Resolution.Turns;
+        if (SelectedTurn is null) _correctionOpen = false;
+    }
+
+    private ProgressiveTurnAnnotation? SelectedTurn => Turns.FirstOrDefault(IsSelected);
+    private string? ActiveCornerId => _hoveredCornerId ?? SelectedTurn?.CornerId;
+    private string SourceTitle => $"{Resolution.SourceLabel}. {Resolution.StatusMessage}";
+    private string MapAccessibleName => $"{Workspace.Track} {Workspace.Layout} track map. {Resolution.StatusMessage}";
+
+    private static ProgressiveTurnMapResolution FromContract(TuningMapView map) => new(
+        map.MapIdentity,
+        map.SourceType,
+        map.SourceLabel,
+        map.SourceUrl,
+        map.Confidence,
+        map.IsVerified,
+        false,
+        map.IsVerified
+            ? "Corner labels verified for this exact configuration."
+            : map.VerificationMessage ?? "Corner labels need local verification.",
+        map.Turns.Select(turn => new ProgressiveTurnAnnotation(
+            turn.CornerId,
+            turn.Label,
+            turn.StartPct,
+            turn.ApexPct,
+            turn.EndPct,
+            map.SourceType,
+            turn.Confidence,
+            turn.IsOfficial,
+            turn.CorrectionHint,
+            turn.UserVerified)).ToArray());
+
+    private bool IsSelected(ProgressiveTurnAnnotation turn) =>
+        string.Equals(Selected, turn.CornerId, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(Selected, turn.Label, StringComparison.OrdinalIgnoreCase);
+
+    private string TurnStateClass(ProgressiveTurnAnnotation turn)
+    {
+        var states = new List<string>();
+        if (string.Equals(ActiveCornerId, turn.CornerId, StringComparison.OrdinalIgnoreCase)) states.Add("active");
+        if (IsSelected(turn)) states.Add("selected");
+        if (!Resolution.Verified && !turn.UserVerified) states.Add("unverified");
+        return string.Join(" ", states);
+    }
+
+    private async Task Select(ProgressiveTurnAnnotation turn)
+    {
+        Selected = turn.CornerId;
+        await SelectedChanged.InvokeAsync(Selected);
+        await TurnSelected.InvokeAsync(new TuningTurn(
+            turn.CornerId,
+            turn.Label,
+            turn.StartPct,
+            turn.ApexPct,
+            turn.EndPct,
+            turn.IsOfficial,
+            turn.Confidence,
+            turn.CorrectionNote,
+            turn.UserVerified,
+            turn.UserVerified ? "Driver correction" : string.Empty));
+    }
+
+    private async Task HandleTurnClick(MouseEventArgs args, ProgressiveTurnAnnotation turn)
+    {
+        if (_correctionOpen && IsSelected(turn))
         {
-            if (Workspace.TrackShape.Count < 3) return [];
-            var minX = Workspace.TrackShape.Min(point => point.X); var maxX = Workspace.TrackShape.Max(point => point.X);
-            var minY = Workspace.TrackShape.Min(point => point.Y); var maxY = Workspace.TrackShape.Max(point => point.Y);
-            var scale = Math.Min(340 / Math.Max(.0001, maxX - minX), 170 / Math.Max(.0001, maxY - minY));
-            return Workspace.TrackShape.Select(point => new MapPoint(point.LapPercent, 210 + (point.X - (minX + maxX) / 2) * scale, 120 + (point.Y - (minY + maxY) / 2) * scale)).ToArray();
+            await SetCorrectionFromPointer(args);
+            return;
+        }
+        await Select(turn);
+    }
+
+    private async Task HandleTurnKeyDown(KeyboardEventArgs args, ProgressiveTurnAnnotation turn)
+    {
+        if (args.Key is "Enter" or " ") await Select(turn);
+    }
+
+    private void Hover(string cornerId) => _hoveredCornerId = cornerId;
+    private void ClearHover() => _hoveredCornerId = null;
+
+    private void OpenCorrection()
+    {
+        if (SelectedTurn is not { } turn) return;
+        _correctionLabel = turn.Label;
+        _correctionStart = turn.StartPct * 100;
+        _correctionApex = turn.ApexPct * 100;
+        _correctionEnd = turn.EndPct * 100;
+        _activeCorrectionHandle = "entry";
+        _correctionError = string.Empty;
+        _correctionOpen = true;
+    }
+
+    private void CloseCorrection()
+    {
+        _correctionOpen = false;
+        _correctionError = string.Empty;
+    }
+
+    private void ClearCorrectionError() => _correctionError = string.Empty;
+
+    private IReadOnlyList<CorrectionHandle> CorrectionHandles =>
+    [
+        new("entry", "Entry", "E", ProgressiveTrackProjection.PointAt(Projection.MainPath, _correctionStart / 100)),
+        new("apex", "Apex", "A", ProgressiveTrackProjection.PointAt(Projection.MainPath, _correctionApex / 100)),
+        new("exit", "Exit", "X", ProgressiveTrackProjection.PointAt(Projection.MainPath, _correctionEnd / 100))
+    ];
+
+    private void ActivateCorrectionHandle(string handle) => _activeCorrectionHandle = handle;
+
+    private void HandleCorrectionKeyDown(KeyboardEventArgs args, string handle)
+    {
+        if (args.Key is "Enter" or " ") ActivateCorrectionHandle(handle);
+    }
+
+    private async Task SetCorrectionFromPointer(MouseEventArgs args)
+    {
+        if (!_correctionOpen || Projection.MainPath.Count == 0) return;
+        _correctionError = string.Empty;
+        var coordinates = await JS.InvokeAsync<double[]>("iracingCoach.pointerViewBox", _mapElement, args.ClientX, args.ClientY, 720, 420);
+        if (coordinates.Length < 2) return;
+        var nearest = Projection.MainPath.MinBy(point => Math.Pow(point.X - coordinates[0], 2) + Math.Pow(point.Y - coordinates[1], 2));
+        if (nearest is null) return;
+        var value = nearest.Percent * 100;
+        switch (_activeCorrectionHandle)
+        {
+            case "entry":
+                _correctionStart = value;
+                _activeCorrectionHandle = "apex";
+                break;
+            case "apex":
+                _correctionApex = value;
+                _activeCorrectionHandle = "exit";
+                break;
+            default:
+                _correctionEnd = value;
+                _activeCorrectionHandle = "entry";
+                break;
         }
     }
-    private MapPoint PointAt(double percent) => MapPoints.MinBy(point => Math.Abs(point.Percent - percent)) ?? new MapPoint(percent, 210, 120);
+
+    private async Task SaveCorrection()
+    {
+        if (SelectedTurn is not { } turn || string.IsNullOrWhiteSpace(_correctionLabel)) return;
+        var start = _correctionStart / 100;
+        var apex = _correctionApex / 100;
+        var end = _correctionEnd / 100;
+        if (!ProgressiveTurnBounds.TryValidate(start, apex, end, out _correctionError)) return;
+        var corrected = turn with
+        {
+            Label = _correctionLabel.Trim(),
+            StartPct = start,
+            ApexPct = apex,
+            EndPct = end,
+            SourceType = string.Equals(_correctionLabel.Trim(), turn.Label, StringComparison.Ordinal)
+                ? turn.SourceType
+                : "verified-manual",
+            Confidence = "user-verified",
+            IsOfficial = string.Equals(_correctionLabel.Trim(), turn.Label, StringComparison.Ordinal) && turn.IsOfficial,
+            CorrectionNote = "Driver-verified local turn label and bounds.",
+            UserVerified = true
+        };
+        if (CorrectionRequested is null || !await CorrectionRequested(new ProgressiveTurnCorrectionRequest(
+                Resolution.MapIdentity,
+                corrected.CornerId,
+                corrected.Label,
+                corrected.StartPct,
+                corrected.ApexPct,
+                corrected.EndPct)))
+            return;
+        _correctionOpen = false;
+        _correctionError = string.Empty;
+        await Select(corrected);
+    }
+
+    private static string ShortLabel(string label)
+    {
+        if (label.StartsWith("Turn ", StringComparison.OrdinalIgnoreCase)) return label[5..];
+        if (label.StartsWith("Load zone ", StringComparison.OrdinalIgnoreCase)) return $"Z{label[10..]}";
+        return label.Length <= 4 ? label : label[..4];
+    }
+
+    private static string TurnAccessibleName(ProgressiveTurnAnnotation turn) =>
+        $"{turn.Label}, {turn.StartPct:P0} to {turn.EndPct:P0}, {TurnStatus(turn).ToLowerInvariant()}";
+    private static string TurnStatus(ProgressiveTurnAnnotation turn) => turn.UserVerified
+        ? "Bounds verified"
+        : turn.IsOfficial
+            ? "Official label · bounds unverified"
+            : "Recorded zone · bounds unverified";
+    private static string AriaBoolean(bool value) => value ? "true" : "false";
+    private static string CorrectionHandleLabel(string handle) => handle switch { "entry" => "entry", "apex" => "apex", _ => "exit" };
     private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
-    private sealed record Zone(string Label, double StartPercent, double EndPercent, bool Wraps) { public double CenterPercent => Wraps ? ((StartPercent + EndPercent + 1) / 2) % 1 : (StartPercent + EndPercent) / 2; }
-    private sealed record MapPoint(double Percent, double X, double Y);
+    private sealed record CorrectionHandle(string Key, string Label, string ShortLabel, ProgressiveMapPoint Point);
 }

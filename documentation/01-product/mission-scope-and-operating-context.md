@@ -20,7 +20,7 @@ It is not a general chat client, social service, multi-user SaaS product, or rep
 | ID | Workflow | Product outcome |
 | --- | --- | --- |
 | `PROD-001` | Race Planning | Build one traceable briefing for the selected friendly car, exact layout, setup type, and distance. |
-| `PROD-002` | Race Analysis | Open a recorded event and inspect deterministic laps, runs, telemetry, tires, fuel, strategy, setup, and interruption context. |
+| `PROD-002` | Race Analysis | Open a recorded event and inspect deterministic Telemetry, Technical data, and a synchronized recorded-data Race replay, including laps, runs, participants, tires, fuel, strategy, setup, and interruption context where supported. |
 | `PROD-003` | Starting Tune | Build a defensible coaching package and baseline plan without generating a simulator-loadable STO. |
 | `PROD-004` | Progressive Tuning | Turn structured driver feedback plus clean recorded evidence into controlled, reversible experiments. |
 
@@ -44,7 +44,7 @@ Live Telemetry and Live Monitor are first-class supporting workflows.
 ## Non-goals and prohibitions
 
 - No raw IBT editor.
-- No replay, setup, purchased HTML, or iRacing installation mutation.
+- No `.rpy` playback/editing, source telemetry mutation, setup mutation, purchased HTML mutation, or iRacing installation mutation. Race replay is a read-only visualization derived from retained IBT evidence.
 - No unverified `.sto` decoder or writer in the production path.
 - No Garage61 credential scraping or global-lap claim without explicit scope.
 - No continuous high-rate telemetry upload to AI.

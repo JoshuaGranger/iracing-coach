@@ -25,6 +25,13 @@ public interface ICoachEngineSupervisor : IAsyncDisposable
     Task<CoachEngineLogin> BeginChatGptLoginAsync(bool deviceCode = false, CancellationToken cancellationToken = default);
     Task CancelLoginAsync(string loginId, CancellationToken cancellationToken = default);
     Task<CoachEngineReply> AskCoachAsync(string? threadId, string question, string evidenceJson, CancellationToken cancellationToken = default);
+    Task<CoachEngineReply> AskStructuredCoachAsync(
+        string? threadId,
+        string instruction,
+        string evidenceJson,
+        string outputSchemaFileName,
+        CancellationToken cancellationToken = default) =>
+        AskCoachAsync(threadId, instruction, evidenceJson, cancellationToken);
     Task StopAsync(CancellationToken cancellationToken = default);
 }
 
@@ -293,7 +300,7 @@ public sealed class CodexAppServerSupervisor : ICoachEngineSupervisor
 
             await RequestAsync("initialize", new
             {
-                clientInfo = new { name = "iracing_coach", title = "iRacing Coach", version = "0.14.2" }
+                clientInfo = new { name = "iracing_coach", title = "iRacing Coach", version = "0.15.0" }
             }, cancellationToken);
             await NotifyAsync("initialized", new { }, cancellationToken);
             SetCurrent(new(true, true, false, "running", "Coach Engine is running.", installation.RuntimeVersion));
@@ -345,23 +352,66 @@ public sealed class CodexAppServerSupervisor : ICoachEngineSupervisor
         await RefreshAccountCoreAsync(cancellationToken);
     }
 
-    public async Task<CoachEngineReply> AskCoachAsync(string? threadId, string question, string evidenceJson, CancellationToken cancellationToken = default)
+    public Task<CoachEngineReply> AskCoachAsync(string? threadId, string question, string evidenceJson, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(question)) throw new ArgumentException("Enter a coaching question.", nameof(question));
+        return AskStructuredCoachCoreAsync(
+            threadId,
+            $"Driver question:\n{question.Trim()}",
+            evidenceJson,
+            "ai-coaching-output.schema.json",
+            schemaRequired: false,
+            cancellationToken);
+    }
+
+    public Task<CoachEngineReply> AskStructuredCoachAsync(
+        string? threadId,
+        string instruction,
+        string evidenceJson,
+        string outputSchemaFileName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(instruction)) throw new ArgumentException("Enter a coaching instruction.", nameof(instruction));
+        return AskStructuredCoachCoreAsync(
+            threadId,
+            instruction.Trim(),
+            evidenceJson,
+            outputSchemaFileName,
+            schemaRequired: true,
+            cancellationToken);
+    }
+
+    private async Task<CoachEngineReply> AskStructuredCoachCoreAsync(
+        string? threadId,
+        string instruction,
+        string evidenceJson,
+        string outputSchemaFileName,
+        bool schemaRequired,
+        CancellationToken cancellationToken)
     {
         if (_process is not { HasExited: false } || !Current.ChatGptConnected || _settings is null || _installation is null)
             throw new InvalidOperationException("Connect ChatGPT before requesting AI coaching.");
-        if (string.IsNullOrWhiteSpace(question)) throw new ArgumentException("Enter a coaching question.", nameof(question));
 
         var activeThreadId = await ResolveThreadAsync(threadId, cancellationToken);
-        var outputSchemaPath = Path.Combine(_installation.SchemaDirectory, "ai-coaching-output.schema.json");
+        var safeSchemaName = Path.GetFileName(outputSchemaFileName);
+        if (!string.Equals(safeSchemaName, outputSchemaFileName, StringComparison.Ordinal) ||
+            !safeSchemaName.EndsWith(".schema.json", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Coach output schema name is invalid.");
+        }
+        var outputSchemaPath = ResolveOutputSchemaPath(_installation.SchemaDirectory, safeSchemaName);
         JsonElement? outputSchema = null;
-        if (File.Exists(outputSchemaPath))
+        if (outputSchemaPath is not null)
         {
             using var schemaDocument = JsonDocument.Parse(File.ReadAllText(outputSchemaPath));
             outputSchema = schemaDocument.RootElement.Clone();
         }
+        else if (schemaRequired)
+        {
+            throw new InvalidOperationException($"Coach output contract {safeSchemaName} is missing. Use Repair installation.");
+        }
         var prompt = $"""
-            Driver question:
-            {question.Trim()}
+            {instruction}
 
             Deterministic race evidence (authoritative JSON):
             {evidenceJson}
@@ -395,6 +445,25 @@ public sealed class CodexAppServerSupervisor : ICoachEngineSupervisor
         {
             _turns.TryRemove(turnId, out _);
         }
+    }
+
+    private static string? ResolveOutputSchemaPath(string packagedSchemaDirectory, string fileName)
+    {
+        var packaged = Path.Combine(packagedSchemaDirectory, fileName);
+        if (File.Exists(packaged)) return packaged;
+
+        foreach (var root in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var current = new DirectoryInfo(root);
+            while (current is not null)
+            {
+                var candidate = Path.Combine(current.FullName, "companion-app-handoff", "contracts", fileName);
+                if (File.Exists(candidate)) return candidate;
+                current = current.Parent;
+            }
+        }
+
+        return null;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)

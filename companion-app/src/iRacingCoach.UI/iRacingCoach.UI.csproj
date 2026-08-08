@@ -10,4 +10,7 @@
     <ProjectReference Include="..\iRacingCoach.Contracts\iRacingCoach.Contracts.csproj" />
     <ProjectReference Include="..\iRacingCoach.Coordinator\iRacingCoach.Coordinator.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Data\turn-map-catalog.v1.json" />
+  </ItemGroup>
 </Project>

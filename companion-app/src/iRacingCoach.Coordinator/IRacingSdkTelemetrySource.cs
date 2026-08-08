@@ -1,6 +1,7 @@
 using System.IO.MemoryMappedFiles;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace iRacingCoach.Coordinator;
 
@@ -16,6 +17,11 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
     private int _lastTick = -1;
     private int _variableCount = -1;
     private int _variableOffset = -1;
+    private int _sessionInfoUpdate = -1;
+    private long? _subsessionId;
+    private IReadOnlyDictionary<int, string> _sessionTypes = new Dictionary<int, string>();
+    private IReadOnlyList<LiveReplayParticipant> _replayParticipants = [];
+    private IReadOnlyList<LiveReplayChannelCoverage> _replayCoverage = [];
     private DateTimeOffset _lastOpenAttempt = DateTimeOffset.MinValue;
 
     public bool TryRead(out LiveTelemetrySample sample)
@@ -36,6 +42,7 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 throw new InvalidDataException("The live iRacing SDK header is outside supported bounds.");
             if (variableCount != _variableCount || variableOffset != _variableOffset)
                 ReadVariables(variableCount, variableOffset, bufferLength);
+            ReadSessionInfoIfChanged(_view.ReadInt32(12), _view.ReadInt32(16), _view.ReadInt32(20));
 
             var bestTick = int.MinValue;
             var bestOffset = -1;
@@ -58,8 +65,14 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
             var positions = ReadIntArray("CarIdxPosition", bestOffset);
             var classPositions = ReadIntArray("CarIdxClassPosition", bestOffset);
             var carLaps = ReadIntArray("CarIdxLap", bestOffset);
+            var carLapsCompleted = ReadIntArray("CarIdxLapCompleted", bestOffset);
+            var carLapDistance = ReadFloatArray("CarIdxLapDistPct", bestOffset);
+            var carOnPitRoad = ReadBoolArray("CarIdxOnPitRoad", bestOffset);
+            var carTrackSurface = ReadIntArray("CarIdxTrackSurface", bestOffset);
+            var carPaceFlags = ReadIntArray("CarIdxPaceFlags", bestOffset);
             var f2Times = ReadFloatArray("CarIdxF2Time", bestOffset);
             var lastLapTimes = ReadFloatArray("CarIdxLastLapTime", bestOffset);
+            var bestLapTimes = ReadFloatArray("CarIdxBestLapTime", bestOffset);
             var overallPosition = ReadInt("PlayerCarPosition", bestOffset) ?? ArrayValue(positions, playerIndex);
             var classPosition = ReadInt("PlayerCarClassPosition", bestOffset) ?? ArrayValue(classPositions, playerIndex);
             var leaderIndex = FindByPosition(positions, 1);
@@ -76,7 +89,19 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
             var repair = (flags & 0x00100000u) != 0;
             var lapRaw = ReadInt("Lap", bestOffset);
             var lapsRemaining = ReadDouble("SessionLapsRemainEx", bestOffset) ?? ReadDouble("SessionLapsRemain", bestOffset);
+            var replayCars = ReplayCars(
+                carLapDistance,
+                carLaps,
+                carLapsCompleted,
+                positions,
+                classPositions,
+                carOnPitRoad,
+                carTrackSurface,
+                carPaceFlags,
+                lastLapTimes,
+                bestLapTimes);
 
+            var sessionNumber = ReadInt("SessionNum", bestOffset);
             sample = new LiveTelemetrySample
             {
                 Connected = true,
@@ -112,6 +137,9 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 SteeringWheelAngleRadians = ReadDouble("SteeringWheelAngle", bestOffset),
                 Throttle = ReadDouble("Throttle", bestOffset),
                 Brake = ReadDouble("Brake", bestOffset),
+                BrakeAbsActive = ReadBool("BrakeABSactive", bestOffset) ??
+                    (ReadDouble("BrakeABSactive", bestOffset) is { } absActive ? absActive > .5 : null),
+                BrakeAbsCutPercent = Percentage(ReadDouble("BrakeABScutPct", bestOffset)),
                 Gear = ReadInt("Gear", bestOffset),
                 Rpm = ReadDouble("RPM", bestOffset),
                 YawRateRadiansPerSecond = ReadDouble("YawRate", bestOffset),
@@ -120,7 +148,20 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 SpeedMetersPerSecond = ReadDouble("Speed", bestOffset),
                 LapDistancePercent = ReadDouble("LapDistPct", bestOffset),
                 Latitude = ReadDouble("Lat", bestOffset),
-                Longitude = ReadDouble("Lon", bestOffset)
+                Longitude = ReadDouble("Lon", bestOffset),
+                SessionTimeSeconds = ReadDouble("SessionTime", bestOffset),
+                SessionState = ReadInt("SessionState", bestOffset),
+                SessionFlags = flags,
+                SessionUniqueId = ReadLong("SessionUniqueID", bestOffset),
+                SubsessionId = _subsessionId,
+                SessionNumber = sessionNumber,
+                SessionType = sessionNumber.HasValue && _sessionTypes.TryGetValue(sessionNumber.Value, out var sessionType)
+                    ? sessionType
+                    : null,
+                PlayerCarIndex = playerIndex,
+                ReplayCoverage = _replayCoverage,
+                ReplayParticipants = _replayParticipants,
+                ReplayCars = replayCars
             };
             return true;
         }
@@ -177,9 +218,151 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
         }
         _variableCount = count;
         _variableOffset = offset;
+        RefreshReplayCoverage();
+    }
+
+    private void ReadSessionInfoIfChanged(int update, int length, int offset)
+    {
+        if (update == _sessionInfoUpdate) return;
+        if (length <= 0 || length > 16 * 1024 * 1024 || offset < HeaderSize || (long)offset + length > _view!.Capacity)
+            throw new InvalidDataException("The live SessionInfo block exceeds shared-memory bounds.");
+        var bytes = new byte[length];
+        _view.ReadArray(offset, bytes, 0, bytes.Length);
+        var nul = Array.IndexOf(bytes, (byte)0);
+        var text = Encoding.UTF8.GetString(bytes, 0, nul >= 0 ? nul : bytes.Length);
+        _subsessionId = Regex.Match(text, @"(?m)^\s*SubSessionID:\s*(\d+)\s*$") is { Success: true } subsession &&
+            long.TryParse(subsession.Groups[1].Value, out var parsedSubsession)
+                ? parsedSubsession
+                : null;
+        _sessionTypes = ParseSessionTypes(text);
+        _replayParticipants = ParseParticipants(text);
+        _sessionInfoUpdate = update;
+        RefreshReplayCoverage();
+    }
+
+    private static IReadOnlyDictionary<int, string> ParseSessionTypes(string sessionInfo)
+    {
+        var result = new Dictionary<int, string>();
+        foreach (Match match in Regex.Matches(
+                     sessionInfo,
+                     @"(?ms)^\s*-\s*SessionNum:\s*(?<number>-?\d+)\s*(?<body>.*?)(?=^\s*-\s*SessionNum:|^\s*DriverInfo:|\z)"))
+        {
+            if (!int.TryParse(match.Groups["number"].Value, out var number)) continue;
+            var type = Regex.Match(match.Groups["body"].Value, @"(?m)^\s*SessionType:\s*(.*?)\s*$");
+            if (!type.Success) continue;
+            var value = type.Groups[1].Value.Trim().Trim('"', '\'');
+            if (value.Length > 0 && value != "~") result[number] = value;
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<LiveReplayParticipant> ParseParticipants(string sessionInfo)
+    {
+        var result = new List<LiveReplayParticipant>();
+        foreach (Match match in Regex.Matches(
+                     sessionInfo,
+                     @"(?ms)^\s*-\s*CarIdx:\s*(?<index>\d+)\s*(?<body>.*?)(?=^\s*-\s*CarIdx:|\z)"))
+        {
+            if (!int.TryParse(match.Groups["index"].Value, out var carIndex)) continue;
+            var body = match.Groups["body"].Value;
+            string? field(string name)
+            {
+                var value = Regex.Match(body, $@"(?m)^\s*{Regex.Escape(name)}:\s*(.*?)\s*$");
+                if (!value.Success) return null;
+                var normalized = value.Groups[1].Value.Trim();
+                if (normalized.Length >= 2 && ((normalized[0] == '"' && normalized[^1] == '"') || (normalized[0] == '\'' && normalized[^1] == '\'')))
+                    normalized = normalized[1..^1];
+                return normalized.Length == 0 || normalized == "~" ? null : normalized;
+            }
+            int? integer(string name) => int.TryParse(field(name), out var value) ? value : null;
+            bool? boolean(string name) => field(name)?.Trim().ToLowerInvariant() switch
+            {
+                "1" or "true" => true,
+                "0" or "false" => false,
+                _ => null
+            };
+            result.Add(new LiveReplayParticipant(
+                carIndex,
+                field("CarNumber") ?? field("CarNumberRaw"),
+                integer("CarClassID"),
+                field("CarClassShortName"),
+                field("CarScreenName") ?? field("CarPath"),
+                field("UserName") ?? field("AbbrevName"),
+                field("TeamName"),
+                boolean("IsSpectator")));
+        }
+        return result.GroupBy(item => item.CarIndex).Select(group => group.First()).OrderBy(item => item.CarIndex).ToArray();
+    }
+
+    private void RefreshReplayCoverage()
+    {
+        var definitions = new (string Name, string Reason)[]
+        {
+            ("SessionTime", "SessionTime was not present in live shared memory."),
+            ("SessionState", "SessionState was not present in live shared memory."),
+            ("SessionFlags", "Global session flags were not present in live shared memory."),
+            ("CarIdxLapDistPct", "Full-field lap distance was not present; rivals cannot be placed."),
+            ("CarIdxLap", "Per-car lap number was not present."),
+            ("CarIdxLapCompleted", "Per-car completed laps were not present."),
+            ("CarIdxPosition", "Per-car overall position was not present."),
+            ("CarIdxClassPosition", "Per-car class position was not present."),
+            ("CarIdxOnPitRoad", "Per-car pit-road state was not present."),
+            ("CarIdxTrackSurface", "Per-car track-surface state was not present."),
+            ("CarIdxPaceFlags", "Per-car pace flags were not present."),
+            ("CarIdxLastLapTime", "Per-car last-lap timing was not present."),
+            ("CarIdxBestLapTime", "Per-car best-lap timing was not present."),
+        };
+        var coverage = definitions.Select(item => new LiveReplayChannelCoverage(
+            item.Name,
+            _variables.ContainsKey(item.Name),
+            _variables.ContainsKey(item.Name) ? null : item.Reason)).ToList();
+        coverage.Add(new LiveReplayChannelCoverage(
+            "DriverInfo.Drivers",
+            _replayParticipants.Count > 0,
+            _replayParticipants.Count > 0 ? null : "DriverInfo participants were not present, so car number/class/name are unavailable."));
+        _replayCoverage = coverage;
+    }
+
+    private static IReadOnlyList<LiveReplayCarSample> ReplayCars(
+        float[] lapDistance,
+        int[] laps,
+        int[] completedLaps,
+        int[] positions,
+        int[] classPositions,
+        bool[] onPitRoad,
+        int[] trackSurface,
+        int[] paceFlags,
+        float[] lastLapTimes,
+        float[] bestLapTimes)
+    {
+        var count = new[] { lapDistance.Length, laps.Length, completedLaps.Length, positions.Length, classPositions.Length, onPitRoad.Length, trackSurface.Length, paceFlags.Length, lastLapTimes.Length, bestLapTimes.Length }.Max();
+        var result = new List<LiveReplayCarSample>(count);
+        for (var index = 0; index < count; index++)
+        {
+            var rawDistance = ArrayValue(lapDistance, index);
+            double? distance = rawDistance is { } value && float.IsFinite(value) && value >= 0 ? value % 1d : null;
+            var position = Positive(ArrayValue(positions, index));
+            var classPosition = Positive(ArrayValue(classPositions, index));
+            var surface = ArrayValue(trackSurface, index);
+            if (!distance.HasValue && !position.HasValue && !classPosition.HasValue && surface is null or -1) continue;
+            result.Add(new LiveReplayCarSample(
+                index,
+                distance,
+                ArrayValue(laps, index),
+                ArrayValue(completedLaps, index),
+                position,
+                classPosition,
+                ArrayValue(onPitRoad, index),
+                surface,
+                ArrayValue(paceFlags, index),
+                Positive(ArrayValue(lastLapTimes, index)),
+                Positive(ArrayValue(bestLapTimes, index))));
+        }
+        return result;
     }
 
     private int? ReadInt(string name, int row) => ReadNumber(name, row) is { } value ? (int)value : null;
+    private long? ReadLong(string name, int row) => ReadNumber(name, row) is { } value && double.IsFinite(value) ? (long)Math.Round(value) : null;
     private uint? ReadUInt(string name, int row)
     {
         if (!_variables.TryGetValue(name, out var variable) || variable.Type is not (2 or 3)) return null;
@@ -218,6 +401,13 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
         if (!_variables.TryGetValue(name, out var variable) || variable.Type != 4) return [];
         var values = new float[variable.Count];
         for (var index = 0; index < values.Length; index++) values[index] = _view!.ReadSingle(row + variable.Offset + index * 4);
+        return values;
+    }
+    private bool[] ReadBoolArray(string name, int row)
+    {
+        if (!_variables.TryGetValue(name, out var variable) || variable.Type != 1) return [];
+        var values = new bool[variable.Count];
+        for (var index = 0; index < values.Length; index++) values[index] = _view!.ReadByte(row + variable.Offset + index) != 0;
         return values;
     }
 
@@ -259,6 +449,11 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
         _variables.Clear();
         _variableCount = -1;
         _variableOffset = -1;
+        _sessionInfoUpdate = -1;
+        _subsessionId = null;
+        _sessionTypes = new Dictionary<int, string>();
+        _replayParticipants = [];
+        _replayCoverage = [];
         _lastTick = -1;
     }
 

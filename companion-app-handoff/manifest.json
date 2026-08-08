@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "bundle": "iracing-coach-companion-app-build-inputs",
   "scope": "clean build inputs; private data and credentials excluded",
-  "generated_at_utc": "2026-08-07T16:23:20.180075Z",
+  "generated_at_utc": "2026-08-08T16:18:03.320826Z",
   "excluded": [
     "data/ (optional private regression corpus)",
     ".git/",
@@ -14,8 +14,8 @@
   "files": [
     {
       "path": "README.md",
-      "bytes": 1549,
-      "sha256": "579f9a2b067bd43f6e88cb6e0559f90507f0b056becfa77d5d2d707d9d18ec35"
+      "bytes": 2134,
+      "sha256": "7af908e8e94848ef7828e8b2f9e0e1eba45b7b47cf13c7fc74aa7e589ee84f0a"
     },
     {
       "path": "AGENTS.md",
@@ -38,19 +38,24 @@
       "sha256": "a320ed830a126c2b72f88ea66b84ca88ac8b02a40f43e594549b18ed4a6e295d"
     },
     {
+      "path": "iracing-coach/config/tuning-rules/nascar-oreilly-xfinity-2026s3-v1.json",
+      "bytes": 6012,
+      "sha256": "ca2e850b58255e75fdd231770db78bcdee1385338e6bfb17d701d8a0914a3dc0"
+    },
+    {
       "path": "iracing-coach/skills/analyze-iracing-race/agents/openai.yaml",
       "bytes": 319,
       "sha256": "b781c0dcffe78a36c4f8aa20f689d20f615fe2d26aa71405f9661ef438085665"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/references/companion-app.md",
-      "bytes": 15812,
-      "sha256": "54f850937060609bdfd88e66d6026c8c9d74d87622480a9066bfb807755bfe24"
+      "bytes": 15959,
+      "sha256": "848fb144297d60f3db05cb019b7c470dd7ddf88f23b9a4fc8476498622d5d8ef"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/references/data-and-analysis.md",
-      "bytes": 20459,
-      "sha256": "1211e8d9eee560b883abb6fc40d4fad37bd35e94615ff74eeeb8db0323851891"
+      "bytes": 20554,
+      "sha256": "f1e79cb5e7c7671829ec8a4c9bcfc48671d83eb323490b04eb6a2681d9238543"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/references/garage61-and-web.md",
@@ -59,8 +64,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/references/report-contract.md",
-      "bytes": 9097,
-      "sha256": "03551d0dd4389ee417997f55ad58d9ea013c519ae452fae04569b547a90bd6d7"
+      "bytes": 9241,
+      "sha256": "31c9e542abeca928adc9df8d88255fd757feec45ea872c19c0f55d55fa7804ce"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/references/setup-tuning.md",
@@ -69,8 +74,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/analysis_engine.py",
-      "bytes": 245800,
-      "sha256": "0b0aceb7214495e71ea407437f97a96b327b054828aeba88ee4fabede3048d50"
+      "bytes": 285942,
+      "sha256": "851404da0b607f2f65882ed2e9304ccc1e8ff9cd4b567300ea51d6cac9ecbffe"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/coach_cli.py",
@@ -99,8 +104,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py",
-      "bytes": 40156,
-      "sha256": "110258362525d8eed419d7bab406704bbb6981cd6a4af8b7aa9705dcbb2a4aa5"
+      "bytes": 48137,
+      "sha256": "ca77b5cc3e01df336b567c7f1bed8fbc6921f79fa6a142a20f35d28b91aa884c"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/native_events.py",
@@ -116,6 +121,11 @@
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/race_card.py",
       "bytes": 51659,
       "sha256": "9e335cfb08c5b7f04e20f27e4ebda823da6b5754cd563417059f25138db4de44"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/race_foundations.py",
+      "bytes": 48939,
+      "sha256": "01db0bacbd91718b23ab672708369e6a2a5630f450305bce43534f8ea6c5905d"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/reporting.py",
@@ -139,33 +149,33 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/storage.py",
-      "bytes": 62262,
-      "sha256": "48853e5af1d842aaad3fcf1db88ec9f700d90d9fed1c2366e4af7d03d54b2fe5"
+      "bytes": 107963,
+      "sha256": "bbdef0fb9a94f9ef41baa0aa3ff8cc85fe14a97a9b44c54a4746a4fb65688bde"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/tuning_engine.py",
-      "bytes": 34286,
-      "sha256": "f2b7e8882b584f232a04a2637ebc21a157029f29dff0db5486d6da6bfaa05829"
+      "bytes": 93571,
+      "sha256": "5e55125bc7639edb75db87d6cf590166740a18049201f8e86ba237481fde9c8e"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/tuning_workflow.py",
-      "bytes": 47017,
-      "sha256": "fb23e6ca3cb67e32581eb341921cafb949719dcbe4716e9a28d5d3bcb4e92429"
+      "bytes": 65214,
+      "sha256": "0cededa691554e6af81861e515b8c42ab21141f54a1e1033676a3d79efd7d08e"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/workflow.py",
-      "bytes": 150393,
-      "sha256": "c24287187d85a8b31534dd603d6ee71b8f04c334b3950995e41d9ba23a8c685c"
+      "bytes": 155097,
+      "sha256": "b4e8160048fdffce72d91698f3151acc4b83b69ecde4704ee7603347c936f8da"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/SKILL.md",
-      "bytes": 21950,
-      "sha256": "1aaa76cb50896bea0277bd1b8532cdefee55985ac3b1aeece3ea2ce831501e7b"
+      "bytes": 22073,
+      "sha256": "58abeb39511ce013233d2b18f4c242271da05fcd3f5991fcdfc47866d73e5b82"
     },
     {
       "path": "iracing-coach/tests/test_analysis_engine.py",
-      "bytes": 44387,
-      "sha256": "30de67928ad31f533c0b778006f516b594fd6d02bc62ef8dfdcaf41a7be5aa32"
+      "bytes": 47520,
+      "sha256": "1ac4a93fd5f0d82f5c459ae2654b88e950b7a5a614809494f9dfe8c7e3d95305"
     },
     {
       "path": "iracing-coach/tests/test_coach_cli.py",
@@ -174,8 +184,8 @@
     },
     {
       "path": "iracing-coach/tests/test_damage_repair_analysis.py",
-      "bytes": 12251,
-      "sha256": "04933b5e2f58109983f009262e6c9d7ebc8c7210bcaa679e8ab01eb118e56af0"
+      "bytes": 13734,
+      "sha256": "f4f19c55dce95894d95ccc197cae1584638fa1a1c5a928657782e4a7853a1193"
     },
     {
       "path": "iracing-coach/tests/test_full_telemetry_contract.py",
@@ -219,13 +229,18 @@
     },
     {
       "path": "iracing-coach/tests/test_path_security.py",
-      "bytes": 1946,
-      "sha256": "674d6391e581d2cfde660bb73e1aeb1478ea1d19bcfcfefbf505fa7925080ac0"
+      "bytes": 3166,
+      "sha256": "7161dcdb4766739ff499bad7c4580a1e0607141c2a47794ccc4b7c1331b8d227"
     },
     {
       "path": "iracing-coach/tests/test_race_card.py",
       "bytes": 12609,
       "sha256": "613918020dbe8406e5079c4df1ca9dccdaac4e9689a87f927667935398bf35e9"
+    },
+    {
+      "path": "iracing-coach/tests/test_race_foundations.py",
+      "bytes": 43679,
+      "sha256": "87e47022301a8d22131c326344bd787e0ec24d5f366539e082b136c1d422dea9"
     },
     {
       "path": "iracing-coach/tests/test_reporting.py",
@@ -246,6 +261,11 @@
       "path": "iracing-coach/tests/test_storage.py",
       "bytes": 23497,
       "sha256": "bb4d7d162e623af896b0407854a5778677faeaccfb1c5e86dedaf313b72baa82"
+    },
+    {
+      "path": "iracing-coach/tests/test_structured_tuning.py",
+      "bytes": 24726,
+      "sha256": "d51b402ae84c7f91306ab923be0e2a91b5fe2d76d9187d5b77fc0c102ec7aff3"
     },
     {
       "path": "iracing-coach/tests/test_telemetry_profile.py",
@@ -269,8 +289,8 @@
     },
     {
       "path": "companion-app-handoff/ACCEPTANCE_CHECKLIST.md",
-      "bytes": 6977,
-      "sha256": "1db4b1f3134badd6de7c6ba27fbcc53c0f27ca2f51a86f35112e8466e4373ced"
+      "bytes": 10485,
+      "sha256": "bbb03d2d9d61b3301c4d8cb426b335c7e6edc9f07d5794c02b64ea08dd6cf6a1"
     },
     {
       "path": "companion-app-handoff/AI_ORCHESTRATION.md",
@@ -313,6 +333,11 @@
       "sha256": "74f26a1060cfb645d8e4b144d4d7203e068387de9ac2cd332c6786d4272daaa8"
     },
     {
+      "path": "companion-app-handoff/contracts/ai-tuning-output.schema.json",
+      "bytes": 1192,
+      "sha256": "d370090dfc181f6751f2e3dd8d3259844bf6fbc32bab96e59351f8daeba062af"
+    },
+    {
       "path": "companion-app-handoff/contracts/analyze-result-v1.schema.json",
       "bytes": 1988,
       "sha256": "20f82d40e2160d597839daac1acf3f6e0a9667e216488bf5ab131cc73872ddde"
@@ -324,8 +349,8 @@
     },
     {
       "path": "companion-app-handoff/contracts/compatibility.json",
-      "bytes": 1844,
-      "sha256": "e464a2b5c4021206c73b4406e53cdd0e325137ab63022b09856202afdc2fbd93"
+      "bytes": 1830,
+      "sha256": "e9e82e20dd50416de8082bab6f02936b54b568c847b5a3294ba4cc02d9219e90"
     },
     {
       "path": "companion-app-handoff/contracts/damage-repair-v1.schema.json",
@@ -359,8 +384,8 @@
     },
     {
       "path": "companion-app-handoff/contracts/mcp-tools.v1.json",
-      "bytes": 17589,
-      "sha256": "ab7eb1c10e47c4a0cf016be52ab73f8d0bcb440fb0be4b4af644614173efbcf3"
+      "bytes": 26447,
+      "sha256": "c723d63675befd06cef7a7796423a1105a776be005127730242450ae982d2920"
     },
     {
       "path": "companion-app-handoff/contracts/race-card-v1.schema.json",
@@ -539,8 +564,8 @@
     },
     {
       "path": "companion-app-handoff/scripts/verify_handoff.py",
-      "bytes": 32100,
-      "sha256": "3f4980aa88b1a7f43399109c5248483844fc62672de3a436e6ba1c65f9bbf0f1"
+      "bytes": 32152,
+      "sha256": "77b4b6af979af6022e154f2394cd11152cf17ef025e94bb76d6eac18b27acf85"
     },
     {
       "path": "companion-app-handoff/SECURITY_AND_TRANSFER.md",
@@ -549,8 +574,8 @@
     },
     {
       "path": "companion-app-handoff/START_HERE.md",
-      "bytes": 5835,
-      "sha256": "26be3a02aafbdd46e0da1c5cdbda54984729de84b800670fe48404a8867f2559"
+      "bytes": 6174,
+      "sha256": "94bc944af6ed0da4bd59202b417d5aa1ddd254dbb841404ed03b2cf57ab67ab5"
     },
     {
       "path": "companion-app-handoff/UI_DESIGN_SYSTEM.md",
@@ -559,7 +584,7 @@
     }
   ],
   "totals": {
-    "file_count": 109,
-    "bytes": 2012764
+    "file_count": 114,
+    "bytes": 2332995
   }
 }

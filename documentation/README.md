@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current implementation snapshot](06-reality/implementation-snapshot-0.14.2.md)
+7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.15.0-development.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -45,12 +45,16 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - `04-architecture`
   - [System boundaries and runtime](04-architecture/system-boundaries-and-runtime.md)
   - [Integrations and AI](04-architecture/integrations-and-ai.md)
+  - [Progressive Tuning evidence contract v2](04-architecture/tuning-evidence-v2.md)
   - [Installation, upgrade, and uninstall](04-architecture/installation-upgrade-and-uninstall.md)
 - `05-quality`
   - [Acceptance, test, and release](05-quality/acceptance-test-and-release.md)
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
+- [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
+- [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
-  - [Current implementation snapshot: 0.14.2](06-reality/implementation-snapshot-0.14.2.md)
+  - [Current development snapshot: 0.15.0](06-reality/implementation-snapshot-0.15.0-development.md)
+  - [Stable packaged snapshot: 0.14.2](06-reality/implementation-snapshot-0.14.2.md)
   - [Prior implementation snapshot: 0.14.1](06-reality/implementation-snapshot-0.14.1.md)
   - [Prior implementation snapshot: 0.14.0](06-reality/implementation-snapshot-0.14.0.md)
   - [Prior implementation snapshot: 0.13.0](06-reality/implementation-snapshot-0.13.0.md)
@@ -83,11 +87,12 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 
 ## Current baseline
 
-- Application version: `0.14.2` focused Race Analysis trace-editor parity repair
+- Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
+- Current source version: `0.15.0` development; no 0.15.0 installer or portable release is claimed
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Local verification: 144/144 .NET tests, 187/187 Python tests, five JavaScript syntax checks, the required handoff verifier, a Release build with zero warnings/errors, and a mouse-driven saved-race trace-editor walkthrough passed
+- Current development verification: 211/211 .NET tests and 229/229 Python tests passed; the verified handoff contains 17 MCP tools and 114 files
 - Installer lifecycle: prior guarded install/upgrade/rollback/uninstall evidence is unchanged and was not rerun for every focused UI adjustment
-- Current focused evidence: session-reset live coaching, conservative complete-lap fuel/pace evidence, a dedicated high-resolution live reader, bounded latest-value telemetry backpressure, lazy detailed traces, non-activating automatic popout behavior, phase-qualified Race/Qualifying identity, schema-7 phase-safe UI caches that invalidate pre-fix tire-temperature results, schema-2 deterministic backend indexing, comparable-lap filtering, and versioned evidence-weighted grading have local evidence. A synthetic 240 Hz source exercises the reader above its former polling ceiling, but real-session cadence, combined-load performance, 244 Hz presentation, broad derived-sideslip validation, a genuine tray-menu Exit click, and user acceptance remain open.
+- Development focus: Race Analysis, Technical data, Race replay, global analysis layouts, exact-configuration maps, retained raw telemetry, NASCAR-first tire/capability foundations, and Progressive Tuning evidence-contract v2. Supported and unavailable states remain evidence-gated; development implementation is not user acceptance.
 
-The current reality is summarized in `06-reality/implementation-snapshot-0.14.2.md`. Earlier Race Analysis and artifact evidence remain in their immutable prior snapshots and release records. Unchanged installer lifecycle behavior is deliberately not re-certified for this corrective iteration. Build binaries and private user data are not part of the source repository.
+The current source reality is summarized in `06-reality/implementation-snapshot-0.15.0-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Unchanged installer lifecycle behavior is deliberately not re-certified during the direct-executable feedback loop. Build binaries and private user data are not part of the source repository.

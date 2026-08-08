@@ -9,6 +9,46 @@ public interface ILiveTelemetrySource : IDisposable
     bool TryRead(out LiveTelemetrySample sample);
 }
 
+public sealed record LiveReplayChannelCoverage(string Channel, bool Recorded, string? UnavailableReason);
+
+public sealed record LiveReplayParticipant(
+    int CarIndex,
+    string? CarNumber,
+    int? ClassId,
+    string? ClassName,
+    string? CarName,
+    string? DriverName,
+    string? TeamName,
+    bool? IsSpectator);
+
+public sealed record LiveReplayCarSample(
+    int CarIndex,
+    double? LapDistancePercent,
+    int? Lap,
+    int? CompletedLaps,
+    int? OverallPosition,
+    int? ClassPosition,
+    bool? OnPitRoad,
+    int? TrackSurface,
+    int? PaceFlags,
+    double? LastLapSeconds,
+    double? BestLapSeconds);
+
+public sealed record LiveReplayCaptureFrame(
+    string SessionKey,
+    DateTimeOffset CapturedAt,
+    double? SessionTimeSeconds,
+    int? SessionState,
+    long? SessionFlags,
+    long? SessionUniqueId,
+    long? SubsessionId,
+    int? SessionNumber,
+    string? SessionType,
+    int? PlayerCarIndex,
+    IReadOnlyList<LiveReplayChannelCoverage> Coverage,
+    IReadOnlyList<LiveReplayParticipant> Participants,
+    IReadOnlyList<LiveReplayCarSample> Cars);
+
 public sealed record LiveTelemetrySample
 {
     public bool Connected { get; init; }
@@ -44,6 +84,8 @@ public sealed record LiveTelemetrySample
     public double? SteeringWheelAngleRadians { get; init; }
     public double? Throttle { get; init; }
     public double? Brake { get; init; }
+    public bool? BrakeAbsActive { get; init; }
+    public double? BrakeAbsCutPercent { get; init; }
     public int? Gear { get; init; }
     public double? Rpm { get; init; }
     public double? YawRateRadiansPerSecond { get; init; }
@@ -53,6 +95,17 @@ public sealed record LiveTelemetrySample
     public double? LapDistancePercent { get; init; }
     public double? Latitude { get; init; }
     public double? Longitude { get; init; }
+    public double? SessionTimeSeconds { get; init; }
+    public int? SessionState { get; init; }
+    public long? SessionFlags { get; init; }
+    public long? SessionUniqueId { get; init; }
+    public long? SubsessionId { get; init; }
+    public int? SessionNumber { get; init; }
+    public string? SessionType { get; init; }
+    public int? PlayerCarIndex { get; init; }
+    public IReadOnlyList<LiveReplayChannelCoverage> ReplayCoverage { get; init; } = [];
+    public IReadOnlyList<LiveReplayParticipant> ReplayParticipants { get; init; } = [];
+    public IReadOnlyList<LiveReplayCarSample> ReplayCars { get; init; } = [];
     public string Source { get; init; } = "Local iRacing SDK shared memory";
 }
 
@@ -83,6 +136,8 @@ public sealed class LiveTelemetryService : IDisposable
     private int? _lastConnectedLap;
     private DateTimeOffset? _lastConnectedTimestamp;
     private int? _lastSourceTick;
+    private DateTimeOffset _replaySessionStartedAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastReplayCaptureAt = DateTimeOffset.MinValue;
 
     public LiveTelemetryService(ILiveTelemetrySource source, LiveMonitorLayout layout)
     {
@@ -92,6 +147,8 @@ public sealed class LiveTelemetryService : IDisposable
 
     public event Action<LiveMonitorState>? Updated;
     public event Action<LiveTracePoint>? FrameCaptured;
+    public event Action<LiveReplayCaptureFrame>? ReplayFrameCaptured;
+    public event Action<string>? ReplaySessionEnded;
     public LiveMonitorState Current { get; private set; }
     public bool CoachingPaused { get; private set; }
 
@@ -169,10 +226,13 @@ public sealed class LiveTelemetryService : IDisposable
                 var sessionChanged = ObserveSessionBoundary(sample);
                 if (sessionChanged)
                 {
+                    if (Current.Snapshot.Connected) ReplaySessionEnded?.Invoke("session_changed");
                     _engine.ResetSession();
                     _history.Clear();
                     _historySnapshot = [];
                     _lastHistorySnapshot = sample.Timestamp;
+                    _replaySessionStartedAt = sample.Timestamp;
+                    _lastReplayCaptureAt = DateTimeOffset.MinValue;
                 }
                 ObserveSourceTicks(sample, sessionChanged);
                 var snapshot = _engine.Update(sample, Current.Layout.SafeGlanceEnabled, CoachingPaused);
@@ -203,7 +263,9 @@ public sealed class LiveTelemetryService : IDisposable
                         snapshot.Pit.WindowOpensInLaps ?? snapshot.Pit.FuelHardLimitLaps,
                         snapshot.OverallPosition,
                         LiveTelemetryMetricEncoding.TirePhase(snapshot.TirePhase),
-                        snapshot.TrackTemperatureC);
+                        snapshot.TrackTemperatureC,
+                        sample.BrakeAbsActive,
+                        sample.BrakeAbsCutPercent);
                     tracePoint = new LiveTracePoint(
                         sample.Timestamp, sample.Lap, sample.LapDistancePercent,
                         sample.SpeedMetersPerSecond * 2.2369362920544, sample.Throttle, sample.Brake,
@@ -233,6 +295,7 @@ public sealed class LiveTelemetryService : IDisposable
                 }
                 _lastPublish = DateTimeOffset.UtcNow;
                 if (tracePoint is not null) FrameCaptured?.Invoke(tracePoint);
+                CaptureReplayFrame(sample, sessionChanged);
                 Updated?.Invoke(Current);
             }
             else if (DateTimeOffset.UtcNow - _lastPublish > TimeSpan.FromSeconds(1))
@@ -307,10 +370,39 @@ public sealed class LiveTelemetryService : IDisposable
 
     private void MarkDisconnectedBoundary()
     {
-        if (Current.Snapshot.Connected) _sessionEpoch++;
+        if (Current.Snapshot.Connected)
+        {
+            _sessionEpoch++;
+            ReplaySessionEnded?.Invoke("disconnected");
+        }
         _lastConnectedTimestamp = null;
         _lastConnectedLap = null;
         _lastSourceTick = null;
+    }
+
+    private void CaptureReplayFrame(LiveTelemetrySample sample, bool sessionChanged)
+    {
+        if (!sample.Connected) return;
+        if (!sessionChanged && sample.Timestamp - _lastReplayCaptureAt < TimeSpan.FromMilliseconds(500)) return;
+        if (_replaySessionStartedAt == DateTimeOffset.MinValue) _replaySessionStartedAt = sample.Timestamp;
+        _lastReplayCaptureAt = sample.Timestamp;
+        var normalizedSessionType = string.Concat((sample.SessionType ?? "unknown").Where(char.IsLetterOrDigit)).ToLowerInvariant();
+        var identity = $"sub-{sample.SubsessionId?.ToString() ?? "unknown"}-sid-{sample.SessionUniqueId?.ToString() ?? "unknown"}-num-{sample.SessionNumber?.ToString() ?? "unknown"}-type-{normalizedSessionType}";
+        var sessionKey = $"{identity}-epoch-{_sessionEpoch}-{_replaySessionStartedAt:yyyyMMddHHmmssfff}";
+        ReplayFrameCaptured?.Invoke(new LiveReplayCaptureFrame(
+            sessionKey,
+            sample.Timestamp,
+            sample.SessionTimeSeconds,
+            sample.SessionState,
+            sample.SessionFlags,
+            sample.SessionUniqueId,
+            sample.SubsessionId,
+            sample.SessionNumber,
+            sample.SessionType,
+            sample.PlayerCarIndex,
+            sample.ReplayCoverage,
+            sample.ReplayParticipants,
+            sample.ReplayCars));
     }
 
     public void Dispose()
@@ -325,6 +417,7 @@ public sealed class LiveTelemetryService : IDisposable
         }
         if (pollThread is not null && pollThread != Thread.CurrentThread)
             pollThread.Join(TimeSpan.FromMilliseconds(250));
+        ReplaySessionEnded?.Invoke("disposed");
         _source.Dispose();
     }
 

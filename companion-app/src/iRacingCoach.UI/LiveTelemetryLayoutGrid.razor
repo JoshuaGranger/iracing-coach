@@ -133,6 +133,10 @@
                                 <label>Chart history
                                     <select value="@tile.TrendDuration" @onchange="args => ChangeTileTrend(tile.Id, args)">@foreach (var duration in LiveTelemetryCatalog.TrendDurations(tile.MetricId)) { <option value="@duration">@TrendLabel(duration)</option> }</select>
                                 </label>
+                                @if (IsBrakeTrend(tile))
+                                {
+                                    <label class="live-abs-highlight-option" title="@(HasAbsHistory ? "Color recorded ABS intervention yellow" : "ABS activation was not recorded")"><span>ABS highlight</span><input type="checkbox" checked="@tile.HighlightAbsIntervention" disabled="@(!HasAbsHistory)" @onchange="args => ChangeTileAbsHighlight(tile.Id, args)" /></label>
+                                }
                             }
                         </div>
                     }
@@ -249,6 +253,10 @@
                         @if (selected.DisplayStyle == LiveMonitorDisplayStyle.Trend)
                         {
                             <label>Chart history<select value="@selected.TrendDuration" @onchange="args => ChangeTileTrend(selected.Id, args)">@foreach (var duration in LiveTelemetryCatalog.TrendDurations(selected.MetricId)) { <option value="@duration">@TrendLabel(duration)</option> }</select></label>
+                            @if (IsBrakeTrend(selected))
+                            {
+                                <label class="live-abs-highlight-option" title="@(HasAbsHistory ? "Color recorded ABS intervention yellow" : "ABS activation was not recorded")"><span>ABS highlight</span><input type="checkbox" checked="@selected.HighlightAbsIntervention" disabled="@(!HasAbsHistory)" @onchange="args => ChangeTileAbsHighlight(selected.Id, args)" /></label>
+                            }
                         }
                         <button class="toolbox-remove-widget" @onclick="() => RemoveTile(selected.Id)"><ProductIcon Name="trash" Size="16" /> Remove widget</button>
                     </section>
@@ -318,6 +326,7 @@
     private LiveMonitorLayoutChoice ActiveChoice => LiveMonitorLayouts.Active(Preferences);
     private LiveMonitorNamedLayout Active => ActiveChoice.Layout;
     private LiveMonitorTile? SelectedTile => Active.Tiles.FirstOrDefault(tile => tile.Id == _selectedTileId);
+    private bool HasAbsHistory => (State.LiveState.History ?? []).Any(point => point.Metrics.BrakeAbsActive.HasValue);
     private IReadOnlyList<LiveTelemetryMetricDefinition> FilteredCatalog => LiveTelemetryCatalog.All
         .Where(item => string.IsNullOrWhiteSpace(_metricSearch) || item.Name.Contains(_metricSearch, StringComparison.OrdinalIgnoreCase) || SourceLabel(item.Source).Contains(_metricSearch, StringComparison.OrdinalIgnoreCase))
         .ToArray();
@@ -377,6 +386,7 @@
                 shape = definition.TrendShape == LiveMonitorTrendShape.Step ? "step" : "continuous",
                 minimum = reading.Minimum,
                 maximum = reading.Maximum,
+                highlightAbs = IsBrakeTrend(tile) && tile.HighlightAbsIntervention && HasAbsHistory,
                 seed = TrendSeed(tile)
             };
         })
@@ -389,13 +399,19 @@
         RefreshTrendSeedCache(history);
         var key = new TrendProjectionKey(tile.MetricId, tile.Unit, tile.TrendDuration);
         if (_trendSeedCache.TryGetValue(key, out var cached)) return cached;
+        var historyByTimestamp = history.GroupBy(point => point.At).ToDictionary(group => group.Key, group => group.Last());
         var projected = LiveTelemetryCatalog.ProjectTrend(tile.MetricId, history, tile.TrendDuration, tile.Unit, MaximumTrendSeedPoints)
-            .Select(point => (object)new
+            .Select(point =>
             {
-                value = point.Value,
-                lap = point.Lap,
-                lapDistancePercent = point.LapDistancePercent,
-                atUnixMilliseconds = point.At.ToUnixTimeMilliseconds()
+                historyByTimestamp.TryGetValue(point.At, out var source);
+                return (object)new
+                {
+                    value = point.Value,
+                    lap = point.Lap,
+                    lapDistancePercent = point.LapDistancePercent,
+                    brakeAbsActive = source?.Metrics.BrakeAbsActive,
+                    atUnixMilliseconds = point.At.ToUnixTimeMilliseconds()
+                };
             })
             .ToArray();
         if (_trendSeedCache.Count >= 64) _trendSeedCache.Clear();
@@ -454,6 +470,7 @@
                     atUnixMilliseconds = frame.At.ToUnixTimeMilliseconds(),
                     lap = frame.Lap,
                     lapDistancePercent = frame.LapDistancePercent,
+                    brakeAbsActive = frame.Metrics.BrakeAbsActive,
                     values = tiles.ToDictionary(tile => tile.Id, tile => LiveTelemetryCatalog.TrendValue(tile.MetricId, frame, tile.Unit), StringComparer.Ordinal)
                 }).ToArray();
                 await JS.InvokeVoidAsync("iracingCoachLiveTelemetryTileCharts.append", _studioElement, payload, TrendOptions(sessionEpoch));
@@ -588,6 +605,13 @@
         if (!Enum.TryParse<LiveMonitorTrendDuration>(args.Value?.ToString(), out var duration)) return;
         var metricId = Active.Tiles.FirstOrDefault(tile => tile.Id == id)?.MetricId;
         if (metricId is not null && LiveTelemetryCatalog.TrendDurations(metricId).Contains(duration)) MutateTile(id, tile => tile.TrendDuration = duration, $"Chart history set to {TrendLabel(duration)}.");
+    }
+
+    private void ChangeTileAbsHighlight(string id, ChangeEventArgs args)
+    {
+        if (!HasAbsHistory) return;
+        var enabled = args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        MutateTile(id, tile => tile.HighlightAbsIntervention = IsBrakeTrend(tile) && enabled, enabled ? "ABS intervention highlighted." : "ABS highlight removed.");
     }
 
     private void SetTileAccent(string id, string accent)
@@ -751,6 +775,7 @@
     private static string TileTitle(LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading) => reading.Available ? definition.Description : reading.AvailabilityMessage;
     private static string TileAccessibleName(LiveTelemetryMetricDefinition definition, LiveTelemetryMetricReading reading, LiveMonitorTile tile) => $"{definition.Name}, {reading.DisplayValue}{(string.IsNullOrWhiteSpace(reading.Unit) ? string.Empty : $" {reading.Unit}")}, {StyleLabel(tile.DisplayStyle)} widget, column {tile.Column + 1}, row {tile.Row + 1}, size {tile.ColumnSpan} by {tile.RowSpan}";
     private static bool UsesAccent(LiveMonitorDisplayStyle style) => style is LiveMonitorDisplayStyle.Gauge or LiveMonitorDisplayStyle.Bar or LiveMonitorDisplayStyle.Trend;
+    private static bool IsBrakeTrend(LiveMonitorTile tile) => tile.DisplayStyle == LiveMonitorDisplayStyle.Trend && string.Equals(tile.MetricId, "brake", StringComparison.OrdinalIgnoreCase);
     private static string StyleLabel(LiveMonitorDisplayStyle style) => style switch { LiveMonitorDisplayStyle.Trend => "Chart", LiveMonitorDisplayStyle.Status => "Status", LiveMonitorDisplayStyle.Gauge => "Gauge", LiveMonitorDisplayStyle.Bar => "Bar", _ => "Number" };
     private static string StyleIcon(LiveMonitorDisplayStyle style) => style switch { LiveMonitorDisplayStyle.Trend => "chart", LiveMonitorDisplayStyle.Gauge => "gauge", LiveMonitorDisplayStyle.Bar => "bar", LiveMonitorDisplayStyle.Status => "status", _ => "number" };
     private static string StyleClass(LiveMonitorDisplayStyle style) => style == LiveMonitorDisplayStyle.Trend ? "chart" : style.ToString().ToLowerInvariant();

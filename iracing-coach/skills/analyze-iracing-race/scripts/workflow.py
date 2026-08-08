@@ -27,7 +27,11 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from path_security import local_path
 
 try:  # Support package imports and direct execution from the scripts folder.
-    from .analysis_engine import analyze_telemetry, analyzer_bundle_sha256
+    from .analysis_engine import (
+        analyze_telemetry,
+        analyzer_bundle_sha256,
+        build_technical_insights,
+    )
     from .garage61_client import (
         Garage61AuthError,
         Garage61Client,
@@ -54,7 +58,11 @@ try:  # Support package imports and direct execution from the scripts folder.
     from .secure_store import SecureStoreError, credential_exists
     from .storage import ArchiveStore, safe_slug, session_phase, stable_hash, utc_now
 except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading.
-    from analysis_engine import analyze_telemetry, analyzer_bundle_sha256
+    from analysis_engine import (
+        analyze_telemetry,
+        analyzer_bundle_sha256,
+        build_technical_insights,
+    )
     from garage61_client import (
         Garage61AuthError,
         Garage61Client,
@@ -215,6 +223,18 @@ _EXTENDED_ANALYSIS_CHANNELS = (
     "RelativeHumidity",
     "Precipitation",
     "WeatherDeclaredWet",
+    # Full-field channels. Historical IBTs frequently omit these arrays; the
+    # replay contract reports that absence rather than synthesizing rivals.
+    "CarIdxLap",
+    "CarIdxLapCompleted",
+    "CarIdxLapDistPct",
+    "CarIdxPosition",
+    "CarIdxClassPosition",
+    "CarIdxOnPitRoad",
+    "CarIdxTrackSurface",
+    "CarIdxPaceFlags",
+    "CarIdxLastLapTime",
+    "CarIdxBestLapTime",
 )
 
 
@@ -1695,6 +1715,7 @@ def analyze_race_workflow(
                 "The selected IBT changed during SHA-256 verification: "
                 f"{path}. No analysis artifact was written."
             )
+    raw_archive = store.archive_raw_telemetry(source_fingerprints)
     selection_verified = time.perf_counter()
     pipeline_sha256 = _analysis_pipeline_sha256()
     analysis_cache_key = _analysis_cache_identity(
@@ -1778,6 +1799,12 @@ def analyze_race_workflow(
     }
 
     source["fingerprints"] = source_fingerprints
+    source["raw_source_policy"] = {
+        "mode": "content-addressed-portable-copy",
+        "durably_copied": raw_archive.get("durably_copied") is True,
+        "archive": raw_archive,
+        "note": "Verified raw IBTs are copied into portable append-only storage; originals remain untouched.",
+    }
     if iracing_root is not None:
         selected_iracing_root = _resolved_root(iracing_root)
     else:
@@ -1801,6 +1828,42 @@ def analyze_race_workflow(
                 f"The selected IBT changed before artifact persistence: {path}. No report was written."
             )
     analysis["source"] = source
+    live_replay = store.live_replay_for_analysis(analysis)
+    recorded_replay = analysis.get("race_replay") or {}
+    if isinstance(live_replay, Mapping) and (
+        not isinstance(recorded_replay, Mapping)
+        or recorded_replay.get("status") == "unavailable"
+        or int(live_replay.get("frame_count") or 0) > int(recorded_replay.get("frame_count") or 0)
+    ):
+        analysis["race_replay"] = dict(live_replay)
+    geometry = analysis.get("track_geometry")
+    if isinstance(geometry, Mapping):
+        analysis["track_geometry"] = store.cache_track_geometry(geometry)
+    tire_learning = analysis.get("tire_learning")
+    if isinstance(tire_learning, Mapping):
+        tire_learning = dict(tire_learning)
+        tire_model = store.update_tire_learning(tire_learning)
+        tire_learning["prediction"] = tire_model.get("prediction") or {
+            "status": "unavailable",
+            "reason": "No matching local tire observations are available.",
+        }
+        tire_learning["persistent_model"] = {
+            "path": tire_model.get("model_path"),
+            "observation_count": tire_model.get("observation_count"),
+            "model_version": tire_model.get("model_version"),
+            "observation_set_fingerprint": tire_model.get(
+                "observation_set_fingerprint"
+            ),
+        }
+        analysis["tire_learning"] = tire_learning
+        analysis["technical_insights"] = build_technical_insights(
+            analysis.get("laps") or [],
+            analysis.get("runs") or [],
+            analysis.get("race_summary") or {},
+            analysis.get("strategy") or {},
+            analysis.get("damage_repair") or {},
+            tire_learning,
+        )
     analysis_finished = time.perf_counter()
     context = store.context_from_analysis(analysis)
     cache_status = store.cache_status(context)
@@ -1829,6 +1892,21 @@ def analyze_race_workflow(
         and not is_current_recording(row)
     ]
     knowledge = _knowledge_for_report(store, context, cache_status)
+    garage61_index = (
+        (knowledge or {}).get("garage61")
+        if isinstance((knowledge or {}).get("garage61"), Mapping)
+        else {}
+    )
+    garage61_representatives = {
+        "schema_version": 1,
+        "status": "available" if garage61_index.get("representative_laps") else "unavailable",
+        "reason": None if garage61_index.get("representative_laps") else "No cached Garage61 representative laps are available for this exact car/track/setup context.",
+        "comparison_scope": garage61_index.get("comparison_scope"),
+        "representative_laps": list(garage61_index.get("representative_laps") or ()),
+        "reference_comparisons": list(garage61_index.get("reference_comparisons") or ()),
+        "comparison_quality": dict(garage61_index.get("comparison_quality") or {}),
+    }
+    analysis["garage61_representative_laps"] = garage61_representatives
     race_card = build_race_card(
         analysis,
         historical_runs=history,
@@ -1867,6 +1945,11 @@ def analyze_race_workflow(
         "laps": analysis.get("laps") or [],
         "lap_traces": analysis.get("lap_traces") or {},
         "track_profile": analysis.get("track_profile") or {},
+        "track_geometry": analysis.get("track_geometry") or {},
+        "race_replay": analysis.get("race_replay") or {},
+        "tire_learning": analysis.get("tire_learning") or {},
+        "garage61_representative_laps": analysis.get("garage61_representative_laps") or {},
+        "technical_insights": analysis.get("technical_insights") or [],
         "corner_tire_age": analysis.get("corner_tire_age") or {},
         "groove_evolution": analysis.get("groove_evolution") or {},
         "strategy": analysis.get("strategy") or {},
@@ -3836,6 +3919,17 @@ def garage61_sync_workflow(
         "coaching_targets": comparison["coaching_targets"],
         "comparison_quality": comparison["quality"],
     }
+    representative_contract = {
+        "schema_version": 1,
+        "status": "available" if representatives else "unavailable",
+        "reason": None if representatives else "No comparable Garage61 laps were returned for this exact context.",
+        "comparison_scope": scope,
+        "representative_laps": representatives,
+        "reference_comparisons": comparison["references"],
+        "comparison_quality": comparison["quality"],
+    }
+    analysis["garage61_representative_laps"] = representative_contract
+    target_lap_cache = store.cache_garage61_target_laps(context, index)
 
     sources = _merge_garage_source(components["sources"], base_url, scope)
     manifest = store.write_knowledge_bundle(
@@ -3899,12 +3993,14 @@ def garage61_sync_workflow(
         },
         "cohort_errors": cohort_errors,
         "representative_laps": representatives,
+        "garage61_representative_laps": representative_contract,
         "comparison_quality": comparison["quality"],
         "coaching_targets": comparison["coaching_targets"],
         "cache": {
             "path": str(bundle_path),
             "manifest": manifest,
             "garage61_index": str(bundle_path / "garage61" / "index.json"),
+            "portable_target_laps": target_lap_cache,
         },
         "report_artifacts": artifacts,
     }
@@ -3918,6 +4014,7 @@ try:  # Support both package imports and direct script-folder execution.
         catalog_iracing_setups_workflow,
         iracing_setup_history_workflow,
         recommend_open_setup_tuning_workflow,
+        recommend_structured_open_setup_tuning_workflow,
         record_open_setup_feedback_workflow,
     )
 except ImportError:  # pragma: no cover - normal CLI/MCP loading path.
@@ -3926,6 +4023,7 @@ except ImportError:  # pragma: no cover - normal CLI/MCP loading path.
         catalog_iracing_setups_workflow,
         iracing_setup_history_workflow,
         recommend_open_setup_tuning_workflow,
+        recommend_structured_open_setup_tuning_workflow,
         record_open_setup_feedback_workflow,
     )
 
@@ -3947,6 +4045,7 @@ __all__ = [
     "iracing_setup_history_workflow",
     "native_event_search_workflow",
     "recommend_open_setup_tuning_workflow",
+    "recommend_structured_open_setup_tuning_workflow",
     "record_open_setup_feedback_workflow",
     "telemetry_query_workflow",
 ]

@@ -25,6 +25,11 @@ $pythonSource = [System.IO.Path]::GetFullPath($PythonRuntime)
 $codexSource = [System.IO.Path]::GetFullPath($CodexRuntime)
 $codexSchemaSource = Join-Path $projectRoot 'generated\codex-app-server-0.146.0-alpha.9.2'
 
+function Get-ProjectVersion([string]$ProjectPath) {
+    [xml]$projectDocument = Get-Content -LiteralPath $ProjectPath -Raw
+    return [string]($projectDocument.Project.PropertyGroup.Version | Select-Object -First 1)
+}
+
 function Reset-ReleaseDirectory([string]$Path) {
     $resolved = [System.IO.Path]::GetFullPath($Path)
     $allowedRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'artifacts')) + [System.IO.Path]::DirectorySeparatorChar
@@ -48,6 +53,16 @@ if (-not (Test-Path -LiteralPath $codexSource -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $codexSchemaSource 'codex_app_server_protocol.schemas.json'))) {
     throw "The generated Codex app-server schemas were not found at $codexSchemaSource."
+}
+$releaseProjects = @(
+    (Join-Path $projectRoot 'src\iRacingCoach.App\iRacingCoach.App.csproj'),
+    (Join-Path $projectRoot 'src\iRacingCoach.Installer\iRacingCoach.Installer.csproj'),
+    (Join-Path $projectRoot 'src\iRacingCoach.Uninstaller\iRacingCoach.Uninstaller.csproj')
+)
+$versionMismatches = $releaseProjects | Where-Object { (Get-ProjectVersion $_) -ne $version }
+if ($versionMismatches.Count -gt 0) {
+    $details = $versionMismatches | ForEach-Object { "$(Split-Path $_ -Leaf)=$(Get-ProjectVersion $_)" }
+    throw "Release identity mismatch. BuildRelease.ps1 targets $version but these projects do not: $($details -join ', '). Update every release identity together before packaging."
 }
 $codexSignature = Get-AuthenticodeSignature -LiteralPath $codexSource
 if ($codexSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
@@ -97,6 +112,7 @@ Copy-Item -LiteralPath $codexSource -Destination (Join-Path $codexDestination 'c
 & robocopy $codexSchemaSource $schemaDestination /E /R:1 /W:1 | Out-Null
 if ($LASTEXITCODE -gt 7) { throw "Codex schema copy failed with robocopy code $LASTEXITCODE." }
 Copy-Item -LiteralPath (Join-Path $workspaceRoot 'companion-app-handoff\contracts\ai-coaching-output.schema.json') -Destination $schemaDestination
+Copy-Item -LiteralPath (Join-Path $workspaceRoot 'companion-app-handoff\contracts\ai-tuning-output.schema.json') -Destination $schemaDestination
 $codexHash = (Get-FileHash -LiteralPath $codexSource -Algorithm SHA256).Hash.ToLowerInvariant()
 $coachEngineManifest = [ordered]@{
     manifestVersion = 1

@@ -41,6 +41,12 @@ The app is not complete until every required item passes on synthetic fixtures a
 
 - [ ] Deterministic Race Card appears before optional AI/network enrichment.
 - [ ] Oval card stays within its compact contract.
+- [ ] Exact-configuration vector maps never borrow main-course, pit, entry, exit, commitment, merge, or start/finish geometry from another layout; every unavailable layer has a truthful reason/action.
+- [ ] Named Race Analysis trace layouts remain globally portable and separate from Live Telemetry layouts; Default cannot be renamed or deleted.
+- [ ] Technical data renders exactly four evidence-gated categories and their full-area investigations without inventing unsupported facts.
+- [ ] Race replay uses only canonically recorded participant/player/event fields, keeps one synchronized clock across map/grid/timeline/telemetry, and never infers ABS or competitor controls.
+- [ ] Tire/capability observations, session-local calculated wear, learned predictions, and external references remain visibly separate; weak or out-of-domain evidence returns unavailable rather than a point estimate.
+- [ ] Finalized raw IBTs are copied atomically into the portable content-addressed store, hash-verified, deduplicated, retained without automatic pruning, and excluded from source/release/support artifacts.
 - [ ] Runs, green/caution exposure, fuel, tire endpoints, service, and evidence limitations render correctly.
 - [ ] Missing tire readings never become estimated wear.
 - [ ] Requested service is distinct from confirmed service.
@@ -50,6 +56,7 @@ The app is not complete until every required item passes on synthetic fixtures a
 - [ ] Leaving with optional repair remaining badges the following run.
 - [ ] Fast-repair request is distinct from confirmed use.
 - [ ] Truncated/in-progress tow retains remaining time.
+- [ ] The complete changed-surface matrix in `documentation/05-quality/race-analysis-overhaul-acceptance-matrix.md` is reviewed against the exact development executable before product acceptance.
 
 ## Corner and track view
 
@@ -80,13 +87,26 @@ The app is not complete until every required item passes on synthetic fixtures a
 
 ## Progressive Tuning
 
-- [ ] Original driver symptom wording is retained.
-- [ ] Telemetry corroboration remains separate from causal inference.
-- [ ] One setup system per controlled A/B experiment.
-- [ ] Fuel, tires, weather, track state, traffic, and line comparability are shown.
+- [ ] The representative recording and open target retain exact analysis, car, configuration, setup fingerprint, and source identities; two same-car/same-track recordings cannot be confused.
+- [ ] A fixed race may supply driving evidence, but no garage candidate appears without a compatible analyzed open target.
+- [ ] The highest-quality clean green run is selected automatically, manual override works, and Early/Middle/Late use each tire run's real lap IDs.
+- [ ] Exact-configuration turn labels retain source, alignment confidence, and geometry/content fingerprint; telemetry zones are never promoted to official turns.
+- [ ] Hover highlights the complete turn segment, keyboard selection works, and a low-confidence map can be corrected without mutating iRacing content.
+- [ ] Each turn can retain multiple Early/Middle/Late Entry/Center/Exit/Whole symptoms, severity, driver confidence, priority, and note; `Good` is distinct from skipped.
+- [ ] The generic note is retained as context but cannot independently authorize a setup candidate.
+- [ ] Drafts autosave atomically in portable app state and never create a second canonical experiment archive.
+- [ ] Original driver wording is retained and telemetry corroboration remains separate from causal inference.
+- [ ] Fuel, tires, weather, track state, traffic, line, damage, and setup comparability are shown or explicitly unavailable.
+- [ ] Candidate settings come only from a versioned exact-car/sim-build rules catalog; absent/locked/out-of-range/unsupported settings produce no candidate.
+- [ ] Exact target values require a verified current value, adjustment step, legal range, and coupled constraints; otherwise use a manual one-step instruction.
+- [ ] Deterministic validation produces the candidate whitelist before AI; invalid/offline/interrupted AI cannot replace or weaken the deterministic result.
+- [ ] AI-selected candidate and evidence IDs are membership-validated and raw IBT/credential content is not sent.
+- [ ] One primary setup-system change, expected effect, tradeoff, test plan, success criteria, and rollback remain visible.
 - [ ] Damage/tow-affected evidence blocks a setup conclusion until a clean repaired-car run.
-- [ ] Improved/worse/no-change/inconclusive and rollback are persisted.
-- [ ] Failed experiments remain searchable.
+- [ ] Improved/unchanged/worse/inconclusive remains distinct for subjective and linked-analysis outcomes and rollback is persisted.
+- [ ] Failed/no-change experiments remain searchable and suppress an equivalent candidate under comparable conditions.
+- [ ] No workflow creates, modifies, or overwrites a simulator-loadable STO.
+- [ ] The complete visual matrix in `documentation/05-quality/progressive-tuning-overhaul-acceptance-matrix.md` is reviewed before product acceptance.
 
 ## AI and authentication
 

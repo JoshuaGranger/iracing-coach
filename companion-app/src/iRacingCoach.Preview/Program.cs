@@ -1,9 +1,22 @@
+using iRacingCoach.BackendClient;
 using iRacingCoach.Coordinator;
 using iRacingCoach.Preview.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
-builder.Services.AddSingleton<CompanionState>();
+var isolatedCoachHome = builder.Configuration["qa-coach-home"];
+if (string.IsNullOrWhiteSpace(isolatedCoachHome))
+{
+    builder.Services.AddSingleton<CompanionState>();
+}
+else
+{
+    var fullCoachHome = Path.GetFullPath(isolatedCoachHome);
+    Directory.CreateDirectory(fullCoachHome);
+    builder.Services.AddSingleton(_ => new CompanionState(
+        new McpBackendClient(),
+        new JsonSettingsStore(Path.Combine(fullCoachHome, "settings.json"))));
+}
 
 var app = builder.Build();
 if (!app.Environment.IsDevelopment())

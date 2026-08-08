@@ -7,12 +7,62 @@ to the exact setup fingerprint, telemetry, conditions, and driver symptom.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 import re
+from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 
 TUNING_SCHEMA_VERSION = 1
+TUNING_EVIDENCE_SCHEMA_VERSION = 2
+TUNING_EVIDENCE_CONTRACT = "tuning_evidence_v2"
+STRUCTURED_TUNING_RULESET_ID = "nascar-oreilly-xfinity-2026s3-v1"
 _NATIVE_EVENT_SAMPLE_LIMIT = 40
+_STRUCTURED_MINIMUM_PHASE_LAPS = 2
+_STRUCTURED_MINIMUM_RUN_LAPS = _STRUCTURED_MINIMUM_PHASE_LAPS * 3
+_AI_REQUEST_MAX_BYTES = 64 * 1024
+_TUNING_GOALS = {"long-run-pace", "tire-life", "restart-pace", "stability"}
+
+_RUN_PHASES = {"early", "middle", "late"}
+_CORNER_PHASES = {"entry", "center", "exit", "whole"}
+_SYMPTOM_ALIASES = {
+    "good": "good",
+    "neutral": "good",
+    "tight": "tight",
+    "understeer": "tight",
+    "loose": "loose",
+    "oversteer": "loose",
+    "unstable": "unstable-braking",
+    "unstable-braking": "unstable-braking",
+    "wheel-hop": "wheel-hop-lock",
+    "wheel-lock": "wheel-hop-lock",
+    "wheel-hop-lock": "wheel-hop-lock",
+    "wheelspin": "wheelspin",
+    "cant-take-throttle": "cant-take-throttle",
+    "cannot-take-throttle": "cant-take-throttle",
+    "bottoming": "bottoming",
+    "harsh": "harsh-skating",
+    "skating": "harsh-skating",
+    "harsh-skating": "harsh-skating",
+    "low-grip": "low-grip",
+    "other": "other",
+}
+_PROBLEM_SEVERITIES = {"mild", "moderate", "severe"}
+_MAP_SOURCE_ALIASES = {
+    "iracing-official": "iracing-official",
+    "official-iracing": "iracing-official",
+    "iracing-game": "iracing-official",
+    "iracing-hud-capture": "iracing-hud-capture",
+    "nascar-official": "nascar-official",
+    "official-nascar": "nascar-official",
+    "venue-official": "venue-official",
+    "official-track": "venue-official",
+    "verified-manual": "verified-manual",
+    "user-confirmed": "verified-manual",
+    "telemetry-derived": "telemetry-derived",
+}
 
 
 _PHASE_TERMS = {
@@ -779,3 +829,1197 @@ def recommend_tuning(
             "and calibrated proxies are alignment markers, not causal classifications."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Progressive Tuning evidence contract v2
+# ---------------------------------------------------------------------------
+
+
+class StructuredTuningError(ValueError):
+    """A bounded structured-tuning request is malformed."""
+
+
+def stable_evidence_hash(value: Any, length: int = 64) -> str:
+    """Return a deterministic JSON hash used for immutable evidence links."""
+
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[: max(8, min(int(length), 64))]
+
+
+def _finite_number(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def _normalized_identity_token(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(value or "").casefold()).strip("-")
+
+
+def embedded_setup_fingerprint(setup: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(setup, Mapping) or not setup:
+        return None
+    # Match analysis_engine._identity exactly, including JSON's default ASCII
+    # escaping, so this gate verifies the recorded fingerprint rather than a
+    # merely similar serialization.
+    return hashlib.sha256(
+        json.dumps(
+            setup, sort_keys=True, separators=(",", ":"), default=str
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _analysis_track_key(analysis: Mapping[str, Any]) -> str:
+    geometry = analysis.get("track_geometry")
+    if isinstance(geometry, Mapping) and geometry.get("track_configuration_key"):
+        return str(geometry["track_configuration_key"])
+    identity = analysis.get("identity") if isinstance(analysis.get("identity"), Mapping) else {}
+    return _normalized_identity_token(
+        f"{identity.get('track_id') or 'track'}-{identity.get('track_config') or identity.get('track_name')}"
+    )
+
+
+def track_geometry_hash(analysis: Mapping[str, Any]) -> str | None:
+    """Return the analysis-owned geometry identity; legacy inference is forbidden."""
+
+    geometry = analysis.get("track_geometry")
+    if not isinstance(geometry, Mapping):
+        return None
+    value = str(geometry.get("geometry_hash") or "").strip().casefold()
+    return value if re.fullmatch(r"[0-9a-f]{64}", value) else None
+
+
+def _normalized_corner(raw: Mapping[str, Any]) -> dict[str, Any]:
+    corner_id = str(raw.get("corner_id") or raw.get("id") or "").strip()
+    label = str(raw.get("label") or raw.get("corner_label") or "").strip()
+    start = _finite_number(raw.get("start_pct"))
+    apex = _finite_number(raw.get("apex_pct"))
+    end = _finite_number(raw.get("end_pct"))
+    if not corner_id or not label or None in (start, apex, end):
+        raise StructuredTuningError(
+            "Every verified turn requires corner_id, label, start_pct, apex_pct, and end_pct."
+        )
+    assert start is not None and apex is not None and end is not None
+    if not all(0.0 <= value < 1.0 for value in (start, apex, end)):
+        raise StructuredTuningError("Turn lap fractions must be finite values in [0, 1).")
+    epsilon = 0.000001
+    forward_arc = (end - start) % 1.0
+    apex_distance = (apex - start) % 1.0
+    if (
+        forward_arc <= epsilon
+        or apex_distance <= epsilon
+        or apex_distance >= forward_arc - epsilon
+    ):
+        raise StructuredTuningError(
+            "Turn bounds must form a non-degenerate forward start-to-apex-to-end arc."
+        )
+    return {
+        "corner_id": corner_id,
+        "label": label,
+        "start_pct": round(start, 6),
+        "apex_pct": round(apex, 6),
+        "end_pct": round(end, 6),
+        "is_official": bool(raw.get("is_official")),
+        "user_verified": bool(raw.get("user_verified", raw.get("verified", False))),
+    }
+
+
+def map_annotation_hash(map_identity: Mapping[str, Any]) -> str:
+    corners = sorted([
+        _normalized_corner(item)
+        for item in map_identity.get("corners", map_identity.get("turns", ()))
+        if isinstance(item, Mapping)
+    ], key=lambda item: (item["start_pct"], item["apex_pct"], item["end_pct"], item["corner_id"]))
+    canonical = {
+        "track_configuration_key": str(map_identity.get("track_configuration_key") or ""),
+        "geometry_hash": str(map_identity.get("geometry_hash") or "").casefold(),
+        "source_type": _MAP_SOURCE_ALIASES.get(
+            str(map_identity.get("source_type") or "").strip().casefold(),
+            str(map_identity.get("source_type") or "").strip().casefold(),
+        ),
+        "corners": corners,
+    }
+    return stable_evidence_hash(canonical, 64)
+
+
+def validate_map_identity(
+    analysis: Mapping[str, Any], map_identity: Mapping[str, Any] | None
+) -> tuple[dict[str, Any], list[str]]:
+    missing: list[str] = []
+    if not isinstance(map_identity, Mapping):
+        return {}, ["verified-map-identity-required"]
+    geometry = analysis.get("track_geometry")
+    geometry = geometry if isinstance(geometry, Mapping) else {}
+    expected_key = _analysis_track_key(analysis)
+    supplied_key = str(map_identity.get("track_configuration_key") or "")
+    expected_geometry_hash = track_geometry_hash(analysis)
+    supplied_geometry_hash = str(map_identity.get("geometry_hash") or "").casefold()
+    source_raw = str(map_identity.get("source_type") or "").strip().casefold()
+    source_type = _MAP_SOURCE_ALIASES.get(source_raw)
+    try:
+        corners = sorted([
+            _normalized_corner(item)
+            for item in map_identity.get("corners", map_identity.get("turns", ()))
+            if isinstance(item, Mapping)
+        ], key=lambda item: (item["start_pct"], item["apex_pct"], item["end_pct"], item["corner_id"]))
+    except StructuredTuningError as exc:
+        corners = []
+        missing.append(f"invalid-corner-annotation:{exc}")
+    quality = geometry.get("quality") if isinstance(geometry.get("quality"), Mapping) else {}
+    if (
+        geometry.get("status") != "usable"
+        or not geometry.get("main_path")
+        or quality.get("main_loop_complete") is not True
+    ):
+        missing.append("complete-telemetry-track-geometry-required")
+    if not supplied_key or supplied_key != expected_key:
+        missing.append("exact-track-configuration-map-mismatch")
+    if not expected_geometry_hash or supplied_geometry_hash != expected_geometry_hash:
+        missing.append("exact-track-geometry-hash-mismatch")
+    if source_type is None:
+        missing.append("verified-map-source-type-required")
+    if not bool(map_identity.get("verified", map_identity.get("is_verified", False))):
+        missing.append("map-verification-required")
+    if not corners:
+        missing.append("verified-corner-annotations-required")
+    if len({item["corner_id"] for item in corners}) != len(corners):
+        missing.append("corner-identifiers-must-be-unique")
+    supplied_annotation_hash = str(map_identity.get("annotation_hash") or "").casefold()
+    expected_annotation_hash = map_annotation_hash(
+        {**dict(map_identity), "source_type": source_type or source_raw, "corners": corners}
+    )
+    if supplied_annotation_hash != expected_annotation_hash:
+        missing.append("corner-annotation-hash-mismatch")
+    return {
+        "map_identity": str(map_identity.get("map_identity") or expected_annotation_hash[:20]),
+        "track_configuration_key": expected_key,
+        "geometry_hash": expected_geometry_hash,
+        "annotation_hash": expected_annotation_hash,
+        "source_type": source_type,
+        "source_label": str(map_identity.get("source_label") or "")[:200],
+        "source_url": str(map_identity.get("source_url") or "")[:2000] or None,
+        "verified": not missing,
+        "corners": corners,
+    }, missing
+
+
+def _casefold_setup_path(
+    setup: Mapping[str, Any], dotted_path: str
+) -> tuple[bool, str, Any]:
+    value: Any = setup
+    resolved: list[str] = []
+    for segment in dotted_path.split("."):
+        if not isinstance(value, Mapping):
+            return False, dotted_path, None
+        match = next((key for key in value if str(key).casefold() == segment.casefold()), None)
+        if match is None:
+            return False, dotted_path, None
+        resolved.append(str(match))
+        value = value[match]
+    return True, ".".join(resolved), value
+
+
+def _setup_gate(analysis: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    identity = analysis.get("identity") if isinstance(analysis.get("identity"), Mapping) else {}
+    missing: list[str] = []
+    setup = identity.get("setup")
+    calculated = embedded_setup_fingerprint(setup if isinstance(setup, Mapping) else None)
+    declared = str(identity.get("setup_fingerprint") or "").casefold()
+    if identity.get("is_fixed_setup") is not False:
+        missing.append("open-setup-target-required")
+    if not calculated:
+        missing.append("embedded-open-setup-required")
+    if not declared:
+        missing.append("open-setup-fingerprint-required")
+    elif calculated and declared not in {calculated, calculated[:16]}:
+        missing.append("open-setup-fingerprint-mismatch")
+    return {
+        "name": identity.get("setup_name"),
+        "fingerprint": declared or calculated,
+        "calculated_fingerprint": calculated,
+        "embedded_setup_available": bool(calculated),
+        "manual_sto_boundary": True,
+        "setup": dict(setup) if isinstance(setup, Mapping) else {},
+    }, missing
+
+
+def validate_open_target(
+    driving_analysis: Mapping[str, Any], open_target_analysis: Mapping[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    source = driving_analysis.get("identity") if isinstance(driving_analysis.get("identity"), Mapping) else {}
+    target = open_target_analysis.get("identity") if isinstance(open_target_analysis.get("identity"), Mapping) else {}
+    setup, missing = _setup_gate(open_target_analysis)
+    source_car = _normalized_identity_token(source.get("car_path"))
+    target_car = _normalized_identity_token(target.get("car_path"))
+    source_track = _analysis_track_key(driving_analysis)
+    target_track = _analysis_track_key(open_target_analysis)
+    target_geometry = open_target_analysis.get("track_geometry")
+    target_geometry = target_geometry if isinstance(target_geometry, Mapping) else {}
+    if not open_target_analysis.get("analysis_id"):
+        missing.append("open-target-analysis-id-required")
+    if not target_geometry.get("track_configuration_key"):
+        missing.append("open-target-track-configuration-key-required")
+    if not source_car or source_car != target_car:
+        missing.append("open-target-exact-car-path-mismatch")
+    if not source_track or source_track != target_track:
+        missing.append("open-target-exact-track-configuration-mismatch")
+    if source.get("is_fixed_setup") is True:
+        source_id = str(driving_analysis.get("analysis_id") or "")
+        target_id = str(open_target_analysis.get("analysis_id") or "")
+        if not source_id or not target_id or source_id == target_id:
+            missing.append("fixed-evidence-requires-distinct-open-target")
+    return {
+        "analysis_id": open_target_analysis.get("analysis_id"),
+        "car_id": target.get("car_id"),
+        "car_path": target.get("car_path"),
+        "track_id": target.get("track_id"),
+        "track_config": target.get("track_config"),
+        "track_configuration_key": target_track,
+        "is_fixed_setup": target.get("is_fixed_setup"),
+        "setup": setup,
+        "compatible": not missing,
+    }, missing
+
+
+def load_structured_tuning_rules(
+    ruleset_id: str = STRUCTURED_TUNING_RULESET_ID,
+) -> dict[str, Any]:
+    if ruleset_id != STRUCTURED_TUNING_RULESET_ID:
+        raise StructuredTuningError(
+            f"Unsupported tuning ruleset {ruleset_id!r}; only {STRUCTURED_TUNING_RULESET_ID!r} is installed."
+        )
+    path = Path(__file__).resolve().parents[3] / "config" / "tuning-rules" / f"{ruleset_id}.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StructuredTuningError(f"Tuning ruleset is unavailable: {exc}") from exc
+    if not isinstance(value, dict) or value.get("ruleset_id") != ruleset_id:
+        raise StructuredTuningError("Tuning ruleset identity is invalid.")
+    value["catalog_sha256"] = stable_evidence_hash(value, 64)
+    return value
+
+
+def _ruleset_supports_car(rules: Mapping[str, Any], car_path: Any) -> bool:
+    normalized = " ".join(str(car_path or "").casefold().split())
+    return any(
+        normalized.startswith(" ".join(str(prefix).casefold().split()))
+        for prefix in rules.get("applicable_car_path_prefixes") or ()
+    )
+
+
+def normalize_structured_feedback(
+    feedback: Sequence[Mapping[str, Any]], map_reference: Mapping[str, Any]
+) -> tuple[list[dict[str, Any]], list[str]]:
+    if isinstance(feedback, (str, bytes)) or not isinstance(feedback, Sequence):
+        raise StructuredTuningError("feedback must be an array of structured turn observations.")
+    if not feedback or len(feedback) > 100:
+        raise StructuredTuningError("feedback must contain 1-100 items.")
+    corners = {
+        str(item.get("corner_id")): item
+        for item in map_reference.get("corners") or ()
+        if isinstance(item, Mapping)
+    }
+    result: list[dict[str, Any]] = []
+    missing: list[str] = []
+    seen_feedback_ids: set[str] = set()
+    for index, raw in enumerate(feedback):
+        if not isinstance(raw, Mapping):
+            raise StructuredTuningError(f"feedback[{index}] must be an object.")
+        corner_id = str(raw.get("corner_id") or "").strip()
+        corner = corners.get(corner_id)
+        if corner is None:
+            missing.append(f"feedback-{index + 1}-corner-not-in-verified-map")
+            continue
+        run_phase = str(raw.get("run_phase") or "middle").casefold().strip()
+        if run_phase == "mid":
+            run_phase = "middle"
+        if run_phase not in _RUN_PHASES:
+            raise StructuredTuningError(f"feedback[{index}].run_phase must be early, middle, or late.")
+        phase_values = raw.get("corner_phases") or raw.get("corner_phase") or []
+        if isinstance(phase_values, str):
+            phase_values = [phase_values]
+        phases = []
+        for phase in phase_values:
+            normalized = str(phase).casefold().strip().replace("mid", "center")
+            if normalized not in _CORNER_PHASES:
+                raise StructuredTuningError(
+                    f"feedback[{index}].corner_phases contains unsupported value {phase!r}."
+                )
+            if normalized not in phases:
+                phases.append(normalized)
+        if not phases:
+            phases = ["whole"]
+        symptom_raw = str(raw.get("symptom_id") or "").casefold().strip().replace("_", "-")
+        symptom = _SYMPTOM_ALIASES.get(symptom_raw)
+        if symptom is None:
+            raise StructuredTuningError(f"feedback[{index}].symptom_id is unsupported.")
+        severity = raw.get("severity", 3)
+        confidence = raw.get("driver_confidence", raw.get("confidence", 3))
+        priority = raw.get("priority", 3)
+        for name, value in (("severity", severity), ("driver_confidence", confidence), ("priority", priority)):
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 5:
+                raise StructuredTuningError(f"feedback[{index}].{name} must be an integer from 1 to 5.")
+        note = str(raw.get("note") or "").strip()
+        if len(note) > 2_000:
+            raise StructuredTuningError(f"feedback[{index}].note must be 2,000 characters or fewer.")
+        # Corner ids can survive a map-catalog revision while their telemetry
+        # bounds change. Require the exact three bounds captured with the report
+        # so stale feedback cannot silently attach to a newer annotation.
+        if any(raw.get(field) is None for field in ("start_pct", "apex_pct", "end_pct")):
+            missing.append(f"feedback-{index + 1}-corner-bounds-required")
+            continue
+        bounds_mismatch = False
+        for field in ("start_pct", "apex_pct", "end_pct"):
+            supplied = _finite_number(raw.get(field))
+            if (
+                supplied is None
+                or not 0.0 <= supplied < 1.0
+                or abs(supplied - float(corner[field])) > 0.000001
+            ):
+                bounds_mismatch = True
+                break
+        if bounds_mismatch:
+            missing.append(f"feedback-{index + 1}-corner-bounds-mismatch")
+            continue
+        stable = {
+            "corner_id": corner_id,
+            "run_phase": run_phase,
+            "corner_phases": phases,
+            "symptom_id": symptom,
+            "severity": severity,
+            "driver_confidence": confidence,
+            "priority": priority,
+            "note": note,
+        }
+        feedback_id = str(raw.get("feedback_id") or f"feedback-{stable_evidence_hash(stable, 16)}").strip()
+        if not feedback_id or len(feedback_id) > 160:
+            raise StructuredTuningError(f"feedback[{index}].feedback_id must contain 1-160 characters.")
+        if feedback_id in seen_feedback_ids:
+            raise StructuredTuningError("feedback_id values must be unique within a request.")
+        seen_feedback_ids.add(feedback_id)
+        result.append(
+            {
+                "feedback_id": feedback_id,
+                "corner_id": corner_id,
+                "corner_label": corner["label"],
+                "start_pct": corner["start_pct"],
+                "apex_pct": corner["apex_pct"],
+                "end_pct": corner["end_pct"],
+                **{key: value for key, value in stable.items() if key != "corner_id"},
+                "source": "driver-report",
+            }
+        )
+    return result, missing
+
+
+def select_representative_runs(
+    analysis: Mapping[str, Any], requested_run_ids: Sequence[Any] = ()
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    eligible: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    limitations: list[str] = []
+    global_repair = analysis.get("damage_repair")
+    for raw in analysis.get("runs") or ():
+        if not isinstance(raw, Mapping):
+            continue
+        run_number = raw.get("run_number")
+        run_id = str(
+            raw.get("run_id")
+            or (f"run-{run_number}" if run_number not in (None, "") else "")
+        )
+        if run_id.isdigit():
+            run_id = f"run-{run_id}"
+        references = raw.get("coaching_reference_lap_numbers")
+        if references is None:
+            references = raw.get("valid_green_lap_numbers") or ()
+        laps = sorted(
+            {
+                int(number)
+                for value in references
+                if (number := _finite_number(value)) is not None
+                and number.is_integer()
+                and number >= 0
+            }
+        )
+        damage = raw.get("damage_repair_context")
+        damage = damage if isinstance(damage, Mapping) else {}
+        damage_eligible = damage.get("automatic_coaching_reference_eligible")
+        reasons: list[str] = []
+        if len(laps) < _STRUCTURED_MINIMUM_RUN_LAPS:
+            reasons.append("fewer-than-six-strict-clean-green-laps")
+        if damage_eligible is False:
+            reasons.append("repair-or-tow-contaminated")
+        elif damage_eligible is None and isinstance(global_repair, Mapping):
+            summary = global_repair.get("summary") if isinstance(global_repair.get("summary"), Mapping) else {}
+            if any(_finite_number(summary.get(name)) not in (None, 0.0) for name in ("repair_time_s", "tow_time_s")):
+                reasons.append("repair-eligibility-not-proven")
+        item = {
+            "run_id": run_id,
+            "run_number": run_number,
+            "eligible_lap_numbers": laps,
+            "eligible_lap_count": len(laps),
+            "phase_lap_numbers": {
+                "early": laps[: len(laps) // 3],
+                "middle": laps[len(laps) // 3 : (2 * len(laps)) // 3],
+                "late": laps[(2 * len(laps)) // 3 :],
+            },
+            "selection_basis": "strict coaching-reference clean-green laps",
+        }
+        if reasons or any(len(values) < _STRUCTURED_MINIMUM_PHASE_LAPS for values in item["phase_lap_numbers"].values()):
+            reasons = reasons or ["fewer-than-two-laps-in-each-run-phase"]
+            rejected.append({**item, "reasons": reasons})
+        else:
+            eligible.append(item)
+    requested = [
+        f"run-{str(value).strip()}" if str(value).strip().isdigit() else str(value).strip()
+        for value in requested_run_ids
+        if str(value).strip()
+    ]
+    if requested:
+        if len(requested) > 3:
+            limitations.append("At most three representative runs may be selected.")
+        by_id = {item["run_id"]: item for item in eligible}
+        selected = [by_id[value] for value in requested[:3] if value in by_id]
+        absent = [value for value in requested[:3] if value not in by_id]
+        limitations.extend(f"Requested run {value} is not eligible." for value in absent)
+        if len(requested) > 3 or absent or len(set(requested)) != len(requested):
+            if len(set(requested)) != len(requested):
+                limitations.append("Representative run overrides must be unique.")
+            selected = []
+        for item in selected:
+            item["selection_mode"] = "driver-override"
+    else:
+        selected = sorted(
+            eligible,
+            key=lambda item: (-item["eligible_lap_count"], str(item["run_id"])),
+        )[:1]
+        for item in selected:
+            item["selection_mode"] = "automatic-longest-clean-run"
+    if not selected:
+        limitations.append("No representative run has two strict clean green laps in every run phase.")
+    return selected, rejected, limitations
+
+
+def _circular_intervals(start: float, end: float) -> list[tuple[float, float]]:
+    return [(start, end)] if start <= end else [(start, 1.0), (0.0, end)]
+
+
+def _corner_zone_overlap(corner: Mapping[str, Any], zone: Mapping[str, Any]) -> float:
+    start_a, end_a = float(corner["start_pct"]), float(corner["end_pct"])
+    start_b = _finite_number(zone.get("start_pct"))
+    end_b = _finite_number(zone.get("end_pct"))
+    if start_b is None or end_b is None:
+        return 0.0
+    return sum(
+        max(0.0, min(a1, b1) - max(a0, b0))
+        for a0, a1 in _circular_intervals(start_a, end_a)
+        for b0, b1 in _circular_intervals(start_b, end_b)
+    )
+
+
+_PHASE_METRICS = {
+    "entry": ("entry_speed_mph", "brake_peak_fraction", "brake_energy_proxy", "brake_onset_lap_pct", "turn_in_lap_pct"),
+    "center": ("minimum_speed_mph", "steering_average_abs_rad", "steering_work_proxy", "steering_corrections"),
+    "exit": ("exit_speed_mph", "exit_throttle_fraction", "throttle_pickup_lap_pct", "brake_release_lap_pct"),
+    "whole": ("entry_speed_mph", "minimum_speed_mph", "exit_speed_mph", "steering_work_proxy"),
+}
+
+
+def build_feedback_observations(
+    analysis: Mapping[str, Any],
+    feedback: Sequence[Mapping[str, Any]],
+    representative_runs: Sequence[Mapping[str, Any]],
+    map_reference: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    tire = analysis.get("corner_tire_age")
+    tire = tire if isinstance(tire, Mapping) else {}
+    run_lookup = {
+        str(item.get("run_number")): item
+        for item in tire.get("runs") or ()
+        if isinstance(item, Mapping)
+    }
+    corner_lookup = {item["corner_id"]: item for item in map_reference.get("corners") or ()}
+    observations: list[dict[str, Any]] = []
+    limitations: list[str] = []
+    for report in feedback:
+        corner = corner_lookup.get(report["corner_id"])
+        for selected in representative_runs:
+            source_run = run_lookup.get(str(selected.get("run_number")))
+            zones = source_run.get("zones") if isinstance(source_run, Mapping) else ()
+            zone = max(
+                (item for item in zones or () if isinstance(item, Mapping)),
+                key=lambda item: _corner_zone_overlap(corner, item),
+                default=None,
+            )
+            if not zone or _corner_zone_overlap(corner, zone) <= 0.0:
+                limitations.append(
+                    f"{report['corner_label']} has no overlapping telemetry load-zone summary for run {selected['run_id']}."
+                )
+                continue
+            phase = next(
+                (
+                    item
+                    for item in zone.get("observational_run_phases") or ()
+                    if isinstance(item, Mapping) and item.get("phase") == report["run_phase"]
+                ),
+                None,
+            )
+            if not phase or phase.get("status") == "unavailable":
+                limitations.append(
+                    f"{report['corner_label']} {report['run_phase']} telemetry summary is unavailable for run {selected['run_id']}."
+                )
+                continue
+            metrics = phase.get("metrics") if isinstance(phase.get("metrics"), Mapping) else {}
+            requested_metrics: list[str] = []
+            for corner_phase in report["corner_phases"]:
+                requested_metrics.extend(_PHASE_METRICS[corner_phase])
+            compact = {
+                name: metrics.get(name)
+                for name in dict.fromkeys(requested_metrics)
+                if _finite_number(metrics.get(name)) is not None
+            }
+            evidence_id = "evidence-" + stable_evidence_hash(
+                {
+                    "feedback_id": report["feedback_id"],
+                    "run_id": selected["run_id"],
+                    "zone_id": zone.get("zone_id"),
+                    "phase": report["run_phase"],
+                    "metrics": compact,
+                },
+                20,
+            )
+            observations.append(
+                {
+                    "evidence_id": evidence_id,
+                    "feedback_id": report["feedback_id"],
+                    "run_id": selected["run_id"],
+                    "corner_id": report["corner_id"],
+                    "corner_label": report["corner_label"],
+                    "run_phase": report["run_phase"],
+                    "corner_phases": report["corner_phases"],
+                    "lap_numbers": list(phase.get("lap_numbers") or ()),
+                    "lap_count": phase.get("lap_count"),
+                    "metrics": compact,
+                    "source": "derived-from-recorded-telemetry",
+                    "causal_claim": False,
+                    "limitation": "These measurements locate and describe the reported symptom; they do not prove a setup cause.",
+                }
+            )
+    return observations, list(dict.fromkeys(limitations))
+
+
+def _feedback_conflicts(feedback: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str, str], list[Mapping[str, Any]]] = {}
+    for item in feedback:
+        for phase in item["corner_phases"]:
+            groups.setdefault((item["corner_id"], item["run_phase"], phase), []).append(item)
+    result: list[dict[str, Any]] = []
+    for key, items in groups.items():
+        max_priority = max(int(item["priority"]) for item in items)
+        top = [item for item in items if int(item["priority"]) == max_priority]
+        symptoms = {str(item["symptom_id"]) for item in top}
+        conflicting = bool("good" in symptoms and len(symptoms) > 1) or bool({"tight", "loose"}.issubset(symptoms))
+        if conflicting:
+            result.append(
+                {
+                    "conflict_id": "conflict-" + stable_evidence_hash({"key": key, "feedback": [item["feedback_id"] for item in top]}, 16),
+                    "scope": {"corner_id": key[0], "run_phase": key[1], "corner_phase": key[2]},
+                    "feedback_ids": [item["feedback_id"] for item in top],
+                    "reason": "Opposing observations have the same highest priority; choose which one should drive this test.",
+                    "resolved": False,
+                }
+            )
+    return result
+
+
+def _prior_outcome_signatures(previous_experiments: Sequence[Mapping[str, Any]]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for item in previous_experiments:
+        if not isinstance(item, Mapping):
+            continue
+        outcome = str(item.get("outcome") or "").casefold()
+        recommendation = item.get("recommendation") if isinstance(item.get("recommendation"), Mapping) else {}
+        candidate = item.get("primary_recommendation")
+        if not isinstance(candidate, Mapping):
+            candidate = recommendation.get("selected_candidate") if isinstance(recommendation.get("selected_candidate"), Mapping) else {}
+        signature = str(candidate.get("history_signature") or "")
+        if signature and outcome:
+            result.setdefault(signature, []).append(outcome)
+    return result
+
+
+def build_candidate_whitelist(
+    target_analysis: Mapping[str, Any],
+    rules: Mapping[str, Any],
+    feedback: Sequence[Mapping[str, Any]],
+    observations: Sequence[Mapping[str, Any]],
+    previous_experiments: Sequence[Mapping[str, Any]] = (),
+    goal: str = "long-run-pace",
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    target_identity = target_analysis.get("identity") if isinstance(target_analysis.get("identity"), Mapping) else {}
+    setup = target_identity.get("setup") if isinstance(target_identity.get("setup"), Mapping) else {}
+    evidence_by_feedback: dict[str, list[str]] = {}
+    for item in observations:
+        evidence_by_feedback.setdefault(str(item.get("feedback_id")), []).append(str(item.get("evidence_id")))
+    history = _prior_outcome_signatures(previous_experiments)
+    candidates: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    limitations: list[str] = []
+    for report in feedback:
+        if report["symptom_id"] in {"good", "other"}:
+            continue
+        for corner_phase in report["corner_phases"]:
+            matching: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
+            for setting in rules.get("settings") or ():
+                if not isinstance(setting, Mapping):
+                    continue
+                for trigger in setting.get("triggers") or ():
+                    if not isinstance(trigger, Mapping):
+                        continue
+                    if (
+                        trigger.get("symptom_id") == report["symptom_id"]
+                        and trigger.get("run_phase") in {"*", report["run_phase"]}
+                        and trigger.get("corner_phase") in {"*", corner_phase}
+                    ):
+                        matching.append((setting, trigger))
+            for setting, trigger in matching:
+                paths: list[dict[str, Any]] = []
+                for path in setting.get("paths") or ():
+                    found, resolved, current = _casefold_setup_path(setup, str(path))
+                    usable = bool(
+                        found
+                        and current not in (None, "")
+                        and not isinstance(current, (Mapping, list, tuple, set))
+                    )
+                    paths.append({"requested_path": path, "resolved_path": resolved if usable else None, "current_value": current if usable else None})
+                required_mode = str(setting.get("required_path_mode") or "all")
+                available = all(item["resolved_path"] for item in paths) if required_mode == "all" else any(item["resolved_path"] for item in paths)
+                if not available:
+                    limitations.append(
+                        f"{setting.get('system')} is unavailable because required settings are absent from the exact embedded open setup."
+                    )
+                    continue
+                direction = str(trigger.get("direction"))
+                direction_rule = setting.get("directions", {}).get(direction)
+                if not isinstance(direction_rule, Mapping):
+                    continue
+                history_signature = stable_evidence_hash(
+                    {
+                        "ruleset_id": rules.get("ruleset_id"),
+                        "setting_id": setting.get("setting_id"),
+                        "direction": direction,
+                        "car_path": _normalized_identity_token(target_identity.get("car_path")),
+                        "track_configuration_key": _analysis_track_key(target_analysis),
+                        "corner_id": report["corner_id"],
+                        "run_phase": report["run_phase"],
+                        "corner_phase": corner_phase,
+                        "symptom_id": report["symptom_id"],
+                    },
+                    32,
+                )
+                outcomes = history.get(history_signature, [])
+                if goal in {"long-run-pace", "tire-life"}:
+                    goal_relevance = {"late": 1.0, "middle": 0.6, "early": 0.3}[report["run_phase"]]
+                    goal_reason = (
+                        f"{report['run_phase'].title()}-run feedback is prioritized for the {goal} goal."
+                    )
+                elif goal == "restart-pace":
+                    goal_relevance = {"early": 1.0, "middle": 0.5, "late": 0.2}[report["run_phase"]]
+                    goal_reason = (
+                        f"{report['run_phase'].title()}-run feedback is prioritized for restart pace."
+                    )
+                else:
+                    stability_symptoms = {"unstable-braking", "wheel-hop-lock", "loose"}
+                    goal_relevance = 1.0 if report["symptom_id"] in stability_symptoms else 0.4
+                    goal_reason = (
+                        f"{report['symptom_id']} is directly stability-related."
+                        if goal_relevance == 1.0
+                        else "This report is retained for stability but is not a direct instability label."
+                    )
+                candidate_id = "candidate-" + stable_evidence_hash(
+                    {"signature": history_signature, "feedback_id": report["feedback_id"]}, 20
+                )
+                candidate = {
+                    "candidate_id": candidate_id,
+                    "setting_id": setting.get("setting_id"),
+                    "system": setting.get("system"),
+                    "direction": direction,
+                    "change": direction_rule.get("instruction"),
+                    "predicted_effect": direction_rule.get("expected_effect"),
+                    "risk": direction_rule.get("risk"),
+                    "current_values": paths,
+                    "proposed_values": None,
+                    "manual_application_only": True,
+                    "adjustability": "confirmed-present-manual-step-unverified",
+                    "legality": "requires-iracing-garage-tech-check",
+                    "feedback_ids": [report["feedback_id"]],
+                    "evidence_ids": evidence_by_feedback.get(report["feedback_id"], []),
+                    "conflicts": [],
+                    "verify": list(setting.get("verify") or ()),
+                    "priority": report["priority"],
+                    "confidence": {
+                        "driver_report": report["driver_confidence"] / 5.0,
+                        "telemetry_context": 1.0 if evidence_by_feedback.get(report["feedback_id"]) else 0.25,
+                        "verified_map": 1.0,
+                        "exact_setup_setting_present": 1.0,
+                        "versioned_rule_direction": 1.0,
+                        "prior_success": 1.0 if "improved" in outcomes else None,
+                    },
+                    "history_signature": history_signature,
+                    "goal": goal,
+                    "goal_role": "workflow-priority-only-not-causal-evidence",
+                    "goal_relevance": {
+                        "score": goal_relevance,
+                        "reason": goal_reason,
+                        "causal_evidence": False,
+                    },
+                    "prior_outcomes": outcomes,
+                    "rollback": {
+                        "setup_name": target_identity.get("setup_name"),
+                        "setup_fingerprint": target_identity.get("setup_fingerprint"),
+                        "instruction": "Reload or restore this exact baseline before another test or immediately if the named risk appears.",
+                    },
+                    "test_protocol": {
+                        "one_change_rule": True,
+                        "control": "Match fuel, tire age, weather, track state, traffic exposure, and intended line.",
+                        "minimum_run": "Repeat the same representative-run length when practical.",
+                        "rollback": "Restore the exact baseline setup before trying another system or if the named risk appears.",
+                    },
+                }
+                confidence_values = [
+                    float(value)
+                    for value in candidate["confidence"].values()
+                    if value is not None
+                ]
+                candidate["confidence"]["overall"] = round(
+                    sum(confidence_values) / len(confidence_values), 3
+                )
+                if any(outcome in {"worse", "no-change"} for outcome in outcomes):
+                    suppressed.append({**candidate, "suppression_reason": "The same scoped change previously produced worse or no-change feedback."})
+                else:
+                    candidates.append(candidate)
+    # A candidate is one logical setup system. Merge duplicate reports into it.
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in candidates:
+        key = (str(item["setting_id"]), str(item["direction"]))
+        if key not in merged:
+            merged[key] = item
+            continue
+        existing = merged[key]
+        existing["feedback_ids"] = list(dict.fromkeys(existing["feedback_ids"] + item["feedback_ids"]))
+        existing["evidence_ids"] = list(dict.fromkeys(existing["evidence_ids"] + item["evidence_ids"]))
+        if item["priority"] > existing["priority"]:
+            existing["priority"] = item["priority"]
+            existing["goal_relevance"] = item["goal_relevance"]
+        elif (
+            item["priority"] == existing["priority"]
+            and item["goal_relevance"]["score"] > existing["goal_relevance"]["score"]
+        ):
+            existing["goal_relevance"] = item["goal_relevance"]
+    # Opposing directions for the same setting need a unique priority winner.
+    by_setting: dict[str, list[dict[str, Any]]] = {}
+    for item in merged.values():
+        by_setting.setdefault(str(item["setting_id"]), []).append(item)
+    resolved: list[dict[str, Any]] = []
+    for items in by_setting.values():
+        if len({item["direction"] for item in items}) == 1:
+            resolved.extend(items)
+            continue
+        highest = max(item["priority"] for item in items)
+        winners = [item for item in items if item["priority"] == highest]
+        if len(winners) == 1:
+            winner = winners[0]
+            winner["conflicts"].append("Opposing lower-priority driver feedback was recorded and did not drive this test.")
+            resolved.append(winner)
+        else:
+            for item in items:
+                suppressed.append({**item, "suppression_reason": "Opposing candidate direction has the same highest priority."})
+    resolved.sort(
+        key=lambda item: (
+            -int(item["priority"]),
+            -float(item["goal_relevance"]["score"]),
+            -float(item["confidence"]["overall"]),
+            0 if item["system"] == "aero-platform" else 1,
+            str(item["candidate_id"]),
+        )
+    )
+    return resolved, suppressed, list(dict.fromkeys(limitations))
+
+
+def build_structured_tuning_evidence(
+    driving_analysis: Mapping[str, Any],
+    feedback: Sequence[Mapping[str, Any]],
+    map_identity: Mapping[str, Any] | None,
+    *,
+    open_target_analysis: Mapping[str, Any] | None = None,
+    representative_run_ids: Sequence[Any] = (),
+    previous_experiments: Sequence[Mapping[str, Any]] = (),
+    generic_note: str = "",
+    goal: str = "long-run-pace",
+    ruleset_id: str = STRUCTURED_TUNING_RULESET_ID,
+) -> dict[str, Any]:
+    if len(str(generic_note)) > 8_000:
+        raise StructuredTuningError("generic_note must be 8,000 characters or fewer.")
+    goal = str(goal or "long-run-pace").strip().casefold()
+    if goal not in _TUNING_GOALS:
+        raise StructuredTuningError(
+            "goal must be long-run-pace, tire-life, restart-pace, or stability."
+        )
+    driving_identity = driving_analysis.get("identity") if isinstance(driving_analysis.get("identity"), Mapping) else {}
+    target_analysis = open_target_analysis or driving_analysis
+    target_identity = target_analysis.get("identity") if isinstance(target_analysis.get("identity"), Mapping) else {}
+    rules = load_structured_tuning_rules(ruleset_id)
+    map_ref, map_missing = validate_map_identity(driving_analysis, map_identity)
+    target_ref, target_missing = validate_open_target(driving_analysis, target_analysis)
+    run_selection, rejected_runs, run_limitations = select_representative_runs(
+        driving_analysis, representative_run_ids
+    )
+    feedback_normalized, feedback_missing = normalize_structured_feedback(feedback, map_ref)
+    conflicts = _feedback_conflicts(feedback_normalized)
+    telemetry_observations, observation_limitations = build_feedback_observations(
+        driving_analysis, feedback_normalized, run_selection, map_ref
+    )
+    driver_observations = [
+        {
+            "evidence_id": "evidence-driver-" + stable_evidence_hash(item, 16),
+            "feedback_id": item["feedback_id"],
+            "corner_id": item["corner_id"],
+            "corner_label": item["corner_label"],
+            "run_phase": item["run_phase"],
+            "corner_phases": item["corner_phases"],
+            "symptom_id": item["symptom_id"],
+            "severity": item["severity"],
+            "driver_confidence": item["driver_confidence"],
+            "source": "driver-report",
+            "causal_claim": False,
+            "limitation": "A driver report identifies a symptom, not its setup cause.",
+        }
+        for item in feedback_normalized
+    ]
+    observations = driver_observations + telemetry_observations
+    missing = list(map_missing) + list(target_missing) + list(feedback_missing)
+    if not str(driving_identity.get("event_type") or "").casefold() == "race":
+        missing.append("representative-race-session-required")
+    if not _ruleset_supports_car(rules, target_identity.get("car_path")):
+        missing.append("unsupported-car-ruleset")
+    if not run_selection:
+        missing.append("representative-clean-run-required")
+    if conflicts:
+        missing.append("unresolved-feedback-conflict")
+    candidates: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    candidate_limitations: list[str] = []
+    if not missing:
+        candidates, suppressed, candidate_limitations = build_candidate_whitelist(
+            target_analysis, rules, feedback_normalized, observations, previous_experiments, goal
+        )
+        if not candidates:
+            missing.append("no-supported-single-change-candidate")
+    limitations = list(
+        dict.fromkeys(
+            run_limitations
+            + observation_limitations
+            + candidate_limitations
+            + [
+                "Driver feedback names the symptom; telemetry only supplies location and context, never setup causality.",
+                "The app never edits or writes .sto files. Apply one whitelisted change manually and re-pass iRacing garage tech.",
+                "Exact numeric steps and ranges are intentionally omitted until verified for this car/build.",
+            ]
+        )
+    )
+    driving_ref = {
+        "analysis_id": driving_analysis.get("analysis_id"),
+        "event_type": driving_identity.get("event_type"),
+        "car_id": driving_identity.get("car_id"),
+        "car_path": driving_identity.get("car_path"),
+        "track_id": driving_identity.get("track_id"),
+        "track_config": driving_identity.get("track_config"),
+        "track_configuration_key": _analysis_track_key(driving_analysis),
+        "is_fixed_setup": driving_identity.get("is_fixed_setup"),
+        "setup_fingerprint": driving_identity.get("setup_fingerprint"),
+    }
+    body: dict[str, Any] = {
+        "schema_version": TUNING_EVIDENCE_SCHEMA_VERSION,
+        "contract": TUNING_EVIDENCE_CONTRACT,
+        "ruleset": {
+            "ruleset_id": rules["ruleset_id"],
+            "catalog_sha256": rules["catalog_sha256"],
+            "provenance": rules.get("provenance") or [],
+            "manual_application_only": True,
+        },
+        "goal": goal,
+        "driving_evidence_ref": driving_ref,
+        "open_target_ref": target_ref,
+        "garage_target_gate": {
+            "source_may_be_fixed": True,
+            "distinct_open_target_required_for_fixed_source": True,
+            "compatible": not target_missing,
+        },
+        "map_ref": map_ref,
+        "representative_runs": run_selection,
+        "rejected_runs": rejected_runs,
+        "feedback": feedback_normalized,
+        "generic_note": str(generic_note).strip(),
+        "observations": observations,
+        "candidate_whitelist": candidates,
+        "suppressed_candidates": suppressed,
+        "conflicts": conflicts,
+        "limitations": limitations,
+        "missing_required": list(dict.fromkeys(missing)),
+        "eligibility": {
+            "can_use_as_driving_evidence": bool(
+                str(driving_identity.get("event_type") or "").casefold() == "race"
+                and run_selection
+                and feedback_normalized
+                and not map_missing
+            ),
+            "can_receive_garage_recommendation": not missing and bool(candidates),
+            "exact_map_identity": not map_missing,
+            "exact_open_setup_identity": not target_missing,
+            "one_change_rule": True,
+        },
+    }
+    body["evidence_hash"] = stable_evidence_hash(body, 64)
+    return body
+
+
+def build_bounded_tuning_ai_request(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    compact_candidates: list[dict[str, Any]] = []
+    included_evidence_ids: set[str] = set()
+    for raw in evidence.get("candidate_whitelist") or ():
+        if not isinstance(raw, Mapping) or len(compact_candidates) >= 20:
+            continue
+        candidate_evidence = [
+            str(item) for item in raw.get("evidence_ids") or () if str(item).strip()
+        ][:24]
+        included_evidence_ids.update(candidate_evidence)
+        compact_candidates.append(
+            {
+                "candidate_id": raw.get("candidate_id"),
+                "system": raw.get("system"),
+                "direction": raw.get("direction"),
+                "change": raw.get("change"),
+                "predicted_effect": raw.get("predicted_effect"),
+                "risk": raw.get("risk"),
+                "evidence_ids": candidate_evidence,
+                "conflicts": list(raw.get("conflicts") or ())[:12],
+                "confidence": raw.get("confidence"),
+                "goal_relevance": raw.get("goal_relevance"),
+                "manual_application_only": True,
+            }
+        )
+    compact_evidence: list[dict[str, Any]] = []
+    included_feedback_ids: set[str] = set()
+    for raw in evidence.get("observations") or ():
+        if not isinstance(raw, Mapping) or str(raw.get("evidence_id")) not in included_evidence_ids:
+            continue
+        feedback_id = str(raw.get("feedback_id") or "")
+        if feedback_id:
+            included_feedback_ids.add(feedback_id)
+        metrics = raw.get("metrics") if isinstance(raw.get("metrics"), Mapping) else {}
+        compact_evidence.append(
+            {
+                "evidence_id": raw.get("evidence_id"),
+                "feedback_id": raw.get("feedback_id"),
+                "corner_id": raw.get("corner_id"),
+                "corner_label": raw.get("corner_label"),
+                "run_id": raw.get("run_id"),
+                "run_phase": raw.get("run_phase"),
+                "corner_phases": raw.get("corner_phases"),
+                "symptom_id": raw.get("symptom_id"),
+                "severity": raw.get("severity"),
+                "driver_confidence": raw.get("driver_confidence"),
+                "lap_count": raw.get("lap_count"),
+                "metrics": dict(list(metrics.items())[:16]),
+                "source": raw.get("source"),
+                "causal_claim": False,
+            }
+        )
+    compact_feedback = [
+        {
+            "feedback_id": raw.get("feedback_id"),
+            "corner_id": raw.get("corner_id"),
+            "corner_label": raw.get("corner_label"),
+            "run_phase": raw.get("run_phase"),
+            "corner_phases": raw.get("corner_phases"),
+            "symptom_id": raw.get("symptom_id"),
+            "severity": raw.get("severity"),
+            "driver_confidence": raw.get("driver_confidence"),
+            "priority": raw.get("priority"),
+            "note": str(raw.get("note") or "")[:300],
+        }
+        for raw in evidence.get("feedback") or ()
+        if isinstance(raw, Mapping) and str(raw.get("feedback_id")) in included_feedback_ids
+    ]
+    request = {
+        "contract": "tuning_ai_request_v1",
+        "workflow_key": evidence.get("evidence_hash"),
+        "instruction": (
+            "Select at most one candidate from candidate_whitelist. Use only supplied evidence IDs. "
+            "Do not invent setup values, telemetry, causes, or legality."
+        ),
+        "goal": evidence.get("goal"),
+        "generic_note": str(evidence.get("generic_note") or "")[:2000],
+        "eligibility": evidence.get("eligibility"),
+        "feedback": compact_feedback,
+        "evidence": compact_evidence,
+        "candidate_whitelist": compact_candidates,
+        "conflicts": list(evidence.get("conflicts") or ())[:20],
+        "limitations": list(evidence.get("limitations") or ())[:30],
+        "response_contract": {
+            "additional_properties": False,
+            "required": ["selected_candidate_id", "summary", "evidence_ids", "conflicts", "confidence_reasons"],
+        },
+    }
+    encoded_size = len(json.dumps(request, separators=(",", ":"), default=str).encode("utf-8"))
+    if encoded_size > _AI_REQUEST_MAX_BYTES:
+        # Notes are useful but never identity or measurement evidence. Drop
+        # them before refusing a valid deterministic plan.
+        request["generic_note"] = ""
+        for item in request["feedback"]:
+            item["note"] = ""
+        request["truncation"] = "Driver note text was omitted to keep the optional AI request under 64 KiB."
+        encoded_size = len(json.dumps(request, separators=(",", ":"), default=str).encode("utf-8"))
+    if encoded_size > _AI_REQUEST_MAX_BYTES:
+        raise StructuredTuningError(
+            "Bounded AI request exceeds 64 KiB after optional note removal; deterministic selection remains required."
+        )
+    return request
+
+
+def validate_tuning_ai_response(
+    response: Any, evidence: Mapping[str, Any]
+) -> dict[str, Any]:
+    errors: list[str] = []
+    if not isinstance(response, Mapping):
+        return {"valid": False, "selection": None, "errors": ["AI response must be an object."]}
+    allowed = {"selected_candidate_id", "summary", "evidence_ids", "conflicts", "confidence_reasons"}
+    unknown = sorted(set(response).difference(allowed))
+    if unknown:
+        errors.append("Unknown fields: " + ", ".join(unknown))
+    for field in allowed:
+        if field not in response:
+            errors.append(f"Missing field: {field}")
+    candidates = {
+        str(item.get("candidate_id")): item
+        for item in evidence.get("candidate_whitelist") or ()
+        if isinstance(item, Mapping) and item.get("candidate_id")
+    }
+    candidate_ids = set(candidates)
+    try:
+        ai_request = build_bounded_tuning_ai_request(evidence)
+    except StructuredTuningError as exc:
+        errors.append(str(exc))
+        ai_request = {"evidence": []}
+    supplied_evidence_ids = {
+        str(item.get("evidence_id"))
+        for item in ai_request.get("evidence") or ()
+        if isinstance(item, Mapping) and item.get("evidence_id")
+    }
+    selected = str(response.get("selected_candidate_id") or "")
+    selected_candidate = candidates.get(selected)
+    candidate_evidence_ids = {
+        str(item)
+        for item in (selected_candidate or {}).get("evidence_ids") or ()
+        if str(item)
+    }
+    evidence_ids = supplied_evidence_ids.intersection(candidate_evidence_ids)
+    summary = str(response.get("summary") or "")
+    if selected not in candidate_ids:
+        errors.append("selected_candidate_id is not in candidate_whitelist.")
+    if not 1 <= len(summary) <= 1200:
+        errors.append("summary must contain 1-1200 characters.")
+    normalized_lists: dict[str, list[str]] = {}
+    bounds = {"evidence_ids": (1, 24, 160), "conflicts": (0, 12, 500), "confidence_reasons": (1, 12, 500)}
+    for field, (minimum, maximum, text_limit) in bounds.items():
+        raw = response.get(field)
+        if not isinstance(raw, list) or not minimum <= len(raw) <= maximum or any(not isinstance(item, str) or not item.strip() or len(item) > text_limit for item in raw):
+            errors.append(f"{field} has invalid type, count, or text length.")
+            normalized_lists[field] = []
+        else:
+            normalized_lists[field] = list(dict.fromkeys(item.strip() for item in raw))
+            if len(normalized_lists[field]) != len(raw):
+                errors.append(f"{field} must not contain duplicate values.")
+    if any(item not in evidence_ids for item in normalized_lists.get("evidence_ids", [])):
+        errors.append("evidence_ids contains an ID not linked to the selected candidate.")
+    selection = None if errors else {
+        "selected_candidate_id": selected,
+        "summary": summary.strip(),
+        **normalized_lists,
+    }
+    return {"valid": not errors, "selection": selection, "errors": errors}
+
+
+def select_structured_recommendation(
+    evidence: Mapping[str, Any], ai_response: Any = None
+) -> dict[str, Any]:
+    candidates = [item for item in evidence.get("candidate_whitelist") or () if isinstance(item, Mapping)]
+    if not evidence.get("eligibility", {}).get("can_receive_garage_recommendation") or not candidates:
+        return {
+            "status": "blocked",
+            "selected_candidate_id": "",
+            "summary": "A garage recommendation is unavailable until the listed evidence and identity requirements are satisfied.",
+            "evidence_ids": [],
+            "conflicts": [str(item.get("reason")) for item in evidence.get("conflicts") or () if isinstance(item, Mapping)],
+            "confidence_reasons": [],
+            "selection_source": "deterministic-gate",
+            "ai_validation": None,
+        }
+    validation = validate_tuning_ai_response(ai_response, evidence) if ai_response is not None else None
+    if validation and validation["valid"]:
+        return {"status": "ready", **validation["selection"], "selection_source": "validated-bounded-ai", "ai_validation": validation}
+    candidate = candidates[0]
+    confidence = candidate.get("confidence") if isinstance(candidate.get("confidence"), Mapping) else {}
+    reasons = [
+        "The exact setting exists in the embedded open setup.",
+        "The direction comes from the installed versioned rules catalog.",
+        "Only one logical setup system is included in this test.",
+    ]
+    goal_relevance = candidate.get("goal_relevance")
+    if isinstance(goal_relevance, Mapping) and goal_relevance.get("reason"):
+        reasons.append(str(goal_relevance["reason"]))
+    if candidate.get("evidence_ids"):
+        reasons.append("Strict clean-run telemetry supplies location and run-phase context without asserting cause.")
+    return {
+        "status": "ready",
+        "selected_candidate_id": candidate["candidate_id"],
+        "summary": f"For the {candidate.get('goal', 'long-run-pace')} goal, test one reversible {candidate['system']} change: {candidate['change']}",
+        "evidence_ids": list(candidate.get("evidence_ids") or ()),
+        "conflicts": list(candidate.get("conflicts") or ()),
+        "confidence_reasons": reasons,
+        "confidence": confidence,
+        "selection_source": "deterministic-fallback" if validation else "deterministic",
+        "ai_validation": validation,
+    }
+
+
+__all__ = [
+    "STRUCTURED_TUNING_RULESET_ID",
+    "StructuredTuningError",
+    "TUNING_EVIDENCE_CONTRACT",
+    "TUNING_EVIDENCE_SCHEMA_VERSION",
+    "build_bounded_tuning_ai_request",
+    "build_candidate_whitelist",
+    "build_structured_tuning_evidence",
+    "choose_oreilly_donor",
+    "embedded_setup_fingerprint",
+    "load_structured_tuning_rules",
+    "map_annotation_hash",
+    "normalize_structured_feedback",
+    "parse_handling_symptoms",
+    "recommend_tuning",
+    "select_representative_runs",
+    "select_structured_recommendation",
+    "stable_evidence_hash",
+    "track_geometry_hash",
+    "validate_map_identity",
+    "validate_open_target",
+    "validate_tuning_ai_response",
+]

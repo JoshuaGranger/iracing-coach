@@ -1,90 +1,648 @@
-<div class="page-heading">
-    <div><span class="eyebrow">Progressive tuning</span><h1>Build a setup experiment</h1></div>
-</div>
+@implements IDisposable
 
-@if (!State.TuningRaces.Any())
-{
-    <section class="surface-card compact-empty-surface"><div class="empty-state"><span class="empty-icon"><ProductIcon Name="tuning" Size="22" /></span><h2>Analyze an open-setup race first</h2><p>A complete analysis and embedded setup are required.</p><button class="button primary" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button></div></section>
-}
-else
-{
-    <div class="workflow-layout tuning-layout @(State.TuningExperiment is null ? "setup-only" : "has-results")">
-        <aside class="surface-card form-panel">
-            <div class="card-header"><div><span class="eyebrow">Recorded starting point</span><h2>Choose a race</h2></div></div>
-            <label>Analyzed open-setup race<select value="@State.SelectedTuningRaceId" @onchange="ChangeRace">@foreach (var raceOption in State.TuningRaces) { <option value="@raceOption.Id">@raceOption.Track · @raceOption.Car · @raceOption.Date</option> }</select></label>
-            @if (State.SelectedTuningRace is { } race) { <div class="context-summary"><span>@race.Car</span><strong>@race.Track · @race.Layout</strong></div> }
-            @if (State.CurrentAnalysis is { } tuningWorkspace && State.SelectedTuningRace is { } tuningRace && string.Equals(tuningWorkspace.Track, tuningRace.Track, StringComparison.OrdinalIgnoreCase))
-            {
-                <TuningTrackSelector Workspace="tuningWorkspace" @bind-Selected="State.TuningCorner" />
-            }
-            @if (State.TuningFeedback.Count > 0)
-            {
-                <div class="tuning-feedback-cards" aria-label="Saved handling feedback">
-                    @foreach (var item in State.TuningFeedback)
-                    {
-                        <article><div><strong>@item.Corner</strong><span>@item.RunPhase · @item.CornerPhase</span></div><b>@item.Balance</b><small>@item.Severity · @item.Confidence confidence@(item.Priority ? " · Priority" : string.Empty)</small><button aria-label="Remove feedback" @onclick="() => State.RemoveTuningFeedback(item)">Remove</button></article>
-                    }
-                </div>
-            }
-            <fieldset class="feedback-builder">
-                <legend>Handling feedback</legend>
-                <div class="feedback-step"><span>1</span><div><strong>When?</strong><div class="segmented-control" role="group" aria-label="Run phase">@foreach (var option in RunPhases) { <button type="button" aria-pressed="@(State.TuningRunPhase == option)" class="@(State.TuningRunPhase == option ? "selected" : "")" @onclick="() => State.TuningRunPhase = option">@option</button> }</div></div></div>
-                <div class="feedback-step"><span>2</span><div><strong>Where in the corner?</strong><div class="segmented-control" role="group" aria-label="Corner phase">@foreach (var option in CornerPhases) { <button type="button" aria-pressed="@(State.TuningCornerPhase == option)" class="@(State.TuningCornerPhase == option ? "selected" : "")" @onclick="() => State.TuningCornerPhase = option">@option</button> }</div></div></div>
-                <div class="feedback-step"><span>3</span><div><strong>What was the balance?</strong><div class="balance-grid" role="group" aria-label="Handling balance">@foreach (var option in Balances) { <button type="button" aria-pressed="@(State.TuningBalance == option.Value)" class="@(State.TuningBalance == option.Value ? "selected" : "")" @onclick="() => State.TuningBalance = option.Value"><b>@option.Label</b><small>@option.Help</small></button> }</div></div></div>
-                <div class="feedback-step"><span>4</span><div class="tuning-rating-row"><div><strong>How strong was it?</strong><div class="segmented-control" role="group" aria-label="Severity">@foreach (var option in Severities) { <button type="button" aria-pressed="@(State.TuningSeverity == option)" class="@(State.TuningSeverity == option ? "selected" : "")" @onclick="() => State.TuningSeverity = option">@option</button> }</div></div><div><strong>How certain are you?</strong><div class="segmented-control" role="group" aria-label="Confidence">@foreach (var option in Confidences) { <button type="button" aria-pressed="@(State.TuningConfidence == option)" class="@(State.TuningConfidence == option ? "selected" : "")" @onclick="() => State.TuningConfidence = option">@option</button> }</div></div></div></div>
-                <label class="priority-toggle"><input type="checkbox" @bind="State.TuningPriority" /><span><strong>Make this the priority</strong></span></label>
-            </fieldset>
-            <div class="field-row tuning-context-fields"><label>Corner or zone<input maxlength="80" placeholder="Whole lap, Turn 3, Esses…" @bind="State.TuningCorner" @bind:event="oninput" /></label><label>Optional detail<input maxlength="500" placeholder="Only after 12 green laps…" @bind="State.TuningNotes" @bind:event="oninput" /></label></div>
-            <div class="button-row tuning-actions"><button class="button secondary" disabled="@(string.IsNullOrWhiteSpace(State.TuningBalance) && string.IsNullOrWhiteSpace(State.SymptomText))" @onclick="State.AddTuningFeedback">Add feedback</button><button class="button primary" disabled="@(State.TuningFeedback.Count == 0 && string.IsNullOrWhiteSpace(State.TuningBalance) && string.IsNullOrWhiteSpace(State.SymptomText))" @onclick="BuildExperiment">Build controlled experiment</button></div>
-        </aside>
+<div class="tuning-workbench-page">
+    <header class="tuning-workbench-toolbar">
+        <div class="tuning-workbench-title">
+            <span class="eyebrow">Progressive tuning</span>
+            <h1>Turn-by-turn setup feedback</h1>
+        </div>
 
-        @if (State.TuningExperiment is { } experiment)
+        @if (EvidenceRaces.Count > 0)
         {
-            <div class="workflow-results"><section class="surface-card">
-                <div class="card-header"><div><span class="eyebrow">Evidence check</span><h2>Recommendation</h2></div><span class="status-label neutral">One change at a time</span></div>
-                <div class="experiment-card real-experiment">
-                    <div class="card-header"><div><span class="eyebrow">Controlled test</span><h2>@DisplaySystem(experiment.System)</h2></div><span class="status-label success">Saved locally</span></div>
-                    <div class="experiment-change"><span>Try this change</span><p>@experiment.Change</p></div>
-                    <div class="effect-risk"><div><span>What it should improve</span><p>@experiment.PredictedEffect</p></div><div><span>What to watch for</span><p>@experiment.Risk</p></div></div>
-                    @if (experiment.Verify.Count > 0) { <div class="verify-list"><span>Compare after the run</span>@foreach (var item in experiment.Verify) { <span class="verify-chip"><ProductIcon Name="check" Size="14" /> @item</span> }</div> }
-                    @if (!string.IsNullOrWhiteSpace(experiment.RollbackFingerprint)) { <div class="rollback-banner"><div><span>Your original setup is preserved</span><strong>Return to it if the change makes the car worse.</strong></div></div> }
-                    <label>Notes after your comparison run<textarea rows="3" maxlength="8000" placeholder="What changed? Was the run clean and comparable?" @bind="State.FeedbackNotes" @bind:event="oninput"></textarea></label>
-                    <div class="outcome-bar"><span>Save the result</span><button @onclick='() => Record("improved")'>Improved</button><button @onclick='() => Record("worse")'>Worse</button><button @onclick='() => Record("no-change")'>No change</button><button @onclick='() => Record("inconclusive")'>Inconclusive</button><strong>@experiment.Outcome</strong></div>
-                    <details class="evidence-details"><summary>Technical record</summary><ul><li>Test record: @experiment.ExperimentId</li>@if (!string.IsNullOrWhiteSpace(experiment.RollbackFingerprint)) { <li class="mono">Original setup: @experiment.RollbackFingerprint</li> }</ul></details>
-                </div>
-            </section></div>
+            <label class="tuning-race-picker">
+                <span>Representative race</span>
+                <select value="@State.SelectedTuningRaceId" @onchange="ChangeRace" disabled="@_working">
+                    @foreach (var race in EvidenceRaces)
+                    {
+                        <option value="@race.Id">@race.Track · @race.Car · @race.Date</option>
+                    }
+                </select>
+            </label>
+
+            <label class="tuning-goal-picker">
+                <span>Goal</span>
+                <select value="@State.TuningDraft.Goal" @onchange="ChangeGoal" disabled="@(_working || State.SelectedTuningRace is null)">
+                    <option value="long-run-pace">Long-run pace</option>
+                    <option value="tire-life">Tire life</option>
+                    <option value="restart-pace">Restart pace</option>
+                    <option value="stability">Stability</option>
+                </select>
+            </label>
         }
-    </div>
-}
+
+        <div class="tuning-workbench-context">
+            @if (State.SelectedTuningRace is { } selectedRace)
+            {
+                <strong>@selectedRace.Track <small>@selectedRace.Layout</small></strong>
+                <span>@selectedRace.Car · @selectedRace.SetupType setup</span>
+            }
+            @if (_working)
+            {
+                <span class="tuning-working" role="status"><i></i>@_workingLabel</span>
+            }
+        </div>
+
+        @if (EligibleRuns.Count > 0)
+        {
+            <div class="tuning-run-picker" role="group" aria-label="Representative runs">
+                <span>Representative runs</span>
+                @foreach (var run in EligibleRuns)
+                {
+                    var selected = State.TuningDraft.RepresentativeRunIds.Contains(run.Number.ToString(), StringComparer.Ordinal);
+                    <button type="button"
+                            class="@(selected ? "selected" : null)"
+                            aria-pressed="@(selected ? "true" : "false")"
+                            disabled="@(_working || (!selected && State.TuningDraft.RepresentativeRunIds.Count >= 3))"
+                            title="@RunTitle(run)"
+                            @onclick="() => ToggleRun(run.Number)">
+                        Run @run.Number <small>@run.GreenLaps green</small>
+                    </button>
+                }
+                <small aria-live="polite">@_controlSaveStatus</small>
+            </div>
+        }
+    </header>
+
+    @if (EvidenceRaces.Count == 0)
+    {
+        <section class="surface-card tuning-empty-page">
+            <div class="empty-state">
+                <span class="empty-icon"><ProductIcon Name="tuning" Size="22" /></span>
+                <h2>No analyzed race is ready yet</h2>
+                <p>Analyze a recorded race, then return here to use it as the representative run.</p>
+                <button class="button primary" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button>
+            </div>
+        </section>
+    }
+    else if (!TuningWorkspaceReady || State.CurrentAnalysis is not { } workspace)
+    {
+        <section class="surface-card tuning-empty-page" aria-live="polite">
+            <div class="empty-state">
+                <span class="tuning-loading-mark" aria-hidden="true"></span>
+                <h2>Loading race data</h2>
+                <p>@State.TuningMessage</p>
+                @if (string.Equals(_failedRaceId, State.SelectedTuningRaceId, StringComparison.Ordinal))
+                {
+                    <button type="button" class="button secondary" @onclick="RetryRace">Retry race</button>
+                }
+            </div>
+        </section>
+    }
+    else
+    {
+        <div class="tuning-workbench">
+            <div class="tuning-map-column">
+                <TuningTrackSelector Workspace="workspace"
+                                     Map="State.SelectedTuningMap"
+                                     Selected="@State.SelectedTuningTurnId"
+                                     SelectedChanged="SelectTurnId"
+                                     TurnSelected="SelectTurn"
+                                     CorrectionRequested="SaveCorrection" />
+
+                <label class="tuning-general-note">
+                    <span><strong>General feedback</strong><small>Anything that applies beyond one turn</small></span>
+                    <textarea rows="2"
+                              maxlength="1200"
+                              placeholder="Optional race-wide handling feedback"
+                              value="@_generalNote"
+                              @oninput="GeneralNoteChanged"></textarea>
+                    <small aria-live="polite">@_generalSaveStatus</small>
+                </label>
+            </div>
+
+            <div class="tuning-inspector-column">
+                @if (State.StructuredTuningResult is { } result && !_hideStructuredResult)
+                {
+                    var selectedChange = result.CandidateWhitelist.FirstOrDefault(item =>
+                            string.Equals(item.CandidateId, result.Recommendation.SelectedCandidateId, StringComparison.Ordinal))
+                        ?? result.CandidateWhitelist.FirstOrDefault();
+                    <section class="tuning-result-card">
+                        <header>
+                            <div><span class="eyebrow">Controlled setup test</span><h2>@(selectedChange?.System ?? "No safe change found")</h2></div>
+                            <span class="status-label neutral">One change</span>
+                        </header>
+                        @if (!string.IsNullOrWhiteSpace(result.Recommendation.Summary))
+                        {
+                            <p class="tuning-result-summary">@result.Recommendation.Summary</p>
+                        }
+                        @if (selectedChange is not null)
+                        {
+                            <div class="tuning-result-block"><span>Try</span><strong>@selectedChange.Change</strong></div>
+                            <div class="tuning-result-block"><span>Expected</span><strong>@selectedChange.PredictedEffect</strong></div>
+                            <div class="tuning-result-block"><span>Watch</span><strong>@selectedChange.Risk</strong></div>
+                            @if (selectedChange.Verify.Count > 0)
+                            {
+                                <div class="tuning-result-verify">
+                                    @foreach (var item in selectedChange.Verify) { <span>@item</span> }
+                                </div>
+                            }
+                            <div class="tuning-outcome-panel">
+                                <label>
+                                    <span>Comparison run <small>Optional</small></span>
+                                    <select @bind="State.SelectedTuningResultRaceId">
+                                        <option value="">Subjective result only</option>
+                                        @foreach (var comparison in State.TuningResultRaces.OrderByDescending(race => race.StartTimeUtc, StringComparer.Ordinal))
+                                        {
+                                            <option value="@comparison.Id">@comparison.Date · @comparison.Car</option>
+                                        }
+                                    </select>
+                                </label>
+                                <div class="tuning-outcome-actions" aria-label="Save comparison outcome">
+                                    <button type="button" @onclick='() => SaveOutcome("improved")'>Improved</button>
+                                    <button type="button" @onclick='() => SaveOutcome("worse")'>Worse</button>
+                                    <button type="button" @onclick='() => SaveOutcome("no-change")'>No change</button>
+                                    <button type="button" @onclick='() => SaveOutcome("inconclusive")'>Inconclusive</button>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            var unavailableReason = string.Join(" ", result.MissingRequired.Concat(result.Limitations));
+                            <p>@(string.IsNullOrWhiteSpace(unavailableReason) ? "The available evidence did not support a safe setup change." : unavailableReason)</p>
+                        }
+                    </section>
+                }
+                else
+                {
+                    <ProgressiveTuningFeedbackEditor Turn="_selectedTurn"
+                                                     ExistingFeedback="State.TuningDraft.Feedback"
+                                                     FeedbackChanged="SaveFeedback"
+                                                     SaveStatus="@_feedbackSaveStatus" />
+                }
+
+                <section class="tuning-analysis-actions">
+                    @if (NeedsOpenTarget)
+                    {
+                        <label>
+                            <span>Open-setup target</span>
+                            <select value="@State.SelectedTuningTargetRaceId" @onchange="ChangeOpenTarget" disabled="@_working">
+                                <option value="">Choose a matching open-setup race</option>
+                                @foreach (var target in OpenTargetRaces)
+                                {
+                                    <option value="@target.Id">@target.Date · @target.Car</option>
+                                }
+                            </select>
+                        </label>
+                    }
+
+                    @if (State.StructuredTuningResult is not null)
+                    {
+                        <button type="button" class="button secondary" @onclick="ReturnToFeedback">Edit feedback</button>
+                    }
+                    <button type="button"
+                            class="button primary"
+                            disabled="@(!CanAnalyze || _working)"
+                            @onclick="AnalyzeFeedback">
+                        Analyze feedback
+                    </button>
+                </section>
+
+                @if (!string.IsNullOrWhiteSpace(_actionMessage))
+                {
+                    <p class="tuning-action-message @(_actionFailed ? "error" : null)" role="status">@_actionMessage</p>
+                }
+                else if (State.SelectedTuningMap is { IsVerified: false })
+                {
+                    <p class="tuning-action-message">Verify each turn's entry, apex, and exit before analysis.</p>
+                }
+                else if (NeedsOpenTarget && State.SelectedTuningTarget is null)
+                {
+                    <p class="tuning-action-message">Choose a matching open setup before requesting a garage change.</p>
+                }
+                else if (State.TuningDraft.Feedback.Count == 0)
+                {
+                    <p class="tuning-action-message">Choose a turn and describe what the car did.</p>
+                }
+                else if (State.TuningDraft.RepresentativeRunIds.Count == 0)
+                {
+                    <p class="tuning-action-message">This recording has no clean green run long enough for a controlled comparison.</p>
+                }
+                else if (CanAnalyze)
+                {
+                    <p class="tuning-action-message">Ready to analyze your feedback.</p>
+                }
+                else if (!string.IsNullOrWhiteSpace(State.TuningMessage))
+                {
+                    <p class="tuning-action-message">@State.TuningMessage</p>
+                }
+            </div>
+        </div>
+    }
+</div>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
-    private static readonly string[] RunPhases = ["Early run", "Middle run", "Late run"];
-    private static readonly string[] CornerPhases = ["Entry", "Center", "Exit"];
-    private static readonly string[] Severities = ["Mild", "Moderate", "Severe"];
-    private static readonly string[] Confidences = ["Low", "Medium", "High"];
-    private static readonly (string Label, string Value, string Help)[] Balances =
-    [
-        ("Tight", "Tight / understeer", "Needs more steering"),
-        ("Loose", "Loose / oversteer", "Rear steps out"),
-        ("Unstable", "Unstable", "Hard to place consistently"),
-        ("Low grip", "Low grip", "Both ends lack grip")
-    ];
-    private static string DisplaySystem(string system) => system switch
-    {
-        "Static Balance" => "Corner balance",
-        "Driving First" => "Driving technique first",
-        _ => system
-    };
-    private Task BuildExperiment() { if (State.TuningFeedback.Count == 0) State.AddTuningFeedback(); return State.GenerateExperimentAsync(); }
-    private Task Record(string outcome) => State.RecordOutcomeAsync(outcome);
-    private Task ChangeRace(ChangeEventArgs args) => State.SelectTuningRaceAsync(args.Value?.ToString());
+
+    private readonly CancellationTokenSource _lifetime = new();
+    private CancellationTokenSource? _noteSave;
+    private TuningTurn? _selectedTurn;
+    private string _generalNote = string.Empty;
+    private string _feedbackSaveStatus = "Draft ready";
+    private string _generalSaveStatus = string.Empty;
+    private string _actionMessage = string.Empty;
+    private string _workingLabel = string.Empty;
+    private string _controlSaveStatus = string.Empty;
     private string? _loadedRaceId;
+    private string? _loadingRaceId;
+    private string? _failedRaceId;
+    private string? _loadedDraftId;
+    private bool _working;
+    private bool _actionFailed;
+    private bool _hideStructuredResult;
+
+    private IReadOnlyList<RecentRace> EvidenceRaces => State.TuningEvidenceRaces
+        .OrderByDescending(race => race.StartTimeUtc, StringComparer.Ordinal)
+        .ThenByDescending(race => race.Date, StringComparer.Ordinal)
+        .ToArray();
+
+    private IReadOnlyList<RecentRace> OpenTargetRaces => State.TuningResultRaces
+        .Where(race => string.Equals(race.SetupType, "Open", StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(race => race.StartTimeUtc, StringComparer.Ordinal)
+        .ThenByDescending(race => race.Date, StringComparer.Ordinal)
+        .ToArray();
+
+    private IReadOnlyList<AnalysisRun> EligibleRuns => (State.CurrentAnalysis?.Runs ?? [])
+        .Where(run => run.ComparisonEligible && run.CoachingReferenceLapCount >= 6)
+        .OrderBy(run => run.Number)
+        .ToArray();
+
+    private bool NeedsOpenTarget => !string.Equals(
+        State.TuningDraft.RepresentativeSession.SetupType,
+        "Open",
+        StringComparison.OrdinalIgnoreCase);
+
+    private bool CanAnalyze => State.TuningDraft.Feedback.Count > 0
+        && State.SelectedTuningMap is not null
+        && State.SelectedTuningMap.IsVerified
+        && (!NeedsOpenTarget || State.SelectedTuningTarget is not null);
+
+    private bool TuningWorkspaceReady => State.CurrentAnalysis is not null
+        && State.SelectedTuningRace is { } race
+        && string.Equals(State.TuningDraft.RepresentativeSession.RaceId, race.Id, StringComparison.Ordinal);
+
+    private static TuningMapView? BuildCatalogMap(AnalysisWorkspace analysis, TuningMapView? supplied)
+    {
+        if (supplied is null || supplied.Path.Count < 2) return null;
+        var catalog = ProgressiveTurnCatalog.Default.Resolve(analysis);
+        if (!catalog.HasTurns || catalog.UsesRecordedLoadZones) return null;
+        if (!string.Equals(catalog.MapIdentity, supplied.MapIdentity, StringComparison.OrdinalIgnoreCase)) return null;
+        var turns = catalog.Turns.Select(turn => new TuningTurn(
+            turn.CornerId,
+            turn.Label,
+            turn.StartPct,
+            turn.ApexPct,
+            turn.EndPct,
+            turn.IsOfficial,
+            turn.Confidence,
+            turn.CorrectionNote)).ToArray();
+        return new TuningMapView(
+            supplied.MapIdentity,
+            catalog.SourceType,
+            catalog.SourceLabel,
+            catalog.SourceUrl,
+            catalog.Confidence,
+            catalog.StatusMessage,
+            catalog.Verified,
+            supplied.Path,
+            turns,
+            supplied.GeometryHash);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (string.Equals(_loadedDraftId, State.TuningDraft.DraftId, StringComparison.Ordinal)) return;
+        _loadedDraftId = State.TuningDraft.DraftId;
+        _generalNote = State.TuningDraft.GeneralNote;
+        _generalSaveStatus = string.Empty;
+        _feedbackSaveStatus = "Draft ready";
+        _selectedTurn = State.SelectedTuningMap?.Turns.FirstOrDefault(turn =>
+            string.Equals(turn.CornerId, State.SelectedTuningTurnId, StringComparison.Ordinal));
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         var raceId = State.SelectedTuningRaceId;
-        if (string.IsNullOrWhiteSpace(raceId) || string.Equals(_loadedRaceId, raceId, StringComparison.Ordinal)) return;
-        _loadedRaceId = raceId;
-        await State.SelectTuningRaceAsync(raceId);
+        if (string.IsNullOrWhiteSpace(raceId)) raceId = EvidenceRaces.FirstOrDefault()?.Id;
+        if (string.IsNullOrWhiteSpace(raceId)
+            || string.Equals(_loadedRaceId, raceId, StringComparison.Ordinal)
+            || string.Equals(_loadingRaceId, raceId, StringComparison.Ordinal)
+            || string.Equals(_failedRaceId, raceId, StringComparison.Ordinal)) return;
+        await RequestLoadRace(raceId, allowRetry: false);
     }
+
+    private async Task ChangeRace(ChangeEventArgs args)
+    {
+        var raceId = args.Value?.ToString()?.Trim() ?? string.Empty;
+        await RequestLoadRace(raceId, allowRetry: true);
+    }
+
+    private Task RetryRace() => RequestLoadRace(State.SelectedTuningRaceId, allowRetry: true);
+
+    private async Task RequestLoadRace(string raceId, bool allowRetry)
+    {
+        if (string.IsNullOrWhiteSpace(raceId)
+            || string.Equals(_loadingRaceId, raceId, StringComparison.Ordinal)
+            || (!allowRetry && string.Equals(_failedRaceId, raceId, StringComparison.Ordinal))) return;
+        _loadingRaceId = raceId;
+        if (allowRetry) _failedRaceId = null;
+        try { await LoadRace(raceId); }
+        finally { _loadingRaceId = null; }
+    }
+
+    private async Task LoadRace(string raceId)
+    {
+        CancelPendingGeneralNote();
+        _working = true;
+        _workingLabel = "Loading race";
+        _actionMessage = string.Empty;
+        _actionFailed = false;
+        _selectedTurn = null;
+        _hideStructuredResult = false;
+        try
+        {
+            await State.SelectTuningRaceAsync(raceId, _lifetime.Token);
+            if (State.CurrentAnalysis is null
+                || !string.Equals(State.TuningDraft.RepresentativeSession.RaceId, raceId, StringComparison.Ordinal))
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(State.TuningMessage)
+                    ? "The race data did not finish loading."
+                    : State.TuningMessage);
+            if (State.CurrentAnalysis is { } analysis
+                && BuildCatalogMap(analysis, State.SelectedTuningMap) is { } catalogMap
+                && !SameTurnMap(State.SelectedTuningMap, catalogMap))
+            {
+                await State.ApplyTuningMapAsync(
+                    catalogMap,
+                    State.TuningDraft.RepresentativeSession.TrackConfigurationKey,
+                    _lifetime.Token);
+            }
+            _loadedDraftId = State.TuningDraft.DraftId;
+            _generalNote = State.TuningDraft.GeneralNote;
+            _feedbackSaveStatus = "Draft ready";
+            _loadedRaceId = raceId;
+            _failedRaceId = null;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            _loadedRaceId = null;
+        }
+        catch (Exception ex)
+        {
+            _loadedRaceId = null;
+            _failedRaceId = raceId;
+            ShowFailure(ex.Message);
+        }
+        finally
+        {
+            _working = false;
+            _workingLabel = string.Empty;
+        }
+    }
+
+    private Task SelectTurnId(string _) => Task.CompletedTask;
+
+    private async Task SelectTurn(TuningTurn turn)
+    {
+        _selectedTurn = turn;
+        _feedbackSaveStatus = "Draft ready";
+        _hideStructuredResult = true;
+        await State.SelectTuningTurnAsync(turn.CornerId, _lifetime.Token);
+    }
+
+    private async Task SaveFeedback(ProgressiveTuningFeedbackBatch batch)
+    {
+        _feedbackSaveStatus = "Saving…";
+        _actionMessage = string.Empty;
+        try
+        {
+            await State.ReplaceTuningFeedbackBatchAsync(
+                batch.CornerId,
+                batch.RunPhase,
+                batch.Feedback,
+                _lifetime.Token);
+            _feedbackSaveStatus = "Saved";
+            _hideStructuredResult = true;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _feedbackSaveStatus = "Not saved";
+            ShowFailure(ex.Message);
+        }
+    }
+
+    private async Task GeneralNoteChanged(ChangeEventArgs args)
+    {
+        var value = args.Value?.ToString() ?? string.Empty;
+        var draftId = State.TuningDraft.DraftId;
+        _generalNote = value;
+        _generalSaveStatus = "";
+        CancelPendingGeneralNote();
+        _noteSave = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        try
+        {
+            await Task.Delay(450, _noteSave.Token);
+            if (!string.Equals(State.TuningDraft.DraftId, draftId, StringComparison.Ordinal)) return;
+            _generalSaveStatus = "Saving…";
+            await State.SaveTuningGeneralNoteAsync(value, _noteSave.Token);
+            _generalSaveStatus = "Saved";
+            _hideStructuredResult = true;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _generalSaveStatus = "Not saved";
+            ShowFailure(ex.Message);
+        }
+    }
+
+    private async Task<bool> SaveCorrection(ProgressiveTurnCorrectionRequest request)
+    {
+        if (State.SelectedTuningMap is null)
+        {
+            ShowFailure("Load a recorded track map before saving a correction.");
+            return false;
+        }
+        _feedbackSaveStatus = "Saving…";
+        try
+        {
+            var correction = new TuningTurnCorrectionDraft
+            {
+                CornerId = request.CornerId,
+                Label = request.Label,
+                StartPct = request.StartPct,
+                ApexPct = request.ApexPct,
+                EndPct = request.EndPct,
+                Note = "Driver-verified local turn label and bounds.",
+                MapIdentity = State.SelectedTuningMap.MapIdentity,
+                VerifiedAt = DateTimeOffset.UtcNow
+            };
+            await State.SaveTuningTurnCorrectionAsync(correction, _lifetime.Token);
+            _selectedTurn = State.SelectedTuningMap?.Turns.FirstOrDefault(turn =>
+                string.Equals(turn.CornerId, request.CornerId, StringComparison.Ordinal));
+            if (_selectedTurn is null)
+                throw new InvalidOperationException("The saved turn correction could not be reloaded.");
+            _feedbackSaveStatus = "Saved";
+            _hideStructuredResult = true;
+            return true;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { return false; }
+        catch (Exception ex)
+        {
+            _feedbackSaveStatus = "Not saved";
+            ShowFailure(ex.Message);
+            return false;
+        }
+    }
+
+    private async Task ChangeOpenTarget(ChangeEventArgs args)
+    {
+        _working = true;
+        _workingLabel = "Loading setup";
+        _actionMessage = string.Empty;
+        try
+        {
+            await State.SelectTuningOpenTargetAsync(args.Value?.ToString(), _lifetime.Token);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            ShowFailure(ex.Message);
+        }
+        finally
+        {
+            _working = false;
+            _workingLabel = string.Empty;
+        }
+    }
+
+    private async Task ChangeGoal(ChangeEventArgs args)
+    {
+        _controlSaveStatus = "Saving…";
+        try
+        {
+            await State.SaveTuningGoalAsync(args.Value?.ToString() ?? "long-run-pace", _lifetime.Token);
+            _controlSaveStatus = "Saved";
+            _hideStructuredResult = true;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _controlSaveStatus = "Not saved";
+            ShowFailure(ex.Message);
+        }
+    }
+
+    private async Task ToggleRun(int runNumber)
+    {
+        var runId = runNumber.ToString();
+        var selected = State.TuningDraft.RepresentativeRunIds.ToList();
+        if (selected.Contains(runId, StringComparer.Ordinal))
+        {
+            if (selected.Count == 1) return;
+            selected.RemoveAll(value => string.Equals(value, runId, StringComparison.Ordinal));
+        }
+        else if (selected.Count < 3)
+        {
+            selected.Add(runId);
+        }
+        _controlSaveStatus = "Saving…";
+        try
+        {
+            await State.SaveTuningRepresentativeRunsAsync(selected, _lifetime.Token);
+            _controlSaveStatus = "Saved";
+            _hideStructuredResult = true;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _controlSaveStatus = "Not saved";
+            ShowFailure(ex.Message);
+        }
+    }
+
+    private async Task AnalyzeFeedback()
+    {
+        _working = true;
+        _workingLabel = "Analyzing feedback";
+        _actionMessage = string.Empty;
+        _actionFailed = false;
+        try
+        {
+            await State.SubmitStructuredTuningAsync(_lifetime.Token);
+            _hideStructuredResult = false;
+            _actionMessage = State.TuningMessage;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            ShowFailure(ex.Message);
+        }
+        finally
+        {
+            _working = false;
+            _workingLabel = string.Empty;
+        }
+    }
+
+    private void ReturnToFeedback()
+    {
+        _hideStructuredResult = true;
+        _actionMessage = string.Empty;
+    }
+
+    private async Task SaveOutcome(string outcome)
+    {
+        _working = true;
+        _workingLabel = "Saving result";
+        _actionMessage = string.Empty;
+        try
+        {
+            await State.RecordOutcomeAsync(outcome, _lifetime.Token);
+            _actionMessage = "Result saved";
+            _actionFailed = false;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            ShowFailure(ex.Message);
+        }
+        finally
+        {
+            _working = false;
+            _workingLabel = string.Empty;
+        }
+    }
+
+    private void ShowFailure(string message)
+    {
+        _actionMessage = message;
+        _actionFailed = true;
+    }
+
+    private static bool SameTurnMap(TuningMapView? left, TuningMapView right) => left is not null
+        && string.Equals(left.MapIdentity, right.MapIdentity, StringComparison.Ordinal)
+        && string.Equals(left.SourceType, right.SourceType, StringComparison.OrdinalIgnoreCase)
+        && left.Turns.Select(turn => turn.CornerId).SequenceEqual(right.Turns.Select(turn => turn.CornerId), StringComparer.Ordinal);
+
+    private static string RunTitle(AnalysisRun run)
+    {
+        var pace = run.PaceSlopeSecondsPerLap is { } slope ? $" · {slope:+0.000;-0.000;0.000} s/lap" : string.Empty;
+        var tire = run.TireRemainingPercent is { } remaining ? $" · {remaining:0.#}% tire remaining" : string.Empty;
+        return $"Run {run.Number} · {run.GreenLaps} green laps{pace}{tire}";
+    }
+
+    public void Dispose()
+    {
+        CancelPendingGeneralNote();
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+
+    private void CancelPendingGeneralNote()
+    {
+        _noteSave?.Cancel();
+        _noteSave?.Dispose();
+        _noteSave = null;
+    }
+
 }

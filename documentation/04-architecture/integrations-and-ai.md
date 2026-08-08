@@ -12,6 +12,9 @@ External services enrich the product but do not define the critical local path.
 | `G61-004` | Garage61 data MUST identify provider provenance, retrieval time, scope, and alignment fitness. |
 | `G61-005` | External reference laps or setups MUST NOT be treated as the user's recorded facts. |
 | `G61-006` | The adapter MUST obey provider authorization, API terms, rate limits, and supported endpoints; scraped or invented data is forbidden. |
+| `G61-007` | The mature tire/capability workflow MUST support Garage61 representative-lap references when an authorized, scope-compatible source is available. This eventual comparison requirement MUST NOT make local analysis, local tire learning, or previously retained local evidence depend on connectivity. |
+| `G61-008` | A retained representative-lap reference MUST follow `TD-055`: provider/scope, retrieval time/state, content hash, lap/setup identity, supported channels, and alignment fitness remain inspectable. The UI MUST label it external and MUST NOT imply that a public/team/reference lap is the user's measurement. |
+| `G61-009` | Garage61 evidence MUST NOT supply competitor tire wear, fuel, controls, setup, or race-replay facts unless the authorized response explicitly contains the field and the provider scope permits that use. An absent or incompatible external reference MUST weaken or remove only the external comparison; it MUST not create a synthetic local model input. |
 
 The backend includes a Garage61 adapter and tests. End-to-end behavior with a real authorized account is environment-dependent and is not established solely by fixture tests.
 

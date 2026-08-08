@@ -24,6 +24,36 @@ public sealed class RaceAnalysisBehaviorTests
     }
 
     [TestMethod]
+    public void TraceCatalog_CoversWorthwhileRecordedFamiliesWithoutConflatingPhysicalSignals()
+    {
+        var signals = AnalysisTraceLayouts.Signals.ToDictionary(signal => signal.Id, StringComparer.Ordinal);
+
+        foreach (var id in new[]
+        {
+            "clutch", "abs-active", "abs-cut", "brake-bias", "steering-torque",
+            "vertical-g", "pitch", "roll", "pitch-rate", "roll-rate",
+            "fuel-level", "fuel-use-rate", "center-front-ride-height",
+            "track-temperature", "air-temperature", "wind-speed", "humidity", "fog", "precipitation",
+            "air-pressure", "air-density", "track-wetness", "track-usage", "weather-wet",
+            "overall-position", "class-position", "distance-ahead", "distance-behind", "on-pit-road", "track-surface"
+        })
+            Assert.IsTrue(signals.ContainsKey(id), $"Expected truthful optional trace metadata for {id}.");
+
+        foreach (var corner in new[] { "lf", "rf", "lr", "rr" })
+        {
+            foreach (var suffix in new[] { "wheel-speed", "wheel-slip", "pressure", "carcass-temp", "surface-temp", "ride-height", "shock-deflection", "shock-velocity" })
+                Assert.IsTrue(signals.ContainsKey($"{corner}-{suffix}"), $"Expected {corner}-{suffix} in the optional trace catalog.");
+        }
+
+        Assert.AreEqual("deg", signals["slip"].Unit, "Vehicle sideslip keeps its angular unit and distinct identity.");
+        Assert.AreEqual("%", signals["lf-wheel-slip"].Unit, "Derived wheel spin/lock remains a separate percentage signal.");
+        Assert.AreNotEqual(signals["slip"].Id, signals["lf-wheel-slip"].Id);
+        Assert.AreEqual("on / off", signals["abs-active"].Unit);
+        Assert.AreEqual("kg/h", signals["fuel-use-rate"].Unit, "Native fuel-use rate is mass flow and must not be mislabeled as gal/h.");
+        Assert.AreEqual("conditions", signals["track-temperature"].AccentGroup);
+    }
+
+    [TestMethod]
     public void TraceLayout_RepairsInvalidRowsAndAllowsAnyDistinctSecondSignal()
     {
         var duplicateId = "same-row";
@@ -67,6 +97,489 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.AreEqual(addedId, restored.RaceAnalysisTraces.Rows[0].Id);
         Assert.IsTrue(AnalysisTraceLayouts.RemoveRow(restored.RaceAnalysisTraces, addedId));
         Assert.IsFalse(AnalysisTraceLayouts.RemoveRow(restored.RaceAnalysisTraces, restored.RaceAnalysisTraces.Rows[0].Id));
+    }
+
+    [TestMethod]
+    public void NamedAnalysisLayouts_KeepDefaultImmutableAndLifecycleSeparateFromLiveDashboards()
+    {
+        var preferences = new AnalysisTraceLayoutSet();
+        var factory = AnalysisTraceLayoutSets.Active(preferences);
+
+        Assert.IsTrue(factory.IsFactory);
+        Assert.AreEqual(AnalysisTraceLayoutSet.FactoryDefaultId, factory.Named.Id);
+        Assert.AreEqual("Default", factory.Named.Name);
+        Assert.IsFalse(AnalysisTraceLayoutSets.RenameActive(preferences, "Changed"));
+        Assert.IsFalse(AnalysisTraceLayoutSets.DeleteActive(preferences));
+
+        factory.Named.Layout.Rows[0].PrimarySignalId = "brake";
+        Assert.AreEqual("speed", AnalysisTraceLayoutSets.Active(preferences).Named.Layout.Rows[0].PrimarySignalId,
+            "The factory choice must be a clone that callers cannot mutate.");
+
+        var editableDefault = AnalysisTraceLayoutSets.EnsureEditable(preferences);
+        Assert.AreEqual("Default Copy", editableDefault.Name);
+        Assert.AreNotEqual(AnalysisTraceLayoutSet.FactoryDefaultId, editableDefault.Id);
+        editableDefault.Layout.Rows[0].PrimarySignalId = "throttle";
+        Assert.AreEqual("speed", AnalysisTraceLayoutSets.Choices(preferences).Single(choice => choice.IsFactory).Named.Layout.Rows[0].PrimarySignalId);
+
+        var first = AnalysisTraceLayoutSets.Create(preferences);
+        var second = AnalysisTraceLayoutSets.Create(preferences);
+        Assert.AreEqual("Custom", first.Name);
+        Assert.AreEqual("Custom 2", second.Name);
+        Assert.IsTrue(AnalysisTraceLayoutSets.RenameActive(preferences, "  Oval   review  "));
+        Assert.AreEqual("Oval review", second.Name);
+        Assert.IsTrue(AnalysisTraceLayoutSets.Select(preferences, first.Id));
+        Assert.IsTrue(AnalysisTraceLayoutSets.RenameActive(preferences, "OVAL REVIEW"));
+        Assert.AreEqual("OVAL REVIEW 2", first.Name, "Analysis layout names must remain unique without case-sensitive duplicates.");
+        Assert.IsFalse(AnalysisTraceLayoutSets.Select(preferences, "missing-layout"));
+
+        var live = new LiveMonitorLayout { ActiveLayoutId = LiveMonitorLayouts.FactoryRaceId };
+        var settings = new CompanionSettings { LiveMonitor = live, RaceAnalysisTraceLayouts = preferences };
+        var restored = JsonSerializer.Deserialize<CompanionSettings>(JsonSerializer.Serialize(settings))!;
+        Assert.IsFalse(AnalysisTraceLayoutSets.ValidateAndRepair(restored.RaceAnalysisTraceLayouts));
+        Assert.AreEqual(first.Id, restored.RaceAnalysisTraceLayouts.ActiveLayoutId);
+        Assert.AreEqual(LiveMonitorLayouts.FactoryRaceId, restored.LiveMonitor.ActiveLayoutId,
+            "Race Analysis layouts must not reuse or mutate Live Telemetry dashboard selection.");
+
+        Assert.IsTrue(AnalysisTraceLayoutSets.DeleteActive(restored.RaceAnalysisTraceLayouts));
+        Assert.AreEqual(AnalysisTraceLayoutSet.FactoryDefaultId, restored.RaceAnalysisTraceLayouts.ActiveLayoutId);
+        Assert.IsFalse(restored.RaceAnalysisTraceLayouts.UserLayouts.Any(layout => layout.Id == first.Id));
+
+        var telemetry = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "TelemetryWorkspace.razor"));
+        foreach (var hook in new[] { "data-analysis-layout-select", "data-analysis-layout-new", "data-analysis-layout-duplicate", "data-analysis-layout-rename", "data-analysis-layout-delete", "data-analysis-layout-default" })
+            StringAssert.Contains(telemetry, hook);
+        StringAssert.Contains(telemetry, "disabled=\"@ActiveTraceLayout.IsFactory\"");
+        StringAssert.Contains(telemetry, "Default is protected. Editing creates a copy.");
+        StringAssert.Contains(telemetry, "private AnalysisTraceLayout EditableTraceLayout => AnalysisTraceLayoutSets.EnsureEditable(TraceLayoutPreferences).Layout;");
+        StringAssert.Contains(telemetry, "private void ChangeTraceLayout(ChangeEventArgs args)");
+        StringAssert.Contains(telemetry, "private void CreateTraceLayout()");
+        StringAssert.Contains(telemetry, "private void DuplicateTraceLayout()");
+        StringAssert.Contains(telemetry, "private void DeleteTraceLayout()");
+        StringAssert.Contains(telemetry, "private void RenameTraceLayout(ChangeEventArgs args)");
+    }
+
+    [TestMethod]
+    public void NamedAnalysisLayouts_DeletedDefaultCopyDoesNotReturnThroughLegacyBridgeOnRender()
+    {
+        var preferences = new AnalysisTraceLayoutSet();
+        var legacy = new AnalysisTraceLayout();
+
+        Assert.IsTrue(AnalysisTraceLayoutSets.ValidateAndRepair(preferences, legacy));
+        Assert.IsTrue(preferences.LegacyLayoutImportCompleted);
+        Assert.IsEmpty(preferences.UserLayouts, "An untouched legacy default should remain the immutable factory layout.");
+
+        var editable = AnalysisTraceLayoutSets.EnsureEditable(preferences);
+        editable.Layout.Rows[0].PrimarySignalId = "throttle";
+        legacy = AnalysisTraceLayoutSets.CloneLayout(editable.Layout);
+        Assert.IsTrue(AnalysisTraceLayoutSets.DeleteActive(preferences));
+        Assert.AreEqual(AnalysisTraceLayoutSet.FactoryDefaultId, preferences.ActiveLayoutId);
+
+        Assert.IsFalse(AnalysisTraceLayoutSets.ValidateAndRepair(preferences, legacy),
+            "A stale mutable-layout bridge must not resurrect a deliberately deleted modern layout.");
+        var renderedChoices = AnalysisTraceLayoutSets.Choices(preferences);
+        Assert.HasCount(1, renderedChoices);
+        Assert.IsTrue(renderedChoices.Single().IsFactory);
+        Assert.IsTrue(AnalysisTraceLayoutSets.Active(preferences).IsFactory);
+
+        var restored = JsonSerializer.Deserialize<AnalysisTraceLayoutSet>(JsonSerializer.Serialize(preferences))!;
+        Assert.IsTrue(restored.LegacyLayoutImportCompleted, "The one-time migration decision must survive restart.");
+        Assert.IsFalse(AnalysisTraceLayoutSets.ValidateAndRepair(restored, legacy));
+        Assert.HasCount(1, AnalysisTraceLayoutSets.Choices(restored));
+        Assert.IsEmpty(restored.UserLayouts);
+    }
+
+    [TestMethod]
+    public void NamedAnalysisLayouts_CustomLegacyLayoutStillImportsExactlyOnce()
+    {
+        var legacy = new AnalysisTraceLayout
+        {
+            Rows =
+            [
+                new AnalysisTraceRow
+                {
+                    Id = "legacy-throttle",
+                    PrimarySignalId = "throttle",
+                    SecondarySignalId = "brake"
+                }
+            ]
+        };
+        var preferences = new AnalysisTraceLayoutSet();
+
+        Assert.IsTrue(AnalysisTraceLayoutSets.ValidateAndRepair(preferences, legacy));
+        var imported = preferences.UserLayouts.Single();
+        Assert.AreEqual("Previous layout", imported.Name);
+        Assert.AreEqual(imported.Id, preferences.ActiveLayoutId);
+        Assert.IsTrue(preferences.LegacyLayoutImportCompleted);
+
+        Assert.IsFalse(AnalysisTraceLayoutSets.ValidateAndRepair(preferences, legacy));
+        Assert.HasCount(1, preferences.UserLayouts);
+    }
+
+    [TestMethod]
+    public void RichTrackMap_DefaultsToTracesAndKeepsEveryPaletteAndLayerTruthful()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(telemetry, "<span>Type</span><select data-map-type @bind=\"Mode\"");
+        StringAssert.Contains(telemetry, "[(\"traces\", \"Traces\"), (\"speed\", \"Speed\"), (\"throttle\", \"Throttle\"), (\"brake\", \"Brake\"), (\"stress\", \"Tire load\")]");
+        StringAssert.Contains(telemetry, "Mode = \"traces\";");
+        StringAssert.Contains(telemetry, "data-analysis-track-map data-map-type=\"@Mode\"");
+        foreach (var layer in new[] { "main", "lap-trace", "pit-road", "pit-entry", "pit-exit", "commitment", "start-finish" })
+            StringAssert.Contains(telemetry, $"data-map-layer=\"{layer}\"");
+        StringAssert.Contains(telemetry, "data-map-legend data-mode=\"@Mode\"");
+        StringAssert.Contains(telemetry, "new MapTracePath(item.Trace.Lap, LapColor(item.Trace.Lap)");
+        StringAssert.Contains(telemetry, "Quality.MainLoopComplete: true");
+        StringAssert.Contains(telemetry, "if (CompleteVectorGeometry is { } vector)");
+        StringAssert.Contains(telemetry, ".Select((point, index) => ProjectVectorPoint(point with { LapPercent = point.LapPercent ?? index / (double)vector.MainPath.Count }))");
+        StringAssert.Contains(telemetry, "var pitRoad = VectorPath(vector.PitLane)");
+        StringAssert.Contains(telemetry, "var entry = VectorPath(vector.PitEntryPath)");
+        StringAssert.Contains(telemetry, "var exit = VectorPath(vector.PitExitPath)");
+        StringAssert.Contains(telemetry, "vector.PitCommitmentLine is { } entryLine");
+        StringAssert.Contains(telemetry, "vector.PitMergeLine is { } exitLine");
+        StringAssert.Contains(telemetry, ".Concat(LinePoints(vector.StartFinishLine))");
+        StringAssert.Contains(telemetry, ".Concat(LinePoints(vector.PitCommitmentLine))");
+        StringAssert.Contains(telemetry, ".Concat(LinePoints(vector.PitMergeLine))");
+        StringAssert.Contains(telemetry, "new(0.00, 232, 66, 78)");
+        StringAssert.Contains(telemetry, "new(1.00, 34, 220, 116)");
+        StringAssert.Contains(telemetry, "\"brake\" => MixColor(normalized, (72, 79, 88), (255, 69, 86))");
+        StringAssert.Contains(telemetry, "\"throttle\" => MixColor(normalized, (72, 79, 88), (42, 226, 126))");
+        StringAssert.Contains(telemetry, "\"stress\" => MixColor(normalized, (247, 210, 74), (247, 65, 76))");
+        StringAssert.Contains(telemetry, ".Select(point => point.TireStressProxy)");
+        Assert.DoesNotContain("Mode is \"throttle\" or \"brake\" or \"stress\"", telemetry,
+            "The selected tire-load range must span yellow to red instead of being pinned to zero through one.");
+        StringAssert.Contains(telemetry, "private void RebuildMapRenderCache()");
+        StringAssert.Contains(telemetry, "_vectorProjection = CreateVectorProjection(_canonicalGeometryPoints);");
+        StringAssert.Contains(telemetry, "CompleteVectorGeometry?.Transform ?? CompleteVectorGeometry?.GeometryProvenance?.NormalizationTransform");
+        StringAssert.Contains(telemetry, "transform?.TryNormalize(point.Longitude!.Value, point.Latitude!.Value");
+        StringAssert.Contains(telemetry, "140 + (point.Y - projection.CenterY) * projection.Scale");
+        Assert.DoesNotContain("140 - (point.Y - projection.CenterY) * projection.Scale", telemetry,
+            "Canonical vector Y is already screen-oriented by the backend transform and must not be reflected a second time.");
+        StringAssert.Contains(telemetry, "_trackRibbonPath = SvgPath(_mapPoints, HasMapGeometry);");
+        StringAssert.Contains(telemetry, "maximumGap <= .05 && span > 0 && closure <= span * .15");
+        StringAssert.Contains(telemetry, "if (_mapTracePaths is not null && string.Equals(_mapTracePathsSignature, SelectionSignature");
+        StringAssert.Contains(telemetry, "if (_mapSegmentCache.TryGetValue(key, out var cached)) return cached;");
+        Assert.DoesNotContain("ProjectGpsPoint(AnalysisTracePoint point, IReadOnlyList<AnalysisTracePoint> geo)", telemetry,
+            "GPS and vector bounds must be precomputed once per workspace, not rescanned for every rendered point.");
+
+        StringAssert.Contains(css, ".map-scale-gradient.speed { background: linear-gradient(90deg,#e8424e,#f88440,#f2cb4c,#74de6c,#22dc74); }");
+        StringAssert.Contains(css, ".map-scale-gradient.throttle { background: linear-gradient(90deg,#484f58,#2ae27e); }");
+        StringAssert.Contains(css, ".map-scale-gradient.brake { background: linear-gradient(90deg,#484f58,#ff4556); }");
+        StringAssert.Contains(css, ".map-scale-gradient.stress { background: linear-gradient(90deg,#f7d24a,#f7414c); }");
+        Assert.IsTrue(Regex.IsMatch(css, @"\.track-pit-entry\s*\{[^}]*stroke:\s*#f0c94d;[^}]*stroke-dasharray:", RegexOptions.Singleline));
+        Assert.IsTrue(Regex.IsMatch(css, @"\.track-pit-exit\s*\{[^}]*stroke:\s*#54a9ff;[^}]*stroke-dasharray:", RegexOptions.Singleline));
+        var commitment = Regex.Match(css, @"\.track-pit-commitment\s*\{(?<body>[^}]*)\}");
+        Assert.IsTrue(commitment.Success);
+        Assert.DoesNotContain("stroke-dasharray", commitment.Groups["body"].Value, "Commitment and merge lines are solid.");
+    }
+
+    [TestMethod]
+    public void RaceTechnicalData_UsesFourFixedOverviewCardsAndTruthfulFullAreaInvestigations()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var page = File.ReadAllText(Path.Combine(ui, "AnalysisWorkspacePage.razor"));
+        var technical = File.ReadAllText(Path.Combine(ui, "RaceTechnicalData.razor"));
+        var unavailable = File.ReadAllText(Path.Combine(ui, "TechnicalUnavailable.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(page, ">Telemetry</button>");
+        StringAssert.Contains(page, ">Technical data</button>");
+        StringAssert.Contains(page, ">Race replay</button>");
+        Assert.DoesNotContain(">Race review</button>", page);
+        StringAssert.Contains(page, "private string RaceDataSection { get; set; } = \"telemetry\";");
+        StringAssert.Contains(page, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" />");
+
+        StringAssert.Contains(technical, "data-analysis-section=\"technical\"");
+        StringAssert.Contains(technical, "@if (ActiveInvestigation is null)");
+        StringAssert.Contains(technical, "data-technical-overview");
+        foreach (var card in new[] { "pit", "tires", "fuel", "racecraft" })
+            StringAssert.Contains(technical, $"data-technical-card=\"{card}\"");
+        foreach (var label in new[] { "Pit strategy", "Tire management", "Fuel management", "Racecraft &amp; pace" })
+            StringAssert.Contains(technical, label);
+        StringAssert.Contains(technical, "data-technical-investigation=\"@ActiveInvestigation\"");
+        StringAssert.Contains(technical, "data-technical-back @onclick=\"CloseInvestigation\"");
+        Assert.AreEqual(3, technical.Split("aria-pressed=\"@(_selectedRunNumber == run.Number ? \"true\" : \"false\")\"", StringSplitOptions.None).Length - 1,
+            "Every Technical data record selector must expose its selected state.");
+        StringAssert.Contains(technical, "Workspace.TechnicalInsights");
+        StringAssert.Contains(technical, "Workspace.TirePrediction");
+        StringAssert.Contains(technical, "Workspace.Garage61References");
+        StringAssert.Contains(technical, "Garage61 reference laps");
+        StringAssert.Contains(technical, "Find Garage61 reference");
+        StringAssert.Contains(technical, "Modeled life to 0%");
+        StringAssert.Contains(technical, "new(\"Most wear\", MostTireWearReading");
+        Assert.DoesNotContain("new(\"Lowest\", LowestTireReading", technical);
+        StringAssert.Contains(technical, "PredictionUnavailableReason");
+
+        StringAssert.Contains(unavailable, "data-technical-unavailable-reason");
+        StringAssert.Contains(unavailable, "data-technical-unavailable-action");
+        StringAssert.Contains(unavailable, "[Parameter, EditorRequired] public string Action");
+        Assert.AreEqual(4, technical.Split("data-technical-card=", StringSplitOptions.None).Length - 1);
+        Assert.IsGreaterThanOrEqualTo(5, technical.Split("Action=", StringSplitOptions.None).Length - 1,
+            "Every missing Technical data branch must explain a useful next action.");
+
+        StringAssert.Contains(css, ".race-technical-data { height: 100%; min-height: 0; }");
+        StringAssert.Contains(css, "grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-rows: repeat(2,minmax(0,1fr));");
+        StringAssert.Contains(css, ".technical-investigation { height:100%;min-height:0;");
+        StringAssert.Contains(css, ".analysis-page-frame:has(.race-analysis-toolbar) .race-technical-data");
+    }
+
+    [TestMethod]
+    public void SpotlightMenu_KeepsKeyboardFocusInsideAndClosesOnEscapeOrOutside()
+    {
+        var root = CompanionRoot();
+        var telemetry = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.UI", "TelemetryWorkspace.razor"));
+        var previewHost = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Preview", "Components", "App.razor"));
+        var nativeHost = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "wwwroot", "index.html"));
+
+        StringAssert.Contains(telemetry, "@ref=\"SpotlightControlElement\"");
+        StringAssert.Contains(telemetry, "@onfocusout=\"HandleSpotlightFocusOut\"");
+        StringAssert.Contains(telemetry, "@ref=\"SpotlightTriggerElement\"");
+        StringAssert.Contains(telemetry, "iracingCoach.elementContainsActiveElement");
+        StringAssert.Contains(telemetry, "await SpotlightTriggerElement.FocusAsync();");
+        StringAssert.Contains(telemetry, "<section class=\"telemetry-workspace\" aria-labelledby=\"telemetry-heading\" @onkeydown=\"HandleWorkspaceKeyDown\" @onclick=\"CloseSpotlightMenu\"");
+        StringAssert.Contains(telemetry, "@onclick=\"() => SelectSpotlight(trace.Lap)\"");
+        Assert.DoesNotContain("@onblur=\"CloseSpotlightMenu\"", telemetry,
+            "Moving focus from the trigger into a Spotlight option must not unmount the menu.");
+        StringAssert.Contains(previewHost, "elementContainsActiveElement: function (element)");
+        StringAssert.Contains(nativeHost, "elementContainsActiveElement: function (element)");
+    }
+
+    [TestMethod]
+    public void RaceTechnicalData_PreservesRecordedRacecraftWhenCleanRunComparisonIsUnavailable()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var technical = File.ReadAllText(Path.Combine(ui, "RaceTechnicalData.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        var branchStart = technical.IndexOf("@if (ComparableRuns.Count == 0)", StringComparison.Ordinal);
+        var branchEnd = technical.IndexOf("@if (Garage61Laps.Count > 0)", branchStart, StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, branchStart);
+        Assert.IsGreaterThan(branchStart, branchEnd);
+        var unavailableComparisonBranch = technical[branchStart..branchEnd];
+
+        StringAssert.Contains(unavailableComparisonBranch, "RacecraftSummaryAvailable");
+        StringAssert.Contains(unavailableComparisonBranch, "data-racecraft-insight-summary");
+        StringAssert.Contains(unavailableComparisonBranch, "@RacecraftInsight!.Takeaway");
+        StringAssert.Contains(unavailableComparisonBranch, "@foreach (var metric in RacecraftInvestigationMetrics)");
+        StringAssert.Contains(unavailableComparisonBranch, "@metric.Evidence.Tag()");
+        StringAssert.Contains(unavailableComparisonBranch, "Clean-run pace comparison unavailable");
+        Assert.IsLessThan(
+            unavailableComparisonBranch.IndexOf("Clean-run pace comparison unavailable", StringComparison.Ordinal),
+            unavailableComparisonBranch.IndexOf("data-racecraft-insight-summary", StringComparison.Ordinal));
+        StringAssert.Contains(technical, "RacecraftInsight?.Metrics.Take(3).ToArray() ?? []");
+        StringAssert.Contains(css, ".technical-racecraft-no-comparison{grid-column:1/-1;");
+        StringAssert.Contains(css, ".technical-racecraft-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));");
+        StringAssert.Contains(css, ".technical-racecraft-no-comparison>.technical-unavailable{");
+    }
+
+    [TestMethod]
+    public void RaceReplay_GatesIncompleteCoverageAndUsesOnlyCanonicalKnownFieldData()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var replay = File.ReadAllText(Path.Combine(ui, "RaceReplayWorkspace.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(replay, "data-analysis-section=\"replay\" data-race-replay");
+        StringAssert.Contains(replay, "@if (!ReplayAvailable)");
+        StringAssert.Contains(replay, "data-replay-unavailable");
+        Assert.DoesNotContain("private bool ReplayAvailable => false", replay);
+        StringAssert.Contains(replay, "private AnalysisRaceReplay? Replay => Workspace.Replay;");
+        StringAssert.Contains(replay, "replay.Status.Equals(\"usable\"");
+        StringAssert.Contains(replay, "replay.Status.Equals(\"partial\"");
+        StringAssert.Contains(replay, "replay.Participants.Count > 0");
+        StringAssert.Contains(replay, "Frames.Count > 1");
+        StringAssert.Contains(replay, "&& _hasPlayerFrame");
+        StringAssert.Contains(replay, "&& HasTrackGeometry;");
+        StringAssert.Contains(replay, "Replay.UnavailableReasons.FirstOrDefault");
+        StringAssert.Contains(replay, "Replay.Coverage.FirstOrDefault(item => item.Status.Equals(\"unavailable\"");
+        StringAssert.Contains(replay, "HumanizeReplayUnavailableReason(stated)");
+        StringAssert.Contains(replay, "HumanizeReplayUnavailableReason(reason)");
+        StringAssert.Contains(replay, "This recording does not include full-field car positions.");
+        foreach (var rawChannel in new[] { "CarIdxLapDistPct", "CarIdxLap", "CarIdxPosition", "CarIdxClassPosition", "CarIdxOnPitRoad", "CarIdxTrackSurface", "CarIdxPaceFlags", "CarIdxLastLapTime", "CarIdxBestLapTime", "DriverInfo", "PlayerCarIdx", "SessionTime", "SessionState", "SessionFlags" })
+            StringAssert.Contains(replay, $"text.Contains(\"{rawChannel}\"");
+        Assert.DoesNotContain("if (!string.IsNullOrWhiteSpace(stated)) return stated;", replay,
+            "Raw backend channel names must not leak into the replay empty state.");
+        StringAssert.Contains(replay, "TemporalCoverageIsUsable(replay.TemporalCoverage)");
+        StringAssert.Contains(replay, "ParticipantHasReplayData(playerIndex)");
+        StringAssert.Contains(replay, "ReplayCoverageLabel");
+        StringAssert.Contains(replay, "replay-coverage-note");
+        StringAssert.Contains(replay, "Quality.MainLoopComplete: true");
+        StringAssert.Contains(replay, "180 + (point.Y - projection.CenterY) * projection.Scale");
+        Assert.DoesNotContain("180 - (point.Y - projection.CenterY) * projection.Scale", replay,
+            "Replay must use the same canonical screen-oriented vector transform as telemetry.");
+        StringAssert.Contains(replay, "_trackPath = SvgPath(TrackPoints, HasTrackGeometry);");
+
+        foreach (var hook in new[] { "data-replay-leader-rail", "data-replay-map", "data-replay-car", "data-replay-playback", "data-replay-grid", "data-replay-timeline", "data-replay-comparison", "data-replay-telemetry", "data-replay-abs-toggle" })
+            StringAssert.Contains(replay, hook);
+        StringAssert.Contains(replay, "data-replay-car=\"@car.CarIndex\"");
+        StringAssert.Contains(replay, "@(car.IsPlayer ? \"player\" : null)");
+        StringAssert.Contains(replay, "@(car.IsClassLeader ? \"class-leader\" : null)");
+        StringAssert.Contains(replay, "@(car.IsOverallLeader ? \"overall-leader\" : null)");
+        StringAssert.Contains(replay, "@(car.IsPlayer || car.IsClassLeader ? 13 : 10)");
+        Assert.DoesNotContain("@if (!AtChecker)", replay, "The running-order grid remains available across the supported replay interval.");
+        var gridStart = replay.IndexOf("<section class=\"replay-session-data\" data-replay-grid>", StringComparison.Ordinal);
+        var gridRows = replay.IndexOf("<div class=\"replay-grid-table\">", gridStart, StringComparison.Ordinal);
+        Assert.IsTrue(gridStart >= 0 && gridRows > gridStart);
+        Assert.DoesNotContain("@if", replay[gridStart..gridRows],
+            "The recorded running-order grid must not be gated by checkered state.");
+        StringAssert.Contains(replay, "data-replay-flag-timeline");
+        Assert.DoesNotContain("ShowTimeline", replay,
+            "The persistent flag timeline must not hide behind a button that unexpectedly seeks to the checker.");
+        var playbackStart = replay.IndexOf("<footer class=\"replay-playback\" data-replay-playback>", StringComparison.Ordinal);
+        var flagTimeline = replay.IndexOf("data-replay-flag-timeline", playbackStart, StringComparison.Ordinal);
+        Assert.IsTrue(playbackStart >= 0 && flagTimeline > playbackStart);
+        Assert.DoesNotContain("@if", replay[playbackStart..flagTimeline],
+            "The horizontal flag-state timeline must stay mounted throughout playback, including before the checker.");
+        StringAssert.Contains(replay, "@foreach (var segment in FlagSegments)");
+        StringAssert.Contains(replay, "left:{segment.Left:0.###}%;width:{segment.Width:0.###}%");
+        StringAssert.Contains(replay, "private IReadOnlyList<FlagSegment> FlagSegments");
+        StringAssert.Contains(replay, "private static string FrameFlagKind(AnalysisReplayFrame frame)");
+        StringAssert.Contains(replay, "CurrentFrame.GlobalFlagLabels");
+        StringAssert.Contains(replay, "var leader = ClassLeader(CurrentFrame);");
+        StringAssert.Contains(replay, "player.ClassPosition ?? player.OverallPosition");
+        StringAssert.Contains(replay, "private void RebuildReplayCache()");
+        StringAssert.Contains(replay, "private void RebuildReplayMapCache()");
+        StringAssert.Contains(replay, "private IReadOnlyList<AnalysisReplayFrame> Frames => _frames;");
+        StringAssert.Contains(replay, "private IReadOnlyList<TimelineItem> TimelineEvents => _timelineEvents;");
+        StringAssert.Contains(replay, "private IReadOnlyList<FlagSegment> FlagSegments => _flagSegments;");
+        StringAssert.Contains(replay, "CanInterpolateFrameTransition(CurrentFrame, NextFrame, car.CarIndex)");
+        StringAssert.Contains(replay, "Replay?.Interpolation.StartsWith(\"linear\"");
+        StringAssert.Contains(replay, "gap <= limit");
+        StringAssert.Contains(replay, "string.Equals(current.SessionState, next.SessionState, StringComparison.OrdinalIgnoreCase)");
+        Assert.DoesNotContain("Replay?.Frames.OrderBy", replay,
+            "Playback renders must not sort and materialize the complete replay on every 60 fps update.");
+        Assert.DoesNotContain("Frames.Take(CurrentFrameIndex + 1)", replay,
+            "Laps-since-pit lookup must use the precomputed pit-event index.");
+        StringAssert.Contains(replay, "var (min, max) = ReplayChartRange(currentLap, signal);");
+        StringAssert.Contains(replay, "new(\"Tire age\", \"—\", PlayerTireAge)");
+        Assert.DoesNotContain("PlayerTireInfo", replay,
+            "A measured pit endpoint or whole-race model must not be carried forward as current replay tire condition.");
+        StringAssert.Contains(replay, "trace.IsComparable() && trace.LapTimeSeconds.HasValue");
+        StringAssert.Contains(replay, "class=\"replay-reference-trace\"");
+        StringAssert.Contains(css, ".replay-reference-trace{stroke:");
+        StringAssert.Contains(css, "stroke-dasharray:3 3");
+
+        StringAssert.Contains(replay, "private static bool IsAbsActive(AnalysisTracePoint point) => Additional(point, \"abs-active\").GetValueOrDefault() > .5;");
+        Assert.DoesNotContain("Additional(point, \"abs-cut\")", replay,
+            "A recorded cut percentage must not be treated as proof that ABS was active.");
+        StringAssert.Contains(replay, "chart.Id == \"brake\" && ShowAbs && HasAbsData");
+        StringAssert.Contains(replay, "@foreach (var path in AbsTracePaths(CurrentTrace))");
+        StringAssert.Contains(replay, "class=\"replay-abs-trace\"");
+        StringAssert.Contains(css, ".replay-abs-trace");
+        StringAssert.Contains(css, "stroke:#f4c24f");
+        Assert.DoesNotContain("Competitor fuel", replay);
+        Assert.DoesNotContain("Competitor tire", replay);
+        Assert.IsFalse(replay.Contains("competitor throttle", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(css, ".race-replay-workspace { position:relative;");
+        StringAssert.Contains(css, ".replay-layout { height:100%;min-height:0;");
+        StringAssert.Contains(css, "@media (prefers-reduced-motion: reduce)");
+    }
+
+    [TestMethod]
+    public void RaceReplay_DoesNotInventCrossClassLeadersOrPitEntriesAcrossCoverageGaps()
+    {
+        var replay = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "RaceReplayWorkspace.razor"))
+            .ReplaceLineEndings("\n");
+
+        var leaderStart = replay.IndexOf("private AnalysisReplayCarState? ClassLeader(AnalysisReplayFrame frame)", StringComparison.Ordinal);
+        var leaderEnd = replay.IndexOf("private ReplayCarDisplay? CurrentClassLeader", leaderStart, StringComparison.Ordinal);
+        Assert.IsTrue(leaderStart >= 0 && leaderEnd > leaderStart);
+        var leaderMethod = replay[leaderStart..leaderEnd];
+        StringAssert.Contains(leaderMethod, "if (classId.HasValue)\n        {\n            return frame.Cars.FirstOrDefault(car => ParticipantHasReplayData(car.CarIndex) && car.ClassPosition == 1 && Participant(car.CarIndex)?.ClassId == classId);\n        }");
+        StringAssert.Contains(leaderMethod, "return frame.Cars.FirstOrDefault(car => ParticipantHasReplayData(car.CarIndex) && car.OverallPosition == 1);");
+        Assert.DoesNotContain("if (classLeader is not null)", leaderMethod,
+            "A missing same-class P1 must remain unavailable instead of silently substituting the overall leader from another class.");
+        StringAssert.Contains(replay, "private string LeaderScopeLabel => PlayerParticipant?.ClassId.HasValue == true ? \"Class leader\" : \"Overall leader\";");
+        StringAssert.Contains(replay, "<span class=\"eyebrow\">@LeaderScopeLabel</span>");
+        StringAssert.Contains(replay, "<strong>@LeaderScopeLabel and you</strong>");
+
+        var pitStart = replay.IndexOf("private IReadOnlyDictionary<int, IReadOnlyList<PitEvent>> BuildPitEventIndex()", StringComparison.Ordinal);
+        var pitEnd = replay.IndexOf("private IReadOnlyList<TimelineItem> BuildTimelineEvents()", pitStart, StringComparison.Ordinal);
+        Assert.IsTrue(pitStart >= 0 && pitEnd > pitStart);
+        var pitIndex = replay[pitStart..pitEnd];
+        StringAssert.Contains(pitIndex, "new Dictionary<int, PitRoadObservation>()");
+        StringAssert.Contains(pitIndex, "previousPitState.TryGetValue(car.CarIndex, out var previous)");
+        StringAssert.Contains(pitIndex, "previous.FrameIndex == frameIndex - 1");
+        StringAssert.Contains(pitIndex, "ReplayFramesAreContinuous(previous.FrameIndex, frameIndex)");
+        StringAssert.Contains(pitIndex, "!previous.OnPitRoad");
+        StringAssert.Contains(pitIndex, "&& onPitRoad");
+        StringAssert.Contains(pitIndex, "gap > 0 && gap <= limit");
+        Assert.DoesNotContain("GetValueOrDefault(car.CarIndex)", pitIndex,
+            "A first observation on pit road must not be treated as a known off-track-to-pit-road transition.");
+
+        var timelineStart = replay.IndexOf("private IReadOnlyList<TimelineItem> BuildTimelineEvents()", StringComparison.Ordinal);
+        var timelineEnd = replay.IndexOf("private IReadOnlyList<FlagSegment> BuildFlagSegments()", timelineStart, StringComparison.Ordinal);
+        Assert.IsTrue(timelineStart >= 0 && timelineEnd > timelineStart);
+        var timeline = replay[timelineStart..timelineEnd];
+        StringAssert.Contains(timeline, "PitRoadObservation? playerPit = null;");
+        StringAssert.Contains(timeline, "previous.FrameIndex == frameIndex - 1");
+        StringAssert.Contains(timeline, "ReplayFramesAreContinuous(previous.FrameIndex, frameIndex)");
+        StringAssert.Contains(timeline, "currentPit.Value != previous.OnPitRoad");
+    }
+
+    [TestMethod]
+    public void RaceReplay_FastestCleanReferenceIsOptionalAndTruthfullyGated()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var replay = File.ReadAllText(Path.Combine(ui, "RaceReplayWorkspace.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(replay, "private bool ShowFastestReference { get; set; } = true;");
+        StringAssert.Contains(replay, "@if (FastestTrace is { } fastestReference)");
+        StringAssert.Contains(replay, "data-replay-reference-toggle");
+        StringAssert.Contains(replay, "aria-pressed=\"@ShowFastestReference\"");
+        StringAssert.Contains(replay, "Compare with fastest clean recorded lap @fastestReference.Lap");
+        StringAssert.Contains(replay, "@if (ShowFastestReference && FastestTrace is { } reference)");
+        StringAssert.Contains(replay, "ShowFastestReference ? FastestTrace : null");
+        StringAssert.Contains(replay, "(currentLap, trace.Lap, signal, ShowFastestReference)");
+        StringAssert.Contains(replay, "(currentLap, signal, ShowFastestReference)");
+        StringAssert.Contains(replay, "ShowFastestReference = !ShowFastestReference;");
+        StringAssert.Contains(replay, "_replayChartPathCache.Clear();");
+        StringAssert.Contains(replay, "_replayChartRangeCache.Clear();");
+        Assert.DoesNotContain("No clean reference", replay,
+            "The absent optional reference should not consume repeated chart-footer space.");
+        StringAssert.Contains(css, ".replay-reference-toggle{");
+        StringAssert.Contains(css, ".replay-reference-toggle.active{");
+    }
+
+    [TestMethod]
+    public void RaceReplay_RecordedTelemetryGapsBreakChartPaths()
+    {
+        var replay = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "RaceReplayWorkspace.razor"));
+        var pathStart = replay.IndexOf("private string ReplayChartPath(AnalysisLapTrace trace, string signal)", StringComparison.Ordinal);
+        var pathEnd = replay.IndexOf("private (double Minimum, double Maximum) ReplayChartRange", pathStart, StringComparison.Ordinal);
+        Assert.IsTrue(pathStart >= 0 && pathEnd > pathStart);
+        var pathBuilder = replay[pathStart..pathEnd];
+
+        StringAssert.Contains(pathBuilder, "double.IsFinite(value.Value)");
+        StringAssert.Contains(pathBuilder, "var segmentStarted = false;");
+        StringAssert.Contains(pathBuilder, "!double.IsFinite(trace.Points[index].LapPercent)");
+        StringAssert.Contains(pathBuilder, "segmentStarted = false;");
+        StringAssert.Contains(pathBuilder, "(segmentStarted ? \"L\" : \"M\")");
+        StringAssert.Contains(pathBuilder, "segmentStarted = true;");
+        Assert.DoesNotContain("commands.Count == 0 ? \"M\" : \"L\"", pathBuilder,
+            "A later valid sample must start a new subpath after missing telemetry.");
+    }
+
+    [TestMethod]
+    public void RaceReplay_MissingLapCountersNeverBecomeLapZeroOrLapBackEstimates()
+    {
+        var replay = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "RaceReplayWorkspace.razor"));
+
+        StringAssert.Contains(replay, "private static int? RecordedLapCount(AnalysisReplayCarState car)");
+        StringAssert.Contains(replay, "private static int? DisplayLap(AnalysisReplayCarState car)");
+        StringAssert.Contains(replay, "private static double? CarDistance(AnalysisReplayCarState car)");
+        Assert.DoesNotContain("car.CompletedLaps ?? car.Lap ?? 0", replay);
+        Assert.DoesNotContain("L@DisplayLap", replay);
+        StringAssert.Contains(replay, "@LapLabel(leader.State)");
+        StringAssert.Contains(replay, "@LapNumberText(row.State)");
+        StringAssert.Contains(replay, "data-replay-unavailable=\"leader-laps\"");
+        StringAssert.Contains(replay, "if (DisplayLap(leader) is not { } leaderLap || DisplayLap(player) is not { } playerLap) return null;");
+        StringAssert.Contains(replay, "if (CarDistance(leader) is not { } leaderDistance || CarDistance(player) is not { } playerDistance) return null;");
+        StringAssert.Contains(replay, "RecordedLapCount(current) is not { } currentLapCount");
+        StringAssert.Contains(replay, "var distance = Wrap(car.LapPercent);");
+        Assert.DoesNotContain("var distance = CarDistance(car);", replay,
+            "Track markers may use recorded lap percent without inventing a lap count.");
     }
 
     [TestMethod]
@@ -200,7 +713,8 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(analysis, "overview?.GreenLaps");
         StringAssert.Contains(analysis, "overview?.PaceConsistencyPercent");
         StringAssert.Contains(workspace, "race-analysis-toolbar");
-        StringAssert.Contains(workspace, "race-review-grades");
+        StringAssert.Contains(workspace, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" />");
+        StringAssert.Contains(workspace, "<RaceReplayWorkspace Workspace=\"Workspace\" />");
         StringAssert.Contains(telemetry, "Average of selected laps");
         StringAssert.Contains(telemetry, "SpeedHeatmapStops");
         StringAssert.Contains(telemetry, "HeatmapColor(normalized, SpeedHeatmapStops)");
@@ -213,6 +727,11 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain("aria-label=\"@(TraceToolboxOpen ? \"Hide trace toolbox\"", telemetry);
         Assert.DoesNotContain("<ProductIcon Name=\"settings\"", telemetry);
         StringAssert.Contains(telemetry, "analysis-trace-catalog");
+        StringAssert.Contains(telemetry, "@foreach (var group in TraceSignalGroups)");
+        StringAssert.Contains(telemetry, "class=\"trace-signal-category\"");
+        StringAssert.Contains(telemetry, ".GroupBy(SignalCategory)");
+        foreach (var category in new[] { "Pace", "Controls", "Vehicle", "Tires", "Conditions" })
+            StringAssert.Contains(telemetry, $"\"{category}\"");
         StringAssert.Contains(telemetry, "data-analysis-drag-signal");
         StringAssert.Contains(telemetry, "data-analysis-drag-row");
         StringAssert.Contains(telemetry, "MoveTraceRowToIndex");
@@ -243,6 +762,10 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain("@ondragover", telemetry);
         Assert.DoesNotContain("RowSubtitle(panel)", telemetry);
         StringAssert.Contains(telemetry, "SignalRange(signal)");
+        StringAssert.Contains(telemetry, "point.AdditionalSignals is { } additional");
+        StringAssert.Contains(telemetry, "additional.TryGetValue(signal.Id, out var value) && double.IsFinite(value)");
+        StringAssert.Contains(telemetry, "private static bool IsStepSignal(AnalysisTraceSignalDefinition signal)");
+        StringAssert.Contains(telemetry, "signal.Unit is \"on / off\" or \"state\" or \"position\"");
         StringAssert.Contains(telemetry, "RowHelp(panel)");
         StringAssert.Contains(telemetry, "rendered.Length == 1");
         StringAssert.Contains(telemetry, "$\"{item.Signal.Name} ({item.Signal.Unit}).\"");
@@ -298,6 +821,10 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain(".analysis-trace-toolbox-backdrop", css);
         StringAssert.Contains(css, ".analysis-page-frame:has(.analysis-trace-studio.toolbox-open)");
         StringAssert.Contains(css, "padding-right: calc(22px + var(--side-toolbox-width));");
+        StringAssert.Contains(css, ".telemetry-workstation-grid.race-workstation {");
+        StringAssert.Contains(css, "grid-template-columns: clamp(300px,28vw,488px) minmax(0,1fr);");
+        Assert.DoesNotContain(".toolbox-open .telemetry-context-column", css,
+            "Customize may reflow the trace region but must not resize the Track/Laps column.");
         StringAssert.Contains(css, ".trace-panel.trace-panel-expanded { transition: right var(--toolbox-motion) var(--ease); }");
         StringAssert.Contains(css, ".trace-panel.trace-panel-expanded.toolbox-open { right: var(--side-toolbox-width); }");
         StringAssert.Contains(css, "--command-bar-height: 28px;");
@@ -312,7 +839,7 @@ public sealed class RaceAnalysisBehaviorTests
     }
 
     [TestMethod]
-    public void RaceAnalysisContextColumn_StacksTrackAboveLapsAndCollapsesEachPanelSmoothly()
+    public void RaceAnalysisContextColumn_HeaderBubblesKeepPanelsMountedAndSynchronizeBothAxes()
     {
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
@@ -322,8 +849,13 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "private bool TrackPanelCollapsed { get; set; }");
         StringAssert.Contains(telemetry, "LapRailCollapsed = false;");
         StringAssert.Contains(telemetry, "TrackPanelCollapsed = false;");
-        StringAssert.Contains(telemetry, "private void ToggleLapRail() => LapRailCollapsed = !LapRailCollapsed;");
-        StringAssert.Contains(telemetry, "private void ToggleTrackPanel() => TrackPanelCollapsed = !TrackPanelCollapsed;");
+        StringAssert.Contains(telemetry, "private void ToggleLapRail()");
+        StringAssert.Contains(telemetry, "LapRailCollapsed = !LapRailCollapsed;");
+        StringAssert.Contains(telemetry, "private void ToggleTrackPanel()");
+        StringAssert.Contains(telemetry, "TrackPanelCollapsed = !TrackPanelCollapsed;");
+        StringAssert.Contains(telemetry, "private string ContextColumnState =>");
+        foreach (var state in new[] { "context-both", "context-track", "context-laps", "context-none" })
+            StringAssert.Contains(telemetry, $"\"{state}\"");
         StringAssert.Contains(telemetry, "[Parameter] public bool IsRaceWorkspace { get; set; }");
         StringAssert.Contains(telemetry, "IsRaceWorkspace ? \"race-workstation\" : \"qualifying-workstation\"");
         StringAssert.Contains(telemetry, "<div class=\"telemetry-context-column\">");
@@ -331,38 +863,41 @@ public sealed class RaceAnalysisBehaviorTests
             telemetry.IndexOf("<aside class=\"lap-rail telemetry-context-panel", StringComparison.Ordinal),
             telemetry.IndexOf("<section class=\"track-panel telemetry-context-panel", StringComparison.Ordinal),
             "Track position must be mounted above laps and runs in the shared context column.");
-        StringAssert.Contains(telemetry, "class=\"context-heading-button\"");
-        StringAssert.Contains(telemetry, "aria-label=\"@(TrackPanelCollapsed ? \"Show track position\" : \"Hide track position\")\"");
+        StringAssert.Contains(telemetry, "class=\"analysis-context-toggles\"");
+        StringAssert.Contains(telemetry, "role=\"group\" aria-label=\"Telemetry context panels\"");
+        StringAssert.Contains(telemetry, "class=\"context-toggle-chip");
+        StringAssert.Contains(telemetry, "data-context-toggle=\"track\"");
+        StringAssert.Contains(telemetry, "data-context-toggle=\"laps\"");
+        StringAssert.Contains(telemetry, "aria-pressed=\"@AriaBoolean(!TrackPanelCollapsed)\"");
+        StringAssert.Contains(telemetry, "aria-pressed=\"@AriaBoolean(!LapRailCollapsed)\"");
         StringAssert.Contains(telemetry, "aria-controls=\"race-track-panel-content\"");
-        StringAssert.Contains(telemetry, "aria-expanded=\"@AriaBoolean(!TrackPanelCollapsed)\"");
-        StringAssert.Contains(telemetry, "aria-hidden=\"@AriaBoolean(TrackPanelCollapsed)\"");
-        StringAssert.Contains(telemetry, "inert=\"@(TrackPanelCollapsed ? string.Empty : null)\"");
-        StringAssert.Contains(telemetry, "aria-label=\"@(LapRailCollapsed ? \"Show Laps and runs\" : \"Hide Laps and runs\")\"");
         StringAssert.Contains(telemetry, "aria-controls=\"race-lap-rail-content\"");
-        StringAssert.Contains(telemetry, "aria-expanded=\"@AriaBoolean(!LapRailCollapsed)\"");
-        StringAssert.Contains(telemetry, "aria-hidden=\"@AriaBoolean(LapRailCollapsed)\"");
-        StringAssert.Contains(telemetry, "inert=\"@(LapRailCollapsed ? string.Empty : null)\"");
+        StringAssert.Contains(telemetry, "aria-hidden=\"@(IsRaceWorkspace && TrackPanelCollapsed ? \"true\" : null)\"");
+        StringAssert.Contains(telemetry, "inert=\"@(IsRaceWorkspace && TrackPanelCollapsed ? string.Empty : null)\"");
+        StringAssert.Contains(telemetry, "aria-hidden=\"@(IsRaceWorkspace && LapRailCollapsed ? \"true\" : null)\"");
+        StringAssert.Contains(telemetry, "inert=\"@(IsRaceWorkspace && LapRailCollapsed ? string.Empty : null)\"");
         Assert.DoesNotContain("@if (!TrackPanelCollapsed)", telemetry, "Collapse must retain the track DOM so map/cursor state survives the motion.");
         Assert.DoesNotContain("@if (!LapRailCollapsed)", telemetry, "Collapse must retain the lap DOM so selection and scroll state survive the motion.");
         Assert.DoesNotContain("ToggleLapRail() => ResetSelection", telemetry);
         Assert.DoesNotContain("ToggleLapRail() => ClearSelection", telemetry);
 
-        StringAssert.Contains(css, ".telemetry-context-column {");
-        StringAssert.Contains(css, "flex-direction: column;");
-        StringAssert.Contains(css, ".telemetry-context-column .track-panel {");
-        StringAssert.Contains(css, "grid-template-columns: minmax(0,1fr);");
-        StringAssert.Contains(css, "align-items: stretch;");
-        StringAssert.Contains(css, ".telemetry-context-column .track-panel.collapsed");
-        StringAssert.Contains(css, ".track-open.laps-collapsed .track-panel");
-        StringAssert.Contains(css, ".laps-open.track-collapsed .lap-rail");
-        StringAssert.Contains(css, "grid-template-rows: auto minmax(0,1fr);");
-        StringAssert.Contains(css, "grid-template-rows: auto 0fr;");
-        StringAssert.Contains(css, "transition: flex-grow 260ms var(--ease),flex-basis 260ms var(--ease),grid-template-rows 260ms var(--ease)");
-        StringAssert.Contains(css, ".track-panel-content {");
-        StringAssert.Contains(css, "transition: opacity 220ms var(--ease),visibility 0s linear 0s;");
-        StringAssert.Contains(css, ".context-heading-button {");
+        StringAssert.Contains(css, "--analysis-motion: var(--toolbox-motion);");
+        StringAssert.Contains(css, ".analysis-context-toggles {");
+        StringAssert.Contains(css, ".context-toggle-chip {");
+        StringAssert.Contains(css, ".race-workstation.context-both");
+        StringAssert.Contains(css, ".race-workstation.context-track");
+        StringAssert.Contains(css, ".race-workstation.context-laps");
+        StringAssert.Contains(css, ".race-workstation.context-none");
+        StringAssert.Contains(css, "grid-template-columns: 0 minmax(0,1fr);");
+        StringAssert.Contains(css, "grid-template-rows: minmax(0,.86fr) minmax(0,1.14fr);");
+        StringAssert.Contains(css, "grid-template-rows: minmax(0,1fr) minmax(0,0fr);");
+        StringAssert.Contains(css, "grid-template-rows: minmax(0,0fr) minmax(0,1fr);");
+        StringAssert.Contains(css, "transition: grid-template-columns var(--analysis-motion) var(--ease),gap var(--analysis-motion) var(--ease);");
+        StringAssert.Contains(css, "transition: grid-template-rows var(--analysis-motion) var(--ease),gap var(--analysis-motion) var(--ease),opacity var(--analysis-motion) var(--ease)");
+        StringAssert.Contains(css, "visibility 0s linear var(--analysis-motion)");
+        StringAssert.Contains(css, "translateX(-18px)");
         StringAssert.Contains(css, "@container (max-width: 1060px)");
-        StringAssert.Contains(css, ".reduced-motion .telemetry-context-panel");
+        StringAssert.Contains(css, ".reduced-motion .race-workstation");
         StringAssert.Contains(css, ".telemetry-workstation-grid.qualifying-workstation {");
         StringAssert.Contains(css, ".qualifying-workstation .track-panel { grid-column: 2; grid-row: 1; }");
     }
@@ -384,19 +919,33 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "Selected.RemoveWhere(lap =>");
 
         StringAssert.Contains(telemetry, "class=\"trace-spotlight-control\"");
-        StringAssert.Contains(telemetry, "<select aria-label=\"Spotlight lap\"");
-        StringAssert.Contains(telemetry, "<option value=\"\">Spotlight lap</option>");
+        StringAssert.Contains(telemetry, "class=\"spotlight-menu-trigger\"");
+        StringAssert.Contains(telemetry, "aria-haspopup=\"listbox\"");
+        StringAssert.Contains(telemetry, "aria-expanded=\"@AriaBoolean(SpotlightMenuOpen)\"");
+        StringAssert.Contains(telemetry, "class=\"spotlight-menu\" role=\"listbox\"");
+        StringAssert.Contains(telemetry, "class=\"spotlight-option @(SpotlightLap == trace.Lap ? \"selected\" : null)\"");
+        StringAssert.Contains(telemetry, "var spotlightFastest =");
+        StringAssert.Contains(telemetry, "@(spotlightFastest ? \" · Fastest\" : string.Empty)");
+        StringAssert.Contains(telemetry, "var sectorState = SectorState(trace, sector);");
+        StringAssert.Contains(telemetry, "class=\"sector-square @sectorState.Class\"");
         StringAssert.Contains(telemetry, "private IReadOnlyList<AnalysisLapTrace> SpotlightCandidates");
         StringAssert.Contains(telemetry, ".Where(IsGreenLap)");
         StringAssert.Contains(telemetry, "@onclick=\"ClearSpotlight\">Clear</button>");
+        StringAssert.Contains(telemetry, "@onclick=\"CloseSpotlightMenu\"");
+        StringAssert.Contains(telemetry, "private async Task SelectSpotlight(int lap)");
+        StringAssert.Contains(telemetry, "SpotlightMenuOpen = false;");
+        StringAssert.Contains(telemetry, "await JS.InvokeVoidAsync(\"iracingCoach.blurActiveElement\")");
         StringAssert.Contains(telemetry, "private IEnumerable<AnalysisLapTrace> RenderedSelectedTraces");
         StringAssert.Contains(telemetry, ".OrderBy(trace => SpotlightLap == trace.Lap ? 1 : 0)");
         StringAssert.Contains(telemetry, "@foreach (var trace in RenderedSelectedTraces)");
         StringAssert.Contains(telemetry, "data-spotlight=\"@(SpotlightLap == trace.Lap)\"");
         StringAssert.Contains(telemetry, "private string TraceStrokeWidth(AnalysisLapTrace trace, int signalIndex)");
         StringAssert.Contains(telemetry, "private string TraceOpacity(AnalysisLapTrace trace, int signalIndex)");
-        StringAssert.Contains(telemetry, "return signalIndex == 0 ? \".5\" : \".38\";");
+        StringAssert.Contains(telemetry, "return signalIndex == 0 ? \"2.35\" : \"1.8\";");
+        StringAssert.Contains(telemetry, "return signalIndex == 0 ? \".42\" : \".30\";");
         StringAssert.Contains(css, ".trace-spotlight-control");
+        StringAssert.Contains(css, ".spotlight-menu");
+        StringAssert.Contains(css, ".spotlight-option");
         StringAssert.Contains(css, ".configurable-trace-chart [data-analysis-trace-path]");
     }
 
@@ -415,12 +964,54 @@ public sealed class RaceAnalysisBehaviorTests
             "Race data tabs, centered event identity/back, and session switch must occupy one left-to-right header row.");
         StringAssert.Contains(workspace, "aria-label=\"Race analysis section\"");
         StringAssert.Contains(workspace, "aria-label=\"Back to race history\"");
+        StringAssert.Contains(workspace, "class=\"race-analysis-title-cluster\"");
+        StringAssert.Contains(workspace, "<span>Back</span>");
         StringAssert.Contains(workspace, "aria-label=\"Event session\"");
         StringAssert.Contains(css, ".analysis-context-bar.race-analysis-toolbar {");
         StringAssert.Contains(css, "grid-template-columns: minmax(188px,220px) minmax(260px,1fr) minmax(150px,220px);");
         StringAssert.Contains(css, ".race-analysis-title {");
         StringAssert.Contains(css, "justify-content: center;");
+        StringAssert.Contains(css, ".race-analysis-title-cluster {");
         StringAssert.Contains(css, ".race-session-actions { justify-self: end; }");
+    }
+
+    [TestMethod]
+    public void RaceTelemetry_UsesStableViewportHeightAndAFlowOrderedLapFooter()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        var footerMatch = Regex.Match(
+            telemetry,
+            "<div class=\"lap-rail-footer\">(?<content>.*?)</div>",
+            RegexOptions.Singleline);
+        Assert.IsTrue(footerMatch.Success, "The lap-selection actions must remain in one stable footer.");
+        var footer = footerMatch.Groups["content"].Value;
+        var fastest = footer.IndexOf(">Fastest</button>", StringComparison.Ordinal);
+        var bestThree = footer.IndexOf(">Best three</button>", StringComparison.Ordinal);
+        var clear = footer.IndexOf(">Clear</button>", StringComparison.Ordinal);
+        var showAll = footer.IndexOf(">Show all</button>", StringComparison.Ordinal);
+        Assert.IsTrue(fastest >= 0 && fastest < bestThree && bestThree < clear && clear < showAll,
+            "The footer flow must be Fastest, Best three, Clear, Show all.");
+        StringAssert.Contains(telemetry, "class=\"telemetry-empty-selection\"");
+        StringAssert.Contains(telemetry, "No laps selected");
+        StringAssert.Contains(telemetry, "Select Fastest, Best three");
+        var layoutInterop = telemetry.IndexOf("await ConfigureTraceLayoutInteropAsync();", StringComparison.Ordinal);
+        var emptySelectionReturn = telemetry.IndexOf("if (Selected.Count == 0) return;", layoutInterop, StringComparison.Ordinal);
+        Assert.IsTrue(layoutInterop >= 0 && emptySelectionReturn > layoutInterop,
+            "Clear must leave trace-layout drag/drop initialized even while no telemetry laps are selected.");
+
+        StringAssert.Contains(css, ".analysis-page-frame:has(.race-analysis-toolbar)");
+        StringAssert.Contains(css, ".analysis-page-frame:has(.race-analysis-toolbar) .analysis-workspace-page");
+        StringAssert.Contains(css, ".analysis-page-frame:has(.race-analysis-toolbar) .race-telemetry-page");
+        StringAssert.Contains(css, ".analysis-page-frame:has(.race-analysis-toolbar) .telemetry-workspace");
+        StringAssert.Contains(css, ".analysis-page-frame:has(.race-analysis-toolbar) .trace-chart-frame");
+        StringAssert.Contains(css, "overflow: hidden;");
+        Assert.DoesNotContain(".telemetry-empty-selection { min-height: 720px", css,
+            "Clearing selection must not swap in a differently sized workbench.");
+        Assert.IsTrue(Regex.IsMatch(css, @"\.analysis-page-frame:has\(\.race-analysis-toolbar\) \.telemetry-empty-selection\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*min-height:\s*0;", RegexOptions.Singleline),
+            "The no-selection surface must fill the same viewport-derived station height as selected telemetry.");
     }
 
     [TestMethod]

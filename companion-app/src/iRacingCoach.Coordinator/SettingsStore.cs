@@ -63,10 +63,12 @@ public sealed class JsonSettingsStore : ISettingsStore
             settings.CoachHome = Path.GetDirectoryName(_path) ?? CompanionSettings.DefaultCoachHome;
             settings.LiveMonitor ??= new LiveMonitorLayout();
             settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
+            settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
             var normalizedThemeColor = ThemeColors.Normalize(settings.ThemeColor);
             var repairedThemeColor = !string.Equals(settings.ThemeColor, normalizedThemeColor, StringComparison.Ordinal);
             settings.ThemeColor = normalizedThemeColor;
             var repairedAnalysisTraces = AnalysisTraceLayouts.ValidateAndRepair(settings.RaceAnalysisTraces);
+            var repairedAnalysisTraceLayouts = AnalysisTraceLayoutSets.ValidateAndRepair(settings.RaceAnalysisTraceLayouts, settings.RaceAnalysisTraces);
             var migratedMonitor = serialized is not null && settings.SettingsSchemaVersion < 4 && TryMigrateLegacyMonitor(serialized, settings.LiveMonitor);
             var migratedMachineLayout = serialized is not null && !File.Exists(_machinePath) && TryReadLegacyMachineLayout(serialized, settings.LiveMonitor);
             ApplyMachineSettings(settings.LiveMonitor);
@@ -77,7 +79,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                 var migrated = TryMigrateGarage61Credential(settings);
                 var schemaMigrated = settings.SettingsSchemaVersion < 4;
                 settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
-                if (migrated || legacyCredentialPresent || migratedMachineLayout || migratedMonitor || repairedMonitor || repairedAnalysisTraces || repairedThemeColor || schemaMigrated) Save(settings);
+                if (migrated || legacyCredentialPresent || migratedMachineLayout || migratedMonitor || repairedMonitor || repairedAnalysisTraces || repairedAnalysisTraceLayouts || repairedThemeColor || schemaMigrated) Save(settings);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException or PlatformNotSupportedException) { }
             return settings;
@@ -101,7 +103,10 @@ public sealed class JsonSettingsStore : ISettingsStore
             settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
             _ = LiveMonitorLayouts.ValidateAndRepair(settings.LiveMonitor, out _);
             settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
-            _ = AnalysisTraceLayouts.ValidateAndRepair(settings.RaceAnalysisTraces);
+            settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
+            _ = AnalysisTraceLayoutSets.ValidateAndRepair(settings.RaceAnalysisTraceLayouts, settings.RaceAnalysisTraces);
+            settings.RaceAnalysisTraces = AnalysisTraceLayoutSets.CloneLayout(
+                AnalysisTraceLayoutSets.Active(settings.RaceAnalysisTraceLayouts).Named.Layout);
             SaveMachineSettings(settings.LiveMonitor);
             WriteAtomically(_path, JsonSerializer.Serialize(settings, JsonOptions));
         }

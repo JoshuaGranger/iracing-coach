@@ -16,17 +16,23 @@ public sealed record TuningFeedbackDraft(
     string Balance,
     string Severity,
     string Confidence,
-    bool Priority);
+    bool Priority,
+    string Note = "",
+    string FeedbackId = "");
 
 public sealed class CompanionState : IDisposable
 {
-    private const int UiAnalysisCacheSchemaVersion = 7;
-    private const string AppVersion = "0.14.2";
+    // The cached backend response is part of the UI contract. Bump this when
+    // mapped analysis fields change so an older response cannot silently hide
+    // newly available maps, replay coverage, tire learning, or technical data.
+    private const int UiAnalysisCacheSchemaVersion = 10;
+    private const string AppVersion = "0.15.0";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
     private readonly ICoachEngineSupervisor _coachEngine;
     private readonly LiveTelemetryService _liveTelemetry;
+    private readonly LiveReplayCaptureStore _liveReplayCapture;
     private readonly IDurableArchiveService _archive;
     private readonly Dictionary<string, CancellationTokenSource> _jobTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Lazy<Task<JsonElement>>> _inflightBackendCalls = new(StringComparer.Ordinal);
@@ -48,6 +54,10 @@ public sealed class CompanionState : IDisposable
     private bool _liveMonitorWasConnected;
     private DateTimeOffset _lastPrimaryUiLiveUpdate = DateTimeOffset.MinValue;
     private int _serviceRequestsInFlight;
+    private int _garage61ReferenceSyncActive;
+    private long _tuningRaceSelectionEpoch;
+    private long _tuningTargetSelectionEpoch;
+    private readonly SemaphoreSlim _tuningDraftMutationGate = new(1, 1);
     private BackendHealthResult _lastBackendHealth = new(false, "unknown", "unknown", "unknown", 0, TimeSpan.Zero, "Not checked");
 
     public CompanionState() : this(new McpBackendClient(), new JsonSettingsStore(), new IRacingSdkTelemetrySource(), new CodexAppServerSupervisor(), new PowerShellGarage61CredentialStore(), new DurableArchiveService()) { }
@@ -67,8 +77,11 @@ public sealed class CompanionState : IDisposable
         Settings.LiveMonitor ??= new LiveMonitorLayout();
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
         _liveTelemetry = new LiveTelemetryService(liveTelemetrySource, Settings.LiveMonitor);
+        _liveReplayCapture = new LiveReplayCaptureStore(() => Settings.ArchiveRoot);
         _liveTelemetry.Updated += OnLiveTelemetryUpdated;
         _liveTelemetry.FrameCaptured += OnLiveTelemetryFrameCaptured;
+        _liveTelemetry.ReplayFrameCaptured += OnLiveReplayFrameCaptured;
+        _liveTelemetry.ReplaySessionEnded += OnLiveReplaySessionEnded;
         _coachEngine.Changed += OnCoachEngineChanged;
         _coachEngine.CoachMessageDelta += OnCoachMessageDelta;
         CoachEngine = _coachEngine.Current;
@@ -126,6 +139,9 @@ public sealed class CompanionState : IDisposable
     public int PlanDistanceValue { get; set; } = 50;
     public string PlanSetupType { get; set; } = "Fixed";
     public string SelectedTuningRaceId { get; set; } = string.Empty;
+    public string SelectedTuningTargetRaceId { get; private set; } = string.Empty;
+    public string SelectedTuningResultRaceId { get; set; } = string.Empty;
+    public string SelectedTuningTurnId { get; private set; } = string.Empty;
     public string SelectedSetupId { get; set; } = string.Empty;
     public string CompareSetupId { get; set; } = string.Empty;
     public int StartingTuneStep { get; private set; } = 1;
@@ -148,12 +164,18 @@ public sealed class CompanionState : IDisposable
     public List<TuningFeedbackDraft> TuningFeedback { get; } = [];
     public RacePlanBriefing? PlanBriefing { get; private set; }
     public TuningExperimentView? TuningExperiment { get; private set; }
+    public ProgressiveTuningDraft TuningDraft { get; private set; } = new();
+    public TuningMapView? SelectedTuningMap { get; private set; }
+    public TuningSetupTarget? SelectedTuningTarget { get; private set; }
+    public StructuredTuningResultView? StructuredTuningResult { get; private set; }
     public SetupPackageView? StartingTunePackage { get; private set; }
     public RaceCard? CurrentRaceCard { get; private set; }
     public AnalysisWorkspace? CurrentAnalysis { get; private set; }
     public bool AnalysisWorkspaceOpen { get; private set; }
     public bool AnalysisLoading { get; private set; }
     public string AnalysisMessage { get; private set; } = string.Empty;
+    public string Garage61ReferenceMessage { get; private set; } = string.Empty;
+    public bool IsGarage61ReferenceSyncing => Volatile.Read(ref _garage61ReferenceSyncActive) != 0;
     public Garage61Connection Garage61 { get; private set; } = new(false, false, "checking", "Checking connection…");
     public CoachEngineConnection CoachEngine { get; private set; }
     public IReadOnlyList<DiagnosticFact> Diagnostics { get; private set; } = [];
@@ -175,6 +197,7 @@ public sealed class CompanionState : IDisposable
     public bool LiveCoachingPaused => _liveTelemetry.CoachingPaused;
     public bool PrimaryUiVisible { get; private set; } = true;
     public bool IRacingDetected => Directory.Exists(Settings.IRacingRoot);
+    public bool Garage61ReferenceActionVisible => Garage61.Available && TryGetAnalysisPath(SelectedRaceSession, out _);
 
     public void ReportUnhandledException(string scope, Exception exception)
     {
@@ -192,10 +215,24 @@ public sealed class CompanionState : IDisposable
 
     public RecentRace? SelectedPlanRace => Races.OfType<RecentRace>().FirstOrDefault(race => string.Equals(race.Id, SelectedPlanRaceId, StringComparison.Ordinal));
     public RecentRace? SelectedTuningRace => Races.OfType<RecentRace>().FirstOrDefault(race => string.Equals(race.Id, SelectedTuningRaceId, StringComparison.Ordinal));
+    public RecentRace? SelectedTuningTargetRace => Races.OfType<RecentRace>().FirstOrDefault(race => string.Equals(race.Id, SelectedTuningTargetRaceId, StringComparison.Ordinal));
+    public RecentRace? SelectedTuningResultRace => Races.OfType<RecentRace>().FirstOrDefault(race => string.Equals(race.Id, SelectedTuningResultRaceId, StringComparison.Ordinal));
     public RecentRace? SelectedRaceSession => EventSessions.OfType<RecentRace>().FirstOrDefault(session => string.Equals(session.Id, SelectedRaceSessionId, StringComparison.Ordinal));
     public LocalSetup? SelectedSetup => Setups.OfType<LocalSetup>().FirstOrDefault(setup => string.Equals(setup.Id, SelectedSetupId, StringComparison.Ordinal));
     public LocalSetup? CompareSetup => Setups.OfType<LocalSetup>().FirstOrDefault(setup => string.Equals(setup.Id, CompareSetupId, StringComparison.Ordinal));
     public IEnumerable<RecentRace> TuningRaces => Races.OfType<RecentRace>().Where(race => race.Analyzed && string.Equals(race.SetupType, "Open", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(race.AnalysisPath));
+    public IEnumerable<RecentRace> TuningEvidenceRaces => Races.OfType<RecentRace>().Where(race => race.Analyzed && !string.IsNullOrWhiteSpace(race.AnalysisPath));
+    public IEnumerable<TuningRaceCandidate> TuningCandidates => TuningEvidenceRaces.Select(race =>
+        ProgressiveTuningCoordinator.Candidate(race,
+            CurrentAnalysis is not null && ProgressiveTuningCoordinator.Matches(race, CurrentAnalysis.TuningIdentity)
+                ? CurrentAnalysis
+                : null));
+    public IEnumerable<RecentRace> TuningResultRaces => Races.OfType<RecentRace>().Where(race =>
+        race.Analyzed && !string.IsNullOrWhiteSpace(race.AnalysisPath)
+        && TuningDraft.RepresentativeSession is { } identity
+        && string.Equals(race.CarPath, identity.CarPath, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(race.Track, identity.Track, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(race.Layout, identity.Layout, StringComparison.OrdinalIgnoreCase));
     public IEnumerable<RaceEventGroup> FilteredEventGroups => EventGroups.OfType<RaceEventGroup>()
         .Where(group => group.Sessions is { Count: > 0 })
         .Where(MatchesRaceBrowser);
@@ -494,6 +531,7 @@ public sealed class CompanionState : IDisposable
         AnalysisMessage = race.Analyzed ? "Opening telemetry…" : "Reading telemetry…";
         CurrentRaceCard = null;
         CurrentAnalysis = null;
+        Garage61ReferenceMessage = string.Empty;
         RaiseChanged();
         if (!force && TryLoadUiAnalysisCache(race))
         {
@@ -653,14 +691,6 @@ public sealed class CompanionState : IDisposable
                 maximum_changes = 1
             }, cancellationToken);
             TuningExperiment = RuntimeMapper.Tuning(result);
-            PersistPortableArtifact("tuning-experiments", $"experiment-{TuningExperiment.ExperimentId}", new
-            {
-                schemaVersion = 1,
-                raceId = race.Id,
-                createdUtc = DateTimeOffset.UtcNow,
-                symptom,
-                result
-            });
             ExperimentGenerated = true;
             TuningMessage = "The recommendation is tied to this race's embedded setup and telemetry.";
             Notify("One controlled setup test is ready.");
@@ -683,7 +713,9 @@ public sealed class CompanionState : IDisposable
             string.IsNullOrWhiteSpace(TuningBalance) ? SymptomText.Trim() : TuningBalance.Trim(),
             TuningSeverity,
             TuningConfidence,
-            TuningPriority);
+            TuningPriority,
+            TuningNotes.Trim(),
+            Guid.NewGuid().ToString("N"));
         if (!TuningFeedback.Contains(draft)) TuningFeedback.Add(draft);
         RaiseChanged();
     }
@@ -696,28 +728,54 @@ public sealed class CompanionState : IDisposable
 
     public async Task SelectTuningRaceAsync(string? raceId, CancellationToken cancellationToken = default)
     {
+        var selectionEpoch = Interlocked.Increment(ref _tuningRaceSelectionEpoch);
+        Interlocked.Increment(ref _tuningTargetSelectionEpoch);
         SelectedTuningRaceId = raceId?.Trim() ?? string.Empty;
         TuningCorner = "Whole lap";
-        TuningFeedback.Clear();
         var race = SelectedTuningRace;
         if (race is null)
         {
+            TuningFeedback.Clear();
+            TuningDraft = new ProgressiveTuningDraft();
+            SelectedTuningMap = null;
+            SelectedTuningTarget = null;
+            SelectedTuningTargetRaceId = string.Empty;
+            SelectedTuningTurnId = string.Empty;
+            StructuredTuningResult = null;
+            TuningExperiment = null;
+            ExperimentGenerated = false;
+            CurrentRaceCard = null;
+            CurrentAnalysis = null;
             RaiseChanged();
             return;
         }
-        if (CurrentAnalysis is not null &&
-            string.Equals(CurrentAnalysis.Track, race.Track, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(CurrentAnalysis.Car, race.Car, StringComparison.OrdinalIgnoreCase))
+        if (CurrentAnalysis is not null && ProgressiveTuningCoordinator.Matches(race, CurrentAnalysis.TuningIdentity))
         {
+            ActivateTuningAnalysis(race);
             RaiseChanged();
             return;
         }
+
+        // Do not expose the previous race's evidence while the new exact
+        // analysis is still loading.
+        TuningFeedback.Clear();
+        TuningDraft = new ProgressiveTuningDraft();
+        SelectedTuningMap = null;
+        SelectedTuningTarget = null;
+        SelectedTuningTargetRaceId = string.Empty;
+        SelectedTuningTurnId = string.Empty;
+        StructuredTuningResult = null;
+        TuningExperiment = null;
+        ExperimentGenerated = false;
+        CurrentRaceCard = null;
+        CurrentAnalysis = null;
 
         TuningMessage = "Loading this race's track and telemetry…";
         RaiseChanged();
         if (TryLoadUiAnalysisCache(race))
         {
-            TuningMessage = "Click a recorded corner, then describe what the car did.";
+            if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id)) return;
+            ActivateTuningAnalysis(race);
             RaiseChanged();
             return;
         }
@@ -732,19 +790,810 @@ public sealed class CompanionState : IDisposable
                 target_hz = 20
             }, cancellationToken);
             EnsureResponseMatchesSession(race, result);
-            CurrentRaceCard = RuntimeMapper.RaceCard(result);
+            var raceCard = RuntimeMapper.RaceCard(result);
             var analysis = RuntimeMapper.Analysis(result);
             EnsureAnalysisMatchesSession(race, analysis);
-            CurrentAnalysis = analysis;
             SaveUiAnalysisCache(race, result);
-            TuningMessage = "Click a recorded corner, then describe what the car did.";
+            if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id)) return;
+            CurrentRaceCard = raceCard;
+            CurrentAnalysis = analysis;
+            ActivateTuningAnalysis(race);
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
         {
+            if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id)) return;
             TuningMessage = Bound(ex.Message);
+            RaiseChanged();
+            throw;
         }
         RaiseChanged();
     }
+
+    public Task SelectTuningTurnAsync(string? cornerId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        SelectedTuningTurnId = cornerId?.Trim() ?? string.Empty;
+        RaiseChanged();
+        return Task.CompletedTask;
+    }
+
+    public async Task UpsertTuningFeedbackAsync(ProgressiveTuningFeedback feedback, CancellationToken cancellationToken = default)
+    {
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(feedback.FeedbackId)) feedback = feedback with { FeedbackId = Guid.NewGuid().ToString("N") };
+        feedback = ValidateTuningFeedback(feedback);
+        var draft = TuningDraft;
+        var items = draft.Feedback.ToList();
+        var index = items.FindIndex(item => string.Equals(item.FeedbackId, feedback.FeedbackId, StringComparison.Ordinal));
+        if (index >= 0) items[index] = feedback;
+        else items.Add(feedback);
+        var updated = draft with { Feedback = items, UpdatedUtc = DateTimeOffset.UtcNow };
+        await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+        if (!IsCurrentTuningDraft(draft)) return;
+        TuningDraft = updated;
+        SyncLegacyTuningFeedback();
+        RaiseChanged();
+    }
+
+    public async Task ReplaceTuningFeedbackBatchAsync(
+        string cornerId,
+        string runPhase,
+        IEnumerable<ProgressiveTuningFeedback> items,
+        CancellationToken cancellationToken = default)
+    {
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var normalizedCorner = cornerId?.Trim() ?? string.Empty;
+        var normalizedPhase = RequireTuningRunPhase(runPhase ?? string.Empty);
+        _ = RequireCurrentTuningTurn(normalizedCorner);
+        var draft = TuningDraft;
+        var replacement = items.Select(item => ValidateTuningFeedback(item with
+            {
+                FeedbackId = string.IsNullOrWhiteSpace(item.FeedbackId) ? Guid.NewGuid().ToString("N") : item.FeedbackId,
+                CornerId = normalizedCorner,
+                RunPhase = normalizedPhase
+            }))
+            .GroupBy(item => item.FeedbackId, StringComparer.Ordinal)
+            .Select(group => group.Last())
+            .ToArray();
+        var retained = draft.Feedback.Where(item =>
+            !string.Equals(item.CornerId, normalizedCorner, StringComparison.Ordinal)
+            || !string.Equals(NormalizeTuningRunPhase(item.RunPhase), normalizedPhase, StringComparison.Ordinal));
+        var updated = draft with { Feedback = retained.Concat(replacement).ToArray(), UpdatedUtc = DateTimeOffset.UtcNow };
+        await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+        if (!IsCurrentTuningDraft(draft)) return;
+        TuningDraft = updated;
+        SyncLegacyTuningFeedback();
+        RaiseChanged();
+    }
+
+    public Task SaveTuningFeedbackAsync(ProgressiveTuningFeedback feedback, CancellationToken cancellationToken = default) =>
+        UpsertTuningFeedbackAsync(feedback, cancellationToken);
+
+    public async Task RemoveTuningFeedbackAsync(string feedbackId, CancellationToken cancellationToken = default)
+    {
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var draft = TuningDraft;
+        var items = draft.Feedback.Where(item => !string.Equals(item.FeedbackId, feedbackId, StringComparison.Ordinal)).ToArray();
+        if (items.Length == draft.Feedback.Count) return;
+        var updated = draft with { Feedback = items, UpdatedUtc = DateTimeOffset.UtcNow };
+        await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+        if (!IsCurrentTuningDraft(draft)) return;
+        TuningDraft = updated;
+        SyncLegacyTuningFeedback();
+        RaiseChanged();
+    }
+
+    public async Task SaveTuningGeneralNoteAsync(string note, CancellationToken cancellationToken = default)
+    {
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var value = note?.Trim() ?? string.Empty;
+        if (value.Length > 8_000) throw new InvalidOperationException("General feedback must be 8,000 characters or fewer.");
+        var draft = TuningDraft;
+        var updated = draft with { GeneralNote = value, UpdatedUtc = DateTimeOffset.UtcNow };
+        await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+        if (!IsCurrentTuningDraft(draft)) return;
+        TuningDraft = updated;
+        TuningNotes = value;
+        RaiseChanged();
+    }
+
+    public async Task SaveTuningGoalAsync(string goal, CancellationToken cancellationToken = default)
+    {
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var normalized = goal?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (normalized is not ("long-run-pace" or "tire-life" or "restart-pace" or "stability"))
+            throw new InvalidOperationException("Choose long-run pace, tire life, restart pace, or stability.");
+        var draft = TuningDraft;
+        var updated = draft with { Goal = normalized, UpdatedUtc = DateTimeOffset.UtcNow };
+        await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+        if (!IsCurrentTuningDraft(draft)) return;
+        TuningDraft = updated;
+        RaiseChanged();
+    }
+
+    public async Task SaveTuningRepresentativeRunsAsync(IEnumerable<string> runIds, CancellationToken cancellationToken = default)
+    {
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var draft = TuningDraft;
+        if (SelectedTuningRace is null
+            || !ProgressiveTuningCoordinator.Matches(SelectedTuningRace, draft.RepresentativeSession)
+            || CurrentAnalysis is null
+            || !ProgressiveTuningCoordinator.Matches(SelectedTuningRace, CurrentAnalysis.TuningIdentity))
+            throw new InvalidOperationException("Reload the representative race before choosing its runs.");
+        var available = CurrentAnalysis.Runs.Where(run => run.ComparisonEligible && run.CoachingReferenceLapCount >= 6)
+            .Select(run => run.Number.ToString(CultureInfo.InvariantCulture)).ToHashSet(StringComparer.Ordinal);
+        var selected = runIds.Select(value => value?.Trim() ?? string.Empty)
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (selected.Length == 0 || selected.Length > 3 || selected.Any(value => !available.Contains(value)))
+            throw new InvalidOperationException("Choose one to three comparison-eligible runs with at least six clean green laps.");
+        var updated = draft with { RepresentativeRunIds = selected, UpdatedUtc = DateTimeOffset.UtcNow };
+        await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+        if (!IsCurrentTuningDraft(draft)) return;
+        TuningDraft = updated;
+        RaiseChanged();
+    }
+
+    public Task SaveRepresentativeRunIdsAsync(IEnumerable<string> runIds, CancellationToken cancellationToken = default) =>
+        SaveTuningRepresentativeRunsAsync(runIds, cancellationToken);
+
+    public async Task ApplyTuningMapAsync(TuningMapView map, string trackConfigurationKey, CancellationToken cancellationToken = default)
+    {
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var draft = TuningDraft;
+        var identity = draft.RepresentativeSession;
+        if (SelectedTuningRace is null
+            || CurrentAnalysis is null
+            || !ProgressiveTuningCoordinator.Matches(SelectedTuningRace, identity)
+            || !ProgressiveTuningCoordinator.Matches(SelectedTuningRace, CurrentAnalysis.TuningIdentity))
+            throw new InvalidOperationException("Reload the representative race before applying its track map.");
+        if (string.IsNullOrWhiteSpace(identity.TrackConfigurationKey)
+            || !string.Equals(identity.TrackConfigurationKey, trackConfigurationKey?.Trim(), StringComparison.Ordinal))
+            throw new InvalidOperationException("The selected track map does not match this recording's exact track configuration.");
+        if (string.IsNullOrWhiteSpace(map.MapIdentity) || map.Path.Count < 2)
+            throw new InvalidOperationException("The selected track map has no stable identity or usable path.");
+        var authoritativeGeometryHash = CurrentAnalysis?.VectorGeometry?.GeometryHash
+            ?? CurrentAnalysis?.TuningMap?.GeometryHash;
+        if (string.IsNullOrWhiteSpace(authoritativeGeometryHash))
+            throw new InvalidOperationException("The authoritative track-geometry hash is unavailable. Reanalyze this recording first.");
+        map = map with { GeometryHash = authoritativeGeometryHash.Trim().ToLowerInvariant() };
+        if (map.Path.Any(point => !double.IsFinite(point.LapPercent) || point.LapPercent is < 0 or >= 1
+                || !double.IsFinite(point.X) || !double.IsFinite(point.Y))
+            || map.Turns.Any(turn => string.IsNullOrWhiteSpace(turn.CornerId)
+                || !double.IsFinite(turn.StartPct) || turn.StartPct is < 0 or >= 1
+                || !double.IsFinite(turn.ApexPct) || turn.ApexPct is < 0 or >= 1
+                || !double.IsFinite(turn.EndPct) || turn.EndPct is < 0 or >= 1
+                || !IsForwardTuningTurn(turn.StartPct, turn.ApexPct, turn.EndPct))
+            || map.Turns.Select(turn => turn.CornerId).Distinct(StringComparer.Ordinal).Count() != map.Turns.Count)
+            throw new InvalidOperationException("The selected track map contains invalid or duplicate turn bounds.");
+
+        var store = new PortableTuningTurnAnnotationStore(Settings.CoachHome);
+        TuningTurnAnnotationSet? annotations = null;
+        try { annotations = store.Load(identity.TrackConfigurationKey, map.MapIdentity); }
+        catch (InvalidDataException ex) { _ = StructuredAppLog.Record("tuning turn annotations", ex, AppVersion); }
+        var merged = PortableTuningTurnAnnotationStore.Merge(map, annotations);
+        var updated = draft with
+        {
+            MapIdentity = map.MapIdentity,
+            TurnCorrections = annotations?.Corrections ?? [],
+            UpdatedUtc = DateTimeOffset.UtcNow
+        };
+        await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+        if (!IsCurrentTuningDraft(draft)) return;
+        SelectedTuningMap = merged;
+        if (CurrentAnalysis is { } current) CurrentAnalysis = current with { TuningMap = merged };
+        TuningDraft = updated;
+        RaiseChanged();
+    }
+
+    public Task SaveTuningTurnCorrectionAsync(string cornerId, string label, CancellationToken cancellationToken = default)
+    {
+        var turn = SelectedTuningMap?.Turns.FirstOrDefault(item => string.Equals(item.CornerId, cornerId, StringComparison.Ordinal));
+        if (turn is null) throw new InvalidOperationException("Choose a recorded turn before correcting its label.");
+        return SaveTuningTurnCorrectionAsync(new TuningTurnCorrectionDraft
+        {
+            CornerId = turn.CornerId,
+            Label = label?.Trim() ?? string.Empty,
+            StartPct = turn.StartPct,
+            ApexPct = turn.ApexPct,
+            EndPct = turn.EndPct,
+            Note = turn.CorrectionHint ?? string.Empty,
+            MapIdentity = SelectedTuningMap!.MapIdentity,
+            GeometryHash = ProgressiveTuningCoordinator.GeometryHash(SelectedTuningMap),
+            VerifiedAt = DateTimeOffset.UtcNow
+        }, cancellationToken);
+    }
+
+    public async Task SaveTuningTurnCorrectionAsync(TuningTurnCorrectionDraft correction, CancellationToken cancellationToken = default)
+    {
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var draft = TuningDraft;
+        var identity = draft.RepresentativeSession;
+        var map = SelectedTuningMap ?? throw new InvalidOperationException("A verified track map is required before correcting a turn.");
+        if (SelectedTuningRace is null || !ProgressiveTuningCoordinator.Matches(SelectedTuningRace, identity))
+            throw new InvalidOperationException("Reload the representative race before correcting its turn map.");
+        if (string.IsNullOrWhiteSpace(identity.TrackConfigurationKey))
+            throw new InvalidOperationException("The exact track configuration is unavailable for this recording.");
+        if (!string.Equals(correction.MapIdentity, map.MapIdentity, StringComparison.Ordinal))
+            throw new InvalidOperationException("The turn correction belongs to a different track map.");
+        if (ProgressiveTuningCoordinator.GeometryHash(map).Length == 0)
+            throw new InvalidOperationException("The authoritative track-geometry hash is unavailable. Reanalyze this recording first.");
+        if (!double.IsFinite(correction.StartPct) || correction.StartPct is < 0 or >= 1
+            || !double.IsFinite(correction.ApexPct) || correction.ApexPct is < 0 or >= 1
+            || !double.IsFinite(correction.EndPct) || correction.EndPct is < 0 or >= 1
+            || !IsForwardTuningTurn(correction.StartPct, correction.ApexPct, correction.EndPct))
+            throw new InvalidOperationException("Turn bounds must form a forward entry-to-apex-to-exit arc within one lap.");
+        correction = correction with
+        {
+            CornerId = correction.CornerId.Trim(),
+            Label = correction.Label.Trim(),
+            Note = correction.Note.Trim(),
+            GeometryHash = ProgressiveTuningCoordinator.GeometryHash(map),
+            VerifiedAt = DateTimeOffset.UtcNow
+        };
+        if (correction.CornerId.Length == 0 || correction.Label.Length == 0)
+            throw new InvalidOperationException("A turn correction requires a turn ID and label.");
+        if (!map.Turns.Any(turn => string.Equals(turn.CornerId, correction.CornerId, StringComparison.Ordinal)))
+            throw new InvalidOperationException("The corrected turn is not part of the current track map.");
+
+        var store = new PortableTuningTurnAnnotationStore(Settings.CoachHome);
+        var set = store.Load(identity.TrackConfigurationKey, map.MapIdentity) ?? new TuningTurnAnnotationSet
+        {
+            TrackConfigurationKey = identity.TrackConfigurationKey,
+            MapIdentity = map.MapIdentity
+        };
+        var corrections = set.Corrections.ToList();
+        // A single exact-configuration map file can serve recordings whose
+        // authoritative geometry changes across iRacing builds or captures.
+        // Replace only this geometry's corner correction; preserve the same
+        // corner ID for every other geometry hash so switching races is durable.
+        corrections.RemoveAll(item =>
+            string.Equals(item.GeometryHash, correction.GeometryHash, StringComparison.Ordinal)
+            && string.Equals(item.CornerId, correction.CornerId, StringComparison.Ordinal));
+        corrections.Add(correction);
+        set = set with { Corrections = corrections, UpdatedUtc = DateTimeOffset.UtcNow };
+        _archive.MarkActive(Settings.CoachHome);
+        await store.SaveAsync(set, cancellationToken);
+        var updated = draft with { TurnCorrections = corrections, UpdatedUtc = DateTimeOffset.UtcNow };
+        await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+        if (!IsCurrentTuningDraft(draft)
+            || SelectedTuningMap is null
+            || !string.Equals(SelectedTuningMap.MapIdentity, map.MapIdentity, StringComparison.Ordinal)) return;
+        TuningDraft = updated;
+        SelectedTuningMap = PortableTuningTurnAnnotationStore.Merge(map, set);
+        if (CurrentAnalysis is not null
+            && SelectedTuningRace is not null
+            && ProgressiveTuningCoordinator.Matches(SelectedTuningRace, CurrentAnalysis.TuningIdentity))
+            CurrentAnalysis = CurrentAnalysis with { TuningMap = SelectedTuningMap };
+        RaiseChanged();
+    }
+
+    public async Task SelectTuningOpenTargetAsync(string? raceId, CancellationToken cancellationToken = default)
+    {
+        var selectionEpoch = Interlocked.Increment(ref _tuningTargetSelectionEpoch);
+        var draft = TuningDraft;
+        var representativeRaceId = SelectedTuningRaceId;
+        var race = Races.FirstOrDefault(item => string.Equals(item.Id, raceId?.Trim(), StringComparison.Ordinal));
+        if (race is null)
+        {
+            using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+            if (!IsCurrentTuningTargetRequest(selectionEpoch, draft, representativeRaceId)) return;
+            var currentDraft = TuningDraft;
+            var updated = currentDraft with { OpenSetupTarget = null, UpdatedUtc = DateTimeOffset.UtcNow };
+            await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
+            if (!IsCurrentTuningTargetSelection(selectionEpoch, currentDraft, representativeRaceId)) return;
+            SelectedTuningTargetRaceId = string.Empty;
+            SelectedTuningTarget = null;
+            TuningDraft = updated;
+            RaiseChanged();
+            return;
+        }
+        var workspace = await LoadTuningWorkspaceAsync(race, cancellationToken);
+        if (!IsCurrentTuningTargetRequest(selectionEpoch, draft, representativeRaceId)) return;
+        var candidate = ProgressiveTuningCoordinator.Candidate(race, workspace);
+        var target = ProgressiveTuningCoordinator.OpenTarget(candidate)
+            ?? throw new InvalidOperationException(string.Join(" ", candidate.Eligibility.MissingRequired.Concat(candidate.Eligibility.Blockers)));
+        if (!ProgressiveTuningCoordinator.CompatibleOpenTarget(draft.RepresentativeSession, target.Baseline))
+            throw new InvalidOperationException("The open setup target must match the representative race's exact car and track configuration.");
+        using var targetMutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        if (!IsCurrentTuningTargetRequest(selectionEpoch, draft, representativeRaceId)) return;
+        var currentTargetDraft = TuningDraft;
+        var updatedTargetDraft = currentTargetDraft with { OpenSetupTarget = target, UpdatedUtc = DateTimeOffset.UtcNow };
+        await SaveTuningDraftSnapshotAsync(updatedTargetDraft, cancellationToken);
+        if (!IsCurrentTuningTargetSelection(selectionEpoch, currentTargetDraft, representativeRaceId)) return;
+        SelectedTuningTargetRaceId = race.Id;
+        SelectedTuningTarget = target;
+        TuningDraft = updatedTargetDraft;
+        RaiseChanged();
+    }
+
+    public async Task SubmitStructuredTuningAsync(CancellationToken cancellationToken = default)
+    {
+        var race = SelectedTuningRace ?? throw new InvalidOperationException("Choose a representative race first.");
+        var draft = TuningDraft;
+        var selectionEpoch = Volatile.Read(ref _tuningRaceSelectionEpoch);
+        var representative = draft.RepresentativeSession;
+        if (!ProgressiveTuningCoordinator.Matches(race, representative))
+            throw new InvalidOperationException("Reload the representative race before requesting a recommendation.");
+        if (draft.Feedback.Count == 0)
+            throw new InvalidOperationException("Describe at least one handling issue before requesting a recommendation.");
+        if (draft.RepresentativeRunIds.Count == 0)
+            throw new InvalidOperationException("This race has no comparison-eligible run with enough clean green laps.");
+        var evidenceCandidate = ProgressiveTuningCoordinator.Candidate(race, CurrentAnalysis);
+        if (!evidenceCandidate.Eligibility.CanUseAsEvidence)
+            throw new InvalidOperationException(string.Join(" ", evidenceCandidate.Eligibility.MissingRequired));
+        var target = evidenceCandidate.Eligibility.CanReceiveGarageRecommendation
+            ? ProgressiveTuningCoordinator.OpenTarget(evidenceCandidate)
+            : SelectedTuningTarget;
+        if (target is null || !ProgressiveTuningCoordinator.CompatibleOpenTarget(representative, target.Baseline))
+            throw new InvalidOperationException("Choose a verified open-setup recording for the same exact car and track configuration.");
+        var mapSubmission = ProgressiveTuningCoordinator.BuildMapSubmission(
+            representative,
+            SelectedTuningMap ?? throw new InvalidOperationException("A recorded track map is required for corner-specific tuning."),
+            draft.TurnCorrections);
+
+        TuningMessage = "Building one controlled setup test…";
+        RaiseChanged();
+        try
+        {
+            var deterministicPayload = BuildStructuredTuningPayload(draft, representative, target, mapSubmission);
+            var result = await CallBackendAsync(
+                "recommend_structured_open_setup_tuning",
+                deterministicPayload,
+                cancellationToken);
+            var deterministicResult = RuntimeMapper.StructuredTuning(result);
+            if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id) || !IsCurrentTuningDraft(draft)) return;
+            StructuredTuningResult = deterministicResult;
+            await TryApplyBoundedTuningCoachAsync(
+                deterministicResult,
+                target,
+                deterministicPayload,
+                draft,
+                selectionEpoch,
+                race.Id,
+                cancellationToken);
+            if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id) || !IsCurrentTuningDraft(draft)) return;
+            var chosen = StructuredTuningResult.CandidateWhitelist.FirstOrDefault(item =>
+                    string.Equals(item.CandidateId, StructuredTuningResult.Recommendation.SelectedCandidateId, StringComparison.Ordinal))
+                ?? StructuredTuningResult.CandidateWhitelist.FirstOrDefault();
+            if (chosen is not null)
+            {
+                TuningExperiment = new TuningExperimentView(
+                    StructuredTuningResult.ExperimentId,
+                    chosen.System,
+                    chosen.Change,
+                    chosen.PredictedEffect,
+                    chosen.Risk,
+                    target.Baseline.SetupFingerprint,
+                    chosen.Verify,
+                    "Waiting for a comparison run");
+            }
+            ExperimentGenerated = chosen is not null;
+            TuningMessage = chosen is null
+                ? string.Join(" ", StructuredTuningResult.MissingRequired.Concat(StructuredTuningResult.Limitations)).Trim()
+                : "One controlled setup test is ready.";
+        }
+        catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
+        {
+            if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id) || !IsCurrentTuningDraft(draft)) return;
+            TuningMessage = Bound(ex.Message);
+            Notify("A safe tuning change could not be recommended from this evidence.");
+        }
+        RaiseChanged();
+    }
+
+    private Dictionary<string, object?> BuildStructuredTuningPayload(
+        ProgressiveTuningDraft draft,
+        TuningSessionIdentity representative,
+        TuningSetupTarget target,
+        TuningMapSubmissionIdentity mapSubmission)
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["analysis_path"] = representative.AnalysisPath,
+            ["open_target_analysis_path"] = target.Baseline.AnalysisPath,
+            ["archive_root"] = Settings.ArchiveRoot,
+            ["feedback"] = draft.Feedback.Select(item => new
+            {
+                feedback_id = item.FeedbackId,
+                corner_id = item.CornerId,
+                corner_label = item.CornerLabel,
+                start_pct = item.StartPct,
+                apex_pct = item.ApexPct,
+                end_pct = item.EndPct,
+                run_phase = item.RunPhase,
+                corner_phases = item.CornerPhases,
+                symptom_id = item.SymptomId,
+                severity = item.Severity,
+                driver_confidence = item.DriverConfidence,
+                note = item.Note,
+                priority = item.Priority
+            }).ToArray(),
+            ["representative_run_ids"] = draft.RepresentativeRunIds,
+            ["map_identity"] = mapSubmission,
+            ["ruleset_id"] = draft.RulesetId,
+            ["goal"] = draft.Goal,
+            ["generic_note"] = draft.GeneralNote,
+            ["maximum_changes"] = 1
+        };
+        return payload;
+    }
+
+    private async Task TryApplyBoundedTuningCoachAsync(
+        StructuredTuningResultView deterministicResult,
+        TuningSetupTarget target,
+        IReadOnlyDictionary<string, object?> deterministicPayload,
+        ProgressiveTuningDraft draft,
+        long selectionEpoch,
+        string raceId,
+        CancellationToken cancellationToken)
+    {
+        if (!CoachEngine.ChatGptConnected
+            || !deterministicResult.Eligibility.CanReceiveGarageRecommendation
+            || deterministicResult.CandidateWhitelist.Count == 0
+            || deterministicResult.Evidence.Count == 0)
+            return;
+
+        try
+        {
+            var evidence = ProgressiveTuningCoordinator.BuildAiEvidence(deterministicResult, target.Baseline);
+            var boundedRequest = ProgressiveTuningCoordinator.BuildBoundedAiRequest(deterministicResult, target.Baseline);
+            if (boundedRequest is null) return;
+            Settings.CoachThreadIds.TryGetValue(evidence.WorkflowKey, out var threadId);
+            var instruction =
+                "Select exactly one candidate from candidate_whitelist. Cite only supplied evidence IDs. " +
+                "Do not invent setup values, telemetry, causes, legality, or additional changes.";
+            var reply = await _coachEngine.AskStructuredCoachAsync(
+                threadId,
+                instruction,
+                boundedRequest.Json,
+                "ai-tuning-output.schema.json",
+                cancellationToken);
+            if (!IsCurrentTuningRaceSelection(selectionEpoch, raceId) || !IsCurrentTuningDraft(draft)) return;
+            if (!string.IsNullOrWhiteSpace(reply.ThreadId))
+            {
+                Settings.CoachThreadIds[evidence.WorkflowKey] = reply.ThreadId;
+                PersistSettingsQuietly();
+            }
+
+            var selection = JsonSerializer.Deserialize<TuningAiSelection>(reply.Text);
+            if (selection is null) return;
+            var validation = ProgressiveTuningCoordinator.ValidateAiSelection(
+                deterministicResult,
+                selection,
+                boundedRequest.CandidateIds,
+                boundedRequest.EvidenceIds);
+            if (!validation.Valid || validation.Selection is null) return;
+
+            var synthesizedPayload = new Dictionary<string, object?>(deterministicPayload, StringComparer.Ordinal)
+            {
+                ["ai_response"] = validation.Selection
+            };
+            var synthesizedResponse = await CallBackendAsync(
+                "recommend_structured_open_setup_tuning",
+                synthesizedPayload,
+                cancellationToken);
+            if (!IsCurrentTuningRaceSelection(selectionEpoch, raceId) || !IsCurrentTuningDraft(draft)) return;
+            var synthesizedResult = RuntimeMapper.StructuredTuning(synthesizedResponse);
+            var synthesizedSelection = new TuningAiSelection(
+                synthesizedResult.Recommendation.SelectedCandidateId,
+                synthesizedResult.Recommendation.Summary,
+                synthesizedResult.Recommendation.EvidenceIds,
+                synthesizedResult.Recommendation.Conflicts,
+                synthesizedResult.Recommendation.ConfidenceReasons);
+            var synthesizedValidation = ProgressiveTuningCoordinator.ValidateAiSelection(deterministicResult, synthesizedSelection);
+            if (synthesizedValidation.Valid
+                && string.Equals(synthesizedResult.ExperimentId, deterministicResult.ExperimentId, StringComparison.Ordinal)
+                && string.Equals(synthesizedResult.Recommendation.SelectedCandidateId, validation.Selection.SelectedCandidateId, StringComparison.Ordinal)
+                && synthesizedResult.CandidateWhitelist.Any(item =>
+                    string.Equals(item.CandidateId, validation.Selection.SelectedCandidateId, StringComparison.Ordinal)))
+                StructuredTuningResult = synthesizedResult;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // A Coach-side timeout must not discard the deterministic recommendation.
+        }
+        catch (Exception ex) when (ex is IOException
+                                   or InvalidOperationException
+                                   or JsonException
+                                   or TimeoutException
+                                   or BackendProtocolException
+                                   or BackendDomainException
+                                   or InvalidDataException)
+        {
+            // AI synthesis is optional. The deterministic result remains authoritative.
+        }
+    }
+
+    public TuningAiEvidenceView? BuildTuningAiEvidence() =>
+        StructuredTuningResult is null || SelectedTuningTarget is null
+            ? null
+            : ProgressiveTuningCoordinator.BuildAiEvidence(StructuredTuningResult, SelectedTuningTarget.Baseline);
+
+    public TuningAiSelectionValidation ValidateTuningAiSelection(TuningAiSelection selection) =>
+        StructuredTuningResult is null
+            ? new TuningAiSelectionValidation(false, null, ["Run deterministic tuning analysis before requesting AI synthesis."])
+            : ProgressiveTuningCoordinator.ValidateAiSelection(StructuredTuningResult, selection);
+
+    private void ActivateTuningAnalysis(RecentRace race)
+    {
+        if (CurrentAnalysis is null) throw new InvalidOperationException("The representative race analysis is not loaded.");
+        var identity = ProgressiveTuningCoordinator.Bind(
+            CurrentAnalysis.TuningIdentity ?? ProgressiveTuningCoordinator.FromRace(race), race);
+        CurrentAnalysis = CurrentAnalysis with { TuningIdentity = identity };
+        var candidate = ProgressiveTuningCoordinator.Candidate(race, CurrentAnalysis);
+        var map = CurrentAnalysis.TuningMap;
+        TuningTurnAnnotationSet? annotations = null;
+        if (map is not null && !string.IsNullOrWhiteSpace(identity.TrackConfigurationKey) && !string.IsNullOrWhiteSpace(map.MapIdentity))
+        {
+            try
+            {
+                annotations = new PortableTuningTurnAnnotationStore(Settings.CoachHome)
+                    .Load(identity.TrackConfigurationKey, map.MapIdentity);
+            }
+            catch (InvalidDataException ex)
+            {
+                _ = StructuredAppLog.Record("tuning turn annotations", ex, AppVersion);
+            }
+        }
+        SelectedTuningMap = map is null ? null : PortableTuningTurnAnnotationStore.Merge(map, annotations);
+        CurrentAnalysis = CurrentAnalysis with { TuningMap = SelectedTuningMap };
+
+        ProgressiveTuningDraft? saved = null;
+        try { saved = new PortableTuningDraftStore(Settings.CoachHome).Load(identity); }
+        catch (InvalidDataException ex) { _ = StructuredAppLog.Record("tuning draft", ex, AppVersion); }
+        var selfTarget = ProgressiveTuningCoordinator.OpenTarget(candidate);
+        var savedTarget = saved?.OpenSetupTarget;
+        SelectedTuningTarget = selfTarget
+            ?? (savedTarget is not null && ProgressiveTuningCoordinator.CompatibleOpenTarget(identity, savedTarget.Baseline)
+                ? savedTarget
+                : null);
+        SelectedTuningTargetRaceId = SelectedTuningTarget?.Baseline.RaceId ?? string.Empty;
+        var defaultRun = CurrentAnalysis.Runs
+            .Where(run => run.ComparisonEligible && run.CoachingReferenceLapCount >= 6)
+            .OrderByDescending(run => run.GreenLaps)
+            .ThenBy(run => run.CautionLaps)
+            .ThenByDescending(run => run.Laps.Count)
+            .ThenBy(run => run.Number)
+            .FirstOrDefault();
+        var runIds = saved?.RepresentativeRunIds.Count > 0
+            ? saved.RepresentativeRunIds
+            : defaultRun is null ? [] : [defaultRun.Number.ToString(CultureInfo.InvariantCulture)];
+        TuningDraft = (saved ?? new ProgressiveTuningDraft()) with
+        {
+            RepresentativeSession = identity,
+            OpenSetupTarget = SelectedTuningTarget,
+            RepresentativeRunIds = runIds,
+            MapIdentity = SelectedTuningMap?.MapIdentity ?? string.Empty,
+            TurnCorrections = annotations?.Corrections ?? saved?.TurnCorrections ?? [],
+            UpdatedUtc = saved?.UpdatedUtc ?? DateTimeOffset.UtcNow
+        };
+        TuningNotes = TuningDraft.GeneralNote;
+        SelectedTuningTurnId = string.Empty;
+        StructuredTuningResult = null;
+        SyncLegacyTuningFeedback();
+        TuningMessage = candidate.Eligibility.CanReceiveGarageRecommendation
+            ? "Choose a turn and describe what the car did."
+            : candidate.Eligibility.CanUseAsEvidence
+                ? "This race can supply driving evidence. Choose a matching open setup before requesting a garage change."
+                : string.Join(" ", candidate.Eligibility.MissingRequired);
+    }
+
+    private async Task<AnalysisWorkspace> LoadTuningWorkspaceAsync(RecentRace race, CancellationToken cancellationToken)
+    {
+        if (CurrentAnalysis is not null
+            && ProgressiveTuningCoordinator.Matches(race, CurrentAnalysis.TuningIdentity)
+            && HasAuthoritativeTuningGeometry(CurrentAnalysis))
+            return CurrentAnalysis;
+        if (!string.IsNullOrWhiteSpace(race.AnalysisPath) && File.Exists(race.AnalysisPath))
+        {
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(race.AnalysisPath, cancellationToken));
+            var archived = RuntimeMapper.ArchivedAnalysis(document.RootElement);
+            EnsureAnalysisMatchesSession(race, archived);
+            archived = archived with
+            {
+                TuningIdentity = ProgressiveTuningCoordinator.Bind(
+                    archived.TuningIdentity ?? ProgressiveTuningCoordinator.FromRace(race), race)
+            };
+            // Pre-progressive archives can carry an open setup but no stable
+            // geometry identity. Reanalyze instead of treating a synthesized
+            // track/layout label as exact target provenance.
+            if (HasAuthoritativeTuningGeometry(archived)) return archived;
+        }
+        var response = await CallBackendAsync("analyze_iracing_race", new
+        {
+            selector = race.EffectiveSelector,
+            iracing_root = Settings.IRacingRoot,
+            archive_root = Settings.ArchiveRoot,
+            target_hz = 20
+        }, cancellationToken);
+        EnsureResponseMatchesSession(race, response);
+        var analysis = RuntimeMapper.Analysis(response);
+        EnsureAnalysisMatchesSession(race, analysis);
+        analysis = analysis with
+        {
+            TuningIdentity = ProgressiveTuningCoordinator.Bind(
+                analysis.TuningIdentity ?? ProgressiveTuningCoordinator.FromRace(race), race)
+        };
+        if (!HasAuthoritativeTuningGeometry(analysis))
+            throw new InvalidDataException("This recording could not provide an authoritative track-geometry identity after reanalysis.");
+        return analysis;
+    }
+
+    private static bool HasAuthoritativeTuningGeometry(AnalysisWorkspace analysis)
+    {
+        var hash = analysis.VectorGeometry?.GeometryHash?.Trim() ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(analysis.TuningIdentity?.TrackConfigurationKey)
+            && hash.Length == 64
+            && hash.All(Uri.IsHexDigit);
+    }
+
+    private async Task SaveTuningDraftAsync(CancellationToken cancellationToken)
+        => await SaveTuningDraftSnapshotAsync(TuningDraft, cancellationToken);
+
+    private async Task SaveTuningDraftSnapshotAsync(ProgressiveTuningDraft draft, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(draft.RepresentativeSession.AnalysisId)
+            || string.IsNullOrWhiteSpace(draft.RepresentativeSession.AnalysisPath))
+            throw new InvalidOperationException("Load an exact analyzed recording before saving tuning feedback.");
+        _archive.MarkActive(Settings.CoachHome);
+        await new PortableTuningDraftStore(Settings.CoachHome).SaveAsync(draft, cancellationToken);
+    }
+
+    private async ValueTask<IDisposable> EnterTuningDraftMutationAsync(CancellationToken cancellationToken)
+    {
+        await _tuningDraftMutationGate.WaitAsync(cancellationToken);
+        return new SemaphoreReleaser(_tuningDraftMutationGate);
+    }
+
+    private sealed class SemaphoreReleaser(SemaphoreSlim semaphore) : IDisposable
+    {
+        private SemaphoreSlim? _semaphore = semaphore;
+
+        public void Dispose() => Interlocked.Exchange(ref _semaphore, null)?.Release();
+    }
+
+    private bool IsCurrentTuningRaceSelection(long epoch, string raceId) =>
+        Volatile.Read(ref _tuningRaceSelectionEpoch) == epoch
+        && string.Equals(SelectedTuningRaceId, raceId, StringComparison.Ordinal);
+
+    private bool IsCurrentTuningTargetSelection(
+        long epoch,
+        ProgressiveTuningDraft draft,
+        string representativeRaceId) =>
+        Volatile.Read(ref _tuningTargetSelectionEpoch) == epoch
+        && string.Equals(SelectedTuningRaceId, representativeRaceId, StringComparison.Ordinal)
+        && IsCurrentTuningDraft(draft);
+
+    private bool IsCurrentTuningTargetRequest(
+        long epoch,
+        ProgressiveTuningDraft draft,
+        string representativeRaceId) =>
+        Volatile.Read(ref _tuningTargetSelectionEpoch) == epoch
+        && string.Equals(SelectedTuningRaceId, representativeRaceId, StringComparison.Ordinal)
+        && IsCurrentTuningDraftIdentity(draft);
+
+    private bool IsCurrentTuningDraft(ProgressiveTuningDraft draft) =>
+        ReferenceEquals(TuningDraft, draft)
+        && IsCurrentTuningDraftIdentity(draft);
+
+    private bool IsCurrentTuningDraftIdentity(ProgressiveTuningDraft draft) =>
+        string.Equals(TuningDraft.DraftId, draft.DraftId, StringComparison.Ordinal)
+        && string.Equals(SelectedTuningRaceId, draft.RepresentativeSession.RaceId, StringComparison.Ordinal)
+        && string.Equals(
+            ProgressiveTuningCoordinator.TuningIdentityKey(TuningDraft.RepresentativeSession),
+            ProgressiveTuningCoordinator.TuningIdentityKey(draft.RepresentativeSession),
+            StringComparison.Ordinal);
+
+    private void SyncLegacyTuningFeedback()
+    {
+        TuningFeedback.Clear();
+        TuningFeedback.AddRange(TuningDraft.Feedback.Select(item => new TuningFeedbackDraft(
+            string.IsNullOrWhiteSpace(item.CornerLabel) ? item.CornerId : item.CornerLabel,
+            Humanize(item.RunPhase),
+            item.CornerPhases.Count == 0 ? "Whole corner" : string.Join(", ", item.CornerPhases.Select(Humanize)),
+            Humanize(item.SymptomId),
+            TuningScale(item.Severity),
+            TuningScale(item.DriverConfidence),
+            item.Priority >= 4,
+            item.Note,
+            item.FeedbackId)));
+    }
+
+    private static string NormalizeTuningRunPhase(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "early" or "early run" => "early",
+        "late" or "late run" => "late",
+        _ => "middle"
+    };
+
+    private static string RequireTuningRunPhase(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "early" or "early run" => "early",
+        "middle" or "mid" or "mid run" or "middle run" => "middle",
+        "late" or "late run" => "late",
+        _ => throw new InvalidOperationException("Run phase must be early, middle, or late.")
+    };
+
+    private TuningTurn RequireCurrentTuningTurn(string cornerId)
+    {
+        var race = SelectedTuningRace ?? throw new InvalidOperationException("Choose a representative race first.");
+        if (!ProgressiveTuningCoordinator.Matches(race, TuningDraft.RepresentativeSession))
+            throw new InvalidOperationException("Reload the representative race before saving corner feedback.");
+        var map = SelectedTuningMap ?? throw new InvalidOperationException("Load this race's current track map before saving corner feedback.");
+        if (!string.Equals(TuningDraft.MapIdentity, map.MapIdentity, StringComparison.Ordinal))
+            throw new InvalidOperationException("The corner feedback belongs to an older track map.");
+        return map.Turns.FirstOrDefault(turn => string.Equals(turn.CornerId, cornerId, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException("The selected turn is not part of the current track map.");
+    }
+
+    private ProgressiveTuningFeedback ValidateTuningFeedback(ProgressiveTuningFeedback feedback)
+    {
+        var turn = RequireCurrentTuningTurn(feedback.CornerId.Trim());
+        if (feedback.StartPct is not { } start
+            || feedback.ApexPct is not { } apex
+            || feedback.EndPct is not { } end
+            || !double.IsFinite(start) || !double.IsFinite(apex) || !double.IsFinite(end)
+            || start is < 0 or >= 1 || apex is < 0 or >= 1 || end is < 0 or >= 1
+            || Math.Abs(start - turn.StartPct) > 0.000001
+            || Math.Abs(apex - turn.ApexPct) > 0.000001
+            || Math.Abs(end - turn.EndPct) > 0.000001)
+            throw new InvalidOperationException("The corner feedback belongs to different turn bounds. Reload the current map and try again.");
+        var symptom = feedback.SymptomId.Trim().ToLowerInvariant().Replace('_', '-');
+        if (symptom is not ("good" or "tight" or "loose" or "unstable-braking" or "wheel-hop-lock"
+            or "wheelspin" or "cant-take-throttle" or "bottoming" or "harsh-skating" or "low-grip" or "other"))
+            throw new InvalidOperationException("Choose a supported handling description.");
+        var phases = feedback.CornerPhases.Count == 0
+            ? ["whole"]
+            : feedback.CornerPhases.Select(value => value.Trim().ToLowerInvariant()).Distinct(StringComparer.Ordinal).ToArray();
+        if (phases.Any(phase => phase is not ("entry" or "center" or "exit" or "whole")))
+            throw new InvalidOperationException("Corner phase must be entry, center, exit, or whole corner.");
+        if (feedback.Note.Trim().Length > 2_000)
+            throw new InvalidOperationException("Corner feedback notes must be 2,000 characters or fewer.");
+        if (feedback.FeedbackId.Trim().Length is < 1 or > 160)
+            throw new InvalidOperationException("Corner feedback identity is invalid.");
+        return NormalizeTuningFeedback(feedback with
+        {
+            CornerLabel = turn.Label,
+            StartPct = turn.StartPct,
+            ApexPct = turn.ApexPct,
+            EndPct = turn.EndPct,
+            RunPhase = RequireTuningRunPhase(feedback.RunPhase),
+            CornerPhases = phases,
+            SymptomId = symptom
+        });
+    }
+
+    private static ProgressiveTuningFeedback NormalizeTuningFeedback(ProgressiveTuningFeedback feedback) => feedback with
+    {
+        CornerId = feedback.CornerId.Trim(),
+        CornerLabel = feedback.CornerLabel.Trim(),
+        RunPhase = NormalizeTuningRunPhase(feedback.RunPhase),
+        CornerPhases = feedback.CornerPhases.Select(value => value.Trim().ToLowerInvariant()).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).ToArray(),
+        SymptomId = feedback.SymptomId.Trim().ToLowerInvariant(),
+        Severity = Math.Clamp(feedback.Severity, 1, 5),
+        DriverConfidence = Math.Clamp(feedback.DriverConfidence, 1, 5),
+        Priority = Math.Clamp(feedback.Priority, 1, 5),
+        Note = feedback.Note.Trim()
+    };
+
+    private static bool IsForwardTuningTurn(double start, double apex, double end)
+    {
+        const double epsilon = 0.000001;
+        var arc = (end - start + 1) % 1;
+        var apexDistance = (apex - start + 1) % 1;
+        return arc > epsilon && apexDistance > epsilon && apexDistance < arc - epsilon;
+    }
+
+    private static string TuningScale(int value) => Math.Clamp(value, 1, 5) switch
+    {
+        1 => "Low",
+        2 => "Mild",
+        4 => "High",
+        5 => "Very high",
+        _ => "Moderate"
+    };
 
     private string BuildTuningSymptom()
     {
@@ -752,7 +1601,8 @@ public sealed class CompanionState : IDisposable
         {
             return string.Join(" ", TuningFeedback.Select((item, index) =>
                 $"Issue {index + 1}: {item.Severity} {item.Balance.ToLowerInvariant()} at {item.CornerPhase.ToLowerInvariant()} in {item.Corner} during the {item.RunPhase.ToLowerInvariant()}. Driver confidence: {item.Confidence.ToLowerInvariant()}." +
-                (item.Priority ? " This is the driver's highest-priority issue." : string.Empty)));
+                (item.Priority ? " This is the driver's highest-priority issue." : string.Empty) +
+                (string.IsNullOrWhiteSpace(item.Note) ? string.Empty : $" Driver note: {item.Note.Trim()}")));
         }
         if (!string.IsNullOrWhiteSpace(TuningBalance))
         {
@@ -764,24 +1614,37 @@ public sealed class CompanionState : IDisposable
         return SymptomText.Trim();
     }
 
-    public async Task RecordOutcomeAsync(string outcome, CancellationToken cancellationToken = default)
+    public Task RecordOutcomeAsync(string outcome, CancellationToken cancellationToken = default) =>
+        RecordOutcomeAsync(outcome, null, cancellationToken);
+
+    public async Task RecordOutcomeAsync(string outcome, string? resultAnalysisPath, CancellationToken cancellationToken = default)
     {
-        if (TuningExperiment is null) return;
+        var experiment = TuningExperiment;
+        if (experiment is null) return;
+        if (string.IsNullOrWhiteSpace(resultAnalysisPath) && SelectedTuningResultRaceId.Length > 0)
+            resultAnalysisPath = SelectedTuningResultRace?.AnalysisPath;
         try
         {
             _ = await CallBackendAsync("record_open_setup_feedback", new
             {
-                experiment_id = TuningExperiment.ExperimentId,
+                experiment_id = experiment.ExperimentId,
                 outcome,
                 notes = FeedbackNotes.Trim(),
-                archive_root = Settings.ArchiveRoot
+                archive_root = Settings.ArchiveRoot,
+                result_analysis_path = string.IsNullOrWhiteSpace(resultAnalysisPath) ? null : resultAnalysisPath
             }, cancellationToken);
-            TuningExperiment = TuningExperiment with { Outcome = Humanize(outcome) };
-            Notify("Outcome saved with the experiment.");
+            if (TuningExperiment is not null
+                && string.Equals(TuningExperiment.ExperimentId, experiment.ExperimentId, StringComparison.Ordinal))
+            {
+                TuningExperiment = TuningExperiment with { Outcome = Humanize(outcome) };
+                Notify("Outcome saved with the experiment.");
+            }
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException)
         {
             Notify($"The outcome was not saved: {Bound(ex.Message)}");
+            RaiseChanged();
+            throw;
         }
         RaiseChanged();
     }
@@ -994,6 +1857,7 @@ public sealed class CompanionState : IDisposable
         try
         {
             _garage61Credentials.Remove();
+            SaveSettingsToStore();
             await RefreshDataAsync(false, cancellationToken);
             Toast = "Garage61 was disconnected from this PC.";
         }
@@ -1002,6 +1866,52 @@ public sealed class CompanionState : IDisposable
             Toast = $"Garage61 could not be disconnected: {Bound(ex.Message)}";
         }
         RaiseChanged();
+    }
+
+    public async Task SyncGarage61ReferencesAsync(CancellationToken cancellationToken = default)
+    {
+        var race = SelectedRaceSession;
+        if (!Garage61.Available || !TryGetAnalysisPath(race, out var analysisPath)) return;
+        if (Interlocked.CompareExchange(ref _garage61ReferenceSyncActive, 1, 0) != 0) return;
+
+        Garage61ReferenceMessage = "Finding comparable laps…";
+        RaiseChanged();
+        try
+        {
+            var result = await CallBackendAsync("sync_garage61_references", new
+            {
+                analysis_path = analysisPath,
+                archive_root = Settings.ArchiveRoot,
+                maximum_laps = 6,
+                download_telemetry = true
+            }, cancellationToken);
+            var references = RuntimeMapper.Garage61References(result)
+                ?? throw new InvalidDataException("Garage61 returned no reference result.");
+            if (IsCurrentRace(race) && CurrentAnalysis is not null)
+                CurrentAnalysis = CurrentAnalysis with { Garage61References = references };
+            InvalidateUiAnalysisCache(race!);
+
+            if (IsCurrentRace(race)) Garage61ReferenceMessage = references.Laps.Count switch
+            {
+                0 => "No comparable Garage61 laps were found for this race.",
+                1 => "One Garage61 reference lap is ready.",
+                _ => $"{references.Laps.Count} Garage61 reference laps are ready."
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (IsCurrentRace(race)) Garage61ReferenceMessage = "Garage61 search cancelled.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException or JsonException or TimeoutException)
+        {
+            LastRecoverableError = StructuredAppLog.Record("Garage61 reference search", ex, AppVersion);
+            if (IsCurrentRace(race)) Garage61ReferenceMessage = Garage61ReferenceFailure(ex.Message);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _garage61ReferenceSyncActive, 0);
+            RaiseChanged();
+        }
     }
 
     public async Task VerifyInstallationAsync(CancellationToken cancellationToken = default)
@@ -1223,7 +2133,10 @@ public sealed class CompanionState : IDisposable
     public void SaveRaceAnalysisTracePreferences()
     {
         Settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
-        _ = AnalysisTraceLayouts.ValidateAndRepair(Settings.RaceAnalysisTraces);
+        Settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
+        _ = AnalysisTraceLayoutSets.ValidateAndRepair(Settings.RaceAnalysisTraceLayouts, Settings.RaceAnalysisTraces);
+        Settings.RaceAnalysisTraces = AnalysisTraceLayoutSets.CloneLayout(
+            AnalysisTraceLayoutSets.Active(Settings.RaceAnalysisTraceLayouts).Named.Layout);
         PersistSettingsQuietly();
         RaiseChanged();
     }
@@ -1312,8 +2225,9 @@ public sealed class CompanionState : IDisposable
             }
             Diagnostics = BuildDiagnostics(_lastBackendHealth);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            LastRecoverableError = StructuredAppLog.Record("prepare portable copy", ex, AppVersion);
             SettingsMessage = $"The backup check could not finish: {Bound(ex.Message)}";
             Toast = "The portable folder is not ready to copy.";
         }
@@ -1454,8 +2368,8 @@ public sealed class CompanionState : IDisposable
         {
             PlanSetupType = latest.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase) ? "Open" : "Fixed";
         }
-        if (SelectedTuningRaceId.Length == 0 || TuningRaces.All(race => race.Id != SelectedTuningRaceId))
-            SelectedTuningRaceId = TuningRaces.FirstOrDefault()?.Id ?? string.Empty;
+        if (SelectedTuningRaceId.Length == 0 || TuningEvidenceRaces.All(race => race.Id != SelectedTuningRaceId))
+            SelectedTuningRaceId = TuningEvidenceRaces.FirstOrDefault()?.Id ?? string.Empty;
     }
 
     private void ApplyBrowserDefault()
@@ -1541,7 +2455,7 @@ public sealed class CompanionState : IDisposable
     [
         new("App", $"v{AppVersion} · Windows x64", "ready"),
         new("Race analysis service", health.Ok ? $"Ready · {BackendVersionLabel(health.ServerVersion)} · {health.ToolCount} tools" : health.Error ?? "Unavailable", health.Ok ? "ready" : "warning"),
-        new("Contract compatibility", health.Ok && health.ToolCount == 16 ? "Compatible · MCP v1" : $"Expected 16 tools; found {health.ToolCount}", health.Ok && health.ToolCount == 16 ? "ready" : "warning"),
+        new("Contract compatibility", health.Ok && health.ToolCount == 17 ? "Compatible · MCP v1" : $"Expected 17 tools; found {health.ToolCount}", health.Ok && health.ToolCount == 17 ? "ready" : "warning"),
         new("Coach Engine", CoachEngine.Installed ? $"{CoachEngine.RuntimeVersion} · {(CoachEngine.Running ? "running" : "stopped")}" : CoachEngine.Message, CoachEngine.Installed ? "ready" : "warning"),
         new("ChatGPT", CoachEngine.ChatGptConnected ? "Connected" : "Not connected; deterministic features remain available", CoachEngine.ChatGptConnected ? "ready" : "neutral"),
         new("iRacing folder", Settings.IRacingRoot, Directory.Exists(Settings.IRacingRoot) ? "ready" : "warning"),
@@ -1680,6 +2594,55 @@ public sealed class CompanionState : IDisposable
     }
 
     private static string Bound(string value) => value.Length <= 240 ? value : value[..240] + "…";
+
+    private bool TryGetAnalysisPath(RecentRace? race, out string analysisPath)
+    {
+        analysisPath = string.Empty;
+        var candidate = race?.AnalysisPath;
+        if (string.IsNullOrWhiteSpace(candidate)) return false;
+        try
+        {
+            var fullPath = Path.GetFullPath(candidate);
+            var archiveRoot = Path.GetFullPath(Settings.ArchiveRoot).TrimEnd(Path.DirectorySeparatorChar);
+            if (!fullPath.StartsWith(archiveRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                !File.Exists(fullPath)) return false;
+            analysisPath = fullPath;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private bool IsCurrentRace(RecentRace? race) => race is not null && SelectedRaceSession is { } current && SameRace(current, race);
+
+    private void InvalidateUiAnalysisCache(RecentRace race)
+    {
+        try
+        {
+            var path = UiAnalysisCachePath(race);
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _ = StructuredAppLog.Record("Garage61 UI cache refresh", ex, AppVersion);
+        }
+    }
+
+    private static string Garage61ReferenceFailure(string message)
+    {
+        if (message.Contains("permission", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("unauthorized", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("401", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("403", StringComparison.OrdinalIgnoreCase))
+            return "Garage61 needs to be reconnected in Settings.";
+        if (message.Contains("mapping", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("car", StringComparison.OrdinalIgnoreCase) && message.Contains("track", StringComparison.OrdinalIgnoreCase))
+            return "Garage61 could not match this race's car, track, and season.";
+        return "Garage61 could not finish the reference search. Try again.";
+    }
 
     private bool TryLoadUiAnalysisCache(RecentRace race)
     {
@@ -2326,6 +3289,10 @@ public sealed class CompanionState : IDisposable
 
     private void OnLiveTelemetryFrameCaptured(LiveTracePoint frame) => LiveTelemetryFrame?.Invoke(frame);
 
+    private void OnLiveReplayFrameCaptured(LiveReplayCaptureFrame frame) => _liveReplayCapture.Capture(frame);
+
+    private void OnLiveReplaySessionEnded(string reason) => _liveReplayCapture.EndSession(reason);
+
     private async Task InitializeCoachEngineAsync()
     {
         try
@@ -2452,7 +3419,10 @@ public sealed class CompanionState : IDisposable
         _coachRequest?.Dispose();
         _liveTelemetry.Updated -= OnLiveTelemetryUpdated;
         _liveTelemetry.FrameCaptured -= OnLiveTelemetryFrameCaptured;
+        _liveTelemetry.ReplayFrameCaptured -= OnLiveReplayFrameCaptured;
+        _liveTelemetry.ReplaySessionEnded -= OnLiveReplaySessionEnded;
         _liveTelemetry.Dispose();
+        _liveReplayCapture.Dispose();
         _coachEngine.Changed -= OnCoachEngineChanged;
         _coachEngine.CoachMessageDelta -= OnCoachMessageDelta;
         _coachEngine.DisposeAsync().AsTask().GetAwaiter().GetResult();

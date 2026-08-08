@@ -76,7 +76,7 @@ Resolve a session once, then pin follow-up native queries to the exact returned 
 
 Before analysis or a query, reject zero-record, truncated, trailing-partial, recently modified, or changing files. A completed disk IBT must have `file_size == buffer_offset + record_count * buffer_length`. Verify size/mtime across decode and SHA-256 hashing; a source change aborts before report/database/profile writes.
 
-Raw-source retention is reference-only by default: do not silently copy gigabytes of IBTs. Archive full catalogs, compact profiles, derived analyses, and SHA-256 fingerprints. If an original is later deleted, existing artifacts remain usable but new raw-channel queries are unavailable. A future companion app may offer an explicit opt-in hard-link/copy retention policy.
+Raw-source retention is durable for the companion app: once an IBT is finalized and accepted, atomically copy it into the portable content-addressed raw store, verify its SHA-256 identity, and deduplicate identical bytes. Keep the original read-only and never depend on a hard link or continued source-path existence. A pending/failed copy may leave existing derived artifacts usable, but it must stay explicit and retryable until the durable raw object is verified.
 
 ## Race Card derived-data contract
 

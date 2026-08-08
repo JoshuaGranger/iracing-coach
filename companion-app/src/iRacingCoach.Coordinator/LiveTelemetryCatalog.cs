@@ -245,7 +245,7 @@ public static class LiveTelemetryCatalog
             D("on-pit-road", "Pit-road state", "Recorded pit-road state.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], status, 0),
             D("optional-repair", "Optional repair", "Recorded optional repair countdown.", LiveMonitorMetricSource.Recorded, "s", ["s"], all, 0, 0),
             D("pace-range", "Personal pace range", "Clean in-session pace band when enough evidence exists.", LiveMonitorMetricSource.Coach, "time", ["time"], all, 3, 0),
-            D("pit-window", "Laps until recommended pit", "Strategic window when supported, otherwise the fuel hard limit.", LiveMonitorMetricSource.Coach, "laps", ["laps"], all, 0, 0),
+            D("pit-window", "Laps to pit", "Strategic window when supported, otherwise the fuel hard limit.", LiveMonitorMetricSource.Coach, "laps", ["laps"], all, 0, 0),
             D("position", "Position", "Recorded overall scoring position.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], all, 0, 1),
             DWithDefault("rpm", "RPM", "Recorded engine speed.", LiveMonitorMetricSource.Recorded, "rpm", ["rpm"], all, LiveMonitorDisplayStyle.Trend, 0, 0),
             DWithDefault("speed", "Speed", "Recorded vehicle speed.", LiveMonitorMetricSource.Recorded, "mph", ["mph", "km/h"], all, LiveMonitorDisplayStyle.Trend, 1, 0),

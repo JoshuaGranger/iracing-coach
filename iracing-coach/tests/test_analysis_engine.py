@@ -636,7 +636,7 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertIsNotNone(analysis["strategy"]["measured_green_fuel_l_per_lap"])
         self.assertTrue(analysis["track_profile"]["shape"])
         traces = analysis["lap_traces"]
-        self.assertEqual(traces["schema_version"], 1)
+        self.assertEqual(traces["schema_version"], 2)
         self.assertGreaterEqual(traces["trace_count"], 1)
         self.assertLessEqual(
             max(len(trace["points"]) for trace in traces["traces"]),
@@ -651,6 +651,7 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertIn("tire_stress_proxy", first_point)
         self.assertEqual(traces["tire_stress"]["evidence_class"], "proxy")
         self.assertIn("not per-lap tread wear", traces["tire_stress"]["definition"])
+        self.assertTrue(traces["additional_signal_catalog"])
         self.assertEqual(traces["sector_start_pcts"], [0.0, 0.333333, 0.666667])
         self.assertIsNotNone(traces["traces"][0]["fuel_used_gal"])
 
@@ -683,6 +684,54 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertTrue(all(item["explanation"] and item["improvement"] for item in grades["categories"]))
         self.assertTrue(any("capped below A+" in item.get("limitations", "") for item in grades["categories"] if item["key"] == "pace"))
 
+    def test_lap_trace_catalog_exposes_only_recorded_optional_signals(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=2)
+        channels = telemetry["channels"]
+        count = len(channels["Speed"])
+        channels["LFspeed"] = [
+            speed * (1.08 if index % 80 >= 40 else 0.94)
+            for index, speed in enumerate(channels["Speed"])
+        ]
+        channels["BrakeABSactive"] = [index % 80 < 4 for index in range(count)]
+        channels["BrakeABScutPct"] = [0.35 if active else 0.0 for active in channels["BrakeABSactive"]]
+
+        traces = analyze_telemetry(telemetry)["lap_traces"]
+        catalog = {item["id"]: item for item in traces["additional_signal_catalog"]}
+
+        self.assertIn("lf-wheel-speed", catalog)
+        self.assertIn("lf-wheel-slip", catalog)
+        self.assertEqual(catalog["lf-wheel-slip"]["evidence_type"], "derived")
+        self.assertEqual(catalog["lf-wheel-slip"]["source_channels"], ["LFspeed", "Speed"])
+        self.assertIn("abs-active", catalog)
+        self.assertIn("abs-cut", catalog)
+        self.assertIn("track-temperature", catalog)
+        self.assertIn("lf-pressure", catalog)
+        self.assertIn("lf-carcass-temp", catalog)
+        self.assertIn("lf-ride-height", catalog)
+        self.assertNotIn("rf-wheel-speed", catalog)
+        self.assertNotIn("rf-wheel-slip", catalog)
+        point_signals = traces["traces"][0]["points"][0]["additional_signals"]
+        self.assertIn("lf-wheel-speed", point_signals)
+        self.assertIn("lf-wheel-slip", point_signals)
+        self.assertNotIn("rf-wheel-speed", point_signals)
+
+    def test_abs_active_trace_does_not_infer_activation_from_cut_percentage(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=2)
+        count = len(telemetry["channels"]["Speed"])
+        telemetry["channels"]["BrakeABSactive"] = [False] * count
+        telemetry["channels"]["BrakeABScutPct"] = [1.0] * count
+
+        traces = analyze_telemetry(telemetry)["lap_traces"]["traces"]
+        points = [point for trace in traces for point in trace["points"]]
+
+        self.assertTrue(points)
+        self.assertTrue(
+            all(point["additional_signals"]["abs-active"] == 0.0 for point in points)
+        )
+        self.assertTrue(
+            all(point["additional_signals"]["abs-cut"] == 100.0 for point in points)
+        )
+
     def test_tire_temperature_respects_source_unit(self) -> None:
         telemetry = synthetic_telemetry()
         telemetry["channels"]["LFtempCL"] = [212.0] * len(
@@ -696,7 +745,7 @@ class AnalysisEngineTests(unittest.TestCase):
 
         self.assertEqual(
             analysis["analysis_profile_version"],
-            "post-race-damage-repair-corner-phase-v9",
+            "post-race-foundations-v11",
         )
         observed = analysis["runs"][0]["tire_observation"]["tires"]["LF"]
         self.assertEqual(observed["carcass_temperature_f"]["CL"], 212.0)

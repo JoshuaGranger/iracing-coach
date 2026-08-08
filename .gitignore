@@ -21,6 +21,12 @@
 **/credentials/
 **/auth.json
 *.machine-local.json
+**/.env
+**/.env.*
+**/*-key.txt
+**/*.key
+**/*.pfx
+**/*.p12
 
 # .NET and release outputs
 companion-app/**/bin/
@@ -29,6 +35,8 @@ companion-app/**/artifacts/
 companion-app/artifacts/
 companion-app/**/*.log
 companion-app/tools/installer-payload.zip
+**/TestResults/
+*.trx
 
 # Personal telemetry is private. Only the named sanitized test fixtures are source.
 *.ibt

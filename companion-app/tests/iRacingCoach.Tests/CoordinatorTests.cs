@@ -249,6 +249,32 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public void AnalysisMapper_PrefersCanonicalTraceCoordinatesAndSteeringPeakWithLegacyFallback()
+    {
+        using var response = JsonDocument.Parse("""
+        {"analysis_view":{
+          "identity":{"event_type":"Race"},"race_summary":{"recorded_laps":1},"laps":[],"runs":[],
+          "lap_traces":{"traces":[{"lap":1,"complete":true,"flag_state":"green","points":[
+            {"lap_pct":0.1,"latitude":41.12345678,"longitude":-93.12345678,"lat":99.0,"lon":98.0,"steering_abs_peak_rad":0.42,"steering_peak_rad":9.0},
+            {"lap_pct":0.2,"lat":40.25,"lon":-92.75,"steering_peak_rad":0.31}
+          ]}]},
+          "track_profile":{"shape":[],"detected_corner_segments":[]},"strategy":{},"damage_repair":{},"setup_telemetry":{},"data_quality":{}}}
+        """);
+
+        var points = RuntimeMapper.Analysis(response.RootElement).Traces.Single().Points;
+
+        Assert.HasCount(2, points);
+        Assert.AreEqual(41.12345678d, points[0].Latitude);
+        Assert.AreEqual(-93.12345678d, points[0].Longitude);
+        Assert.AreEqual(.42d, points[0].SteeringPeakRadians,
+            "The analyzer's canonical absolute peak must win over the legacy key.");
+        Assert.AreEqual(40.25d, points[1].Latitude);
+        Assert.AreEqual(-92.75d, points[1].Longitude);
+        Assert.AreEqual(.31d, points[1].SteeringPeakRadians,
+            "Previously archived traces using the legacy keys must remain readable.");
+    }
+
+    [TestMethod]
     public void AnalysisMapper_MapsMeasuredPitTireBandsIntoDriverFacingOuterMiddleInnerOrder()
     {
         using var response = JsonDocument.Parse("""
@@ -260,11 +286,16 @@ public sealed class CoordinatorTests
               "LF":{"average_remaining_percent":90,"remaining_percent":{"L":91,"M":90,"R":89},"carcass_temperature_f":{"CL":180,"CM":185,"CR":190},"surface_temperature_f":{"L":175,"M":181,"R":188},"pressure":{"kind":"live","psi":28.4}},
               "RF":{"average_remaining_percent":88,"remaining_percent":{"L":85,"M":88,"R":91},"carcass_temperature_f":{"CL":195,"CM":190,"CR":182},"surface_temperature_f":{"L":198,"M":191,"R":184},"pressure":{"kind":"cold","psi":25.2}}
             }}}],
-          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
+          "lap_traces":{"additional_signal_catalog":[
+            {"id":"lf-wheel-slip","name":"LF wheel slip","unit":"%","category":"Tires","evidence_type":"derived","description":"Wheel speed relative to vehicle speed.","source_channels":["LFspeed","Speed"]}
+          ],"traces":[{"lap":7,"complete":true,"flag_state":"green","points":[
+            {"lap_pct":0.5,"additional_signals":{"lf-wheel-slip":-8.25,"invalid":"not numeric","missing":null}}
+          ]}]},"track_profile":{"shape":[],"detected_corner_segments":[]},
           "strategy":{"pit_assessments":[]},"damage_repair":{"episodes":[]},"setup_telemetry":{},"data_quality":{}}}
         """);
 
-        var pitStop = RuntimeMapper.Analysis(response.RootElement).Runs.Single().PitStop!;
+        var workspace = RuntimeMapper.Analysis(response.RootElement);
+        var pitStop = workspace.Runs.Single().PitStop!;
         Assert.AreEqual(12d, pitStop.ServiceSeconds);
         Assert.AreEqual(10d, pitStop.LeftFrontTireWearPercent);
         Assert.AreEqual(12d, pitStop.RightFrontTireWearPercent);
@@ -285,6 +316,15 @@ public sealed class CoordinatorTests
         Assert.AreEqual(182d, rightFront.CarcassTemperatureF.Outer);
         Assert.AreEqual(195d, rightFront.CarcassTemperatureF.Inner);
         Assert.AreEqual("Cold", rightFront.PressureKind);
+
+        Assert.HasCount(1, workspace.AdditionalTraceSignals!);
+        Assert.AreEqual("lf-wheel-slip", workspace.AdditionalTraceSignals![0].Id);
+        Assert.AreEqual(EvidenceKind.Derived, workspace.AdditionalTraceSignals[0].Evidence);
+        CollectionAssert.AreEqual(new[] { "LFspeed", "Speed" }, workspace.AdditionalTraceSignals[0].SourceChannels.ToArray());
+        var additionalSignals = workspace.Traces.Single().Points.Single().AdditionalSignals!;
+        Assert.AreEqual(-8.25d, additionalSignals["lf-wheel-slip"]);
+        Assert.IsFalse(additionalSignals.ContainsKey("invalid"));
+        Assert.IsFalse(additionalSignals.ContainsKey("missing"));
     }
 
     [TestMethod]
@@ -295,7 +335,7 @@ public sealed class CoordinatorTests
           "identity":{"event_type":"Race"},"race_summary":{},"laps":[],"runs":[],
           "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
           "strategy":{},"damage_repair":{"incident_points":{"events":[
-            {"candidate_lap":7,"points_added":1,"session_time_s":100.5,"count_before":0,"count_after":1,"source_channel":"PlayerCarMyIncidentCount"},
+            {"candidate_lap":7,"points_added":1,"session_time_s":100.5,"count_before":0,"count_after":1,"source_channel":"ExplicitIncidentFeed","event_type":"contact","contact_target":"wall","track_location":"Off track","on_pit_road":false,"speed_mph":88.4,"yaw_rate_deg_s":12.5,"slip_angle_deg":-3.2},
             {"candidate_lap":7,"points_added":2,"session_time_s":105.25,"count_before":1,"count_after":3,"source_channel":"PlayerCarMyIncidentCount"},
             {"candidate_lap":8,"points_added":0,"session_time_s":110,"count_before":3,"count_after":3,"source_channel":"ExplicitIncidentFeed"},
             {"points_added":4,"session_time_s":120},
@@ -312,12 +352,20 @@ public sealed class CoordinatorTests
         Assert.AreEqual(100.5d, incidents[0].SessionTimeSeconds);
         Assert.AreEqual(0d, incidents[0].CountBefore);
         Assert.AreEqual(1d, incidents[0].CountAfter);
-        Assert.AreEqual("PlayerCarMyIncidentCount", incidents[0].SourceChannel);
+        Assert.AreEqual("ExplicitIncidentFeed", incidents[0].SourceChannel);
+        Assert.AreEqual("contact", incidents[0].EventType);
+        Assert.AreEqual("wall", incidents[0].ContactTarget);
+        Assert.AreEqual("Off track", incidents[0].TrackLocation);
+        Assert.IsFalse(incidents[0].OnPitRoad);
+        Assert.AreEqual(88.4d, incidents[0].SpeedMph);
+        Assert.AreEqual(12.5d, incidents[0].YawRateDegreesPerSecond);
+        Assert.AreEqual(-3.2d, incidents[0].SlipAngleDegrees);
         Assert.AreEqual(2, incidents[1].Points);
         Assert.AreEqual(105.25d, incidents[1].SessionTimeSeconds);
         Assert.AreEqual(8, incidents[2].Lap);
         Assert.AreEqual(0, incidents[2].Points, "An explicitly recorded zero-point event must not be discarded or synthesized.");
         Assert.AreEqual("ExplicitIncidentFeed", incidents[2].SourceChannel);
+
     }
 
     [TestMethod]
@@ -750,12 +798,12 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
-    public async Task HomeRefresh_RegeneratesSchemaSixRaceSummaryCacheAfterTireTemperatureCorrection()
+    public async Task HomeRefresh_RegeneratesSchemaNineCacheForProgressiveTuningGeometryIdentity()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache-upgrade", Guid.NewGuid().ToString("N"));
         var analysis = HomeAnalysisResponse();
         const string selector = "subsession:9001:1";
-        WriteUiAnalysisCache(root, selector, analysis, schemaVersion: 6);
+        WriteUiAnalysisCache(root, selector, analysis, schemaVersion: 9);
         var backend = new FakeBackend(
             dashboard: DashboardWithFinalizedRaces(1),
             analysis: analysis);
@@ -769,8 +817,8 @@ public sealed class CoordinatorTests
 
         var cachePath = UiAnalysisCachePath(root, selector);
         using var regenerated = JsonDocument.Parse(File.ReadAllText(cachePath));
-        Assert.AreEqual(7, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-6 cache predates source-unit-aware tire temperatures and must be regenerated exactly once.");
+        Assert.AreEqual(10, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-9 cache predates the authoritative progressive-tuning geometry identity and must be regenerated exactly once.");
         Assert.IsEmpty(state.Jobs, "Cache migration remains quiet background maintenance.");
     }
 
@@ -1203,6 +1251,51 @@ public sealed class CoordinatorTests
         Assert.AreEqual(1.4, actual.LiveMonitor.OverallScale);
         Assert.IsTrue(actual.LiveMonitor.ReopenOnConnect);
         Assert.AreEqual("Ctrl+Shift+L", actual.LiveMonitor.GlobalHotkey);
+    }
+
+    [TestMethod]
+    public void SettingsStore_MigratesCustomizedLegacyAnalysisTraceLayoutOnceAndPersistsTheSelection()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "iracing-coach-analysis-layout-migration", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "settings.json");
+        var credentials = new FakeGarage61CredentialStore(Path.Combine(directory, "credential.dpapi"));
+        var legacy = new CompanionSettings
+        {
+            CoachHome = directory,
+            RaceAnalysisTraces = new AnalysisTraceLayout
+            {
+                Rows =
+                [
+                    new AnalysisTraceRow
+                    {
+                        Id = "legacy-row",
+                        PrimarySignalId = "throttle",
+                        SecondarySignalId = "brake"
+                    }
+                ]
+            }
+        };
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
+        var legacyJson = JsonNode.Parse(JsonSerializer.Serialize(legacy, jsonOptions))!.AsObject();
+        Assert.IsTrue(legacyJson.Remove("raceAnalysisTraceLayouts"), "The fixture must emulate settings written before named Analysis layouts existed.");
+        File.WriteAllText(path, legacyJson.ToJsonString(jsonOptions));
+
+        var store = new JsonSettingsStore(path, credentials);
+        var migrated = store.Load();
+        var previous = migrated.RaceAnalysisTraceLayouts.UserLayouts.Single();
+        Assert.AreEqual("Previous layout", previous.Name);
+        Assert.AreEqual(previous.Id, migrated.RaceAnalysisTraceLayouts.ActiveLayoutId);
+        Assert.AreEqual("throttle", previous.Layout.Rows.Single().PrimarySignalId);
+        Assert.AreEqual("brake", previous.Layout.Rows.Single().SecondarySignalId);
+        Assert.AreEqual(AnalysisTraceLayoutSet.FactoryDefaultId,
+            AnalysisTraceLayoutSets.Choices(migrated.RaceAnalysisTraceLayouts).Single(choice => choice.IsFactory).Named.Id);
+
+        var persisted = store.Load();
+        Assert.HasCount(1, persisted.RaceAnalysisTraceLayouts.UserLayouts,
+            "Loading migrated settings again must not duplicate the legacy layout.");
+        Assert.AreEqual(previous.Id, persisted.RaceAnalysisTraceLayouts.ActiveLayoutId);
+        Assert.IsTrue(JsonNode.Parse(File.ReadAllText(path))!.AsObject().ContainsKey("raceAnalysisTraceLayouts"));
     }
 
     [TestMethod]
@@ -2019,7 +2112,7 @@ public sealed class CoordinatorTests
         }).ToArray()
     });
 
-    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 7, string sessionType = "Race", string? storedSelector = null)
+    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 10, string sessionType = "Race", string? storedSelector = null)
     {
         var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
         Directory.CreateDirectory(directory);
@@ -2079,7 +2172,7 @@ public sealed class CoordinatorTests
         public int AnalyzeCalls => Volatile.Read(ref _analyzeCalls);
 
         public Task<BackendHealthResult> CheckHealthAsync(BackendConfiguration configuration, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new BackendHealthResult(true, "iracing-coach-local", "0.3.0", "2025-06-18", 16, TimeSpan.FromMilliseconds(4)));
+            Task.FromResult(new BackendHealthResult(true, "iracing-coach-local", "0.3.0", "2025-06-18", 17, TimeSpan.FromMilliseconds(4)));
 
         public async Task<JsonElement> CallToolAsync(BackendConfiguration configuration, string toolName, object arguments, CancellationToken cancellationToken = default)
         {

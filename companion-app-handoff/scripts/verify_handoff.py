@@ -42,6 +42,7 @@ REQUIRED_FILES = (
     CONTRACT_ROOT / "damage-repair-v1.schema.json",
     CONTRACT_ROOT / "track-phase-visualization-v1.schema.json",
     CONTRACT_ROOT / "ai-coaching-output.schema.json",
+    CONTRACT_ROOT / "ai-tuning-output.schema.json",
     CONTRACT_ROOT / "telemetry-events-v1.schema.json",
     CONTRACT_ROOT / "setup-package-v1.schema.json",
     CONTRACT_ROOT / "tuning-recommendation-v1.schema.json",

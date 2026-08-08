@@ -1,0 +1,137 @@
+using iRacingCoach.UI;
+
+namespace iRacingCoach.Tests;
+
+[TestClass]
+public sealed class ProgressiveTuningUiTests
+{
+    [TestMethod]
+    public void ExactCatalog_SeedsCurrentNascarConfigsWithoutClaimingVerifiedBounds()
+    {
+        var catalog = ProgressiveTurnCatalog.Default;
+
+        var iowa = catalog.ResolveExact("559-oval", "Iowa Speedway", "Oval", requireMapIdentity: true);
+        Assert.IsNotNull(iowa);
+        Assert.IsFalse(iowa.Verified);
+        Assert.AreEqual("nascar-official", iowa.SourceType);
+        CollectionAssert.AreEqual(new[] { "Turn 1", "Turn 2", "Turn 3", "Turn 4" }, iowa.Turns.Select(turn => turn.Label).ToArray());
+        Assert.IsTrue(iowa.Turns.All(turn => turn.IsOfficial && turn.Confidence == "low"));
+        Assert.AreEqual(.16, iowa.Turns[0].StartPct, .00001);
+        Assert.AreEqual(.845, iowa.Turns[^1].EndPct, .00001);
+
+        var newHampshire = catalog.ResolveExact("131-oval", "New Hampshire Motor Speedway", "Oval", requireMapIdentity: true);
+        Assert.IsNotNull(newHampshire);
+        Assert.IsFalse(newHampshire.Verified);
+        Assert.AreEqual("venue-official", newHampshire.SourceType);
+        Assert.AreEqual(.135, newHampshire.Turns[0].StartPct, .00001);
+        Assert.AreEqual(.855, newHampshire.Turns[^1].EndPct, .00001);
+    }
+
+    [TestMethod]
+    public void ExactCatalog_DoesNotCrossApplyDisplayNameMatchToDifferentConfigKey()
+    {
+        var catalog = ProgressiveTurnCatalog.Default;
+
+        Assert.IsNull(catalog.ResolveExact("different-layout", "Iowa Speedway", "Oval", requireMapIdentity: true));
+        Assert.IsNotNull(catalog.ResolveExact(string.Empty, "Iowa Speedway", "Oval"));
+    }
+
+    [TestMethod]
+    public void ExactCatalog_UsesHalfOpenNormalizedLapPercentContract()
+    {
+        Assert.IsTrue(ProgressiveTurnCatalog.IsNormalizedPercent(0));
+        Assert.IsTrue(ProgressiveTurnCatalog.IsNormalizedPercent(.999999));
+        Assert.IsFalse(ProgressiveTurnCatalog.IsNormalizedPercent(1));
+        Assert.IsFalse(ProgressiveTurnCatalog.IsNormalizedPercent(-.000001));
+        Assert.IsFalse(ProgressiveTurnCatalog.IsNormalizedPercent(double.NaN));
+    }
+
+    [TestMethod]
+    public void TurnBounds_RequireForwardEntryApexExitOrderWithWrapSupport()
+    {
+        Assert.IsTrue(ProgressiveTurnBounds.TryValidate(.15, .2, .3, out var normalError), normalError);
+        Assert.IsTrue(ProgressiveTurnBounds.TryValidate(.85, .95, .1, out var wrapError), wrapError);
+        Assert.IsFalse(ProgressiveTurnBounds.TryValidate(.2, .8, .4, out var orderError));
+        StringAssert.Contains(orderError, "driving order");
+        Assert.IsFalse(ProgressiveTurnBounds.TryValidate(.2, .2, .3, out _));
+        Assert.IsFalse(ProgressiveTurnBounds.TryValidate(.2, .25, .2, out _));
+        Assert.IsFalse(ProgressiveTurnBounds.TryValidate(.2, .25, 1, out _));
+    }
+
+    [TestMethod]
+    public void SameCornerIds_AreResolvedIndependentlyForIowaAndNewHampshire()
+    {
+        var catalog = ProgressiveTurnCatalog.Default;
+        var iowa = catalog.ResolveExact("559-oval", "Iowa Speedway", "Oval", requireMapIdentity: true)!;
+        var newHampshire = catalog.ResolveExact("131-oval", "New Hampshire Motor Speedway", "Oval", requireMapIdentity: true)!;
+
+        Assert.AreEqual("turn-1", iowa.Turns[0].CornerId);
+        Assert.AreEqual("turn-1", newHampshire.Turns[0].CornerId);
+        Assert.AreNotEqual(iowa.MapIdentity, newHampshire.MapIdentity);
+        Assert.AreNotEqual(iowa.Turns[0].StartPct, newHampshire.Turns[0].StartPct);
+    }
+
+    [TestMethod]
+    public void Projection_RangePathUsesNormalizedLapPercentAndWrapsStartFinish()
+    {
+        ProgressiveMapPoint[] path =
+        [
+            new(0, 0, 0),
+            new(.25, 100, 0),
+            new(.5, 100, 100),
+            new(.75, 0, 100)
+        ];
+
+        var normal = ProgressiveTrackProjection.PathForRange(path, .2, .55);
+        var wrapped = ProgressiveTrackProjection.PathForRange(path, .8, .1);
+
+        StringAssert.StartsWith(normal, "M ");
+        StringAssert.Contains(normal, "L 100 0");
+        StringAssert.StartsWith(wrapped, "M ");
+        Assert.IsGreaterThanOrEqualTo(1, wrapped.Count(character => character == 'L'));
+        var apex = ProgressiveTrackProjection.PointAt(path, .25);
+        Assert.AreEqual(100, apex.X, .001);
+        Assert.AreEqual(0, apex.Y, .001);
+    }
+
+    [TestMethod]
+    public void ProgressiveTuningSource_UsesDurableStructuredFeedbackAndRichCorrectionHooks()
+    {
+        var ui = UiRoot();
+        var page = File.ReadAllText(Path.Combine(ui, "TuningPage.razor"));
+        var editor = File.ReadAllText(Path.Combine(ui, "ProgressiveTuningFeedbackEditor.razor"));
+        var selector = File.ReadAllText(Path.Combine(ui, "TuningTrackSelector.razor"));
+        var catalog = File.ReadAllText(Path.Combine(ui, "Data", "turn-map-catalog.v1.json"));
+
+        StringAssert.Contains(page, "ApplyTuningMapAsync");
+        StringAssert.Contains(page, "SaveTuningRepresentativeRunsAsync");
+        StringAssert.Contains(page, "SaveTuningGoalAsync");
+        StringAssert.Contains(page, "SaveTuningTurnCorrectionAsync");
+        StringAssert.Contains(page, "_selectedTurn = State.SelectedTuningMap?.Turns.FirstOrDefault");
+        StringAssert.Contains(page, "ReplaceTuningFeedbackBatchAsync");
+        StringAssert.Contains(page, "_loadedRaceId = null");
+        StringAssert.Contains(editor, "new(\"good\"");
+        StringAssert.Contains(editor, "new(\"unstable-braking\"");
+        StringAssert.Contains(editor, "new(\"wheel-hop-lock\"");
+        StringAssert.Contains(editor, "new(\"cant-take-throttle\"");
+        StringAssert.Contains(editor, "Priority = state.Priority");
+        StringAssert.Contains(editor, "CancelPendingNote");
+        StringAssert.Contains(selector, "CorrectionRequested");
+        StringAssert.Contains(selector, "UserVerified");
+        StringAssert.Contains(selector, "max=\"99.9\"");
+        Assert.DoesNotContain("_localCorrections", selector);
+        StringAssert.Contains(catalog, "iracing-hud-capture");
+    }
+
+    private static string UiRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, "src", "iRacingCoach.UI");
+            if (Directory.Exists(candidate)) return candidate;
+            directory = directory.Parent;
+        }
+        throw new DirectoryNotFoundException("Could not locate the companion UI source tree.");
+    }
+}

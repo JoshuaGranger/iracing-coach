@@ -88,7 +88,7 @@ When service evidence exists, state requested tires/fuel separately from confirm
 
 ## Telemetry completeness and diagnostics
 
-In the appendix or full report, report recorded, routine-loaded, and analyzer-consumed channel counts plus native and analysis rates. Say that the raw IBT is referenced, not silently copied. Do not list hundreds of channel names; use a compact profile or bounded slice only when a conclusion needs omitted/native-rate evidence.
+In the appendix or full report, report recorded, routine-loaded, and analyzer-consumed channel counts plus native and analysis rates. Identify whether the finalized raw IBT has a verified durable content-addressed copy, is pending retention, or remains available only at its source path; do not expose the personal path unnecessarily. Do not list hundreds of channel names; use a compact profile or bounded slice only when a conclusion needs omitted/native-rate evidence.
 
 Use transient event details only when they change the coaching conclusion: source record/time, lap distance, measured channels, derived method, and limitation. Never dump a long event list. Keep measured values, threshold/peak events, diagnostic proxies, and causal interpretation distinct.
 

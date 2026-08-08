@@ -202,6 +202,9 @@ public static class RuntimeMapper
         return new Garage61Connection(configured, available, status, message);
     }
 
+    public static AnalysisGarage61References? Garage61References(JsonElement response) =>
+        MapGarage61References(Object(response, "garage61_representative_laps"), response);
+
     public static RaceCard RaceCard(JsonElement response)
     {
         var card = Object(response, "race_card");
@@ -247,6 +250,12 @@ public static class RuntimeMapper
         var quality = Object(view, "data_quality");
         var gradesRoot = Object(view, "race_grades");
         var timing = Object(response, "timing");
+        var vectorGeometry = MapTrackGeometry(Object(view, "track_geometry"));
+        var replay = MapRaceReplay(Object(view, "race_replay"));
+        var tirePrediction = MapTirePrediction(Object(view, "tire_learning"));
+        var garage61References = MapGarage61References(Object(view, "garage61_representative_laps"), view);
+        var technicalInsights = MapTechnicalInsights(view);
+        var tuningIdentity = MapTuningIdentity(response, view, selection, identity, vectorGeometry);
 
         string? previousMappedLapFlag = null;
         var laps = Array(view, "laps").OrderBy(lap => Integer(lap, "lap")).Select(lap =>
@@ -275,9 +284,10 @@ public static class RuntimeMapper
                 Array(trace, "points").Select(point => new AnalysisTracePoint(
                     Number(point, "lap_pct") ?? 0, Number(point, "session_time_s"), Number(point, "speed_mph"), Number(point, "speed_min_mph"), Number(point, "speed_max_mph"),
                     Number(point, "throttle"), Number(point, "throttle_min"), Number(point, "brake"), Number(point, "brake_mean"),
-                    Number(point, "steering_rad"), Number(point, "steering_peak_rad"), Number(point, "slip_angle_deg"), NullableInteger(point, "gear"), Number(point, "rpm"),
+                    Number(point, "steering_rad"), Number(point, "steering_abs_peak_rad") ?? Number(point, "steering_peak_rad"), Number(point, "slip_angle_deg"), NullableInteger(point, "gear"), Number(point, "rpm"),
                     Number(point, "yaw_rate_deg_s"), Number(point, "lateral_g"), Number(point, "longitudinal_g"),
-                    Number(point, "lat"), Number(point, "lon"), Number(point, "tire_stress_proxy"))).ToArray(),
+                    Number(point, "latitude") ?? Number(point, "lat"), Number(point, "longitude") ?? Number(point, "lon"), Number(point, "tire_stress_proxy"),
+                    NumberDictionary(point, "additional_signals"))).ToArray(),
                 Array(trace, "flag_states").Select(Value).Where(value => value.Length > 0).ToArray(),
                 Boolean(trace, "pit_entry") == true, Boolean(trace, "pit_exit") == true,
                 Number(trace, "fuel_used_gal"),
@@ -292,6 +302,19 @@ public static class RuntimeMapper
                 hasLapEligibility && !lapEligibility!.Confounded,
                 hasLapEligibility ? lapEligibility!.ExclusionReason : "Lap comparison eligibility was not recorded");
         }).ToArray();
+
+        var additionalTraceSignals = Array(traceRoot, "additional_signal_catalog")
+            .Select(signal => new AnalysisTraceSignal(
+                Text(signal, "id") ?? string.Empty,
+                Text(signal, "name") ?? Humanize(Text(signal, "id")) ?? "Recorded signal",
+                Text(signal, "unit") ?? string.Empty,
+                Text(signal, "category") ?? "Other",
+                Evidence(Text(signal, "evidence_type")),
+                Text(signal, "description") ?? string.Empty,
+                Array(signal, "source_channels").Select(Value).Where(value => value.Length > 0).ToArray()))
+            .Where(signal => signal.Id.Length > 0)
+            .DistinctBy(signal => signal.Id, StringComparer.Ordinal)
+            .ToArray();
 
         var runs = Array(view, "runs").Select(run =>
         {
@@ -337,7 +360,10 @@ public static class RuntimeMapper
                 reasons.Length == 0 ? "Recorded run" : string.Join(", ", reasons.Select(Humanize).Where(value => value is not null)),
                 Number(pace, "early_average_lap_s"), Number(pace, "late_average_lap_s"), Number(pace, "early_to_late_delta_s"),
                 Number(tire, "lowest_remaining_percent"), Text(tire, "lowest_remaining_tire") ?? string.Empty,
-                Number(drivingLoad, "early_brake_vs_late_percent"), Number(drivingLoad, "early_steer_vs_late_percent"), pitStop);
+                Number(drivingLoad, "early_brake_vs_late_percent"), Number(drivingLoad, "early_steer_vs_late_percent"), pitStop,
+                Array(run, "coaching_reference_lap_numbers")
+                    .Select(NullableIntegerValue)
+                    .Count(value => value.HasValue && value.Value >= 0));
         }).ToArray();
 
         var shape = Array(track, "shape").Select(point => new TrackShapePoint(
@@ -401,7 +427,14 @@ public static class RuntimeMapper
                         Number(item, "session_time_s"),
                         Number(item, "count_before"),
                         Number(item, "count_after"),
-                        Text(item, "source_channel"))
+                        Text(item, "source_channel"),
+                        Text(item, "event_type"),
+                        Text(item, "contact_target"),
+                        Text(item, "track_location"),
+                        Boolean(item, "on_pit_road"),
+                        Number(item, "speed_mph"),
+                        Number(item, "yaw_rate_deg_s"),
+                        Number(item, "slip_angle_deg"))
                     : null;
             })
             .Where(item => item is not null)
@@ -420,6 +453,7 @@ public static class RuntimeMapper
             Integer(damageSummary, "recorded_repair_episodes"), Integer(damageSummary, "confirmed_fast_repair_uses"),
             Number(damageSummary, "total_pit_road_time_s"), Number(damageSummary, "total_repair_work_completed_s"),
             Array(damage, "limitations").Select(Value).Where(value => value.Length > 0).ToArray(), incidents);
+        var tuningMap = MapTuningMap(view, vectorGeometry, shape, segments, tuningIdentity);
 
         return new AnalysisWorkspace(
             Integer(view, "schema_version"), Text(response, "analysis_id") ?? string.Empty,
@@ -433,7 +467,15 @@ public static class RuntimeMapper
             Humanize(Text(damage, "status")) ?? "Unavailable", strategyDetails, damageDetails, Text(identity, "setup_fingerprint") ?? string.Empty,
             Humanize(Text(quality, "confidence")) ?? "Unknown", Number(timing, "total_ms") ?? 0,
             Text(gradesRoot, "overall_grade") ?? "Not graded", grades,
-            Array(traceRoot, "sector_start_pcts").Select(NumberValue).Where(value => value.HasValue).Select(value => value!.Value).Order().ToArray());
+            Array(traceRoot, "sector_start_pcts").Select(NumberValue).Where(value => value.HasValue).Select(value => value!.Value).Order().ToArray(),
+            additionalTraceSignals,
+            vectorGeometry,
+            replay,
+            tirePrediction,
+            garage61References,
+            technicalInsights,
+            tuningIdentity,
+            tuningMap);
     }
 
     public static SetupPackageView SetupPackage(JsonElement response, string requestedCar, string requestedTrack, string requestedSeason, string purpose)
@@ -497,6 +539,106 @@ public static class RuntimeMapper
             RequireText(setup, "fingerprint", "setup fingerprint"),
             Array(primary, "verify").Select(Value).Where(value => value.Length > 0).ToArray(),
             "Waiting for a comparison run");
+    }
+
+    public static StructuredTuningResultView StructuredTuning(JsonElement response)
+    {
+        var wrapped = Object(response, "result");
+        var root = wrapped.ValueKind == JsonValueKind.Object ? wrapped : response;
+        var eligibilityRoot = Object(root, "eligibility");
+        var evidenceContract = Object(root, "tuning_evidence_v2");
+        var evidenceItems = Array(root, "evidence").ToArray();
+        if (evidenceItems.Length == 0) evidenceItems = Array(evidenceContract, "observations")
+            .Concat(Array(evidenceContract, "evidence"))
+            .Concat(Array(evidenceContract, "items")).ToArray();
+        var evidence = evidenceItems.Select((item, index) => new TuningEvidenceView(
+                Text(item, "evidence_id") ?? Text(item, "id") ?? $"evidence-{index + 1}",
+                TuningEvidenceKind(item),
+                Text(item, "label") ?? TuningObservationLabel(item, index),
+                Text(item, "value") ?? Text(item, "text") ?? Text(item, "summary") ?? TuningObservationValue(item),
+                Text(item, "unit") ?? string.Empty,
+                Text(item, "source") ?? Text(item, "provenance") ?? "Local race evidence",
+                Text(item, "limitation") ?? string.Empty))
+            .ToArray();
+
+        var candidateItems = Array(root, "candidate_whitelist").ToArray();
+        if (candidateItems.Length == 0) candidateItems = Array(Object(root, "recommendation"), "candidate_whitelist").ToArray();
+        var candidates = candidateItems.Select((item, index) => new TuningCandidateChangeView(
+                Text(item, "candidate_id") ?? Text(item, "id") ?? $"candidate-{index + 1}",
+                Humanize(Text(item, "system")) ?? "Setup",
+                Text(item, "change") ?? string.Empty,
+                Text(item, "predicted_effect") ?? string.Empty,
+                Text(item, "risk") ?? string.Empty,
+                Array(item, "verify").Concat(Array(item, "verification")).Select(Value).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).ToArray(),
+                Text(item, "source") ?? "Installed versioned tuning rule",
+                TuningCandidateConfidence(item),
+                Array(item, "evidence_ids").Select(Value).Where(value => value.Length > 0).ToArray(),
+                Array(item, "conflicts").Select(Value).Where(value => value.Length > 0).ToArray()))
+            .ToArray();
+
+        var recommendationRoot = Object(root, "recommendation");
+        var recommendation = new StructuredTuningRecommendationView(
+            Text(recommendationRoot, "status") ?? Text(root, "status") ?? "unavailable",
+            Text(recommendationRoot, "selected_candidate_id") ?? string.Empty,
+            Text(recommendationRoot, "summary") ?? Text(recommendationRoot, "explanation") ?? string.Empty,
+            Array(recommendationRoot, "evidence_ids").Select(Value).Where(value => value.Length > 0).ToArray(),
+            Array(recommendationRoot, "conflicts").Select(Value).Where(value => value.Length > 0).ToArray(),
+            Array(recommendationRoot, "confidence_reasons").Select(Value).Where(value => value.Length > 0).ToArray());
+
+        var missing = Array(root, "missing_required").Concat(Array(eligibilityRoot, "missing_required"))
+            .Select(Value).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+        var blockers = Array(eligibilityRoot, "blockers").Select(Value).Where(value => value.Length > 0).ToArray();
+        var canEvidence = Boolean(eligibilityRoot, "can_use_as_driving_evidence")
+            ?? Boolean(eligibilityRoot, "can_use_as_evidence")
+            ?? evidence.Length > 0;
+        var canRecommend = Boolean(eligibilityRoot, "can_receive_garage_recommendation")
+            ?? string.Equals(recommendation.Status, "ready", StringComparison.OrdinalIgnoreCase);
+        var eligibility = new TuningEligibilityView
+        {
+            CanUseAsEvidence = canEvidence,
+            CanReceiveGarageRecommendation = canRecommend,
+            IsFinalized = Boolean(eligibilityRoot, "is_finalized") ?? canEvidence,
+            IsOpenSetup = Boolean(eligibilityRoot, "is_open_setup") ?? canRecommend,
+            EmbeddedSetupAvailable = Boolean(eligibilityRoot, "embedded_setup_available") ?? canRecommend,
+            HasSetupFingerprint = Boolean(eligibilityRoot, "has_setup_fingerprint") ?? canRecommend,
+            ExactIdentityAvailable = Boolean(eligibilityRoot, "exact_identity_available")
+                ?? (Boolean(eligibilityRoot, "exact_map_identity") == true && Boolean(eligibilityRoot, "exact_open_setup_identity") == true),
+            MissingRequired = missing,
+            Blockers = blockers
+        };
+
+        var history = Array(root, "history").Concat(Array(root, "prior_successes_considered"))
+            .Select(item => new TuningHistoryView(
+                Text(item, "experiment_id") ?? Text(item, "id") ?? string.Empty,
+                Text(item, "outcome") ?? string.Empty,
+                Text(item, "setup_fingerprint") ?? Text(Object(item, "setup"), "fingerprint") ?? string.Empty,
+                ParseTimestamp(Text(item, "recorded_utc") ?? Text(item, "created_utc")),
+                Array(item, "evidence_ids").Select(Value).Where(value => value.Length > 0).ToArray()))
+            .Where(item => item.ExperimentId.Length > 0)
+            .DistinctBy(item => item.ExperimentId, StringComparer.Ordinal)
+            .ToArray();
+        var protocolRoot = Object(root, "test_protocol");
+        var protocol = protocolRoot.ValueKind == JsonValueKind.Object
+            ? new TuningTestProtocolView(
+                Text(protocolRoot, "control") ?? string.Empty,
+                Array(protocolRoot, "sequence").Select(Value).Where(value => value.Length > 0).ToArray(),
+                Boolean(protocolRoot, "one_change_rule") == true,
+                Array(protocolRoot, "comparison_requirements").Select(Value).Where(value => value.Length > 0).ToArray())
+            : null;
+        var limitations = Array(root, "limitations").Concat(Array(evidenceContract, "limitations"))
+            .Select(Value).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+
+        return new StructuredTuningResultView(
+            Text(root, "experiment_id") ?? string.Empty,
+            Text(root, "experiment_path") ?? string.Empty,
+            eligibility,
+            evidence,
+            candidates,
+            recommendation,
+            limitations,
+            missing,
+            history,
+            protocol);
     }
 
     public static IReadOnlyList<StrategyScenario> Strategy(JsonElement response)
@@ -598,6 +740,451 @@ public static class RuntimeMapper
         return values.Length % 2 == 0 ? (values[middle - 1] + values[middle]) / 2d : values[middle];
     }
 
+    private static TuningSessionIdentity MapTuningIdentity(
+        JsonElement response,
+        JsonElement view,
+        JsonElement selection,
+        JsonElement identity,
+        AnalysisTrackGeometry? geometry)
+    {
+        var source = Object(view, "source");
+        var artifacts = Object(response, "artifacts");
+        var embeddedSetup = Object(identity, "setup");
+        var sourceHashes = (geometry?.SourceSha256 ?? [])
+            .Concat(geometry?.ObservedSourceSha256 ?? [])
+            .Concat(Array(source, "fingerprints").Select(item => Text(item, "sha256") ?? string.Empty))
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var fixedSetup = Boolean(identity, "is_fixed_setup");
+        var setupType = fixedSetup switch
+        {
+            true => "Fixed",
+            false => "Open",
+            _ => Humanize(Text(identity, "setup_type")) ?? "Unknown"
+        };
+        var embeddedAvailable = Boolean(identity, "embedded_setup_available") == true
+            || Integer(identity, "setup_parameter_count") > 0
+            || embeddedSetup.ValueKind == JsonValueKind.Object && embeddedSetup.EnumerateObject().Any();
+        return new TuningSessionIdentity
+        {
+            Selector = Text(selection, "selector") ?? Text(selection, "group_id") ?? string.Empty,
+            AnalysisId = Text(response, "analysis_id") ?? Text(view, "analysis_id") ?? string.Empty,
+            AnalysisPath = Text(response, "analysis_path") ?? Text(artifacts, "analysis") ?? Text(view, "analysis_path") ?? string.Empty,
+            SessionId = Text(identity, "session_id") ?? Text(selection, "sim_session_num") ?? string.Empty,
+            SessionUniqueId = Text(identity, "session_unique_id") ?? string.Empty,
+            SubsessionId = Text(identity, "subsession_id") ?? Text(selection, "subsession_id") ?? string.Empty,
+            SessionType = Text(selection, "sim_session_type") ?? Text(identity, "event_type") ?? string.Empty,
+            TrackConfigurationKey = geometry?.TrackConfigurationKey ?? Text(identity, "track_configuration_key") ?? string.Empty,
+            TrackId = Text(identity, "track_id") ?? string.Empty,
+            Track = DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")) ?? string.Empty,
+            Layout = DisplayLayout(Text(identity, "track_config")),
+            CarId = Text(identity, "car_id") ?? string.Empty,
+            CarPath = Text(identity, "car_path") ?? string.Empty,
+            Car = DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? string.Empty,
+            SetupType = setupType,
+            SetupFingerprint = Text(identity, "setup_fingerprint") ?? string.Empty,
+            EmbeddedSetupAvailable = embeddedAvailable,
+            SourceSha256 = sourceHashes
+        };
+    }
+
+    private static TuningMapView MapTuningMap(
+        JsonElement view,
+        AnalysisTrackGeometry? geometry,
+        IReadOnlyList<TrackShapePoint> shape,
+        IReadOnlyList<TrackSegment> segments,
+        TuningSessionIdentity identity)
+    {
+        var supplied = Object(view, "tuning_map");
+        var suppliedPath = Array(supplied, "path").Concat(Array(supplied, "main_path"))
+            .Select(TuningPoint)
+            .Where(point => double.IsFinite(point.X) && double.IsFinite(point.Y))
+            .ToArray();
+        var path = suppliedPath.Length > 1
+            ? suppliedPath
+            : geometry?.MainPath is { Count: > 1 } vector
+                ? vector.Select((point, index) => new TuningMapPoint(
+                    point.LapPercent ?? (vector.Count <= 1 ? 0 : index / (double)(vector.Count - 1)),
+                    point.X,
+                    point.Y)).ToArray()
+                : shape.Select(point => new TuningMapPoint(point.LapPercent, point.X, point.Y)).ToArray();
+
+        var suppliedTurns = Array(supplied, "turns").Concat(Array(supplied, "corners"))
+            .Select((turn, index) => new TuningTurn(
+                Text(turn, "corner_id") ?? Text(turn, "id") ?? $"turn-{index + 1}",
+                Text(turn, "label") ?? $"Turn {index + 1}",
+                Number(turn, "start_pct") ?? 0,
+                Number(turn, "apex_pct") ?? MidpointPercent(Number(turn, "start_pct") ?? 0, Number(turn, "end_pct") ?? 0),
+                Number(turn, "end_pct") ?? 0,
+                Boolean(turn, "is_official") == true,
+                Text(turn, "confidence") ?? "Unknown",
+                Text(turn, "correction_hint")))
+            .ToArray();
+        var turns = suppliedTurns.Length > 0
+            ? suppliedTurns
+            : segments.Select(segment => new TuningTurn(
+                $"detected-{segment.Number}",
+                segment.Label,
+                segment.StartPercent,
+                MidpointPercent(segment.StartPercent, segment.EndPercent),
+                segment.EndPercent,
+                false,
+                "Detected",
+                "Verify the label and three bounds against the official track map before using this as a named corner."))
+                .ToArray();
+
+        var mapIdentity = Text(supplied, "map_identity") ?? Text(supplied, "map_id")
+            ?? identity.TrackConfigurationKey
+            ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(mapIdentity)) mapIdentity = $"analysis:{identity.AnalysisId}";
+        var hasSuppliedMap = supplied.ValueKind == JsonValueKind.Object && suppliedPath.Length > 1;
+        return new TuningMapView(
+            mapIdentity,
+            Text(supplied, "source_type") ?? "telemetry-derived",
+            Text(supplied, "source_label") ?? (hasSuppliedMap ? "Verified track map" : "Recorded racing geometry"),
+            Text(supplied, "source_url"),
+            Text(supplied, "confidence") ?? (path.Count() > 1 ? "Recorded" : "Unavailable"),
+            Text(supplied, "verification_message") ?? (hasSuppliedMap ? null : "Detected turn labels and bounds are not official until the driver verifies them."),
+            Boolean(supplied, "is_verified") == true,
+            path,
+            turns,
+            Text(supplied, "geometry_hash") ?? geometry?.GeometryHash);
+    }
+
+    private static TuningMapPoint TuningPoint(JsonElement point) => new(
+        Number(point, "lap_pct") ?? Number(point, "lap_percent") ?? 0,
+        Number(point, "x") ?? 0,
+        Number(point, "y") ?? 0);
+
+    private static double MidpointPercent(double start, double end)
+    {
+        var normalizedStart = ((start % 1) + 1) % 1;
+        var normalizedEnd = ((end % 1) + 1) % 1;
+        var distance = normalizedEnd >= normalizedStart
+            ? normalizedEnd - normalizedStart
+            : 1 - normalizedStart + normalizedEnd;
+        return (normalizedStart + distance / 2) % 1;
+    }
+
+    private static AnalysisTrackGeometry? MapTrackGeometry(JsonElement geometry)
+    {
+        if (geometry.ValueKind != JsonValueKind.Object) return null;
+        var points = (string property) => Array(geometry, property).Select(VectorPoint).ToArray();
+        var legacySources = Hashes(geometry, "source_sha256");
+        var contributingSources = Hashes(geometry, "contributing_source_sha256");
+        if (contributingSources.Count == 0) contributingSources = legacySources;
+        var observedSources = Hashes(geometry, "observed_source_sha256");
+        if (observedSources.Count == 0) observedSources = legacySources;
+        var provenance = MapGeometryProvenance(Object(geometry, "geometry_provenance"));
+        var transform = MapGeometryTransform(Object(geometry, "transform")) ?? provenance?.NormalizationTransform;
+        var quality = MapTrackGeometryQuality(Object(geometry, "quality"));
+        return new AnalysisTrackGeometry(
+            Text(geometry, "status") ?? "unavailable",
+            Text(geometry, "track_configuration_key") ?? string.Empty,
+            Text(geometry, "coordinate_system") ?? string.Empty,
+            points("main_path"),
+            points("pit_lane"),
+            points("pit_entry_path"),
+            points("pit_exit_path"),
+            VectorLine(Object(geometry, "start_finish_line")),
+            VectorLine(Object(geometry, "pit_commitment_line")),
+            VectorLine(Object(geometry, "pit_merge_line")),
+            Array(geometry, "unavailable_reasons").Select(Value).Where(value => value.Length > 0).ToArray(),
+            contributingSources,
+            observedSources,
+            transform,
+            provenance,
+            quality,
+            Text(geometry, "geometry_hash"));
+    }
+
+    private static AnalysisTrackGeometryQuality? MapTrackGeometryQuality(JsonElement quality)
+    {
+        if (quality.ValueKind != JsonValueKind.Object) return null;
+        var mapped = new AnalysisTrackGeometryQuality(
+            Boolean(quality, "main_loop_complete"),
+            Number(quality, "lap_percent_coverage"),
+            Number(quality, "maximum_lap_percent_gap"),
+            Number(quality, "closure_distance"));
+        return mapped.MainLoopComplete.HasValue
+            || mapped.LapPercentCoverage.HasValue
+            || mapped.MaximumLapPercentGap.HasValue
+            || mapped.ClosureDistance.HasValue
+                ? mapped
+                : null;
+    }
+
+    private static AnalysisGeometryTransform? MapGeometryTransform(JsonElement transform)
+    {
+        if (transform.ValueKind != JsonValueKind.Object) return null;
+        var bounds = Object(transform, "source_bounds");
+        var sourceBounds = bounds.ValueKind == JsonValueKind.Object
+            && Number(bounds, "minimum_x") is { } minimumX
+            && Number(bounds, "maximum_x") is { } maximumX
+            && Number(bounds, "minimum_y") is { } minimumY
+            && Number(bounds, "maximum_y") is { } maximumY
+                ? new AnalysisGeometrySourceBounds(minimumX, maximumX, minimumY, maximumY)
+                : null;
+        var mapped = new AnalysisGeometryTransform(sourceBounds, Number(transform, "normalization_scale"));
+        return mapped.IsUsable ? mapped : null;
+    }
+
+    private static AnalysisGeometryProvenance? MapGeometryProvenance(JsonElement provenance)
+    {
+        if (provenance.ValueKind != JsonValueKind.Object) return null;
+        var observations = Array(provenance, "observations").Select(item => new AnalysisGeometryObservation(
+            Text(item, "observation_id") ?? string.Empty,
+            Hashes(item, "source_sha256"),
+            MapGeometryTransform(Object(item, "transform")),
+            Text(item, "geometry_fingerprint"),
+            ParseTimestamp(Text(item, "observed_at")),
+            NumberObject(Object(item, "quality"))))
+            .Where(item => item.ObservationId.Length > 0)
+            .ToArray();
+        return new AnalysisGeometryProvenance(
+            Text(provenance, "selected_observation_id"),
+            MapGeometryTransform(Object(provenance, "normalization_transform")),
+            observations);
+    }
+
+    private static AnalysisVectorPoint VectorPoint(JsonElement point) => new(
+        Number(point, "x") ?? 0,
+        Number(point, "y") ?? 0,
+        Number(point, "lap_pct"),
+        Integer(point, "observations"));
+
+    private static AnalysisVectorLine? VectorLine(JsonElement line)
+    {
+        if (line.ValueKind != JsonValueKind.Object) return null;
+        var a = Object(line, "a");
+        var b = Object(line, "b");
+        return a.ValueKind == JsonValueKind.Object && b.ValueKind == JsonValueKind.Object
+            ? new AnalysisVectorLine(VectorPoint(a), VectorPoint(b))
+            : null;
+    }
+
+    private static AnalysisRaceReplay? MapRaceReplay(JsonElement replay)
+    {
+        if (replay.ValueKind != JsonValueKind.Object) return null;
+        var coverage = Array(replay, "coverage").Select(item => new AnalysisReplayCoverage(
+            Text(item, "channel") ?? string.Empty,
+            Text(item, "status") ?? "unavailable",
+            Text(item, "reason"),
+            NullableInteger(item, "recorded_segment_count"),
+            NullableInteger(item, "segment_count"),
+            Number(item, "recorded_fraction"),
+            Boolean(item, "all_segments_recorded"),
+            NullableInteger(item, "temporal_gap_count"))).ToArray();
+        var temporalRoot = Object(replay, "temporal_coverage");
+        var temporalCoverage = temporalRoot.ValueKind == JsonValueKind.Object
+            ? new AnalysisReplayTemporalCoverage(
+                Text(temporalRoot, "status") ?? "unavailable",
+                NullableInteger(temporalRoot, "recorded_frame_count"),
+                NullableInteger(temporalRoot, "expected_frame_count"),
+                Number(temporalRoot, "recorded_fraction"),
+                NullableInteger(temporalRoot, "gap_count"),
+                Number(temporalRoot, "largest_gap_s"),
+                Number(temporalRoot, "start_session_time_s"),
+                Number(temporalRoot, "end_session_time_s"))
+            : null;
+        var participantCoverage = Array(replay, "participant_coverage").Select(item => new AnalysisReplayParticipantCoverage(
+            Integer(item, "car_index"),
+            Text(item, "status") ?? "unavailable",
+            NullableInteger(item, "recorded_frame_count"),
+            NullableInteger(item, "total_frame_count"),
+            Number(item, "recorded_fraction"),
+            NullableInteger(item, "recorded_segment_count"),
+            NullableInteger(item, "segment_count"),
+            Number(item, "first_session_time_s"),
+            Number(item, "last_session_time_s"))).ToArray();
+        var participants = Array(replay, "participants").Select(item => new AnalysisReplayParticipant(
+            Integer(item, "car_index"),
+            Text(item, "car_number"),
+            NullableInteger(item, "class_id"),
+            Text(item, "class_name"),
+            Text(item, "car_name"),
+            Text(item, "driver_name"),
+            Text(item, "team_name"),
+            Boolean(item, "is_player") == true,
+            Boolean(item, "is_spectator") == true)).ToArray();
+        var frames = Array(replay, "frames").Select(frame => new AnalysisReplayFrame(
+            Number(frame, "session_time_s") ?? 0,
+            Text(frame, "session_state") ?? "unknown",
+            Long(frame, "global_flags") ?? 0,
+            Array(frame, "global_flag_labels").Select(Value).Where(value => value.Length > 0).ToArray(),
+            Array(frame, "cars").Select(car => new AnalysisReplayCarState(
+                Integer(car, "car_index"),
+                Number(car, "lap_pct") ?? 0,
+                NullableInteger(car, "lap"),
+                NullableInteger(car, "completed_laps"),
+                NullableInteger(car, "overall_position"),
+                NullableInteger(car, "class_position"),
+                Boolean(car, "on_pit_road"),
+                NullableInteger(car, "track_surface"),
+                Text(car, "track_surface_label"),
+                NullableInteger(car, "pace_flags"),
+                Number(car, "last_lap_time_s"),
+                Number(car, "best_lap_time_s"))).ToArray())).ToArray();
+        return new AnalysisRaceReplay(
+            Text(replay, "status") ?? "unavailable",
+            Array(replay, "unavailable_reasons").Select(Value).Where(value => value.Length > 0).ToArray(),
+            Array(replay, "limitations").Select(Value).Where(value => value.Length > 0).ToArray(),
+            coverage,
+            participants,
+            frames,
+            Number(replay, "sample_rate_hz"),
+            NullableInteger(replay, "player_car_index"),
+            Text(replay, "interpolation") ?? string.Empty,
+            temporalCoverage,
+            participantCoverage);
+    }
+
+    private static AnalysisTireLearningPrediction? MapTirePrediction(JsonElement learning)
+    {
+        if (learning.ValueKind != JsonValueKind.Object) return null;
+        var prediction = Object(learning, "prediction");
+        if (prediction.ValueKind != JsonValueKind.Object) return null;
+        var tireRoot = Object(prediction, "tires");
+        AnalysisTireCornerPrediction[] tires = tireRoot.ValueKind != JsonValueKind.Object
+            ? []
+            : tireRoot.EnumerateObject().Select(corner =>
+            {
+                var bands = corner.Value.ValueKind != JsonValueKind.Object
+                    ? new Dictionary<string, AnalysisTireBandPrediction>(StringComparer.OrdinalIgnoreCase)
+                    : corner.Value.EnumerateObject().ToDictionary(
+                        band => band.Name,
+                        band => new AnalysisTireBandPrediction(
+                            Number(band.Value, "remaining_percent"),
+                            Number(band.Value, "low_percent"),
+                            Number(band.Value, "high_percent"),
+                            Number(band.Value, "wear_rate_percent_per_green_lap"),
+                            Number(band.Value, "laps_remaining_to_zero")),
+                        StringComparer.OrdinalIgnoreCase);
+                return new AnalysisTireCornerPrediction(corner.Name, bands);
+            }).ToArray();
+        var persistent = Object(learning, "persistent_model");
+        var context = Object(learning, "context");
+        var matchingContext = context.ValueKind == JsonValueKind.Object
+            ? context.EnumerateObject()
+                .Select(property => (property.Name, Value: DisplayJson(property.Value)))
+                .Where(item => item.Value.Length > 0)
+                .ToDictionary(item => item.Name, item => item.Value, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return new AnalysisTireLearningPrediction(
+            Text(prediction, "status") ?? "unavailable",
+            Text(prediction, "reason"),
+            Text(prediction, "evidence_class"),
+            Text(prediction, "confidence"),
+            Integer(prediction, "eligible_observations"),
+            Integer(prediction, "matching_sessions"),
+            Number(prediction, "laps_remaining"),
+            Number(prediction, "pace_cost_s"),
+            Number(prediction, "pace_cost_low_s"),
+            Number(prediction, "pace_cost_high_s"),
+            Number(prediction, "pace_slope_s_per_green_lap"),
+            Number(prediction, "capability_pace_s"),
+            Number(prediction, "capability_pace_low_s"),
+            Number(prediction, "capability_pace_high_s"),
+            tires,
+            Text(persistent, "path"),
+            Integer(persistent, "observation_count"),
+            Text(prediction, "model_version") ?? Text(persistent, "model_version"),
+            Text(prediction, "observation_set_fingerprint") ?? Text(persistent, "observation_set_fingerprint"),
+            Integer(prediction, "total_observations"),
+            Integer(prediction, "excluded_observations"),
+            Number(prediction, "effective_matched_observations"),
+            Number(prediction, "median_feature_distance"),
+            Integer(prediction, "comparable_feature_count"),
+            Array(prediction, "matched_features").Select(Value).Where(value => value.Length > 0).ToArray(),
+            Array(prediction, "exclusion_reasons").Select(Value).Where(value => value.Length > 0).ToArray(),
+            Text(prediction, "matching_scope"),
+            matchingContext);
+    }
+
+    private static AnalysisGarage61References? MapGarage61References(JsonElement references, JsonElement envelope)
+    {
+        if (references.ValueKind != JsonValueKind.Object) return null;
+        var comparisons = Array(references, "reference_comparisons")
+            .Concat(Array(envelope, "reference_comparisons"))
+            .Where(item => item.ValueKind == JsonValueKind.Object)
+            .GroupBy(item => Text(item, "lap_id") ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Key.Length > 0)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var comparisonQuality = Object(references, "comparison_quality");
+        if (comparisonQuality.ValueKind != JsonValueKind.Object) comparisonQuality = Object(envelope, "comparison_quality");
+        var manifest = Object(Object(envelope, "cache"), "manifest");
+        var retrievedAt = ParseTimestamp(
+            Text(references, "retrieved_at") ??
+            Text(references, "synced_at") ??
+            Text(manifest, "refreshed_at"));
+        var laps = Array(references, "representative_laps").Select(item =>
+        {
+            var lap = Object(item, "lap");
+            var telemetry = Object(item, "telemetry");
+            var driver = Object(lap, "driver");
+            var driverName = Text(driver, "name") ?? Text(driver, "displayName") ?? Text(lap, "driverName") ?? string.Empty;
+            var id = Text(lap, "id") ?? Text(item, "id") ?? string.Empty;
+            comparisons.TryGetValue(id, out var comparison);
+            var quality = Object(comparison, "quality");
+            return new AnalysisGarage61ReferenceLap(
+                id,
+                Number(lap, "lapTime"),
+                Text(item, "setup_type") ?? Text(lap, "setupType") ?? string.Empty,
+                Text(item, "comparison_role") ?? "representative",
+                Text(telemetry, "status") is "downloaded" or "cached" || Boolean(lap, "canViewTelemetry") == true,
+                driverName,
+                "Garage61",
+                retrievedAt,
+                Text(telemetry, "sha256"),
+                Array(quality, "signals").Select(Value).Where(value => value.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                Text(quality, "status"),
+                Boolean(quality, "usable"),
+                NullableInteger(quality, "aligned_bins"),
+                Number(quality, "coverage_fraction"));
+        }).Where(item => item.Id.Length > 0).ToArray();
+        var availableSignals = laps.SelectMany(lap => lap.AvailableSignals ?? [])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new AnalysisGarage61References(
+            Text(references, "status") ?? "unavailable",
+            Text(references, "reason"),
+            Text(references, "comparison_scope"),
+            laps,
+            "Garage61",
+            retrievedAt,
+            Text(manifest, "source_hash"),
+            availableSignals,
+            Text(comparisonQuality, "status"),
+            Text(comparisonQuality, "reason"),
+            Text(comparisonQuality, "setup_scope"),
+            NullableInteger(comparisonQuality, "usable_reference_laps"),
+            Number(comparisonQuality, "median_coverage_fraction"));
+    }
+
+    private static DateTimeOffset? ParseTimestamp(string? value) =>
+        DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed.ToUniversalTime()
+            : null;
+
+    private static IReadOnlyList<AnalysisTechnicalInsight> MapTechnicalInsights(JsonElement view) =>
+        Array(view, "technical_insights").Select(item => new AnalysisTechnicalInsight(
+            Text(item, "key") ?? string.Empty,
+            Text(item, "label") ?? Humanize(Text(item, "key")) ?? "Technical insight",
+            Text(item, "status") ?? "unavailable",
+            Text(item, "rating") ?? string.Empty,
+            Text(item, "takeaway") ?? string.Empty,
+            Array(item, "metrics").Select(metric => new AnalysisTechnicalMetric(
+                Text(metric, "label") ?? string.Empty,
+                Text(metric, "value") ?? string.Empty,
+                Evidence(Text(metric, "evidence_type")))).ToArray(),
+            Array(item, "evidence").Select(Value).Where(value => value.Length > 0).ToArray(),
+            Array(item, "unavailable_reasons").Select(Value).Where(value => value.Length > 0).ToArray()))
+        .Where(item => item.Key.Length > 0)
+        .ToArray();
+
     private static double? TireWearPercent(JsonElement tires, string corner)
     {
         var remaining = Number(Object(tires, corner), "average_remaining_percent");
@@ -650,6 +1237,40 @@ public static class RuntimeMapper
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Array
             ? value.EnumerateArray().ToArray() : [];
 
+    private static IReadOnlyDictionary<string, double> NumberDictionary(JsonElement element, string property)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty(property, out var value) ||
+            value.ValueKind != JsonValueKind.Object)
+            return new Dictionary<string, double>(StringComparer.Ordinal);
+
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var item in value.EnumerateObject())
+            if (NumberValue(item.Value) is { } number)
+                result[item.Name] = number;
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, double> NumberObject(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+            return new Dictionary<string, double>(StringComparer.Ordinal);
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var item in element.EnumerateObject())
+            if (NumberValue(item.Value) is { } number)
+                result[item.Name] = number;
+        return result;
+    }
+
+    private static IReadOnlyList<string> Hashes(JsonElement element, string property) =>
+        Array(element, property)
+            .Select(Value)
+            .Where(value => value.Length == 64 && value.All(Uri.IsHexDigit))
+            .Select(value => value.ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+
     private static IEnumerable<double> Numbers(JsonElement element, string property)
     {
         if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(property, out var value)) yield break;
@@ -694,6 +1315,12 @@ public static class RuntimeMapper
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
             ? NullableIntegerValue(value) : null;
 
+    private static long? Long(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.TryGetInt64(out var integer) ? integer
+            : value.TryGetDouble(out var number) && double.IsFinite(number) ? (long)Math.Round(number) : null
+            : null;
+
     private static double? Number(JsonElement element, string property) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
             ? NumberValue(value) : null;
@@ -720,6 +1347,47 @@ public static class RuntimeMapper
         var value = Text(element, property);
         if (string.IsNullOrWhiteSpace(value)) throw new InvalidDataException($"The tuning response did not include a {label}.");
         return value;
+    }
+
+    private static EvidenceKind TuningEvidenceKind(JsonElement item)
+    {
+        var declared = Text(item, "evidence_type") ?? Text(item, "kind");
+        if (!string.IsNullOrWhiteSpace(declared)) return Evidence(declared);
+        return Text(item, "source")?.ToLowerInvariant() switch
+        {
+            "derived-from-recorded-telemetry" => EvidenceKind.Derived,
+            "driver-report" => EvidenceKind.Inferred,
+            _ => EvidenceKind.Unavailable
+        };
+    }
+
+    private static string TuningObservationLabel(JsonElement item, int index)
+    {
+        var corner = Text(item, "corner_label") ?? Text(item, "corner_id");
+        var phase = Humanize(Text(item, "run_phase"));
+        if (!string.IsNullOrWhiteSpace(corner) && !string.IsNullOrWhiteSpace(phase)) return $"{corner} · {phase}";
+        return !string.IsNullOrWhiteSpace(corner) ? corner : $"Evidence {index + 1}";
+    }
+
+    private static string TuningObservationValue(JsonElement item)
+    {
+        var symptom = Humanize(Text(item, "symptom_id"));
+        var severity = NullableInteger(item, "severity");
+        if (!string.IsNullOrWhiteSpace(symptom)) return severity.HasValue ? $"{symptom} · severity {severity}/5" : symptom;
+        var metrics = Object(item, "metrics");
+        if (metrics.ValueKind != JsonValueKind.Object) return string.Empty;
+        return string.Join(" · ", metrics.EnumerateObject().Take(5).Select(property =>
+            $"{Humanize(property.Name) ?? property.Name} {DisplayJson(property.Value)}"));
+    }
+
+    private static string TuningCandidateConfidence(JsonElement item)
+    {
+        var direct = Text(item, "confidence");
+        if (!string.IsNullOrWhiteSpace(direct)) return direct;
+        var confidence = Object(item, "confidence");
+        return Number(confidence, "overall") is { } overall
+            ? $"{overall * 100:0}%"
+            : "Unknown";
     }
 
     private static EvidenceKind Evidence(string? value) => value?.ToLowerInvariant() switch

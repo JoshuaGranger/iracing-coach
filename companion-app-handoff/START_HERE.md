@@ -2,6 +2,8 @@
 
 This packet is intended to be copied with the entire `iRacing Coach` folder to the Windows development machine. It contains the product contract, deterministic backend, schemas, sanitized fixtures, tests, deployment rules, and verification scripts needed to build the companion app.
 
+Version boundary: `0.14.2` is the latest stable packaged release. The current tree identifies `0.15.0` development source and uses direct development executables for feedback; it is not a 0.15.0 installer or portable release. The current integrated evidence is 211 .NET tests, 229 Python tests, and a verified 17-tool/114-file handoff.
+
 ## Current development round
 
 Read `NEXT_DEVELOPMENT_PROMPT.md` first. It contains Joshua's latest approved product decisions and supersedes older frontend workflow, technology-binding, diagnostics-visibility, AI/local-responsibility, and progressive-tuning guidance where they conflict. Backend evidence rules, source protections, credentials, and executable contracts remain authoritative.
@@ -34,7 +36,7 @@ If prose and executable behavior differ, the current MCP `tools/list`, compatibi
 ## What is included
 
 - A standard-library-only Python 3.10+ deterministic backend.
-- Sixteen bounded MCP tools plus JSON CLI fallbacks.
+- Seventeen bounded MCP tools plus JSON CLI fallbacks.
 - Race selection, telemetry decoding, tires, fuel, cautions, strategy, damage/tow/repair, corner phases, groove evidence, archives, setup packages, and controlled tuning history.
 - Garage61 client/auth plumbing, ready to activate after API approval and local PAT configuration.
 - Product and UI requirements for all four workflows.

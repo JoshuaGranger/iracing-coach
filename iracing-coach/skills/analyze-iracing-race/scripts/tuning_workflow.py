@@ -12,12 +12,32 @@ try:  # Package import and direct script execution are both supported.
     from .path_security import local_path
     from .setup_catalog import catalog_setups, compare_setups, normalize_embedded_setup
     from .storage import ArchiveStore, safe_slug, stable_hash, utc_now
-    from .tuning_engine import choose_oreilly_donor, recommend_tuning
+    from .tuning_engine import (
+        STRUCTURED_TUNING_RULESET_ID,
+        StructuredTuningError,
+        build_bounded_tuning_ai_request,
+        build_structured_tuning_evidence,
+        choose_oreilly_donor,
+        select_representative_runs,
+        select_structured_recommendation,
+        stable_evidence_hash,
+        recommend_tuning,
+    )
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from path_security import local_path
     from setup_catalog import catalog_setups, compare_setups, normalize_embedded_setup
     from storage import ArchiveStore, safe_slug, stable_hash, utc_now
-    from tuning_engine import choose_oreilly_donor, recommend_tuning
+    from tuning_engine import (
+        STRUCTURED_TUNING_RULESET_ID,
+        StructuredTuningError,
+        build_bounded_tuning_ai_request,
+        build_structured_tuning_evidence,
+        choose_oreilly_donor,
+        select_representative_runs,
+        select_structured_recommendation,
+        stable_evidence_hash,
+        recommend_tuning,
+    )
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -42,10 +62,9 @@ def _default_iracing_root() -> Path:
     if override:
         return local_path(override, "IRACING_COACH_IRACING_ROOT")
     configured = _defaults().get("iracing_root")
-    return local_path(
-        str(configured or r"C:\Users\joshu\Documents\iRacing"),
-        "configured iRacing root",
-    )
+    if configured:
+        return local_path(str(configured), "configured iRacing root")
+    return local_path(Path.home() / "Documents" / "iRacing", "iRacing root")
 
 
 def _setup_root(root: str | os.PathLike[str] | None) -> Path:
@@ -996,6 +1015,191 @@ def recommend_open_setup_tuning_workflow(
     }
 
 
+def recommend_structured_open_setup_tuning_workflow(
+    *,
+    analysis_path: str | os.PathLike[str],
+    feedback: Sequence[Mapping[str, Any]],
+    map_identity: Mapping[str, Any],
+    archive_root: str | os.PathLike[str] | None = None,
+    open_target_analysis_path: str | os.PathLike[str] | None = None,
+    representative_run_ids: Sequence[Any] = (),
+    generic_note: str = "",
+    goal: str = "long-run-pace",
+    ruleset_id: str = STRUCTURED_TUNING_RULESET_ID,
+    package_id: str | None = None,
+    draft_id: str | None = None,
+    ai_response: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build and idempotently persist the evidence-bounded v2 tuning plan.
+
+    A fixed race may be the driving-evidence source, but it can never be the
+    garage target.  In that case ``open_target_analysis_path`` must identify a
+    distinct, exact-car/exact-configuration open analysis with an authoritative
+    embedded setup.  Source setup files remain read-only.
+    """
+
+    resolved_driving, driving_analysis = _read_analysis(analysis_path)
+    if open_target_analysis_path:
+        resolved_target, target_analysis = _read_analysis(open_target_analysis_path)
+    else:
+        resolved_target, target_analysis = resolved_driving, driving_analysis
+    store = ArchiveStore(archive_root)
+    if package_id:
+        # Existence is verified for referential integrity. The v2 rules engine
+        # never substitutes package or HTML values for the embedded target setup.
+        store.load_tuning_package(package_id)
+    context = _analysis_context(store, target_analysis)
+    history = store.tuning_history(
+        context,
+        include_other_seasons=False,
+        include_other_tracks=False,
+        limit=200,
+    )
+    try:
+        evidence = build_structured_tuning_evidence(
+            driving_analysis,
+            feedback,
+            map_identity,
+            open_target_analysis=target_analysis,
+            representative_run_ids=representative_run_ids,
+            previous_experiments=history,
+            generic_note=generic_note,
+            goal=goal,
+            ruleset_id=ruleset_id,
+        )
+        recommendation = select_structured_recommendation(evidence, ai_response)
+    except StructuredTuningError as exc:
+        raise TuningWorkflowError(str(exc)) from exc
+    ai_request = None
+    ai_request_error = None
+    if evidence.get("candidate_whitelist"):
+        try:
+            ai_request = build_bounded_tuning_ai_request(evidence)
+        except StructuredTuningError as exc:
+            ai_request_error = str(exc)
+
+    draft_key = {
+        "driving_analysis_id": driving_analysis.get("analysis_id"),
+        "open_target_analysis_id": target_analysis.get("analysis_id"),
+        "map_identity": evidence.get("map_ref", {}).get("map_identity"),
+        "ruleset_id": ruleset_id,
+    }
+    supplied_draft_id = str(draft_id or "").strip()
+    if supplied_draft_id and (
+        len(supplied_draft_id) > 128
+        or any(not (character.isalnum() or character in "._-") for character in supplied_draft_id)
+    ):
+        raise TuningWorkflowError(
+            "draft_id must be 1-128 letters, numbers, dots, dashes, or underscores."
+        )
+    resolved_draft_id = supplied_draft_id or (
+        "tuning-draft-" + stable_evidence_hash(draft_key, 20)
+    )
+    saved_draft = store.save_tuning_draft(
+        {
+            "schema_version": 2,
+            "draft_id": resolved_draft_id,
+            "driving_analysis_path": str(resolved_driving),
+            "open_target_analysis_path": str(resolved_target),
+            "representative_run_ids": [str(item) for item in representative_run_ids],
+            "map_identity": dict(map_identity),
+            "ruleset_id": ruleset_id,
+            "generic_note": str(generic_note).strip(),
+            "goal": str(goal or "long-run-pace"),
+            "feedback": [dict(item) for item in feedback],
+            "latest_evidence_hash": evidence["evidence_hash"],
+            "latest_status": recommendation["status"],
+        }
+    )
+
+    persisted = False
+    experiment_id = None
+    experiment_path = None
+    selected_candidate = next(
+        (
+            item
+            for item in evidence.get("candidate_whitelist") or ()
+            if item.get("candidate_id") == recommendation.get("selected_candidate_id")
+        ),
+        None,
+    )
+    if recommendation.get("status") == "ready" and selected_candidate:
+        # The evidence hash excludes AI synthesis, so deterministic first call
+        # and validated-AI second call UPSERT the same experiment rather than
+        # producing duplicate history rows.
+        experiment_id = "tune-v2-" + str(evidence["evidence_hash"])[0:24]
+        target_identity = target_analysis.get("identity") if isinstance(target_analysis.get("identity"), Mapping) else {}
+        driving_identity = driving_analysis.get("identity") if isinstance(driving_analysis.get("identity"), Mapping) else {}
+        experiment = {
+            "schema_version": 2,
+            "experiment_id": experiment_id,
+            "analysis_id": driving_analysis.get("analysis_id"),
+            "analysis_path": str(resolved_driving),
+            "open_target_analysis_id": target_analysis.get("analysis_id"),
+            "open_target_analysis_path": str(resolved_target),
+            "package_id": package_id,
+            "context": context,
+            "source_identity": {
+                "car_id": target_identity.get("car_id"),
+                "car_path": target_identity.get("car_path"),
+                "track_id": target_identity.get("track_id"),
+                "track_name": target_identity.get("track_name"),
+                "track_config": target_identity.get("track_config"),
+                "track_configuration_key": evidence.get("open_target_ref", {}).get("track_configuration_key"),
+            },
+            "driving_evidence_identity": {
+                "car_id": driving_identity.get("car_id"),
+                "car_path": driving_identity.get("car_path"),
+                "track_id": driving_identity.get("track_id"),
+                "track_name": driving_identity.get("track_name"),
+                "track_config": driving_identity.get("track_config"),
+                "is_fixed_setup": driving_identity.get("is_fixed_setup"),
+            },
+            "setup": {
+                "name": target_identity.get("setup_name"),
+                "fingerprint": target_identity.get("setup_fingerprint"),
+                "modified": target_identity.get("setup_modified"),
+                "manual_sto_boundary": True,
+            },
+            "symptoms": evidence.get("feedback") or [],
+            "structured_evidence": evidence,
+            "recommendation": {
+                "contract": "structured_tuning_recommendation_v2",
+                "evidence_hash": evidence["evidence_hash"],
+                "selection": recommendation,
+                "selected_candidate": selected_candidate,
+            },
+            "primary_recommendation": selected_candidate,
+            "status": "planned",
+        }
+        saved = store.record_tuning_experiment(experiment)
+        persisted = True
+        experiment_path = saved["path"]
+
+    return {
+        "ok": recommendation.get("status") == "ready",
+        "status": recommendation.get("status"),
+        "contract": "tuning_evidence_v2",
+        "draft_id": resolved_draft_id,
+        "draft_path": saved_draft["path"],
+        "persisted": persisted,
+        "experiment_id": experiment_id,
+        "experiment_path": experiment_path,
+        "evidence_hash": evidence["evidence_hash"],
+        "eligibility": evidence["eligibility"],
+        "evidence": evidence.get("observations") or [],
+        "candidate_whitelist": evidence.get("candidate_whitelist") or [],
+        "suppressed_candidates": evidence.get("suppressed_candidates") or [],
+        "recommendation": recommendation,
+        "limitations": evidence.get("limitations") or [],
+        "missing_required": evidence.get("missing_required") or [],
+        "history": history,
+        "ai_request": ai_request,
+        "ai_request_error": ai_request_error,
+        "tuning_evidence_v2": evidence,
+    }
+
+
 _OUTCOMES = {"improved", "worse", "no-change", "inconclusive"}
 
 
@@ -1006,6 +1210,150 @@ def _temperature_delta(left: Any, right: Any) -> float | None:
         return abs(float(left) - float(right))
     except (TypeError, ValueError):
         return None
+
+
+def _exact_track_configuration_key(analysis: Mapping[str, Any]) -> str:
+    geometry = analysis.get("track_geometry")
+    if isinstance(geometry, Mapping) and geometry.get("track_configuration_key"):
+        return str(geometry["track_configuration_key"])
+    identity = analysis.get("identity") if isinstance(analysis.get("identity"), Mapping) else {}
+    return safe_slug(
+        f"{identity.get('track_id') or 'track'}-{identity.get('track_config') or identity.get('track_name')}"
+    )
+
+
+def _selected_run_metrics(
+    analysis: Mapping[str, Any], selected: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    if not selected:
+        return {}
+    run_number = selected[0].get("run_number")
+    run = next(
+        (
+            item
+            for item in analysis.get("runs") or ()
+            if isinstance(item, Mapping) and item.get("run_number") == run_number
+        ),
+        {},
+    )
+    pace = run.get("pace") if isinstance(run.get("pace"), Mapping) else {}
+    fuel = run.get("fuel") if isinstance(run.get("fuel"), Mapping) else {}
+    return {
+        "run_id": selected[0].get("run_id"),
+        "run_number": run_number,
+        "eligible_lap_count": selected[0].get("eligible_lap_count"),
+        "early_average_lap_s": _number_or_none(pace.get("early_average_lap_s")),
+        "late_average_lap_s": _number_or_none(pace.get("late_average_lap_s")),
+        "early_to_late_delta_s": _number_or_none(pace.get("early_to_late_delta_s")),
+        "green_lap_time_slope_s_per_lap": _number_or_none(pace.get("green_lap_time_slope_s_per_lap")),
+        "start_fuel_l": _number_or_none(fuel.get("start_l")),
+    }
+
+
+def _number_or_none(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and abs(number) != float("inf") else None
+
+
+def _structured_result_comparison(
+    experiment: Mapping[str, Any], result_analysis: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Compare known A/B fields without converting association into causality."""
+
+    result_identity = result_analysis.get("identity") if isinstance(result_analysis.get("identity"), Mapping) else {}
+    source_identity = experiment.get("source_identity") if isinstance(experiment.get("source_identity"), Mapping) else {}
+    exact_car = _compact(source_identity.get("car_path")) == _compact(result_identity.get("car_path"))
+    exact_track = str(source_identity.get("track_configuration_key") or "") == _exact_track_configuration_key(result_analysis)
+    open_setup = result_identity.get("is_fixed_setup") is False
+    baseline_setup = experiment.get("setup") if isinstance(experiment.get("setup"), Mapping) else {}
+    baseline_fingerprint = str(baseline_setup.get("fingerprint") or "")
+    result_fingerprint = str(result_identity.get("setup_fingerprint") or "")
+    setup_changed = bool(
+        baseline_fingerprint and result_fingerprint and baseline_fingerprint != result_fingerprint
+    )
+    result_runs, rejected_result_runs, result_run_limits = select_representative_runs(result_analysis)
+
+    baseline_analysis: dict[str, Any] = {}
+    baseline_path = experiment.get("open_target_analysis_path") or experiment.get("analysis_path")
+    if baseline_path and Path(str(baseline_path)).is_file():
+        try:
+            _, baseline_analysis = _read_analysis(str(baseline_path))
+        except TuningWorkflowError:
+            baseline_analysis = {}
+    baseline_runs, _, baseline_run_limits = select_representative_runs(baseline_analysis) if baseline_analysis else ([], [], ["Baseline analysis is unavailable."])
+    baseline_metrics = _selected_run_metrics(baseline_analysis, baseline_runs)
+    result_metrics = _selected_run_metrics(result_analysis, result_runs)
+    metric_deltas: dict[str, float] = {}
+    for field in (
+        "early_average_lap_s",
+        "late_average_lap_s",
+        "early_to_late_delta_s",
+        "green_lap_time_slope_s_per_lap",
+        "start_fuel_l",
+    ):
+        before = _number_or_none(baseline_metrics.get(field))
+        after = _number_or_none(result_metrics.get(field))
+        if before is not None and after is not None:
+            metric_deltas[field] = round(after - before, 6)
+
+    baseline_identity = baseline_analysis.get("identity") if isinstance(baseline_analysis.get("identity"), Mapping) else {}
+    baseline_conditions = baseline_identity.get("conditions") if isinstance(baseline_identity.get("conditions"), Mapping) else {}
+    result_conditions = result_identity.get("conditions") if isinstance(result_identity.get("conditions"), Mapping) else {}
+    track_temp_delta = _temperature_delta(
+        baseline_conditions.get("track_temp_c"), result_conditions.get("track_temp_c")
+    )
+    air_temp_delta = _temperature_delta(
+        baseline_conditions.get("air_temp_c"), result_conditions.get("air_temp_c")
+    )
+    limitations: list[str] = []
+    if not exact_car:
+        limitations.append("Result car_path does not exactly match the open target.")
+    if not exact_track:
+        limitations.append("Result track configuration key does not exactly match the open target.")
+    if not open_setup:
+        limitations.append("Result is not confirmed as an open-setup session.")
+    if not setup_changed:
+        limitations.append("A different setup fingerprint was not recorded.")
+    if not result_runs:
+        limitations.extend(result_run_limits or ["No strict clean result run is available."])
+    if not baseline_runs:
+        limitations.extend(baseline_run_limits or ["No strict clean baseline run is available."])
+    if track_temp_delta is None:
+        limitations.append("Track-temperature comparability is unknown.")
+    elif track_temp_delta > 5.0:
+        limitations.append("Track temperature differs by more than 5 C.")
+    if air_temp_delta is None:
+        limitations.append("Air-temperature comparability is unknown.")
+    elif air_temp_delta > 3.0:
+        limitations.append("Air temperature differs by more than 3 C.")
+    baseline_compound = baseline_identity.get("tire_compound")
+    result_compound = result_identity.get("tire_compound")
+    if baseline_compound is None or result_compound is None:
+        limitations.append("Tire-compound comparability is unknown.")
+    elif baseline_compound != result_compound:
+        limitations.append("Tire compounds differ.")
+    return {
+        "contract": "tuning_result_comparison_v2",
+        "status": "controlled-comparison-candidate" if not limitations else "partial",
+        "same_exact_car_path": exact_car,
+        "same_exact_track_configuration": exact_track,
+        "open_setup": open_setup,
+        "setup_fingerprint_changed": setup_changed,
+        "baseline_setup_fingerprint": baseline_fingerprint or None,
+        "result_setup_fingerprint": result_fingerprint or None,
+        "baseline_representative_run": baseline_metrics or None,
+        "result_representative_run": result_metrics or None,
+        "measured_deltas_result_minus_baseline": metric_deltas,
+        "track_temp_absolute_delta_c": track_temp_delta,
+        "air_temp_absolute_delta_c": air_temp_delta,
+        "limitations": list(dict.fromkeys(limitations)),
+        "causality": "Measured differences are an A/B association and do not prove the setup change caused them.",
+    }
 
 
 def record_open_setup_feedback_workflow(
@@ -1037,8 +1385,51 @@ def record_open_setup_feedback_workflow(
         "setup_fingerprint_changed": None,
         "limitations": ["No result analysis was supplied for telemetry comparability."],
     }
+    if int(experiment.get("schema_version") or 1) >= 2:
+        comparison = {
+            "contract": "tuning_result_comparison_v2",
+            "status": "driver-feedback-only",
+            "measured_deltas_result_minus_baseline": {},
+            "limitations": [
+                "No result analysis was supplied, so only the driver's stated outcome is recorded."
+            ],
+            "causality": "Driver feedback alone does not prove the setup change caused the reported outcome.",
+        }
     if result_analysis_path:
         resolved_result, result_analysis = _read_analysis(result_analysis_path)
+        if int(experiment.get("schema_version") or 1) >= 2:
+            comparison = _structured_result_comparison(experiment, result_analysis)
+            if not comparison["same_exact_car_path"]:
+                raise TuningWorkflowError(
+                    "Result analysis must use the exact open-target car_path."
+                )
+            if not comparison["same_exact_track_configuration"]:
+                raise TuningWorkflowError(
+                    "Result analysis must use the exact open-target track configuration."
+                )
+            if not comparison["open_setup"]:
+                raise TuningWorkflowError("Result analysis must be an open-setup session.")
+            feedback = {
+                "recorded_at": utc_now(),
+                "driver_outcome": normalized_outcome,
+                "notes": str(notes).strip(),
+                "result_analysis_id": result_analysis.get("analysis_id"),
+                "result_analysis_path": str(resolved_result),
+                "comparison": comparison,
+            }
+            saved = store.record_tuning_feedback(
+                experiment_id,
+                feedback,
+                outcome=normalized_outcome,
+            )
+            return {
+                "ok": True,
+                "status": "recorded",
+                "experiment_id": experiment_id,
+                "experiment_path": saved["path"],
+                "outcome": normalized_outcome,
+                "comparison": comparison,
+            }
         identity = result_analysis["identity"]
         source_identity = experiment.get("source_identity") if isinstance(experiment.get("source_identity"), Mapping) else {}
         same_car = _loose_match(
@@ -1162,5 +1553,6 @@ __all__ = [
     "catalog_iracing_setups_workflow",
     "iracing_setup_history_workflow",
     "recommend_open_setup_tuning_workflow",
+    "recommend_structured_open_setup_tuning_workflow",
     "record_open_setup_feedback_workflow",
 ]

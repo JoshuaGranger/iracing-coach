@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -205,6 +206,38 @@ class DamageRepairAnalysisTests(unittest.TestCase):
                 for item in damage["lap_impacts"]
             )
         )
+
+    def test_incident_event_retains_only_recorded_driving_context(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=3)
+        channels = telemetry["channels"]
+        count = len(channels["SessionTime"])
+        event_index = 100
+        channels["PlayerCarMyIncidentCount"] = [
+            0 if index < event_index else 2 for index in range(count)
+        ]
+        channels["PlayerTrackSurface"] = [3] * count
+        channels["PlayerTrackSurface"][event_index] = 0
+        channels["YawRate"] = [0.0] * count
+        channels["YawRate"][event_index] = math.radians(12.5)
+        channels["VelocityX"] = list(channels["Speed"])
+        channels["VelocityY"] = [0.0] * count
+        channels["VelocityY"][event_index] = -3.0
+
+        event = analyze_telemetry(telemetry)["damage_repair"]["incident_points"][
+            "events"
+        ][0]
+
+        self.assertEqual(event["candidate_lap"], channels["Lap"][event_index])
+        self.assertEqual(event["points_added"], 2.0)
+        self.assertEqual(event["track_location"], "Off track")
+        self.assertEqual(event["on_pit_road"], channels["OnPitRoad"][event_index])
+        self.assertAlmostEqual(
+            event["speed_mph"], channels["Speed"][event_index] * 2.236936, places=1
+        )
+        self.assertEqual(event["yaw_rate_deg_s"], 12.5)
+        self.assertLess(event["slip_angle_deg"], 0.0)
+        self.assertNotIn("event_type", event)
+        self.assertNotIn("contact_target", event)
 
     def test_routine_loader_requests_real_sdk_damage_channels(self) -> None:
         for channel in (

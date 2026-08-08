@@ -3,9 +3,26 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<section class="telemetry-workspace" aria-labelledby="telemetry-heading" @onkeydown="HandleWorkspaceKeyDown">
+<section class="telemetry-workspace" aria-labelledby="telemetry-heading" @onkeydown="HandleWorkspaceKeyDown" @onclick="CloseSpotlightMenu">
     <div class="analysis-section-heading">
         <div><span class="eyebrow">Telemetry</span><h2 id="telemetry-heading">Compare laps</h2></div>
+        @if (IsRaceWorkspace)
+        {
+            <div class="analysis-context-toggles" role="group" aria-label="Telemetry context panels" @onclick:stopPropagation="true">
+                <button type="button"
+                        class="context-toggle-chip @(!TrackPanelCollapsed ? "active" : null)"
+                        data-context-toggle="track"
+                        aria-controls="race-track-panel-content"
+                        aria-pressed="@AriaBoolean(!TrackPanelCollapsed)"
+                        @onclick="ToggleTrackPanel"><ProductIcon Name="analysis" Size="14" /><span>Track position</span></button>
+                <button type="button"
+                        class="context-toggle-chip @(!LapRailCollapsed ? "active" : null)"
+                        data-context-toggle="laps"
+                        aria-controls="race-lap-rail-content"
+                        aria-pressed="@AriaBoolean(!LapRailCollapsed)"
+                        @onclick="ToggleLapRail"><ProductIcon Name="race" Size="14" /><span>Laps &amp; runs</span></button>
+            </div>
+        }
     </div>
 
     @if (Workspace.Traces.Count == 0)
@@ -16,42 +33,57 @@
     {
         <div class="telemetry-workstation-grid @(IsRaceWorkspace ? "race-workstation" : "qualifying-workstation") @ContextColumnState">
         <div class="telemetry-context-column">
-        <section class="track-panel telemetry-context-panel @(TrackPanelCollapsed ? "collapsed" : null)" aria-labelledby="track-panel-title">
+        <section class="track-panel telemetry-context-panel @(TrackPanelCollapsed ? "collapsed" : null)"
+                 aria-labelledby="track-panel-title"
+                 aria-hidden="@(IsRaceWorkspace && TrackPanelCollapsed ? "true" : null)"
+                 inert="@(IsRaceWorkspace && TrackPanelCollapsed ? string.Empty : null)">
             <div class="panel-title track-panel-title">
                 @if (IsRaceWorkspace)
                 {
-                    <button type="button"
-                            class="context-heading-button"
-                            aria-controls="race-track-panel-content"
-                            aria-expanded="@AriaBoolean(!TrackPanelCollapsed)"
-                            aria-label="@(TrackPanelCollapsed ? "Show track position" : "Hide track position")"
-                            @onclick="ToggleTrackPanel">
-                        <span class="context-heading-copy"><strong id="track-panel-title">@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></span>
-                        <ProductIcon Name="chevron-up" Size="15" />
-                    </button>
+                    <div class="context-heading-static"><strong id="track-panel-title">@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div>
                 }
                 else
                 {
                     <div class="context-heading-static"><strong id="track-panel-title">@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div>
                 }
                 <div class="track-panel-actions">
-                    <label class="track-color-control"><span>Color</span><select @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label>
+                    <label class="track-color-control"><span>Type</span><select data-map-type @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label>
                 </div>
             </div>
             <div id="race-track-panel-content"
                  class="track-panel-content"
                  aria-hidden="@AriaBoolean(TrackPanelCollapsed)"
                  inert="@(TrackPanelCollapsed ? string.Empty : null)">
-                <svg @ref="TrackElement" class="track-map" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map">
-                    @if (Workspace.TrackShape.Count >= 3)
+                <svg @ref="TrackElement" class="track-map rich-analysis-map" data-analysis-track-map data-map-type="@Mode" viewBox="@TrackViewBox" role="img" aria-label="Track telemetry map">
+                    @if (HasMapGeometry)
                     {
                         var startFinishLine = StartFinishLine;
-                        @foreach (var segment in MapSegments)
+                        <path d="@TrackRibbonPath" class="track-main-ribbon-halo" data-map-layer="main" />
+                        <path d="@TrackRibbonPath" class="track-main-ribbon" data-map-layer="main" />
+                        @if (Mode == "traces")
                         {
-                            <line x1="@F(segment.A.X)" y1="@F(segment.A.Y)" x2="@F(segment.B.X)" y2="@F(segment.B.Y)" stroke="@segment.Color" stroke-width="8" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+                            @foreach (var tracePath in MapTracePaths)
+                            {
+                                <path d="@tracePath.Path" stroke="@tracePath.Color" class="track-lap-trace" data-map-layer="lap-trace" data-lap="@tracePath.Lap" />
+                            }
                         }
-                        <line x1="@F(startFinishLine.X1)" y1="@F(startFinishLine.Y1)" x2="@F(startFinishLine.X2)" y2="@F(startFinishLine.Y2)" class="track-start-line-halo" />
-                        <line x1="@F(startFinishLine.X1)" y1="@F(startFinishLine.Y1)" x2="@F(startFinishLine.X2)" y2="@F(startFinishLine.Y2)" class="track-start-line" />
+                        else
+                        {
+                            @foreach (var segment in MapSegments)
+                            {
+                                <line x1="@F(segment.A.X)" y1="@F(segment.A.Y)" x2="@F(segment.B.X)" y2="@F(segment.B.Y)" stroke="@segment.Color" class="track-metric-segment" data-map-layer="@Mode" />
+                            }
+                        }
+                        @foreach (var layer in PitMapLayers)
+                        {
+                            @if (!string.IsNullOrWhiteSpace(layer.PitRoad)) { <path d="@layer.PitRoad" class="track-pit-road-halo" data-map-layer="pit-road" /><path d="@layer.PitRoad" class="track-pit-road" data-map-layer="pit-road" /> }
+                            @if (!string.IsNullOrWhiteSpace(layer.Entry)) { <path d="@layer.Entry" class="track-pit-entry" data-map-layer="pit-entry" /> }
+                            @if (!string.IsNullOrWhiteSpace(layer.Exit)) { <path d="@layer.Exit" class="track-pit-exit" data-map-layer="pit-exit" /> }
+                            @if (layer.EntryCommitment is { } entryCommitment) { <line x1="@F(entryCommitment.X1)" y1="@F(entryCommitment.Y1)" x2="@F(entryCommitment.X2)" y2="@F(entryCommitment.Y2)" class="track-pit-commitment entry" data-map-layer="commitment" /> }
+                            @if (layer.ExitCommitment is { } exitCommitment) { <line x1="@F(exitCommitment.X1)" y1="@F(exitCommitment.Y1)" x2="@F(exitCommitment.X2)" y2="@F(exitCommitment.Y2)" class="track-pit-commitment exit" data-map-layer="commitment" /> }
+                        }
+                        <line x1="@F(startFinishLine.X1)" y1="@F(startFinishLine.Y1)" x2="@F(startFinishLine.X2)" y2="@F(startFinishLine.Y2)" class="track-start-line-halo" data-map-layer="start-finish" />
+                        <line x1="@F(startFinishLine.X1)" y1="@F(startFinishLine.Y1)" x2="@F(startFinishLine.X2)" y2="@F(startFinishLine.Y2)" class="track-start-line" data-map-layer="start-finish" />
                         <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="8" class="map-cursor-halo" />
                         <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="4" class="map-cursor" />
                     }
@@ -74,21 +106,48 @@
                         <svg:text x="28" y="205" class="chart-label">Start / finish</svg:text><svg:text x="392" y="205" text-anchor="end" class="chart-label">100%</svg:text>
                     }
                 </svg>
+                <div class="track-map-legend" data-map-legend data-mode="@Mode">
+                    @if (Mode == "traces")
+                    {
+                        @foreach (var trace in MapTracePaths)
+                        {
+                            <span style="@($"--legend-color:{trace.Color}")"><i></i>Lap @trace.Lap</span>
+                        }
+                        @if (MapTraceUnavailableCount > 0)
+                        {
+                            <span class="map-trace-unavailable">@MapTraceUnavailableCount without racing-line coordinates</span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="map-scale-copy"><b>@MapLegendMinimum</b><i class="map-scale-gradient @Mode"></i><b>@MapLegendMaximum</b></span>
+                    }
+                </div>
                 <div class="cursor-readout"><strong data-analysis-track-percent>@((Cursor * 100).ToString("0.0"))%</strong><span data-analysis-track-summary>@CursorSummary</span></div>
             </div>
         </section>
 
-        <aside class="lap-rail telemetry-context-panel @(LapRailCollapsed ? "collapsed" : null)" aria-labelledby="lap-rail-title">
+        <aside class="lap-rail telemetry-context-panel @(LapRailCollapsed ? "collapsed" : null)"
+               aria-labelledby="lap-rail-title"
+               aria-hidden="@(IsRaceWorkspace && LapRailCollapsed ? "true" : null)"
+               inert="@(IsRaceWorkspace && LapRailCollapsed ? string.Empty : null)">
             <div class="lap-rail-header">
-                <button type="button"
-                        class="context-heading-button"
-                        aria-controls="race-lap-rail-content"
-                        aria-expanded="@AriaBoolean(!LapRailCollapsed)"
-                        aria-label="@(LapRailCollapsed ? "Show Laps and runs" : "Hide Laps and runs")"
-                        @onclick="ToggleLapRail">
-                    <span class="context-heading-copy"><strong id="lap-rail-title">Laps &amp; runs</strong><span>@Selected.Count selected</span></span>
-                    <ProductIcon Name="chevron-up" Size="15" />
-                </button>
+                @if (IsRaceWorkspace)
+                {
+                    <div class="context-heading-static"><strong id="lap-rail-title">Laps &amp; runs</strong><span>@Selected.Count selected</span></div>
+                }
+                else
+                {
+                    <button type="button"
+                            class="context-heading-button"
+                            aria-controls="race-lap-rail-content"
+                            aria-expanded="@AriaBoolean(!LapRailCollapsed)"
+                            aria-label="@(LapRailCollapsed ? "Show Laps and runs" : "Hide Laps and runs")"
+                            @onclick="ToggleLapRail">
+                        <span class="context-heading-copy"><strong id="lap-rail-title">Laps &amp; runs</strong><span>@Selected.Count selected</span></span>
+                        <ProductIcon Name="chevron-up" Size="15" />
+                    </button>
+                }
                 <div class="lap-filter-controls" aria-label="Lap filters">
                     <label class="green-lap-filter"><input type="checkbox" checked="@GreenLapsOnly" @onchange="GreenLapFilterChanged" /> Green laps</label>
                     <label class="clean-lap-filter"><input type="checkbox" checked="@CleanLapsOnly" @onchange="CleanLapFilterChanged" /> Clean laps</label>
@@ -177,11 +236,11 @@
                                                 title="@(direction == "in" ? "Pit entry" : "Pit exit")"
                                                 @onmouseenter="args => ShowPitPopover(args, trace.Lap, direction)"
                                                 @onmouseleave="SchedulePitPopoverHide"
-                                                @onfocus="() => ShowPitPopoverFromFocus(trace.Lap, direction)"
-                                                @onblur="SchedulePitPopoverHide"
-                                                @onclick="args => ShowPitPopover(args, trace.Lap, direction)"
-                                                @onclick:stopPropagation="true"
-                                                @onkeydown:stopPropagation="true"><ProductIcon Name="@(direction == "in" ? "pit-in" : "pit-out")" Size="14" /></button>
+                                                 @onfocus="() => ShowPitPopoverFromFocus(trace.Lap, direction)"
+                                                 @onblur="SchedulePitPopoverHide"
+                                                 @onclick="args => ShowPitPopover(args, trace.Lap, direction)"
+                                                 @onclick:stopPropagation="true"
+                                                 @onkeydown:stopPropagation="true">@(direction == "in" ? "Pit entry" : "Pit exit")</button>
                                     }
                                 </span>
                                 @if (pitLap && activePitRun?.PitStop is not null)
@@ -258,48 +317,74 @@
                                         <span class="track-usage-row"><i aria-hidden="true"></i><strong>@TrackUsage(conditions)</strong></span>
                                     </span>
                                 }
-                                @if (ActiveIncidentLap == trace.Lap && lapIncidents.Count > 0)
-                                {
-                                    <span id="@IncidentPopoverId(trace.Lap)" class="incident-popover" style="@IncidentPopoverStyle" role="tooltip">
-                                        <strong>Lap @trace.Lap · x@incidentPoints</strong>
-                                        @foreach (var incident in lapIncidents)
-                                        {
-                                            <span>@IncidentEventDescription(trace, incident)</span>
-                                        }
-                                        <small>The recording identifies incident-point changes, not contact type. A zero-point contact appears only when the source records an explicit event.</small>
-                                    </span>
-                                }
+                                 @if (ActiveIncidentLap == trace.Lap && lapIncidents.Count > 0)
+                                 {
+                                     <span id="@IncidentPopoverId(trace.Lap)" class="incident-popover" style="@IncidentPopoverStyle" role="tooltip">
+                                         <strong>@($"Lap {trace.Lap} · x{incidentPoints}")</strong>
+                                         @foreach (var incident in lapIncidents)
+                                         {
+                                             var description = IncidentEventDescription(trace, incident, lapIncidents.Count > 1);
+                                             @if (!string.IsNullOrWhiteSpace(description))
+                                             {
+                                                 <span>@description</span>
+                                             }
+                                         }
+                                     </span>
+                                 }
                             </div>
                         }
                     </details>
                 }
             </div>
-            <div class="lap-rail-footer"><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ClearSelection">Clear</button><button class="text-button" @onclick="ShowAllLaps">Show all</button></div>
+            <div class="lap-rail-footer"><button class="text-button" @onclick="SelectFastest">Fastest</button><button class="text-button" @onclick="ResetSelection">Best three</button><button class="text-button" @onclick="ClearSelection">Clear</button><button class="text-button" @onclick="ShowAllLaps">Show all</button></div>
             </div>
         </aside>
         </div>
 
-        @if (Selected.Count == 0)
-        {
-            <div class="telemetry-empty-selection"><strong>No laps selected</strong><span>Select a lap, Best three, or Show all to display telemetry.</span></div>
-        }
-        else
-        {
         <div class="telemetry-grid">
             <div @ref="TraceStudioElement"
                  class="trace-panel analysis-trace-studio @(TraceExpanded ? "trace-panel-expanded" : null) @(TraceToolboxOpen ? "editing toolbox-open" : "viewing toolbox-closed")"
                  data-analysis-trace-studio>
                 <div class="panel-title trace-panel-title">
                     <div class="trace-panel-summary"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare</span></div>
-                    <div class="trace-spotlight-control">
-                        <select aria-label="Spotlight lap" value="@(SpotlightLap?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)" @onchange="SpotlightLapChanged">
-                            <option value="">Spotlight lap</option>
-                            @foreach (var trace in SpotlightCandidates)
-                            {
-                                <option value="@trace.Lap">Lap @trace.Lap · @LapTime(trace.LapTimeSeconds)</option>
-                            }
-                        </select>
-                        <button type="button" disabled="@(!SpotlightLap.HasValue)" @onclick="ClearSpotlight">Clear</button>
+                    <div @ref="SpotlightControlElement" class="trace-spotlight-control" @onfocusout="HandleSpotlightFocusOut" @onclick:stopPropagation="true">
+                        <button @ref="SpotlightTriggerElement" type="button"
+                                class="spotlight-menu-trigger"
+                                aria-label="Spotlight lap"
+                                aria-haspopup="listbox"
+                                aria-expanded="@AriaBoolean(SpotlightMenuOpen)"
+                                @onclick="ToggleSpotlightMenu"><span>Spotlight lap</span><ProductIcon Name="chevron-down" Size="13" /></button>
+                        @if (SpotlightMenuOpen)
+                        {
+                            <div class="spotlight-menu" role="listbox" aria-label="Spotlight lap choices">
+                                @foreach (var trace in SpotlightCandidates)
+                                {
+                                    var spotlightFastest = trace.LapTimeSeconds.HasValue && Math.Abs(trace.LapTimeSeconds.Value - FastestLapTime) < .0001;
+                                    <button type="button"
+                                            class="spotlight-option @(SpotlightLap == trace.Lap ? "selected" : null)"
+                                            role="option"
+                                            aria-selected="@AriaBoolean(SpotlightLap == trace.Lap)"
+                                            style="@($"--lap-color:{LapColor(trace.Lap)}")"
+                                            @onmousedown:preventDefault="true"
+                                            @onclick="() => SelectSpotlight(trace.Lap)">
+                                        <span class="spotlight-lap"><b>@trace.Lap</b><i class="lap-trace-color" aria-hidden="true"></i></span>
+                                        <span class="spotlight-time @(spotlightFastest ? "fastest" : null)">@LapTime(trace.LapTimeSeconds)@(spotlightFastest ? " · Fastest" : string.Empty)</span>
+                                        <span class="sector-squares" aria-label="Sector performance">
+                                            @for (var sector = 0; sector < SectorStarts.Count; sector++)
+                                            {
+                                                var sectorState = SectorState(trace, sector);
+                                                <span class="sector-square @sectorState.Class" title="@sectorState.Title" aria-hidden="true"></span>
+                                            }
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                        @if (SpotlightLap.HasValue)
+                        {
+                            <span class="spotlight-active-chip" style="@($"--lap-color:{LapColor(SpotlightLap.Value)}")"><i></i>Lap @SpotlightLap</span>
+                            <button type="button" class="spotlight-clear" @onclick="ClearSpotlight">Clear</button>
+                        }
                     </div>
                     <div class="trace-panel-actions">
                         <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@AriaBoolean(TraceToolboxOpen)" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
@@ -321,8 +406,22 @@
                     </header>
                     <div class="analysis-trace-toolbox-body">
                         <section class="trace-toolbox-layout-section">
-                            <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Charts</span><strong>One-column layout</strong></div><span>@TraceRows.Count / @AnalysisTraceLayouts.MaximumRows</span></div>
-                            <button type="button" class="trace-layout-reset" title="Restore the default trace charts" @onclick="ResetTraceLayout"><ProductIcon Name="reset" Size="15" /> Reset charts</button>
+                            <div class="toolbox-section-heading"><div><span class="toolbox-kicker">Trace layout</span><strong>@ActiveTraceLayout.Named.Name</strong></div><span>@TraceRows.Count / @AnalysisTraceLayouts.MaximumRows</span></div>
+                            <div class="analysis-layout-library">
+                                <label class="analysis-layout-select"><span class="sr-only">Race Analysis trace layout</span><select data-analysis-layout-select value="@TraceLayoutPreferences.ActiveLayoutId" @onchange="ChangeTraceLayout">@foreach (var choice in TraceLayoutChoices) { <option value="@choice.Named.Id">@choice.Named.Name</option> }</select></label>
+                                <button type="button" data-analysis-layout-new title="Create a trace layout" @onclick="CreateTraceLayout"><ProductIcon Name="plus" Size="15" /> New</button>
+                                <button type="button" data-analysis-layout-duplicate title="Duplicate this trace layout" @onclick="DuplicateTraceLayout"><ProductIcon Name="duplicate" Size="15" /> Copy</button>
+                                <button type="button" data-analysis-layout-delete class="danger" disabled="@ActiveTraceLayout.IsFactory" title="Delete this custom trace layout" @onclick="DeleteTraceLayout"><ProductIcon Name="trash" Size="15" /> Delete</button>
+                            </div>
+                            @if (ActiveTraceLayout.IsFactory)
+                            {
+                                <div class="analysis-layout-default-note" data-analysis-layout-default><ProductIcon Name="check" Size="14" /><span>Default is protected. Editing creates a copy.</span></div>
+                            }
+                            else
+                            {
+                                <label class="analysis-layout-name"><span>Name</span><input data-analysis-layout-rename value="@ActiveTraceLayout.Named.Name" maxlength="40" @onchange="RenameTraceLayout" /></label>
+                            }
+                            <button type="button" class="trace-layout-reset" disabled="@ActiveTraceLayout.IsFactory" title="Restore the default trace charts in this custom layout" @onclick="ResetTraceLayout"><ProductIcon Name="reset" Size="15" /> Reset charts</button>
                         </section>
                         @if (SelectedTraceRow is { } selectedRow && PanelFor(selectedRow) is { } selectedPanel)
                         {
@@ -353,22 +452,28 @@
                                 {
                                     <div class="toolbox-search-empty"><strong>No matching telemetry</strong><span>Try a shorter name or unit.</span></div>
                                 }
-                                @foreach (var signal in FilteredTraceSignals)
+                                @foreach (var group in TraceSignalGroups)
                                 {
-                                    var recorded = SignalRecordedInRace(signal);
-                                    <article class="toolbox-metric-card analysis-trace-metric-card @(!recorded ? "unavailable" : null)"
-                                             role="listitem"
-                                             tabindex="0"
-                                             data-analysis-drag-signal="@signal.Id"
-                                             data-signal-id="@signal.Id"
-                                             data-signal-name="@signal.Name"
-                                             aria-label="@($"{signal.Name}, {signal.Unit}. Drag onto a chart, or press Enter to pair or replace it in the selected chart.")"
-                                             @onkeydown="args => HandleTraceSignalKeyDown(signal.Id, args)"
-                                             title="@(recorded ? $"Drag {signal.Name} onto a chart" : $"{signal.Name} was not recorded in this race; the saved chart will activate when data is available")">
-                                        <span class="metric-drag-handle" aria-hidden="true"><ProductIcon Name="grip" Size="15" /></span>
-                                        <div><strong>@signal.Name</strong><small>@signal.Unit@(!recorded ? " · not recorded" : string.Empty)</small></div>
-                                        <button type="button" class="metric-add-button" data-analysis-no-drag disabled="@(TraceRows.Count >= AnalysisTraceLayouts.MaximumRows)" aria-label="Add @signal.Name as a new chart" title="Add as a new chart" @onkeydown:stopPropagation="true" @onclick="() => AddTraceSignal(signal.Id)"><ProductIcon Name="plus" Size="16" /></button>
-                                    </article>
+                                    <section class="trace-signal-category" aria-labelledby="@($"trace-category-{CategorySlug(group.Key)}")">
+                                        <h3 id="@($"trace-category-{CategorySlug(group.Key)}")">@group.Key</h3>
+                                        @foreach (var signal in group.OrderByDescending(SignalRecordedInRace).ThenBy(signal => signal.Name, StringComparer.OrdinalIgnoreCase))
+                                        {
+                                            var recorded = SignalRecordedInRace(signal);
+                                            <article class="toolbox-metric-card analysis-trace-metric-card @(!recorded ? "unavailable" : null)"
+                                                     role="listitem"
+                                                     tabindex="0"
+                                                     data-analysis-drag-signal="@signal.Id"
+                                                     data-signal-id="@signal.Id"
+                                                     data-signal-name="@signal.Name"
+                                                     aria-label="@($"{signal.Name}, {signal.Unit}. Drag onto a chart, or press Enter to pair or replace it in the selected chart.")"
+                                                     @onkeydown="args => HandleTraceSignalKeyDown(signal.Id, args)"
+                                                     title="@(recorded ? $"Drag {signal.Name} onto a chart" : $"{signal.Name} was not recorded in this race; the saved chart will activate when data is available")">
+                                                <span class="metric-drag-handle" aria-hidden="true"><ProductIcon Name="grip" Size="15" /></span>
+                                                <div><strong>@signal.Name</strong><small>@signal.Unit@(!recorded ? " · not recorded" : string.Empty)</small></div>
+                                                <button type="button" class="metric-add-button" data-analysis-no-drag disabled="@(TraceRows.Count >= AnalysisTraceLayouts.MaximumRows)" aria-label="Add @signal.Name as a new chart" title="Add as a new chart" @onkeydown:stopPropagation="true" @onclick="() => AddTraceSignal(signal.Id)"><ProductIcon Name="plus" Size="16" /></button>
+                                            </article>
+                                        }
+                                    </section>
                                 }
                             </div>
                         </section>
@@ -376,6 +481,12 @@
                     <footer class="trace-toolbox-footer"><span>Drop between charts to add</span><span>Drop on a chart to pair</span><span><kbd>Alt</kbd> + arrow reorders</span></footer>
                 </aside>
                 <div class="trace-chart-frame" style="@TraceChartFrameStyle">
+                @if (Selected.Count == 0)
+                {
+                    <div class="telemetry-empty-selection"><strong>No laps selected</strong><span>Select Fastest, Best three, or a lap to display telemetry.</span></div>
+                }
+                else
+                {
                     <div class="trace-label-column" aria-label="Trace chart labels">
                         @foreach (var panel in TraceRows)
                         {
@@ -434,10 +545,10 @@
                     }
                     <g data-analysis-cursor-layer class="analysis-cursor-layer" style="display:none" aria-hidden="true"></g>
                 </svg>
+                }
                 </div>
             </div>
         </div>
-        }
         </div>
     }
 </section>
@@ -448,12 +559,14 @@
     [Parameter] public bool IsRaceWorkspace { get; set; }
     private readonly HashSet<int> Selected = [];
     private string? _analysisId;
-    private string Mode { get; set; } = "speed";
+    private AnalysisWorkspace? _workspaceReference;
+    private string Mode { get; set; } = "traces";
     private bool CleanLapsOnly { get; set; }
     private bool GreenLapsOnly { get; set; }
     private bool LapRailCollapsed { get; set; }
     private bool TrackPanelCollapsed { get; set; }
     private int? SpotlightLap { get; set; }
+    private bool SpotlightMenuOpen { get; set; }
     private bool TraceExpanded { get; set; }
     private bool TraceToolboxOpen { get; set; }
     private string _traceSignalSearch = string.Empty;
@@ -475,11 +588,29 @@
     private bool IncidentPopoverLeft { get; set; }
     private CancellationTokenSource? _pitPopoverHideCancellation;
     private IReadOnlyList<MapPoint>? _mapPoints;
+    private IReadOnlyList<AnalysisVectorPoint> _canonicalGeometryPoints = [];
+    private IReadOnlyList<AnalysisTracePoint> _allRecordedGpsPoints = [];
+    private VectorProjection? _vectorProjection;
+    private GpsBounds? _gpsBounds;
+    private MapBounds? _mapBounds;
+    private string _trackViewBox = "0 0 420 280";
+    private string _trackRibbonPath = string.Empty;
+    private MapLine _startFinishLine = new(210, 127, 210, 153);
+    private IReadOnlyList<PitMapLayer> _pitMapLayers = [];
+    private IReadOnlyList<MapTracePath>? _mapTracePaths;
+    private string _mapTracePathsSignature = string.Empty;
+    private int _mapTraceUnavailableCount;
+    private IReadOnlyDictionary<int, string> _lapColorCache = new Dictionary<int, string>();
+    private double _fastestLapTime = double.MaxValue;
+    private readonly Dictionary<string, IReadOnlyList<MapSegment>> _mapSegmentCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<StripSegment>> _stripSegmentCache = new(StringComparer.Ordinal);
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
     private ElementReference TraceStudioElement;
     private ElementReference TraceToolboxButtonElement;
+    private ElementReference SpotlightControlElement;
+    private ElementReference SpotlightTriggerElement;
     private DotNetObjectReference<TelemetryWorkspace>? _traceLayoutDotNetReference;
     private bool _cursorInteropAttached;
     private bool _traceLayoutInteropAttached;
@@ -497,31 +628,35 @@
     private const double TraceRowsHeight = 820;
     private const int TooltipRowHeight = 20;
     private const double TooltipCharacterWidth = 7.1;
-    private static readonly (string Key, string Label)[] Modes = [("speed", "Speed"), ("throttle", "Throttle"), ("brake", "Brake"), ("steering", "Steering"), ("stress", "Tire load")];
+    private static readonly (string Key, string Label)[] Modes = [("traces", "Traces"), ("speed", "Speed"), ("throttle", "Throttle"), ("brake", "Brake"), ("stress", "Tire load")];
     private static readonly HeatStop[] SpeedHeatmapStops =
     [
-        new(0.00, 71, 103, 232),
-        new(0.25, 56, 189, 248),
-        new(0.50, 66, 226, 154),
-        new(0.75, 244, 211, 94),
-        new(1.00, 255, 111, 105)
+        new(0.00, 232, 66, 78),
+        new(0.34, 248, 132, 64),
+        new(0.58, 242, 203, 76),
+        new(0.78, 116, 222, 108),
+        new(1.00, 34, 220, 116)
     ];
 
     protected override void OnParametersSet()
     {
         State.Settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
-        _ = AnalysisTraceLayouts.ValidateAndRepair(State.Settings.RaceAnalysisTraces);
-        if (_analysisId == Workspace.AnalysisId) return;
+        State.Settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
+        _ = AnalysisTraceLayoutSets.ValidateAndRepair(State.Settings.RaceAnalysisTraceLayouts, State.Settings.RaceAnalysisTraces);
+        if (_analysisId == Workspace.AnalysisId && ReferenceEquals(_workspaceReference, Workspace)) return;
         KeepPitPopoverOpen();
         ActivePitLap = null;
         ActivePitDirection = null;
         ActiveIncidentLap = null;
         _analysisId = Workspace.AnalysisId;
-        _mapPoints = null;
+        _workspaceReference = Workspace;
+        Mode = "traces";
         SpotlightLap = null;
+        SpotlightMenuOpen = false;
         LapRailCollapsed = false;
         TrackPanelCollapsed = false;
         ResetSelection();
+        RebuildMapRenderCache();
         RebuildCalculatedTireWear();
         _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
         InvalidateTraceRender();
@@ -529,6 +664,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Layout editing is independent of lap selection. Keep drag/drop and
+        // keyboard reordering available after Clear leaves the chart empty.
+        await ConfigureTraceLayoutInteropAsync();
         if (Selected.Count == 0) return;
         if (!_cursorInteropAttached && await MeasureChart()) return;
         var signature = CursorInteropSignature;
@@ -542,16 +680,31 @@
         {
             await JS.InvokeVoidAsync("iracingCoachAnalysisCursor.sync", ChartElement, TrackElement);
         }
-        await ConfigureTraceLayoutInteropAsync();
     }
 
     private void ToggleTraceExpanded()
     {
         TraceExpanded = !TraceExpanded;
     }
-    private string ContextColumnState => $"{(LapRailCollapsed ? "laps-collapsed" : "laps-open")} {(TrackPanelCollapsed ? "track-collapsed" : "track-open")} {(LapRailCollapsed && TrackPanelCollapsed ? "context-collapsed" : null)}";
-    private void ToggleLapRail() => LapRailCollapsed = !LapRailCollapsed;
-    private void ToggleTrackPanel() => TrackPanelCollapsed = !TrackPanelCollapsed;
+    private string ContextColumnState => IsRaceWorkspace
+        ? (!TrackPanelCollapsed, !LapRailCollapsed) switch
+        {
+            (true, true) => "context-both",
+            (true, false) => "context-track",
+            (false, true) => "context-laps",
+            _ => "context-none"
+        }
+        : $"{(LapRailCollapsed ? "laps-collapsed" : "laps-open")} {(TrackPanelCollapsed ? "track-collapsed" : "track-open")}";
+    private void ToggleLapRail()
+    {
+        LapRailCollapsed = !LapRailCollapsed;
+        CloseSpotlightMenu();
+    }
+    private void ToggleTrackPanel()
+    {
+        TrackPanelCollapsed = !TrackPanelCollapsed;
+        CloseSpotlightMenu();
+    }
     private void ToggleTraceToolbox()
     {
         TraceToolboxOpen = !TraceToolboxOpen;
@@ -570,7 +723,14 @@
     private async Task HandleWorkspaceKeyDown(KeyboardEventArgs args)
     {
         if (args.Key != "Escape") return;
-        if (TraceToolboxOpen) await CloseTraceToolbox();
+        if (SpotlightMenuOpen)
+        {
+            SpotlightMenuOpen = false;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+            await SpotlightTriggerElement.FocusAsync();
+        }
+        else if (TraceToolboxOpen) await CloseTraceToolbox();
         else if (TraceExpanded) ToggleTraceExpanded();
     }
 
@@ -618,8 +778,12 @@
             }
         }
     }
-    private double FastestLapTime => Workspace.Traces.Where(trace => IsClean(trace) && trace.LapTimeSeconds.HasValue).Select(trace => trace.LapTimeSeconds!.Value).DefaultIfEmpty(double.MaxValue).Min();
-    private AnalysisTraceLayout TraceLayout => State.Settings.RaceAnalysisTraces;
+    private double FastestLapTime => _fastestLapTime;
+    private AnalysisTraceLayoutSet TraceLayoutPreferences => State.Settings.RaceAnalysisTraceLayouts;
+    private IReadOnlyList<AnalysisTraceLayoutChoice> TraceLayoutChoices => AnalysisTraceLayoutSets.Choices(TraceLayoutPreferences);
+    private AnalysisTraceLayoutChoice ActiveTraceLayout => AnalysisTraceLayoutSets.Active(TraceLayoutPreferences);
+    private AnalysisTraceLayout TraceLayout => ActiveTraceLayout.Named.Layout;
+    private AnalysisTraceLayout EditableTraceLayout => AnalysisTraceLayoutSets.EnsureEditable(TraceLayoutPreferences).Layout;
     private IReadOnlyList<TracePanelRow> TraceRows => TraceLayout.Rows.Select(row => new TracePanelRow(
         row,
         new[] { AnalysisTraceLayouts.Signal(row.PrimarySignalId), AnalysisTraceLayouts.Signal(row.SecondarySignalId) }
@@ -640,14 +804,14 @@
     private string TraceStrokeWidth(AnalysisLapTrace trace, int signalIndex)
     {
         if (!SpotlightLap.HasValue) return signalIndex == 0 ? "1.35" : "1.05";
-        if (SpotlightLap == trace.Lap) return signalIndex == 0 ? "2.15" : "1.65";
+        if (SpotlightLap == trace.Lap) return signalIndex == 0 ? "2.35" : "1.8";
         return signalIndex == 0 ? "1.15" : ".95";
     }
     private string TraceOpacity(AnalysisLapTrace trace, int signalIndex)
     {
         if (!SpotlightLap.HasValue) return signalIndex == 0 ? "1" : ".72";
         if (SpotlightLap == trace.Lap) return signalIndex == 0 ? "1" : ".82";
-        return signalIndex == 0 ? ".5" : ".38";
+        return signalIndex == 0 ? ".42" : ".30";
     }
     private string CursorSummary
     {
@@ -672,20 +836,38 @@
         InvalidateTraceRender();
     }
     private void SelectLap(int lap) => ToggleLap(lap);
-    private void SpotlightLapChanged(ChangeEventArgs args)
+    private void ToggleSpotlightMenu()
     {
-        if (!int.TryParse(args.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var lap) ||
-            SpotlightCandidates.All(trace => trace.Lap != lap))
+        SpotlightMenuOpen = !SpotlightMenuOpen;
+    }
+    private void CloseSpotlightMenu() => SpotlightMenuOpen = false;
+    private async Task HandleSpotlightFocusOut()
+    {
+        if (!SpotlightMenuOpen) return;
+        await Task.Yield();
+        try
         {
-            ClearSpotlight();
+            if (await JS.InvokeAsync<bool>("iracingCoach.elementContainsActiveElement", SpotlightControlElement)) return;
+        }
+        catch (JSDisconnectedException)
+        {
             return;
         }
+        SpotlightMenuOpen = false;
+    }
+    private async Task SelectSpotlight(int lap)
+    {
+        if (SpotlightCandidates.All(trace => trace.Lap != lap)) return;
         SpotlightLap = lap;
         Selected.Add(lap);
+        SpotlightMenuOpen = false;
         InvalidateTraceRender();
+        try { await JS.InvokeVoidAsync("iracingCoach.blurActiveElement"); }
+        catch (JSDisconnectedException) { }
     }
     private void ClearSpotlight()
     {
+        SpotlightMenuOpen = false;
         if (!SpotlightLap.HasValue) return;
         SpotlightLap = null;
         InvalidateTraceRender();
@@ -704,6 +886,18 @@
         await DisposeTraceLayoutInteropAsync();
         Selected.Clear();
         SpotlightLap = null;
+        SpotlightMenuOpen = false;
+        InvalidateTraceRender();
+    }
+    private void SelectFastest()
+    {
+        var fastest = Workspace.Traces.Where(IsClean).Where(HasUsableLapTime)
+            .OrderBy(trace => trace.LapTimeSeconds).ThenBy(trace => trace.Lap).FirstOrDefault()
+            ?? Workspace.Traces.Where(HasUsableLapTime).OrderBy(trace => trace.LapTimeSeconds).ThenBy(trace => trace.Lap).FirstOrDefault();
+        Selected.Clear();
+        SpotlightLap = null;
+        SpotlightMenuOpen = false;
+        if (fastest is not null) Selected.Add(fastest.Lap);
         InvalidateTraceRender();
     }
     private void CleanLapFilterChanged(ChangeEventArgs args)
@@ -732,6 +926,7 @@
     private void ResetSelection()
     {
         SpotlightLap = null;
+        SpotlightMenuOpen = false;
         Selected.Clear();
         foreach (var trace in Workspace.Traces.Where(IsClean).Where(HasUsableLapTime).OrderBy(trace => trace.LapTimeSeconds!.Value).ThenBy(trace => trace.Lap).Take(3))
             Selected.Add(trace.Lap);
@@ -745,8 +940,32 @@
     private IReadOnlyList<AnalysisTraceSignalDefinition> FilteredTraceSignals => AnalysisTraceLayouts.Signals
         .Where(signal => string.IsNullOrWhiteSpace(_traceSignalSearch) ||
             signal.Name.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase) ||
-            signal.Unit.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase))
+            signal.Unit.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase) ||
+            signal.AccentGroup.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase))
         .ToArray();
+    private IReadOnlyList<IGrouping<string, AnalysisTraceSignalDefinition>> TraceSignalGroups => FilteredTraceSignals
+        .GroupBy(SignalCategory)
+        .OrderBy(group => CategoryOrder(group.Key))
+        .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    private static string SignalCategory(AnalysisTraceSignalDefinition signal) => signal.AccentGroup switch
+    {
+        "speed" or "time" or "race" => "Pace",
+        "pedals" => "Controls",
+        "tire" => "Tires",
+        "conditions" => "Conditions",
+        _ => "Vehicle"
+    };
+    private static int CategoryOrder(string category) => category switch
+    {
+        "Pace" => 0,
+        "Controls" => 1,
+        "Vehicle" => 2,
+        "Tires" => 3,
+        "Conditions" => 4,
+        _ => 5
+    };
+    private static string CategorySlug(string category) => new(category.ToLowerInvariant().Select(character => char.IsLetterOrDigit(character) ? character : '-').ToArray());
     private TracePanelRow? PanelFor(AnalysisTraceRow row) => TraceRows.FirstOrDefault(panel => string.Equals(panel.Preferences.Id, row.Id, StringComparison.Ordinal));
     private void ActivateTraceRow(string rowId)
     {
@@ -754,28 +973,62 @@
     }
     private void ResetTraceLayout()
     {
-        TraceLayout.Rows.Clear();
-        _ = AnalysisTraceLayouts.ValidateAndRepair(TraceLayout);
+        if (ActiveTraceLayout.IsFactory) return;
+        var layout = ActiveTraceLayout.Named.Layout;
+        layout.Rows.Clear();
+        _ = AnalysisTraceLayouts.ValidateAndRepair(layout);
+        _selectedTraceRowId = layout.Rows.FirstOrDefault()?.Id;
+        SaveTraceLayout();
+    }
+    private void ChangeTraceLayout(ChangeEventArgs args)
+    {
+        if (!AnalysisTraceLayoutSets.Select(TraceLayoutPreferences, args.Value?.ToString())) return;
         _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
+        SaveTraceLayout();
+    }
+    private void CreateTraceLayout()
+    {
+        var created = AnalysisTraceLayoutSets.Create(TraceLayoutPreferences);
+        _selectedTraceRowId = created.Layout.Rows.FirstOrDefault()?.Id;
+        SaveTraceLayout();
+    }
+    private void DuplicateTraceLayout()
+    {
+        var duplicate = AnalysisTraceLayoutSets.Duplicate(TraceLayoutPreferences);
+        _selectedTraceRowId = duplicate.Layout.Rows.FirstOrDefault()?.Id;
+        SaveTraceLayout();
+    }
+    private void DeleteTraceLayout()
+    {
+        if (!AnalysisTraceLayoutSets.DeleteActive(TraceLayoutPreferences)) return;
+        _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
+        SaveTraceLayout();
+    }
+    private void RenameTraceLayout(ChangeEventArgs args)
+    {
+        if (!AnalysisTraceLayoutSets.RenameActive(TraceLayoutPreferences, args.Value?.ToString())) return;
         SaveTraceLayout();
     }
     private void AddTraceSignal(string signalId)
     {
-        if (!AnalysisTraceLayouts.InsertSignal(TraceLayout, signalId, TraceLayout.Rows.Count)) return;
-        _selectedTraceRowId = TraceLayout.Rows.LastOrDefault()?.Id;
+        var layout = EditableTraceLayout;
+        if (!AnalysisTraceLayouts.InsertSignal(layout, signalId, layout.Rows.Count)) return;
+        _selectedTraceRowId = layout.Rows.LastOrDefault()?.Id;
         SaveTraceLayout();
     }
     private void RemoveTraceRow(string rowId)
     {
-        var index = TraceLayout.Rows.FindIndex(row => string.Equals(row.Id, rowId, StringComparison.Ordinal));
-        if (!AnalysisTraceLayouts.RemoveRow(TraceLayout, rowId)) return;
-        _selectedTraceRowId = TraceLayout.Rows.ElementAtOrDefault(Math.Clamp(index, 0, Math.Max(0, TraceLayout.Rows.Count - 1)))?.Id;
+        var layout = EditableTraceLayout;
+        var index = layout.Rows.FindIndex(row => string.Equals(row.Id, rowId, StringComparison.Ordinal));
+        if (!AnalysisTraceLayouts.RemoveRow(layout, rowId)) return;
+        _selectedTraceRowId = layout.Rows.ElementAtOrDefault(Math.Clamp(index, 0, Math.Max(0, layout.Rows.Count - 1)))?.Id;
         SaveTraceLayout();
     }
     private void RemoveTraceSignal(string rowId, string signalId)
     {
-        if (!AnalysisTraceLayouts.RemoveSignal(TraceLayout, rowId, signalId)) return;
-        if (SelectedTraceRow is null) _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
+        var layout = EditableTraceLayout;
+        if (!AnalysisTraceLayouts.RemoveSignal(layout, rowId, signalId)) return;
+        if (SelectedTraceRow is null) _selectedTraceRowId = layout.Rows.FirstOrDefault()?.Id;
         SaveTraceLayout();
     }
     private void HandleTraceRowKeyDown(string rowId, KeyboardEventArgs args)
@@ -783,9 +1036,10 @@
         if (!TraceToolboxOpen) return;
         if (args.Key == "Delete") { RemoveTraceRow(rowId); return; }
         if (!args.AltKey || args.Key is not ("ArrowUp" or "ArrowDown")) return;
-        var index = TraceLayout.Rows.FindIndex(row => string.Equals(row.Id, rowId, StringComparison.Ordinal));
+        var layout = EditableTraceLayout;
+        var index = layout.Rows.FindIndex(row => string.Equals(row.Id, rowId, StringComparison.Ordinal));
         var target = index + (args.Key == "ArrowUp" ? -1 : 1);
-        if (AnalysisTraceLayouts.MoveRowToIndex(TraceLayout, rowId, target))
+        if (AnalysisTraceLayouts.MoveRowToIndex(layout, rowId, target))
         {
             _selectedTraceRowId = rowId;
             SaveTraceLayout();
@@ -794,7 +1048,7 @@
     private void HandleTraceSignalKeyDown(string signalId, KeyboardEventArgs args)
     {
         if (args.Key is not ("Enter" or " " or "Spacebar") || SelectedTraceRow is not { } selectedRow) return;
-        if (!AnalysisTraceLayouts.PlaceSignal(TraceLayout, selectedRow.Id, signalId)) return;
+        if (!AnalysisTraceLayouts.PlaceSignal(EditableTraceLayout, selectedRow.Id, signalId)) return;
         _selectedTraceRowId = selectedRow.Id;
         SaveTraceLayout();
     }
@@ -804,7 +1058,7 @@
         var changed = false;
         await InvokeAsync(() =>
         {
-            changed = AnalysisTraceLayouts.MoveRowToIndex(TraceLayout, rowId, targetIndex);
+            changed = AnalysisTraceLayouts.MoveRowToIndex(EditableTraceLayout, rowId, targetIndex);
             if (changed) { _selectedTraceRowId = rowId; SaveTraceLayout(); }
         });
         return changed;
@@ -815,10 +1069,11 @@
         var changed = false;
         await InvokeAsync(() =>
         {
-            changed = AnalysisTraceLayouts.InsertSignal(TraceLayout, signalId, targetIndex);
+            var layout = EditableTraceLayout;
+            changed = AnalysisTraceLayouts.InsertSignal(layout, signalId, targetIndex);
             if (changed)
             {
-                _selectedTraceRowId = TraceLayout.Rows.ElementAtOrDefault(Math.Clamp(targetIndex, 0, TraceLayout.Rows.Count - 1))?.Id;
+                _selectedTraceRowId = layout.Rows.ElementAtOrDefault(Math.Clamp(targetIndex, 0, layout.Rows.Count - 1))?.Id;
                 SaveTraceLayout();
             }
         });
@@ -830,7 +1085,7 @@
         var changed = false;
         await InvokeAsync(() =>
         {
-            changed = AnalysisTraceLayouts.PlaceSignal(TraceLayout, rowId, signalId);
+            changed = AnalysisTraceLayouts.PlaceSignal(EditableTraceLayout, rowId, signalId);
             if (changed) { _selectedTraceRowId = rowId; SaveTraceLayout(); }
         });
         return changed;
@@ -1174,6 +1429,7 @@
                 {
                     id = signal.Id,
                     shortLabel = signal.ShortLabel,
+                    unit = signal.Unit,
                     minimum = InteropNumber(range.Min) ?? -.5,
                     maximum = InteropNumber(range.Max) ?? .5
                 };
@@ -1213,68 +1469,238 @@
             tooltipCharacterWidth = TooltipCharacterWidth,
             rows,
             traces = traceData,
-            trackPoints = Workspace.TrackShape.Count >= 3
+            trackPoints = HasMapGeometry
                 ? MapPoints.Select(point => new { percent = point.Percent, x = point.X, y = point.Y }).ToArray()
                 : [],
-            distanceStrip = Workspace.TrackShape.Count < 3
+            distanceStrip = !HasMapGeometry
         };
     }
     private static double? InteropNumber(double? value) => value is { } number && double.IsFinite(number) ? number : null;
-    private IReadOnlyList<MapPoint> MapPoints
+    private void RebuildMapRenderCache()
     {
-        get
+        _canonicalGeometryPoints = CompleteVectorGeometry is { } vector
+            ? vector.MainPath
+                .Concat(vector.PitLane)
+                .Concat(vector.PitEntryPath)
+                .Concat(vector.PitExitPath)
+                .Concat(LinePoints(vector.StartFinishLine))
+                .Concat(LinePoints(vector.PitCommitmentLine))
+                .Concat(LinePoints(vector.PitMergeLine))
+                .ToArray()
+            : [];
+        _vectorProjection = CreateVectorProjection(_canonicalGeometryPoints);
+        _allRecordedGpsPoints = Workspace.Traces
+            .SelectMany(trace => trace.Points)
+            .Where(point => point.Latitude.HasValue && point.Longitude.HasValue)
+            .ToArray();
+        _gpsBounds = CreateGpsBounds(_allRecordedGpsPoints);
+        _fastestLapTime = Workspace.Traces
+            .Where(trace => IsClean(trace) && trace.LapTimeSeconds.HasValue)
+            .Select(trace => trace.LapTimeSeconds!.Value)
+            .DefaultIfEmpty(double.MaxValue)
+            .Min();
+        var laps = Workspace.Traces.Select(trace => trace.Lap).Distinct().OrderBy(value => value).ToArray();
+        _lapColorCache = laps.Select((lap, index) =>
         {
-            if (_mapPoints is not null) return _mapPoints;
-            if (Workspace.TrackShape.Count < 3) return _mapPoints = Array.Empty<MapPoint>();
-            var minX = Workspace.TrackShape.Min(p => p.X); var maxX = Workspace.TrackShape.Max(p => p.X);
-            var minY = Workspace.TrackShape.Min(p => p.Y); var maxY = Workspace.TrackShape.Max(p => p.Y);
-            var scale = Math.Min(350 / Math.Max(.0001, maxX - minX), 218 / Math.Max(.0001, maxY - minY));
-            return _mapPoints = Workspace.TrackShape.OrderBy(p => p.LapPercent).Select(p => new MapPoint(WrapPercent(p.LapPercent), 210 + (p.X - (minX + maxX) / 2) * scale, 140 - (p.Y - (minY + maxY) / 2) * scale)).ToArray();
-        }
+            var trace = Workspace.Traces.FirstOrDefault(item => item.Lap == lap);
+            if (trace?.LapTimeSeconds is { } lapTime && Math.Abs(lapTime - _fastestLapTime) < .0001)
+                return new KeyValuePair<int, string>(lap, "#F05CDB");
+            var fraction = laps.Length <= 1 ? 0 : index / (double)(laps.Length - 1);
+            var hue = 280 * fraction;
+            return new KeyValuePair<int, string>(lap, $"hsl({hue.ToString("0.##", CultureInfo.InvariantCulture)} 82% 62%)");
+        }).ToDictionary(pair => pair.Key, pair => pair.Value);
+
+        _mapPoints = BuildMapPoints();
+        _mapBounds = CreateMapBounds(_mapPoints);
+        _trackRibbonPath = SvgPath(_mapPoints, HasMapGeometry);
+        _trackViewBox = BuildTrackViewBox();
+        _startFinishLine = BuildStartFinishLine();
+        _pitMapLayers = BuildPitMapLayers();
+        _mapTracePaths = null;
+        _mapTracePathsSignature = string.Empty;
+        _mapTraceUnavailableCount = 0;
+        _mapSegmentCache.Clear();
+        _stripSegmentCache.Clear();
     }
-    private string TrackViewBox
+
+    private IReadOnlyList<MapPoint> BuildMapPoints()
     {
-        get
-        {
-            if (Workspace.TrackShape.Count < 3) return "0 0 420 280";
-            var points = MapPoints;
-            const double padding = 18;
-            var minX = points.Min(point => point.X) - padding;
-            var minY = points.Min(point => point.Y) - padding;
-            var width = points.Max(point => point.X) - points.Min(point => point.X) + padding * 2;
-            var height = points.Max(point => point.Y) - points.Min(point => point.Y) + padding * 2;
-            return $"{F(minX)} {F(minY)} {F(width)} {F(height)}";
-        }
+        if (CompleteVectorGeometry is { } vector)
+            return vector.MainPath
+                .Select((point, index) => ProjectVectorPoint(point with { LapPercent = point.LapPercent ?? index / (double)vector.MainPath.Count }))
+                .ToArray();
+        if (!HasCompleteTrackShape) return [];
+        var minX = Workspace.TrackShape.Min(point => point.X); var maxX = Workspace.TrackShape.Max(point => point.X);
+        var minY = Workspace.TrackShape.Min(point => point.Y); var maxY = Workspace.TrackShape.Max(point => point.Y);
+        var scale = Math.Min(350 / Math.Max(.0001, maxX - minX), 218 / Math.Max(.0001, maxY - minY));
+        return Workspace.TrackShape.OrderBy(point => point.LapPercent)
+            .Select(point => new MapPoint(WrapPercent(point.LapPercent), 210 + (point.X - (minX + maxX) / 2) * scale, 140 - (point.Y - (minY + maxY) / 2) * scale))
+            .ToArray();
+    }
+
+    private IReadOnlyList<MapPoint> MapPoints => _mapPoints ?? [];
+    private AnalysisTrackGeometry? CompleteVectorGeometry => Workspace.VectorGeometry is
+    {
+        MainPath.Count: >= 3,
+        Quality.MainLoopComplete: true
+    } vector && !vector.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ? vector : null;
+    private bool HasCompleteTrackShape => IsCompleteTrackShape(Workspace.TrackShape);
+    private bool HasMapGeometry => CompleteVectorGeometry is not null || HasCompleteTrackShape;
+    private string TrackViewBox => _trackViewBox;
+    private string BuildTrackViewBox()
+    {
+        if (!HasMapGeometry) return "0 0 420 280";
+        var points = CompleteVectorGeometry is not null
+            ? _canonicalGeometryPoints.Select(ProjectVectorPoint).ToArray()
+            : MapPoints;
+        if (points.Count == 0) return "0 0 420 280";
+        const double padding = 18;
+        var minX = points.Min(point => point.X) - padding;
+        var minY = points.Min(point => point.Y) - padding;
+        var width = points.Max(point => point.X) - points.Min(point => point.X) + padding * 2;
+        var height = points.Max(point => point.Y) - points.Min(point => point.Y) + padding * 2;
+        return $"{F(minX)} {F(minY)} {F(width)} {F(height)}";
     }
     private MapPoint CursorMapPoint => MapPointAt(Cursor);
-    private MapLine StartFinishLine
+    private MapLine StartFinishLine => _startFinishLine;
+    private MapLine BuildStartFinishLine()
+    {
+        if (CompleteVectorGeometry?.StartFinishLine is { } recorded)
+        {
+            var first = ProjectVectorPoint(recorded.A);
+            var second = ProjectVectorPoint(recorded.B);
+            return new MapLine(first.X, first.Y, second.X, second.Y);
+        }
+        var points = MapPoints;
+        var center = MapPointAt(0, points);
+        var before = MapPointAt(.995, points);
+        var after = MapPointAt(.005, points);
+        var tangentX = after.X - before.X;
+        var tangentY = after.Y - before.Y;
+        var length = Math.Sqrt(tangentX * tangentX + tangentY * tangentY);
+        if (length < .0001) return new MapLine(center.X, center.Y - 13, center.X, center.Y + 13);
+        const double halfLength = 13;
+        var normalX = -tangentY / length * halfLength;
+        var normalY = tangentX / length * halfLength;
+        return new MapLine(center.X - normalX, center.Y - normalY, center.X + normalX, center.Y + normalY);
+    }
+    private string TrackRibbonPath => _trackRibbonPath;
+    private IReadOnlyList<MapTracePath> MapTracePaths
     {
         get
         {
-            var points = MapPoints;
-            var center = MapPointAt(0, points);
-            var before = MapPointAt(.995, points);
-            var after = MapPointAt(.005, points);
-            var tangentX = after.X - before.X;
-            var tangentY = after.Y - before.Y;
-            var length = Math.Sqrt(tangentX * tangentX + tangentY * tangentY);
-            if (length < .0001) return new MapLine(center.X, center.Y - 13, center.X, center.Y + 13);
-            const double halfLength = 13;
-            var normalX = -tangentY / length * halfLength;
-            var normalY = tangentX / length * halfLength;
-            return new MapLine(center.X - normalX, center.Y - normalY, center.X + normalX, center.Y + normalY);
+            if (_mapTracePaths is not null && string.Equals(_mapTracePathsSignature, SelectionSignature, StringComparison.Ordinal)) return _mapTracePaths;
+            _mapTracePathsSignature = SelectionSignature;
+            var selected = RenderedSelectedTraces.ToArray();
+            _mapTraceUnavailableCount = selected.Count(trace => trace.Points.Count(point => point.Latitude.HasValue && point.Longitude.HasValue) < 3);
+            if (_allRecordedGpsPoints.Count < 3) return _mapTracePaths = [];
+            return _mapTracePaths = selected
+                .Select(trace => new { Trace = trace, Points = trace.Points.Where(point => point.Latitude.HasValue && point.Longitude.HasValue).Select(ProjectGpsPoint).ToArray() })
+                .Where(item => item.Points.Length >= 3)
+                .Select(item => new MapTracePath(item.Trace.Lap, LapColor(item.Trace.Lap), SvgPath(item.Points, item.Trace.Complete)))
+                .ToArray();
         }
     }
-    private IEnumerable<MapSegment> MapSegments
+    private IReadOnlyList<AnalysisTracePoint> AllRecordedGpsPoints => _allRecordedGpsPoints;
+    private int MapTraceUnavailableCount => _mapTraceUnavailableCount;
+    private IReadOnlyList<PitMapLayer> PitMapLayers => _pitMapLayers;
+    private IReadOnlyList<PitMapLayer> BuildPitMapLayers()
+    {
+        if (CompleteVectorGeometry is not { } vector) return [];
+        var pitRoad = VectorPath(vector.PitLane);
+        var entry = VectorPath(vector.PitEntryPath);
+        var exit = VectorPath(vector.PitExitPath);
+        var commitment = vector.PitCommitmentLine is { } entryLine ? ProjectVectorLine(entryLine) : null;
+        var merge = vector.PitMergeLine is { } exitLine ? ProjectVectorLine(exitLine) : null;
+        if (pitRoad.Length == 0 && entry.Length == 0 && exit.Length == 0 && commitment is null && merge is null) return [];
+        return [new PitMapLayer(pitRoad, entry, exit, commitment, merge)];
+    }
+    private string VectorPath(IReadOnlyList<AnalysisVectorPoint> points) => points.Count < 2 ? string.Empty : SvgPath(points.Select(ProjectVectorPoint).ToArray(), false);
+    private MapLine ProjectVectorLine(AnalysisVectorLine line)
+    {
+        var first = ProjectVectorPoint(line.A); var second = ProjectVectorPoint(line.B);
+        return new MapLine(first.X, first.Y, second.X, second.Y);
+    }
+    private MapPoint ProjectVectorPoint(AnalysisVectorPoint point)
+    {
+        if (_vectorProjection is not { } projection) return new MapPoint(WrapPercent(point.LapPercent ?? 0), point.X, point.Y);
+        return new MapPoint(WrapPercent(point.LapPercent ?? 0), 210 + (point.X - projection.CenterX) * projection.Scale, 140 + (point.Y - projection.CenterY) * projection.Scale);
+    }
+    private IReadOnlyList<AnalysisVectorPoint> CanonicalGeometryPoints => _canonicalGeometryPoints;
+    private static IEnumerable<AnalysisVectorPoint> LinePoints(AnalysisVectorLine? line) => line is null ? [] : [line.A, line.B];
+    private MapPoint ProjectGpsPoint(AnalysisTracePoint point)
+    {
+        if (_gpsBounds is not { } gps) return MapPointAt(point.LapPercent);
+        if (_vectorProjection is not null)
+        {
+            var transform = CompleteVectorGeometry?.Transform ?? CompleteVectorGeometry?.GeometryProvenance?.NormalizationTransform;
+            if (transform?.TryNormalize(point.Longitude!.Value, point.Latitude!.Value, out var normalizedX, out var normalizedY) == true)
+                return ProjectVectorPoint(new AnalysisVectorPoint(normalizedX, normalizedY, point.LapPercent));
+
+            // Legacy geometry did not retain the raw-coordinate transform. Keep
+            // those archives usable, but never replace a valid canonical transform
+            // with bounds inferred from only the currently loaded trace subset.
+            var normalizationScale = Math.Max(gps.MaximumLongitude - gps.MinimumLongitude, gps.MaximumLatitude - gps.MinimumLatitude);
+            var fallbackNormalizedX = (point.Longitude!.Value - gps.MinimumLongitude) / Math.Max(.000000001, normalizationScale);
+            var fallbackNormalizedY = (gps.MaximumLatitude - point.Latitude!.Value) / Math.Max(.000000001, normalizationScale);
+            return ProjectVectorPoint(new AnalysisVectorPoint(fallbackNormalizedX, fallbackNormalizedY, point.LapPercent));
+        }
+        if (_mapBounds is not { } map) return MapPointAt(point.LapPercent);
+        var longitudeFraction = (point.Longitude!.Value - gps.MinimumLongitude) / Math.Max(.000000001, gps.MaximumLongitude - gps.MinimumLongitude);
+        var latitudeFraction = (point.Latitude!.Value - gps.MinimumLatitude) / Math.Max(.000000001, gps.MaximumLatitude - gps.MinimumLatitude);
+        return new MapPoint(WrapPercent(point.LapPercent), map.MinimumX + longitudeFraction * (map.MaximumX - map.MinimumX), map.MaximumY - latitudeFraction * (map.MaximumY - map.MinimumY));
+    }
+    private static VectorProjection? CreateVectorProjection(IReadOnlyList<AnalysisVectorPoint> points)
+    {
+        if (points.Count == 0) return null;
+        var minimumX = points.Min(point => point.X); var maximumX = points.Max(point => point.X);
+        var minimumY = points.Min(point => point.Y); var maximumY = points.Max(point => point.Y);
+        var scale = Math.Min(350 / Math.Max(.0001, maximumX - minimumX), 218 / Math.Max(.0001, maximumY - minimumY));
+        return new VectorProjection((minimumX + maximumX) / 2, (minimumY + maximumY) / 2, scale);
+    }
+    private static GpsBounds? CreateGpsBounds(IReadOnlyList<AnalysisTracePoint> points) => points.Count == 0 ? null : new GpsBounds(
+        points.Min(point => point.Longitude!.Value), points.Max(point => point.Longitude!.Value),
+        points.Min(point => point.Latitude!.Value), points.Max(point => point.Latitude!.Value));
+    private static MapBounds? CreateMapBounds(IReadOnlyList<MapPoint> points) => points.Count == 0 ? null : new MapBounds(
+        points.Min(point => point.X), points.Max(point => point.X), points.Min(point => point.Y), points.Max(point => point.Y));
+    private static bool IsCompleteTrackShape(IReadOnlyList<TrackShapePoint> points)
+    {
+        if (points.Count < 3) return false;
+        var ordered = points
+            .Where(point => double.IsFinite(point.LapPercent) && double.IsFinite(point.X) && double.IsFinite(point.Y))
+            .OrderBy(point => WrapPercent(point.LapPercent))
+            .ToArray();
+        if (ordered.Length < 3) return false;
+        var maximumGap = WrapPercent(ordered[0].LapPercent) + 1 - WrapPercent(ordered[^1].LapPercent);
+        for (var index = 1; index < ordered.Length; index++)
+            maximumGap = Math.Max(maximumGap, WrapPercent(ordered[index].LapPercent) - WrapPercent(ordered[index - 1].LapPercent));
+        var width = ordered.Max(point => point.X) - ordered.Min(point => point.X);
+        var height = ordered.Max(point => point.Y) - ordered.Min(point => point.Y);
+        var span = Math.Max(width, height);
+        var closure = Math.Sqrt(Math.Pow(ordered[0].X - ordered[^1].X, 2) + Math.Pow(ordered[0].Y - ordered[^1].Y, 2));
+        return maximumGap <= .05 && span > 0 && closure <= span * .15;
+    }
+    private static string SvgPath(IReadOnlyList<MapPoint> points, bool close)
+    {
+        if (points.Count == 0) return string.Empty;
+        var path = $"M {F(points[0].X)} {F(points[0].Y)}";
+        for (var index = 1; index < points.Count; index++) path += $" L {F(points[index].X)} {F(points[index].Y)}";
+        return close ? path + " Z" : path;
+    }
+    private IReadOnlyList<MapSegment> MapSegments
     {
         get
         {
+            var key = $"{Mode}|{SelectionSignature}";
+            if (_mapSegmentCache.TryGetValue(key, out var cached)) return cached;
             var points = MapPoints;
+            var segments = new MapSegment[points.Count];
             for (var index = 0; index < points.Count; index++)
             {
                 var a = points[index]; var b = points[(index + 1) % points.Count];
-                yield return new MapSegment(a, b, MetricColor(MetricAt(SegmentPercent(a.Percent, b.Percent, .5))));
+                segments[index] = new MapSegment(a, b, MetricColor(MetricAt(SegmentPercent(a.Percent, b.Percent, .5))));
             }
+            return _mapSegmentCache[key] = segments;
         }
     }
     private MapPoint MapPointAt(double percent) => MapPointAt(percent, MapPoints);
@@ -1310,16 +1736,20 @@
         var distance = Math.Abs(first - second);
         return Math.Min(distance, 1 - distance);
     }
-    private IEnumerable<StripSegment> StripSegments
+    private IReadOnlyList<StripSegment> StripSegments
     {
         get
         {
+            var key = $"{Mode}|{SelectionSignature}";
+            if (_stripSegmentCache.TryGetValue(key, out var cached)) return cached;
             const int count = 80;
+            var segments = new StripSegment[count];
             for (var index = 0; index < count; index++)
             {
                 var start = index / (double)count; var end = (index + 1) / (double)count;
-                yield return new StripSegment(28 + start * 364, 28 + end * 364, MetricColor(MetricAt((start + end) / 2)));
+                segments[index] = new StripSegment(28 + start * 364, 28 + end * 364, MetricColor(MetricAt((start + end) / 2)));
             }
+            return _stripSegmentCache[key] = segments;
         }
     }
     private double? MetricAt(double percent)
@@ -1334,16 +1764,20 @@
         var plottedValue = Mode == "steering" ? Math.Abs(value.Value) : value.Value;
         var normalized = Math.Clamp((plottedValue - minimum) / Math.Max(.000001, maximum - minimum), 0, 1);
         normalized = Math.Pow(normalized, .72);
-        if (Mode != "speed" && normalized < .015) return "#222A33";
+        if (Mode != "speed" && normalized < .015) return "#48515B";
         return Mode switch
         {
             "speed" => HeatmapColor(normalized, SpeedHeatmapStops),
-            "brake" => $"hsl({F(18 - normalized * 16)} {F(76 + normalized * 20)}% {F(33 + normalized * 31)}%)",
-            "throttle" => $"hsl({F(160 - normalized * 25)} {F(70 + normalized * 24)}% {F(31 + normalized * 32)}%)",
-            "steering" => $"hsl({F(302 - normalized * 34)} {F(72 + normalized * 22)}% {F(34 + normalized * 31)}%)",
-            "stress" => $"hsl({F(58 - normalized * 53)} {F(78 + normalized * 18)}% {F(34 + normalized * 30)}%)",
+            "brake" => MixColor(normalized, (72, 79, 88), (255, 69, 86)),
+            "throttle" => MixColor(normalized, (72, 79, 88), (42, 226, 126)),
+            "stress" => MixColor(normalized, (247, 210, 74), (247, 65, 76)),
             _ => "#75AFFF"
         };
+    }
+    private static string MixColor(double amount, (int Red, int Green, int Blue) low, (int Red, int Green, int Blue) high)
+    {
+        var blend = Math.Clamp(amount, 0, 1);
+        return $"rgb({(int)Math.Round(low.Red + (high.Red - low.Red) * blend)} {(int)Math.Round(low.Green + (high.Green - low.Green) * blend)} {(int)Math.Round(low.Blue + (high.Blue - low.Blue) * blend)})";
     }
     private static string HeatmapColor(double normalized, IReadOnlyList<HeatStop> stops)
     {
@@ -1362,7 +1796,24 @@
     {
         var key = $"{Mode}|{SelectionSignature}";
         if (_trackRangeCache.TryGetValue(key, out var cached)) return cached;
-        if (Mode is "throttle" or "brake" or "stress") return _trackRangeCache[key] = (0, 1);
+        if (Mode is "throttle" or "brake") return _trackRangeCache[key] = (0, 1);
+        if (Mode == "stress")
+        {
+            var loads = SelectedTraces.SelectMany(trace => trace.Points)
+                .Select(point => point.TireStressProxy)
+                .Where(value => value.HasValue && double.IsFinite(value.Value))
+                .Select(value => value!.Value)
+                .ToArray();
+            if (loads.Length == 0) return _trackRangeCache[key] = (0, 1);
+            var minimum = loads.Min();
+            var maximum = loads.Max();
+            if (maximum - minimum < .001)
+            {
+                minimum = Math.Max(0, minimum - .01);
+                maximum = Math.Min(1, maximum + .01);
+            }
+            return _trackRangeCache[key] = (minimum, Math.Max(minimum + .001, maximum));
+        }
         if (Mode == "steering")
         {
             var maximum = SelectedTraces.SelectMany(trace => trace.Points)
@@ -1377,6 +1828,22 @@
         var max = values.Max();
         if (max - min < 5) { min -= 2.5; max += 2.5; }
         return _trackRangeCache[key] = (min, max);
+    }
+    private string MapLegendMinimum
+    {
+        get
+        {
+            var range = TrackMetricRange();
+            return Mode switch { "speed" => $"{range.Min:0} mph", "throttle" or "brake" or "stress" => "0%", _ => string.Empty };
+        }
+    }
+    private string MapLegendMaximum
+    {
+        get
+        {
+            var range = TrackMetricRange();
+            return Mode switch { "speed" => $"{range.Max:0} mph", "throttle" or "brake" or "stress" => "100%", _ => string.Empty };
+        }
     }
     private AggregateSample AverageAt(double percent)
     {
@@ -1445,7 +1912,9 @@
         "yaw" => point.YawRateDegreesPerSecond,
         "lateral-g" => point.LateralG,
         "longitudinal-g" => point.LongitudinalG,
-        _ => null
+        _ => point.AdditionalSignals is { } additional && additional.TryGetValue(signal.Id, out var value) && double.IsFinite(value)
+            ? value
+            : null
     };
     private double? TimeDelta(AnalysisLapTrace trace, AnalysisTracePoint point)
     {
@@ -1459,7 +1928,10 @@
     }
     private string RowLabel(TracePanelRow panel)
     {
-        return string.Join(" / ", panel.Signals.Select(signal => signal.Name));
+        return string.Join(" / ", panel.Signals.Select(signal =>
+            signal.Name.Equals("Longitudinal G", StringComparison.OrdinalIgnoreCase)
+                ? "Long. G"
+                : signal.Name));
     }
     private static string RowUnit(TracePanelRow panel) =>
         string.Join(" / ", panel.Signals.Select(signal => signal.Unit).Distinct(StringComparer.OrdinalIgnoreCase));
@@ -1496,6 +1968,7 @@
             .Where(value => value.HasValue).Select(value => value!.Value).ToArray();
         if (values.Length == 0) return (-.5, .5);
         if (signal.Id is "throttle" or "brake") return _traceRangeCache[key] = (0, 1);
+        if (signal.Unit == "on / off") return _traceRangeCache[key] = (0, 1);
         if (signal.Id == "tire-wear") return _traceRangeCache[key] = (0, Math.Max(.01, values.Max() * 1.05));
         if (signal.Id is "delta" or "steering" or "slip" or "yaw")
         {
@@ -1529,7 +2002,7 @@
     private double? SmoothedValue(AnalysisTraceSignalDefinition signal, AnalysisLapTrace trace, int index)
     {
         var current = SignalPointValue(signal, trace, trace.Points[index]);
-        if (!current.HasValue || signal.Id is "gear" or "tire-wear") return current;
+        if (!current.HasValue || IsStepSignal(signal)) return current;
         var neighborWeight = signal.Id is "throttle" or "brake" ? .10 : .16;
         var currentWeight = 1 - neighborWeight * 2;
         var sum = current.Value * currentWeight;
@@ -1538,6 +2011,9 @@
         if (index + 1 < trace.Points.Count && SignalPointValue(signal, trace, trace.Points[index + 1]) is { } next) { sum += next * neighborWeight; weight += neighborWeight; }
         return sum / weight;
     }
+    private static bool IsStepSignal(AnalysisTraceSignalDefinition signal) =>
+        signal.Id is "gear" or "tire-wear" or "overall-position" or "class-position" or "track-wetness" or "track-surface" ||
+        signal.Unit is "on / off" or "state" or "position";
     private static string LapRange(IReadOnlyList<int> laps) => laps.Count == 0 ? "—" : laps.Count == 1 ? laps[0].ToString() : $"{laps.Min()}–{laps.Max()}";
     private static string AriaBoolean(bool value) => value ? "true" : "false";
     private static string PaceTrend(AnalysisRun run) => run.PaceSlopeSecondsPerLap is null ? "—" : run.PaceSlopeSecondsPerLap > .005 ? $"+{run.PaceSlopeSecondsPerLap:0.000} s/lap" : run.PaceSlopeSecondsPerLap < -.005 ? $"{run.PaceSlopeSecondsPerLap:0.000} s/lap" : "Stable";
@@ -1610,14 +2086,25 @@
     private IReadOnlyList<AnalysisIncident> LapIncidents(int lap) =>
         Workspace.Damage.Incidents?.Where(item => item.Lap == lap).ToArray() ?? [];
     private int IncidentPoints(int lap) => LapIncidents(lap).Sum(item => item.Points);
-    private string IncidentEventDescription(AnalysisLapTrace trace, AnalysisIncident incident)
+    private string IncidentEventDescription(AnalysisLapTrace trace, AnalysisIncident incident, bool includePoints)
     {
-        var parts = new List<string> { $"x{incident.Points}" };
-        if (IncidentLapPercent(trace, incident) is { } percent) parts.Add($"{percent * 100:0.0}% lap");
-        if (incident.SessionTimeSeconds is { } sessionTime) parts.Add($"session {FormatSessionTime(sessionTime)}");
-        if (incident.CountBefore.HasValue && incident.CountAfter.HasValue)
-            parts.Add($"total {incident.CountBefore.Value:0} to {incident.CountAfter.Value:0}");
+        var parts = new List<string>();
+        if (includePoints) parts.Add($"x{incident.Points}");
+        if (!string.IsNullOrWhiteSpace(incident.EventType)) parts.Add(HumanizeIncidentValue(incident.EventType));
+        if (!string.IsNullOrWhiteSpace(incident.ContactTarget)) parts.Add($"Contact: {HumanizeIncidentValue(incident.ContactTarget)}");
+        if (!string.IsNullOrWhiteSpace(incident.TrackLocation)) parts.Add(HumanizeIncidentValue(incident.TrackLocation));
+        if (incident.OnPitRoad == true) parts.Add("Pit road");
+        if (incident.SpeedMph is { } speed) parts.Add($"{speed:0} mph");
+        if (incident.YawRateDegreesPerSecond is { } yaw) parts.Add($"Yaw rate {yaw:+0.0;-0.0;0.0}°/s");
+        if (incident.SlipAngleDegrees is { } slip) parts.Add($"Slip angle {slip:+0.0;-0.0;0.0}°");
+        if (IncidentLapPercent(trace, incident) is { } percent) parts.Add($"{percent * 100:0}% lap");
+        if (incident.SessionTimeSeconds is { } sessionTime) parts.Add(FormatSessionTime(sessionTime));
         return string.Join(" · ", parts);
+    }
+    private static string HumanizeIncidentValue(string value)
+    {
+        var words = value.Trim().Replace('_', ' ').Replace('-', ' ');
+        return words.Length == 0 ? string.Empty : char.ToUpperInvariant(words[0]) + words[1..];
     }
     private static double? IncidentLapPercent(AnalysisLapTrace trace, AnalysisIncident incident)
     {
@@ -1683,14 +2170,7 @@
     private static string FriendlyZone(TrackSegment zone) => string.IsNullOrWhiteSpace(zone.Label) || zone.Label.StartsWith("Load zone", StringComparison.OrdinalIgnoreCase) ? $"C{zone.Number}" : zone.Label;
     private string LapColor(int lap)
     {
-        var trace = Workspace.Traces.FirstOrDefault(item => item.Lap == lap);
-        if (trace?.LapTimeSeconds is { } lapTime && Math.Abs(lapTime - FastestLapTime) < .0001)
-            return "#F05CDB";
-        var laps = Workspace.Traces.Select(trace => trace.Lap).Distinct().OrderBy(value => value).ToArray();
-        var index = Array.IndexOf(laps, lap);
-        var fraction = laps.Length <= 1 ? 0 : Math.Max(0, index) / (double)(laps.Length - 1);
-        var hue = 280 * fraction;
-        return $"hsl({hue.ToString("0.##", CultureInfo.InvariantCulture)} 82% 62%)";
+        return _lapColorCache.TryGetValue(lap, out var color) ? color : "#8F7DF6";
     }
     private static string LapTime(double? seconds) => seconds is null ? "—" : TimeSpan.FromSeconds(seconds.Value).ToString(@"m\:ss\.fff");
     private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
@@ -1702,6 +2182,11 @@
         _tracePathCache.Clear();
         _trackRangeCache.Clear();
         _signalAvailabilityCache.Clear();
+        _mapTracePaths = null;
+        _mapTracePathsSignature = string.Empty;
+        _mapTraceUnavailableCount = 0;
+        _mapSegmentCache.Clear();
+        _stripSegmentCache.Clear();
     }
     public async ValueTask DisposeAsync()
     {
@@ -1715,7 +2200,12 @@
     }
     private sealed record MapPoint(double Percent, double X, double Y);
     private sealed record MapLine(double X1, double Y1, double X2, double Y2);
+    private sealed record VectorProjection(double CenterX, double CenterY, double Scale);
+    private sealed record GpsBounds(double MinimumLongitude, double MaximumLongitude, double MinimumLatitude, double MaximumLatitude);
+    private sealed record MapBounds(double MinimumX, double MaximumX, double MinimumY, double MaximumY);
     private sealed record MapSegment(MapPoint A, MapPoint B, string Color);
+    private sealed record MapTracePath(int Lap, string Color, string Path);
+    private sealed record PitMapLayer(string PitRoad, string Entry, string Exit, MapLine? EntryCommitment, MapLine? ExitCommitment);
     private sealed record StripSegment(double X1, double X2, string Color);
     private sealed record LapGroup(string Label, IReadOnlyList<AnalysisLapTrace> Traces, AnalysisRun? Run);
     private sealed record SectorStatus(string Class, string Title);

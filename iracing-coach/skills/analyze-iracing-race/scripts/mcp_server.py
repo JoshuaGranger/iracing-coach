@@ -630,6 +630,79 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "recommend_structured_open_setup_tuning",
+        "description": "Build and persist an evidence-bounded, one-change manual garage experiment from verified per-turn/run-phase feedback. A fixed race may supply driving evidence only when a distinct compatible open target is provided.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["analysis_path", "feedback", "map_identity"],
+            "properties": {
+                "analysis_path": {"type": "string"},
+                "open_target_analysis_path": {"type": "string"},
+                "archive_root": {"type": "string"},
+                "package_id": {"type": "string", "maxLength": 128},
+                "draft_id": {"type": "string", "maxLength": 128},
+                "ruleset_id": {"type": "string", "enum": ["nascar-oreilly-xfinity-2026s3-v1"], "default": "nascar-oreilly-xfinity-2026s3-v1"},
+                "goal": {"type": "string", "enum": ["long-run-pace", "tire-life", "restart-pace", "stability"], "default": "long-run-pace"},
+                "representative_run_ids": {"type": "array", "maxItems": 3, "uniqueItems": True, "items": {"oneOf": [{"type": "string", "maxLength": 80}, {"type": "integer"}]}},
+                "generic_note": {"type": "string", "maxLength": 8000},
+                "feedback": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                        "type": "object",
+                        "required": ["corner_id", "run_phase", "corner_phases", "symptom_id"],
+                        "properties": {
+                            "feedback_id": {"type": "string", "maxLength": 160},
+                            "corner_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                            "corner_label": {"type": "string", "maxLength": 160},
+                            "start_pct": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+                            "apex_pct": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+                            "end_pct": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+                            "run_phase": {"type": "string", "enum": ["early", "middle", "late"]},
+                            "corner_phases": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": True, "items": {"type": "string", "enum": ["entry", "center", "exit", "whole"]}},
+                            "symptom_id": {"type": "string", "maxLength": 80},
+                            "severity": {"type": "integer", "minimum": 1, "maximum": 5, "default": 3},
+                            "driver_confidence": {"type": "integer", "minimum": 1, "maximum": 5, "default": 3},
+                            "priority": {"type": "integer", "minimum": 1, "maximum": 5, "default": 3},
+                            "note": {"type": "string", "maxLength": 2000}
+                        },
+                        "additionalProperties": False
+                    }
+                },
+                "map_identity": {
+                    "type": "object",
+                    "required": ["track_configuration_key", "geometry_hash", "annotation_hash", "source_type", "verified", "corners"],
+                    "properties": {
+                        "map_identity": {"type": "string", "maxLength": 160},
+                        "track_configuration_key": {"type": "string", "minLength": 1, "maxLength": 200},
+                        "geometry_hash": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                        "annotation_hash": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+                        "source_type": {"type": "string", "enum": ["iracing-official", "iracing-hud-capture", "nascar-official", "venue-official", "verified-manual", "telemetry-derived"]},
+                        "source_label": {"type": "string", "maxLength": 200},
+                        "source_url": {"type": "string", "maxLength": 2000},
+                        "verified": {"type": "boolean"},
+                        "corners": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"type": "object"}}
+                    },
+                    "additionalProperties": False
+                },
+                "ai_response": {
+                    "type": "object",
+                    "required": ["selected_candidate_id", "summary", "evidence_ids", "conflicts", "confidence_reasons"],
+                    "properties": {
+                        "selected_candidate_id": {"type": "string", "minLength": 1, "maxLength": 160},
+                        "summary": {"type": "string", "minLength": 1, "maxLength": 1200},
+                        "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 24, "uniqueItems": True, "items": {"type": "string", "maxLength": 160}},
+                        "conflicts": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 500}},
+                        "confidence_reasons": {"type": "array", "minItems": 1, "maxItems": 12, "items": {"type": "string", "maxLength": 500}}
+                    },
+                    "additionalProperties": False
+                }
+            },
+            "additionalProperties": False
+        }
+    },
+    {
         "name": "record_open_setup_feedback",
         "description": "Record whether a planned setup experiment improved, worsened, or did not change the car, optionally validating a result analysis.",
         "inputSchema": {
@@ -822,6 +895,55 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
             archive_root=str(archive_root),
             package_id=package_id,
             maximum_changes=int(arguments.get("maximum_changes", 3)),
+        )
+    if name == "recommend_structured_open_setup_tuning":
+        feedback = arguments.get("feedback")
+        if not isinstance(feedback, list) or not 1 <= len(feedback) <= 100:
+            raise ValueError("feedback must contain 1-100 structured observations.")
+        if any(not isinstance(item, Mapping) for item in feedback):
+            raise ValueError("Every feedback item must be an object.")
+        if any(len(str(item.get("note") or "")) > 2000 for item in feedback):
+            raise ValueError("Each feedback note must be 2,000 characters or fewer.")
+        map_identity = arguments.get("map_identity")
+        if not isinstance(map_identity, Mapping):
+            raise ValueError("map_identity must be an object.")
+        if len(json.dumps(map_identity, separators=(",", ":"), default=str).encode("utf-8")) > 256 * 1024:
+            raise ValueError("map_identity must be 256 KiB or smaller.")
+        run_ids = arguments.get("representative_run_ids") or []
+        if not isinstance(run_ids, list) or len(run_ids) > 3:
+            raise ValueError("representative_run_ids must contain at most three items.")
+        package_id = (
+            _bounded_identifier(arguments["package_id"], "package_id")
+            if arguments.get("package_id") else None
+        )
+        draft_id = (
+            _bounded_identifier(arguments["draft_id"], "draft_id")
+            if arguments.get("draft_id") else None
+        )
+        open_target = (
+            str(_analysis_path(arguments["open_target_analysis_path"], archive_root))
+            if arguments.get("open_target_analysis_path") else None
+        )
+        ai_response = arguments.get("ai_response")
+        if ai_response is not None and not isinstance(ai_response, Mapping):
+            raise ValueError("ai_response must be an object.")
+        return _workflow_function("recommend_structured_open_setup_tuning_workflow")(
+            analysis_path=str(_analysis_path(arguments["analysis_path"], archive_root)),
+            open_target_analysis_path=open_target,
+            feedback=feedback,
+            map_identity=map_identity,
+            representative_run_ids=run_ids,
+            generic_note=(
+                _bounded_text(arguments["generic_note"], "generic_note", 8000)
+                if str(arguments.get("generic_note") or "").strip()
+                else ""
+            ),
+            goal=str(arguments.get("goal") or "long-run-pace"),
+            ruleset_id=str(arguments.get("ruleset_id") or "nascar-oreilly-xfinity-2026s3-v1"),
+            package_id=package_id,
+            draft_id=draft_id,
+            ai_response=ai_response,
+            archive_root=str(archive_root),
         )
     if name == "record_open_setup_feedback":
         result_analysis = (

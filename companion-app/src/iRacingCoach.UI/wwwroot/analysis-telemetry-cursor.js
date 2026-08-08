@@ -52,7 +52,14 @@
       case "yaw": return `${prefix}${signed(value, 1)}°/s`;
       case "lateral-g":
       case "longitudinal-g": return `${prefix}${signed(value, 2)} g`;
-      default: return `${prefix}${value.toFixed(3)}`;
+      default: {
+        const unit = signal.unit || "";
+        if (unit === "on / off") return `${prefix}${value >= 0.5 ? "On" : "Off"}`;
+        if (unit === "state" || unit === "position") return `${prefix}${value.toFixed(0)}`;
+        const digits = unit === "%" || unit === "mph" || unit === "deg F" || unit === "psi" ? 1 : unit === "g" ? 2 : 3;
+        const renderedUnit = unit === "deg F" ? "°F" : unit;
+        return `${prefix}${value.toFixed(digits)}${renderedUnit ? ` ${renderedUnit}` : ""}`;
+      }
     }
   }
 
@@ -469,6 +476,7 @@
       trackElement,
       config,
       frame: 0,
+      resizeTimer: 0,
       chartInside: false,
       trackInside: false,
       clientX: 0,
@@ -531,11 +539,20 @@
     };
     state.resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
       state.rect = element.getBoundingClientRect();
-      resizeChartDom(state, state.rect.width, false);
       if (state.chartInside) {
         updateFractionFromPointer(state);
         schedule(state);
       }
+      if (state.resizeTimer) clearTimeout(state.resizeTimer);
+      state.resizeTimer = setTimeout(() => {
+        state.resizeTimer = 0;
+        state.rect = element.getBoundingClientRect();
+        resizeChartDom(state, state.rect.width, false);
+        if (state.chartInside) {
+          updateFractionFromPointer(state);
+          schedule(state);
+        }
+      }, 60);
     }) : null;
     state.scrolled = () => {
       state.rect = element.getBoundingClientRect();
@@ -561,7 +578,11 @@
     if (!state) return;
     updateDomReferences(state, trackElement);
     state.rect = element.getBoundingClientRect();
-    resizeChartDom(state, state.rect.width, true);
+    // A toolbox toggle rerenders the component while CSS is still animating its
+    // width. ResizeObserver owns that motion and settles the expensive path
+    // rebuild once; forcing a resize here redraws at an intermediate width and
+    // is visible as a hitch near the start of the drawer transition.
+    if (!state.resizeObserver) resizeChartDom(state, state.rect.width, true);
     if (!state.element.querySelector("[data-analysis-cursor-layer] > *")) buildOverlay(state);
     if (cursorActive(state)) schedule(state);
     else updateTrack(state, state.fraction);
@@ -571,6 +592,7 @@
     const state = sessions.get(element);
     if (!state) return;
     if (state.frame) cancelAnimationFrame(state.frame);
+    if (state.resizeTimer) clearTimeout(state.resizeTimer);
     state.resizeObserver?.disconnect();
     element.removeEventListener("pointerenter", state.enter);
     element.removeEventListener("pointermove", state.move);

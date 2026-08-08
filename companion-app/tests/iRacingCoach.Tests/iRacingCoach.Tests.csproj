@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\iRacingCoach.BackendClient\iRacingCoach.BackendClient.csproj" />
     <ProjectReference Include="..\..\src\iRacingCoach.Contracts\iRacingCoach.Contracts.csproj" />
     <ProjectReference Include="..\..\src\iRacingCoach.Coordinator\iRacingCoach.Coordinator.csproj" />
+    <ProjectReference Include="..\..\src\iRacingCoach.UI\iRacingCoach.UI.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\..\companion-app-handoff\contracts\**\*.json" Link="fixtures\contracts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

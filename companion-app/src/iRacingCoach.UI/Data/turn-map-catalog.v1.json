@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "description": "Portable exact-configuration corner annotations. Empty by design until a sourced map or a user-verified local correction exists.",
+  "sourcePriority": [
+    "iracing-official",
+    "nascar-official",
+    "venue-official",
+    "iracing-hud-capture",
+    "verified-manual",
+    "licensed-community"
+  ],
+  "records": [
+    {
+      "mapIdentity": "559-oval",
+      "track": "Iowa Speedway",
+      "layout": "Oval",
+      "sourceType": "nascar-official",
+      "sourceLabel": "NASCAR Iowa facility map",
+      "sourceUrl": "https://www.nascar.com/wp-content/uploads/sites/7/2025/07/22/IOWA-25-1416156-Facility-Map-3x2-F.pdf",
+      "confidence": "low",
+      "verified": false,
+      "turns": [
+        {
+          "cornerId": "turn-1",
+          "label": "Turn 1",
+          "startPct": 0.16,
+          "apexPct": 0.2125,
+          "endPct": 0.265,
+          "sourceType": "nascar-official",
+          "confidence": "low",
+          "isOfficial": true,
+          "correctionNote": "The label is official. Entry, apex, and exit are telemetry-aligned estimates awaiting local verification."
+        },
+        {
+          "cornerId": "turn-2",
+          "label": "Turn 2",
+          "startPct": 0.27,
+          "apexPct": 0.3225,
+          "endPct": 0.375,
+          "sourceType": "nascar-official",
+          "confidence": "low",
+          "isOfficial": true,
+          "correctionNote": "The label is official. Entry, apex, and exit are telemetry-aligned estimates awaiting local verification."
+        },
+        {
+          "cornerId": "turn-3",
+          "label": "Turn 3",
+          "startPct": 0.62,
+          "apexPct": 0.675,
+          "endPct": 0.73,
+          "sourceType": "nascar-official",
+          "confidence": "low",
+          "isOfficial": true,
+          "correctionNote": "The label is official. The Turn 3/4 split is a conservative telemetry-aligned estimate awaiting local verification."
+        },
+        {
+          "cornerId": "turn-4",
+          "label": "Turn 4",
+          "startPct": 0.73,
+          "apexPct": 0.7875,
+          "endPct": 0.845,
+          "sourceType": "nascar-official",
+          "confidence": "low",
+          "isOfficial": true,
+          "correctionNote": "The label is official. The Turn 3/4 split is a conservative telemetry-aligned estimate awaiting local verification."
+        }
+      ]
+    },
+    {
+      "mapIdentity": "131-oval",
+      "track": "New Hampshire Motor Speedway",
+      "layout": "Oval",
+      "sourceType": "venue-official",
+      "sourceLabel": "New Hampshire Motor Speedway official track map",
+      "sourceUrl": "https://www.nhms.com/documents/track-map.pdf",
+      "confidence": "low",
+      "verified": false,
+      "turns": [
+        {
+          "cornerId": "turn-1",
+          "label": "Turn 1",
+          "startPct": 0.135,
+          "apexPct": 0.19,
+          "endPct": 0.245,
+          "sourceType": "venue-official",
+          "confidence": "low",
+          "isOfficial": true,
+          "correctionNote": "The label is official. Entry, apex, and exit are telemetry-aligned estimates awaiting local verification."
+        },
+        {
+          "cornerId": "turn-2",
+          "label": "Turn 2",
+          "startPct": 0.245,
+          "apexPct": 0.3,
+          "endPct": 0.355,
+          "sourceType": "venue-official",
+          "confidence": "low",
+          "isOfficial": true,
+          "correctionNote": "The label is official. Entry, apex, and exit are telemetry-aligned estimates awaiting local verification."
+        },
+        {
+          "cornerId": "turn-3",
+          "label": "Turn 3",
+          "startPct": 0.645,
+          "apexPct": 0.7,
+          "endPct": 0.75,
+          "sourceType": "venue-official",
+          "confidence": "low",
+          "isOfficial": true,
+          "correctionNote": "The label is official. Entry, apex, and exit are telemetry-aligned estimates awaiting local verification."
+        },
+        {
+          "cornerId": "turn-4",
+          "label": "Turn 4",
+          "startPct": 0.75,
+          "apexPct": 0.8,
+          "endPct": 0.855,
+          "sourceType": "venue-official",
+          "confidence": "low",
+          "isOfficial": true,
+          "correctionNote": "The label is official. Entry, apex, and exit are telemetry-aligned estimates awaiting local verification."
+        }
+      ]
+    }
+  ]
+}

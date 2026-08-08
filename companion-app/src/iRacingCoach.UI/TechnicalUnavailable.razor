@@ -1,0 +1,12 @@
+<div class="technical-unavailable" data-technical-unavailable>
+    <ProductIcon Name="info" Size="19" />
+    <strong>@Title</strong>
+    <span data-technical-unavailable-reason>@Detail</span>
+    <small data-technical-unavailable-action>@Action</small>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Detail { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Action { get; set; } = string.Empty;
+}

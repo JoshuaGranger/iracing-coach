@@ -1,0 +1,466 @@
+@inject CompanionState State
+
+<section class="race-technical-data" data-analysis-section="technical" aria-label="Technical race data">
+    @if (ActiveInvestigation is null)
+    {
+        <div class="technical-overview" data-technical-overview>
+            <button type="button" class="technical-overview-card pit" data-technical-card="pit" @onclick='() => OpenInvestigation("pit")'>
+                <span class="technical-card-heading"><span><ProductIcon Name="strategy" Size="17" />Pit strategy</span><ProductIcon Name="chevron-right" Size="15" /></span>
+                <strong>@PitSummary</strong>
+                <span class="technical-state @PitStateClass">@PitState</span>
+                <span class="technical-card-metrics">
+                    @foreach (var metric in PitCardMetrics) { <span data-evidence="@metric.Evidence"><small>@metric.Label</small><b>@metric.Value</b></span> }
+                </span>
+                <span class="technical-card-foot">@PitTakeaway</span>
+            </button>
+
+            <button type="button" class="technical-overview-card tires" data-technical-card="tires" @onclick='() => OpenInvestigation("tires")'>
+                <span class="technical-card-heading"><span><ProductIcon Name="tire" Size="17" />Tire management</span><ProductIcon Name="chevron-right" Size="15" /></span>
+                <strong>@TireSummary</strong>
+                <span class="technical-state @TireStateClass">@TireState</span>
+                <span class="technical-card-metrics">
+                    @foreach (var metric in TireCardMetrics) { <span data-evidence="@metric.Evidence"><small>@metric.Label</small><b>@metric.Value</b></span> }
+                </span>
+                <span class="technical-card-foot">@TireTakeaway</span>
+            </button>
+
+            <button type="button" class="technical-overview-card fuel" data-technical-card="fuel" @onclick='() => OpenInvestigation("fuel")'>
+                <span class="technical-card-heading"><span><ProductIcon Name="fuel" Size="17" />Fuel management</span><ProductIcon Name="chevron-right" Size="15" /></span>
+                <strong>@FuelSummary</strong>
+                <span class="technical-state @FuelStateClass">@FuelState</span>
+                <span class="technical-card-metrics">
+                    @foreach (var metric in FuelCardMetrics) { <span data-evidence="@metric.Evidence"><small>@metric.Label</small><b>@metric.Value</b></span> }
+                </span>
+                <span class="technical-card-foot">@FuelTakeaway</span>
+            </button>
+
+            <button type="button" class="technical-overview-card racecraft" data-technical-card="racecraft" @onclick='() => OpenInvestigation("racecraft")'>
+                <span class="technical-card-heading"><span><ProductIcon Name="analysis" Size="17" />Racecraft &amp; pace</span><ProductIcon Name="chevron-right" Size="15" /></span>
+                <strong>@PaceSummary</strong>
+                <span class="technical-state @PaceStateClass">@PaceState</span>
+                <span class="technical-card-metrics">
+                    @foreach (var metric in RacecraftCardMetrics) { <span data-evidence="@metric.Evidence"><small>@metric.Label</small><b>@metric.Value</b></span> }
+                </span>
+                <span class="technical-card-foot">@PaceTakeaway</span>
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="technical-investigation" data-technical-investigation="@ActiveInvestigation">
+            <header class="technical-investigation-header">
+                <button type="button" class="technical-back" data-technical-back @onclick="CloseInvestigation"><span aria-hidden="true">←</span> Back</button>
+                <div><span class="eyebrow">Technical data</span><h2>@InvestigationTitle</h2></div>
+                <span class="technical-investigation-summary">@InvestigationSummary</span>
+            </header>
+
+            @switch (ActiveInvestigation)
+            {
+                case "pit":
+                    <div class="technical-investigation-body pit-investigation">
+                        @if (PitRuns.Count == 0)
+                        {
+                            <TechnicalUnavailable Title="No pit service recorded" Detail="This recording does not contain a pit-stop service snapshot." Action="Record a race with a completed pit service to populate this view." />
+                        }
+                        else
+                        {
+                            <nav class="technical-record-selector" aria-label="Recorded pit stops">
+                                @foreach (var run in PitRuns)
+                                {
+                                    <button type="button" class="@(_selectedRunNumber == run.Number ? "selected" : null)" aria-pressed="@(_selectedRunNumber == run.Number ? "true" : "false")" @onclick="() => SelectRun(run.Number)"><span>After run @run.Number</span><b>@PitLap(run)</b></button>
+                                }
+                            </nav>
+                            @if (SelectedPitRun is { } pitRun)
+                            {
+                                <div class="technical-detail-grid">
+                                    <article class="technical-detail-hero"><span>Service window</span><strong>@Duration(pitRun.PitStop?.ServiceSeconds)</strong><small>@PitLap(pitRun)</small></article>
+                                    <article><span>Fuel added</span><strong>@Gallons(pitRun.PitStop?.FuelAddedGallons)</strong></article>
+                                    <article><span>Tires changed</span><strong>@ChangedTires(pitRun)</strong></article>
+                                    <article><span>Damage repair</span><strong>@Duration(pitRun.PitStop?.DamageRepairedSeconds)</strong></article>
+                                    <article><span>Penalty service</span><strong>@Duration(pitRun.PitStop?.PenaltyServedSeconds)</strong></article>
+                                    <article><span>Fuel range after stop</span><strong>@Laps(pitRun.PitStop?.EstimatedFuelLapsRemaining)</strong></article>
+                                </div>
+                            }
+                        }
+                    </div>
+                    break;
+                case "tires":
+                    <div class="technical-investigation-body tire-investigation">
+                        <div class="technical-tire-investigation-shell">
+                            <section class="technical-tire-source measured" data-tire-source="measured">
+                                <header><span class="technical-evidence-chip measured">Measured</span><strong>Pit-stop condition</strong></header>
+                                @if (TireStops.Count == 0)
+                                {
+                                    <TechnicalUnavailable Title="No tire snapshots recorded" Detail="iRacing did not record a completed pit-stop tire snapshot." Action="Complete a pit stop with tire telemetry available to capture measured O/M/I condition." />
+                                }
+                                else
+                                {
+                                    <nav class="technical-record-selector" aria-label="Tire snapshots">
+                                        @foreach (var run in TireStops)
+                                        {
+                                            <button type="button" class="@(_selectedRunNumber == run.Number ? "selected" : null)" aria-pressed="@(_selectedRunNumber == run.Number ? "true" : "false")" @onclick="() => SelectRun(run.Number)"><span>@PitLap(run)</span><b>@LowestTire(run)</b></button>
+                                        }
+                                    </nav>
+                                    @if (SelectedTireRun?.PitStop is { } pit)
+                                    {
+                                        <div class="technical-tire-grid">
+                                            @foreach (var tire in TireConditions(pit))
+                                            {
+                                                <article class="technical-tire-card">
+                                                    <header><strong>@tire.Corner</strong><span>@(ChangedAtStop(SelectedTireRun, tire.Corner) ? "Changed" : "Kept")</span></header>
+                                                    <div class="technical-tire-bands" aria-label="@tire.Corner measured wear outer middle inner">
+                                                        @foreach (var band in TireBands(tire))
+                                                        {
+                                                            <span><small>@band.Label</small><b>@Percent(band.Value)</b></span>
+                                                        }
+                                                    </div>
+                                                    <footer><span>Pressure</span><b>@Pressure(tire.PressurePsi)</b></footer>
+                                                </article>
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </section>
+                            <section class="technical-tire-source predicted" data-tire-source="predicted">
+                                <header><span class="technical-evidence-chip predicted">Predicted</span><strong>Learned tire outlook</strong></header>
+                                @if (!PredictionAvailable)
+                                {
+                                    <TechnicalUnavailable Title="Tire prediction unavailable" Detail="@PredictionUnavailableReason" Action="Record more comparable green-flag runs with measured tire endpoints to train this local estimate." />
+                                }
+                                else if (Workspace.TirePrediction is { } prediction)
+                                {
+                                    <div class="technical-prediction-summary">
+                                        <span><small>Modeled life to 0%</small><b>@PredictionNumber(prediction.LapsRemaining, "laps")</b></span>
+                                        <span><small>Pace cost</small><b>@PredictionRange(prediction.PaceCostSeconds, prediction.PaceCostLowSeconds, prediction.PaceCostHighSeconds, "s")</b></span>
+                                        <span><small>Capability pace</small><b>@PredictionPace(prediction)</b></span>
+                                        <span><small>Confidence</small><b>@PredictionConfidence(prediction)</b></span>
+                                    </div>
+                                    <div class="technical-predicted-tires">
+                                        @foreach (var tire in prediction.Tires)
+                                        {
+                                            <article><strong>@tire.Corner</strong>@foreach (var band in PredictionBands(tire)) { <span><small>@band.Label</small><b>@PredictionBand(band.Value)</b></span> }</article>
+                                        }
+                                    </div>
+                                }
+                            </section>
+                        </div>
+                    </div>
+                    break;
+                case "fuel":
+                    <div class="technical-investigation-body fuel-investigation">
+                        @if (FuelRuns.Count == 0 && !Workspace.Strategy.GreenFuelGallonsPerLap.HasValue)
+                        {
+                            <TechnicalUnavailable Title="Fuel use was not recorded" Detail="No stint consumption or per-lap fuel estimate is available for this race." Action="Record fuel level across complete green-flag laps to calculate consumption and range." />
+                        }
+                        else
+                        {
+                            <div class="technical-fuel-summary">
+                                <article><span>Green-lap use</span><strong>@FuelPerGreenLap</strong></article>
+                                <article><span>Caution-lap use</span><strong>@Gallons(Workspace.Strategy.CautionFuelGallonsPerLap)</strong></article>
+                                <article><span>All-green range</span><strong>@FuelRange</strong></article>
+                                <article><span>Minimum stops</span><strong>@(Workspace.Strategy.MinimumStopsAllGreen?.ToString() ?? "—")</strong></article>
+                            </div>
+                            <div class="technical-bar-list" aria-label="Fuel consumed by run">
+                                @foreach (var run in FuelRuns)
+                                {
+                                    <div><span>Run @run.Number</span><i><b style="width:@FuelBarWidth(run)"></b></i><strong>@Gallons(run.FuelUsedGallons)</strong><small>@run.GreenLaps green</small></div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    break;
+                default:
+                    <div class="technical-investigation-body pace-investigation">
+                        @if (ComparableRuns.Count == 0)
+                        {
+                            <div class="technical-racecraft-no-comparison" data-racecraft-no-comparison>
+                                @if (RacecraftSummaryAvailable)
+                                {
+                                    <section class="technical-racecraft-summary" data-racecraft-insight-summary>
+                                        <header><span><ProductIcon Name="analysis" Size="16" />Recorded racecraft</span><span class="technical-state @PaceStateClass">@PaceState</span></header>
+                                        <p>@RacecraftInsight!.Takeaway</p>
+                                        @if (RacecraftInvestigationMetrics.Count > 0)
+                                        {
+                                            <div class="technical-racecraft-metrics">
+                                                @foreach (var metric in RacecraftInvestigationMetrics)
+                                                {
+                                                    <span data-evidence="@metric.Evidence.ToString().ToLowerInvariant()"><small><b class="technical-metric-evidence">@metric.Evidence.Tag()</b>@metric.Label</small><strong>@metric.Value</strong></span>
+                                                }
+                                            </div>
+                                        }
+                                    </section>
+                                }
+                                <TechnicalUnavailable Title="Clean-run pace comparison unavailable" Detail="Cautions, pit laps, or missing timing prevented a comparable early-to-late run." Action="Record a multi-lap green run without pit service to unlock this comparison." />
+                            </div>
+                        }
+                        else
+                        {
+                            <nav class="technical-record-selector" aria-label="Comparable runs">
+                                @foreach (var run in ComparableRuns)
+                                {
+                                    <button type="button" class="@(_selectedRunNumber == run.Number ? "selected" : null)" aria-pressed="@(_selectedRunNumber == run.Number ? "true" : "false")" @onclick="() => SelectRun(run.Number)"><span>Run @run.Number</span><b>@PaceTrend(run)</b></button>
+                                }
+                            </nav>
+                            @if (SelectedComparableRun is { } paceRun)
+                            {
+                                <div class="technical-pace-stage">
+                                    <div class="technical-pace-line" style="--pace-slope:@PaceSlope(paceRun)" aria-hidden="true"><i></i><b></b></div>
+                                    <div class="technical-pace-endpoints"><span><small>Early pace</small><strong>@LapTime(paceRun.EarlyAverageLapSeconds)</strong></span><span><small>Late pace</small><strong>@LapTime(paceRun.LateAverageLapSeconds)</strong></span></div>
+                                    <div class="technical-detail-grid">
+                                        <article><span>Early to late</span><strong>@Delta(paceRun.EarlyToLateDeltaSeconds)</strong></article>
+                                        <article><span>Trend</span><strong>@PaceTrend(paceRun)</strong></article>
+                                        <article><span>Green laps</span><strong>@paceRun.GreenLaps</strong></article>
+                                        <article><span>Lowest tire</span><strong>@LowestTire(paceRun)</strong></article>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        @if (Garage61Laps.Count > 0)
+                        {
+                            <section class="technical-reference-laps" data-garage61-references>
+                                <header>
+                                    <span>Garage61 reference laps</span>
+                                    <small>@Garage61Scope</small>
+                                    @if (State.Garage61ReferenceActionVisible)
+                                    {
+                                        <button type="button" class="technical-reference-action" disabled="@State.IsGarage61ReferenceSyncing" @onclick="FindGarage61ReferencesAsync">@(State.IsGarage61ReferenceSyncing ? "Refreshing…" : "Refresh")</button>
+                                    }
+                                </header>
+                                <div>
+                                    @foreach (var reference in Garage61Laps)
+                                    {
+                                        <article>
+                                            <span>@ReferenceRole(reference)</span>
+                                            <strong>@LapTime(reference.LapTimeSeconds)</strong>
+                                            <small>@ReferenceEvidence(reference)</small>
+                                        </article>
+                                    }
+                                </div>
+                                @if (Garage61Evidence.Length > 0) { <footer>@Garage61Evidence</footer> }
+                            </section>
+                        }
+                        else if (State.Garage61ReferenceActionVisible)
+                        {
+                            <section class="technical-reference-empty" data-garage61-reference-action>
+                                <span><strong>Garage61 reference</strong><small>Find comparable laps for this race.</small></span>
+                                <button type="button" class="technical-reference-action" disabled="@State.IsGarage61ReferenceSyncing" @onclick="FindGarage61ReferencesAsync">@(State.IsGarage61ReferenceSyncing ? "Finding…" : "Find Garage61 reference")</button>
+                            </section>
+                        }
+                        @if (State.Garage61ReferenceMessage.Length > 0)
+                        {
+                            <p class="technical-reference-message" role="status">@State.Garage61ReferenceMessage</p>
+                        }
+                    </div>
+                    break;
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
+    [Parameter, EditorRequired] public RaceCard Card { get; set; } = null!;
+
+    private string? ActiveInvestigation { get; set; }
+    private int? _selectedRunNumber;
+
+    private IReadOnlyList<AnalysisRun> PitRuns => Workspace.Runs.Where(run => run.PitStop is not null).OrderBy(run => run.Number).ToArray();
+    private IReadOnlyList<AnalysisRun> TireStops => PitRuns.Where(run => run.PitStop is { } pit && (pit.TireConditions?.Count > 0 || LegacyWear(pit).Any(value => value.HasValue))).ToArray();
+    private IReadOnlyList<AnalysisRun> FuelRuns => Workspace.Runs.Where(run => run.FuelUsedGallons.HasValue).OrderBy(run => run.Number).ToArray();
+    private IReadOnlyList<AnalysisRun> ComparableRuns => Workspace.Runs.Where(run => run.ComparisonEligible && (run.EarlyAverageLapSeconds.HasValue || run.LateAverageLapSeconds.HasValue)).OrderBy(run => run.Number).ToArray();
+    private AnalysisRun? SelectedPitRun => PitRuns.FirstOrDefault(run => run.Number == _selectedRunNumber) ?? PitRuns.FirstOrDefault();
+    private AnalysisRun? SelectedTireRun => TireStops.FirstOrDefault(run => run.Number == _selectedRunNumber) ?? TireStops.FirstOrDefault();
+    private AnalysisRun? SelectedComparableRun => ComparableRuns.FirstOrDefault(run => run.Number == _selectedRunNumber) ?? ComparableRuns.FirstOrDefault();
+    private AnalysisRun? LongestGreenRun => Workspace.Runs.OrderByDescending(run => run.GreenLaps).FirstOrDefault();
+    private AnalysisRun? RepresentativePaceRun => ComparableRuns.OrderByDescending(run => run.GreenLaps).ThenBy(run => run.Number).FirstOrDefault();
+    private AnalysisRun? LowestRemainingTireRun => Workspace.Runs.Where(run => run.TireRemainingPercent.HasValue).OrderBy(run => run.TireRemainingPercent).FirstOrDefault();
+    private AnalysisTechnicalInsight? PitInsight => Insight("pit");
+    private AnalysisTechnicalInsight? TireInsight => Insight("tires");
+    private AnalysisTechnicalInsight? FuelInsight => Insight("fuel");
+    private AnalysisTechnicalInsight? RacecraftInsight => Insight("racecraft");
+    private AnalysisTechnicalInsight? Insight(string key) => Workspace.TechnicalInsights?.FirstOrDefault(item => item.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+    private double? FastestCleanSeconds => Workspace.Traces.Where(trace => trace.IsComparable() && trace.LapTimeSeconds.HasValue).Select(trace => trace.LapTimeSeconds).Min();
+    private int IncidentPoints => (Workspace.Damage.Incidents ?? []).Sum(incident => incident.Points);
+    private string PitSummary => PitRuns.Count switch { 0 => "No recorded stop", 1 => "One recorded stop", _ => $"{PitRuns.Count} recorded stops" };
+    private string LongestRun => LongestGreenRun is null ? "—" : $"{LongestGreenRun.GreenLaps} laps";
+    private string RecordedServiceTime { get { var total = PitRuns.Sum(run => run.PitStop?.ServiceSeconds ?? 0); return Duration(total > 0 ? total : null); } }
+    private string TireSummary => TireStops.Count > 0 ? "Recorded condition at pit stops" : "No recorded tire snapshot";
+    private string MostTireWearReading => MostRecordedTireWear() is { } value ? $"{value:0.0}%" : "—";
+    private int TireChangeCount => PitRuns.Sum(run => run.PitStop?.TiresChanged?.Count ?? 0);
+    private string FuelSummary => Workspace.Strategy.GreenFuelGallonsPerLap.HasValue ? "A measured fuel baseline is available" : FuelRuns.Count > 0 ? "Recorded consumption by stint" : "Fuel use unavailable";
+    private string FuelPerGreenLap => Gallons(Workspace.Strategy.GreenFuelGallonsPerLap);
+    private string FuelRange => Laps(Workspace.Strategy.AllGreenRangeLaps);
+    private string FuelReserve => Gallons(Workspace.Strategy.ReserveFuelGallons);
+    private string PaceSummary => ComparableRuns.Count > 0 ? $"{ComparableRuns.Count} clean run comparison{(ComparableRuns.Count == 1 ? string.Empty : "s")}" : "No clean run comparison";
+    private string FastestCleanLap => LapTime(FastestCleanSeconds);
+    private string IncidentSummary => (Workspace.Damage.Incidents ?? []).Count == 0 ? "None" : $"x{IncidentPoints}";
+    private string InvestigationTitle => ActiveInvestigation switch { "pit" => "Pit strategy", "tires" => "Tire condition", "fuel" => "Fuel use", _ => "Racecraft & pace" };
+    private string InvestigationSummary => ActiveInvestigation switch { "pit" => PitSummary, "tires" => TireSummary, "fuel" => FuelSummary, _ => PaceSummary };
+    private string PitState => InsightRating(PitInsight) ?? (Workspace.Strategy.MinimumStopsAllGreen switch
+    {
+        { } minimum when Workspace.PitStops <= minimum => "On modeled target",
+        { } minimum when Workspace.PitStops == minimum + 1 => "One extra stop",
+        { } minimum when Workspace.PitStops > minimum => $"{Workspace.PitStops - minimum} extra stops",
+        _ => PitRuns.Count > 0 ? "Recorded" : "Unavailable"
+    });
+    private string PitStateClass => InsightStateClass(PitInsight) ?? (PitState switch { "On modeled target" => "positive", "Recorded" => "neutral", "Unavailable" => "unavailable", _ => "attention" });
+    private string PitTakeaway => InsightTakeaway(PitInsight) ?? (Workspace.Strategy.MinimumStopsAllGreen is { } minimum
+        ? Workspace.PitStops <= minimum
+            ? $"Recorded {Workspace.PitStops}; the all-green model called for {minimum}."
+            : $"Review the {Workspace.PitStops - minimum} stop difference from the all-green model."
+        : PitRuns.Count > 0 ? $"Start with the {Duration(PitRuns.Max(run => run.PitStop?.ServiceSeconds ?? 0))} longest service window." : "No stop outcome can be evaluated from this recording.");
+    private string TireState => InsightRating(TireInsight) ?? (LowestRemainingTireRun?.TireRemainingPercent switch { >= 70 => "Strong margin", >= 45 => "Moderate margin", < 45 => "Low margin", _ => TireStops.Count > 0 ? "Snapshots recorded" : "Unavailable" });
+    private string TireStateClass => InsightStateClass(TireInsight) ?? (TireState switch { "Strong margin" => "positive", "Moderate margin" or "Snapshots recorded" => "neutral", "Low margin" => "attention", _ => "unavailable" });
+    private string TireTakeaway => InsightTakeaway(TireInsight) ?? (LowestRemainingTireRun is { } run
+        ? $"{run.TireName} was lowest at {run.TireRemainingPercent:0.0}% remaining."
+        : TireStops.Count > 0 ? "Use the stop snapshots to compare inner, middle, and outer condition." : "No tire-condition outcome can be evaluated.");
+    private string FuelState => InsightRating(FuelInsight) ?? (Workspace.Strategy.AllGreenRangeLaps switch { { } range when Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps => "Full-race range", { } => "Stop required", _ => FuelRuns.Count > 0 ? "Consumption recorded" : "Unavailable" });
+    private string FuelStateClass => InsightStateClass(FuelInsight) ?? (FuelState switch { "Full-race range" => "positive", "Stop required" => "attention", "Consumption recorded" => "neutral", _ => "unavailable" });
+    private string FuelTakeaway => InsightTakeaway(FuelInsight) ?? (Workspace.Strategy.MinimumStopsAllGreen is { } minimum
+        ? $"All-green model: {minimum} stop{(minimum == 1 ? string.Empty : "s")} plus {FuelReserve} reserve."
+        : FuelRuns.Count > 0 ? $"Run {FuelRuns.MaxBy(run => run.FuelUsedGallons)?.Number} used the most recorded fuel." : "No fuel outcome can be evaluated.");
+    private string PaceState => InsightRating(RacecraftInsight) ?? (RepresentativePaceRun?.PaceSlopeSecondsPerLap switch { > .02 => "Falling off", < -.01 => "Improving", not null => "Stable", _ => ComparableRuns.Count > 0 ? "Comparable" : "Unavailable" });
+    private string PaceStateClass => InsightStateClass(RacecraftInsight) ?? (PaceState switch { "Stable" or "Improving" => "positive", "Comparable" => "neutral", "Falling off" => "attention", _ => "unavailable" });
+    private string PaceTakeaway => InsightTakeaway(RacecraftInsight) ?? (RepresentativePaceRun is { } run
+        ? $"Run {run.Number}: {PaceTrend(run)} across {run.GreenLaps} green laps."
+        : "No clean run is long enough for a pace outcome.");
+
+    private IReadOnlyList<CardMetric> PitCardMetrics => CardMetrics(PitInsight,
+        new("Stops", Workspace.PitStops.ToString(), "measured"), new("Longest run", LongestRun, "derived"), new("Service", RecordedServiceTime, "measured"));
+    private IReadOnlyList<CardMetric> TireCardMetrics => CardMetrics(TireInsight,
+        new("Snapshots", TireStops.Count.ToString(), "measured"), new("Most wear", MostTireWearReading, "measured"), new("Changed", TireChangeCount.ToString(), "measured"));
+    private IReadOnlyList<CardMetric> FuelCardMetrics => CardMetrics(FuelInsight,
+        new("Green lap", FuelPerGreenLap, "measured"), new("Range", FuelRange, "derived"), new("Reserve", FuelReserve, "calculated"));
+    private IReadOnlyList<CardMetric> RacecraftCardMetrics => CardMetrics(RacecraftInsight,
+        new("Fastest clean", FastestCleanLap, "measured"), new("Comparable runs", ComparableRuns.Count.ToString(), "derived"), new("Incidents", IncidentSummary, "measured"));
+    private bool RacecraftSummaryAvailable => RacecraftInsight is { } insight
+        && !insight.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase)
+        && (!string.IsNullOrWhiteSpace(insight.Takeaway) || insight.Metrics.Count > 0);
+    private IReadOnlyList<AnalysisTechnicalMetric> RacecraftInvestigationMetrics => RacecraftInsight?.Metrics.Take(3).ToArray() ?? [];
+    private static IReadOnlyList<CardMetric> CardMetrics(AnalysisTechnicalInsight? insight, params CardMetric[] fallback)
+    {
+        var metrics = insight?.Metrics.Select(metric => new CardMetric(metric.Label, metric.Value, metric.Evidence.ToString().ToLowerInvariant())).ToList() ?? [];
+        foreach (var candidate in fallback)
+        {
+            if (metrics.Count >= 3) break;
+            if (metrics.Any(metric => metric.Label.Equals(candidate.Label, StringComparison.OrdinalIgnoreCase))) continue;
+            metrics.Add(candidate);
+        }
+        return metrics.Take(3).ToArray();
+    }
+    private static string? InsightRating(AnalysisTechnicalInsight? insight) => insight is null ? null : Humanize(insight.Rating.Length > 0 ? insight.Rating : insight.Status);
+    private static string? InsightStateClass(AnalysisTechnicalInsight? insight) => insight is null ? null : insight.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ? "unavailable" : insight.Rating.Contains("usable", StringComparison.OrdinalIgnoreCase) || insight.Rating.Contains("measured", StringComparison.OrdinalIgnoreCase) || insight.Rating.Contains("recorded", StringComparison.OrdinalIgnoreCase) ? "positive" : "neutral";
+    private static string? InsightTakeaway(AnalysisTechnicalInsight? insight) => string.IsNullOrWhiteSpace(insight?.Takeaway) ? null : insight.Takeaway;
+    private static string Humanize(string value) => string.IsNullOrWhiteSpace(value) ? "Available" : char.ToUpperInvariant(value[0]) + value[1..].Replace('-', ' ').Replace('_', ' ');
+
+    private bool PredictionAvailable => Workspace.TirePrediction is { } prediction
+        && !prediction.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase)
+        && (prediction.Tires.Count > 0 || prediction.LapsRemaining.HasValue || prediction.PaceCostSeconds.HasValue || prediction.CapabilityPaceSeconds.HasValue);
+    private string PredictionUnavailableReason => Workspace.TirePrediction?.Reason is { Length: > 0 } reason ? reason : "No learned estimate can be supported by the recorded tire endpoints and green-run history.";
+    private static string PredictionNumber(double? value, string unit) => value.HasValue ? $"{value.Value:0.0} {unit}" : "—";
+    private static string PredictionRange(double? value, double? low, double? high, string unit)
+    {
+        if (!value.HasValue) return "—";
+        return low.HasValue && high.HasValue ? $"{value.Value:0.000} {unit} ({low.Value:0.000}–{high.Value:0.000})" : $"{value.Value:0.000} {unit}";
+    }
+    private static string PredictionPace(AnalysisTireLearningPrediction prediction) => PredictionRange(prediction.CapabilityPaceSeconds, prediction.CapabilityPaceLowSeconds, prediction.CapabilityPaceHighSeconds, "s");
+    private static string PredictionConfidence(AnalysisTireLearningPrediction prediction) => string.IsNullOrWhiteSpace(prediction.Confidence) ? $"{prediction.EligibleObservations} observations" : $"{Humanize(prediction.Confidence)} · {prediction.EligibleObservations} observations";
+    private static IReadOnlyList<(string Label, AnalysisTireBandPrediction? Value)> PredictionBands(AnalysisTireCornerPrediction tire) =>
+        new[] { "outer", "middle", "inner" }.Select(key => (key[..1].ToUpperInvariant(), tire.Bands.TryGetValue(key, out var value) ? value : null)).ToArray();
+    private static string PredictionBand(AnalysisTireBandPrediction? band)
+    {
+        if (band?.RemainingPercent is not { } value) return "—";
+        return band.LowPercent.HasValue && band.HighPercent.HasValue ? $"{value:0.0}% ({band.LowPercent:0.0}–{band.HighPercent:0.0})" : $"{value:0.0}%";
+    }
+    private IReadOnlyList<AnalysisGarage61ReferenceLap> Garage61Laps => Workspace.Garage61References is { } references
+        && !references.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ? references.Laps.Where(lap => lap.LapTimeSeconds.HasValue).Take(4).ToArray() : [];
+    private string Garage61Scope => Workspace.Garage61References?.ComparisonScope is { Length: > 0 } scope ? Humanize(scope) : "Own and team references";
+    private static string ReferenceRole(AnalysisGarage61ReferenceLap reference) => string.IsNullOrWhiteSpace(reference.ComparisonRole) ? "Reference" : Humanize(reference.ComparisonRole);
+    private string Garage61Evidence
+    {
+        get
+        {
+            if (Workspace.Garage61References is not { } references) return string.Empty;
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(references.ComparisonStatus)) parts.Add(Humanize(references.ComparisonStatus));
+            if (references.UsableReferenceLaps is { } usable) parts.Add($"{usable} aligned");
+            if (references.MedianCoverageFraction is { } coverage) parts.Add($"{coverage * 100:0}% coverage");
+            if (references.RetrievedAt is { } retrieved) parts.Add($"updated {retrieved.ToLocalTime():MMM d, h:mm tt}");
+            if (!string.IsNullOrWhiteSpace(references.SourceSha256)) parts.Add($"source {ShortHash(references.SourceSha256)}");
+            return string.Join(" · ", parts);
+        }
+    }
+    private static string ReferenceEvidence(AnalysisGarage61ReferenceLap reference)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(reference.SetupType)) parts.Add(Humanize(reference.SetupType));
+        if (reference.AlignmentCoverageFraction is { } coverage) parts.Add($"{coverage * 100:0}% aligned");
+        if (reference.AvailableSignals is { Count: > 0 }) parts.Add(string.Join(", ", reference.AvailableSignals.Select(SignalName).Take(3)));
+        return string.Join(" · ", parts);
+    }
+    private static string SignalName(string value) => value switch
+    {
+        "speed_mph" => "speed",
+        "steering_abs_rad" => "steering",
+        "lateral_g" => "lateral G",
+        _ => Humanize(value)
+    };
+    private static string ShortHash(string value) => value.Length <= 10 ? value : value[..10];
+    private Task FindGarage61ReferencesAsync() => State.SyncGarage61ReferencesAsync();
+
+    private void OpenInvestigation(string key)
+    {
+        ActiveInvestigation = key;
+        _selectedRunNumber = key switch
+        {
+            "pit" => PitRuns.FirstOrDefault()?.Number,
+            "tires" => TireStops.FirstOrDefault()?.Number,
+            "racecraft" => ComparableRuns.FirstOrDefault()?.Number,
+            _ => null
+        };
+    }
+
+    private void CloseInvestigation() { ActiveInvestigation = null; _selectedRunNumber = null; }
+    private void SelectRun(int number) => _selectedRunNumber = number;
+    private static string PitLap(AnalysisRun run) => run.Laps.Count == 0 ? "Lap —" : $"Lap {run.Laps.Max()}";
+    private static string ChangedTires(AnalysisRun run) => run.PitStop?.TiresChanged is { Count: > 0 } tires ? string.Join(", ", tires) : "None recorded";
+    private static string Gallons(double? value) => value.HasValue ? $"{value.Value:0.000} gal" : "—";
+    private static string Laps(double? value) => value.HasValue ? $"{value.Value:0.0} laps" : "—";
+    private static string Duration(double? value) => value.HasValue && value.Value > 0 ? $"{value.Value:0.0} s" : "—";
+    private static string Percent(double? value) => value.HasValue ? $"{value.Value:0.0}%" : "—";
+    private static string Pressure(double? value) => value.HasValue ? $"{value.Value:0.0} psi" : "—";
+    private static string LapTime(double? value) => value.HasValue ? TimeSpan.FromSeconds(value.Value).ToString(@"m\:ss\.fff") : "—";
+    private static string Delta(double? value) => value.HasValue ? $"{value.Value:+0.000;-0.000;0.000} s" : "—";
+    private static string PaceTrend(AnalysisRun run) => run.PaceSlopeSecondsPerLap switch { > .01 => $"+{run.PaceSlopeSecondsPerLap:0.000} s/lap", < -.01 => $"{run.PaceSlopeSecondsPerLap:0.000} s/lap", not null => "Stable", _ => "—" };
+    private static string LowestTire(AnalysisRun run) => run.TireRemainingPercent.HasValue ? $"{run.TireName} {run.TireRemainingPercent:0.0}%" : "—";
+    private string FuelBarWidth(AnalysisRun run)
+    {
+        var maximum = FuelRuns.Select(item => item.FuelUsedGallons ?? 0).DefaultIfEmpty(0).Max();
+        return maximum <= 0 ? "0%" : $"{Math.Clamp((run.FuelUsedGallons ?? 0) / maximum * 100, 0, 100):0.#}%";
+    }
+    private static string PaceSlope(AnalysisRun run) => Math.Clamp(50 + (run.EarlyToLateDeltaSeconds ?? 0) * 12, 14, 86).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    private double? MostRecordedTireWear() => TireStops.SelectMany(run => LegacyWear(run.PitStop!)).Where(value => value.HasValue).Select(value => value!.Value).DefaultIfEmpty(double.NaN).Max() is var value && !double.IsNaN(value) ? value : null;
+    private static IEnumerable<double?> LegacyWear(AnalysisPitStop pit) => [pit.LeftFrontTireWearPercent, pit.RightFrontTireWearPercent, pit.LeftRearTireWearPercent, pit.RightRearTireWearPercent];
+    private static bool ChangedAtStop(AnalysisRun? run, string corner) => run?.PitStop?.TiresChanged?.Contains(corner, StringComparer.OrdinalIgnoreCase) == true;
+    private static IReadOnlyList<AnalysisTireCondition> TireConditions(AnalysisPitStop pit)
+    {
+        if (pit.TireConditions is { Count: > 0 }) return new[] { "LF", "RF", "LR", "RR" }.Where(pit.TireConditions.ContainsKey).Select(key => pit.TireConditions[key]).ToArray();
+        var empty = new AnalysisTireBands(null, null, null);
+        return new[]
+        {
+            new AnalysisTireCondition("LF", pit.LeftFrontTireWearPercent, empty, empty, empty, null, string.Empty),
+            new AnalysisTireCondition("RF", pit.RightFrontTireWearPercent, empty, empty, empty, null, string.Empty),
+            new AnalysisTireCondition("LR", pit.LeftRearTireWearPercent, empty, empty, empty, null, string.Empty),
+            new AnalysisTireCondition("RR", pit.RightRearTireWearPercent, empty, empty, empty, null, string.Empty)
+        }.Where(tire => tire.AverageWearPercent.HasValue).ToArray();
+    }
+    private static IReadOnlyList<(string Label, double? Value)> TireBands(AnalysisTireCondition tire)
+    {
+        if (tire.WearPercent is { Outer: null, Middle: null, Inner: null }) return [("Avg", tire.AverageWearPercent)];
+        var right = tire.Corner is "RF" or "RR";
+        return right
+            ? [("I", tire.WearPercent.Inner), ("M", tire.WearPercent.Middle), ("O", tire.WearPercent.Outer)]
+            : [("O", tire.WearPercent.Outer), ("M", tire.WearPercent.Middle), ("I", tire.WearPercent.Inner)];
+    }
+    private sealed record CardMetric(string Label, string Value, string Evidence);
+}

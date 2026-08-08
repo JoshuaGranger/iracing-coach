@@ -188,7 +188,7 @@ public sealed class CapabilityRegistryTests
             Assert.IsFalse(primaryCopy.Contains(glyph, StringComparison.Ordinal), $"Primary UI contains a text glyph used as an icon: {glyph}");
 
         StringAssert.Contains(razor["NavRail.razor"], "<ProductIcon");
-        StringAssert.Contains(razor["TuningPage.razor"], "feedback-builder");
+        StringAssert.Contains(razor["TuningPage.razor"], "ProgressiveTuningFeedbackEditor");
         StringAssert.Contains(razor["DiagnosticsPage.razor"], "DiagnosticsExpanded");
         StringAssert.Contains(razor["SettingsPage.razor"], "<details class=\"settings-disclosure\"");
 
@@ -233,6 +233,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(traceCss, "position: fixed");
 
         var analysis = File.ReadAllText(Path.Combine(ui, "AnalysisWorkspacePage.razor"));
+        var technical = File.ReadAllText(Path.Combine(ui, "RaceTechnicalData.razor"));
+        var replay = File.ReadAllText(Path.Combine(ui, "RaceReplayWorkspace.razor"));
         Assert.DoesNotContain("<RaceCardPanel", analysis);
         StringAssert.Contains(analysis, "analysis-one-screen");
         StringAssert.Contains(analysis, "analysis-insight-rail");
@@ -249,10 +251,16 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(analysis, "RaceDataSection");
         StringAssert.Contains(analysis, "analysis-data-switch");
         StringAssert.Contains(analysis, ">Telemetry</button>");
-        StringAssert.Contains(analysis, ">Race review</button>");
+        StringAssert.Contains(analysis, ">Technical data</button>");
+        StringAssert.Contains(analysis, ">Race replay</button>");
+        Assert.DoesNotContain(">Race review</button>", analysis);
         StringAssert.Contains(analysis, "RaceDataSection == \"telemetry\"");
-        StringAssert.Contains(analysis, "RaceDataSection == \"review\"");
-        StringAssert.Contains(analysis, "analysis-review-grid");
+        StringAssert.Contains(analysis, "RaceDataSection == \"technical\"");
+        StringAssert.Contains(analysis, "RaceDataSection == \"replay\"");
+        StringAssert.Contains(analysis, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" />");
+        StringAssert.Contains(analysis, "<RaceReplayWorkspace Workspace=\"Workspace\" />");
+        StringAssert.Contains(technical, "data-technical-overview");
+        StringAssert.Contains(replay, "data-replay-unavailable");
         StringAssert.Contains(analysis, "qualifying-review-shell");
         StringAssert.Contains(analysis, "RaceReviewMetrics.BuildCornerSummaries");
         Assert.DoesNotContain("new TrackSegment", analysis);
@@ -293,8 +301,17 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "class=\"incident-popover\"");
         StringAssert.Contains(telemetry, "style=\"@IncidentPopoverStyle\"");
         StringAssert.Contains(telemetry, "@foreach (var incident in lapIncidents)");
-        StringAssert.Contains(telemetry, "IncidentEventDescription(trace, incident)");
-        StringAssert.Contains(telemetry, "A zero-point contact appears only when the source records an explicit event.");
+        StringAssert.Contains(telemetry, "IncidentEventDescription(trace, incident, lapIncidents.Count > 1)");
+        StringAssert.Contains(telemetry, "@if (!string.IsNullOrWhiteSpace(description))");
+        StringAssert.Contains(telemetry, "incident.EventType");
+        StringAssert.Contains(telemetry, "incident.ContactTarget");
+        StringAssert.Contains(telemetry, "incident.TrackLocation");
+        StringAssert.Contains(telemetry, "incident.OnPitRoad");
+        StringAssert.Contains(telemetry, "incident.SpeedMph");
+        Assert.DoesNotContain("The recording identifies incident-point changes", telemetry);
+        Assert.DoesNotContain("A zero-point contact appears only when the source records an explicit event", telemetry);
+        Assert.DoesNotContain("incident.SourceChannel", telemetry,
+            "Technical source provenance belongs in diagnostics, not the driving incident popover.");
         StringAssert.Contains(traceCss, ".incident-popover {");
         StringAssert.Contains(traceCss, "position: fixed;");
         Assert.DoesNotContain("incidentPoints > 0", telemetry,
@@ -313,9 +330,11 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "class=\"lap-fuel-column\"");
         StringAssert.Contains(telemetry, "class=\"lap-incident-column\"");
         StringAssert.Contains(telemetry, "class=\"lap-pit-column\"");
-        StringAssert.Contains(telemetry, "Name=\"@(direction == \"in\" ? \"pit-in\" : \"pit-out\")\"");
+        StringAssert.Contains(telemetry, "@(direction == \"in\" ? \"Pit entry\" : \"Pit exit\")");
         StringAssert.Contains(telemetry, "aria-label=\"@($\"Pit {(direction == \"in\" ? \"entry\" : \"exit\")} details\")\"");
         StringAssert.Contains(telemetry, "title=\"@(direction == \"in\" ? \"Pit entry\" : \"Pit exit\")\"");
+        Assert.DoesNotContain("Name=\"@(direction == \"in\" ? \"pit-in\" : \"pit-out\")\"", telemetry,
+            "Pit direction must be visible text, not an icon-only symbol.");
         StringAssert.Contains(telemetry, "LapFlags(trace)");
         StringAssert.Contains(telemetry, "if (!trace.Complete) return [new LapFlag(\"incomplete\", \"Incomplete lap\")]");
         StringAssert.Contains(telemetry, "states.RemoveAll(value => value.Equals(\"white\"");
@@ -330,8 +349,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "No laps selected");
         Assert.DoesNotContain("Selected.Count >= 5", telemetry);
         StringAssert.Contains(telemetry, "var hue = 280 * fraction");
-        StringAssert.Contains(telemetry, "Math.Abs(lapTime - FastestLapTime) < .0001");
-        StringAssert.Contains(telemetry, "return \"#F05CDB\"");
+        StringAssert.Contains(telemetry, "Math.Abs(lapTime - _fastestLapTime) < .0001");
+        StringAssert.Contains(telemetry, "new KeyValuePair<int, string>(lap, \"#F05CDB\")");
         StringAssert.Contains(cursorInterop, "{ passive: false }");
         StringAssert.Contains(telemetry, "TooltipCapacity");
         StringAssert.Contains(telemetry, "Average of selected laps");
@@ -364,29 +383,25 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".lap-select-button {");
         StringAssert.Contains(coachCss, ".lap-conditions-popover { position: fixed");
         StringAssert.Contains(coachCss, ".conditions-grid { display: grid; grid-template-columns: repeat(3");
-        StringAssert.Contains(coachCss, "grid-template-columns: 70px 42px 90px 34px 64px 30px 34px");
-        StringAssert.Contains(coachCss, "grid-template-columns: 64px 36px 84px 32px 58px 26px 32px");
+        StringAssert.Contains(coachCss, ".race-workstation .lap-rail-row { grid-template-columns: 70px 42px 90px 34px 60px 30px 58px; }");
         StringAssert.Contains(coachCss, "justify-content: center; gap: 0 5px;");
-        StringAssert.Contains(coachCss, ".pit-badge { width: 24px; height: 22px; display: grid; place-items: center;");
-        StringAssert.Contains(coachCss, ".pit-badge .product-icon { width: 14px; height: 14px; }");
+        StringAssert.Contains(coachCss, ".pit-badge {");
+        StringAssert.Contains(coachCss, "width: auto;");
+        StringAssert.Contains(coachCss, "white-space: nowrap;");
         StringAssert.Contains(coachCss, "grid-template-columns: minmax(0,1fr); justify-self: end;");
         StringAssert.Contains(coachCss, ".lap-time small { display: block; width: 100%;");
         StringAssert.Contains(coachCss, ".lap-time { display: flex; flex-direction: column; align-items: flex-end; justify-self: center; }");
         StringAssert.Contains(coachCss, ".lap-pace-value,.lap-time small { width: max-content; transform: none; }");
-        StringAssert.Contains(coachCss, "grid-template-columns: 488px minmax(0,1fr);");
+        StringAssert.Contains(coachCss, "grid-template-columns: clamp(300px,28vw,488px) minmax(0,1fr);");
         StringAssert.Contains(coachCss, "align-self: stretch;");
-        StringAssert.Contains(coachCss, ".telemetry-context-column {");
-        StringAssert.Contains(coachCss, "flex-direction: column;");
-        StringAssert.Contains(coachCss, ".telemetry-context-column .track-panel {");
-        StringAssert.Contains(coachCss, ".telemetry-context-column .lap-rail {");
-        StringAssert.Contains(coachCss, "contain: size;");
+        StringAssert.Contains(coachCss, ".race-workstation .telemetry-context-column {");
+        StringAssert.Contains(coachCss, ".race-workstation.context-track .telemetry-context-column");
+        StringAssert.Contains(coachCss, ".race-workstation.context-laps .telemetry-context-column");
+        StringAssert.Contains(coachCss, ".race-workstation.context-none { grid-template-columns: 0 minmax(0,1fr); gap: 0; }");
         StringAssert.Contains(coachCss, ".race-telemetry-page { min-width: 0; container-type: inline-size; }");
-        StringAssert.Contains(coachCss, "@container (max-width: 1280px)");
-        StringAssert.Contains(coachCss, "grid-template-columns: minmax(410px,40%) minmax(0,1fr)");
         StringAssert.Contains(coachCss, "@container (max-width: 1060px)");
-        StringAssert.Contains(coachCss, "grid-template-columns: 180px minmax(0,1fr);");
-        StringAssert.Contains(coachCss, ".telemetry-workstation-grid.context-collapsed { grid-template-columns: minmax(0,1fr); }");
-        StringAssert.Contains(coachCss, ".telemetry-context-column { height: clamp(620px,76vh,820px); }");
+        StringAssert.Contains(coachCss, ".analysis-page-frame:has(.race-analysis-toolbar) {");
+        StringAssert.Contains(coachCss, "height: calc(100dvh - var(--command-bar-height));");
         StringAssert.Contains(coachCss, "@container (max-width: 960px)");
         StringAssert.Contains(coachCss, "grid-template-columns: 48px 38px minmax(70px,1fr) 34px 58px");
         StringAssert.Contains(coachCss, "@container (max-width: 760px)");
@@ -409,12 +424,13 @@ public sealed class CapabilityRegistryTests
         Assert.DoesNotContain("<span class=\"lap-state", telemetry);
         StringAssert.Contains(telemetry, "stroke-width=\"@TraceStrokeWidth(trace, indexedSignal.Index)\"");
         StringAssert.Contains(telemetry, "return signalIndex == 0 ? \"1.35\" : \"1.05\";");
-        StringAssert.Contains(telemetry, "140 - (p.Y");
+        StringAssert.Contains(telemetry, "140 + (point.Y - projection.CenterY) * projection.Scale");
         StringAssert.Contains(telemetry, "HeatmapColor(normalized, SpeedHeatmapStops)");
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         StringAssert.Contains(css, ".event-session-switch .segmented");
         StringAssert.Contains(css, ".analysis-data-switch");
-        StringAssert.Contains(css, ".analysis-review-grid");
+        StringAssert.Contains(css, ".technical-overview");
+        StringAssert.Contains(css, ".race-replay-workspace");
         StringAssert.Contains(css, ".qualifying-review-shell { display: contents; }");
         StringAssert.Contains(css, ".lap-time.fastest");
         StringAssert.Contains(css, "white-space: nowrap");
@@ -429,7 +445,7 @@ public sealed class CapabilityRegistryTests
 
         var tuning = File.ReadAllText(Path.Combine(ui, "TuningPage.razor"));
         StringAssert.Contains(tuning, "TuningTrackSelector");
-        StringAssert.Contains(tuning, "State.TuningFeedback");
+        StringAssert.Contains(tuning, "State.TuningDraft.Feedback");
         Assert.IsTrue(File.Exists(Path.Combine(ui, "TuningTrackSelector.razor")));
 
         var live = File.ReadAllText(Path.Combine(ui, "LiveTelemetryPage.razor"));
@@ -438,6 +454,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(liveVisuals, "<canvas");
         StringAssert.Contains(liveVisuals, "LiveTelemetryFrame");
         StringAssert.Contains(liveVisuals, "display-synced");
+        StringAssert.Contains(liveVisuals, "@(((Snapshot.LapDistancePercent ?? 0) * 100).ToString(\"0\"))%");
+        Assert.DoesNotContain("* 100).ToString(\"0\")%", liveVisuals);
         Assert.DoesNotContain("<svg class=\"live-trend-chart\"", liveVisuals);
         var liveChart = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-chart.js"));
         StringAssert.Contains(liveChart, "requestAnimationFrame");
@@ -529,6 +547,22 @@ public sealed class CapabilityRegistryTests
         var onExitEnd = application.IndexOf("private static void ForceTerminateProcess()", onExitStart, StringComparison.Ordinal);
         var onExitMethod = application[onExitStart..onExitEnd];
         Assert.DoesNotContain("\n            _exitWatchdog?.Dispose();", onExitMethod);
+    }
+
+    [TestMethod]
+    public void ReleaseBuild_RefusesMixedApplicationInstallerAndUninstallerVersions()
+    {
+        var script = File.ReadAllText(Path.Combine(CompanionRoot(), "tools", "BuildRelease.ps1"));
+
+        StringAssert.Contains(script, "function Get-ProjectVersion");
+        StringAssert.Contains(script, "iRacingCoach.App.csproj");
+        StringAssert.Contains(script, "iRacingCoach.Installer.csproj");
+        StringAssert.Contains(script, "iRacingCoach.Uninstaller.csproj");
+        StringAssert.Contains(script, "Release identity mismatch.");
+        var mismatchGuard = script.IndexOf("Release identity mismatch.", StringComparison.Ordinal);
+        var destructiveReset = script.IndexOf("Reset-ReleaseDirectory $artifactRoot", StringComparison.Ordinal);
+        Assert.IsTrue(mismatchGuard >= 0 && destructiveReset >= 0 && mismatchGuard < destructiveReset,
+            "A mixed-version release must fail before any prior release output is reset or rewritten.");
     }
 
     [TestMethod]

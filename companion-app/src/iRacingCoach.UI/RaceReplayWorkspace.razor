@@ -1,0 +1,1090 @@
+@using System.Globalization
+@implements IAsyncDisposable
+
+<section class="race-replay-workspace" data-analysis-section="replay" data-race-replay aria-label="Race replay">
+    @if (!ReplayAvailable)
+    {
+        <div class="replay-unavailable" data-replay-unavailable>
+            <ProductIcon Name="replay" Size="26" />
+            <div><h2>Race replay is unavailable</h2><p>@ReplayUnavailableReason</p></div>
+        </div>
+    }
+    else
+    {
+        <div class="replay-layout">
+            <aside class="replay-leader-rail" data-replay-leader-rail aria-label="@($"{LeaderScopeLabel} laps")">
+                <header><span class="eyebrow">@LeaderScopeLabel</span><strong>Lap history</strong></header>
+                @if (CurrentClassLeader is { } leader)
+                {
+                    <div class="replay-leader-row leader" data-replay-leader-row data-car-index="@leader.CarIndex" style="@($"--replay-car-color:{leader.Color}")">
+                        <b>@Position(leader.State.OverallPosition)</b>
+                        <span class="replay-car-number">@leader.Number</span>
+                        <span class="replay-driver"><strong>@leader.Driver</strong><small>@leader.ClassName</small></span>
+                        <span class="replay-lap">@LapLabel(leader.State)</span>
+                    </div>
+                    @if (CurrentLeaderLap.HasValue)
+                    {
+                        <div class="replay-leader-lap-list" data-replay-leader-lap-list>
+                            @foreach (var lap in LeaderLapWindow)
+                            {
+                                <button type="button" class="@(lap == CurrentLeaderLap ? "current" : null)" data-replay-leader-lap="@lap" aria-current="@(lap == CurrentLeaderLap ? "true" : null)" @onclick="() => SeekToLeaderLap(lap)">
+                                    <span>Lap @lap</span><b>@(lap == CurrentLeaderLap ? CurrentFlagSummary : string.Empty)</b>
+                                </button>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="replay-rail-unavailable" data-replay-unavailable="leader-laps"><ProductIcon Name="info" Size="15" /><span>Leader lap count was not recorded at this moment.</span></div>
+                    }
+                }
+                else
+                {
+                    <div class="replay-rail-unavailable" data-replay-unavailable="leader-order"><ProductIcon Name="info" Size="15" /><span>Leader-lap order was not recorded at this moment.</span></div>
+                }
+            </aside>
+
+            <main class="replay-stage">
+                <section class="replay-map-card" data-replay-map>
+                    <header>
+                        <div><span class="eyebrow">Track</span><strong>@Workspace.Track <span>@Workspace.Layout</span></strong></div>
+                        <span class="replay-map-status">@CurrentFlagSummary · @CurrentLapLabel · @((CurrentLapPercent * 100).ToString("0.0"))%</span>
+                    </header>
+                    <svg class="replay-track-map" viewBox="@TrackViewBox" role="img" aria-label="Full-field race replay track map">
+                        <path d="@TrackPath" class="replay-track-ribbon-halo" />
+                        <path d="@TrackPath" class="replay-track-ribbon" data-map-layer="main" />
+                        @if (!string.IsNullOrWhiteSpace(PitLanePath))
+                        {
+                            <path d="@PitLanePath" class="replay-pit-road-halo" />
+                            <path d="@PitLanePath" class="replay-pit-road" data-map-layer="pit-road" />
+                        }
+                        @if (!string.IsNullOrWhiteSpace(PitEntryPath)) { <path d="@PitEntryPath" class="replay-pit-entry" data-map-layer="pit-entry" /> }
+                        @if (!string.IsNullOrWhiteSpace(PitExitPath)) { <path d="@PitExitPath" class="replay-pit-exit" data-map-layer="pit-exit" /> }
+                        @if (PitCommitmentLine is { } commitment)
+                        {
+                            <line x1="@F(commitment.X1)" y1="@F(commitment.Y1)" x2="@F(commitment.X2)" y2="@F(commitment.Y2)" class="replay-pit-commitment entry" data-map-layer="commitment" />
+                        }
+                        @if (PitMergeLine is { } merge)
+                        {
+                            <line x1="@F(merge.X1)" y1="@F(merge.Y1)" x2="@F(merge.X2)" y2="@F(merge.Y2)" class="replay-pit-commitment exit" data-map-layer="commitment" />
+                        }
+                        @if (StartFinishLine is { } line)
+                        {
+                            <line x1="@F(line.X1)" y1="@F(line.Y1)" x2="@F(line.X2)" y2="@F(line.Y2)" class="replay-start-line-halo" />
+                            <line x1="@F(line.X1)" y1="@F(line.Y1)" x2="@F(line.X2)" y2="@F(line.Y2)" class="replay-start-line" data-map-layer="start-finish" />
+                        }
+                        @foreach (var car in RenderedCars)
+                        {
+                            <g class="replay-car-marker @(car.IsPlayer ? "player" : null) @(car.IsClassLeader ? "class-leader" : null) @(car.IsOverallLeader ? "overall-leader" : null)"
+                               data-replay-car="@car.CarIndex" data-player="@Aria(car.IsPlayer)" data-class-leader="@Aria(car.IsClassLeader)"
+                               style="@($"--replay-car-color:{car.Color}")" transform="translate(@F(car.Point.X) @F(car.Point.Y))">
+                                <circle r="@(car.IsPlayer || car.IsClassLeader ? 13 : 10)" class="replay-car-halo" />
+                                <circle r="@(car.IsPlayer || car.IsClassLeader ? 10 : 7.5)" class="replay-car-body" />
+                                <svg:text text-anchor="middle" dominant-baseline="central">@car.Number</svg:text>
+                            </g>
+                        }
+                    </svg>
+                    <div class="replay-map-key">
+                        <span><i class="player"></i>You</span><span><i class="leader"></i>Class leader</span><span>Car color = class</span>
+                        @if (ReplayCoverageLabel is { } coverageLabel)
+                        {
+                            <span class="replay-coverage-note" title="@ReplayCoverageDetails">@coverageLabel</span>
+                        }
+                    </div>
+                </section>
+
+                <section class="replay-comparison" data-replay-comparison>
+                    <header><span class="eyebrow">Known comparison</span><strong>@LeaderScopeLabel and you</strong></header>
+                    @if (PlayerComparison is not null)
+                    {
+                        <div class="replay-comparison-table">
+                            <div class="replay-comparison-head"><span></span><b>@LeaderScopeLabel @PlayerComparison.LeaderNumber</b><b>You</b></div>
+                            @foreach (var row in ComparisonRows)
+                            {
+                                <div class="replay-comparison-row"><span>@row.Label</span><b>@row.Leader</b><b>@row.Player</b></div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="replay-comparison-unavailable" data-replay-unavailable="comparison">Leader-to-driver comparison is not known at this moment.</div>
+                    }
+                </section>
+
+                <section class="replay-session-data" data-replay-grid>
+                    <header><span class="eyebrow">Race grid</span><strong>Recorded running order</strong></header>
+                    <div class="replay-grid-table">
+                        <div class="replay-grid-head"><span>Pos</span><span>Car</span><span>Lap</span><span>State</span></div>
+                        @foreach (var row in GridRows)
+                        {
+                            <div class="replay-grid-row @(row.IsPlayer ? "player" : null)" data-car-index="@row.CarIndex" style="@($"--replay-car-color:{row.Color}")">
+                                <b>@Position(row.State.OverallPosition)</b>
+                                <span><i></i><strong>@row.Number</strong> @row.Driver</span>
+                                <strong>@LapNumberText(row.State)</strong>
+                                <small>@CarState(row.State)</small>
+                            </div>
+                        }
+                    </div>
+                    @if (AtChecker)
+                    {
+                        <div class="replay-event-timeline compact" data-replay-timeline aria-label="Recorded race events">
+                            @foreach (var item in TimelineEvents)
+                            {
+                                <button type="button" @onclick="() => SeekToTime(item.SessionTimeSeconds)"><span class="@item.Kind"></span><b>@Clock(item.SessionTimeSeconds - ReplayStartSeconds)</b><small>@item.Label</small></button>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <footer class="replay-playback" data-replay-playback>
+                    <button type="button" class="replay-skip" title="Previous lap" aria-label="Previous lap" disabled="@(!CurrentLapNumber.HasValue)" @onclick="PreviousLap"><ProductIcon Name="chevron-left" Size="16" /></button>
+                    <button type="button" class="replay-play" title="@(Playing ? "Pause replay" : "Play replay")" aria-label="@(Playing ? "Pause replay" : "Play replay")" aria-pressed="@Playing" @onclick="TogglePlayback"><ProductIcon Name="@(Playing ? "pause" : "play")" Size="18" /></button>
+                    <button type="button" class="replay-skip" title="Next lap" aria-label="Next lap" disabled="@(!CurrentLapNumber.HasValue)" @onclick="NextLap"><ProductIcon Name="chevron-right" Size="16" /></button>
+                    <span class="replay-time">@PlaybackTime</span>
+                    <div class="replay-scrubber">
+                        <div class="replay-flag-strip" data-replay-flag-timeline aria-hidden="true">
+                            @foreach (var segment in FlagSegments) { <i class="@segment.Kind" style="@($"left:{segment.Left:0.###}%;width:{segment.Width:0.###}%")"></i> }
+                            <b style="@($"left:{PlaybackFraction * 100:0.###}%")"></b>
+                        </div>
+                        <input type="range" min="0" max="1000" step="1" value="@PlaybackSlider" @oninput="Seek" aria-label="Replay position" />
+                    </div>
+                    <span class="replay-time">@TotalReplayTime</span>
+                    <label class="replay-speed"><span class="sr-only">Playback speed</span><select value="@PlaybackSpeed.ToString("0.0", CultureInfo.InvariantCulture)" @onchange="ChangePlaybackSpeed" aria-label="Playback speed">@foreach (var speed in PlaybackSpeeds) { <option value="@speed.ToString("0.0", CultureInfo.InvariantCulture)">@speed.ToString("0.#")&times;</option> }</select></label>
+                </footer>
+            </main>
+
+            <aside class="replay-telemetry" data-replay-telemetry>
+                <header>
+                    <div><span class="eyebrow">Your telemetry</span><strong>One-lap trace</strong></div>
+                    <div class="replay-telemetry-header-actions">
+                        <span class="replay-current-lap">@(CurrentTrace is null ? "Unavailable" : $"Lap {CurrentTrace.Lap}")</span>
+                        @if (FastestTrace is { } fastestReference)
+                        {
+                            <button type="button" class="replay-reference-toggle @(ShowFastestReference ? "active" : null)" data-replay-reference-toggle
+                                    aria-pressed="@ShowFastestReference" title="Compare with fastest clean recorded lap @fastestReference.Lap" @onclick="ToggleFastestReference">
+                                <i aria-hidden="true"></i><span>Fastest</span>
+                            </button>
+                        }
+                    </div>
+                </header>
+                @if (CurrentTrace is null)
+                {
+                    <div class="replay-telemetry-unavailable" data-replay-unavailable="player-telemetry">Your synchronized lap telemetry is not available at this replay position.</div>
+                }
+                else
+                {
+                    @foreach (var chart in ReplayCharts)
+                    {
+                        <article class="replay-telemetry-chart" data-replay-chart="@chart.Id">
+                            <header><span><b>@chart.Label</b><small>@chart.Unit</small></span>
+                                @if (chart.Id == "brake" && HasAbsData)
+                                {
+                                    <label class="replay-abs-toggle" data-replay-abs-toggle title="Color explicitly recorded ABS intervention yellow"><input type="checkbox" @bind="ShowAbs" /><span>ABS</span></label>
+                                }
+                            </header>
+                            <svg viewBox="0 0 360 94" preserveAspectRatio="none" role="img" aria-label="@chart.Label trace for lap @CurrentTrace.Lap">
+                                <line x1="0" y1="47" x2="360" y2="47" class="replay-chart-grid" />
+                                @if (ShowFastestReference && FastestTrace is { } reference)
+                                {
+                                    <path d="@ReplayChartPath(reference, chart.Id)" class="replay-reference-trace" />
+                                }
+                                <path d="@ReplayChartPath(CurrentTrace, chart.Id)" class="replay-current-trace" />
+                                @if (chart.Id == "brake" && ShowAbs && HasAbsData)
+                                {
+                                    @foreach (var path in AbsTracePaths(CurrentTrace))
+                                    {
+                                        <path d="@path" class="replay-abs-trace" />
+                                    }
+                                }
+                                <line x1="@F(CurrentLapPercent * 360)" y1="3" x2="@F(CurrentLapPercent * 360)" y2="91" class="replay-telemetry-cursor" />
+                            </svg>
+                            <footer>
+                                <span>@ChartValue(chart.Id)</span>
+                                @if (ShowFastestReference && FastestTrace is { } footerReference)
+                                {
+                                    <small>Fastest @footerReference.Lap · dotted</small>
+                                }
+                            </footer>
+                        </article>
+                    }
+                }
+            </aside>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
+
+    private readonly CancellationTokenSource _playbackCancellation = new();
+    private bool Playing { get; set; }
+    private bool ShowAbs { get; set; }
+    private bool ShowFastestReference { get; set; } = true;
+    private double PlaybackFraction { get; set; }
+    private double PlaybackSpeed { get; set; } = 1;
+    private string? _analysisId;
+    private AnalysisWorkspace? _workspaceReference;
+    private IReadOnlyList<MapPoint>? _trackPoints;
+    private IReadOnlyList<AnalysisVectorPoint> _geometryBounds = [];
+    private VectorProjection? _vectorProjection;
+    private string _trackPath = string.Empty;
+    private string _pitLanePath = string.Empty;
+    private string _pitEntryPath = string.Empty;
+    private string _pitExitPath = string.Empty;
+    private string _trackViewBox = "0 0 600 360";
+    private MapLine? _pitCommitmentLine;
+    private MapLine? _pitMergeLine;
+    private MapLine? _startFinishLine;
+    private IReadOnlyList<AnalysisReplayFrame> _frames = [];
+    private IReadOnlyDictionary<int, AnalysisReplayParticipant> _participants = new Dictionary<int, AnalysisReplayParticipant>();
+    private IReadOnlyDictionary<int, AnalysisReplayParticipantCoverage> _participantCoverage = new Dictionary<int, AnalysisReplayParticipantCoverage>();
+    private IReadOnlyDictionary<int, AnalysisLapTrace> _tracesByLap = new Dictionary<int, AnalysisLapTrace>();
+    private IReadOnlyDictionary<int, IReadOnlyList<PitEvent>> _pitEventsByCar = new Dictionary<int, IReadOnlyList<PitEvent>>();
+    private IReadOnlyList<TimelineItem> _timelineEvents = [];
+    private IReadOnlyList<FlagSegment> _flagSegments = [];
+    private AnalysisLapTrace? _fastestTrace;
+    private int? _playerCarIndex;
+    private int _maximumLeaderLap;
+    private int _playbackGeneration;
+    private bool _hasRecordedCars;
+    private bool _hasPlayerFrame;
+    private readonly Dictionary<(int CurrentLap, int TraceLap, string Signal, bool ReferenceVisible), string> _replayChartPathCache = [];
+    private readonly Dictionary<(int CurrentLap, string Signal, bool ReferenceVisible), (double Minimum, double Maximum)> _replayChartRangeCache = [];
+    private readonly Dictionary<int, IReadOnlyList<string>> _absTracePathCache = [];
+    private HashSet<int> _absAvailableLaps = [];
+
+    private static readonly double[] PlaybackSpeeds = [0.5, 1, 2, 4, 10];
+    private static readonly string[] ClassColors = ["#61dca3", "#f6c85f", "#8f7df6", "#ee6f7c", "#56c8e8", "#f09452", "#c174df", "#77c65d"];
+    private static readonly (string Label, string[] Aliases)[] TireCorners =
+    [
+        ("LF", ["LF", "left-front", "left front"]),
+        ("RF", ["RF", "right-front", "right front"]),
+        ("LR", ["LR", "left-rear", "left rear"]),
+        ("RR", ["RR", "right-rear", "right rear"])
+    ];
+    private static readonly ReplayChart[] ReplayCharts =
+    [
+        new("speed", "Speed", "mph"),
+        new("throttle", "Throttle", "%"),
+        new("brake", "Brake", "%"),
+        new("steering", "Steering", "left / right")
+    ];
+
+    protected override void OnParametersSet()
+    {
+        if (_analysisId == Workspace.AnalysisId && ReferenceEquals(_workspaceReference, Workspace)) return;
+        _analysisId = Workspace.AnalysisId;
+        _workspaceReference = Workspace;
+        Playing = false;
+        _playbackGeneration++;
+        PlaybackFraction = 0;
+        PlaybackSpeed = 1;
+        ShowAbs = false;
+        ShowFastestReference = true;
+        _trackPoints = null;
+        RebuildReplayCache();
+    }
+
+    private void RebuildReplayCache()
+    {
+        var replay = Workspace.Replay;
+        _frames = replay?.Frames
+            .Where(frame => double.IsFinite(frame.SessionTimeSeconds))
+            .OrderBy(frame => frame.SessionTimeSeconds)
+            .ToArray() ?? [];
+        _participants = replay?.Participants
+            .GroupBy(participant => participant.CarIndex)
+            .ToDictionary(group => group.Key, group => group.Last())
+            ?? new Dictionary<int, AnalysisReplayParticipant>();
+        _participantCoverage = replay?.ParticipantCoverage?
+            .GroupBy(item => item.CarIndex)
+            .ToDictionary(group => group.Key, group => group.Last())
+            ?? new Dictionary<int, AnalysisReplayParticipantCoverage>();
+        _playerCarIndex = replay?.PlayerCarIndex
+            ?? replay?.Participants.FirstOrDefault(participant => participant.IsPlayer)?.CarIndex;
+        _hasRecordedCars = _frames.Any(frame => frame.Cars.Count > 0);
+        _hasPlayerFrame = _playerCarIndex is { } playerIndex
+            && ParticipantHasReplayData(playerIndex)
+            && _frames.Any(frame => frame.Cars.Any(car => car.CarIndex == playerIndex));
+        _tracesByLap = Workspace.Traces
+            .GroupBy(trace => trace.Lap)
+            .ToDictionary(group => group.Key, group => group.MaxBy(trace => trace.Points.Count)!);
+        _fastestTrace = Workspace.Traces
+            .Where(trace => trace.IsComparable() && trace.LapTimeSeconds.HasValue && trace.Points.Count > 0)
+            .OrderBy(trace => trace.LapTimeSeconds)
+            .FirstOrDefault();
+        _absAvailableLaps = Workspace.Traces.Where(trace => trace.Points.Any(IsAbsActive)).Select(trace => trace.Lap).ToHashSet();
+        _replayChartPathCache.Clear();
+        _replayChartRangeCache.Clear();
+        _absTracePathCache.Clear();
+        _pitEventsByCar = BuildPitEventIndex();
+        _maximumLeaderLap = _frames
+            .Select(ClassLeader)
+            .Where(state => state is not null)
+            .Select(state => DisplayLap(state!))
+            .Where(lap => lap.HasValue)
+            .Select(lap => lap!.Value)
+            .DefaultIfEmpty(0)
+            .Max();
+        _timelineEvents = BuildTimelineEvents();
+        _flagSegments = BuildFlagSegments();
+        RebuildReplayMapCache();
+    }
+
+    private IReadOnlyDictionary<int, IReadOnlyList<PitEvent>> BuildPitEventIndex()
+    {
+        var events = new Dictionary<int, List<PitEvent>>();
+        var previousPitState = new Dictionary<int, PitRoadObservation>();
+        for (var frameIndex = 0; frameIndex < _frames.Count; frameIndex++)
+        {
+            foreach (var car in _frames[frameIndex].Cars)
+            {
+                if (!car.OnPitRoad.HasValue) continue;
+                var onPitRoad = car.OnPitRoad.Value;
+                if (previousPitState.TryGetValue(car.CarIndex, out var previous)
+                    && previous.FrameIndex == frameIndex - 1
+                    && ReplayFramesAreContinuous(previous.FrameIndex, frameIndex)
+                    && !previous.OnPitRoad
+                    && onPitRoad)
+                {
+                    if (RecordedLapCount(car) is not { } recordedLapCount) continue;
+                    if (!events.TryGetValue(car.CarIndex, out var carEvents)) events[car.CarIndex] = carEvents = [];
+                    carEvents.Add(new PitEvent(frameIndex, recordedLapCount));
+                }
+                previousPitState[car.CarIndex] = new(frameIndex, onPitRoad);
+            }
+        }
+        return events.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<PitEvent>)pair.Value.ToArray());
+    }
+
+    private bool ReplayFramesAreContinuous(int previousFrameIndex, int currentFrameIndex)
+    {
+        if (previousFrameIndex < 0 || currentFrameIndex <= previousFrameIndex || currentFrameIndex >= _frames.Count) return false;
+        var gap = _frames[currentFrameIndex].SessionTimeSeconds - _frames[previousFrameIndex].SessionTimeSeconds;
+        var recordedRate = Replay?.SampleRateHz;
+        var sampleRate = recordedRate is > 0 ? recordedRate.Value : 2;
+        var limit = Math.Clamp(2.5 / sampleRate, .25, 2);
+        return gap > 0 && gap <= limit;
+    }
+
+    private IReadOnlyList<TimelineItem> BuildTimelineEvents()
+    {
+        var events = new List<TimelineItem>();
+        var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        PitRoadObservation? playerPit = null;
+        string? sessionState = null;
+        for (var frameIndex = 0; frameIndex < _frames.Count; frameIndex++)
+        {
+            var frame = _frames[frameIndex];
+            foreach (var label in frame.GlobalFlagLabels.Where(label => !flags.Contains(label)))
+                events.Add(new(frame.SessionTimeSeconds, FlagKind(label), FriendlyFlag(label)));
+            flags = frame.GlobalFlagLabels.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!string.Equals(frame.SessionState, sessionState, StringComparison.OrdinalIgnoreCase) && IsSignificantState(frame.SessionState))
+                events.Add(new(frame.SessionTimeSeconds, FlagKind(frame.SessionState), FriendlySessionState(frame.SessionState)));
+            sessionState = frame.SessionState;
+            var currentPit = _playerCarIndex is { } player ? frame.Cars.FirstOrDefault(car => car.CarIndex == player)?.OnPitRoad : null;
+            if (currentPit.HasValue
+                && playerPit is { } previous
+                && previous.FrameIndex == frameIndex - 1
+                && ReplayFramesAreContinuous(previous.FrameIndex, frameIndex)
+                && currentPit.Value != previous.OnPitRoad)
+                events.Add(new(frame.SessionTimeSeconds, "pit", currentPit.Value ? "You entered pit road" : "You exited pit road"));
+            if (currentPit.HasValue) playerPit = new(frameIndex, currentPit.Value);
+        }
+        return events
+            .GroupBy(item => (Math.Round(item.SessionTimeSeconds, 2), item.Label))
+            .Select(group => group.First())
+            .OrderBy(item => item.SessionTimeSeconds)
+            .ToArray();
+    }
+
+    private IReadOnlyList<FlagSegment> BuildFlagSegments()
+    {
+        if (_frames.Count == 0) return [];
+        var segments = new List<FlagSegment>();
+        var kind = FrameFlagKind(_frames[0]);
+        var started = _frames[0].SessionTimeSeconds;
+        foreach (var frame in _frames.Skip(1))
+        {
+            var nextKind = FrameFlagKind(frame);
+            if (nextKind == kind) continue;
+            segments.Add(FlagSegmentBetween(started, frame.SessionTimeSeconds, kind));
+            started = frame.SessionTimeSeconds;
+            kind = nextKind;
+        }
+        segments.Add(FlagSegmentBetween(started, _frames[^1].SessionTimeSeconds, kind));
+        return segments;
+    }
+
+    private AnalysisRaceReplay? Replay => Workspace.Replay;
+    private IReadOnlyList<AnalysisReplayFrame> Frames => _frames;
+    private int? PlayerCarIndex => _playerCarIndex;
+    private AnalysisTrackGeometry? CompleteVectorGeometry => Workspace.VectorGeometry is
+    {
+        MainPath.Count: >= 3,
+        Quality.MainLoopComplete: true
+    } vector && !vector.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ? vector : null;
+    private bool HasCompleteTrackShape => IsCompleteTrackShape(Workspace.TrackShape);
+    private bool HasTrackGeometry => CompleteVectorGeometry is not null || HasCompleteTrackShape;
+    private bool ReplayAvailable => Replay is { } replay
+        && (replay.Status.Equals("usable", StringComparison.OrdinalIgnoreCase) || replay.Status.Equals("partial", StringComparison.OrdinalIgnoreCase))
+        && TemporalCoverageIsUsable(replay.TemporalCoverage)
+        && replay.Participants.Count > 0
+        && Frames.Count > 1
+        && _hasRecordedCars
+        && PlayerCarIndex.HasValue
+        && replay.Participants.Any(participant => participant.CarIndex == PlayerCarIndex.Value)
+        && _hasPlayerFrame
+        && HasTrackGeometry;
+    private string ReplayUnavailableReason
+    {
+        get
+        {
+            if (Replay is null) return "Full-field timing and car-position frames were not recorded for this race.";
+            var stated = Replay.UnavailableReasons.FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason));
+            if (!string.IsNullOrWhiteSpace(stated)) return HumanizeReplayUnavailableReason(stated);
+            var coverage = Replay.Coverage.FirstOrDefault(item => item.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.Reason));
+            if (coverage?.Reason is { Length: > 0 } reason) return HumanizeReplayUnavailableReason(reason);
+            if (!TemporalCoverageIsUsable(Replay.TemporalCoverage)) return "Too little of the race timeline was recorded to replay it reliably.";
+            if (PlayerCarIndex is { } player && !ParticipantHasReplayData(player)) return "Your car was not recorded often enough to synchronize this replay.";
+            if (!HasTrackGeometry) return "Recorded track geometry is not available for this race.";
+            return "The recording does not contain synchronized full-field replay frames.";
+        }
+    }
+
+    private static string HumanizeReplayUnavailableReason(string reason)
+    {
+        var text = reason.Trim();
+        if (text.Contains("CarIdxLapDistPct", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include full-field car positions.";
+        if (text.Contains("CarIdxLapCompleted", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("CarIdxLap", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include every car's lap count.";
+        if (text.Contains("CarIdxClassPosition", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include every car's class position.";
+        if (text.Contains("CarIdxPosition", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include every car's running position.";
+        if (text.Contains("CarIdxOnPitRoad", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include every car's pit-road status.";
+        if (text.Contains("CarIdxTrackSurface", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include every car's track location.";
+        if (text.Contains("CarIdxPaceFlags", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include every car's private flag status.";
+        if (text.Contains("CarIdxLastLapTime", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include every car's last-lap time.";
+        if (text.Contains("CarIdxBestLapTime", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include every car's best-lap time.";
+        if (text.Contains("DriverInfo", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include the driver roster needed to identify the cars.";
+        if (text.Contains("PlayerCarIdx", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not identify your car in the field.";
+        if (text.Contains("SessionTime", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include the race clock needed for replay.";
+        if (text.Contains("SessionState", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include the race-state timing needed for replay.";
+        if (text.Contains("SessionFlags", StringComparison.OrdinalIgnoreCase))
+            return "This recording does not include the flag timeline needed for replay.";
+        return text;
+    }
+
+    private string? ReplayCoverageLabel
+    {
+        get
+        {
+            if (Replay is not { } replay) return null;
+            var timeline = replay.TemporalCoverage;
+            var partialCars = replay.ParticipantCoverage?.Count(item => !ParticipantCoverageIsComplete(item)) ?? 0;
+            var timelinePartial = timeline is not null && !CoverageStatusIsComplete(timeline.Status);
+            if (!timelinePartial && partialCars == 0) return null;
+            if (timeline?.RecordedFraction is { } fraction) return $"Partial replay · {fraction * 100:0}%";
+            return "Partial replay";
+        }
+    }
+
+    private string ReplayCoverageDetails
+    {
+        get
+        {
+            if (Replay is not { } replay) return string.Empty;
+            var details = new List<string>();
+            if (replay.TemporalCoverage is { } timeline)
+            {
+                if (timeline.RecordedFrameCount.HasValue && timeline.ExpectedFrameCount.HasValue)
+                    details.Add($"{timeline.RecordedFrameCount:N0} of {timeline.ExpectedFrameCount:N0} timeline frames recorded");
+                if (timeline.GapCount is > 0) details.Add($"{timeline.GapCount:N0} recorded gap{(timeline.GapCount == 1 ? string.Empty : "s")}");
+            }
+            var partialCars = replay.ParticipantCoverage?.Count(item => !ParticipantCoverageIsComplete(item)) ?? 0;
+            if (partialCars > 0) details.Add($"{partialCars:N0} car{(partialCars == 1 ? string.Empty : "s")} only partially recorded");
+            return details.Count > 0 ? string.Join(" · ", details) : "Some replay data was not recorded.";
+        }
+    }
+
+    private double ReplayStartSeconds => Frames.Count == 0 ? 0 : Frames[0].SessionTimeSeconds;
+    private double ReplayEndSeconds => Frames.Count == 0 ? 0 : Frames[^1].SessionTimeSeconds;
+    private double ReplayDurationSeconds => Math.Max(.001, ReplayEndSeconds - ReplayStartSeconds);
+    private double CurrentReplaySeconds => ReplayStartSeconds + PlaybackFraction * ReplayDurationSeconds;
+    private int CurrentFrameIndex => FrameIndexAt(CurrentReplaySeconds);
+    private AnalysisReplayFrame CurrentFrame => Frames[CurrentFrameIndex];
+    private AnalysisReplayFrame NextFrame => Frames[Math.Min(Frames.Count - 1, CurrentFrameIndex + 1)];
+    private double CurrentFrameBlend => NextFrame.SessionTimeSeconds <= CurrentFrame.SessionTimeSeconds
+        ? 0
+        : Math.Clamp((CurrentReplaySeconds - CurrentFrame.SessionTimeSeconds) / (NextFrame.SessionTimeSeconds - CurrentFrame.SessionTimeSeconds), 0, 1);
+    private AnalysisReplayCarState? CurrentPlayerState => PlayerCarIndex is { } player ? CurrentFrame.Cars.FirstOrDefault(car => car.CarIndex == player) : null;
+    private int? CurrentLapNumber => CurrentPlayerState is null ? null : DisplayLap(CurrentPlayerState);
+    private string CurrentLapLabel => CurrentLapNumber is { } lap ? $"L{lap}" : "Lap —";
+    private double CurrentLapPercent => CurrentPlayerState is { LapPercent: var percent } && double.IsFinite(percent) ? Math.Clamp(percent, 0, 1) : 0;
+    private string CurrentFlagSummary => CurrentFrame.GlobalFlagLabels.FirstOrDefault() ?? FriendlySessionState(CurrentFrame.SessionState);
+    private bool AtChecker => CurrentFrame.GlobalFlagLabels.Any(IsChecker) || CurrentFrame.SessionState.Contains("check", StringComparison.OrdinalIgnoreCase) || CurrentFrame.SessionState.Contains("cool", StringComparison.OrdinalIgnoreCase);
+    private int PlaybackSlider => (int)Math.Round(PlaybackFraction * 1000);
+    private string PlaybackTime => Clock(CurrentReplaySeconds - ReplayStartSeconds);
+    private string TotalReplayTime => Clock(ReplayDurationSeconds);
+
+    private IReadOnlyDictionary<int, AnalysisReplayParticipant> Participants => _participants;
+    private IReadOnlyList<ReplayCarDisplay> GridRows => CurrentFrame.Cars
+        .Where(car => ParticipantHasReplayData(car.CarIndex))
+        .OrderBy(car => car.OverallPosition ?? int.MaxValue)
+        .ThenByDescending(car => CarDistance(car) ?? double.NegativeInfinity)
+        .Select(CarDisplay)
+        .ToArray();
+    private AnalysisReplayParticipant? PlayerParticipant => PlayerCarIndex is { } player ? Participant(player) : null;
+    private string LeaderScopeLabel => PlayerParticipant?.ClassId.HasValue == true ? "Class leader" : "Overall leader";
+    private AnalysisReplayCarState? ClassLeader(AnalysisReplayFrame frame)
+    {
+        var classId = PlayerParticipant?.ClassId;
+        if (classId.HasValue)
+        {
+            return frame.Cars.FirstOrDefault(car => ParticipantHasReplayData(car.CarIndex) && car.ClassPosition == 1 && Participant(car.CarIndex)?.ClassId == classId);
+        }
+        return frame.Cars.FirstOrDefault(car => ParticipantHasReplayData(car.CarIndex) && car.OverallPosition == 1);
+    }
+    private ReplayCarDisplay? CurrentClassLeader => ClassLeader(CurrentFrame) is { } state ? CarDisplay(state) : null;
+    private int? CurrentLeaderLap => ClassLeader(CurrentFrame) is { } state ? DisplayLap(state) : null;
+    private int MaximumLeaderLap => _maximumLeaderLap;
+    private IReadOnlyList<int> LeaderLapWindow
+    {
+        get
+        {
+            if (CurrentLeaderLap is not { } currentLeaderLap || currentLeaderLap <= 0) return [];
+            const int visible = 15;
+            var start = Math.Max(1, currentLeaderLap - visible / 2);
+            var end = Math.Min(Math.Max(currentLeaderLap, MaximumLeaderLap), start + visible - 1);
+            start = Math.Max(1, end - visible + 1);
+            return Enumerable.Range(start, end - start + 1).ToArray();
+        }
+    }
+    private IReadOnlyList<ReplayCarMarker> RenderedCars
+    {
+        get
+        {
+            var next = NextFrame.Cars.ToDictionary(car => car.CarIndex);
+            return CurrentFrame.Cars.Where(car => ParticipantHasReplayData(car.CarIndex) && double.IsFinite(car.LapPercent)).Select(car =>
+            {
+                var participant = Participant(car.CarIndex);
+                var distance = Wrap(car.LapPercent);
+                if (next.TryGetValue(car.CarIndex, out var upcoming) && double.IsFinite(upcoming.LapPercent) && CanInterpolateFrameTransition(CurrentFrame, NextFrame, car.CarIndex))
+                {
+                    var nextDistance = Wrap(upcoming.LapPercent);
+                    if (nextDistance < distance - .65) nextDistance += 1;
+                    if (nextDistance >= distance && nextDistance - distance < .35) distance += (nextDistance - distance) * CurrentFrameBlend;
+                }
+                return new ReplayCarMarker(
+                    car.CarIndex,
+                    CarNumber(participant, car.CarIndex),
+                    ClassColor(participant),
+                    PointAt(Wrap(distance)),
+                    car.CarIndex == PlayerCarIndex,
+                    car.ClassPosition == 1,
+                    car.OverallPosition == 1);
+            }).ToArray();
+        }
+    }
+    private ReplayCarDisplay CarDisplay(AnalysisReplayCarState car)
+    {
+        var participant = Participant(car.CarIndex);
+        return new ReplayCarDisplay(
+            car.CarIndex,
+            CarNumber(participant, car.CarIndex),
+            participant?.DriverName ?? participant?.TeamName ?? participant?.CarName ?? $"Car {car.CarIndex}",
+            participant?.ClassName ?? "Class not recorded",
+            ClassColor(participant),
+            car,
+            car.CarIndex == PlayerCarIndex,
+            car.OverallPosition == 1);
+    }
+    private ReplayComparison? PlayerComparison
+    {
+        get
+        {
+            var player = CurrentPlayerState;
+            var leader = ClassLeader(CurrentFrame);
+            if (player is null || leader is null || (!player.ClassPosition.HasValue && !player.OverallPosition.HasValue)) return null;
+            if (DisplayLap(leader) is not { } leaderLap || DisplayLap(player) is not { } playerLap) return null;
+            if (CarDistance(leader) is not { } leaderDistance || CarDistance(player) is not { } playerDistance) return null;
+            var delta = leaderDistance - playerDistance;
+            var distance = delta < .001 ? "On leader distance" : delta >= 1 ? $"{delta:0.00} laps back" : $"{delta * 100:0.0}% lap back";
+            return new ReplayComparison(CarNumber(Participant(leader.CarIndex), leader.CarIndex), leaderLap, player.ClassPosition ?? player.OverallPosition, playerLap, distance);
+        }
+    }
+    private IReadOnlyList<ComparisonRow> ComparisonRows
+    {
+        get
+        {
+            if (PlayerComparison is not { } comparison || CurrentPlayerState is not { } player || ClassLeader(CurrentFrame) is not { } leader) return [];
+            var leaderPit = LapsSincePit(leader.CarIndex);
+            var playerPit = LapsSincePit(player.CarIndex);
+            return
+            [
+                new("Last lap", ReplayLapTime(leader.LastLapSeconds), player.LastLapSeconds.HasValue ? ReplayLapTime(player.LastLapSeconds) : PlayerLastLap),
+                new("Position / lap", $"P{Position(leader.ClassPosition ?? leader.OverallPosition)} · L{comparison.LeaderLap}", $"P{Position(player.ClassPosition ?? player.OverallPosition)} · L{comparison.PlayerLap}"),
+                new("Laps since pit", leaderPit.HasValue ? leaderPit.Value.ToString(CultureInfo.InvariantCulture) : "—", playerPit.HasValue ? playerPit.Value.ToString(CultureInfo.InvariantCulture) : "—"),
+                new("Fuel", "—", PlayerFuel),
+                new("Tire age", "—", PlayerTireAge)
+            ];
+        }
+    }
+    private string PlayerLastLap
+    {
+        get
+        {
+            if (CurrentLapNumber is not { } currentLap) return "—";
+            var trace = Workspace.Traces.Where(item => item.Lap < currentLap && item.Complete && item.LapTimeSeconds.HasValue).OrderByDescending(item => item.Lap).FirstOrDefault();
+            return trace?.LapTimeSeconds is { } time ? TimeSpan.FromSeconds(time).ToString(@"m\:ss\.fff") : "—";
+        }
+    }
+    private string PlayerFuel => CurrentPoint is { } point && Additional(point, "fuel-level") is { } fuel ? $"{fuel:0.00} gal" : "—";
+    private string PlayerTireAge
+    {
+        get
+        {
+            if (CurrentLapNumber is not { } currentLap || currentLap <= 0) return "—";
+            var values = new List<string>();
+            var recorded = false;
+            foreach (var tire in TireCorners)
+            {
+                var changeLap = Workspace.Runs
+                    .Where(run => run.PitStop is not null && run.Laps.Count > 0 && run.Laps.Max() < currentLap && TireWasChanged(run.PitStop, tire.Aliases))
+                    .Select(run => (int?)run.Laps.Max())
+                    .OrderByDescending(lap => lap)
+                    .FirstOrDefault();
+                if (changeLap.HasValue) recorded = true;
+                values.Add($"{tire.Label} {(changeLap.HasValue ? Math.Max(0, currentLap - changeLap.Value).ToString(CultureInfo.InvariantCulture) : "—")}");
+            }
+            return recorded ? $"{string.Join(" · ", values)} laps" : "—";
+        }
+    }
+    private static bool TireWasChanged(AnalysisPitStop pitStop, IReadOnlyList<string> aliases) =>
+        pitStop.TiresChanged.Any(changed => aliases.Any(alias => changed.Equals(alias, StringComparison.OrdinalIgnoreCase)));
+    private int? LapsSincePit(int carIndex)
+    {
+        var current = CurrentFrame.Cars.FirstOrDefault(car => car.CarIndex == carIndex);
+        if (current is null || RecordedLapCount(current) is not { } currentLapCount || !_pitEventsByCar.TryGetValue(carIndex, out var events) || events.Count == 0) return null;
+        var low = 0;
+        var high = events.Count - 1;
+        var found = -1;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            if (events[middle].FrameIndex <= CurrentFrameIndex) { found = middle; low = middle + 1; }
+            else high = middle - 1;
+        }
+        if (found < 0) return null;
+        return Math.Max(0, currentLapCount - events[found].CompletedLap);
+    }
+
+    private AnalysisLapTrace? CurrentTrace
+    {
+        get
+        {
+            if (CurrentPlayerState is not { } state) return null;
+            var candidates = new[] { state.Lap, state.CompletedLaps.HasValue ? state.CompletedLaps + 1 : null, state.Lap.HasValue ? state.Lap + 1 : null }
+                .Where(value => value.HasValue).Select(value => value!.Value).Distinct();
+            return candidates.Select(lap => _tracesByLap.GetValueOrDefault(lap)).FirstOrDefault(trace => trace is not null);
+        }
+    }
+    private AnalysisTracePoint? CurrentPoint => CurrentTrace is { } trace ? NearestTracePoint(trace.Points, CurrentLapPercent) : null;
+    private AnalysisLapTrace? FastestTrace => _fastestTrace;
+    private bool HasAbsData => CurrentTrace is { } trace && _absAvailableLaps.Contains(trace.Lap);
+
+    private void ToggleFastestReference()
+    {
+        ShowFastestReference = !ShowFastestReference;
+        _replayChartPathCache.Clear();
+        _replayChartRangeCache.Clear();
+    }
+
+    private void RebuildReplayMapCache()
+    {
+        _geometryBounds = CompleteVectorGeometry is { } vector
+            ? vector.MainPath.Concat(vector.PitLane).Concat(vector.PitEntryPath).Concat(vector.PitExitPath)
+                .Concat(VectorLinePoints(vector.StartFinishLine)).Concat(VectorLinePoints(vector.PitCommitmentLine)).Concat(VectorLinePoints(vector.PitMergeLine)).ToArray()
+            : [];
+        _vectorProjection = CreateVectorProjection(_geometryBounds);
+        if (CompleteVectorGeometry is { } mapped)
+            _trackPoints = mapped.MainPath.Select((point, index) => ProjectVectorPoint(point, point.LapPercent ?? index / (double)mapped.MainPath.Count)).ToArray();
+        else if (HasCompleteTrackShape)
+        {
+            var minX = Workspace.TrackShape.Min(point => point.X); var maxX = Workspace.TrackShape.Max(point => point.X);
+            var minY = Workspace.TrackShape.Min(point => point.Y); var maxY = Workspace.TrackShape.Max(point => point.Y);
+            var scale = Math.Min(500 / Math.Max(.0001, maxX - minX), 300 / Math.Max(.0001, maxY - minY));
+            _trackPoints = Workspace.TrackShape.OrderBy(point => point.LapPercent).Select(point => new MapPoint(Wrap(point.LapPercent), 300 + (point.X - (minX + maxX) / 2) * scale, 180 - (point.Y - (minY + maxY) / 2) * scale)).ToArray();
+        }
+        else _trackPoints = [];
+        _trackPath = SvgPath(TrackPoints, HasTrackGeometry);
+        _pitLanePath = VectorPath(CompleteVectorGeometry?.PitLane);
+        _pitEntryPath = VectorPath(CompleteVectorGeometry?.PitEntryPath);
+        _pitExitPath = VectorPath(CompleteVectorGeometry?.PitExitPath);
+        _pitCommitmentLine = ProjectVectorLine(CompleteVectorGeometry?.PitCommitmentLine);
+        _pitMergeLine = ProjectVectorLine(CompleteVectorGeometry?.PitMergeLine);
+        _startFinishLine = CompleteVectorGeometry?.StartFinishLine is { } recorded ? ProjectVectorLine(recorded) : InferredStartFinishLine();
+        var points = CompleteVectorGeometry is not null ? _geometryBounds.Select(point => ProjectVectorPoint(point)).ToArray() : TrackPoints;
+        if (points.Count == 0) { _trackViewBox = "0 0 600 360"; return; }
+        const double pad = 34;
+        var minimumX = points.Min(point => point.X); var maximumX = points.Max(point => point.X);
+        var minimumY = points.Min(point => point.Y); var maximumY = points.Max(point => point.Y);
+        _trackViewBox = $"{F(minimumX - pad)} {F(minimumY - pad)} {F(maximumX - minimumX + 2 * pad)} {F(maximumY - minimumY + 2 * pad)}";
+    }
+    private IReadOnlyList<MapPoint> TrackPoints => _trackPoints ?? [];
+    private IReadOnlyList<AnalysisVectorPoint> GeometryBounds => _geometryBounds;
+    private string TrackPath => _trackPath;
+    private string PitLanePath => _pitLanePath;
+    private string PitEntryPath => _pitEntryPath;
+    private string PitExitPath => _pitExitPath;
+    private MapLine? PitCommitmentLine => _pitCommitmentLine;
+    private MapLine? PitMergeLine => _pitMergeLine;
+    private MapLine? StartFinishLine => _startFinishLine;
+    private string TrackViewBox => _trackViewBox;
+    private MapPoint ProjectVectorPoint(AnalysisVectorPoint point, double? percent = null)
+    {
+        if (_vectorProjection is not { } projection) return new MapPoint(Wrap(percent ?? point.LapPercent ?? 0), point.X, point.Y);
+        return new MapPoint(Wrap(percent ?? point.LapPercent ?? 0), 300 + (point.X - projection.CenterX) * projection.Scale, 180 + (point.Y - projection.CenterY) * projection.Scale);
+    }
+    private MapLine? ProjectVectorLine(AnalysisVectorLine? line)
+    {
+        if (line is null) return null;
+        var first = ProjectVectorPoint(line.A); var second = ProjectVectorPoint(line.B);
+        return new(first.X, first.Y, second.X, second.Y);
+    }
+    private string VectorPath(IReadOnlyList<AnalysisVectorPoint>? points) => points is not { Count: >= 2 } ? string.Empty : SvgPath(points.Select(point => ProjectVectorPoint(point)).ToArray(), false);
+    private static IEnumerable<AnalysisVectorPoint> VectorLinePoints(AnalysisVectorLine? line) => line is null ? [] : [line.A, line.B];
+    private static VectorProjection? CreateVectorProjection(IReadOnlyList<AnalysisVectorPoint> points)
+    {
+        if (points.Count == 0) return null;
+        var minimumX = points.Min(point => point.X); var maximumX = points.Max(point => point.X);
+        var minimumY = points.Min(point => point.Y); var maximumY = points.Max(point => point.Y);
+        var scale = Math.Min(500 / Math.Max(.0001, maximumX - minimumX), 300 / Math.Max(.0001, maximumY - minimumY));
+        return new VectorProjection((minimumX + maximumX) / 2, (minimumY + maximumY) / 2, scale);
+    }
+    private static bool IsCompleteTrackShape(IReadOnlyList<TrackShapePoint> points)
+    {
+        if (points.Count < 3) return false;
+        var ordered = points
+            .Where(point => double.IsFinite(point.LapPercent) && double.IsFinite(point.X) && double.IsFinite(point.Y))
+            .OrderBy(point => Wrap(point.LapPercent))
+            .ToArray();
+        if (ordered.Length < 3) return false;
+        var maximumGap = Wrap(ordered[0].LapPercent) + 1 - Wrap(ordered[^1].LapPercent);
+        for (var index = 1; index < ordered.Length; index++)
+            maximumGap = Math.Max(maximumGap, Wrap(ordered[index].LapPercent) - Wrap(ordered[index - 1].LapPercent));
+        var width = ordered.Max(point => point.X) - ordered.Min(point => point.X);
+        var height = ordered.Max(point => point.Y) - ordered.Min(point => point.Y);
+        var span = Math.Max(width, height);
+        var closure = Math.Sqrt(Math.Pow(ordered[0].X - ordered[^1].X, 2) + Math.Pow(ordered[0].Y - ordered[^1].Y, 2));
+        return maximumGap <= .05 && span > 0 && closure <= span * .15;
+    }
+    private MapLine? InferredStartFinishLine()
+    {
+        if (TrackPoints.Count < 3) return null;
+        var center = PointAt(0); var before = PointAt(.995); var after = PointAt(.005);
+        var dx = after.X - before.X; var dy = after.Y - before.Y; var length = Math.Sqrt(dx * dx + dy * dy);
+        if (length < .001) return new(center.X, center.Y - 16, center.X, center.Y + 16);
+        var nx = -dy / length * 16; var ny = dx / length * 16;
+        return new(center.X - nx, center.Y - ny, center.X + nx, center.Y + ny);
+    }
+    private MapPoint PointAt(double percent)
+    {
+        var points = TrackPoints; var target = Wrap(percent);
+        for (var index = 0; index < points.Count; index++)
+        {
+            var first = points[index]; var second = points[(index + 1) % points.Count];
+            var end = second.Percent <= first.Percent ? second.Percent + 1 : second.Percent;
+            var adjusted = target < first.Percent ? target + 1 : target;
+            if (adjusted > end + .000001) continue;
+            var amount = Math.Abs(end - first.Percent) < .000001 ? 0 : (adjusted - first.Percent) / (end - first.Percent);
+            return new(target, first.X + (second.X - first.X) * amount, first.Y + (second.Y - first.Y) * amount);
+        }
+        return points[0];
+    }
+
+    private bool CanInterpolateFrameTransition(AnalysisReplayFrame current, AnalysisReplayFrame next, int carIndex)
+    {
+        var gap = next.SessionTimeSeconds - current.SessionTimeSeconds;
+        var recordedRate = Replay?.SampleRateHz;
+        var sampleRate = recordedRate is > 0 ? recordedRate.Value : 2;
+        var limit = Math.Clamp(2.5 / sampleRate, .25, 2);
+        return Replay?.Interpolation.StartsWith("linear", StringComparison.OrdinalIgnoreCase) == true
+            && ParticipantHasReplayData(carIndex)
+            && gap > 0
+            && gap <= limit
+            && string.Equals(current.SessionState, next.SessionState, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TemporalCoverageIsUsable(AnalysisReplayTemporalCoverage? coverage) => coverage is null
+        || (!coverage.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase)
+            && coverage.RecordedFrameCount is not < 2
+            && coverage.RecordedFraction is not <= 0);
+
+    private bool ParticipantHasReplayData(int carIndex)
+    {
+        if (_participantCoverage.Count == 0) return true;
+        return _participantCoverage.TryGetValue(carIndex, out var coverage)
+            && !coverage.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase)
+            && coverage.RecordedFrameCount is not < 2
+            && coverage.RecordedFraction is not <= 0;
+    }
+
+    private static bool CoverageStatusIsComplete(string status) =>
+        status.Equals("complete", StringComparison.OrdinalIgnoreCase)
+        || status.Equals("usable", StringComparison.OrdinalIgnoreCase)
+        || status.Equals("recorded", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ParticipantCoverageIsComplete(AnalysisReplayParticipantCoverage coverage) =>
+        CoverageStatusIsComplete(coverage.Status)
+        && coverage.RecordedFraction is not < .999
+        && (coverage.SegmentCount is null || coverage.RecordedSegmentCount == coverage.SegmentCount);
+
+    private async Task TogglePlayback()
+    {
+        Playing = !Playing;
+        var generation = ++_playbackGeneration;
+        if (!Playing) return;
+        if (PlaybackFraction >= .999) PlaybackFraction = 0;
+        var previous = DateTimeOffset.UtcNow;
+        while (Playing && generation == _playbackGeneration && !_playbackCancellation.IsCancellationRequested)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var elapsed = (now - previous).TotalSeconds;
+            previous = now;
+            PlaybackFraction = Math.Clamp(PlaybackFraction + elapsed * PlaybackSpeed / ReplayDurationSeconds, 0, 1);
+            if (PlaybackFraction >= 1) Playing = false;
+            await InvokeAsync(StateHasChanged);
+            try { await Task.Delay(16, _playbackCancellation.Token); } catch (OperationCanceledException) { break; }
+        }
+    }
+    private void Seek(ChangeEventArgs args)
+    {
+        Playing = false;
+        _playbackGeneration++;
+        if (double.TryParse(args.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)) PlaybackFraction = Math.Clamp(value / 1000, 0, 1);
+    }
+    private void ChangePlaybackSpeed(ChangeEventArgs args)
+    {
+        if (double.TryParse(args.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && PlaybackSpeeds.Contains(value)) PlaybackSpeed = value;
+    }
+    private void SeekToTime(double seconds) { Playing = false; _playbackGeneration++; PlaybackFraction = Math.Clamp((seconds - ReplayStartSeconds) / ReplayDurationSeconds, 0, 1); }
+    private void SeekToLap(int lap)
+    {
+        var player = PlayerCarIndex;
+        var frame = Frames.FirstOrDefault(item => player.HasValue && item.Cars.Any(car => car.CarIndex == player && DisplayLap(car) is { } recordedLap && recordedLap >= lap));
+        if (frame is not null) SeekToTime(frame.SessionTimeSeconds);
+    }
+    private void SeekToLeaderLap(int lap)
+    {
+        var frame = Frames.FirstOrDefault(item => ClassLeader(item) is { } leader && DisplayLap(leader) is { } recordedLap && recordedLap >= lap);
+        if (frame is not null) SeekToTime(frame.SessionTimeSeconds);
+    }
+    private void PreviousLap() { if (CurrentLapNumber is { } lap) SeekToLap(Math.Max(1, lap - 1)); }
+    private void NextLap() { if (CurrentLapNumber is { } lap) SeekToLap(lap + 1); }
+    private int FrameIndexAt(double sessionTime)
+    {
+        var low = 0; var high = Frames.Count - 1;
+        while (low < high)
+        {
+            var middle = (low + high + 1) / 2;
+            if (Frames[middle].SessionTimeSeconds <= sessionTime) low = middle; else high = middle - 1;
+        }
+        return low;
+    }
+
+    private IReadOnlyList<TimelineItem> TimelineEvents => _timelineEvents;
+    private IReadOnlyList<FlagSegment> FlagSegments => _flagSegments;
+    private FlagSegment FlagSegmentBetween(double start, double end, string kind) => new(
+        Math.Clamp((start - ReplayStartSeconds) / ReplayDurationSeconds * 100, 0, 100),
+        Math.Max(.2, Math.Clamp((end - start) / ReplayDurationSeconds * 100, 0, 100)),
+        kind);
+
+    private string ReplayChartPath(AnalysisLapTrace trace, string signal)
+    {
+        var currentLap = CurrentTrace?.Lap ?? trace.Lap;
+        var cacheKey = (currentLap, trace.Lap, signal, ShowFastestReference);
+        if (_replayChartPathCache.TryGetValue(cacheKey, out var cached)) return cached;
+        if (trace.Points.Count == 0) return string.Empty;
+        var values = trace.Points.Select(point => ChartSignal(point, signal)).ToArray();
+        var recorded = values.Where(value => value.HasValue && double.IsFinite(value.Value)).Select(value => value!.Value).ToArray();
+        if (recorded.Length == 0) return string.Empty;
+        var (min, max) = ReplayChartRange(currentLap, signal);
+        if (max - min < .001) { min -= .5; max += .5; }
+        var commands = new List<string>();
+        var segmentStarted = false;
+        for (var index = 0; index < trace.Points.Count; index++)
+        {
+            if (!values[index].HasValue || !double.IsFinite(values[index]!.Value) || !double.IsFinite(trace.Points[index].LapPercent))
+            {
+                segmentStarted = false;
+                continue;
+            }
+            var x = Math.Clamp(trace.Points[index].LapPercent, 0, 1) * 360;
+            var y = 88 - Math.Clamp((values[index]!.Value - min) / (max - min), 0, 1) * 78;
+            commands.Add($"{(segmentStarted ? "L" : "M")}{F(x)} {F(y)}");
+            segmentStarted = true;
+        }
+        return _replayChartPathCache[cacheKey] = string.Join(" ", commands);
+    }
+    private (double Minimum, double Maximum) ReplayChartRange(int currentLap, string signal)
+    {
+        var key = (currentLap, signal, ShowFastestReference);
+        if (_replayChartRangeCache.TryGetValue(key, out var cached)) return cached;
+        if (signal is "throttle" or "brake") return _replayChartRangeCache[key] = (0, 1);
+        var traces = new[] { CurrentTrace, ShowFastestReference ? FastestTrace : null }.Where(trace => trace is not null).Distinct().Cast<AnalysisLapTrace>();
+        var values = traces.SelectMany(trace => trace.Points).Select(point => ChartSignal(point, signal))
+            .Where(value => value.HasValue && double.IsFinite(value.Value)).Select(value => value!.Value).ToArray();
+        if (values.Length == 0) return _replayChartRangeCache[key] = (-.5, .5);
+        if (signal == "steering")
+        {
+            var magnitude = Math.Max(.1, values.Max(Math.Abs));
+            return _replayChartRangeCache[key] = (-magnitude, magnitude);
+        }
+        var minimum = values.Min();
+        var maximum = values.Max();
+        if (maximum - minimum < .001) { minimum -= .5; maximum += .5; }
+        return _replayChartRangeCache[key] = (minimum, maximum);
+    }
+    private string ChartValue(string signal)
+    {
+        var value = CurrentPoint is null ? null : ChartSignal(CurrentPoint, signal);
+        return signal switch
+        {
+            "speed" => value.HasValue ? $"{value:0} mph" : "—",
+            "throttle" or "brake" => value.HasValue ? $"{value * 100:0}%" : "—",
+            "steering" => value.HasValue ? $"{Math.Abs(value.Value * 180 / Math.PI):0.0}° {(value < 0 ? "left" : "right")}" : "—",
+            _ => "—"
+        };
+    }
+    private static double? ChartSignal(AnalysisTracePoint point, string signal) => signal switch { "speed" => point.SpeedMph, "throttle" => point.Throttle, "brake" => point.Brake, "steering" => point.SteeringRadians, _ => null };
+    private static double? Additional(AnalysisTracePoint point, string id) => point.AdditionalSignals is not null && point.AdditionalSignals.TryGetValue(id, out var value) ? value : null;
+    private static bool IsAbsActive(AnalysisTracePoint point) => Additional(point, "abs-active").GetValueOrDefault() > .5;
+    private static AnalysisTracePoint? NearestTracePoint(IReadOnlyList<AnalysisTracePoint> points, double percent)
+    {
+        if (points.Count == 0) return null;
+        var low = 0;
+        var high = points.Count - 1;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            var value = points[middle].LapPercent;
+            if (value < percent) low = middle + 1;
+            else if (value > percent) high = middle - 1;
+            else return points[middle];
+        }
+        if (low <= 0) return points[0];
+        if (low >= points.Count) return points[^1];
+        return Math.Abs(points[low].LapPercent - percent) < Math.Abs(points[low - 1].LapPercent - percent)
+            ? points[low]
+            : points[low - 1];
+    }
+    private IReadOnlyList<string> AbsTracePaths(AnalysisLapTrace trace)
+    {
+        if (_absTracePathCache.TryGetValue(trace.Lap, out var cached)) return cached;
+        var paths = new List<string>();
+        var commands = new List<string>();
+        foreach (var point in trace.Points)
+        {
+            var active = IsAbsActive(point);
+            if (active)
+            {
+                var x = Math.Clamp(point.LapPercent, 0, 1) * 360;
+                var y = 88 - Math.Clamp(point.Brake ?? 0, 0, 1) * 78;
+                commands.Add($"{(commands.Count == 0 ? "M" : "L")}{F(x)} {F(y)}");
+            }
+            else if (commands.Count > 0)
+            {
+                paths.Add(string.Join(" ", commands));
+                commands.Clear();
+            }
+        }
+        if (commands.Count > 0) paths.Add(string.Join(" ", commands));
+        return _absTracePathCache[trace.Lap] = paths.ToArray();
+    }
+
+    private AnalysisReplayParticipant? Participant(int carIndex) => Participants.TryGetValue(carIndex, out var participant) ? participant : null;
+    private static int? RecordedLapCount(AnalysisReplayCarState car) => car.CompletedLaps is >= 0
+        ? car.CompletedLaps
+        : car.Lap is >= 0 ? car.Lap : null;
+    private static double? CarDistance(AnalysisReplayCarState car) => RecordedLapCount(car) is { } laps && double.IsFinite(car.LapPercent)
+        ? laps + Wrap(car.LapPercent)
+        : null;
+    private static int? DisplayLap(AnalysisReplayCarState car) => car.Lap is > 0
+        ? car.Lap
+        : car.CompletedLaps is >= 0 ? car.CompletedLaps + 1 : null;
+    private static string LapLabel(AnalysisReplayCarState car) => DisplayLap(car) is { } lap ? $"L{lap}" : "—";
+    private static string LapNumberText(AnalysisReplayCarState car) => DisplayLap(car)?.ToString(CultureInfo.InvariantCulture) ?? "—";
+    private static string CarNumber(AnalysisReplayParticipant? participant, int carIndex) => !string.IsNullOrWhiteSpace(participant?.CarNumber) ? participant.CarNumber! : carIndex.ToString(CultureInfo.InvariantCulture);
+    private static string ClassColor(AnalysisReplayParticipant? participant)
+    {
+        var key = participant?.ClassId ?? StableClassHash(participant?.ClassName ?? "unknown");
+        return ClassColors[Math.Abs(key == int.MinValue ? 0 : key) % ClassColors.Length];
+    }
+    private static int StableClassHash(string value)
+    {
+        unchecked
+        {
+            uint hash = 2166136261;
+            foreach (var character in value)
+            {
+                hash ^= char.ToUpperInvariant(character);
+                hash *= 16777619;
+            }
+            return (int)hash;
+        }
+    }
+    private static string CarState(AnalysisReplayCarState car) => car.OnPitRoad == true ? "Pit road" : !string.IsNullOrWhiteSpace(car.TrackSurfaceLabel) ? car.TrackSurfaceLabel! : "On track";
+    private static string Position(int? value) => value.HasValue && value.Value > 0 ? value.Value.ToString(CultureInfo.InvariantCulture) : "—";
+    private static string ReplayLapTime(double? seconds) => seconds is > 0 ? TimeSpan.FromSeconds(seconds.Value).ToString(@"m\:ss\.fff") : "—";
+    private static bool IsChecker(string label) => label.Contains("check", StringComparison.OrdinalIgnoreCase);
+    private static bool IsSignificantState(string state) => state.Contains("race", StringComparison.OrdinalIgnoreCase) || state.Contains("green", StringComparison.OrdinalIgnoreCase) || state.Contains("check", StringComparison.OrdinalIgnoreCase) || state.Contains("cool", StringComparison.OrdinalIgnoreCase);
+    private static string FlagKind(string label) => label.Contains("yellow", StringComparison.OrdinalIgnoreCase) || label.Contains("caution", StringComparison.OrdinalIgnoreCase) ? "caution" : IsChecker(label) ? "checker" : label.Contains("pit", StringComparison.OrdinalIgnoreCase) ? "pit" : "flag";
+    private static string FrameFlagKind(AnalysisReplayFrame frame) => frame.GlobalFlagLabels.Any(label => label.Contains("yellow", StringComparison.OrdinalIgnoreCase) || label.Contains("caution", StringComparison.OrdinalIgnoreCase)) ? "caution" : frame.GlobalFlagLabels.Any(IsChecker) || frame.SessionState.Contains("check", StringComparison.OrdinalIgnoreCase) ? "checker" : frame.GlobalFlagLabels.Any(label => label.Contains("white", StringComparison.OrdinalIgnoreCase)) ? "white" : frame.GlobalFlagLabels.Any(label => label.Contains("green", StringComparison.OrdinalIgnoreCase)) || frame.SessionState.Contains("race", StringComparison.OrdinalIgnoreCase) ? "green" : "neutral";
+    private static string FriendlyFlag(string label) => label.Replace('_', ' ').Trim();
+    private static string FriendlySessionState(string state) => string.IsNullOrWhiteSpace(state) ? "Session state not recorded" : state.Replace('_', ' ').Trim();
+    private static string SvgPath(IReadOnlyList<MapPoint> points, bool close)
+    {
+        if (points.Count == 0) return string.Empty;
+        var value = $"M {F(points[0].X)} {F(points[0].Y)}";
+        for (var index = 1; index < points.Count; index++) value += $" L {F(points[index].X)} {F(points[index].Y)}";
+        return close ? value + " Z" : value;
+    }
+    private static string Clock(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
+    private static double Wrap(double value) { var wrapped = value % 1; return wrapped < 0 ? wrapped + 1 : wrapped; }
+    private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+    private static string Aria(bool value) => value ? "true" : "false";
+
+    public ValueTask DisposeAsync()
+    {
+        Playing = false;
+        _playbackCancellation.Cancel();
+        _playbackCancellation.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private sealed record ReplayChart(string Id, string Label, string Unit);
+    private sealed record ReplayCarDisplay(int CarIndex, string Number, string Driver, string ClassName, string Color, AnalysisReplayCarState State, bool IsPlayer, bool IsLeader);
+    private sealed record ReplayCarMarker(int CarIndex, string Number, string Color, MapPoint Point, bool IsPlayer, bool IsClassLeader, bool IsOverallLeader);
+    private sealed record ReplayComparison(string LeaderNumber, int LeaderLap, int? PlayerPosition, int PlayerLap, string Distance);
+    private sealed record ComparisonRow(string Label, string Leader, string Player);
+    private sealed record TimelineItem(double SessionTimeSeconds, string Kind, string Label);
+    private sealed record FlagSegment(double Left, double Width, string Kind);
+    private sealed record PitEvent(int FrameIndex, int CompletedLap);
+    private sealed record PitRoadObservation(int FrameIndex, bool OnPitRoad);
+    private sealed record MapPoint(double Percent, double X, double Y);
+    private sealed record MapLine(double X1, double Y1, double X2, double Y2);
+    private sealed record VectorProjection(double CenterX, double CenterY, double Scale);
+}

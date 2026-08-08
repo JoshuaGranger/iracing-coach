@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
+import shutil
 import sqlite3
 import tempfile
 import time
@@ -20,8 +22,22 @@ from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 try:  # Package import and direct script execution are both supported.
     from .path_security import local_path
+    from .race_foundations import (
+        TIRE_MODEL_VERSION,
+        _main_loop_quality,
+        build_tire_prediction,
+        model_file_name,
+        track_geometry_sha256,
+    )
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from path_security import local_path
+    from race_foundations import (
+        TIRE_MODEL_VERSION,
+        _main_loop_quality,
+        build_tire_prediction,
+        model_file_name,
+        track_geometry_sha256,
+    )
 
 
 SCHEMA_VERSION = 2
@@ -48,7 +64,10 @@ def default_archive_root() -> Path:
     override = os.environ.get("IRACING_COACH_DATA")
     if override:
         return local_path(override, "IRACING_COACH_DATA")
-    return local_path(r"C:\Users\joshu\Documents\iRacing Coach\data", "archive_root")
+    return local_path(
+        Path.home() / "Documents" / "iRacing Coach" / "data",
+        "archive_root",
+    )
 
 
 def safe_slug(value: Any, fallback: str = "unknown") -> str:
@@ -140,6 +159,39 @@ def _atomic_write_text(path: Path, text: str) -> None:
             pass
 
 
+def _atomic_copy_verified(source: Path, destination: Path, expected_sha256: str) -> None:
+    """Copy one immutable source without ever moving or modifying the original."""
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.is_file() and file_sha256(destination) == expected_sha256:
+        actual_source_sha256 = file_sha256(source)
+        if actual_source_sha256 != expected_sha256:
+            raise OSError(
+                f"Source telemetry SHA-256 changed before archival for {source}: "
+                f"expected {expected_sha256}, got {actual_source_sha256}"
+            )
+        return
+    fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
+    try:
+        with source.open("rb") as source_handle, os.fdopen(fd, "wb") as target_handle:
+            shutil.copyfileobj(source_handle, target_handle, 1024 * 1024)
+            target_handle.flush()
+            os.fsync(target_handle.fileno())
+        temporary = Path(temp_name)
+        actual_sha256 = file_sha256(temporary)
+        if actual_sha256 != expected_sha256:
+            raise OSError(
+                f"Archived telemetry SHA-256 mismatch for {source}: "
+                f"expected {expected_sha256}, got {actual_sha256}"
+            )
+        os.replace(temporary, destination)
+    finally:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+
+
 def _json_text(value: Any) -> str:
     return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n"
 
@@ -220,6 +272,10 @@ class ArchiveStore:
         self.cache_dir = self.root / "season-cache"
         self.tuning_dir = self.root / "tuning"
         self.auth_dir = self.root / "auth"
+        self.track_geometry_dir = self.root / "track-geometry"
+        self.telemetry_traces_dir = self.root / "telemetry-traces"
+        self.tire_models_dir = self.root / "tire-models"
+        self.target_laps_dir = self.root / "target-laps"
         self.db_path = self.root / "history.sqlite3"
 
     def initialize(self) -> None:
@@ -229,6 +285,10 @@ class ArchiveStore:
             self.cache_dir,
             self.tuning_dir,
             self.auth_dir,
+            self.track_geometry_dir,
+            self.telemetry_traces_dir,
+            self.tire_models_dir,
+            self.target_laps_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
         self._initialize_db()
@@ -1444,6 +1504,54 @@ class ArchiveStore:
             result.append(item)
         return result
 
+    def tuning_draft_path(self, draft_id: str) -> Path:
+        """Return the durable portable path for a structured tuning draft."""
+
+        raw_identifier = str(draft_id or "").strip()
+        if not raw_identifier:
+            raise ValueError("A tuning draft requires draft_id.")
+        identifier = f"{safe_slug(raw_identifier, 'draft')}-{stable_hash(raw_identifier, 12)}"
+        return self.tuning_dir / "drafts" / f"{identifier}.json"
+
+    def save_tuning_draft(self, draft: Mapping[str, Any]) -> dict[str, Any]:
+        """Atomically persist feedback even when recommendation gates are blocked."""
+
+        payload = dict(draft)
+        draft_id = str(payload.get("draft_id") or "").strip()
+        if not draft_id:
+            raise ValueError("A tuning draft requires draft_id.")
+        now = utc_now()
+        payload.setdefault("schema_version", 2)
+        payload.setdefault("created_at", now)
+        payload["updated_at"] = now
+        payload["draft_id"] = draft_id
+        path = self.tuning_draft_path(draft_id)
+        if path.is_file():
+            try:
+                prior = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                prior = None
+            if isinstance(prior, Mapping) and prior.get("created_at"):
+                payload["created_at"] = prior["created_at"]
+        _atomic_write_text(path, _json_text(payload))
+        return {"draft": payload, "path": str(path)}
+
+    def load_tuning_draft(self, draft_id: str) -> dict[str, Any]:
+        path = self.tuning_draft_path(draft_id).resolve()
+        try:
+            path.relative_to(self.tuning_dir.resolve())
+        except ValueError as exc:
+            raise ValueError("Stored tuning draft path escaped the tuning archive.") from exc
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise KeyError(f"Unknown tuning draft: {draft_id}") from exc
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Tuning draft is unreadable: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Tuning draft root must be an object.")
+        return payload
+
     def source_fingerprints(self, paths: Iterable[str | os.PathLike[str]]) -> list[dict[str, Any]]:
         result = []
         for raw_path in paths:
@@ -1476,3 +1584,876 @@ class ArchiveStore:
                 }
             )
         return result
+
+    def archive_raw_telemetry(
+        self, fingerprints: Sequence[Mapping[str, Any]]
+    ) -> dict[str, Any]:
+        """Create content-addressed portable copies while preserving originals."""
+
+        self.initialize()
+        items: list[dict[str, Any]] = []
+        for record in fingerprints:
+            source = Path(str(record.get("path") or "")).resolve(strict=True)
+            sha256 = str(record.get("sha256") or "").strip().lower()
+            if not _SOURCE_HASH_PATTERN.fullmatch(sha256):
+                raise ValueError(f"Invalid source SHA-256 for {source}")
+            source_before = source.stat()
+            expected_size = int(record.get("size") or source_before.st_size)
+            expected_modified_ns = int(
+                record.get("modified_ns") or source_before.st_mtime_ns
+            )
+            if (
+                source_before.st_size != expected_size
+                or source_before.st_mtime_ns != expected_modified_ns
+            ):
+                raise OSError(
+                    f"Source changed after fingerprinting and before archival: {source}"
+                )
+            archive_dir = self.telemetry_traces_dir / "raw" / sha256
+            manifest_path = archive_dir / "manifest.json"
+            prior: Mapping[str, Any] = {}
+            if manifest_path.is_file():
+                try:
+                    decoded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    if isinstance(decoded, Mapping) and decoded.get("sha256") == sha256:
+                        prior = decoded
+                except (OSError, json.JSONDecodeError):
+                    prior = {}
+
+            prior_archived_name = str(prior.get("archived_file") or "").strip()
+            if prior_archived_name and Path(prior_archived_name).name == prior_archived_name:
+                archived_name = prior_archived_name
+            else:
+                suffix = source.suffix.casefold() if source.suffix else ".bin"
+                archived_name = f"{safe_slug(source.stem, 'telemetry')}{suffix}"
+            destination = archive_dir / archived_name
+            _atomic_copy_verified(source, destination, sha256)
+
+            source_stat = source.stat()
+            if (
+                source_stat.st_size != source_before.st_size
+                or source_stat.st_mtime_ns != source_before.st_mtime_ns
+            ):
+                raise OSError(f"Source changed while it was being archived: {source}")
+            archived_size = destination.stat().st_size
+            modified_ns = expected_modified_ns
+            discovery_id = stable_hash(
+                {
+                    "sha256": sha256,
+                    "source_path": str(source),
+                    "size": archived_size,
+                    "modified_ns": modified_ns,
+                },
+                64,
+            )
+            discoveries: list[dict[str, Any]] = []
+            for item in prior.get("source_discoveries") or ():
+                if not isinstance(item, Mapping) or not item.get("discovery_id"):
+                    continue
+                discoveries.append(dict(item))
+            if not discoveries and prior.get("original_path"):
+                legacy_modified_ns = prior.get("modified_ns")
+                legacy_discovery_id = stable_hash(
+                    {
+                        "sha256": sha256,
+                        "source_path": str(prior.get("original_path")),
+                        "size": int(prior.get("size") or archived_size),
+                        "modified_ns": legacy_modified_ns,
+                    },
+                    64,
+                )
+                discoveries.append(
+                    {
+                        "discovery_id": legacy_discovery_id,
+                        "source_path": str(prior.get("original_path")),
+                        "original_file_name": str(
+                            prior.get("original_file_name")
+                            or Path(str(prior.get("original_path"))).name
+                        ),
+                        "size": int(prior.get("size") or archived_size),
+                        "modified_ns": legacy_modified_ns,
+                        "discovered_at": prior.get("verified_at") or utc_now(),
+                    }
+                )
+            is_new_discovery = not any(
+                str(item.get("discovery_id")) == discovery_id for item in discoveries
+            )
+            verified_at = utc_now()
+            if is_new_discovery:
+                discoveries.append(
+                    {
+                        "discovery_id": discovery_id,
+                        "source_path": str(source),
+                        "original_file_name": source.name,
+                        "size": archived_size,
+                        "modified_ns": modified_ns,
+                        "discovered_at": verified_at,
+                    }
+                )
+            first_discovery = discoveries[0]
+            manifest = {
+                "schema_version": 2,
+                "sha256": sha256,
+                "size": archived_size,
+                "archived_file": archived_name,
+                # Retain the original contract-v1 fields as the first known
+                # discovery.  New readers use source_discoveries so a later
+                # identical file never erases earlier provenance.
+                "original_file_name": first_discovery.get("original_file_name"),
+                "original_path": first_discovery.get("source_path"),
+                "verified_at": verified_at,
+                "first_archived_at": prior.get("first_archived_at")
+                or prior.get("verified_at")
+                or verified_at,
+                "source_discovery_count": len(discoveries),
+                "source_discoveries": discoveries,
+                "retention": "append-only; source and archive are never deleted by analysis",
+            }
+            _atomic_write_text(manifest_path, _json_text(manifest))
+            items.append(
+                {
+                    "sha256": sha256,
+                    "size": manifest["size"],
+                    "source_path": str(source),
+                    "archive_path": str(destination),
+                    "discovery_id": discovery_id,
+                    "new_discovery": is_new_discovery,
+                    "status": "verified",
+                }
+            )
+        return {
+            "schema_version": 2,
+            "status": "verified" if items else "empty",
+            "durably_copied": bool(items),
+            "items": items,
+        }
+
+    @staticmethod
+    def _verified_geometry_quality(value: Mapping[str, Any]) -> dict[str, Any]:
+        """Return conservative quality, migrating legacy cache entries in memory."""
+
+        quality = value.get("quality")
+        quality = dict(quality) if isinstance(quality, Mapping) else {}
+        raw_main_path = value.get("main_path")
+        main_path = (
+            raw_main_path
+            if isinstance(raw_main_path, Sequence)
+            and not isinstance(raw_main_path, (str, bytes, bytearray))
+            else ()
+        )
+        measured = _main_loop_quality(main_path)
+        explicit_complete = quality.get("main_loop_complete")
+
+        def bounded(field: str, fallback: float, minimum: float, maximum: float) -> float:
+            try:
+                number = float(quality.get(field))
+            except (TypeError, ValueError, OverflowError):
+                return fallback
+            return max(minimum, min(maximum, number)) if math.isfinite(number) else fallback
+
+        if explicit_complete is True:
+            # A producer claim can only be downgraded by the actual cached path,
+            # never promoted beyond what its normalized points verify.
+            complete = bool(measured["main_loop_complete"])
+            coverage = min(
+                bounded("lap_percent_coverage", float(measured["lap_percent_coverage"]), 0.0, 1.0),
+                float(measured["lap_percent_coverage"]),
+            )
+            maximum_gap = max(
+                bounded("maximum_lap_percent_gap", float(measured["maximum_lap_percent_gap"]), 0.0, 1.0),
+                float(measured["maximum_lap_percent_gap"]),
+            )
+            closure_distance = max(
+                bounded("closure_distance", float(measured["closure_distance"]), 0.0, math.sqrt(2.0)),
+                float(measured["closure_distance"]),
+            )
+        elif explicit_complete is False:
+            # Rejected builders intentionally clear main_path.  Preserve their
+            # measured pre-rejection coverage for provenance and ranking only.
+            complete = False
+            coverage = bounded("lap_percent_coverage", float(measured["lap_percent_coverage"]), 0.0, 1.0)
+            maximum_gap = bounded(
+                "maximum_lap_percent_gap", float(measured["maximum_lap_percent_gap"]), 0.0, 1.0
+            )
+            closure_distance = bounded(
+                "closure_distance", float(measured["closure_distance"]), 0.0, math.sqrt(2.0)
+            )
+        else:
+            # Legacy entries receive no trust based on point count or status;
+            # recompute all four completeness fields from the recorded path.
+            complete = bool(measured["main_loop_complete"])
+            coverage = float(measured["lap_percent_coverage"])
+            maximum_gap = float(measured["maximum_lap_percent_gap"])
+            closure_distance = float(measured["closure_distance"])
+
+        try:
+            observed_points = max(
+                0,
+                int(
+                    quality.get("observed_main_path_points")
+                    or quality.get("main_path_points")
+                    or len(main_path)
+                ),
+            )
+        except (TypeError, ValueError, OverflowError):
+            observed_points = len(main_path)
+        return {
+            **quality,
+            "main_loop_complete": complete,
+            "lap_percent_coverage": round(coverage, 6),
+            "maximum_lap_percent_gap": round(maximum_gap, 6),
+            "closure_distance": round(closure_distance, 8),
+            "main_path_points": len(main_path) if complete else 0,
+            "observed_main_path_points": observed_points,
+        }
+
+    @classmethod
+    def _geometry_score(cls, value: Mapping[str, Any]) -> tuple[int, int, int, int, int, int, int]:
+        quality = cls._verified_geometry_quality(value)
+        return (
+            1 if quality["main_loop_complete"] else 0,
+            int(round(float(quality["lap_percent_coverage"]) * 1_000_000)),
+            -int(round(float(quality["maximum_lap_percent_gap"]) * 1_000_000)),
+            -int(round(float(quality["closure_distance"]) * 1_000_000)),
+            int(quality.get("observed_main_path_points") or quality.get("main_path_points") or 0),
+            int(quality.get("pit_lane_points") or 0),
+            int(quality.get("pit_entry_observations") or 0)
+            + int(quality.get("pit_exit_observations") or 0),
+        )
+
+    def cache_track_geometry(self, geometry: Mapping[str, Any]) -> dict[str, Any]:
+        self.initialize()
+        exact_key = str(geometry.get("track_configuration_key") or "track-unknown").strip()
+        exact_identity = {
+            "track_configuration_key": exact_key,
+            "track_id": geometry.get("track_id"),
+            "track_name": geometry.get("track_name"),
+            "track_config": geometry.get("track_config"),
+        }
+        key = safe_slug(exact_key, "track-unknown")
+        path = self.track_geometry_dir / f"{key}-{stable_hash(exact_identity, 12)}.json"
+        legacy_path = self.track_geometry_dir / f"{key}.json"
+        prior: Mapping[str, Any] = {}
+        read_path = path if path.is_file() else legacy_path
+        if read_path.is_file():
+            try:
+                decoded = json.loads(read_path.read_text(encoding="utf-8"))
+                prior = decoded if isinstance(decoded, Mapping) else {}
+            except (OSError, json.JSONDecodeError):
+                prior = {}
+        prior_identity = {
+            "track_configuration_key": str(prior.get("track_configuration_key") or "").strip(),
+            "track_id": prior.get("track_id"),
+            "track_name": prior.get("track_name"),
+            "track_config": prior.get("track_config"),
+        }
+        if prior and prior_identity != exact_identity:
+            # A durable file is selected only for the exact configuration named
+            # by its payload, even if a stale or manually moved file shares the path.
+            prior = {}
+        incoming = dict(geometry)
+        prior_is_chosen = bool(
+            prior and self._geometry_score(prior) > self._geometry_score(incoming)
+        )
+        chosen = dict(prior if prior_is_chosen else incoming)
+
+        def source_hashes(value: Mapping[str, Any], field: str) -> list[str]:
+            raw_values = value.get(field) or ()
+            if isinstance(raw_values, str):
+                raw_values = [raw_values]
+            return sorted(
+                {
+                    str(item).lower()
+                    for item in raw_values
+                    if _SOURCE_HASH_PATTERN.fullmatch(str(item).lower())
+                }
+            )
+
+        def contributing_hashes(value: Mapping[str, Any]) -> list[str]:
+            return source_hashes(value, "contributing_source_sha256") or source_hashes(
+                value, "source_sha256"
+            )
+
+        def geometry_observation(value: Mapping[str, Any]) -> dict[str, Any]:
+            contributors = contributing_hashes(value)
+            transform = dict(value.get("transform") or {})
+            geometry_fingerprint = stable_hash(
+                {
+                    "track_configuration_key": value.get("track_configuration_key"),
+                    "track_id": value.get("track_id"),
+                    "track_name": value.get("track_name"),
+                    "track_config": value.get("track_config"),
+                    "main_path": value.get("main_path") or [],
+                    "pit_lane": value.get("pit_lane") or [],
+                    "pit_entry_path": value.get("pit_entry_path") or [],
+                    "pit_exit_path": value.get("pit_exit_path") or [],
+                    "transform": transform,
+                },
+                64,
+            )
+            observation_id = stable_hash(
+                {
+                    "source_sha256": contributors,
+                    "geometry_fingerprint": geometry_fingerprint,
+                },
+                64,
+            )
+            return {
+                "observation_id": observation_id,
+                "source_sha256": contributors,
+                "quality": self._verified_geometry_quality(value),
+                "transform": transform,
+                "geometry_fingerprint": geometry_fingerprint,
+                "observed_at": utc_now(),
+            }
+
+        prior_provenance = prior.get("geometry_provenance")
+        prior_provenance = (
+            prior_provenance if isinstance(prior_provenance, Mapping) else {}
+        )
+        observations: dict[str, dict[str, Any]] = {}
+        for item in prior_provenance.get("observations") or ():
+            if isinstance(item, Mapping) and item.get("observation_id"):
+                observations[str(item["observation_id"])] = dict(item)
+        prior_observation = geometry_observation(prior) if prior else None
+        incoming_observation = geometry_observation(incoming)
+        if prior_observation is not None:
+            observations.setdefault(
+                str(prior_observation["observation_id"]), prior_observation
+            )
+        observations.setdefault(
+            str(incoming_observation["observation_id"]), incoming_observation
+        )
+
+        chosen_observation = prior_observation if prior_is_chosen else incoming_observation
+        assert chosen_observation is not None
+        contributing = contributing_hashes(chosen)
+        observed = sorted(
+            {
+                *source_hashes(prior, "observed_source_sha256"),
+                *source_hashes(prior, "source_sha256"),
+                *source_hashes(incoming, "observed_source_sha256"),
+                *source_hashes(incoming, "source_sha256"),
+            }
+        )
+        verified_quality = self._verified_geometry_quality(chosen)
+        chosen["quality"] = verified_quality
+        if not verified_quality["main_loop_complete"]:
+            # Never publish an open polyline in the canonical main-loop slot and
+            # never retain a synthetic start/finish line for unknown geometry.
+            chosen["status"] = "unavailable"
+            chosen["main_path"] = []
+            chosen["start_finish_line"] = None
+            reasons = [str(item) for item in chosen.get("unavailable_reasons") or () if str(item).strip()]
+            completeness_reason = "A complete closed main circuit loop could not be verified."
+            if completeness_reason not in reasons:
+                reasons.append(completeness_reason)
+            chosen["unavailable_reasons"] = reasons
+            chosen["geometry_hash"] = None
+        else:
+            # A re-analysis upgrades legacy cache entries even when their
+            # recorded point coverage still wins canonical selection.
+            chosen["geometry_hash"] = track_geometry_sha256(chosen)
+        # source_sha256 remains the contract-v1 observed-source union.  The
+        # additive fields make selection provenance unambiguous.
+        chosen["source_sha256"] = observed
+        chosen["contributing_source_sha256"] = contributing
+        chosen["observed_source_sha256"] = observed
+        chosen["geometry_provenance"] = {
+            "selected_observation_id": chosen_observation["observation_id"],
+            "normalization_transform": dict(chosen.get("transform") or {}),
+            "observations": sorted(
+                observations.values(), key=lambda item: str(item["observation_id"])
+            ),
+        }
+        chosen["cache"] = {
+            "path": str(path),
+            "updated_at": utc_now(),
+            "source_recordings": len(observed),
+            "contributing_source_recordings": len(contributing),
+            "selection": "complete closed loop first, then lap-percent coverage and recorded detail",
+        }
+        _atomic_write_text(path, _json_text(chosen))
+        return dict(chosen)
+
+    def update_tire_learning(self, package: Mapping[str, Any]) -> dict[str, Any]:
+        """Merge immutable observations and calculate an evidence-bounded model."""
+
+        self.initialize()
+        context_key = str(package.get("context_key") or "").strip()
+        path = self.tire_models_dir / model_file_name(context_key or "unsupported")
+        prior: Mapping[str, Any] = {}
+        if path.is_file():
+            try:
+                decoded = json.loads(path.read_text(encoding="utf-8"))
+                prior = decoded if isinstance(decoded, Mapping) else {}
+            except (OSError, json.JSONDecodeError):
+                prior = {}
+        observations: dict[str, dict[str, Any]] = {}
+        for raw in list(prior.get("observations") or ()) + list(package.get("observations") or ()):
+            if not isinstance(raw, Mapping) or not raw.get("observation_id"):
+                continue
+            observations[str(raw["observation_id"])] = dict(raw)
+        current_age = package.get("current_tire_age") or {}
+        prediction_context = package.get("prediction_context") or {}
+        prediction = build_tire_prediction(list(observations.values()), current_age, prediction_context)
+        observation_set_fingerprint = stable_hash(
+            sorted(
+                observations.values(),
+                key=lambda item: str(item.get("observation_id") or ""),
+            ),
+            64,
+        )
+        model = {
+            "schema_version": 1,
+            "model_version": TIRE_MODEL_VERSION,
+            "observation_set_fingerprint": observation_set_fingerprint,
+            "context_key": context_key,
+            "context": dict(package.get("context") or prior.get("context") or {}),
+            "family": package.get("family") or prior.get("family"),
+            "supported_families": list(package.get("supported_families") or ()),
+            "updated_at": utc_now(),
+            "prediction_context": dict(prediction_context),
+            "observations": sorted(
+                observations.values(), key=lambda item: str(item.get("observation_id"))
+            ),
+            "prediction": prediction,
+        }
+        _atomic_write_text(path, _json_text(model))
+        return {
+            "status": package.get("status"),
+            "model_path": str(path),
+            "observation_count": len(observations),
+            "model_version": TIRE_MODEL_VERSION,
+            "observation_set_fingerprint": observation_set_fingerprint,
+            "prediction": prediction,
+        }
+
+    def cache_garage61_target_laps(
+        self, context: Mapping[str, str], index: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        self.initialize()
+        path = self.target_laps_dir.joinpath(*self.cache_key(context).split("/")) / "garage61.json"
+        payload = {
+            "schema_version": 1,
+            "cached_at": utc_now(),
+            "cache_key": self.cache_key(context),
+            "comparison_scope": index.get("comparison_scope"),
+            "target": dict(index.get("target") or {}),
+            "representative_laps": list(index.get("representative_laps") or ()),
+            "reference_comparisons": list(index.get("reference_comparisons") or ()),
+            "comparison_quality": dict(index.get("comparison_quality") or {}),
+        }
+        _atomic_write_text(path, _json_text(payload))
+        return {"status": "cached", "path": str(path), "count": len(payload["representative_laps"])}
+
+    def live_replay_for_analysis(self, analysis: Mapping[str, Any]) -> dict[str, Any] | None:
+        """Load SHA-verified live chunks for the exact subsession/session phase."""
+
+        session_identity = _analysis_session_identity(analysis)
+        subsession = session_identity.get("subsession_id")
+        session_number = session_identity.get("sim_session_num")
+        expected_phase = session_identity.get("session_phase") or "unknown"
+        if subsession in (None, ""):
+            return None
+        root = self.telemetry_traces_dir / "live-replay"
+        if not root.is_dir():
+            return None
+        matches: list[tuple[Path, Mapping[str, Any]]] = []
+        for manifest_path in root.glob("*/manifest.json"):
+            try:
+                decoded = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(decoded, Mapping):
+                continue
+            if str(decoded.get("subsessionId") or "") != str(subsession):
+                continue
+            recorded_session = decoded.get("sessionNumber")
+            if session_number not in (None, "") and recorded_session not in (None, "") and str(recorded_session) != str(session_number):
+                continue
+            recorded_phase = session_phase(decoded.get("sessionType"))
+            if expected_phase != "unknown" and recorded_phase != "unknown" and recorded_phase != expected_phase:
+                continue
+            if (
+                expected_phase != "unknown"
+                and recorded_phase == "unknown"
+                and (session_number in (None, "") or recorded_session in (None, ""))
+            ):
+                # Subsession alone cannot distinguish practice/qualifying/race.
+                continue
+            matches.append((manifest_path, decoded))
+        if not matches:
+            return None
+
+        participants_by_index: dict[int, dict[str, Any]] = {}
+        participant_segments: dict[int, set[int]] = {}
+        frames: list[dict[str, Any]] = []
+        manifests: list[str] = []
+        capture_segments: list[dict[str, Any]] = []
+        player_index: int | None = None
+        session_states = {0: "invalid", 1: "get_in_car", 2: "warmup", 3: "parade_laps", 4: "racing", 5: "checkered", 6: "cooldown"}
+
+        def integer(value: Any) -> int | None:
+            try:
+                number = float(value)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return int(round(number)) if math.isfinite(number) else None
+
+        def flag_labels(raw: int) -> list[str]:
+            result: list[str] = []
+            for label, mask in (("green", 0x0004), ("yellow", 0x0008 | 0x0100 | 0x4000 | 0x8000), ("white", 0x0002), ("checkered", 0x0001), ("black", 0x00010000)):
+                if raw & mask:
+                    result.append(label)
+            return result
+
+        for segment_index, (manifest_path, manifest) in enumerate(matches):
+            manifests.append(str(manifest_path))
+            if player_index is None:
+                player_index = integer(manifest.get("playerCarIndex"))
+            segment_channels: dict[str, dict[str, Any]] = {}
+            for item in manifest.get("coverage") or ():
+                if not isinstance(item, Mapping) or not item.get("channel"):
+                    continue
+                channel = str(item["channel"])
+                segment_channels[channel] = {
+                    "recorded": item.get("recorded") is True,
+                    "reason": item.get("unavailableReason"),
+                }
+            for item in manifest.get("participants") or ():
+                if not isinstance(item, Mapping) or (car_index := integer(item.get("carIndex"))) is None:
+                    continue
+                participants_by_index[car_index] = {
+                    "car_index": car_index,
+                    "car_number": item.get("carNumber"),
+                    "class_id": integer(item.get("classId")),
+                    "class_name": item.get("className"),
+                    "car_name": item.get("carName"),
+                    "driver_name": item.get("driverName"),
+                    "team_name": item.get("teamName"),
+                    "is_player": car_index == player_index,
+                    "is_spectator": item.get("isSpectator") is True,
+                }
+            verified_chunk_count = 0
+            segment_frame_count = 0
+            for chunk in manifest.get("chunks") or ():
+                if not isinstance(chunk, Mapping) or not chunk.get("file") or not chunk.get("sha256"):
+                    continue
+                chunk_path = (manifest_path.parent / str(chunk["file"])).resolve()
+                if manifest_path.parent.resolve() not in chunk_path.parents or not chunk_path.is_file():
+                    continue
+                expected = str(chunk["sha256"]).lower()
+                if not _SOURCE_HASH_PATTERN.fullmatch(expected) or file_sha256(chunk_path) != expected:
+                    continue
+                try:
+                    decoded_chunk = json.loads(chunk_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                verified_chunk_count += 1
+                for raw_frame in (decoded_chunk.get("frames") or ()) if isinstance(decoded_chunk, Mapping) else ():
+                    if not isinstance(raw_frame, Mapping):
+                        continue
+                    segment_frame_count += 1
+                    raw_flags = integer(raw_frame.get("sessionFlags")) or 0
+                    cars: list[dict[str, Any]] = []
+                    for raw_car in raw_frame.get("cars") or ():
+                        if not isinstance(raw_car, Mapping) or (car_index := integer(raw_car.get("carIndex"))) is None:
+                            continue
+                        participant_segments.setdefault(car_index, set()).add(segment_index)
+                        participants_by_index.setdefault(
+                            car_index,
+                            {
+                                "car_index": car_index,
+                                "car_number": None,
+                                "class_id": None,
+                                "class_name": None,
+                                "car_name": None,
+                                "driver_name": None,
+                                "team_name": None,
+                                "is_player": car_index == player_index,
+                                "is_spectator": False,
+                            },
+                        )
+                        lap_pct = raw_car.get("lapDistancePercent")
+                        cars.append({
+                            "car_index": car_index,
+                            "lap_pct": lap_pct,
+                            "lap": integer(raw_car.get("lap")),
+                            "completed_laps": integer(raw_car.get("completedLaps")),
+                            "overall_position": integer(raw_car.get("overallPosition")),
+                            "class_position": integer(raw_car.get("classPosition")),
+                            "on_pit_road": raw_car.get("onPitRoad") if isinstance(raw_car.get("onPitRoad"), bool) else None,
+                            "track_surface": integer(raw_car.get("trackSurface")),
+                            "pace_flags": integer(raw_car.get("paceFlags")),
+                            "last_lap_time_s": raw_car.get("lastLapSeconds"),
+                            "best_lap_time_s": raw_car.get("bestLapSeconds"),
+                        })
+                    frames.append({
+                        "session_time_s": raw_frame.get("sessionTimeSeconds"),
+                        "session_state": session_states.get(integer(raw_frame.get("sessionState")) or -1, "unknown"),
+                        "global_flags": raw_flags,
+                        "global_flag_labels": flag_labels(raw_flags),
+                        "cars": cars,
+                        "captured_at": raw_frame.get("capturedAt"),
+                        "_capture_segment": segment_index,
+                    })
+            capture_segments.append(
+                {
+                    "index": segment_index,
+                    "manifest": str(manifest_path),
+                    "channels": segment_channels,
+                    "verified_chunk_count": verified_chunk_count,
+                    "frame_count": segment_frame_count,
+                }
+            )
+        def finite_session_time(frame: Mapping[str, Any]) -> float | None:
+            try:
+                value = float(frame.get("session_time_s"))
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return value if math.isfinite(value) else None
+
+        frames.sort(
+            key=lambda frame: (
+                finite_session_time(frame)
+                if finite_session_time(frame) is not None
+                else -1.0,
+                str(frame.get("captured_at") or ""),
+            )
+        )
+        deduplicated_by_time: dict[tuple[str, Any], dict[str, Any]] = {}
+        for frame in frames:
+            frame.pop("captured_at", None)
+            finite_time = finite_session_time(frame)
+            key = (
+                ("time", round(finite_time, 3))
+                if finite_time is not None
+                else ("content", stable_hash(frame, 32))
+            )
+            prior = deduplicated_by_time.get(key)
+            frame_score = (
+                len(frame.get("cars") or ()),
+                sum(len(car) for car in frame.get("cars") or () if isinstance(car, Mapping)),
+            )
+            prior_score = (
+                len(prior.get("cars") or ()),
+                sum(len(car) for car in prior.get("cars") or () if isinstance(car, Mapping)),
+            ) if prior is not None else (-1, -1)
+            if prior is None or frame_score > prior_score:
+                deduplicated_by_time[key] = frame
+        deduplicated = sorted(
+            deduplicated_by_time.values(),
+            key=lambda frame: finite_session_time(frame) or -1.0,
+        )
+
+        sample_rate_hz = 2.0
+        expected_interval_s = 1.0 / sample_rate_hz
+        finite_times = sorted(
+            {
+                value
+                for frame in deduplicated
+                if (value := finite_session_time(frame)) is not None
+            }
+        )
+        start_time = finite_times[0] if finite_times else None
+        end_time = finite_times[-1] if finite_times else None
+        expected_frame_count = (
+            max(
+                len(finite_times),
+                int(round((end_time - start_time) * sample_rate_hz)) + 1,
+            )
+            if start_time is not None and end_time is not None
+            else len(deduplicated)
+        )
+        frame_fraction = (
+            min(1.0, len(finite_times) / expected_frame_count)
+            if expected_frame_count > 0
+            else 0.0
+        )
+        gaps = [
+            later - earlier
+            for earlier, later in zip(finite_times, finite_times[1:])
+            if later - earlier > expected_interval_s * 3.0 + 1e-9
+        ]
+        temporal_status = (
+            "unavailable"
+            if not finite_times
+            else "partial"
+            if gaps or frame_fraction < 0.9995
+            else "recorded"
+        )
+        temporal_coverage = {
+            "status": temporal_status,
+            "recorded_frame_count": len(finite_times),
+            "expected_frame_count": expected_frame_count,
+            "recorded_fraction": round(frame_fraction, 4),
+            "gap_count": len(gaps),
+            "largest_gap_s": round(max(gaps), 3) if gaps else 0.0,
+            "start_session_time_s": round(start_time, 3) if start_time is not None else None,
+            "end_session_time_s": round(end_time, 3) if end_time is not None else None,
+        }
+
+        required = ("SessionTime", "SessionState", "CarIdxLapDistPct")
+        channel_names = sorted(
+            {
+                *required,
+                *(
+                    channel
+                    for segment in capture_segments
+                    for channel in segment["channels"]
+                ),
+            }
+        )
+        segment_count = len(capture_segments)
+        coverage_by_channel: dict[str, dict[str, Any]] = {}
+        for channel in channel_names:
+            recorded_segments = [
+                segment
+                for segment in capture_segments
+                if segment["frame_count"] > 0
+                and (segment["channels"].get(channel) or {}).get("recorded") is True
+            ]
+            recorded_segment_count = len(recorded_segments)
+            segment_fraction = (
+                recorded_segment_count / segment_count if segment_count else 0.0
+            )
+            recorded_fraction = min(segment_fraction, frame_fraction)
+            all_segments_recorded = (
+                segment_count > 0
+                and recorded_segment_count == segment_count
+                and temporal_status == "recorded"
+            )
+            status = (
+                "recorded"
+                if all_segments_recorded
+                else "partial"
+                if recorded_segment_count > 0
+                else "unavailable"
+            )
+            reasons = [
+                str((segment["channels"].get(channel) or {}).get("reason") or "").strip()
+                for segment in capture_segments
+                if (segment["channels"].get(channel) or {}).get("recorded") is not True
+            ]
+            reasons = [reason for reason in reasons if reason]
+            if recorded_segment_count < segment_count:
+                reasons.append(
+                    f"{channel} was not recorded in "
+                    f"{segment_count - recorded_segment_count} of {segment_count} capture segments."
+                )
+            if gaps:
+                reasons.append(
+                    f"The merged capture has {len(gaps)} session-time gap(s); "
+                    "continuous channel coverage is not claimed."
+                )
+            coverage_by_channel[channel] = {
+                "channel": channel,
+                "status": status,
+                "reason": "; ".join(dict.fromkeys(reasons)) or None,
+                "recorded_segment_count": recorded_segment_count,
+                "segment_count": segment_count,
+                "recorded_fraction": round(recorded_fraction, 4),
+                "all_segments_recorded": all_segments_recorded,
+                "temporal_gap_count": len(gaps),
+            }
+
+        unavailable = [
+            str(coverage_by_channel.get(channel, {}).get("reason") or f"{channel} was not captured.")
+            for channel in required
+            if coverage_by_channel.get(channel, {}).get("status") != "recorded"
+        ]
+        has_cars = any(frame.get("cars") for frame in deduplicated)
+        required_unavailable = any(
+            coverage_by_channel.get(channel, {}).get("status") == "unavailable"
+            for channel in required
+        )
+        status = "unavailable" if required_unavailable or not has_cars else (
+            "partial"
+            if temporal_status != "recorded"
+            or any(item.get("status") != "recorded" for item in coverage_by_channel.values())
+            else "usable"
+        )
+        if not has_cars:
+            unavailable.append("No recorded competitor lap-distance rows were captured.")
+
+        participant_coverage: list[dict[str, Any]] = []
+        total_frame_count = len(deduplicated)
+        for car_index in sorted(participants_by_index):
+            participant_frames = [
+                frame
+                for frame in deduplicated
+                if any(
+                    integer(car.get("car_index")) == car_index
+                    for car in frame.get("cars") or ()
+                    if isinstance(car, Mapping)
+                )
+            ]
+            participant_times = [
+                value
+                for frame in participant_frames
+                if (value := finite_session_time(frame)) is not None
+            ]
+            participant_segment_count = len(participant_segments.get(car_index, set()))
+            frame_coverage_fraction = (
+                len(participant_frames) / total_frame_count if total_frame_count else 0.0
+            )
+            segment_coverage_fraction = (
+                participant_segment_count / segment_count if segment_count else 0.0
+            )
+            participant_fraction = min(
+                frame_coverage_fraction,
+                segment_coverage_fraction,
+                frame_fraction,
+            )
+            participant_status = (
+                "recorded"
+                if participant_frames
+                and len(participant_frames) == total_frame_count
+                and participant_segment_count == segment_count
+                and temporal_status == "recorded"
+                else "partial"
+                if participant_frames
+                else "unavailable"
+            )
+            participant_coverage.append(
+                {
+                    "car_index": car_index,
+                    "status": participant_status,
+                    "recorded_frame_count": len(participant_frames),
+                    "total_frame_count": total_frame_count,
+                    "recorded_fraction": round(participant_fraction, 4),
+                    "recorded_segment_count": participant_segment_count,
+                    "segment_count": segment_count,
+                    "first_session_time_s": (
+                        round(min(participant_times), 3) if participant_times else None
+                    ),
+                    "last_session_time_s": (
+                        round(max(participant_times), 3) if participant_times else None
+                    ),
+                }
+            )
+
+        for frame in deduplicated:
+            frame.pop("_capture_segment", None)
+        return {
+            "schema_version": 1,
+            "source": "durable_live_sdk_capture",
+            "status": status,
+            "unavailable_reasons": list(dict.fromkeys(unavailable)),
+            "coverage": sorted(coverage_by_channel.values(), key=lambda item: item["channel"]),
+            "temporal_coverage": temporal_coverage,
+            "sample_rate_hz": sample_rate_hz,
+            "interpolation": "linear lap-distance interpolation between recorded live SDK frames",
+            "participant_count": len(participants_by_index),
+            "player_car_index": player_index,
+            "participants": [participants_by_index[index] for index in sorted(participants_by_index)],
+            "participant_coverage": participant_coverage,
+            "frames": deduplicated if status != "unavailable" else [],
+            "frame_count": len(deduplicated) if status != "unavailable" else 0,
+            "capture_manifests": manifests,
+            "limitations": [
+                "Only SHA-verified recorded values are present; reconnect and time-gap coverage is quantified explicitly.",
+                "Competitor fuel, tire wear, tire temperature, setup, and private penalties are not inferred.",
+            ],
+        }

@@ -26,7 +26,7 @@
                     <line x1="34" y1="135" x2="406" y2="135" class="distance-base" />
                     <line x1="34" y1="135" x2="@F(34 + (Snapshot.LapDistancePercent ?? 0) * 372)" y2="135" class="live-distance-progress" />
                     <circle cx="@F(34 + (Snapshot.LapDistancePercent ?? 0) * 372)" cy="135" r="8" class="live-car-marker" />
-                    <svg:text x="34" y="174" class="chart-label">Start / finish</svg:text><svg:text x="406" y="174" text-anchor="end" class="chart-label">@((Snapshot.LapDistancePercent ?? 0) * 100).ToString("0")%</svg:text>
+                    <svg:text x="34" y="174" class="chart-label">Start / finish</svg:text><svg:text x="406" y="174" text-anchor="end" class="chart-label">@(((Snapshot.LapDistancePercent ?? 0) * 100).ToString("0"))%</svg:text>
                 }
             </svg>
             <div class="live-control-bars">

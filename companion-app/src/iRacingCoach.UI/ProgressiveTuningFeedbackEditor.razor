@@ -1,0 +1,337 @@
+@using System.Security.Cryptography
+@using System.Text
+@implements IDisposable
+
+<section class="tuning-feedback-editor" aria-labelledby="turn-feedback-heading">
+    @if (Turn is null)
+    {
+        <div class="tuning-feedback-empty">
+            <ProductIcon Name="tuning" Size="23" />
+            <strong>Select a turn</strong>
+            <span>Choose a labeled corner or recorded load zone on the map.</span>
+        </div>
+    }
+    else
+    {
+        <header class="tuning-feedback-header">
+            <div><span class="eyebrow">Selected location</span><h2 id="turn-feedback-heading">@Turn.Label</h2></div>
+            <span class="status-label @(Turn.IsOfficial ? "success" : "neutral")">@(Turn.IsOfficial ? "Official label" : "Recorded zone")</span>
+        </header>
+
+        <div class="tuning-run-phase-selector" role="tablist" aria-label="Run phase">
+            @foreach (var phase in RunPhases)
+            {
+                <button type="button"
+                        role="tab"
+                        aria-selected="@AriaBoolean(_runPhase == phase.Id)"
+                        class="@(_runPhase == phase.Id ? "selected" : null)"
+                        @onclick="() => SelectRunPhase(phase.Id)">
+                    <span>@phase.Label</span>
+                    @if (FeedbackCount(phase.Id) > 0) { <b>@FeedbackCount(phase.Id)</b> }
+                </button>
+            }
+        </div>
+
+        <div class="tuning-editor-section">
+            <span class="tuning-field-label">Corner phase</span>
+            <div class="tuning-chip-row" role="group" aria-label="Corner phases">
+                @foreach (var phase in CornerPhases)
+                {
+                    <button type="button"
+                            aria-pressed="@AriaBoolean(ActiveState.CornerPhases.Contains(phase.Id))"
+                            class="@(ActiveState.CornerPhases.Contains(phase.Id) ? "selected" : null)"
+                            @onclick="() => ToggleCornerPhase(phase.Id)">@phase.Label</button>
+                }
+            </div>
+        </div>
+
+        <div class="tuning-editor-section tuning-symptom-section">
+            <div class="tuning-field-heading"><span class="tuning-field-label">What did the car do?</span><small>@ActiveState.Symptoms.Count selected</small></div>
+            <div class="tuning-symptom-grid" role="group" aria-label="Handling symptoms">
+                @foreach (var symptom in Symptoms)
+                {
+                    <button type="button"
+                            title="@symptom.Help"
+                            aria-pressed="@AriaBoolean(ActiveState.Symptoms.Contains(symptom.Id))"
+                            class="@(ActiveState.Symptoms.Contains(symptom.Id) ? "selected" : null) @(symptom.Id == "good" ? "good" : null)"
+                            @onclick="() => ToggleSymptom(symptom.Id)">@symptom.Label</button>
+                }
+            </div>
+        </div>
+
+        <div class="tuning-ratings">
+            <fieldset>
+                <legend>Severity</legend>
+                <div class="tuning-number-scale" role="radiogroup" aria-label="Severity from one to five">
+                    @for (var rating = 1; rating <= 5; rating++)
+                    {
+                        var value = rating;
+                        <button type="button" role="radio" aria-checked="@AriaBoolean(ActiveState.Severity == value)" class="@(ActiveState.Severity == value ? "selected" : null)" @onclick="() => SetSeverity(value)">@value</button>
+                    }
+                </div>
+            </fieldset>
+            <fieldset>
+                <legend>Confidence</legend>
+                <div class="tuning-number-scale" role="radiogroup" aria-label="Driver confidence from one to five">
+                    @for (var rating = 1; rating <= 5; rating++)
+                    {
+                        var value = rating;
+                        <button type="button" role="radio" aria-checked="@AriaBoolean(ActiveState.Confidence == value)" class="@(ActiveState.Confidence == value ? "selected" : null)" @onclick="() => SetConfidence(value)">@value</button>
+                    }
+                </div>
+            </fieldset>
+            <fieldset>
+                <legend>Importance</legend>
+                <div class="tuning-number-scale" role="radiogroup" aria-label="Importance from one to five">
+                    @for (var rating = 1; rating <= 5; rating++)
+                    {
+                        var value = rating;
+                        <button type="button" role="radio" aria-checked="@AriaBoolean(ActiveState.Priority == value)" class="@(ActiveState.Priority == value ? "selected" : null)" @onclick="() => SetPriority(value)">@value</button>
+                    }
+                </div>
+            </fieldset>
+        </div>
+
+        <label class="tuning-feedback-note">Optional detail<textarea rows="2" maxlength="500" placeholder="Only what would help explain this turn…" value="@ActiveState.Note" @oninput="NoteChanged"></textarea></label>
+
+        <footer class="tuning-editor-footer">
+            <span aria-live="polite">@SaveStatus</span>
+            <small>@FeedbackCount(_runPhase) saved for this phase</small>
+        </footer>
+    }
+</section>
+
+@code {
+    [Parameter] public TuningTurn? Turn { get; set; }
+    [Parameter] public IReadOnlyList<ProgressiveTuningFeedback> ExistingFeedback { get; set; } = [];
+    [Parameter] public EventCallback<ProgressiveTuningFeedbackBatch> FeedbackChanged { get; set; }
+    [Parameter] public string SaveStatus { get; set; } = "Draft ready";
+
+    private static readonly (string Id, string Label)[] RunPhases =
+    [
+        ("early", "Early run"),
+        ("middle", "Mid run"),
+        ("late", "Late run")
+    ];
+    private static readonly (string Id, string Label)[] CornerPhases =
+    [
+        ("whole", "Whole turn"),
+        ("entry", "Entry"),
+        ("center", "Center"),
+        ("exit", "Exit")
+    ];
+    private static readonly SymptomOption[] Symptoms =
+    [
+        new("good", "Good", "The balance felt right here"),
+        new("tight", "Tight", "Understeer or front push"),
+        new("loose", "Loose", "Oversteer or rear instability"),
+        new("unstable-braking", "Unstable braking", "Car moves or rotates unpredictably under braking"),
+        new("wheel-hop-lock", "Wheel hop / lock", "A tire hops or locks under braking"),
+        new("cant-take-throttle", "Can't take throttle", "Throttle application makes the car push or step out"),
+        new("wheelspin", "Wheelspin", "Lacks drive or spins the rear tires"),
+        new("bottoming", "Bottoming", "Splitter or chassis contact"),
+        new("harsh-skating", "Harsh / skating", "Skates or loses compliance over bumps and seams"),
+        new("low-grip", "Low grip", "Both ends lack grip"),
+        new("other", "Other", "Describe it in the note")
+    ];
+
+    private readonly Dictionary<string, FeedbackEditorState> _states = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? _noteSave;
+    private string _runPhase = "early";
+    private string _seedSignature = string.Empty;
+    private string _parameterTurnId = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        var turnId = Turn?.CornerId ?? string.Empty;
+        if (!string.Equals(_parameterTurnId, turnId, StringComparison.Ordinal))
+        {
+            CancelPendingNote();
+            _parameterTurnId = turnId;
+        }
+        var signature = string.Join("|", ExistingFeedback
+            .OrderBy(item => item.FeedbackId, StringComparer.Ordinal)
+            .Select(item => $"{item.FeedbackId}:{item.CornerId}:{item.RunPhase}:{string.Join(',', item.CornerPhases)}:{item.SymptomId}:{item.Severity}:{item.DriverConfidence}:{item.Priority}:{item.Note}"));
+        if (signature == _seedSignature) return;
+        CancelPendingNote();
+        _seedSignature = signature;
+        _states.Clear();
+        foreach (var group in ExistingFeedback.GroupBy(item => Key(item.CornerId, item.RunPhase)))
+        {
+            var first = group.First();
+            var state = new FeedbackEditorState
+            {
+                Severity = first.Severity,
+                Confidence = first.DriverConfidence,
+                Priority = Math.Clamp(first.Priority, 1, 5),
+                Note = first.Note
+            };
+            state.CornerPhases.UnionWith(first.CornerPhases.Count == 0 ? ["whole"] : first.CornerPhases);
+            state.Symptoms.UnionWith(group.Select(item => item.SymptomId));
+            _states[group.Key] = state;
+        }
+    }
+
+    private FeedbackEditorState ActiveState
+    {
+        get
+        {
+            if (Turn is null) return FeedbackEditorState.Empty;
+            var key = Key(Turn.CornerId, _runPhase);
+            if (_states.TryGetValue(key, out var existing)) return existing;
+            var created = new FeedbackEditorState();
+            created.CornerPhases.Add("whole");
+            _states[key] = created;
+            return created;
+        }
+    }
+
+    private void SelectRunPhase(string phase)
+    {
+        CancelPendingNote();
+        _runPhase = phase;
+    }
+
+    private async Task ToggleCornerPhase(string phase)
+    {
+        var state = ActiveState;
+        if (phase == "whole")
+        {
+            state.CornerPhases.Clear();
+            state.CornerPhases.Add("whole");
+        }
+        else
+        {
+            state.CornerPhases.Remove("whole");
+            if (!state.CornerPhases.Add(phase)) state.CornerPhases.Remove(phase);
+            if (state.CornerPhases.Count == 0) state.CornerPhases.Add("whole");
+        }
+        await PublishAsync();
+    }
+
+    private async Task ToggleSymptom(string symptom)
+    {
+        var symptoms = ActiveState.Symptoms;
+        if (string.Equals(symptom, "good", StringComparison.Ordinal))
+        {
+            if (symptoms.SetEquals(["good"])) symptoms.Clear();
+            else
+            {
+                symptoms.Clear();
+                symptoms.Add("good");
+            }
+        }
+        else
+        {
+            symptoms.Remove("good");
+            if (!symptoms.Add(symptom)) symptoms.Remove(symptom);
+        }
+        await PublishAsync();
+    }
+
+    private async Task SetSeverity(int value)
+    {
+        ActiveState.Severity = value;
+        await PublishAsync();
+    }
+
+    private async Task SetConfidence(int value)
+    {
+        ActiveState.Confidence = value;
+        await PublishAsync();
+    }
+
+    private async Task SetPriority(int value)
+    {
+        ActiveState.Priority = value;
+        await PublishAsync();
+    }
+
+    private async Task NoteChanged(ChangeEventArgs args)
+    {
+        if (Turn is null) return;
+        var turn = Turn;
+        var runPhase = _runPhase;
+        var state = ActiveState;
+        state.Note = args.Value?.ToString()?.TrimStart() ?? string.Empty;
+        CancelPendingNote();
+        _noteSave = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(350, _noteSave.Token);
+            await PublishAsync(turn, runPhase, state);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task PublishAsync()
+    {
+        if (Turn is null) return;
+        await PublishAsync(Turn, _runPhase, ActiveState);
+    }
+
+    private async Task PublishAsync(TuningTurn turn, string runPhase, FeedbackEditorState state)
+    {
+        var cornerPhases = state.CornerPhases.Contains("whole")
+            ? Array.Empty<string>()
+            : state.CornerPhases.OrderBy(value => value, StringComparer.Ordinal).ToArray();
+        var feedback = state.Symptoms
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .Select(symptom => new ProgressiveTuningFeedback
+            {
+                FeedbackId = StableFeedbackId(turn.CornerId, runPhase, symptom),
+                CornerId = turn.CornerId,
+                CornerLabel = turn.Label,
+                StartPct = turn.StartPct,
+                ApexPct = turn.ApexPct,
+                EndPct = turn.EndPct,
+                RunPhase = runPhase,
+                CornerPhases = cornerPhases,
+                SymptomId = symptom,
+                Severity = state.Severity,
+                DriverConfidence = state.Confidence,
+                Note = state.Note.Trim(),
+                Priority = state.Priority
+            })
+            .ToArray();
+        await FeedbackChanged.InvokeAsync(new ProgressiveTuningFeedbackBatch(turn.CornerId, runPhase, feedback));
+    }
+
+    private int FeedbackCount(string runPhase)
+    {
+        if (Turn is null) return 0;
+        return _states.GetValueOrDefault(Key(Turn.CornerId, runPhase))?.Symptoms.Count ?? 0;
+    }
+
+    private static string StableFeedbackId(string cornerId, string runPhase, string symptom)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{cornerId}|{runPhase}|{symptom}"));
+        return $"feedback-{Convert.ToHexString(bytes.AsSpan(0, 12)).ToLowerInvariant()}";
+    }
+    private static string Key(string cornerId, string runPhase) => $"{cornerId}|{runPhase}";
+    private static string AriaBoolean(bool value) => value ? "true" : "false";
+
+    public void Dispose()
+    {
+        CancelPendingNote();
+    }
+
+    private void CancelPendingNote()
+    {
+        _noteSave?.Cancel();
+        _noteSave?.Dispose();
+        _noteSave = null;
+    }
+
+    private sealed record SymptomOption(string Id, string Label, string Help);
+    private sealed class FeedbackEditorState
+    {
+        public static FeedbackEditorState Empty { get; } = new();
+        public HashSet<string> CornerPhases { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Symptoms { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public int Severity { get; set; } = 3;
+        public int Confidence { get; set; } = 3;
+        public int Priority { get; set; } = 3;
+        public string Note { get; set; } = string.Empty;
+    }
+}

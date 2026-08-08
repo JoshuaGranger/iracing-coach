@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "ruleset_id": "nascar-oreilly-xfinity-2026s3-v1",
+  "car_family": "nascar-oreilly-xfinity",
+  "applicable_car_path_prefixes": ["stockcars2 "],
+  "season_labels": ["2026S3"],
+  "manual_application_only": true,
+  "numeric_ranges_verified": false,
+  "provenance": [
+    {
+      "kind": "official-car-manual",
+      "url": "https://s100.iracing.com/wp-content/uploads/2026/03/UM-NASCAR-Oreilly_Manual_V1.pdf",
+      "scope": "qualitative setup-system direction and garage terminology"
+    },
+    {
+      "kind": "official-release-notes",
+      "url": "https://support.iracing.com/support/solutions/articles/31000178217-2026-season-2-initial-release-notes-2026-03-09-03-",
+      "scope": "2026 O'Reilly package and season-specific rule-change warning"
+    }
+  ],
+  "settings": [
+    {
+      "setting_id": "front-brake-bias",
+      "system": "braking-balance",
+      "paths": ["Chassis.Front.FrontBrakeBias"],
+      "required_path_mode": "all",
+      "unit": "percent",
+      "verified_step": null,
+      "verified_minimum": null,
+      "verified_maximum": null,
+      "directions": {
+        "forward": {
+          "instruction": "Move front brake bias forward by one available garage step.",
+          "expected_effect": "Increase rear stability during brake application and release.",
+          "risk": "Front locking, longer stopping distance, or a tighter center."
+        },
+        "rearward": {
+          "instruction": "Move front brake bias rearward by one available garage step.",
+          "expected_effect": "Increase rotation under braking.",
+          "risk": "Rear lock or wheel hop; roll back immediately if either appears."
+        }
+      },
+      "triggers": [
+        {"run_phase": "*", "corner_phase": "entry", "symptom_id": "loose", "direction": "forward"},
+        {"run_phase": "*", "corner_phase": "entry", "symptom_id": "unstable-braking", "direction": "forward"},
+        {"run_phase": "*", "corner_phase": "entry", "symptom_id": "wheel-hop-lock", "direction": "forward"},
+        {"run_phase": "*", "corner_phase": "entry", "symptom_id": "tight", "direction": "rearward"}
+      ],
+      "verify": ["brake-release point", "front/rear wheel-speed divergence proxy when recorded", "entry stability and center rotation", "iRacing garage tech status"]
+    },
+    {
+      "setting_id": "cross-weight",
+      "system": "static-balance",
+      "paths": ["Chassis.Front.CrossWeight"],
+      "required_path_mode": "all",
+      "unit": "percent",
+      "verified_step": null,
+      "verified_minimum": null,
+      "verified_maximum": null,
+      "directions": {
+        "lower": {
+          "instruction": "Reduce crossweight by one available small garage step while preserving the baseline ride heights and front preload.",
+          "expected_effect": "Increase center and exit rotation.",
+          "risk": "A nervous entry or reduced drive-off stability."
+        },
+        "raise": {
+          "instruction": "Increase crossweight by one available small garage step while preserving the baseline ride heights and front preload.",
+          "expected_effect": "Increase center and initial-throttle stability.",
+          "risk": "A center push and increased right-front scrub."
+        }
+      },
+      "triggers": [
+        {"run_phase": "*", "corner_phase": "center", "symptom_id": "tight", "direction": "lower"},
+        {"run_phase": "*", "corner_phase": "exit", "symptom_id": "tight", "direction": "lower"},
+        {"run_phase": "*", "corner_phase": "center", "symptom_id": "loose", "direction": "raise"}
+      ],
+      "verify": ["center steering demand", "minimum and exit speed", "right-front versus right-rear temperature and measured service wear", "iRacing garage tech status"]
+    },
+    {
+      "setting_id": "rear-track-bar-pair",
+      "system": "rear-roll-geometry",
+      "paths": ["Chassis.LeftRear.TrackBarHeight", "Chassis.RightRear.TrackBarHeight"],
+      "required_path_mode": "all",
+      "unit": "setup-native",
+      "verified_step": null,
+      "verified_minimum": null,
+      "verified_maximum": null,
+      "directions": {
+        "lower-equal": {
+          "instruction": "Lower both rear track-bar ends by one available equal garage step; preserve rake for this test.",
+          "expected_effect": "Increase lateral rear grip and drive-off security.",
+          "risk": "A tighter center or increased rear tire load and heat elsewhere."
+        }
+      },
+      "triggers": [
+        {"run_phase": "*", "corner_phase": "exit", "symptom_id": "loose", "direction": "lower-equal"},
+        {"run_phase": "*", "corner_phase": "exit", "symptom_id": "wheelspin", "direction": "lower-equal"},
+        {"run_phase": "*", "corner_phase": "exit", "symptom_id": "cant-take-throttle", "direction": "lower-equal"}
+      ],
+      "verify": ["throttle pickup", "exit steering corrections", "right-rear temperature and measured service wear", "center balance", "iRacing garage tech status"]
+    },
+    {
+      "setting_id": "front-packer-pair",
+      "system": "aero-platform",
+      "paths": ["Chassis.LeftFront.Packer", "Chassis.RightFront.Packer"],
+      "required_path_mode": "all",
+      "unit": "setup-native",
+      "verified_step": null,
+      "verified_minimum": null,
+      "verified_maximum": null,
+      "directions": {
+        "add-equal": {
+          "instruction": "Add one available equal front-packer step, then restore the intended static heights/preload and re-pass tech.",
+          "expected_effect": "Engage front support earlier and increase minimum dynamic splitter clearance.",
+          "risk": "Holding the front too high, transferring load through the anti-roll bar, and creating understeer."
+        }
+      },
+      "triggers": [
+        {"run_phase": "*", "corner_phase": "*", "symptom_id": "bottoming", "direction": "add-equal"}
+      ],
+      "verify": ["minimum center-front splitter height", "left/right front dynamic heights", "normal-braking versus panic-braking contact", "iRacing garage tech status"]
+    }
+  ]
+}
