@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "bundle": "iracing-coach-companion-app-build-inputs",
   "scope": "clean build inputs; private data and credentials excluded",
-  "generated_at_utc": "2026-08-10T19:19:27.541706Z",
+  "generated_at_utc": "2026-08-10T19:28:59.394491Z",
   "excluded": [
     "data/ (optional private regression corpus)",
     ".git/",
@@ -14,8 +14,8 @@
   "files": [
     {
       "path": "README.md",
-      "bytes": 2134,
-      "sha256": "7af908e8e94848ef7828e8b2f9e0e1eba45b7b47cf13c7fc74aa7e589ee84f0a"
+      "bytes": 2188,
+      "sha256": "9d19bbb35b6340a5677c8a7557bbf708813d6284e8bdad377652014b731fa122"
     },
     {
       "path": "AGENTS.md",
@@ -585,6 +585,6 @@
   ],
   "totals": {
     "file_count": 114,
-    "bytes": 2361746
+    "bytes": 2361800
   }
 }

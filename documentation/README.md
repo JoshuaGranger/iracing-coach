@@ -89,11 +89,11 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 ## Current baseline
 
 - Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
-- Current source version: `0.15.0` development; no 0.15.0 installer or portable release is claimed
+- Current source version: `0.15.0` development; a guarded installer candidate exists for simulator feedback, but no stable or portable 0.15.0 release is claimed
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
 - Current development verification: 232/232 .NET tests and 230/230 Python tests passed; the verified handoff contains 17 MCP tools and 114 files
-- Installer lifecycle: prior guarded install/upgrade/rollback/uninstall evidence is unchanged and was not rerun for every focused UI adjustment
+- Installer lifecycle: the final 0.15.0 candidate passed guarded install, rollback, running-app replacement, data-preservation, uninstall, reinstall, and final-uninstall checks
 - Development focus: Race Analysis, Technical data, Race replay, global analysis layouts, exact-configuration maps, retained raw telemetry, NASCAR-first tire/capability foundations, and Progressive Tuning evidence-contract v2. Supported and unavailable states remain evidence-gated; development implementation is not user acceptance.
 
-The current source reality is summarized in `06-reality/implementation-snapshot-0.15.0-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Unchanged installer lifecycle behavior is deliberately not re-certified during the direct-executable feedback loop. Build binaries and private user data are not part of the source repository.
+The current source reality is summarized in `06-reality/implementation-snapshot-0.15.0-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. The 0.15.0 installer candidate is a feedback artifact, not an accepted release. Build binaries and private user data are not part of the source repository.

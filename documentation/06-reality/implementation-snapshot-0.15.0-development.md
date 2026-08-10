@@ -1,12 +1,12 @@
 # Implementation Snapshot: 0.15.0 Development
 
-Status: active development source for direct-executable feedback. This is not a packaged release or user-acceptance record.
+Status: active development source with an explicitly requested installer candidate for simulator feedback. This is not a stable-release or user-acceptance record.
 
 Evidence date: 2026-08-10.
 
 ## Version boundary
 
-The application source, backend client identity, and development publish path identify `0.15.0`. The latest stable packaged artifact remains `0.14.2`; its source commit, installer and portable hashes, payload measurements, and acceptance boundaries remain immutable in [the 0.14.2 snapshot](implementation-snapshot-0.14.2.md). No 0.15.0 installer, portable archive, upgrade certification, or release hash is claimed here.
+The application, backend client, installer, uninstaller, and repair identities are synchronized at `0.15.0`. The candidate was built from source commit `9e4befbde2fea8c2d51e4bf40f1ed1586ed23187` for simulator feedback. The latest stable packaged artifact remains `0.14.2`; its source commit, installer and portable hashes, payload measurements, and acceptance boundaries remain immutable in [the 0.14.2 snapshot](implementation-snapshot-0.14.2.md). No 0.15.0 portable archive, stable-release designation, or user acceptance is claimed here.
 
 ## Implemented development reality
 
@@ -27,7 +27,10 @@ The application source, backend client identity, and development publish path id
 | Integrated .NET suite | 232 passed, 0 failed | Desktop, coordinator, mapping, layout, replay, Garage61, and Progressive Tuning source contracts |
 | Integrated Python suite | 230 passed, 0 failed | Deterministic analysis, storage, raw archive, tire foundations, Garage61, and structured tuning contracts |
 | Handoff inventory | 17 MCP tools; 114 manifested files | Contract/export/manifest consistency, not packaged-product acceptance |
-| Browser-driven development review | Core Race Analysis, Technical data, Progressive Tuning, Live Telemetry, Home, and Settings states exercised at primary desktop sizes | Local development host and available recordings; not real live-session or broad hardware acceptance |
+| Browser-driven development review | 262 checks passed with 66 screenshots at 1280×720 and 1920×1080; no console, page, or network errors | Local development host and available recordings; not real live-session or broad hardware acceptance |
+| Spotlight pointer stress | 50 open/close cycles passed across both viewports with released pointer focus | Repeated local interaction evidence for the previously intermittent control |
+| Installer candidate | 499,357,736 bytes; SHA-256 `9545666f9de5325158397a8a2dc1ccc92fd35c2b64a5f48993d412929dc6be7a` | Unsigned private feedback artifact; not a stable release |
+| Guarded installer lifecycle | Install, simulated rollback, running-app replacement, durable-data preservation, uninstall, reinstall, and final uninstall passed | Temporary test roots with Windows integration disabled; not a clean-PC or user-acceptance claim |
 | Instrumented performance repair | Race cursor forced-layout probes approximately 27–40/frame to 0; live idle frames/layout probes to 0; active drag layout reads approximately 3,900/s to 0; resize backing-store rebuild once after settle; approximately 21 s mapped-drive startup stall removed | Static/source instrumentation and local harness evidence; not real-session latency or accepted 244 Hz simulator validation |
 
 ## Open acceptance boundaries

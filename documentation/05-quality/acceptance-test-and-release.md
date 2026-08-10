@@ -41,7 +41,7 @@ The development loop MUST NOT run `BuildRelease.ps1`, create `installer-payload.
 
 ## Current 0.15.0 development evidence
 
-The current source identifies 0.15.0 and has integrated evidence from 232/232 .NET tests and 230/230 Python tests. The verified handoff exposes 17 MCP tools across 114 manifested files. This is development-source evidence for the direct-executable feedback loop, not a packaged-release record. Exact-executable interaction, native-window behavior, representative real recordings, live simulator cadence, external Garage61 results, and user acceptance remain separate claims unless explicitly recorded.
+The current source identifies 0.15.0 and has integrated evidence from 232/232 .NET tests and 230/230 Python tests. The verified handoff exposes 17 MCP tools across 114 manifested files. An explicitly requested 499,357,736-byte installer candidate was built from commit `9e4befbde2fea8c2d51e4bf40f1ed1586ed23187`; its SHA-256 is `9545666f9de5325158397a8a2dc1ccc92fd35c2b64a5f48993d412929dc6be7a`. The guarded lifecycle test passed install, rollback, replacement, preservation, uninstall, reinstall, and final uninstall. This remains development feedback evidence rather than a stable packaged-release record. Real simulator cadence, external Garage61 results, clean-PC behavior, and user acceptance remain separate claims unless explicitly recorded.
 
 ## Stable packaged 0.14.2 evidence
 
