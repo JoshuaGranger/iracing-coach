@@ -88,7 +88,7 @@ def exported_values() -> dict[Path, Any]:
         },
         "ui": {
             "design_system_version": 1,
-            "default_theme": "gentle-charcoal-dark",
+            "default_theme": "mineral-glass-dark",
             "application_language": "C#",
             "application_runtime": ".NET 10",
             "native_host": "WPF",

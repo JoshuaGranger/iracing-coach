@@ -11,11 +11,15 @@ public sealed class ThemeColorTests
     public void ThemeColors_ExposeCuratedPalettesAndNormalizeUnknownValuesToMint()
     {
         CollectionAssert.AreEqual(
-            new[] { "mint", "blue", "violet", "coral", "amber" },
+            new[] { "mint", "blue", "violet", "coral", "amber", "lime", "rose", "indigo", "copper" },
             ThemeColors.Choices.Select(choice => choice.Id).ToArray());
         Assert.AreEqual("violet", ThemeColors.Normalize(" VIOLET "));
+        Assert.AreEqual(ThemeColors.CustomId, ThemeColors.Normalize(" CUSTOM "));
         Assert.AreEqual(ThemeColors.DefaultId, ThemeColors.Normalize("not-a-theme"));
         Assert.AreEqual("theme-color-coral", ThemeColors.CssClass("coral"));
+        Assert.AreEqual("#12ABEF", ThemeColors.NormalizeCustomHex("#12abef"));
+        Assert.AreEqual(ThemeColors.DefaultCustomHex, ThemeColors.NormalizeCustomHex("not-a-color"));
+        StringAssert.Contains(ThemeColors.CssVariables(ThemeColors.CustomId, "#12abef"), "--accent:#12ABEF");
         Assert.IsTrue(ThemeColors.Choices.All(choice =>
             choice.Accent.StartsWith('#') && choice.Fill.StartsWith('#') &&
             choice.Subtle.StartsWith('#') && choice.Focus.StartsWith('#')));
@@ -27,11 +31,12 @@ public sealed class ThemeColorTests
         var directory = Path.Combine(Path.GetTempPath(), "iracing-coach-theme-tests", Guid.NewGuid().ToString("N"));
         var path = Path.Combine(directory, "settings.json");
         var store = new JsonSettingsStore(path);
-        var settings = new CompanionSettings { ThemeColor = "violet" };
+        var settings = new CompanionSettings { ThemeColor = "custom", CustomThemeColor = "#12abef" };
 
         store.Save(settings);
-        Assert.AreEqual("violet", store.Load().ThemeColor);
-        StringAssert.Contains(File.ReadAllText(path), "\"themeColor\": \"violet\"");
+        Assert.AreEqual("custom", store.Load().ThemeColor);
+        Assert.AreEqual("#12ABEF", store.Load().CustomThemeColor);
+        StringAssert.Contains(File.ReadAllText(path), "\"themeColor\": \"custom\"");
 
         File.WriteAllText(path, "{\"themeColor\":\"unknown-color\"}");
         Assert.AreEqual(ThemeColors.DefaultId, store.Load().ThemeColor);
@@ -48,9 +53,12 @@ public sealed class ThemeColorTests
         var state = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.Coordinator", "CompanionState.cs"));
 
         StringAssert.Contains(settings, "@foreach (var color in ThemeColors.Choices)");
-        StringAssert.Contains(settings, "aria-pressed=\"@selected\"");
+        StringAssert.Contains(settings, "aria-pressed=\"@(selected ? \"true\" : \"false\")\"");
         StringAssert.Contains(settings, "@onclick=\"() => State.SetThemeColor(color.Id)\"");
+        StringAssert.Contains(settings, "type=\"color\"");
+        StringAssert.Contains(settings, "State.SetCustomThemeColor");
         StringAssert.Contains(shell, "@ThemeColors.CssClass(State.Settings.ThemeColor)");
+        StringAssert.Contains(shell, "@ThemeColors.CssVariables(State.Settings.ThemeColor, State.Settings.CustomThemeColor)");
         StringAssert.Contains(state, "public void SetThemeColor(string colorId)");
         StringAssert.Contains(state, "Settings.ThemeColor = ThemeColors.DefaultId;");
         foreach (var id in ThemeColors.Choices.Select(choice => choice.Id))
@@ -68,12 +76,12 @@ public sealed class ThemeColorTests
 
         foreach (var resource in new[] { "MonitorAccentBrush", "MonitorAccentFillBrush", "MonitorAccentSubtleBrush", "MonitorFocusBrush" })
             StringAssert.Contains(xaml, $"x:Key=\"{resource}\"");
-        StringAssert.Contains(code, "ThemeColors.Get(_state.Settings.ThemeColor)");
+        StringAssert.Contains(code, "ThemeColors.Get(_state.Settings.ThemeColor, _state.Settings.CustomThemeColor)");
         StringAssert.Contains(code, "Resources[\"MonitorAccentBrush\"] = ThemeBrush(theme.Accent);");
         StringAssert.Contains(code, "Resources[\"MonitorAccentFillBrush\"] = ThemeBrush(theme.Fill);");
         StringAssert.Contains(code, "Resources[\"MonitorAccentSubtleBrush\"] = ThemeBrush(theme.Subtle);");
         StringAssert.Contains(code, "Resources[\"MonitorFocusBrush\"] = ThemeBrush(theme.Focus);");
-        StringAssert.Contains(code, "|theme:{ThemeColors.Normalize(_state.Settings.ThemeColor)}");
+        StringAssert.Contains(code, "|theme:{ThemeColors.Normalize(_state.Settings.ThemeColor)}:{ThemeColors.NormalizeCustomHex(_state.Settings.CustomThemeColor)}");
     }
 
     private static string CompanionRoot([CallerFilePath] string source = "") =>

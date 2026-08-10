@@ -2,6 +2,7 @@
   const charts = new WeakMap();
   const maximumAgeMs = 10 * 60 * 1000;
   const maximumRetainedPoints = 144000;
+  const resizeSettleMilliseconds = 72;
   const panels = Object.freeze([
     { key: "speed", label: "Speed", unit: "mph", color: "speed" },
     { key: "throttle", label: "Throttle", unit: "%", color: "throttle" },
@@ -73,9 +74,7 @@
   function canDraw(state) {
     if (state.disposed || !state.canvas.isConnected || document.hidden || state.intersecting === false) return false;
     if (state.disclosure && !state.disclosure.open) return false;
-    if (state.canvas.offsetParent === null) return false;
-    const rect = state.canvas.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+    return state.pendingWidth > 0 && state.pendingHeight > 0;
   }
 
   function stopRendering(state) {
@@ -116,10 +115,13 @@
     state.bucketCount = Math.max(1, Math.floor(state.plots[0].width));
   }
 
-  function resize(state) {
-    const rect = state.canvas.getBoundingClientRect();
-    const width = Math.max(1, Math.round(rect.width));
-    const height = Math.max(1, Math.round(rect.height));
+  function resize(state, now) {
+    if (!state.resizeDirty && state.width > 0 && state.height > 0) return true;
+    // Let CSS/composition scale the existing bitmap during a structural
+    // drawer/reflow, then rebuild the backing store once at rest.
+    if (state.width > 0 && now - state.resizeObservedAt < resizeSettleMilliseconds) return false;
+    const width = Math.max(1, Math.round(state.pendingWidth));
+    const height = Math.max(1, Math.round(state.pendingHeight));
     const scale = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     const pixelWidth = Math.round(width * scale);
     const pixelHeight = Math.round(height * scale);
@@ -132,11 +134,13 @@
     state.context.setTransform(scale, 0, 0, scale, 0, 0);
     state.width = width;
     state.height = height;
+    state.resizeDirty = false;
     if (changed || state.layoutDirty) {
       updateLayout(state);
       state.layoutDirty = false;
       state.dataDirty = true;
     }
+    return true;
   }
 
   function lowerBound(points, start, target) {
@@ -312,7 +316,7 @@
 
   function draw(state, now) {
     if (!canDraw(state)) return false;
-    resize(state);
+    resize(state, now);
     if (state.dataDirty) rebuildCache(state);
 
     const framePeriod = 1000 / state.sourceRate;
@@ -351,7 +355,7 @@
       drawTrace(context, state.panelCaches[index], panel, plot, startTime, state.cacheDuration, colors);
     }
 
-    return !state.reducedMotion && elapsed < coastLimit;
+    return state.resizeDirty || !state.reducedMotion && elapsed < coastLimit;
   }
 
   function prune(state) {
@@ -383,6 +387,7 @@
       if (point.at !== null) normalizedPoints.push(point);
     }
     normalizedPoints.sort((left, right) => left.at - right.at);
+    const initial = canvas.getBoundingClientRect();
     const state = {
       canvas,
       context,
@@ -401,6 +406,10 @@
       animationFrame: 0,
       width: 0,
       height: 0,
+      pendingWidth: initial.width,
+      pendingHeight: initial.height,
+      resizeObservedAt: 0,
+      resizeDirty: true,
       bucketCount: 1,
       panelCaches: null,
       observedMinimum: new Float64Array(panels.length),
@@ -416,7 +425,12 @@
     for (const point of state.points) {
       if (point.lastLap && point.lastLap >= 10 && point.lastLap <= 600) state.lapSeconds = point.lastLap;
     }
-    state.resizeObserver = new ResizeObserver(() => {
+    state.resizeObserver = new ResizeObserver(entries => {
+      const size = entries[0] && entries[0].contentRect;
+      state.pendingWidth = size ? size.width : state.pendingWidth;
+      state.pendingHeight = size ? size.height : state.pendingHeight;
+      state.resizeObservedAt = performance.now();
+      state.resizeDirty = true;
       state.layoutDirty = true;
       requestRender(state);
     });

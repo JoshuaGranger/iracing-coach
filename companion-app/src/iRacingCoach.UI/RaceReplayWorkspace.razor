@@ -138,7 +138,7 @@
 
                 <footer class="replay-playback" data-replay-playback>
                     <button type="button" class="replay-skip" title="Previous lap" aria-label="Previous lap" disabled="@(!CurrentLapNumber.HasValue)" @onclick="PreviousLap"><ProductIcon Name="chevron-left" Size="16" /></button>
-                    <button type="button" class="replay-play" title="@(Playing ? "Pause replay" : "Play replay")" aria-label="@(Playing ? "Pause replay" : "Play replay")" aria-pressed="@Playing" @onclick="TogglePlayback"><ProductIcon Name="@(Playing ? "pause" : "play")" Size="18" /></button>
+                <button type="button" class="replay-play" title="@(Playing ? "Pause replay" : "Play replay")" aria-label="@(Playing ? "Pause replay" : "Play replay")" aria-pressed="@(Playing ? "true" : "false")" @onclick="TogglePlayback"><ProductIcon Name="@(Playing ? "pause" : "play")" Size="18" /></button>
                     <button type="button" class="replay-skip" title="Next lap" aria-label="Next lap" disabled="@(!CurrentLapNumber.HasValue)" @onclick="NextLap"><ProductIcon Name="chevron-right" Size="16" /></button>
                     <span class="replay-time">@PlaybackTime</span>
                     <div class="replay-scrubber">
@@ -161,7 +161,7 @@
                         @if (FastestTrace is { } fastestReference)
                         {
                             <button type="button" class="replay-reference-toggle @(ShowFastestReference ? "active" : null)" data-replay-reference-toggle
-                                    aria-pressed="@ShowFastestReference" title="Compare with fastest clean recorded lap @fastestReference.Lap" @onclick="ToggleFastestReference">
+                            aria-pressed="@(ShowFastestReference ? "true" : "false")" title="Compare with fastest clean recorded lap @fastestReference.Lap" @onclick="ToggleFastestReference">
                                 <i aria-hidden="true"></i><span>Fastest</span>
                             </button>
                         }
@@ -440,15 +440,15 @@
     {
         get
         {
-            if (Replay is null) return "Full-field timing and car-position frames were not recorded for this race.";
+            if (Replay is null) return "Race replay needs full-field timing and car positions, which are unavailable for this race.";
             var stated = Replay.UnavailableReasons.FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason));
             if (!string.IsNullOrWhiteSpace(stated)) return HumanizeReplayUnavailableReason(stated);
             var coverage = Replay.Coverage.FirstOrDefault(item => item.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.Reason));
             if (coverage?.Reason is { Length: > 0 } reason) return HumanizeReplayUnavailableReason(reason);
-            if (!TemporalCoverageIsUsable(Replay.TemporalCoverage)) return "Too little of the race timeline was recorded to replay it reliably.";
-            if (PlayerCarIndex is { } player && !ParticipantHasReplayData(player)) return "Your car was not recorded often enough to synchronize this replay.";
-            if (!HasTrackGeometry) return "Recorded track geometry is not available for this race.";
-            return "The recording does not contain synchronized full-field replay frames.";
+            if (!TemporalCoverageIsUsable(Replay.TemporalCoverage)) return "Too little of the race timeline is available to replay it reliably.";
+            if (PlayerCarIndex is { } player && !ParticipantHasReplayData(player)) return "There are not enough synchronized positions for your car to replay this race.";
+            if (!HasTrackGeometry) return "The track map needed for replay is unavailable for this race.";
+            return "The synchronized full-field timeline needed for replay is unavailable for this race.";
         }
     }
 
@@ -456,35 +456,35 @@
     {
         var text = reason.Trim();
         if (text.Contains("CarIdxLapDistPct", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include full-field car positions.";
+            return "Race replay needs full-field car positions, which are unavailable for this race.";
         if (text.Contains("CarIdxLapCompleted", StringComparison.OrdinalIgnoreCase) ||
             text.Contains("CarIdxLap", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include every car's lap count.";
+            return "Race replay needs each car's lap count, which is unavailable for this race.";
         if (text.Contains("CarIdxClassPosition", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include every car's class position.";
+            return "Class positions are unavailable for this race.";
         if (text.Contains("CarIdxPosition", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include every car's running position.";
+            return "Running positions are unavailable for this race.";
         if (text.Contains("CarIdxOnPitRoad", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include every car's pit-road status.";
+            return "Pit-road status is unavailable for this race.";
         if (text.Contains("CarIdxTrackSurface", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include every car's track location.";
+            return "Track locations are unavailable for this race.";
         if (text.Contains("CarIdxPaceFlags", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include every car's private flag status.";
+            return "Per-car flag status is unavailable for this race.";
         if (text.Contains("CarIdxLastLapTime", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include every car's last-lap time.";
+            return "Last-lap times are unavailable for this race.";
         if (text.Contains("CarIdxBestLapTime", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include every car's best-lap time.";
+            return "Best-lap times are unavailable for this race.";
         if (text.Contains("DriverInfo", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include the driver roster needed to identify the cars.";
+            return "The driver roster needed for replay is unavailable.";
         if (text.Contains("PlayerCarIdx", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not identify your car in the field.";
+            return "Your car cannot be identified in this race timeline.";
         if (text.Contains("SessionTime", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include the race clock needed for replay.";
+            return "The race clock needed for replay is unavailable.";
         if (text.Contains("SessionState", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include the race-state timing needed for replay.";
+            return "Race-state timing is unavailable for this race.";
         if (text.Contains("SessionFlags", StringComparison.OrdinalIgnoreCase))
-            return "This recording does not include the flag timeline needed for replay.";
-        return text;
+            return "The flag timeline needed for replay is unavailable.";
+        return "The required full-field timeline is unavailable for this race.";
     }
 
     private string? ReplayCoverageLabel

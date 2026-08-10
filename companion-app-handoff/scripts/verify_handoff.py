@@ -115,7 +115,7 @@ def _theme_contrast(foreground: str, background: str) -> float:
 def _validate_theme_contract() -> None:
     theme = _load_json(HANDOFF_ROOT / "config" / "theme.dark.json")
     _require(theme.get("schemaVersion") == 1, "theme schemaVersion must be 1")
-    _require(theme.get("name") == "gentle-charcoal-dark", "unexpected theme name")
+    _require(theme.get("name") == "mineral-glass-dark", "unexpected theme name")
     _require(theme.get("mode") == "dark", "default theme must be dark")
     colors = theme.get("colors") or {}
     required = {
@@ -148,7 +148,8 @@ def _validate_theme_contract() -> None:
     _require(motion.get("honorReducedMotion") is True, "theme must honor reduced motion")
     _require(motion.get("continuousStatusAnimationAllowed") is False, "continuous status animation must remain disabled")
     _require(0 <= int(motion.get("hover", -1)) <= 160, "hover motion must stay gentle and short")
-    _require(0 <= int(motion.get("panel", -1)) <= 240, "panel motion must stay bounded")
+    _require(int(motion.get("structure", -1)) == 500, "structural motion must use the global 500 ms duration")
+    _require("panel" not in motion, "structural motion must have one authoritative duration token")
     behavior = theme.get("behavior") or {}
     for false_key in (
         "pureBlackOrWhiteSurfacesAllowed",

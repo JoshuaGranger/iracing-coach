@@ -3,7 +3,8 @@
 @inject CompanionState State
 @inject IJSRuntime JS
 
-<div class="app-shell @ThemeColors.CssClass(State.Settings.ThemeColor) @(State.RailCollapsed ? "rail-collapsed" : "") @(State.Settings.UseReducedMotion ? "reduced-motion" : "") @(State.CurrentPage == "first-run" ? "first-run-mode" : "")">
+<div class="app-shell @ThemeColors.CssClass(State.Settings.ThemeColor) @(State.RailCollapsed ? "rail-collapsed" : "") @(State.Settings.UseReducedMotion ? "reduced-motion" : "") @(State.CurrentPage == "first-run" ? "first-run-mode" : "")"
+     style="@ThemeColors.CssVariables(State.Settings.ThemeColor, State.Settings.CustomThemeColor)">
     @if (State.CurrentPage != "first-run")
     {
         <NavRail State="State" />
@@ -70,11 +71,26 @@
     protected override void OnInitialized() => State.Changed += OnStateChanged;
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await State.InitializeAsync();
+        // Initialization can include cataloging a large local race library. Start it
+        // on the first render, but do not hold the Blazor circuit hostage while the
+        // deterministic services finish: Settings and other local navigation must
+        // remain immediately usable.
+        if (firstRender) _ = Task.Run(InitializeStateAsync);
         if (!string.Equals(_renderedPage, State.CurrentPage, StringComparison.Ordinal))
         {
             _renderedPage = State.CurrentPage;
             await JS.InvokeVoidAsync("iracingCoach.scrollWorkspaceTop");
+        }
+    }
+    private async Task InitializeStateAsync()
+    {
+        try
+        {
+            await State.InitializeAsync();
+        }
+        catch (Exception error)
+        {
+            State.ReportUnhandledException("app startup", error);
         }
     }
     private string PageLabel => State.CurrentPage switch { "live" => "Live Telemetry", "analysis" => "Race Analysis", "planning" => "Race Planning", "setup" => "Setups", "tuning" => "Progressive Tuning", "connections" => "Connections", "settings" => "Settings", _ => "Home" };

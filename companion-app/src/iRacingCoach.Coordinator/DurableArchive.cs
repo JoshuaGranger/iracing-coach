@@ -178,10 +178,10 @@ public sealed class DurableArchiveService : IDurableArchiveService
         manifest.ExpectedDirectories = DurableDirectories.Select(path => path.Replace('\\', '/')).ToList();
         manifest.UpdatedUtc = now;
         WriteAtomic(manifestPath, manifest);
-        WritePortableState(canonicalRoot, manifest, safeToCopy: false, "Archive is active. Use Prepare Backup / Migration Copy before copying it.");
+        WritePortableState(canonicalRoot, manifest, safeToCopy: false, "The Coach folder is active. Use the guided copy check before copying it.");
 
         var restored = BuildRestoreSummary(canonicalRoot, manifest);
-        var restoredMessage = restored.TotalItems == 0 ? "Portable Coach folder is ready." : $"Restored {restored.TotalItems:N0} portable item{(restored.TotalItems == 1 ? string.Empty : "s")}.";
+        var restoredMessage = restored.TotalItems == 0 ? "Coach folder is ready." : $"Restored {restored.TotalItems:N0} Coach item{(restored.TotalItems == 1 ? string.Empty : "s")}.";
         if (integrityVerified == true) restoredMessage += " The last prepared-copy checksum was verified.";
         if (integrityVerified == false) restoredMessage += " Portable files changed since the last prepared copy; prepare a new copy to refresh its integrity record.";
         return new(true, integrityVerified, manifest.SchemaVersion, manifest.ArchiveId, canonicalRoot, restored, manifest.LastIntegrityCheckUtc, restoredMessage);
@@ -226,7 +226,7 @@ public sealed class DurableArchiveService : IDurableArchiveService
         var canonicalRoot = CanonicalRoot(root);
         var manifest = ReadManifest(Path.Combine(canonicalRoot, ManifestFileName));
         if (manifest is null || manifest.SchemaVersion > CurrentSchemaVersion) return;
-        WritePortableState(canonicalRoot, manifest, false, "Archive is active. Close the app or use Prepare Backup / Migration Copy before copying it.");
+        WritePortableState(canonicalRoot, manifest, false, "The Coach folder is active. Close the app or use the guided copy check before copying it.");
     }
 
     private static ArchiveManifest Migrate(string root, ArchiveManifest manifest, string appVersion, string backendVersion)

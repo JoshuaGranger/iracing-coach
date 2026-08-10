@@ -13,22 +13,45 @@
 
 <LiveTelemetryLayoutGrid State="State" />
 
-<section class="live-driving-disclosure">
-    <button type="button" class="live-driving-toggle" aria-expanded="@_tracesExpanded" aria-controls="live-driving-traces" @onclick="ToggleTraces">
+<section class="live-driving-disclosure @(_tracesExpanded ? "open" : null)">
+    <button type="button" class="live-driving-toggle" aria-expanded="@(_tracesExpanded ? "true" : "false")" aria-controls="live-driving-traces" @onclick="ToggleTraces">
         <ProductIcon Name="analysis" Size="16" />
         <span>Driving traces</span>
         <ProductIcon Name="chevron-down" Size="15" />
     </button>
-    @if (_tracesExpanded)
-    {
-        <div id="live-driving-traces">
-            <LiveTelemetryVisuals State="State" />
+    <div id="live-driving-traces" class="live-driving-body" aria-hidden="@(_tracesExpanded ? "false" : "true")" inert="@(_tracesExpanded ? null : string.Empty)">
+        <div>
+            @if (_tracesMounted)
+            {
+                <LiveTelemetryVisuals State="State" />
+            }
         </div>
-    }
+    </div>
 </section>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     private bool _tracesExpanded;
-    private void ToggleTraces() => _tracesExpanded = !_tracesExpanded;
+    private bool _tracesMounted;
+    private int _traceTransition;
+
+    private async Task ToggleTraces()
+    {
+        var transition = ++_traceTransition;
+        if (_tracesExpanded)
+        {
+            _tracesExpanded = false;
+            await InvokeAsync(StateHasChanged);
+            if (!State.Settings.UseReducedMotion) await Task.Delay(500);
+            if (transition != _traceTransition || _tracesExpanded) return;
+            _tracesMounted = false;
+            return;
+        }
+
+        _tracesMounted = true;
+        await InvokeAsync(StateHasChanged);
+        if (!State.Settings.UseReducedMotion) await Task.Delay(20);
+        if (transition != _traceTransition) return;
+        _tracesExpanded = true;
+    }
 }

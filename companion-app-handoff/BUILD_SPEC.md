@@ -44,7 +44,7 @@ Use stdio for both local backend processes. Do not open a localhost HTTP port fo
 
 ## Visual system
 
-The binding visual specification is `UI_DESIGN_SYSTEM.md`; the machine-readable token source is `config/theme.dark.json`. The app is dark-only for release one: gentle charcoal layers, softened text, restrained blue interaction, and brighter colors reserved for telemetry/evidence. It must not fall back to pure black panels, pure white body text, neon traces, generic Bootstrap styling, or a wall of high-contrast cards.
+The binding visual specification is `UI_DESIGN_SYSTEM.md`; the machine-readable token source is `config/theme.dark.json`. The app is dark-only for release one: mineral green-tinted glass layers, softened text, a user-selected interaction color, and brighter colors reserved for telemetry/evidence. It must not fall back to pure black panels, pure white body text, neon traces, generic Bootstrap styling, or a wall of high-contrast cards.
 
 Generate CSS custom properties and any WPF resource equivalents from the token file so native and Hybrid surfaces remain identical. The look may share Codex's calm workspace atmosphere but must use original layout, components, icons, and branding.
 

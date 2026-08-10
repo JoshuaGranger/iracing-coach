@@ -41,7 +41,7 @@ The development loop MUST NOT run `BuildRelease.ps1`, create `installer-payload.
 
 ## Current 0.15.0 development evidence
 
-The current source identifies 0.15.0 and has integrated evidence from 211/211 .NET tests and 229/229 Python tests. The verified handoff exposes 17 MCP tools across 114 manifested files. This is development-source evidence for the direct-executable feedback loop, not a packaged-release record. Exact-executable interaction, native-window behavior, representative real recordings, live simulator cadence, external Garage61 results, and user acceptance remain separate claims unless explicitly recorded.
+The current source identifies 0.15.0 and has integrated evidence from 232/232 .NET tests and 230/230 Python tests. The verified handoff exposes 17 MCP tools across 114 manifested files. This is development-source evidence for the direct-executable feedback loop, not a packaged-release record. Exact-executable interaction, native-window behavior, representative real recordings, live simulator cadence, external Garage61 results, and user acceptance remain separate claims unless explicitly recorded.
 
 ## Stable packaged 0.14.2 evidence
 

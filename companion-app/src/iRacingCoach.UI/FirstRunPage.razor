@@ -9,10 +9,10 @@
         @switch (State.SetupStep)
         {
             case 1:
-                <span class="eyebrow">Step 1 of 5</span><h2>@(State.IRacingDetected ? "iRacing is ready" : "Detect iRacing")</h2><p>@(State.IRacingDetected ? "These folders provide telemetry, saved setups, and the portable Coach archive." : "We’ll find your iRacing Documents folder, installation, telemetry, saved setups, and Coach archive.")</p>
+                <span class="eyebrow">Step 1 of 5</span><h2>@(State.IRacingDetected ? "iRacing is ready" : "Detect iRacing")</h2><p>@(State.IRacingDetected ? "These folders provide telemetry, saved setups, and the Coach app data." : "We’ll find your iRacing Documents folder, installation, telemetry, saved setups, and Coach folder.")</p>
                 @if (State.Archive is not null && State.Archive.Restored.TotalItems > 0)
                 {
-                    <div class="ready-callout"><span><ProductIcon Name="check" Size="19" /></span><div><strong>Existing Coach folder restored</strong><small>@State.Archive.Restored.TotalItems portable items found. Reports and cached data are ready.</small></div></div>
+                    <div class="ready-callout"><span><ProductIcon Name="check" Size="19" /></span><div><strong>Existing Coach folder restored</strong><small>@State.Archive.Restored.TotalItems saved items found. Your race history is ready.</small></div></div>
                 }
                 <div class="detection-row"><span class="status-orb @(State.IRacingDetected ? "ready" : "neutral")"></span><div><strong>@(State.IRacingDetected ? "iRacing Documents found" : "Ready to look")</strong><small>@(State.IRacingDetected ? "Telemetry and setup folders are available" : "Detection is read only")</small></div></div>
                 <button class="button primary" @onclick="State.DetectIRacing">@(State.IRacingDetected ? "Continue" : "Detect iRacing")</button>
@@ -35,7 +35,7 @@
                 }
                 break;
             case 3:
-                <span class="eyebrow">Step 3 of 5</span><h2>Connect Garage61</h2><p>Add your Garage61 personal token once. Windows protects it for this user; it is never placed in your portable settings.</p>
+                <span class="eyebrow">Step 3 of 5</span><h2>Connect Garage61</h2><p>Add your Garage61 personal token once. Windows protects it for this user and keeps it out of copied Coach data.</p>
                 @if (State.Garage61.Configured)
                 {
                     <div class="connection-summary"><span class="status-orb @(State.Garage61.Available ? "ready" : "neutral")"></span><strong>@(State.Garage61.Available ? "Connected" : "Saved on this PC")</strong><small>@State.Garage61.Message</small></div>
@@ -48,8 +48,8 @@
                 }
                 break;
             case 4:
-                <span class="eyebrow">Step 4 of 5</span><h2>Verify installation</h2><p>Check Race Analysis, Coach Engine, the Coach archive, and detected iRacing folders.</p>
-                <div class="verification-list"><div><span class="status-orb @(State.IRacingDetected ? "ready" : "warning")"></span><strong>iRacing data</strong><small>@(State.IRacingDetected ? "Found" : "Needs attention")</small></div><div><span class="status-orb @(State.CoachEngine.Installed ? "ready" : "warning")"></span><strong>Coach Engine</strong><small>@(State.CoachEngine.Installed ? "Installed" : "Repair required")</small></div><div><span class="status-orb ready"></span><strong>Coach archive</strong><small>Ready</small></div></div>
+                <span class="eyebrow">Step 4 of 5</span><h2>Verify installation</h2><p>Check Race Analysis, Coach Engine, the Coach folder, and detected iRacing folders.</p>
+                <div class="verification-list"><div><span class="status-orb @(State.IRacingDetected ? "ready" : "warning")"></span><strong>iRacing data</strong><small>@(State.IRacingDetected ? "Found" : "Needs attention")</small></div><div><span class="status-orb @(State.CoachEngine.Installed ? "ready" : "warning")"></span><strong>Coach Engine</strong><small>@(State.CoachEngine.Installed ? "Installed" : "Repair required")</small></div><div><span class="status-orb ready"></span><strong>Coach folder</strong><small>Ready</small></div></div>
                 <button class="button primary" @onclick="() => State.VerifyInstallationAsync()">Verify installation</button>
                 break;
             default:

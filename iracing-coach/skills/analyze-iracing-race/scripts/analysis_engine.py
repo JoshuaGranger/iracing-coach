@@ -5230,6 +5230,10 @@ def build_technical_insights(
         evidence: str = "measured",
         *,
         signed: bool = False,
+        detail: str = "",
+        action: str = "",
+        tone: str = "neutral",
+        group: str = "",
     ) -> dict[str, Any]:
         if isinstance(value, float):
             rendered = f"{value:.3f}".rstrip("0").rstrip(".")
@@ -5239,15 +5243,29 @@ def build_technical_insights(
             rendered = f"+{value}"
         else:
             rendered = str(value)
-        return {
+        payload = {
             "label": label,
             "value": f"{rendered}{(' ' + unit) if unit else ''}",
             "numeric_value": value if isinstance(value, (int, float)) else None,
             "unit": unit or None,
             "evidence_type": evidence,
         }
+        if detail:
+            payload["detail"] = detail
+        if action:
+            payload["action"] = action
+        if tone != "neutral":
+            payload["tone"] = tone
+        if group:
+            payload["group"] = group
+        return payload
 
-    pit_runs = [run for run in runs if run.get("ended_with_pit_stop")]
+    indexed_pit_runs = [
+        (index, run)
+        for index, run in enumerate(runs)
+        if run.get("ended_with_pit_stop")
+    ]
+    pit_runs = [run for _, run in indexed_pit_runs]
     service_seconds: list[float] = []
     penalty_seconds: list[float] = []
     for run in pit_runs:
@@ -5270,55 +5288,251 @@ def build_technical_insights(
         value for item in pit_assessments
         if (value := _finite(item.get("post_stop_all_green_surplus_laps"))) is not None
     ]
+    assessment_by_run = {
+        int(run_number): item
+        for item in pit_assessments
+        if (run_number := _finite(item.get("run_number"))) is not None
+    }
+    pit_profiles: list[dict[str, Any]] = []
+    for ordinal, (run_index, run) in enumerate(indexed_pit_runs):
+        service = run.get("pit_service") or {}
+        changed = sorted({
+            str(value).upper()
+            for value in (service.get("tires_changed_observed") or ())
+            if str(value).upper() in TIRES
+        })
+        tire_call = "four" if len(changed) == 4 else "two" if len(changed) == 2 else "other"
+        run_number = int(_finite(run.get("run_number")) or 0)
+        assessment = assessment_by_run.get(run_number)
+        if assessment is None and ordinal < len(pit_assessments):
+            assessment = pit_assessments[ordinal]
+        assessment = assessment or {}
+        next_run = runs[run_index + 1] if run_index + 1 < len(runs) else None
+        start = _finite(service.get("start_time"))
+        end = _finite(service.get("end_time"))
+        outgoing_tires = (run.get("tire_observation") or {}).get("tires") or {}
+        wear_by_corner = {
+            str(corner).upper(): 100.0 - remaining
+            for corner, details in outgoing_tires.items()
+            if isinstance(details, Mapping)
+            and (remaining := _finite(details.get("average_remaining_percent"))) is not None
+        }
+        next_green_laps = None
+        if next_run is not None:
+            next_green_laps = _finite((next_run.get("pace") or {}).get("green_laps_used"))
+            if next_green_laps is None:
+                next_green_laps = _finite(next_run.get("green_laps"))
+        pit_profiles.append({
+            "run_number": run_number,
+            "tire_call": tire_call,
+            "changed": changed,
+            "service_s": end - start if start is not None and end is not None and end >= start else None,
+            "next_early_pace_s": (
+                _finite((next_run.get("pace") or {}).get("early_average_lap_s"))
+                if next_run is not None else None
+            ),
+            "next_green_laps": next_green_laps,
+            "cycle_change": _finite(assessment.get("pit_cycle_position_change")),
+            "fuel_margin": _finite(assessment.get("post_stop_all_green_surplus_laps")),
+            "under_caution": run.get("ended_under_caution") is True,
+            "wear_by_corner": wear_by_corner,
+            "mean_outgoing_wear_pct": _mean(wear_by_corner.values()),
+        })
+
+    def profile_mean(group: Sequence[Mapping[str, Any]], field: str) -> float | None:
+        values = [value for item in group if (value := _finite(item.get(field))) is not None]
+        return _mean(values)
+
+    two_tire_profiles = [item for item in pit_profiles if item["tire_call"] == "two"]
+    four_tire_profiles = [item for item in pit_profiles if item["tire_call"] == "four"]
     pit_metrics: list[dict[str, Any]] = []
     if cycle_changes:
+        cycle_total = int(round(sum(cycle_changes)))
         pit_metrics.append(
             metric(
                 "Pit-cycle net",
-                int(round(sum(cycle_changes))),
+                cycle_total,
                 "positions",
                 "derived",
                 signed=True,
+                detail="Position immediately before each stop compared with the start of the following run.",
+                action="Review stops that lost positions for entry, service, exit, and restart execution.",
+                tone="positive" if cycle_total > 0 else "attention" if cycle_total < 0 else "neutral",
+                group="outcome",
             )
         )
-    elif pit_runs:
-        pit_metrics.append(metric("Stops", len(pit_runs)))
-    if service_seconds:
-        pit_metrics.append(metric("Recorded service", round(sum(service_seconds), 2), "s"))
-    repair = _finite(damage_summary.get("total_repair_work_completed_s"))
-    if repair is not None and repair > 0:
-        pit_metrics.append(metric("Repair work", round(repair, 2), "s"))
-    elif penalty_seconds:
-        pit_metrics.append(metric("Penalty service", round(sum(penalty_seconds), 2), "s"))
-    elif post_stop_margins:
+    if pit_runs:
+        caution_stops = sum(item["under_caution"] for item in pit_profiles)
         pit_metrics.append(
             metric(
-                "Tightest fuel margin",
-                round(min(post_stop_margins), 1),
-                "green laps",
-                "derived",
-                signed=True,
+                "Stops",
+                len(pit_runs),
+                detail=f"{caution_stops} ended under caution; {len(pit_runs) - caution_stops} ended under green or an unknown flag state.",
+                group="execution",
+            )
+        )
+    if service_seconds:
+        pit_metrics.append(
+            metric(
+                "Total service",
+                round(sum(service_seconds), 2),
+                "s",
+                detail=f"Longest timed service was {max(service_seconds):.2f} s.",
+                action="Open the stop selector to compare tire, fuel, repair, and penalty work.",
+                group="execution",
+            )
+        )
+    repair = _finite(damage_summary.get("total_repair_work_completed_s"))
+    if repair is not None and repair > 0:
+        pit_metrics.append(
+            metric(
+                "Repair work",
+                round(repair, 2),
+                "s",
+                detail="Completed repair time is separated from routine fuel and tire service.",
+                tone="attention",
+                group="exceptions",
             )
         )
     if penalty_seconds:
-        pit_takeaway = f"Recorded penalty service totaled {sum(penalty_seconds):.1f} s across {len(pit_runs)} stop(s)."
+        pit_metrics.append(
+            metric(
+                "Penalty service",
+                round(sum(penalty_seconds), 2),
+                "s",
+                detail="Time served under a confirmed penalty state.",
+                action="Use the incident and pit timeline to identify the avoidable trigger.",
+                tone="attention",
+                group="exceptions",
+            )
+        )
+    if post_stop_margins:
+        margin = round(min(post_stop_margins), 1)
+        pit_metrics.append(
+            metric(
+                "Tightest fuel margin",
+                margin,
+                "green laps",
+                "derived",
+                signed=True,
+                detail="Post-stop fuel range minus the green laps remaining to the scheduled finish.",
+                action="A negative margin means that stop could not reach the scheduled finish at the measured green-lap burn.",
+                tone="attention" if margin < 0 else "positive",
+                group="strategy",
+            )
+        )
+
+    if two_tire_profiles or four_tire_profiles:
+        pit_metrics.append(
+            metric(
+                "Tire calls",
+                f"{len(two_tire_profiles)} two / {len(four_tire_profiles)} four",
+                detail="Only confirmed corner changes are counted; unknown or partial service is excluded.",
+                group="tires",
+            )
+        )
+    two_service = profile_mean(two_tire_profiles, "service_s")
+    four_service = profile_mean(four_tire_profiles, "service_s")
+    two_pace = profile_mean(two_tire_profiles, "next_early_pace_s")
+    four_pace = profile_mean(four_tire_profiles, "next_early_pace_s")
+    two_cycle = profile_mean(two_tire_profiles, "cycle_change")
+    four_cycle = profile_mean(four_tire_profiles, "cycle_change")
+    two_wear = profile_mean(two_tire_profiles, "mean_outgoing_wear_pct")
+    four_wear = profile_mean(four_tire_profiles, "mean_outgoing_wear_pct")
+    if two_service is not None and four_service is not None:
+        service_delta = round(two_service - four_service, 2)
+        pit_metrics.append(
+            metric(
+                "2 vs 4 service",
+                service_delta,
+                "s",
+                "derived",
+                signed=True,
+                detail="Average two-tire service minus average four-tire service in this race; negative is shorter.",
+                action="Balance this time difference against the following-run pace and position results.",
+                tone="positive" if service_delta < 0 else "attention" if service_delta > 0 else "neutral",
+                group="tires",
+            )
+        )
+    if two_pace is not None and four_pace is not None:
+        pace_comparison = round(two_pace - four_pace, 3)
+        pit_metrics.append(
+            metric(
+                "2 vs 4 next-run pace",
+                pace_comparison,
+                "s",
+                "derived",
+                signed=True,
+                detail="Average early clean pace after two tires minus early clean pace after four; negative is faster.",
+                action="Treat this as a retrospective association unless fuel, traffic, weather, and flag context also match.",
+                tone="positive" if pace_comparison < 0 else "attention" if pace_comparison > 0 else "neutral",
+                group="tires",
+            )
+        )
+    if two_cycle is not None and four_cycle is not None:
+        position_comparison = round(two_cycle - four_cycle, 1)
+        pit_metrics.append(
+            metric(
+                "2 vs 4 cycle",
+                position_comparison,
+                "positions",
+                "derived",
+                signed=True,
+                detail="Average pit-cycle position change after two tires minus the four-tire average; positive favored two tires.",
+                action="Use with service and next-run pace; it does not isolate the tire call from traffic or caution timing.",
+                tone="positive" if position_comparison > 0 else "attention" if position_comparison < 0 else "neutral",
+                group="tires",
+            )
+        )
+    if two_wear is not None and four_wear is not None:
+        wear_comparison = round(two_wear - four_wear, 1)
+        pit_metrics.append(
+            metric(
+                "2 vs 4 outgoing wear",
+                wear_comparison,
+                "points",
+                "derived",
+                signed=True,
+                detail="Average confirmed O/M/I wear before two-tire stops minus the four-tire-stop average.",
+                action="Use this with the service, cycle, and following-run results; unlike-for-like wear is essential.",
+                group="tires",
+            )
+        )
+    if penalty_seconds:
+        pit_takeaway = f"Penalty service cost {sum(penalty_seconds):.1f} s; start with the stop timeline."
     elif cycle_changes and sum(cycle_changes) < 0:
         pit_takeaway = f"Pit cycles returned the car {abs(int(round(sum(cycle_changes))))} position(s) worse overall."
+    elif two_service is not None and four_service is not None and two_pace is not None and four_pace is not None:
+        pit_takeaway = (
+            f"Two tires were {abs(two_service - four_service):.2f} s "
+            f"{'shorter' if two_service < four_service else 'longer'} in service and the next-run early pace was "
+            f"{abs(two_pace - four_pace):.3f} s {'faster' if two_pace < four_pace else 'slower'}."
+        )
     elif cycle_changes and sum(cycle_changes) > 0:
         pit_takeaway = f"Pit cycles returned the car {int(round(sum(cycle_changes)))} position(s) better overall."
     elif post_stop_margins and min(post_stop_margins) < 0:
-        pit_takeaway = f"The tightest recorded stop was {abs(min(post_stop_margins)):.1f} all-green lap(s) short of scheduled distance."
+        pit_takeaway = f"The tightest stop was {abs(min(post_stop_margins)):.1f} all-green lap(s) short of scheduled distance."
     elif service_seconds:
-        pit_takeaway = f"Recorded service totaled {sum(service_seconds):.1f} s across {len(pit_runs)} stop(s)."
+        pit_takeaway = f"Service totaled {sum(service_seconds):.1f} s across {len(pit_runs)} stop(s)."
     else:
-        pit_takeaway = "No complete pit-cycle comparison was recorded."
+        pit_takeaway = "No complete pit-cycle comparison is available."
+    pit_rating = (
+        "attention" if penalty_seconds or (cycle_changes and sum(cycle_changes) < 0)
+        else "gain" if cycle_changes and sum(cycle_changes) > 0
+        else "review"
+    )
+    pit_unavailable = [] if pit_runs else ["No run ended with a confirmed pit stop."]
+    if pit_runs and not (two_tire_profiles and four_tire_profiles):
+        pit_unavailable.append("Both confirmed two-tire and four-tire stops are required for a direct retrospective comparison.")
+    pit_unavailable.append("Race tire-service rules were not present, so legality and mandatory-service conclusions are withheld.")
+    pit_unavailable.append("Comparable historical two-tire and four-tire strategy outcomes were not available in the local tire model.")
     pit_insight = {
         "key": "pit",
         "label": "Pit strategy",
         "status": "available" if pit_runs else "unavailable",
-        "rating": "measured" if pit_runs and (service_seconds or cycle_changes) else "partial" if pit_runs else "unavailable",
-        "takeaway": pit_takeaway if pit_runs else "No pit stop was recorded.",
-        "metrics": pit_metrics[:3] if pit_runs else [],
+        "rating": pit_rating if pit_runs else "unavailable",
+        "takeaway": pit_takeaway if pit_runs else "No pit stop is available for review.",
+        "metrics": pit_metrics if pit_runs else [],
         "evidence": (
             (["pit-road state"] if pit_runs else [])
             + (["position before and after pit cycle"] if cycle_changes else [])
@@ -5326,7 +5540,7 @@ def build_technical_insights(
             + (["repair timers"] if repair is not None and repair > 0 else [])
             + (["recorded post-stop fuel level"] if post_stop_margins else [])
         ),
-        "unavailable_reasons": [] if pit_runs else ["No run ended with a recorded pit stop."],
+        "unavailable_reasons": pit_unavailable,
     }
 
     measured_tire_runs = [run for run in runs if isinstance(run.get("tire_observation"), Mapping)]
@@ -5387,38 +5601,162 @@ def build_technical_insights(
             if early not in (None, 0.0) and late is not None:
                 load_changes.append(((late / early - 1.0) * 100.0, label))
     strongest_load = max(load_changes, key=lambda item: abs(item[0]), default=None)
+    latest_measured_run = max(
+        measured_tire_runs,
+        key=lambda item: _finite(item.get("run_number")) or -1.0,
+        default=None,
+    )
+    latest_corner_wear: dict[str, float] = {}
+    if latest_measured_run is not None:
+        for corner, details in ((latest_measured_run.get("tire_observation") or {}).get("tires") or {}).items():
+            if not isinstance(details, Mapping):
+                continue
+            remaining = _finite(details.get("average_remaining_percent"))
+            if remaining is not None:
+                latest_corner_wear[str(corner).upper()] = 100.0 - remaining
 
     tire_metrics: list[dict[str, Any]] = []
     tire_prediction = tire_learning.get("prediction") or {}
+    lowest_remaining: float | None = None
     if measured_bands:
-        lowest_value, corner, band, run_number = min(measured_bands, key=lambda item: item[0])
-        run_suffix = f" · run {run_number}" if run_number else ""
+        lowest_remaining, corner, band, run_number = min(measured_bands, key=lambda item: item[0])
+        run_suffix = f" - run {run_number}" if run_number else ""
         tire_metrics.append(
-            metric(f"Lowest O/M/I: {corner} {band}{run_suffix}", round(lowest_value, 1), "%")
+            metric(
+                f"Most wear: {corner} {band}{run_suffix}",
+                round(100.0 - lowest_remaining, 1),
+                "%",
+                detail=f"{lowest_remaining:.1f}% remained in the most-used confirmed O/M/I band.",
+                action="Compare this corner and band with steering load and the late-run pace change.",
+                tone="attention" if lowest_remaining < 45.0 else "neutral",
+                group="condition",
+            )
         )
     if pace_delta is not None:
         tire_metrics.append(
             metric(
-                f"Run {representative_run_number} early→late" if representative_run_number else "Early→late pace",
+                f"Run {representative_run_number} early-to-late" if representative_run_number else "Early-to-late pace",
                 round(pace_delta, 3),
                 "s",
                 "derived",
                 signed=True,
+                detail="Average late clean pace minus average early clean pace in the longest comparable run.",
+                action="A positive value is falloff; compare the same run's tire condition and driving load.",
+                tone="attention" if pace_delta > 0.0 else "positive" if pace_delta < 0.0 else "neutral",
+                group="pace",
             )
         )
-    predicted_life = _finite(tire_prediction.get("laps_remaining"))
-    if tire_prediction.get("status") == "predicted" and predicted_life is not None:
-        tire_metrics.append(metric("Modeled life", round(predicted_life, 1), "green laps", "predicted"))
-    elif strongest_load is not None:
+    for change, label in load_changes:
         tire_metrics.append(
             metric(
-                f"Late {strongest_load[1]}",
-                round(strongest_load[0], 1),
+                f"Late {label}",
+                round(change, 1),
                 "% vs early",
                 "derived",
                 signed=True,
+                detail=f"Late-run {label} proxy compared with the early segment of the same run.",
+                action=(
+                    "More steering work can indicate added correction or scrub; confirm on the trace before changing technique."
+                    if label == "steering load"
+                    else "More braking work can add front-tire load; confirm braking points and traffic context on the trace."
+                ),
+                tone="attention" if change > 10.0 else "neutral",
+                group="driver load",
             )
         )
+    if len(latest_corner_wear) >= 4:
+        front_wear = _mean(latest_corner_wear.get(corner) for corner in ("LF", "RF"))
+        rear_wear = _mean(latest_corner_wear.get(corner) for corner in ("LR", "RR"))
+        left_wear = _mean(latest_corner_wear.get(corner) for corner in ("LF", "LR"))
+        right_wear = _mean(latest_corner_wear.get(corner) for corner in ("RF", "RR"))
+        if front_wear is not None and rear_wear is not None:
+            tire_metrics.append(
+                metric(
+                    "Front vs rear wear",
+                    round(front_wear - rear_wear, 1),
+                    "points",
+                    "derived",
+                    signed=True,
+                    detail="Average front wear minus average rear wear at the latest confirmed tire reading.",
+                    action="Positive means the fronts wore more; inspect entry speed, steering work, and balance together.",
+                    group="balance",
+                )
+            )
+        if right_wear is not None and left_wear is not None:
+            tire_metrics.append(
+                metric(
+                    "Right vs left wear",
+                    round(right_wear - left_wear, 1),
+                    "points",
+                    "derived",
+                    signed=True,
+                    detail="Average right-side wear minus average left-side wear at the latest confirmed tire reading.",
+                    action="Use the per-corner O/M/I cards to see which tire and band created the difference.",
+                    group="balance",
+                )
+            )
+
+    dynamics = (representative_run.get("vehicle_dynamics") or {}) if representative_run is not None else {}
+    for label, key, action in (
+        ("Front lock", "front_wheel_lock_proxy_s", "Review brake release and pressure where the wheel-speed trace confirms front lock."),
+        ("Rear wheelspin", "rear_wheelspin_proxy_s", "Review throttle pickup where the wheel-speed trace confirms rear spin."),
+        ("ABS active", "abs_active_s", "Review the brake trace with ABS highlighting to see where intervention occurred."),
+    ):
+        value = _finite(dynamics.get(key))
+        if value is not None and value > 0.0:
+            tire_metrics.append(
+                metric(
+                    label,
+                    round(value, 2),
+                    "s",
+                    detail="Time accumulated on complete green laps in the representative run.",
+                    action=action,
+                    tone="attention",
+                    group="tire events",
+                )
+            )
+
+    predicted_life = _finite(tire_prediction.get("laps_remaining"))
+    predicted_pace = _finite(tire_prediction.get("capability_pace_s"))
+    predicted_cost = _finite(tire_prediction.get("pace_cost_s"))
+    eligible_observations = _finite(tire_prediction.get("eligible_observations"))
+    if tire_prediction.get("status") == "predicted" and predicted_life is not None:
+        tire_metrics.append(
+            metric(
+                "Estimated life",
+                round(predicted_life, 1),
+                "green laps",
+                "predicted",
+                detail="Estimated green laps until the first modeled O/M/I band reaches zero; not a safety limit.",
+                action="Use as a planning boundary and retain margin; it is not a recommendation to run the tire to zero.",
+                group="local model",
+            )
+        )
+    if tire_prediction.get("status") == "predicted" and predicted_pace is not None:
+        tire_metrics.append(
+            metric(
+                "Capability pace",
+                round(predicted_pace, 3),
+                "s",
+                "predicted",
+                detail=f"Condition-matched local estimate from {int(eligible_observations or 0)} eligible observation(s).",
+                action="Compare actual clean pace with this target; traffic and line still affect the result.",
+                group="local model",
+            )
+        )
+    if tire_prediction.get("status") == "predicted" and predicted_cost is not None:
+        tire_metrics.append(
+            metric(
+                "Estimated tire-age cost",
+                round(predicted_cost, 3),
+                "s",
+                "predicted",
+                detail="Condition-matched pace cost associated with the modeled tire state.",
+                action="Separate expected tire-age cost from avoidable execution loss when reviewing a lap.",
+                group="local model",
+            )
+        )
+
     tire_takeaway_parts: list[str] = []
     if pace_delta is not None and representative_run_number:
         direction = "slower" if pace_delta > 0 else "faster"
@@ -5435,21 +5773,21 @@ def build_technical_insights(
         tire_takeaway = tire_takeaway[0].upper() + tire_takeaway[1:] + "."
     elif measured_bands:
         lowest_value, corner, band, _ = min(measured_bands, key=lambda item: item[0])
-        tire_takeaway = f"Lowest measured band was {corner} {band} at {lowest_value:.1f}% remaining."
+        tire_takeaway = f"The most-worn band was {corner} {band}, with {lowest_value:.1f}% remaining."
     else:
-        tire_takeaway = "No measured tire endpoint or comparable run trend was available."
+        tire_takeaway = "No tire-condition endpoint or comparable run trend is available."
+    tire_attention = (
+        (lowest_remaining is not None and lowest_remaining < 45.0)
+        or (pace_delta is not None and pace_delta > 0.15)
+        or any((_finite(dynamics.get(key)) or 0.0) > 0.0 for key in ("front_wheel_lock_proxy_s", "rear_wheelspin_proxy_s"))
+    )
     tire_insight = {
         "key": "tires",
         "label": "Tires",
         "status": "available" if tire_metrics else "unavailable",
-        "rating": (
-            "measured+modeled" if measured_bands and tire_prediction.get("status") == "predicted"
-            else "measured" if measured_bands
-            else "derived" if tire_metrics
-            else "unavailable"
-        ),
+        "rating": "attention" if tire_attention else "stable" if tire_metrics else "unavailable",
         "takeaway": tire_takeaway,
-        "metrics": tire_metrics[:3],
+        "metrics": tire_metrics,
         "evidence": (
             (["measured pit-service O/M/I wear"] if measured_bands else [])
             + (["clean-run early and late pace"] if pace_delta is not None else [])
@@ -5470,9 +5808,65 @@ def build_technical_insights(
     range_laps = _finite(forecast.get("all_green_range_laps"))
     fuel_metrics: list[dict[str, Any]] = []
     if green_burn is not None:
-        fuel_metrics.append(metric("Green-lap use", round(green_burn, 4), "gal/lap"))
+        fuel_metrics.append(
+            metric(
+                "Green-lap use",
+                round(green_burn, 4),
+                "gal/lap",
+                detail="Median fuel use across comparable green-flag run segments.",
+                action="Use this rate for green-run range and reserve checks.",
+                group="burn",
+            )
+        )
+    if caution_burn is not None:
+        fuel_metrics.append(
+            metric(
+                "Caution-lap use",
+                round(caution_burn, 4),
+                "gal/lap",
+                detail="Median fuel use across caution-lap segments.",
+                action="Use the observed caution mix only for retrospective context, not a future-caution forecast.",
+                group="burn",
+            )
+        )
     if range_laps is not None:
-        fuel_metrics.append(metric("All-green range", round(range_laps, 1), "laps", "derived"))
+        fuel_metrics.append(
+            metric(
+                "All-green range",
+                round(range_laps, 1),
+                "laps",
+                "derived",
+                detail="Range using observed run-start capacity, measured green burn, and the configured two-lap reserve.",
+                action="Treat this as a fuel-feasibility boundary, not an optimal pit-call claim.",
+                group="range",
+            )
+        )
+    minimum_stops = _finite(forecast.get("minimum_stops_all_green"))
+    if minimum_stops is not None:
+        fuel_metrics.append(
+            metric(
+                "All-green minimum",
+                int(round(minimum_stops)),
+                "stops",
+                "derived",
+                detail="Minimum scheduled stops supported by observed capacity and green-lap burn.",
+                action="Rules, tires, stage breaks, pit loss, traffic, and future cautions can require a different call.",
+                group="strategy",
+            )
+        )
+    observed_mix_range = _finite(forecast.get("observed_mix_range_laps"))
+    if observed_mix_range is not None:
+        fuel_metrics.append(
+            metric(
+                "Observed-mix range",
+                round(observed_mix_range, 1),
+                "laps",
+                "derived",
+                detail="Range if this race's measured green/caution mix repeated.",
+                action="Do not treat this as a prediction of future cautions.",
+                group="range",
+            )
+        )
     final_run = runs[-1] if runs else None
     scheduled_laps = _finite(race.get("scheduled_laps"))
     final_run_end_lap = _finite(final_run.get("end_lap")) if final_run else None
@@ -5488,7 +5882,18 @@ def build_technical_insights(
         else None
     )
     if finish_reserve_laps is not None:
-        fuel_metrics.append(metric("Finish reserve", round(finish_reserve_laps, 1), "green laps", "derived"))
+        fuel_metrics.append(
+            metric(
+                "Finish reserve",
+                round(finish_reserve_laps, 1),
+                "green laps",
+                "derived",
+                detail="Finish fuel divided by measured green-lap burn.",
+                action="Review whether the reserve was intentional before treating it as excess fuel.",
+                tone="attention" if finish_reserve_laps > 3.0 else "positive",
+                group="outcome",
+            )
+        )
     elif post_stop_margins:
         fuel_metrics.append(
             metric(
@@ -5497,25 +5902,87 @@ def build_technical_insights(
                 "green laps",
                 "derived",
                 signed=True,
+                detail="Smallest projected post-stop range minus scheduled green laps remaining.",
+                action="A negative value identifies a stop that could not reach scheduled distance at the measured green rate.",
+                tone="attention" if min(post_stop_margins) < 0 else "positive",
+                group="outcome",
+            )
+        )
+    run_burns = [
+        value / 3.785411784
+        for run in runs
+        if (value := _finite((run.get("fuel") or {}).get("green_l_per_lap"))) is not None
+        and value > 0.0
+    ]
+    if len(run_burns) >= 2:
+        burn_spread = max(run_burns) - min(run_burns)
+        fuel_metrics.append(
+            metric(
+                "Run-to-run burn spread",
+                round(burn_spread, 4),
+                "gal/lap",
+                "derived",
+                detail="Highest comparable run burn minus the lowest.",
+                action="A large spread warrants checking caution mix, traffic, and throttle behavior before changing the plan.",
+                group="consistency",
+            )
+        )
+    total_used = sum(
+        value
+        for run in runs
+        if (value := _finite((run.get("fuel") or {}).get("used_gal"))) is not None
+        and value > 0.0
+    )
+    if total_used > 0.0:
+        fuel_metrics.append(
+            metric(
+                "Race fuel used",
+                round(total_used, 2),
+                "gal",
+                detail="Sum of positive fuel-level change across analyzed runs.",
+                group="outcome",
+            )
+        )
+    total_added_l = sum(
+        value
+        for run in pit_runs
+        if (value := _finite((run.get("pit_service") or {}).get("fuel_added_l"))) is not None
+        and value > 0.0
+    )
+    if total_added_l > 0.0:
+        fuel_metrics.append(
+            metric(
+                "Fuel added",
+                round(total_added_l / 3.785411784, 2),
+                "gal",
+                detail="Confirmed positive fuel change during pit service.",
+                action="Compare each stop's added fuel with its post-stop margin.",
+                group="stops",
             )
         )
     if post_stop_margins and min(post_stop_margins) < 0:
         fuel_takeaway = f"Tightest post-stop all-green projection was {abs(min(post_stop_margins)):.1f} lap(s) short."
     elif finish_reserve_laps is not None:
-        fuel_takeaway = f"Recorded finish fuel equaled {finish_reserve_laps:.1f} green lap(s) at measured burn."
+        fuel_takeaway = f"Finish fuel equaled {finish_reserve_laps:.1f} green lap(s) at the measured burn rate."
     elif post_stop_margins:
-        fuel_takeaway = f"Every recorded post-stop all-green projection retained at least {min(post_stop_margins):.1f} lap(s)."
+        fuel_takeaway = f"Every post-stop all-green projection retained at least {min(post_stop_margins):.1f} lap(s)."
     elif fuel_metrics:
-        fuel_takeaway = "Measured burn supports a range estimate; no complete post-stop margin was recorded."
+        fuel_takeaway = "Fuel burn supports a range estimate, but no complete post-stop margin is available."
     else:
         fuel_takeaway = "Fuel use could not be measured."
     fuel_insight = {
         "key": "fuel",
         "label": "Fuel",
         "status": "available" if fuel_metrics else "unavailable",
-        "rating": "usable" if green_burn is not None and range_laps is not None else "partial" if fuel_metrics else "unavailable",
+        "rating": (
+            "short" if post_stop_margins and min(post_stop_margins) < 0
+            else "tight" if finish_reserve_laps is not None and finish_reserve_laps < 1.0
+            else "safe" if finish_reserve_laps is not None or (post_stop_margins and min(post_stop_margins) >= 0)
+            else "baseline" if fuel_metrics
+            else "unavailable"
+        ),
         "takeaway": fuel_takeaway,
-        "metrics": fuel_metrics[:3],
+        "metrics": fuel_metrics,
         "evidence": (
             (["recorded fuel-level change"] if fuel_metrics else [])
             + (["recorded post-stop fuel level"] if post_stop_margins else [])
@@ -5539,12 +6006,17 @@ def build_technical_insights(
     racecraft_metrics: list[dict[str, Any]] = []
     position_evidence = start_position is not None and finish_position is not None
     if position_evidence:
+        net_positions = int(round(start_position - finish_position))
         racecraft_metrics.append(
             metric(
                 "Net positions",
-                int(round(start_position - finish_position)),
+                net_positions,
                 "positions",
                 signed=True,
+                detail="Starting position minus final classified position.",
+                action="Use the phase results below to identify where the net change occurred.",
+                tone="positive" if net_positions > 0 else "attention" if net_positions < 0 else "neutral",
+                group="result",
             )
         )
 
@@ -5587,48 +6059,118 @@ def build_technical_insights(
             last_position = _finite((phase_laps[-1].get("position") or {}).get("end"))
             if first_position is not None and last_position is not None:
                 phases.append((label, first_position - last_position))
+    for phase_label, phase_change in phases:
+        racecraft_metrics.append(
+            metric(
+                phase_label,
+                int(round(phase_change)),
+                "positions",
+                "derived",
+                signed=True,
+                detail="Position change across this race phase; positive means positions gained.",
+                action=(
+                    "Compare the relevant laps in Telemetry to preserve what worked."
+                    if phase_change > 0
+                    else "Compare these laps with the strongest phase for traffic, line, and execution differences."
+                    if phase_change < 0
+                    else "No net position change was detected in this phase."
+                ),
+                tone="positive" if phase_change > 0 else "attention" if phase_change < 0 else "neutral",
+                group="phases",
+            )
+        )
     strongest_phase = max(phases, key=lambda item: item[1], default=None)
     weakest_phase = min(phases, key=lambda item: item[1], default=None)
-    if strongest_phase is not None:
+    if usable_times:
         racecraft_metrics.append(
             metric(
-                f"Best phase: {strongest_phase[0]}",
-                int(round(strongest_phase[1])),
-                "positions",
-                "derived",
-                signed=True,
+                "Fastest clean",
+                round(min(usable_times), 3),
+                "s",
+                detail="Fastest complete green lap without pit service.",
+                action="Use this lap as the personal execution reference for this race.",
+                group="pace",
             )
         )
-    if weakest_phase is not None and weakest_phase != strongest_phase:
         racecraft_metrics.append(
             metric(
-                f"Weakest phase: {weakest_phase[0]}",
-                int(round(weakest_phase[1])),
-                "positions",
-                "derived",
-                signed=True,
+                "Median clean",
+                round(float(_median(usable_times) or 0.0), 3),
+                "s",
+                detail="Middle clean green-lap time, which is less sensitive to a single exceptional lap.",
+                action="The gap to fastest indicates how consistently peak pace was reproduced.",
+                group="pace",
             )
         )
-    elif usable_times and len(racecraft_metrics) < 3:
-        racecraft_metrics.append(metric("Fastest clean", round(min(usable_times), 3), "s"))
+    if len(usable_times) >= 2:
+        pace_spread = statistics.pstdev(usable_times)
+        racecraft_metrics.append(
+            metric(
+                "Clean-lap variation",
+                round(pace_spread, 3),
+                "s",
+                "derived",
+                detail="Population standard deviation across usable clean green laps.",
+                action="Lower variation means the available pace was reproduced more consistently.",
+                tone="attention" if pace_spread > 0.5 else "positive",
+                group="consistency",
+            )
+        )
+    long_run_delta = (
+        _finite((representative_run.get("pace") or {}).get("early_to_late_delta_s"))
+        if representative_run is not None else None
+    )
+    if long_run_delta is not None:
+        racecraft_metrics.append(
+            metric(
+                "Long-run change",
+                round(long_run_delta, 3),
+                "s",
+                "derived",
+                signed=True,
+                detail=f"Early-to-late pace change in run {representative_run_number}, the longest comparable run.",
+                action="Use with tire and driving-load findings before attributing the change to technique.",
+                tone="attention" if long_run_delta > 0.0 else "positive" if long_run_delta < 0.0 else "neutral",
+                group="pace",
+            )
+        )
+    incident_points = _finite((damage.get("incident_points") or {}).get("positive_delta"))
+    if incident_points is not None:
+        racecraft_metrics.append(
+            metric(
+                "Incident points",
+                int(round(incident_points)),
+                detail="Total positive incident-count change during the race.",
+                action="Use the incident timeline for context; points alone do not identify contact, damage, or fault.",
+                tone="attention" if incident_points > 0 else "positive",
+                group="execution",
+            )
+        )
     if weakest_phase is not None and weakest_phase[1] < 0:
-        racecraft_takeaway = f"Recorded {weakest_phase[0].lower()} running lost {abs(int(round(weakest_phase[1])))} position(s); compare those laps in Telemetry."
+        racecraft_takeaway = f"{weakest_phase[0]} running lost {abs(int(round(weakest_phase[1])))} position(s); compare those laps with the strongest phase."
     elif strongest_phase is not None and strongest_phase[1] > 0:
-        racecraft_takeaway = f"Recorded {strongest_phase[0].lower()} running gained {int(round(strongest_phase[1]))} position(s)."
+        racecraft_takeaway = f"{strongest_phase[0]} running gained {int(round(strongest_phase[1]))} position(s), the strongest phase of the race."
     elif position_evidence:
         net = int(round(start_position - finish_position))
-        racecraft_takeaway = f"Recorded start-to-finish position change was {net:+d}."
+        racecraft_takeaway = f"Start-to-finish position change was {net:+d}."
     elif usable_times:
         racecraft_takeaway = f"Fastest clean green lap was {min(usable_times):.3f} s."
     else:
-        racecraft_takeaway = "No position progression or clean pace was recorded."
+        racecraft_takeaway = "No position progression or clean pace is available."
+    net_result = int(round(start_position - finish_position)) if position_evidence else None
     racecraft_insight = {
         "key": "racecraft",
         "label": "Racecraft & pace",
         "status": "available" if racecraft_metrics else "unavailable",
-        "rating": "measured" if position_evidence and phases else "partial" if racecraft_metrics else "unavailable",
+        "rating": (
+            "gain" if net_result is not None and net_result > 0
+            else "loss" if net_result is not None and net_result < 0
+            else "stable" if position_evidence
+            else "pace-only" if racecraft_metrics
+            else "unavailable"
+        ),
         "takeaway": racecraft_takeaway,
-        "metrics": racecraft_metrics[:3],
+        "metrics": racecraft_metrics,
         "evidence": (
             (["player position endpoints"] if position_evidence else [])
             + (["lap-by-lap player position and flags"] if phases else [])

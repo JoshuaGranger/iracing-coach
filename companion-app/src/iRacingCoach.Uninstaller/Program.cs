@@ -47,7 +47,7 @@ internal static class Program
                 Thread.Sleep(700);
                 RemoveInstallation(target, systemIntegration: true);
                 MessageBox.Show(
-                    $"iRacing Coach was removed. Your portable archive was kept at:\n\n{DurableArchivePath()}",
+                    $"iRacing Coach was removed. Your Coach folder was kept at:\n\n{DurableArchivePath()}",
                     "iRacing Coach",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -56,7 +56,7 @@ internal static class Program
             }
 
             if (MessageBox.Show(
-                    $"Remove the iRacing Coach app?\n\nYour portable archive will be kept at:\n{DurableArchivePath()}\n\nThe uninstaller does not offer a delete-data option.",
+                    $"Remove the iRacing Coach app?\n\nYour Coach folder will be kept at:\n{DurableArchivePath()}\n\nYour race history and preferences will not be deleted.",
                     "Uninstall iRacing Coach",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Question) != DialogResult.Yes)

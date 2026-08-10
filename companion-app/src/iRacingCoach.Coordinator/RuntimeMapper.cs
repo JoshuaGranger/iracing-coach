@@ -350,7 +350,9 @@ public static class RuntimeMapper
                     TireWearPercent(tires, "LF"), TireWearPercent(tires, "RF"), TireWearPercent(tires, "LR"), TireWearPercent(tires, "RR"),
                     repairCompletedSeconds > .005 ? repairCompletedSeconds : null,
                     Number(pitService, "penalty_served_s"),
-                    tireConditions)
+                    tireConditions,
+                    Number(pitAssessment, "pit_cycle_position_change"),
+                    Number(pitAssessment, "scheduled_race_laps_remaining_after_stop"))
                 : null;
             return new AnalysisRun(
                 runNumber, Array(run, "lap_numbers").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray(),
@@ -363,7 +365,8 @@ public static class RuntimeMapper
                 Number(drivingLoad, "early_brake_vs_late_percent"), Number(drivingLoad, "early_steer_vs_late_percent"), pitStop,
                 Array(run, "coaching_reference_lap_numbers")
                     .Select(NullableIntegerValue)
-                    .Count(value => value.HasValue && value.Value >= 0));
+                    .Count(value => value.HasValue && value.Value >= 0),
+                Boolean(run, "ended_under_caution"));
         }).ToArray();
 
         var shape = Array(track, "shape").Select(point => new TrackShapePoint(
@@ -1179,7 +1182,11 @@ public static class RuntimeMapper
             Array(item, "metrics").Select(metric => new AnalysisTechnicalMetric(
                 Text(metric, "label") ?? string.Empty,
                 Text(metric, "value") ?? string.Empty,
-                Evidence(Text(metric, "evidence_type")))).ToArray(),
+                Evidence(Text(metric, "evidence_type")),
+                Text(metric, "detail") ?? string.Empty,
+                Text(metric, "action") ?? string.Empty,
+                Text(metric, "tone") ?? "neutral",
+                Text(metric, "group") ?? string.Empty)).ToArray(),
             Array(item, "evidence").Select(Value).Where(value => value.Length > 0).ToArray(),
             Array(item, "unavailable_reasons").Select(Value).Where(value => value.Length > 0).ToArray()))
         .Where(item => item.Key.Length > 0)

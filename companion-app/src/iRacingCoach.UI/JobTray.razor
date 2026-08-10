@@ -1,12 +1,11 @@
 <aside class="job-tray @(State.JobTrayOpen ? "open" : "")" aria-label="Background jobs">
-    <button class="job-tray-header" aria-expanded="@State.JobTrayOpen" @onclick="State.ToggleJobTray">
+    <button class="job-tray-header" aria-expanded="@(State.JobTrayOpen ? "true" : "false")" @onclick="State.ToggleJobTray">
         <span class="job-icon"><ProductIcon Name="jobs" Size="17" /></span>
         <span><strong>Background jobs</strong><small>@Summary</small></span>
         <span class="job-count">@State.Jobs.Count</span><ProductIcon Name="@(State.JobTrayOpen ? "chevron-down" : "chevron-up")" Size="16" />
     </button>
-    @if (State.JobTrayOpen)
-    {
-        <div class="job-tray-body">
+    <div class="job-tray-body" aria-hidden="@(State.JobTrayOpen ? "false" : "true")" inert="@(State.JobTrayOpen ? null : string.Empty)">
+        <div>
             @if (State.Jobs.Count == 0)
             {
                 <div class="job-empty"><span><ProductIcon Name="check" Size="17" /></span><p>No work in progress.<small>You can keep using the app while analysis runs.</small></p></div>
@@ -31,7 +30,7 @@
                 }
             }
         </div>
-    }
+    </div>
 </aside>
 
 @code {

@@ -210,6 +210,7 @@ public sealed class CapabilityRegistryTests
         var root = CompanionRoot();
         var ui = Path.Combine(root, "src", "iRacingCoach.UI");
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var incidentPresentation = File.ReadAllText(Path.Combine(ui, "IncidentPresentation.cs"));
         var traceLayouts = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "AnalysisTraceLayouts.cs"));
         var cursorInterop = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-telemetry-cursor.js"));
         StringAssert.Contains(telemetry, "<b>@trace.Lap</b>");
@@ -301,17 +302,25 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "class=\"incident-popover\"");
         StringAssert.Contains(telemetry, "style=\"@IncidentPopoverStyle\"");
         StringAssert.Contains(telemetry, "@foreach (var incident in lapIncidents)");
-        StringAssert.Contains(telemetry, "IncidentEventDescription(trace, incident, lapIncidents.Count > 1)");
+        StringAssert.Contains(telemetry, "IncidentEventDescription(incident, lapIncidents.Count > 1)");
         StringAssert.Contains(telemetry, "@if (!string.IsNullOrWhiteSpace(description))");
-        StringAssert.Contains(telemetry, "incident.EventType");
-        StringAssert.Contains(telemetry, "incident.ContactTarget");
-        StringAssert.Contains(telemetry, "incident.TrackLocation");
-        StringAssert.Contains(telemetry, "incident.OnPitRoad");
-        StringAssert.Contains(telemetry, "incident.SpeedMph");
+        StringAssert.Contains(telemetry, "IncidentPresentation.Describe(incident, includePoints)");
+        StringAssert.Contains(incidentPresentation, "incident.EventType");
+        StringAssert.Contains(incidentPresentation, "incident.ContactTarget");
+        StringAssert.Contains(incidentPresentation, "incident.TrackLocation");
+        StringAssert.Contains(incidentPresentation, "IsMeasuredOffTrack(incident.TrackLocation)");
+        StringAssert.Contains(incidentPresentation, "string.Equals(Normalize(value), \"off track\"");
+        Assert.DoesNotContain("incident.OnPitRoad", telemetry);
+        Assert.DoesNotContain("incident.SpeedMph", telemetry);
+        Assert.DoesNotContain("incident.YawRateDegreesPerSecond", telemetry);
+        Assert.DoesNotContain("incident.SlipAngleDegrees", telemetry);
+        Assert.DoesNotContain("IncidentLapPercent", telemetry);
         Assert.DoesNotContain("The recording identifies incident-point changes", telemetry);
         Assert.DoesNotContain("A zero-point contact appears only when the source records an explicit event", telemetry);
         Assert.DoesNotContain("incident.SourceChannel", telemetry,
             "Technical source provenance belongs in diagnostics, not the driving incident popover.");
+        Assert.DoesNotContain("incident.SourceChannel", incidentPresentation,
+            "Technical source provenance belongs in diagnostics, not the driving incident popover formatter.");
         StringAssert.Contains(traceCss, ".incident-popover {");
         StringAssert.Contains(traceCss, "position: fixed;");
         Assert.DoesNotContain("incidentPoints > 0", telemetry,
@@ -362,7 +371,9 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(cursorInterop, "widest * state.config.tooltipCharacterWidth");
         Assert.DoesNotContain(">Lap @trace.value.Lap</svg:text>", telemetry);
         StringAssert.Contains(cursorInterop, "leftCandidate >= plotStart");
-        StringAssert.Contains(cursorInterop, "getComputedTextLength()");
+        Assert.DoesNotContain("getComputedTextLength", cursorInterop,
+            "Cursor frames must not force synchronous SVG text layout.");
+        StringAssert.Contains(cursorInterop, "setTextIfChanged(slot.value, formatted[slotIndex])");
         StringAssert.Contains(cursorInterop, "availableTooltipWidth");
         StringAssert.Contains(telemetry, "private const double TraceRowsHeight = 820");
         StringAssert.Contains(telemetry, "TraceRowsHeight / Math.Max(1, TraceRows.Count)");
@@ -383,7 +394,9 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".lap-select-button {");
         StringAssert.Contains(coachCss, ".lap-conditions-popover { position: fixed");
         StringAssert.Contains(coachCss, ".conditions-grid { display: grid; grid-template-columns: repeat(3");
-        StringAssert.Contains(coachCss, ".race-workstation .lap-rail-row { grid-template-columns: 70px 42px 90px 34px 60px 30px 58px; }");
+        StringAssert.Contains(coachCss, "grid-template-columns: 50px 42px minmax(80px,1fr) 34px 28px 64px 64px;");
+        StringAssert.Contains(coachCss, ".race-workstation .lap-incident-column { grid-column: 5; grid-row: 1; }");
+        StringAssert.Contains(coachCss, ".race-workstation .lap-pit-column { grid-column: 7; grid-row: 1;");
         StringAssert.Contains(coachCss, "justify-content: center; gap: 0 5px;");
         StringAssert.Contains(coachCss, ".pit-badge {");
         StringAssert.Contains(coachCss, "width: auto;");
@@ -392,7 +405,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".lap-time small { display: block; width: 100%;");
         StringAssert.Contains(coachCss, ".lap-time { display: flex; flex-direction: column; align-items: flex-end; justify-self: center; }");
         StringAssert.Contains(coachCss, ".lap-pace-value,.lap-time small { width: max-content; transform: none; }");
-        StringAssert.Contains(coachCss, "grid-template-columns: clamp(300px,28vw,488px) minmax(0,1fr);");
+        StringAssert.Contains(coachCss, "grid-template-columns: clamp(400px,29vw,500px) minmax(0,1fr);");
         StringAssert.Contains(coachCss, "align-self: stretch;");
         StringAssert.Contains(coachCss, ".race-workstation .telemetry-context-column {");
         StringAssert.Contains(coachCss, ".race-workstation.context-track .telemetry-context-column");
@@ -487,6 +500,71 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
+    public void PointerActivatedControls_ReleaseTransientFocusWithoutBreakingKeyboardFocus()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "companion-app", "src", "iRacingCoach.UI", "wwwroot", "interaction-policy.js"));
+        var nativeHost = File.ReadAllText(Path.Combine(RepositoryRoot(), "companion-app", "src", "iRacingCoach.App", "wwwroot", "index.html"));
+        var previewHost = File.ReadAllText(Path.Combine(RepositoryRoot(), "companion-app", "src", "iRacingCoach.Preview", "Components", "App.razor"));
+
+        Assert.Contains("document.addEventListener(\"pointerdown\"", source, StringComparison.Ordinal);
+        Assert.Contains("document.addEventListener(\"pointerup\"", source, StringComparison.Ordinal);
+        Assert.Contains("document.addEventListener(\"change\"", source, StringComparison.Ordinal);
+        Assert.Contains("control instanceof HTMLSelectElement", source, StringComparison.Ordinal);
+        Assert.Contains("button,[role='button'],[role='tab']", source, StringComparison.Ordinal);
+        Assert.Contains("document.activeElement === control", source, StringComparison.Ordinal);
+        Assert.Contains("control.blur()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("keydown", source, StringComparison.Ordinal);
+        Assert.Contains("interaction-policy.js", nativeHost, StringComparison.Ordinal);
+        Assert.Contains("interaction-policy.js", previewHost, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void HomeWorkflowCards_HighlightWithoutMovingOnHover()
+    {
+        var css = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "wwwroot", "coach.css"));
+        var hoverRule = css.Split(".workflow-card:hover", StringSplitOptions.None)[1]
+            .Split('}', 2, StringSplitOptions.None)[0];
+
+        Assert.Contains("border-color:", hoverRule, StringComparison.Ordinal);
+        Assert.DoesNotContain("transform:", hoverRule, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void InteractiveAriaStates_RenderExplicitLowercaseBooleans()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var live = File.ReadAllText(Path.Combine(ui, "LiveTelemetryPage.razor"));
+        var settings = File.ReadAllText(Path.Combine(ui, "SettingsPage.razor"));
+
+        Assert.Contains("aria-expanded=\"@(_tracesExpanded ? \"true\" : \"false\")\"", live, StringComparison.Ordinal);
+        Assert.Contains("aria-hidden=\"@(_tracesExpanded ? \"false\" : \"true\")\"", live, StringComparison.Ordinal);
+        Assert.Contains("aria-pressed=\"@(selected ? \"true\" : \"false\")\"", settings, StringComparison.Ordinal);
+        Assert.Contains("aria-expanded=\"@(_connectionsOpen ? \"true\" : \"false\")\"", settings, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void AppStartup_DoesNotBlockTheInteractiveCircuitWhileCatalogingLocalData()
+    {
+        var shell = File.ReadAllText(Path.Combine(RepositoryRoot(), "companion-app", "src", "iRacingCoach.UI", "CompanionShell.razor"));
+
+        Assert.Contains("if (firstRender) _ = Task.Run(InitializeStateAsync);", shell, StringComparison.Ordinal);
+        Assert.Contains("await State.InitializeAsync();", shell, StringComparison.Ordinal);
+        Assert.Contains("State.ReportUnhandledException(\"app startup\", error);", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (firstRender) await State.InitializeAsync();", shell, StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void NativeDisclosurePanels_UseTheSharedStructuralMotionToken()
+    {
+        var css = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "wwwroot", "coach.css"));
+
+        StringAssert.Contains(css, "html { interpolate-size: allow-keywords; }");
+        StringAssert.Contains(css, "details::details-content");
+        StringAssert.Contains(css, "block-size var(--motion-structure) var(--ease)");
+        StringAssert.Contains(css, "details[open]::details-content { block-size: auto; opacity: 1; }");
+    }
+
+    [TestMethod]
     public void LiveDrivingTraceCanvas_CachesHistoryAndStopsRenderingWhileHidden()
     {
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
@@ -558,11 +636,58 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(script, "iRacingCoach.App.csproj");
         StringAssert.Contains(script, "iRacingCoach.Installer.csproj");
         StringAssert.Contains(script, "iRacingCoach.Uninstaller.csproj");
+        StringAssert.Contains(script, "iRacingCoach.Installer\\Program.cs");
+        StringAssert.Contains(script, "iRacingCoach.Coordinator\\CompanionState.cs");
+        StringAssert.Contains(script, "iRacingCoach.Contracts\\Models.cs");
+        StringAssert.Contains(script, "$sourceIdentityMismatches");
         StringAssert.Contains(script, "Release identity mismatch.");
+        StringAssert.Contains(script, "[switch]$IncludePortable");
+        StringAssert.Contains(script, "if ($IncludePortable)");
         var mismatchGuard = script.IndexOf("Release identity mismatch.", StringComparison.Ordinal);
         var destructiveReset = script.IndexOf("Reset-ReleaseDirectory $artifactRoot", StringComparison.Ordinal);
         Assert.IsTrue(mismatchGuard >= 0 && destructiveReset >= 0 && mismatchGuard < destructiveReset,
             "A mixed-version release must fail before any prior release output is reset or rewritten.");
+    }
+
+    [TestMethod]
+    public void ReleaseIdentity_IsSynchronizedAcrossPackagingAndRepairSurfaces()
+    {
+        const string version = "0.15.0";
+        var root = CompanionRoot();
+        var releaseScript = File.ReadAllText(Path.Combine(root, "tools", "BuildRelease.ps1"));
+        var appProject = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "iRacingCoach.App.csproj"));
+        var installerProject = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Installer", "iRacingCoach.Installer.csproj"));
+        var uninstallerProject = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Uninstaller", "iRacingCoach.Uninstaller.csproj"));
+        var installer = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Installer", "Program.cs"));
+        var coordinator = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "CompanionState.cs"));
+        var contracts = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Contracts", "Models.cs"));
+
+        StringAssert.Contains(releaseScript, $"$version = '{version}'");
+        StringAssert.Contains(appProject, $"<Version>{version}</Version>");
+        StringAssert.Contains(installerProject, $"<Version>{version}</Version>");
+        StringAssert.Contains(uninstallerProject, $"<Version>{version}</Version>");
+        StringAssert.Contains(installer, $"internal const string ProductVersion = \"{version}\";");
+        StringAssert.Contains(installer, "$\"iRacingCoach-{ProductVersion}-Setup.exe\"");
+        StringAssert.Contains(installer, "key.SetValue(\"DisplayVersion\", Program.ProductVersion)");
+        StringAssert.Contains(installer, "Program.RepairInstallerFileName");
+        StringAssert.Contains(coordinator, $"private const string AppVersion = \"{version}\";");
+        StringAssert.Contains(coordinator, "$\"iRacingCoach-{AppVersion}-Setup.exe\"");
+        StringAssert.Contains(contracts, $"string ClientVersion = \"{version}\"");
+
+        foreach (var liveIdentitySource in new[]
+        {
+            releaseScript,
+            appProject,
+            installerProject,
+            uninstallerProject,
+            installer,
+            coordinator,
+            contracts
+        })
+        {
+            Assert.DoesNotContain("0.14.2", liveIdentitySource,
+                "Historical release identities must not remain in active packaging or repair surfaces.");
+        }
     }
 
     [TestMethod]

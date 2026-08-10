@@ -449,15 +449,15 @@ public sealed class LiveMonitorTests
         Assert.IsFalse(script.Contains("chart.points.map(point => point.value)", StringComparison.Ordinal), "Domain calculation must not allocate and rescale an unbounded values array per sample.");
         Assert.IsFalse(script.Contains("Math.min(...values)", StringComparison.Ordinal), "Large telemetry histories must not be spread into function arguments.");
 
-        StringAssert.Contains(script, "function decimatedSegments(chart, studio, valueRange)");
+        StringAssert.Contains(script, "function buildPixelEnvelope(chart, studio, valueRange)");
         StringAssert.Contains(script, "bucketCount * verticesPerPixel");
-        StringAssert.Contains(script, "bucket.first, bucket.minimum, bucket.maximum, bucket.absFirst, bucket.absLast, bucket.last");
+        StringAssert.Contains(script, "first/minimum/maximum/last preserves brief extrema");
         StringAssert.Contains(script, "preserves brief extrema");
         StringAssert.Contains(script, "resetLapCharts(studio)");
         StringAssert.Contains(script, "isLapRegression(studio.latestLapProgress, progress)");
         StringAssert.Contains(script, "observeClock(studio, clockPoint, arrivedAt)) resetLapCharts(studio)");
         StringAssert.Contains(script, "const scrolling = !studio.reducedMotion");
-        StringAssert.Contains(script, "if (!chart.dirty && !scrolling) return;");
+        StringAssert.Contains(script, "if (!chart.dirty && !scrolling && !chart.resizeDirty) return false;");
         StringAssert.Contains(script, "chart.palette = palette(canvas)");
         StringAssert.Contains(script, "secondsWindow(chart.configuration)");
         StringAssert.Contains(script, "context.translate(-shift, 0)");
@@ -491,8 +491,9 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(razor, "brakeAbsActive = frame.Metrics.BrakeAbsActive");
 
         StringAssert.Contains(script, "const absActive = rawAbsActive === true;");
-        StringAssert.Contains(script, "absActive: point.absActive === true");
-        StringAssert.Contains(script, "chart.absPath = chart.configuration.highlightAbs && absVertexCount > 1 ? absPath : null");
+        StringAssert.Contains(script, "if (point.absActive === true)");
+        StringAssert.Contains(script, "if (!chart.configuration.highlightAbs) return { path: null, vertexCount: 0 }");
+        StringAssert.Contains(script, "chart.absPath = abs.vertexCount > 1 ? abs.path : null");
         StringAssert.Contains(script, "context.strokeStyle = \"#f4c24f\"");
         Assert.DoesNotContain("absCut", script, "A cut percentage must never be promoted into an ABS activation event.");
         Assert.DoesNotContain("brakeAbsCutPercent", razor, "The chart renderer needs only the explicit BrakeABSactive evidence channel.");
@@ -529,7 +530,7 @@ public sealed class LiveMonitorTests
         var machine = Path.Combine(directory, "machine.json");
         File.WriteAllText(portable, """{"settingsSchemaVersion":3,"liveMonitor":{"positionLocked":false,"left":44,"top":55,"width":700,"monitorDeviceName":"DISPLAY-OLD","secondaryFields":["LeaderLap","Fuel","Weather"]}}""");
         var settings = new JsonSettingsStore(portable, new TestCredentialStore(Path.Combine(directory, "credential.dpapi")), machine).Load();
-        Assert.AreEqual(4, settings.SettingsSchemaVersion);
+        Assert.AreEqual(5, settings.SettingsSchemaVersion);
         Assert.IsFalse(settings.LiveMonitor.IsLocked);
         var migrated = settings.LiveMonitor.UserLayouts.Single(layout => layout.Name == "Migrated 0.9.3");
         CollectionAssert.AreEqual(new[] { "leader-last-lap", "fuel", "track-temperature" }, migrated.Tiles.Select(tile => tile.MetricId).ToArray());
@@ -842,7 +843,8 @@ public sealed class LiveMonitorTests
         var state = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "CompanionState.cs"));
         var mainWindow = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "MainWindow.xaml.cs"));
 
-        StringAssert.Contains(page, "@if (_tracesExpanded)");
+        StringAssert.Contains(page, "@if (_tracesMounted)");
+        StringAssert.Contains(page, "if (!State.Settings.UseReducedMotion) await Task.Delay(500);");
         StringAssert.Contains(page, "<LiveTelemetryVisuals State=\"State\" />");
         Assert.AreEqual(1, page.Split("Waiting for iRacing", StringSplitOptions.None).Length - 1, "The disconnected dashboard needs one explanation, not repeated status copy.");
         Assert.DoesNotContain("Waiting for iRacing", grid);
@@ -877,7 +879,7 @@ public sealed class LiveMonitorTests
         var script = File.ReadAllText(scriptPath);
         foreach (var pointerContract in new[] { "pointerdown", "pointermove", "pointerup", "setPointerCapture", "getBoundingClientRect" })
             StringAssert.Contains(script, pointerContract);
-        foreach (var snapContract in new[] { "snapHysteresis", "data-live-resize", "CommitTilePlacement", "DropMetric", "ReplaceMetric", "ReplaceTile", "requestAnimationFrame", "Escape", "placementCanPack", "state.committing", "lostpointercapture", "windowBlur", "autoScroll", "document.elementFromPoint", "tileElement.getBoundingClientRect()", "tileAtPointer", "tileAtCell", "excludedTileId", "replacementTileId", "Replace ${target.name} with ${session.metricName}" })
+        foreach (var snapContract in new[] { "snapHysteresis", "data-live-resize", "CommitTilePlacement", "DropMetric", "ReplaceMetric", "ReplaceTile", "requestAnimationFrame", "Escape", "placementCanPack", "state.committing", "lostpointercapture", "windowBlur", "autoScroll", "captureTileGeometry", "state.latestPointer", "session.metrics", "tileAtPointer", "tileAtCell", "excludedTileId", "replacementTileId", "Replace ${target.name} with ${session.metricName}" })
             StringAssert.Contains(script, snapContract);
         Assert.AreEqual(2, script.Split("const target = inside ? tileAtPointer", StringSplitOptions.None).Length - 1, "Both an existing widget move and a toolbox metric drop must detect an occupied target.");
         StringAssert.Contains(script, "await state.dotnet.invokeMethodAsync(\"ReplaceTile\", session.original.id, session.replacementTileId)");
@@ -949,19 +951,24 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(script, "visibleBottom - visibleTop - 14");
         StringAssert.Contains(script, "viewport.style.height = `${availableHeight}px`");
         StringAssert.Contains(script, "viewport.style.minHeight = `${Math.min(320, availableHeight)}px`");
+        StringAssert.Contains(script, "getPropertyValue(\"--motion-structure\")");
+        StringAssert.Contains(script, "const duration = motionMilliseconds(state.root)");
+        Assert.DoesNotContain("duration: 180", script);
+        Assert.DoesNotContain("duration: 200", script);
         Assert.IsFalse(razor.Contains("live-editor-guidance", StringComparison.Ordinal), "The editor should not spend a header row on static drag instructions or success chatter.");
         Assert.IsFalse(razor.Contains("Undo available", StringComparison.OrdinalIgnoreCase), "Undo controls already communicate recoverability; removal actions should stay concise.");
         Assert.IsFalse(monitorCode.Contains("Undo is available", StringComparison.OrdinalIgnoreCase), "The native monitor should not add undo instructions to routine completion messages.");
         Assert.IsFalse(razor.Contains("OverallScale", StringComparison.Ordinal), "Physical scale belongs only to the pop-out monitor, not the fitted full-page dashboard.");
         Assert.DoesNotContain(".live-toolbox-backdrop", css);
         StringAssert.Contains(css, "--command-bar-height: 28px;");
-        StringAssert.Contains(css, "--toolbox-motion: 280ms;");
+        StringAssert.Contains(css, "--motion-structure: 500ms;");
+        Assert.DoesNotContain("--toolbox-motion", css);
         StringAssert.Contains(css, ".live-toolbox { position: fixed;");
         StringAssert.Contains(css, "top: var(--command-bar-height);");
-        StringAssert.Contains(css, "transition: opacity var(--toolbox-motion) var(--ease),transform var(--toolbox-motion) var(--ease),box-shadow var(--toolbox-motion) var(--ease),visibility 0s linear var(--toolbox-motion);");
+        StringAssert.Contains(css, "transition: opacity var(--motion-structure) var(--ease),transform var(--motion-structure) var(--ease),box-shadow var(--motion-structure) var(--ease),visibility 0s linear var(--motion-structure);");
         StringAssert.Contains(css, ".page-frame:has(.live-layout-studio),");
         StringAssert.Contains(css, ".analysis-page-frame:has(.analysis-trace-studio)");
-        StringAssert.Contains(css, "transition: padding-right var(--toolbox-motion) var(--ease);");
+        StringAssert.Contains(css, "transition: padding-right var(--motion-structure) var(--ease);");
         StringAssert.Contains(css, ".page-frame:has(.live-layout-studio.toolbox-open)");
         StringAssert.Contains(css, "padding-right: calc(var(--space-7) + var(--side-toolbox-width));");
         StringAssert.Contains(css, ".analysis-page-frame:has(.analysis-trace-studio.toolbox-open)");
@@ -971,6 +978,43 @@ public sealed class LiveMonitorTests
         Assert.IsFalse(razor.Contains("Â", StringComparison.Ordinal), "Razor markup must not contain mojibake glyphs.");
         Assert.IsFalse(script.Contains("Ã", StringComparison.Ordinal), "Pointer script must not contain mojibake glyphs.");
         Assert.IsFalse(script.Contains("Â", StringComparison.Ordinal), "Pointer script must not contain mojibake glyphs.");
+    }
+
+    [TestMethod]
+    public void LiveTelemetryRendering_HotPathsAreFrameSyncedAndDoNotForceLayoutPerFrame()
+    {
+        var ui = Path.Combine(CompanionAppRoot(), "src", "iRacingCoach.UI");
+        var tileCharts = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-tile-charts.js"));
+        var drivingChart = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-chart.js"));
+        var layout = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-layout.js"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(tileCharts, "chart.pointStart");
+        StringAssert.Contains(tileCharts, "buildPixelEnvelope");
+        StringAssert.Contains(tileCharts, "requestStudioDraw(studio)");
+        StringAssert.Contains(tileCharts, "resizeSettleMilliseconds");
+        Assert.DoesNotContain("chart.points.splice(0", tileCharts,
+            "A rolling telemetry window must advance an index instead of shifting the whole history every SDK tick.");
+        Assert.DoesNotContain("const unique = new Map()", tileCharts,
+            "Pixel-envelope construction must not allocate a Map for every plotted pixel.");
+        Assert.DoesNotContain("offsetParent", tileCharts,
+            "A display-frame loop must not force style/layout through offsetParent.");
+        Assert.DoesNotContain("requestAnimationFrame(next => drawStudio", tileCharts,
+            "An idle or hidden telemetry dashboard must not retain a permanent animation loop.");
+
+        StringAssert.Contains(drivingChart, "pendingWidth");
+        StringAssert.Contains(drivingChart, "ResizeObserver(entries =>");
+        Assert.DoesNotContain("offsetParent", drivingChart);
+        Assert.AreEqual(1, drivingChart.Split("getBoundingClientRect()", StringSplitOptions.None).Length - 1,
+            "The driving chart may measure once at initialization; display frames use ResizeObserver dimensions.");
+
+        StringAssert.Contains(layout, "state.pointerMoveFrame = requestAnimationFrame");
+        StringAssert.Contains(layout, "captureTileGeometry(state)");
+        StringAssert.Contains(layout, "translate3d(");
+        Assert.DoesNotContain("session.ghost.offsetWidth", layout);
+        Assert.DoesNotContain("session.preview.style.left", layout);
+        Assert.DoesNotContain("transition: left var(--motion-hover) var(--ease),top var(--motion-hover)", css,
+            "The drop preview follows the pointer directly rather than trailing a geometry tween.");
     }
 
     private static void AssertNoOverlap(LiveMonitorNamedLayout layout)

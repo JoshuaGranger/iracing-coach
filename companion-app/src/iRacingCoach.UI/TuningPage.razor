@@ -1,65 +1,31 @@
 @implements IDisposable
 
-<div class="tuning-workbench-page">
-    <header class="tuning-workbench-toolbar">
-        <div class="tuning-workbench-title">
-            <span class="eyebrow">Progressive tuning</span>
-            <h1>Turn-by-turn setup feedback</h1>
-        </div>
-
+<div class="tuning-workbench-page tuning-workbench-v3">
+    <header class="tuning-session-bar">
         @if (EvidenceRaces.Count > 0)
         {
             <label class="tuning-race-picker">
-                <span>Representative race</span>
-                <select value="@State.SelectedTuningRaceId" @onchange="ChangeRace" disabled="@_working">
+                <span>Race</span>
+                <select value="@State.SelectedTuningRaceId" @onchange="ChangeRace" disabled="@_working" aria-label="Representative race">
                     @foreach (var race in EvidenceRaces)
                     {
                         <option value="@race.Id">@race.Track · @race.Car · @race.Date</option>
                     }
                 </select>
             </label>
-
-            <label class="tuning-goal-picker">
-                <span>Goal</span>
-                <select value="@State.TuningDraft.Goal" @onchange="ChangeGoal" disabled="@(_working || State.SelectedTuningRace is null)">
-                    <option value="long-run-pace">Long-run pace</option>
-                    <option value="tire-life">Tire life</option>
-                    <option value="restart-pace">Restart pace</option>
-                    <option value="stability">Stability</option>
-                </select>
-            </label>
         }
 
-        <div class="tuning-workbench-context">
+        <div class="tuning-session-context">
             @if (State.SelectedTuningRace is { } selectedRace)
             {
                 <strong>@selectedRace.Track <small>@selectedRace.Layout</small></strong>
-                <span>@selectedRace.Car · @selectedRace.SetupType setup</span>
-            }
-            @if (_working)
-            {
-                <span class="tuning-working" role="status"><i></i>@_workingLabel</span>
+                <span>@selectedRace.Car · @selectedRace.SetupType</span>
             }
         </div>
 
-        @if (EligibleRuns.Count > 0)
+        @if (_working)
         {
-            <div class="tuning-run-picker" role="group" aria-label="Representative runs">
-                <span>Representative runs</span>
-                @foreach (var run in EligibleRuns)
-                {
-                    var selected = State.TuningDraft.RepresentativeRunIds.Contains(run.Number.ToString(), StringComparer.Ordinal);
-                    <button type="button"
-                            class="@(selected ? "selected" : null)"
-                            aria-pressed="@(selected ? "true" : "false")"
-                            disabled="@(_working || (!selected && State.TuningDraft.RepresentativeRunIds.Count >= 3))"
-                            title="@RunTitle(run)"
-                            @onclick="() => ToggleRun(run.Number)">
-                        Run @run.Number <small>@run.GreenLaps green</small>
-                    </button>
-                }
-                <small aria-live="polite">@_controlSaveStatus</small>
-            </div>
+            <span class="tuning-working" role="status"><i></i>@_workingLabel</span>
         }
     </header>
 
@@ -67,9 +33,9 @@
     {
         <section class="surface-card tuning-empty-page">
             <div class="empty-state">
-                <span class="empty-icon"><ProductIcon Name="tuning" Size="22" /></span>
+                <span class="empty-icon"><ProductIcon Name="wrench" Size="22" /></span>
                 <h2>No analyzed race is ready yet</h2>
-                <p>Analyze a recorded race, then return here to use it as the representative run.</p>
+                <p>Analyze a recorded race, then return here to tune from it.</p>
                 <button class="button primary" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button>
             </div>
         </section>
@@ -97,135 +63,218 @@
                                      Selected="@State.SelectedTuningTurnId"
                                      SelectedChanged="SelectTurnId"
                                      TurnSelected="SelectTurn"
-                                     CorrectionRequested="SaveCorrection" />
+                                     CorrectionRequested="SaveCorrection"
+                                     CorrectionModeChanged="HandleCorrectionModeChanged"
+                                     Feedback="State.TuningDraft.Feedback"
+                                     ActiveRunPhase="@_activeRunPhase"
+                                     PriorityCornerId="@PriorityCornerId" />
 
-                <label class="tuning-general-note">
-                    <span><strong>General feedback</strong><small>Anything that applies beyond one turn</small></span>
-                    <textarea rows="2"
-                              maxlength="1200"
-                              placeholder="Optional race-wide handling feedback"
-                              value="@_generalNote"
-                              @oninput="GeneralNoteChanged"></textarea>
-                    <small aria-live="polite">@_generalSaveStatus</small>
-                </label>
+                <aside class="tuning-feedback-popover @(_editorOpen ? "open" : null)"
+                       aria-hidden="@AriaBoolean(!_editorOpen)"
+                       inert="@(!_editorOpen)">
+                    <ProgressiveTuningFeedbackEditor Turn="_selectedTurn"
+                                                     RunPhase="@_activeRunPhase"
+                                                     ExistingFeedback="State.TuningDraft.Feedback"
+                                                     IsPriorityCorner="@IsSelectedPriorityCorner"
+                                                     FeedbackChanged="SaveFeedback"
+                                                     PriorityChanged="SetPriorityCorner"
+                                                     CloseRequested="CloseFeedbackEditor"
+                                                     SaveStatus="@_feedbackSaveStatus" />
+                </aside>
             </div>
 
-            <div class="tuning-inspector-column">
-                @if (State.StructuredTuningResult is { } result && !_hideStructuredResult)
-                {
-                    var selectedChange = result.CandidateWhitelist.FirstOrDefault(item =>
-                            string.Equals(item.CandidateId, result.Recommendation.SelectedCandidateId, StringComparison.Ordinal))
-                        ?? result.CandidateWhitelist.FirstOrDefault();
-                    <section class="tuning-result-card">
-                        <header>
-                            <div><span class="eyebrow">Controlled setup test</span><h2>@(selectedChange?.System ?? "No safe change found")</h2></div>
-                            <span class="status-label neutral">One change</span>
-                        </header>
-                        @if (!string.IsNullOrWhiteSpace(result.Recommendation.Summary))
-                        {
-                            <p class="tuning-result-summary">@result.Recommendation.Summary</p>
-                        }
-                        @if (selectedChange is not null)
-                        {
-                            <div class="tuning-result-block"><span>Try</span><strong>@selectedChange.Change</strong></div>
-                            <div class="tuning-result-block"><span>Expected</span><strong>@selectedChange.PredictedEffect</strong></div>
-                            <div class="tuning-result-block"><span>Watch</span><strong>@selectedChange.Risk</strong></div>
-                            @if (selectedChange.Verify.Count > 0)
+            <aside class="tuning-toolbox" aria-label="Tuning evidence and controls">
+                <header class="tuning-toolbox-header">
+                    <div>
+                        <span class="eyebrow">Race evidence</span>
+                        <h2>@ActivePhaseLabel</h2>
+                    </div>
+                    <label class="tuning-goal-picker">
+                        <span>Goal</span>
+                        <select value="@State.TuningDraft.Goal" @onchange="ChangeGoal" disabled="@_working">
+                            <option value="long-run-pace">Long-run pace</option>
+                            <option value="tire-life">Tire life</option>
+                            <option value="restart-pace">Restart pace</option>
+                            <option value="stability">Stability</option>
+                        </select>
+                    </label>
+                </header>
+
+                <div class="tuning-master-phase" role="tablist" aria-label="Run phase for all turns">
+                    @foreach (var phase in RunPhases)
+                    {
+                        <button type="button"
+                                role="tab"
+                                aria-selected="@AriaBoolean(_activeRunPhase == phase.Id)"
+                                class="@(_activeRunPhase == phase.Id ? "selected" : null)"
+                                @onclick="() => SelectRunPhase(phase.Id)">
+                            <span>@phase.Label</span>
+                            @if (PhaseFeedbackCount(phase.Id) > 0)
                             {
-                                <div class="tuning-result-verify">
-                                    @foreach (var item in selectedChange.Verify) { <span>@item</span> }
+                                <b>@PhaseFeedbackCount(phase.Id)</b>
+                            }
+                        </button>
+                    }
+                </div>
+
+                <div class="tuning-toolbox-scroll">
+                    @if (State.StructuredTuningResult is { } result && !_hideStructuredResult)
+                    {
+                        var selectedChange = result.CandidateWhitelist.FirstOrDefault(item =>
+                                string.Equals(item.CandidateId, result.Recommendation.SelectedCandidateId, StringComparison.Ordinal))
+                            ?? result.CandidateWhitelist.FirstOrDefault();
+                        <section class="tuning-result-card">
+                            <header>
+                                <div><span class="eyebrow">Controlled test</span><h2>@(selectedChange?.System ?? "No safe change")</h2></div>
+                                <span class="status-label neutral">One system</span>
+                            </header>
+                            @if (!string.IsNullOrWhiteSpace(result.Recommendation.Summary))
+                            {
+                                <p class="tuning-result-summary">@result.Recommendation.Summary</p>
+                            }
+                            @if (selectedChange is not null)
+                            {
+                                <div class="tuning-result-block"><span>Try</span><strong>@selectedChange.Change</strong></div>
+                                <div class="tuning-result-block"><span>Expected</span><strong>@selectedChange.PredictedEffect</strong></div>
+                                <div class="tuning-result-block"><span>Watch</span><strong>@selectedChange.Risk</strong></div>
+                                @if (selectedChange.Verify.Count > 0)
+                                {
+                                    <div class="tuning-result-verify">
+                                        @foreach (var item in selectedChange.Verify)
+                                        {
+                                            <span>@item</span>
+                                        }
+                                    </div>
+                                }
+                                <div class="tuning-outcome-panel">
+                                    <label>
+                                        <span>Comparison run</span>
+                                        <select @bind="State.SelectedTuningResultRaceId">
+                                            <option value="">Driver result only</option>
+                                            @foreach (var comparison in State.TuningResultRaces.OrderByDescending(race => race.StartTimeUtc, StringComparer.Ordinal))
+                                            {
+                                                <option value="@comparison.Id">@comparison.Date · @comparison.Car</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <div class="tuning-outcome-actions" aria-label="Save comparison outcome">
+                                        <button type="button" @onclick='() => SaveOutcome("improved")'>Improved</button>
+                                        <button type="button" @onclick='() => SaveOutcome("worse")'>Worse</button>
+                                        <button type="button" @onclick='() => SaveOutcome("no-change")'>No change</button>
+                                        <button type="button" @onclick='() => SaveOutcome("inconclusive")'>Inconclusive</button>
+                                    </div>
                                 </div>
                             }
-                            <div class="tuning-outcome-panel">
+                            else
+                            {
+                                var reason = string.Join(" ", result.MissingRequired.Concat(result.Limitations));
+                                <p>@(string.IsNullOrWhiteSpace(reason) ? "The available evidence does not support a safe setup change." : reason)</p>
+                            }
+                        </section>
+                    }
+                    else
+                    {
+                        <section class="tuning-evidence-section tuning-runs-section">
+                            <header><h3>Representative runs</h3><small>@_controlSaveStatus</small></header>
+                            <div class="tuning-run-picker" role="group" aria-label="Representative runs">
+                                @foreach (var run in EligibleRuns)
+                                {
+                                    var selected = State.TuningDraft.RepresentativeRunIds.Contains(run.Number.ToString(), StringComparer.Ordinal);
+                                    <button type="button"
+                                            class="@(selected ? "selected" : null)"
+                                            aria-pressed="@AriaBoolean(selected)"
+                                            disabled="@(_working || (!selected && State.TuningDraft.RepresentativeRunIds.Count >= 3))"
+                                            title="@RunTitle(run)"
+                                            @onclick="() => ToggleRun(run.Number)">
+                                        <strong>Run @run.Number</strong>
+                                        <span>@run.GreenLaps green</span>
+                                    </button>
+                                }
+                            </div>
+                        </section>
+
+                        @if (SelectedRunEvidence.Count > 0)
+                        {
+                            <section class="tuning-evidence-section">
+                                <header><h3>Run behavior</h3></header>
+                                <div class="tuning-run-evidence">
+                                    @foreach (var evidence in SelectedRunEvidence)
+                                    {
+                                        <article>
+                                            <span>Run @evidence.Run</span>
+                                            <strong>@evidence.Value</strong>
+                                            <small>@evidence.Label</small>
+                                        </article>
+                                    }
+                                </div>
+                            </section>
+                        }
+
+                        @if (RecordedTireEvidence.Count > 0)
+                        {
+                            <section class="tuning-evidence-section">
+                                <header><h3>Recorded tire wear</h3><ProductIcon Name="tire" Size="15" /></header>
+                                <div class="tuning-tire-evidence">
+                                    @foreach (var tire in RecordedTireEvidence)
+                                    {
+                                        <article>
+                                            <span>@tire.Corner</span>
+                                            <strong>@tire.Wear.ToString("0.0")%</strong>
+                                            <small>Run @tire.Run</small>
+                                        </article>
+                                    }
+                                </div>
+                            </section>
+                        }
+
+                        @if (NeedsOpenTarget)
+                        {
+                            <section class="tuning-evidence-section tuning-open-target">
                                 <label>
-                                    <span>Comparison run <small>Optional</small></span>
-                                    <select @bind="State.SelectedTuningResultRaceId">
-                                        <option value="">Subjective result only</option>
-                                        @foreach (var comparison in State.TuningResultRaces.OrderByDescending(race => race.StartTimeUtc, StringComparer.Ordinal))
+                                    <span>Open-setup target</span>
+                                    <select value="@State.SelectedTuningTargetRaceId" @onchange="ChangeOpenTarget" disabled="@_working">
+                                        <option value="">Choose matching race</option>
+                                        @foreach (var target in OpenTargetRaces)
                                         {
-                                            <option value="@comparison.Id">@comparison.Date · @comparison.Car</option>
+                                            <option value="@target.Id">@target.Date · @target.Car</option>
                                         }
                                     </select>
                                 </label>
-                                <div class="tuning-outcome-actions" aria-label="Save comparison outcome">
-                                    <button type="button" @onclick='() => SaveOutcome("improved")'>Improved</button>
-                                    <button type="button" @onclick='() => SaveOutcome("worse")'>Worse</button>
-                                    <button type="button" @onclick='() => SaveOutcome("no-change")'>No change</button>
-                                    <button type="button" @onclick='() => SaveOutcome("inconclusive")'>Inconclusive</button>
-                                </div>
-                            </div>
+                            </section>
                         }
-                        else
+                    }
+                </div>
+
+                <footer class="tuning-toolbox-footer">
+                    <label class="tuning-general-note">
+                        <span>General feedback</span>
+                        <textarea rows="2"
+                                  maxlength="1200"
+                                  placeholder="Anything that applies across the race"
+                                  value="@_generalNote"
+                                  @oninput="GeneralNoteChanged"></textarea>
+                        <small aria-live="polite">@_generalSaveStatus</small>
+                    </label>
+
+                    @if (!string.IsNullOrWhiteSpace(ActionHint))
+                    {
+                        <p class="tuning-action-message @(_actionFailed ? "error" : null)" role="status">@ActionHint</p>
+                    }
+
+                    <div class="tuning-analysis-actions">
+                        @if (State.StructuredTuningResult is not null && !_hideStructuredResult)
                         {
-                            var unavailableReason = string.Join(" ", result.MissingRequired.Concat(result.Limitations));
-                            <p>@(string.IsNullOrWhiteSpace(unavailableReason) ? "The available evidence did not support a safe setup change." : unavailableReason)</p>
+                            <button type="button" class="button secondary" @onclick="ReturnToFeedback">Edit feedback</button>
                         }
-                    </section>
-                }
-                else
-                {
-                    <ProgressiveTuningFeedbackEditor Turn="_selectedTurn"
-                                                     ExistingFeedback="State.TuningDraft.Feedback"
-                                                     FeedbackChanged="SaveFeedback"
-                                                     SaveStatus="@_feedbackSaveStatus" />
-                }
-
-                <section class="tuning-analysis-actions">
-                    @if (NeedsOpenTarget)
-                    {
-                        <label>
-                            <span>Open-setup target</span>
-                            <select value="@State.SelectedTuningTargetRaceId" @onchange="ChangeOpenTarget" disabled="@_working">
-                                <option value="">Choose a matching open-setup race</option>
-                                @foreach (var target in OpenTargetRaces)
-                                {
-                                    <option value="@target.Id">@target.Date · @target.Car</option>
-                                }
-                            </select>
-                        </label>
-                    }
-
-                    @if (State.StructuredTuningResult is not null)
-                    {
-                        <button type="button" class="button secondary" @onclick="ReturnToFeedback">Edit feedback</button>
-                    }
-                    <button type="button"
-                            class="button primary"
-                            disabled="@(!CanAnalyze || _working)"
-                            @onclick="AnalyzeFeedback">
-                        Analyze feedback
-                    </button>
-                </section>
-
-                @if (!string.IsNullOrWhiteSpace(_actionMessage))
-                {
-                    <p class="tuning-action-message @(_actionFailed ? "error" : null)" role="status">@_actionMessage</p>
-                }
-                else if (State.SelectedTuningMap is { IsVerified: false })
-                {
-                    <p class="tuning-action-message">Verify each turn's entry, apex, and exit before analysis.</p>
-                }
-                else if (NeedsOpenTarget && State.SelectedTuningTarget is null)
-                {
-                    <p class="tuning-action-message">Choose a matching open setup before requesting a garage change.</p>
-                }
-                else if (State.TuningDraft.Feedback.Count == 0)
-                {
-                    <p class="tuning-action-message">Choose a turn and describe what the car did.</p>
-                }
-                else if (State.TuningDraft.RepresentativeRunIds.Count == 0)
-                {
-                    <p class="tuning-action-message">This recording has no clean green run long enough for a controlled comparison.</p>
-                }
-                else if (CanAnalyze)
-                {
-                    <p class="tuning-action-message">Ready to analyze your feedback.</p>
-                }
-                else if (!string.IsNullOrWhiteSpace(State.TuningMessage))
-                {
-                    <p class="tuning-action-message">@State.TuningMessage</p>
-                }
-            </div>
+                        <button type="button"
+                                class="button primary"
+                                disabled="@(!CanAnalyze || _working)"
+                                @onclick="AnalyzeFeedback">
+                            Begin analysis
+                        </button>
+                    </div>
+                </footer>
+            </aside>
         </div>
     }
 </div>
@@ -233,11 +282,19 @@
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
 
+    private static readonly (string Id, string Label)[] RunPhases =
+    [
+        ("early", "Early"),
+        ("middle", "Mid"),
+        ("late", "Late")
+    ];
+
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _noteSave;
     private TuningTurn? _selectedTurn;
+    private string _activeRunPhase = "early";
     private string _generalNote = string.Empty;
-    private string _feedbackSaveStatus = "Draft ready";
+    private string _feedbackSaveStatus = string.Empty;
     private string _generalSaveStatus = string.Empty;
     private string _actionMessage = string.Empty;
     private string _workingLabel = string.Empty;
@@ -246,9 +303,11 @@
     private string? _loadingRaceId;
     private string? _failedRaceId;
     private string? _loadedDraftId;
+    private string? _priorityCornerId;
     private bool _working;
     private bool _actionFailed;
     private bool _hideStructuredResult;
+    private bool _editorOpen;
 
     private IReadOnlyList<RecentRace> EvidenceRaces => State.TuningEvidenceRaces
         .OrderByDescending(race => race.StartTimeUtc, StringComparer.Ordinal)
@@ -266,12 +325,59 @@
         .OrderBy(run => run.Number)
         .ToArray();
 
+    private IReadOnlyList<AnalysisRun> SelectedRuns
+    {
+        get
+        {
+            var selected = State.TuningDraft.RepresentativeRunIds.ToHashSet(StringComparer.Ordinal);
+            return EligibleRuns.Where(run => selected.Contains(run.Number.ToString())).ToArray();
+        }
+    }
+
+    private IReadOnlyList<RunEvidence> SelectedRunEvidence
+    {
+        get
+        {
+            var evidence = new List<RunEvidence>();
+            foreach (var run in SelectedRuns)
+            {
+                if (run.EarlyToLateDeltaSeconds is { } delta)
+                    evidence.Add(new(run.Number, $"{delta:+0.000;-0.000;0.000} s", "early to late"));
+                else if (run.PaceSlopeSecondsPerLap is { } slope)
+                    evidence.Add(new(run.Number, $"{slope:+0.000;-0.000;0.000} s/lap", "pace trend"));
+                if (run.FuelUsedGallons is { } fuel)
+                    evidence.Add(new(run.Number, $"{fuel:0.00} gal", "fuel used"));
+                if (run.TireRemainingPercent is { } remaining)
+                    evidence.Add(new(run.Number, $"{remaining:0.0}%", "lowest remaining"));
+            }
+            return evidence;
+        }
+    }
+
+    private IReadOnlyList<TireEvidence> RecordedTireEvidence
+    {
+        get
+        {
+            var evidence = new List<TireEvidence>();
+            foreach (var run in SelectedRuns)
+            {
+                var pit = run.PitStop;
+                if (pit?.LeftFrontTireWearPercent is { } lf) evidence.Add(new(run.Number, "LF", lf));
+                if (pit?.RightFrontTireWearPercent is { } rf) evidence.Add(new(run.Number, "RF", rf));
+                if (pit?.LeftRearTireWearPercent is { } lr) evidence.Add(new(run.Number, "LR", lr));
+                if (pit?.RightRearTireWearPercent is { } rr) evidence.Add(new(run.Number, "RR", rr));
+            }
+            return evidence.TakeLast(4).ToArray();
+        }
+    }
+
     private bool NeedsOpenTarget => !string.Equals(
         State.TuningDraft.RepresentativeSession.SetupType,
         "Open",
         StringComparison.OrdinalIgnoreCase);
 
     private bool CanAnalyze => State.TuningDraft.Feedback.Count > 0
+        && State.TuningDraft.RepresentativeRunIds.Count > 0
         && State.SelectedTuningMap is not null
         && State.SelectedTuningMap.IsVerified
         && (!NeedsOpenTarget || State.SelectedTuningTarget is not null);
@@ -279,6 +385,34 @@
     private bool TuningWorkspaceReady => State.CurrentAnalysis is not null
         && State.SelectedTuningRace is { } race
         && string.Equals(State.TuningDraft.RepresentativeSession.RaceId, race.Id, StringComparison.Ordinal);
+
+    private string ActivePhaseLabel => _activeRunPhase switch
+    {
+        "early" => "Early run",
+        "late" => "Late run",
+        _ => "Mid run"
+    };
+
+    private string PriorityCornerId => _priorityCornerId ?? State.TuningDraft.Feedback
+        .Where(item => item.Priority >= 5)
+        .Select(item => item.CornerId)
+        .FirstOrDefault() ?? string.Empty;
+
+    private bool IsSelectedPriorityCorner => _selectedTurn is not null
+        && string.Equals(PriorityCornerId, _selectedTurn.CornerId, StringComparison.Ordinal);
+
+    private string ActionHint
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_actionMessage)) return _actionMessage;
+            if (State.SelectedTuningMap is { IsVerified: false }) return "Verify the turn bounds before analysis.";
+            if (NeedsOpenTarget && State.SelectedTuningTarget is null) return "Choose a matching open setup.";
+            if (State.TuningDraft.Feedback.Count == 0) return "Select a turn and describe the balance.";
+            if (State.TuningDraft.RepresentativeRunIds.Count == 0) return "Choose a representative run.";
+            return string.Empty;
+        }
+    }
 
     private static TuningMapView? BuildCatalogMap(AnalysisWorkspace analysis, TuningMapView? supplied)
     {
@@ -314,9 +448,14 @@
         _loadedDraftId = State.TuningDraft.DraftId;
         _generalNote = State.TuningDraft.GeneralNote;
         _generalSaveStatus = string.Empty;
-        _feedbackSaveStatus = "Draft ready";
+        _feedbackSaveStatus = string.Empty;
+        _priorityCornerId = State.TuningDraft.Feedback
+            .Where(item => item.Priority >= 5)
+            .Select(item => item.CornerId)
+            .FirstOrDefault();
         _selectedTurn = State.SelectedTuningMap?.Turns.FirstOrDefault(turn =>
             string.Equals(turn.CornerId, State.SelectedTuningTurnId, StringComparison.Ordinal));
+        _editorOpen = _selectedTurn is not null;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -357,6 +496,7 @@
         _actionMessage = string.Empty;
         _actionFailed = false;
         _selectedTurn = null;
+        _editorOpen = false;
         _hideStructuredResult = false;
         try
         {
@@ -377,7 +517,8 @@
             }
             _loadedDraftId = State.TuningDraft.DraftId;
             _generalNote = State.TuningDraft.GeneralNote;
-            _feedbackSaveStatus = "Draft ready";
+            _feedbackSaveStatus = string.Empty;
+            _priorityCornerId = State.TuningDraft.Feedback.Where(item => item.Priority >= 5).Select(item => item.CornerId).FirstOrDefault();
             _loadedRaceId = raceId;
             _failedRaceId = null;
         }
@@ -403,24 +544,75 @@
     private async Task SelectTurn(TuningTurn turn)
     {
         _selectedTurn = turn;
-        _feedbackSaveStatus = "Draft ready";
+        _editorOpen = true;
+        _feedbackSaveStatus = string.Empty;
         _hideStructuredResult = true;
         await State.SelectTuningTurnAsync(turn.CornerId, _lifetime.Token);
     }
+
+    private async Task CloseFeedbackEditor()
+    {
+        _editorOpen = false;
+        await State.SelectTuningTurnAsync(string.Empty, _lifetime.Token);
+    }
+
+    private void HandleCorrectionModeChanged(bool open)
+    {
+        if (open) _editorOpen = false;
+    }
+
+    private void SelectRunPhase(string phase)
+    {
+        _activeRunPhase = phase;
+        _hideStructuredResult = true;
+    }
+
+    private int PhaseFeedbackCount(string phase) => State.TuningDraft.Feedback.Count(item =>
+        string.Equals(item.RunPhase, phase, StringComparison.OrdinalIgnoreCase));
 
     private async Task SaveFeedback(ProgressiveTuningFeedbackBatch batch)
     {
         _feedbackSaveStatus = "Saving…";
         _actionMessage = string.Empty;
+        var normalized = batch.Feedback.Select(item => item with
+        {
+            Priority = string.Equals(PriorityCornerId, batch.CornerId, StringComparison.Ordinal) ? 5 : Math.Min(item.Priority, 4)
+        }).ToArray();
         try
         {
             await State.ReplaceTuningFeedbackBatchAsync(
                 batch.CornerId,
                 batch.RunPhase,
-                batch.Feedback,
+                normalized,
                 _lifetime.Token);
             _feedbackSaveStatus = "Saved";
             _hideStructuredResult = true;
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _feedbackSaveStatus = "Not saved";
+            ShowFailure(ex.Message);
+        }
+    }
+
+    private async Task SetPriorityCorner(bool selected)
+    {
+        if (_selectedTurn is null) return;
+        var target = selected ? _selectedTurn.CornerId : string.Empty;
+        _priorityCornerId = target.Length == 0 ? null : target;
+        var snapshot = State.TuningDraft.Feedback.ToArray();
+        try
+        {
+            foreach (var group in snapshot.GroupBy(item => (item.CornerId, item.RunPhase)))
+            {
+                var updated = group.Select(item => item with
+                {
+                    Priority = string.Equals(item.CornerId, target, StringComparison.Ordinal) ? 5 : Math.Min(item.Priority, 4)
+                }).ToArray();
+                await State.ReplaceTuningFeedbackBatchAsync(group.Key.CornerId, group.Key.RunPhase, updated, _lifetime.Token);
+            }
+            _feedbackSaveStatus = "Saved";
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex)
@@ -435,7 +627,7 @@
         var value = args.Value?.ToString() ?? string.Empty;
         var draftId = State.TuningDraft.DraftId;
         _generalNote = value;
-        _generalSaveStatus = "";
+        _generalSaveStatus = string.Empty;
         CancelPendingGeneralNote();
         _noteSave = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         try
@@ -459,7 +651,7 @@
     {
         if (State.SelectedTuningMap is null)
         {
-            ShowFailure("Load a recorded track map before saving a correction.");
+            ShowFailure("Load a track map before saving a correction.");
             return false;
         }
         _feedbackSaveStatus = "Saving…";
@@ -563,9 +755,10 @@
     private async Task AnalyzeFeedback()
     {
         _working = true;
-        _workingLabel = "Analyzing feedback";
+        _workingLabel = "Analyzing";
         _actionMessage = string.Empty;
         _actionFailed = false;
+        _editorOpen = false;
         try
         {
             await State.SubmitStructuredTuningAsync(_lifetime.Token);
@@ -631,6 +824,8 @@
         return $"Run {run.Number} · {run.GreenLaps} green laps{pace}{tire}";
     }
 
+    private static string AriaBoolean(bool value) => value ? "true" : "false";
+
     public void Dispose()
     {
         CancelPendingGeneralNote();
@@ -645,4 +840,6 @@
         _noteSave = null;
     }
 
+    private sealed record RunEvidence(int Run, string Value, string Label);
+    private sealed record TireEvidence(int Run, string Corner, double Wear);
 }

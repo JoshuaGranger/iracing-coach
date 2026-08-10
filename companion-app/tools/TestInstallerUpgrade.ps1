@@ -41,6 +41,7 @@ try {
         'coach-engine\codex\codex.exe',
         'coach-engine\schemas\codex_app_server_protocol.schemas.json',
         'coach-engine\schemas\ai-coaching-output.schema.json',
+        'coach-engine\schemas\ai-tuning-output.schema.json',
         'coach-engine\coach-engine-manifest.json'
     )
     $missing = @($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $resolvedTarget $_)) })

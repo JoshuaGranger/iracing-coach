@@ -145,7 +145,7 @@ public sealed class CompanionState : IDisposable
     public string SelectedSetupId { get; set; } = string.Empty;
     public string CompareSetupId { get; set; } = string.Empty;
     public int StartingTuneStep { get; private set; } = 1;
-    public string StartingTuneSeason { get; set; } = string.Empty;
+    public string StartingTuneSeason { get; set; } = CurrentIRacingSeason();
     public string StartingTuneCar { get; set; } = string.Empty;
     public string StartingTuneTrack { get; set; } = string.Empty;
     public string StartingTunePurpose { get; set; } = "Race";
@@ -159,6 +159,7 @@ public sealed class CompanionState : IDisposable
     public List<RecentRace> EventSessions { get; } = [];
     public List<RaceEventGroup> EventGroups { get; } = [];
     public List<InstalledCar> Cars { get; } = [];
+    public List<InstalledTrack> Tracks { get; } = [];
     public List<LocalSetup> Setups { get; } = [];
     public List<StrategyScenario> StrategyScenarios { get; } = [];
     public List<TuningFeedbackDraft> TuningFeedback { get; } = [];
@@ -245,7 +246,10 @@ public sealed class CompanionState : IDisposable
             return new CapabilityContext
             {
                 HasRaceRecordings = Races.Count > 0,
-                HasOpenAnalyzedRace = TuningRaces.Any(),
+                // Progressive tuning can start from any analyzed race as evidence. The
+                // open-setup target is chosen inside the workflow when the evidence race
+                // itself was fixed, so the navigation gate must not hide that path.
+                HasOpenAnalyzedRace = TuningEvidenceRaces.Any(),
                 HasSetupFiles = Setups.Count > 0,
                 HasComparableSetups = CapabilityRegistry.HasSetupComparison(Setups, SelectedSetupId),
                 HasTrackView = CapabilityRegistry.HasTrackView(CurrentAnalysis),
@@ -310,6 +314,11 @@ public sealed class CompanionState : IDisposable
     {
         if (_initialized) return;
         _initialized = true;
+        if (!Directory.Exists(Settings.IRacingInstallRoot))
+        {
+            var detectedInstall = new CompanionSettings().IRacingInstallRoot;
+            if (Directory.Exists(detectedInstall)) Settings.IRacingInstallRoot = detectedInstall;
+        }
         try
         {
             EnsureRepository();
@@ -321,8 +330,8 @@ public sealed class CompanionState : IDisposable
             Diagnostics =
             [
                 new("App", $"v{AppVersion} / Windows x64", "ready"),
-                new("Portable archive", ex.Message, "warning"),
-                new("Portable Coach folder", Settings.CoachHome, "warning")
+                new("Coach data", ex.Message, "warning"),
+                new("Coach folder", Settings.CoachHome, "warning")
             ];
             HomeDataReady = true;
             RaiseChanged();
@@ -430,9 +439,10 @@ public sealed class CompanionState : IDisposable
             }
             UpdateHealth("garage61", "Garage61", Garage61.Available ? "ready" : Garage61.Configured ? "warning" : "neutral",
                 Garage61.Available ? "Connected" : Garage61.Configured ? "Key saved · offline" : "Not configured");
-            UpdateHealth("repository", "Coach data", "ready", "Portable folder ready");
+            UpdateHealth("repository", "Coach data", "ready", "Coach folder ready");
 
             DiscoverCars();
+            DiscoverTracks();
             Diagnostics = BuildDiagnostics(health);
             LastUpdated = DateTimeOffset.Now;
             if (showToast) Toast = "Your local racing data is up to date.";
@@ -446,7 +456,7 @@ public sealed class CompanionState : IDisposable
             ReportUnhandledException("catalog refresh", ex);
             UpdateHealth("backend", "Race analysis", "unavailable", "Could not read local racing data", true);
             UpdateHealth("garage61", "Garage61", "neutral", "Not checked");
-            UpdateHealth("repository", "Coach data", "ready", "Portable folder ready");
+            UpdateHealth("repository", "Coach data", "ready", "Coach folder ready");
             DataMessage = $"The app could not update: {Bound(ex.Message)}";
             if (showToast) Toast = "The update needs attention. Open Diagnostics for details.";
         }
@@ -1667,8 +1677,8 @@ public sealed class CompanionState : IDisposable
             }, cancellationToken);
             var copied = response.TryGetProperty("copied", out var value) && value.ValueKind == JsonValueKind.True;
             SetupMessage = copied
-                ? "A byte-identical copy and its source record were saved in your portable setups folder."
-                : "That exact setup is already in your portable setups folder.";
+                ? "An exact copy was saved in your Coach setup library."
+                : "That exact setup is already in your Coach setup library.";
             Notify(SetupMessage);
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
@@ -1778,14 +1788,14 @@ public sealed class CompanionState : IDisposable
             }
             EnsureRepository();
             SaveSettingsToStore();
-            SettingsMessage = "Portable preferences were saved. Account connections stay protected on this Windows user.";
+            SettingsMessage = "Settings saved. Account connections stay protected on this Windows user.";
             Toast = "Settings saved.";
             SettingsSaved?.Invoke(Settings);
             _ = RefreshDataAsync(false, CancellationToken.None);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException)
         {
-            SettingsMessage = "Windows could not save the settings file. Check access to the Coach repository.";
+            SettingsMessage = "Windows could not save the settings file. Check access to the Coach folder.";
             Toast = "Settings were not saved.";
         }
         RaiseChanged();
@@ -1797,7 +1807,7 @@ public sealed class CompanionState : IDisposable
         if (Directory.Exists(Settings.IRacingRoot))
         {
             SetupStep = Math.Max(SetupStep, 2);
-            SettingsMessage = "iRacing data was found and the Coach archive is ready.";
+            SettingsMessage = "iRacing data was found and the Coach folder is ready.";
         }
         else
         {
@@ -2018,7 +2028,7 @@ public sealed class CompanionState : IDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "iRacingCoach",
             "Installer",
-            "iRacingCoach-0.14.2-Setup.exe");
+            $"iRacingCoach-{AppVersion}-Setup.exe");
         if (!File.Exists(setup))
         {
             Toast = "The repair package could not be found. Run the latest iRacing Coach installer again.";
@@ -2045,6 +2055,7 @@ public sealed class CompanionState : IDisposable
         Settings.IRacingRoot = defaults.IRacingRoot;
         Settings.IRacingInstallRoot = defaults.IRacingInstallRoot;
         Settings.ThemeColor = ThemeColors.DefaultId;
+        Settings.CustomThemeColor = ThemeColors.DefaultCustomHex;
         Settings.LaunchAtSignIn = false;
         Settings.UseReducedMotion = false;
         Settings.DiagnosticIncludeConfounded = false;
@@ -2075,6 +2086,17 @@ public sealed class CompanionState : IDisposable
         var normalized = ThemeColors.Normalize(colorId);
         if (string.Equals(Settings.ThemeColor, normalized, StringComparison.Ordinal)) return;
         Settings.ThemeColor = normalized;
+        RaiseChanged();
+    }
+
+    public void SetCustomThemeColor(string color)
+    {
+        var normalized = ThemeColors.NormalizeCustomHex(color);
+        var colorChanged = !string.Equals(Settings.CustomThemeColor, normalized, StringComparison.OrdinalIgnoreCase);
+        var modeChanged = !string.Equals(Settings.ThemeColor, ThemeColors.CustomId, StringComparison.Ordinal);
+        if (!colorChanged && !modeChanged) return;
+        Settings.CustomThemeColor = normalized;
+        Settings.ThemeColor = ThemeColors.CustomId;
         RaiseChanged();
     }
 
@@ -2216,12 +2238,12 @@ public sealed class CompanionState : IDisposable
                         Restored = Archive.Restored with { UnresolvedSources = BackupPreparation.UnresolvedSources }
                     };
                 SettingsMessage = $"Safe to copy: {BackupPreparation.FileCount:N0} files checked. Copy {BackupPreparation.Root}.";
-                Toast = "Your portable Coach folder is ready to copy.";
+                Toast = "Your Coach folder is ready to copy.";
             }
             else
             {
                 SettingsMessage = BackupPreparation.Message;
-                Toast = "The portable folder is still active. Finish the listed work and try again.";
+                Toast = "The Coach folder is still in use. Finish the listed work and try again.";
             }
             Diagnostics = BuildDiagnostics(_lastBackendHealth);
         }
@@ -2229,7 +2251,7 @@ public sealed class CompanionState : IDisposable
         {
             LastRecoverableError = StructuredAppLog.Record("prepare portable copy", ex, AppVersion);
             SettingsMessage = $"The backup check could not finish: {Bound(ex.Message)}";
-            Toast = "The portable folder is not ready to copy.";
+            Toast = "The Coach folder is not ready to copy.";
         }
         finally
         {
@@ -2275,7 +2297,7 @@ public sealed class CompanionState : IDisposable
                 currentPath = Path.GetFullPath(path),
                 mappedUtc = DateTimeOffset.UtcNow
             });
-            Toast = "The telemetry source was identified. Prepare the archive again to refresh missing-source status.";
+            Toast = "The telemetry file was found. Run the copy check again to refresh its status.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -2396,10 +2418,12 @@ public sealed class CompanionState : IDisposable
         {
             try
             {
-                foreach (var directory in Directory.EnumerateDirectories(root))
+                foreach (var directory in LeafInstalledContent(root, 3))
                 {
-                    var id = Path.GetFileName(directory);
-                    found.TryAdd(id, new InstalledCar(id, Humanize(id), directory, "Installed on this PC"));
+                    var relative = Path.GetRelativePath(root, directory).Replace('\\', '/');
+                    var id = relative.Replace('/', ' ');
+                    var name = Humanize(Path.GetFileName(directory));
+                    found.TryAdd(id, new InstalledCar(id, name, directory, "Installed on this PC"));
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
@@ -2408,11 +2432,65 @@ public sealed class CompanionState : IDisposable
         Cars.AddRange(found.Values.OrderBy(car => car.Name, StringComparer.CurrentCultureIgnoreCase));
     }
 
+    private void DiscoverTracks()
+    {
+        var found = new Dictionary<string, InstalledTrack>(StringComparer.OrdinalIgnoreCase);
+        foreach (var race in Races.OfType<RecentRace>())
+        {
+            var id = string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track}/{race.Layout}";
+            found[id] = new InstalledTrack(id, string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track} - {race.Layout}", race.SourcePath, "Recorded race");
+        }
+
+        foreach (var root in InstalledTrackRoots())
+        {
+            try
+            {
+                foreach (var trackDirectory in Directory.EnumerateDirectories(root))
+                {
+                    foreach (var layoutDirectory in LeafInstalledContent(trackDirectory, 3))
+                    {
+                        var relative = Path.GetRelativePath(root, layoutDirectory).Replace('\\', '/');
+                        var pieces = relative.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Humanize).ToArray();
+                        var name = string.Join(" - ", pieces);
+                        found.TryAdd(relative, new InstalledTrack(relative, name, layoutDirectory, "Installed on this PC"));
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+
+        Tracks.Clear();
+        Tracks.AddRange(found.Values.OrderBy(track => track.Name, StringComparer.CurrentCultureIgnoreCase));
+    }
+
+    private static IEnumerable<string> LeafInstalledContent(string root, int remainingDepth)
+    {
+        string[] children;
+        try { children = remainingDepth > 0 ? Directory.GetDirectories(root) : []; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { yield break; }
+
+        var yieldedChild = false;
+        foreach (var child in children)
+        {
+            foreach (var layout in LeafInstalledContent(child, remainingDepth - 1))
+            {
+                yieldedChild = true;
+                yield return layout;
+            }
+        }
+        if (yieldedChild) yield break;
+
+        var containsTrackData = false;
+        try { containsTrackData = Directory.EnumerateFiles(root, "*.dat", SearchOption.TopDirectoryOnly).Any(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        if (containsTrackData) yield return root;
+    }
+
     private IEnumerable<string> InstalledCarRoots()
     {
         var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        var candidates = new[]
+        var candidates = new List<string>
         {
             Path.Combine(Settings.IRacingInstallRoot, "cars"),
             Path.Combine(programFiles, "iRacing", "cars"),
@@ -2420,7 +2498,32 @@ public sealed class CompanionState : IDisposable
             Path.Combine(programFilesX86, "Steam", "steamapps", "common", "iRacing", "cars"),
             Path.Combine(programFiles, "Steam", "steamapps", "common", "iRacing", "cars")
         };
+        foreach (var drive in DriveInfo.GetDrives().Where(candidate => candidate.DriveType == DriveType.Fixed && candidate.IsReady))
+        {
+            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "Games", "iRacing", "cars"));
+            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "iRacing", "cars"));
+            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "SteamLibrary", "steamapps", "common", "iRacing", "cars"));
+        }
         return candidates.Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private IEnumerable<string> InstalledTrackRoots() => InstalledCarRoots()
+        .Select(root => Path.Combine(Directory.GetParent(root)?.FullName ?? string.Empty, "tracks"))
+        .Where(Directory.Exists)
+        .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private static string CurrentIRacingSeason()
+    {
+        var now = DateTimeOffset.Now;
+        var season = now.Month switch
+        {
+            12 or 1 or 2 => 1,
+            3 or 4 or 5 => 2,
+            6 or 7 or 8 => 3,
+            _ => 4
+        };
+        var year = now.Month == 12 ? now.Year + 1 : now.Year;
+        return $"{year}S{season}";
     }
 
     private void ConfigureWatchers()
@@ -2460,10 +2563,9 @@ public sealed class CompanionState : IDisposable
         new("ChatGPT", CoachEngine.ChatGptConnected ? "Connected" : "Not connected; deterministic features remain available", CoachEngine.ChatGptConnected ? "ready" : "neutral"),
         new("iRacing folder", Settings.IRacingRoot, Directory.Exists(Settings.IRacingRoot) ? "ready" : "warning"),
         new("iRacing installation", Settings.IRacingInstallRoot, Directory.Exists(Settings.IRacingInstallRoot) ? "ready" : "neutral"),
-        new("Portable Coach repository", Settings.CoachHome, Directory.Exists(Settings.CoachHome) ? "ready" : "warning"),
-        new("Archive schema", Archive is null ? "Not initialized" : $"v{Archive.SchemaVersion} · ID {Archive.ArchiveId[..Math.Min(8, Archive.ArchiveId.Length)]}", Archive?.Compatible == true ? "ready" : "warning"),
-        new("Archive integrity", Archive?.LastIntegrityCheckUtc is null ? "Not checked yet; use Prepare Backup / Migration Copy" : Archive.IntegrityVerified == false ? "Portable files changed since the last prepared copy" : $"Verified · checked {Archive.LastIntegrityCheckUtc.Value.ToLocalTime():g}", Archive?.IntegrityVerified == false ? "warning" : Archive?.LastIntegrityCheckUtc is null ? "neutral" : "ready"),
-        new("Restored portable data", Archive is null ? "Unavailable" : $"{Archive.Restored.TotalItems:N0} indexed items · {Archive.Restored.UnresolvedSources:N0} missing telemetry sources", Archive?.Restored.UnresolvedSources > 0 ? "neutral" : "ready"),
+        new("Coach folder", Settings.CoachHome, Directory.Exists(Settings.CoachHome) ? "ready" : "warning"),
+        new("Copy readiness", Archive?.LastIntegrityCheckUtc is null ? "Not checked yet; use Move or back up" : Archive.IntegrityVerified == false ? "Coach files changed since the last copy check" : $"Verified · checked {Archive.LastIntegrityCheckUtc.Value.ToLocalTime():g}", Archive?.IntegrityVerified == false ? "warning" : Archive?.LastIntegrityCheckUtc is null ? "neutral" : "ready"),
+        new("Coach data", Archive is null ? "Unavailable" : $"{Archive.Restored.TotalItems:N0} saved items · {Archive.Restored.UnresolvedSources:N0} telemetry files need locating", Archive?.Restored.UnresolvedSources > 0 ? "neutral" : "ready"),
         new("Settings file", Settings.SettingsPath, File.Exists(Settings.SettingsPath) ? "ready" : "neutral"),
         new("Setup copies", Settings.SetupsRoot, "ready"),
         new("Garage61", Garage61.Available ? "Connected" : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
@@ -2471,7 +2573,7 @@ public sealed class CompanionState : IDisposable
         new("Live update pipeline", $"{LiveState.FramesRead:N0} frames · {LiveState.DroppedFrames:N0} dropped · {LiveState.RenderLatencyMs:0.00} ms compute", LiveState.DroppedFrames == 0 ? "ready" : "warning"),
         new("Telemetry popout", Settings.LiveMonitor.Visible ? $"Visible · {LiveMonitorLayouts.Active(Settings.LiveMonitor).Layout.Name}" : "Hidden", "neutral"),
         new("Overlay compatibility", "Works above borderless-windowed iRacing and on another monitor; exclusive fullscreen may cover it", "neutral"),
-        new("Automatic discovery", "Watching files · quiet 30-second safety check", "ready"),
+        new("Race updates", "Watching for completed recordings", "ready"),
         new("Finalized races found", Races.Count.ToString(CultureInfo.CurrentCulture)),
         new("Local setup files found", Setups.Count.ToString(CultureInfo.CurrentCulture)),
         new("Cars found on this PC", Cars.Count.ToString(CultureInfo.CurrentCulture))
@@ -3221,7 +3323,7 @@ public sealed class CompanionState : IDisposable
             var directory = Path.GetFullPath(Path.Combine(Settings.ArchiveRoot, component));
             var archiveRoot = Path.GetFullPath(Settings.ArchiveRoot).TrimEnd(Path.DirectorySeparatorChar);
             if (!directory.StartsWith(archiveRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("The portable artifact path escaped the Coach archive.");
+                throw new InvalidOperationException("The saved-data path escaped the Coach data folder.");
             Directory.CreateDirectory(directory);
             var safeName = string.Concat(name.Select(character => Path.GetInvalidFileNameChars().Contains(character) || character is ':' or '/' or '\\' ? '-' : character));
             var path = Path.Combine(directory, safeName + ".json");

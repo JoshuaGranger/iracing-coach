@@ -36,7 +36,7 @@
             <button class="button primary" disabled="@string.IsNullOrWhiteSpace(State.Garage61KeyInput)" @onclick="() => State.ConnectGarage61Async()">Connect Garage61</button>
             @if (State.Garage61.Configured) { <button class="button secondary" @onclick="() => State.DisconnectGarage61Async()">Disconnect</button> }
         </div>
-        <small>Garage61 credentials are not part of the portable Coach folder and must be connected once on each PC.</small>
+        <small>Garage61 is reconnected once on each PC after moving the Coach folder.</small>
     </section>
 </div>
 

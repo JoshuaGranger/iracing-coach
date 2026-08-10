@@ -123,6 +123,57 @@ public sealed class ProgressiveTuningUiTests
         StringAssert.Contains(catalog, "iracing-hud-capture");
     }
 
+    [TestMethod]
+    public void ProgressiveTuningWorkspace_IsTrackFirstPhaseAwareAndViewportBounded()
+    {
+        var ui = UiRoot();
+        var page = File.ReadAllText(Path.Combine(ui, "TuningPage.razor"));
+        var editor = File.ReadAllText(Path.Combine(ui, "ProgressiveTuningFeedbackEditor.razor"));
+        var selector = File.ReadAllText(Path.Combine(ui, "TuningTrackSelector.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+
+        StringAssert.Contains(page, "tuning-workbench-v3");
+        StringAssert.Contains(page, "tuning-session-bar");
+        StringAssert.Contains(page, "tuning-feedback-popover");
+        StringAssert.Contains(page, "tuning-toolbox");
+        StringAssert.Contains(page, "Run phase for all turns");
+        StringAssert.Contains(page, "Recorded tire wear");
+        StringAssert.Contains(page, "Begin analysis");
+        StringAssert.Contains(page, "SetPriorityCorner");
+        StringAssert.Contains(page, "CorrectionModeChanged=\"HandleCorrectionModeChanged\"");
+        StringAssert.Contains(page, "if (open) _editorOpen = false");
+        StringAssert.Contains(editor, "(\"tight\", \"Tight\")");
+        StringAssert.Contains(editor, "(\"good\", \"Comfortable\")");
+        StringAssert.Contains(editor, "(\"loose\", \"Loose\")");
+        StringAssert.Contains(editor, "aria-label=\"Add symptom\"");
+        StringAssert.Contains(editor, "aria-label=\"Add note\"");
+        Assert.DoesNotContain("Not assessed", editor, StringComparison.OrdinalIgnoreCase);
+        StringAssert.Contains(selector, "ActiveRunPhase");
+        StringAssert.Contains(selector, "feedback-comfortable");
+        StringAssert.Contains(selector, "feedback-tight");
+        StringAssert.Contains(selector, "feedback-loose");
+        StringAssert.Contains(selector, "CorrectionModeChanged.InvokeAsync(true)");
+        StringAssert.Contains(css, ".page-frame:has(.tuning-workbench-v3)");
+        StringAssert.Contains(css, "overflow: hidden");
+        StringAssert.Contains(css, "grid-template-columns: minmax(0, 2fr) minmax(318px, 1fr)");
+        StringAssert.Contains(css, "var(--motion-structure)");
+    }
+
+    [TestMethod]
+    public void FixedOnlyEvidence_KeepsTuningVisibleAndRequestsAnOpenSetupTarget()
+    {
+        var ui = UiRoot();
+        var src = Directory.GetParent(ui)!.FullName;
+        var state = File.ReadAllText(Path.Combine(src, "iRacingCoach.Coordinator", "CompanionState.cs"));
+        var page = File.ReadAllText(Path.Combine(ui, "TuningPage.razor"));
+
+        StringAssert.Contains(state, "HasOpenAnalyzedRace = TuningEvidenceRaces.Any()");
+        Assert.DoesNotContain("HasOpenAnalyzedRace = TuningRaces.Any()", state);
+        StringAssert.Contains(page, "NeedsOpenTarget");
+        StringAssert.Contains(page, "Open-setup target");
+        StringAssert.Contains(page, "Choose matching race");
+    }
+
     private static string UiRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

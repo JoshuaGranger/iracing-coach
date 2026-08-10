@@ -1,26 +1,27 @@
-<section class="diagnostics-section" aria-labelledby="diagnostics-heading">
-    <div class="section-heading diagnostics-heading">
-        <div><ProductIcon Name="info" Size="17" /><h2 id="diagnostics-heading">Troubleshooting</h2></div>
-        <button class="text-button" aria-expanded="@State.DiagnosticsExpanded" @onclick="State.ToggleDiagnostics">@(State.DiagnosticsExpanded ? "Close" : "Open")</button>
+<section class="diagnostics-section settings-accordion @(State.DiagnosticsExpanded ? "open" : null)" aria-labelledby="diagnostics-heading">
+    <button class="settings-accordion-toggle diagnostics-toggle" aria-expanded="@(State.DiagnosticsExpanded ? "true" : "false")" @onclick="State.ToggleDiagnostics">
+        <span><ProductIcon Name="info" Size="17" /><strong id="diagnostics-heading">Troubleshooting</strong></span>
+        <small>@TroubleshootingSummary</small>
+        <ProductIcon Name="chevron-down" Size="16" />
+    </button>
+    <div class="settings-accordion-body" aria-hidden="@(State.DiagnosticsExpanded ? "false" : "true")" inert="@(State.DiagnosticsExpanded ? null : string.Empty)">
+        <div>
+            <div class="diagnostic-grid compact-diagnostics">
+                @foreach (var fact in State.Diagnostics)
+                {
+                    <div class="diagnostic-fact @fact.State"><span>@fact.Label</span><strong>@fact.Value</strong></div>
+                }
+            </div>
+            <div class="diagnostics-actions">
+                <button class="button secondary" @onclick="CheckAgain">Run health test</button>
+                <button class="button secondary" @onclick="State.OpenLogs">Open logs</button>
+            </div>
+        </div>
     </div>
-    @if (State.DiagnosticsExpanded)
-    {
-        <p class="section-copy diagnostics-copy">Health details exclude credentials and raw telemetry.</p>
-        <div class="diagnostic-grid compact-diagnostics">
-            @foreach (var fact in State.Diagnostics)
-            {
-                <div class="diagnostic-fact @fact.State"><span>@fact.Label</span><strong>@fact.Value</strong></div>
-            }
-        </div>
-        <div class="diagnostics-actions">
-            <button class="button secondary" @onclick="CheckAgain">Run health test</button>
-            <button class="button secondary" @onclick="State.OpenLogs">Open logs</button>
-            <span>Support information excludes API keys and raw telemetry.</span>
-        </div>
-    }
 </section>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    private string TroubleshootingSummary => State.Diagnostics.Any(item => item.State is "warning" or "unavailable") ? "Needs attention" : "All checks ready";
     private Task CheckAgain() => State.RunHealthCheckAsync();
 }

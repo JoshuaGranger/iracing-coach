@@ -139,6 +139,7 @@ public enum RaceBrowserFilter
 }
 
 public sealed record InstalledCar(string Id, string Name, string Path, string Source);
+public sealed record InstalledTrack(string Id, string Name, string Path, string Source);
 public sealed record SetupField(string Key, string Label, string Group, string Value);
 
 public sealed record LocalSetup(
@@ -313,7 +314,9 @@ public sealed record AnalysisPitStop(
     double? RightRearTireWearPercent,
     double? DamageRepairedSeconds = null,
     double? PenaltyServedSeconds = null,
-    IReadOnlyDictionary<string, AnalysisTireCondition>? TireConditions = null);
+    IReadOnlyDictionary<string, AnalysisTireCondition>? TireConditions = null,
+    double? PitCyclePositionChange = null,
+    double? RaceLapsRemainingAfterStop = null);
 
 public sealed record AnalysisRun(
     int Number,
@@ -333,7 +336,8 @@ public sealed record AnalysisRun(
     double? EarlyBrakeVsLatePercent,
     double? EarlySteerVsLatePercent,
     AnalysisPitStop? PitStop = null,
-    int CoachingReferenceLapCount = 0);
+    int CoachingReferenceLapCount = 0,
+    bool? EndedUnderCaution = null);
 
 public sealed record AnalysisStrategy(
     double? GreenFuelGallonsPerLap,
@@ -620,7 +624,11 @@ public sealed record AnalysisGarage61References(
 public sealed record AnalysisTechnicalMetric(
     string Label,
     string Value,
-    EvidenceKind Evidence);
+    EvidenceKind Evidence,
+    string Detail = "",
+    string Action = "",
+    string Tone = "neutral",
+    string Group = "");
 
 public sealed record AnalysisTechnicalInsight(
     string Key,
@@ -696,13 +704,14 @@ public sealed class CompanionSettings
     [JsonIgnore]
     public string Garage61ApiKey { get; set; } = string.Empty;
     public bool FirstRunComplete { get; set; }
-    public int SettingsSchemaVersion { get; set; } = 4;
+    public int SettingsSchemaVersion { get; set; } = 5;
     public Dictionary<string, string> CoachThreadIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     [JsonIgnore]
     public string PythonPath => ResolvePackagedExecutable("python", "python.exe");
     public bool LaunchAtSignIn { get; set; }
     public bool UseReducedMotion { get; set; }
     public string ThemeColor { get; set; } = "mint";
+    public string CustomThemeColor { get; set; } = "#65D0B6";
     public bool DiagnosticIncludeConfounded { get; set; }
     public LiveMonitorLayout LiveMonitor { get; set; } = new();
     public AnalysisTraceLayout RaceAnalysisTraces { get; set; } = new();
@@ -727,11 +736,17 @@ public sealed class CompanionSettings
 
     private static string ResolveDefaultIRacingInstallRoot()
     {
-        var candidates = new[]
+        var candidates = new List<string>
         {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "iRacing"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "iRacing")
         };
+        foreach (var drive in DriveInfo.GetDrives().Where(candidate => candidate.DriveType == DriveType.Fixed && candidate.IsReady))
+        {
+            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "Games", "iRacing"));
+            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "iRacing"));
+            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "SteamLibrary", "steamapps", "common", "iRacing"));
+        }
         return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
     }
 }

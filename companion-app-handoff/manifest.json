@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "bundle": "iracing-coach-companion-app-build-inputs",
   "scope": "clean build inputs; private data and credentials excluded",
-  "generated_at_utc": "2026-08-08T16:18:03.320826Z",
+  "generated_at_utc": "2026-08-10T19:19:27.541706Z",
   "excluded": [
     "data/ (optional private regression corpus)",
     ".git/",
@@ -74,8 +74,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/analysis_engine.py",
-      "bytes": 285942,
-      "sha256": "851404da0b607f2f65882ed2e9304ccc1e8ff9cd4b567300ea51d6cac9ecbffe"
+      "bytes": 310838,
+      "sha256": "10a6e0a3eaef07d2cfd2fdc7718fedae4537d1a0e8898906732e44d4ea0ed39f"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/coach_cli.py",
@@ -239,8 +239,8 @@
     },
     {
       "path": "iracing-coach/tests/test_race_foundations.py",
-      "bytes": 43679,
-      "sha256": "87e47022301a8d22131c326344bd787e0ec24d5f366539e082b136c1d422dea9"
+      "bytes": 46730,
+      "sha256": "51ac5c83adb1366d776c5f5d6329fd85a46694b24b7b024c0ebf8ada8095c233"
     },
     {
       "path": "iracing-coach/tests/test_reporting.py",
@@ -314,18 +314,18 @@
     },
     {
       "path": "companion-app-handoff/BUILD_SPEC.md",
-      "bytes": 8834,
-      "sha256": "da87c486efb5d4412bd4b89c9d85074e76b44d1a196239c6b99b8a96b0cf4419"
+      "bytes": 8851,
+      "sha256": "fefa7149e00b945bda56e4f5ed53798515ed0f14bba233f30fb56e26ab41227a"
     },
     {
       "path": "companion-app-handoff/config/appsettings.example.json",
-      "bytes": 536,
-      "sha256": "922e8fc92508436e0a790786f9a040fc96e84abc1490a4c085cdf62a1f2705d2"
+      "bytes": 534,
+      "sha256": "81162ae1e24fe78179034c0f0e12b71f3d88a586c6c1be721b2dacc81735d7a7"
     },
     {
       "path": "companion-app-handoff/config/theme.dark.json",
-      "bytes": 2633,
-      "sha256": "997f970a9a75c52a7784ee9f59876f88d9501c3889f427f8f89493038fd3ccb6"
+      "bytes": 2649,
+      "sha256": "b23cfff15f44dff21e6c65c9da754621ba1d285649e9ea8957d90fbff8984cf5"
     },
     {
       "path": "companion-app-handoff/contracts/ai-coaching-output.schema.json",
@@ -344,13 +344,13 @@
     },
     {
       "path": "companion-app-handoff/contracts/app-settings.schema.json",
-      "bytes": 1462,
-      "sha256": "9e12b7b5c9216fc79729f434b5b1699c38b07c8038c3c49591e1710b05440558"
+      "bytes": 1460,
+      "sha256": "e45a3c7c31af507bbccdc8601b85578b0cbeaccf5045b2de5da1c8038892770d"
     },
     {
       "path": "companion-app-handoff/contracts/compatibility.json",
-      "bytes": 1830,
-      "sha256": "e9e82e20dd50416de8082bab6f02936b54b568c847b5a3294ba4cc02d9219e90"
+      "bytes": 1828,
+      "sha256": "6136eccc9ba3807955b4bb1f6b8aa580e4c07496ed2332c854bb5af51623b2d8"
     },
     {
       "path": "companion-app-handoff/contracts/damage-repair-v1.schema.json",
@@ -404,8 +404,8 @@
     },
     {
       "path": "companion-app-handoff/contracts/theme-v1.schema.json",
-      "bytes": 2702,
-      "sha256": "34c243d6e4c29c64591575f168c35d14a8523c2ed9038aa0cb3560bda8c3bfd0"
+      "bytes": 2700,
+      "sha256": "6375c22de6656fb19ead98df31af8e86168a96ebec4a84d2f739407c2deb4dd4"
     },
     {
       "path": "companion-app-handoff/contracts/track-phase-visualization-v1.schema.json",
@@ -524,8 +524,8 @@
     },
     {
       "path": "companion-app-handoff/scripts/export_contracts.py",
-      "bytes": 5155,
-      "sha256": "201c992493575ad9147d138fadca5f33d60cf4d0e1eadf6a8ecc30a910f6b4b4"
+      "bytes": 5153,
+      "sha256": "5269b7d286e4f4194183ec0075c952f00c6f7f378584d60decf094c1d8038fcc"
     },
     {
       "path": "companion-app-handoff/scripts/generate-fixtures.ps1",
@@ -564,8 +564,8 @@
     },
     {
       "path": "companion-app-handoff/scripts/verify_handoff.py",
-      "bytes": 32152,
-      "sha256": "77b4b6af979af6022e154f2394cd11152cf17ef025e94bb76d6eac18b27acf85"
+      "bytes": 32272,
+      "sha256": "8349d02608b821f66dd2377aeadc9b13e0ea974ed0e83120bdef4909da117091"
     },
     {
       "path": "companion-app-handoff/SECURITY_AND_TRANSFER.md",
@@ -579,12 +579,12 @@
     },
     {
       "path": "companion-app-handoff/UI_DESIGN_SYSTEM.md",
-      "bytes": 9053,
-      "sha256": "e613affb2dc51dd37ba6069e650dca5a6559d3faade5f1191782aebbce51b18a"
+      "bytes": 9714,
+      "sha256": "f75848b1fe1849ec78a4a69121e91245bfbba3e6faf12807d9c354e6ad33dbac"
     }
   ],
   "totals": {
     "file_count": 114,
-    "bytes": 2332995
+    "bytes": 2361746
   }
 }

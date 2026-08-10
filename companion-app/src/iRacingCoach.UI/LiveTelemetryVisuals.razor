@@ -196,6 +196,7 @@
 
     private static IReadOnlyList<LiveTracePoint> CompactPendingFrames(IReadOnlyList<LiveTracePoint> frames, int maximumFrames)
     {
+        if (frames.Count <= maximumFrames) return frames;
         Func<LiveTracePoint, double?>[] selectors =
         {
             point => point.SpeedMph,

@@ -10,6 +10,8 @@ namespace iRacingCoach.Installer;
 
 internal static class Program
 {
+    internal const string ProductVersion = "0.15.0";
+    internal static string RepairInstallerFileName => $"iRacingCoach-{ProductVersion}-Setup.exe";
     internal static string PerUserTarget => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "iRacing Coach");
 
     [STAThread]
@@ -122,7 +124,7 @@ internal sealed class InstallerForm : Form
         var subtitle = new Label { Text = "A local companion for race analysis, planning, setup work, and live coaching.", AutoSize = true, Location = new Point(45, 82), ForeColor = Color.FromArgb(195, 196, 196) };
         var boundary = new Label { Text = "App and analysis runtime", AutoSize = true, Location = new Point(45, 130), ForeColor = Color.FromArgb(150, 153, 157) };
         var programFiles = new Label { Text = Program.PerUserTarget, AutoSize = true, Location = new Point(45, 151), ForeColor = ForeColor };
-        var data = new Label { Text = "Your portable data stays in Documents\\iRacing Coach and is never removed by uninstall or upgrade.", MaximumSize = new Size(430, 0), AutoSize = true, Location = new Point(45, 185), ForeColor = Color.FromArgb(163, 173, 184) };
+        var data = new Label { Text = "Your Coach folder stays in Documents\\iRacing Coach and is never removed by uninstall or upgrade.", MaximumSize = new Size(430, 0), AutoSize = true, Location = new Point(45, 185), ForeColor = Color.FromArgb(163, 173, 184) };
         _desktop.Location = new Point(48, 232); _launch.Location = new Point(48, 258);
         _progress.Location = new Point(45, 296); _status.Location = new Point(45, 315); _install.Location = new Point(294, 305);
         _install.Click += InstallClicked;
@@ -298,7 +300,7 @@ internal static class InstallerEngine
         var source = Environment.ProcessPath ?? throw new InvalidOperationException("The setup path is unavailable.");
         var cacheRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iRacingCoach", "Installer");
         Directory.CreateDirectory(cacheRoot);
-        var destination = Path.Combine(cacheRoot, "iRacingCoach-0.14.2-Setup.exe");
+        var destination = Path.Combine(cacheRoot, Program.RepairInstallerFileName);
         foreach (var oldInstaller in Directory.EnumerateFiles(cacheRoot, "iRacingCoach-*-Setup.exe", SearchOption.TopDirectoryOnly))
         {
             if (!string.Equals(oldInstaller, destination, StringComparison.OrdinalIgnoreCase)) File.Delete(oldInstaller);
@@ -379,9 +381,9 @@ internal static class InstallerEngine
         CreateShortcut(Path.Combine(startMenu, "iRacing Coach.lnk"), executable, target);
         if (desktopShortcut) CreateShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "iRacing Coach.lnk"), executable, target);
         using var key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\iRacing Coach");
-        key.SetValue("DisplayName", "iRacing Coach"); key.SetValue("DisplayVersion", "0.14.2"); key.SetValue("Publisher", "iRacing Coach");
+        key.SetValue("DisplayName", "iRacing Coach"); key.SetValue("DisplayVersion", Program.ProductVersion); key.SetValue("Publisher", "iRacing Coach");
         key.SetValue("InstallLocation", target); key.SetValue("DisplayIcon", executable); key.SetValue("UninstallString", $"\"{Path.Combine(target, "Uninstall iRacing Coach.exe")}\"");
-        key.SetValue("ModifyPath", $"\"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iRacingCoach", "Installer", "iRacingCoach-0.14.2-Setup.exe")}\" --repair");
+        key.SetValue("ModifyPath", $"\"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iRacingCoach", "Installer", Program.RepairInstallerFileName)}\" --repair");
         key.SetValue("NoModify", 0, RegistryValueKind.DWord); key.SetValue("NoRepair", 0, RegistryValueKind.DWord);
     }
 

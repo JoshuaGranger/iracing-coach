@@ -1536,7 +1536,7 @@ public sealed class CoordinatorTests
         Assert.AreEqual(string.Empty, actual.Garage61ApiKey);
         Assert.DoesNotContain("legacy-test-key", File.ReadAllText(path));
         Assert.IsFalse(File.ReadAllText(path).Contains("garage61ApiKey", StringComparison.OrdinalIgnoreCase));
-        Assert.AreEqual(4, actual.SettingsSchemaVersion);
+        Assert.AreEqual(5, actual.SettingsSchemaVersion);
     }
 
     [TestMethod]

@@ -151,7 +151,7 @@ public sealed class RaceFoundationMapperTests
             "garage61_representative_laps": {
               "status":"available","comparison_scope":"own/team","representative_laps":[{"comparison_role":"representative","lap":{"id":"42","lapTime":24.5,"canViewTelemetry":true,"driverName":"Driver"},"telemetry":{"status":"cached"}}]
             },
-            "technical_insights": [{"key":"fuel","label":"Fuel","status":"available","rating":"usable","takeaway":"Measured.","metrics":[{"label":"Range","value":"30 laps","evidence_type":"derived"}],"evidence":["fuel level"],"unavailable_reasons":[]}]
+            "technical_insights": [{"key":"fuel","label":"Fuel","status":"available","rating":"safe","takeaway":"Range is supported.","metrics":[{"label":"Range","value":"30 laps","evidence_type":"derived","detail":"Green-lap range.","action":"Keep a reserve.","tone":"positive","group":"range"}],"evidence":["fuel level"],"unavailable_reasons":[]}]
           }
         }
         """);
@@ -202,6 +202,11 @@ public sealed class RaceFoundationMapperTests
         Assert.AreEqual("own/team", mapped.Garage61References?.ComparisonScope);
         Assert.AreEqual("42", mapped.Garage61References?.Laps.Single().Id);
         Assert.AreEqual("fuel", mapped.TechnicalInsights?.Single().Key);
+        var technicalMetric = mapped.TechnicalInsights?.Single().Metrics.Single();
+        Assert.AreEqual("Green-lap range.", technicalMetric?.Detail);
+        Assert.AreEqual("Keep a reserve.", technicalMetric?.Action);
+        Assert.AreEqual("positive", technicalMetric?.Tone);
+        Assert.AreEqual("range", technicalMetric?.Group);
     }
 
     [TestMethod]

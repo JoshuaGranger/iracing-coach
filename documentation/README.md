@@ -54,6 +54,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
   - [Current development snapshot: 0.15.0](06-reality/implementation-snapshot-0.15.0-development.md)
+  - [Technical Data signal coverage: 0.15.0 development](06-reality/technical-data-signal-coverage-0.15.0-development.md)
   - [Stable packaged snapshot: 0.14.2](06-reality/implementation-snapshot-0.14.2.md)
   - [Prior implementation snapshot: 0.14.1](06-reality/implementation-snapshot-0.14.1.md)
   - [Prior implementation snapshot: 0.14.0](06-reality/implementation-snapshot-0.14.0.md)
@@ -91,7 +92,7 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 - Current source version: `0.15.0` development; no 0.15.0 installer or portable release is claimed
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Current development verification: 211/211 .NET tests and 229/229 Python tests passed; the verified handoff contains 17 MCP tools and 114 files
+- Current development verification: 232/232 .NET tests and 230/230 Python tests passed; the verified handoff contains 17 MCP tools and 114 files
 - Installer lifecycle: prior guarded install/upgrade/rollback/uninstall evidence is unchanged and was not rerun for every focused UI adjustment
 - Development focus: Race Analysis, Technical data, Race replay, global analysis layouts, exact-configuration maps, retained raw telemetry, NASCAR-first tire/capability foundations, and Progressive Tuning evidence-contract v2. Supported and unavailable states remain evidence-gated; development implementation is not user acceptance.
 

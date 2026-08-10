@@ -185,17 +185,18 @@ public partial class LiveMonitorWindow : Window
         finally { _updatingControls = false; }
     }
 
-    private string VisualSignature() => $"{LiveMonitorLayouts.EditorSignature(Preferences)}|theme:{ThemeColors.Normalize(_state.Settings.ThemeColor)}";
+    private string VisualSignature() => $"{LiveMonitorLayouts.EditorSignature(Preferences)}|theme:{ThemeColors.Normalize(_state.Settings.ThemeColor)}:{ThemeColors.NormalizeCustomHex(_state.Settings.CustomThemeColor)}";
 
     private void ApplyTheme()
     {
-        var theme = ThemeColors.Get(_state.Settings.ThemeColor);
-        if (string.Equals(_appliedThemeColor, theme.Id, StringComparison.Ordinal)) return;
+        var theme = ThemeColors.Get(_state.Settings.ThemeColor, _state.Settings.CustomThemeColor);
+        var signature = $"{theme.Id}:{theme.Accent}";
+        if (string.Equals(_appliedThemeColor, signature, StringComparison.Ordinal)) return;
         Resources["MonitorAccentBrush"] = ThemeBrush(theme.Accent);
         Resources["MonitorAccentFillBrush"] = ThemeBrush(theme.Fill);
         Resources["MonitorAccentSubtleBrush"] = ThemeBrush(theme.Subtle);
         Resources["MonitorFocusBrush"] = ThemeBrush(theme.Focus);
-        _appliedThemeColor = theme.Id;
+        _appliedThemeColor = signature;
     }
 
     private static SolidColorBrush ThemeBrush(string value) =>

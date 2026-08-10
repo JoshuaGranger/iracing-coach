@@ -521,11 +521,82 @@ class RaceFoundationTests(unittest.TestCase):
         self.assertIn("Finish reserve", [item["label"] for item in by_key["fuel"]["metrics"]])
         self.assertTrue(
             any(
-                item["label"].startswith("Weakest phase")
+                item["label"] == "Late"
                 for item in by_key["racecraft"]["metrics"]
             )
         )
-        self.assertTrue(all(len(item["metrics"]) <= 3 for item in insights))
+        self.assertTrue(any(len(item["metrics"]) > 3 for item in insights))
+        self.assertTrue(
+            all(
+                "detail" in metric
+                for item in insights
+                for metric in item["metrics"]
+                if metric["label"] not in {"Stops", "Race fuel used"}
+            )
+        )
+
+    def test_technical_insights_compare_two_and_four_tire_stops_only_when_both_are_known(self) -> None:
+        def tire_observation(remaining: float) -> dict[str, object]:
+            return {
+                "tires": {
+                    corner: {
+                        "average_remaining_percent": remaining,
+                        "remaining_percent": {"L": remaining, "M": remaining, "R": remaining},
+                    }
+                    for corner in ("LF", "RF", "LR", "RR")
+                }
+            }
+
+        runs = [
+            {
+                "run_number": 1,
+                "ended_with_pit_stop": True,
+                "ended_under_caution": True,
+                "pit_service": {
+                    "start_time": 100.0,
+                    "end_time": 110.0,
+                    "tires_changed_observed": ["RF", "RR"],
+                },
+                "tire_observation": tire_observation(80.0),
+                "pace": {"green_laps_used": 12},
+            },
+            {
+                "run_number": 2,
+                "ended_with_pit_stop": True,
+                "ended_under_caution": False,
+                "pit_service": {
+                    "start_time": 200.0,
+                    "end_time": 214.0,
+                    "tires_changed_observed": ["LF", "RF", "LR", "RR"],
+                },
+                "tire_observation": tire_observation(70.0),
+                "pace": {"green_laps_used": 10, "early_average_lap_s": 31.0},
+            },
+            {
+                "run_number": 3,
+                "ended_with_pit_stop": False,
+                "pace": {"green_laps_used": 10, "early_average_lap_s": 30.5},
+            },
+        ]
+        strategy = {
+            "pit_assessments": [
+                {"run_number": 1, "was_pit_stop": True, "pit_cycle_position_change": -1},
+                {"run_number": 2, "was_pit_stop": True, "pit_cycle_position_change": 2},
+            ],
+            "forecast": {},
+        }
+        insights = build_technical_insights([], runs, {}, strategy, {}, {})
+        pit_metrics = {item["label"]: item for item in insights[0]["metrics"]}
+
+        self.assertEqual(pit_metrics["2 vs 4 service"]["numeric_value"], -4.0)
+        self.assertEqual(pit_metrics["2 vs 4 next-run pace"]["numeric_value"], 0.5)
+        self.assertEqual(pit_metrics["2 vs 4 cycle"]["numeric_value"], -3.0)
+        self.assertEqual(pit_metrics["2 vs 4 outgoing wear"]["numeric_value"], -10.0)
+        self.assertIn("association", pit_metrics["2 vs 4 next-run pace"]["action"])
+
+        one_strategy = {"pit_assessments": strategy["pit_assessments"][:1], "forecast": {}}
+        one_call = build_technical_insights([], runs[:1], {}, one_strategy, {}, {})[0]
+        self.assertFalse(any(item["label"].startswith("2 vs 4") for item in one_call["metrics"]))
 
     def test_raw_archive_is_verified_deduplicated_and_non_destructive(self) -> None:
         with tempfile.TemporaryDirectory() as folder:

@@ -7,11 +7,13 @@ param(
     [string]$PythonRuntime,
 
     [Parameter(Mandatory = $true)]
-    [string]$CodexRuntime
+    [string]$CodexRuntime,
+
+    [switch]$IncludePortable
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '0.14.2'
+$version = '0.15.0'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot '..'))
 $backendSource = Join-Path $workspaceRoot 'iracing-coach'
@@ -63,6 +65,30 @@ $versionMismatches = $releaseProjects | Where-Object { (Get-ProjectVersion $_) -
 if ($versionMismatches.Count -gt 0) {
     $details = $versionMismatches | ForEach-Object { "$(Split-Path $_ -Leaf)=$(Get-ProjectVersion $_)" }
     throw "Release identity mismatch. BuildRelease.ps1 targets $version but these projects do not: $($details -join ', '). Update every release identity together before packaging."
+}
+$releaseSourceIdentities = @(
+    [pscustomobject]@{
+        Label = 'installer product version'
+        Path = (Join-Path $projectRoot 'src\iRacingCoach.Installer\Program.cs')
+        Expected = "internal const string ProductVersion = `"$version`";"
+    },
+    [pscustomobject]@{
+        Label = 'application repair version'
+        Path = (Join-Path $projectRoot 'src\iRacingCoach.Coordinator\CompanionState.cs')
+        Expected = "private const string AppVersion = `"$version`";"
+    },
+    [pscustomobject]@{
+        Label = 'backend client version'
+        Path = (Join-Path $projectRoot 'src\iRacingCoach.Contracts\Models.cs')
+        Expected = "string ClientVersion = `"$version`""
+    }
+)
+$sourceIdentityMismatches = $releaseSourceIdentities | Where-Object {
+    -not (Get-Content -LiteralPath $_.Path -Raw).Contains($_.Expected)
+}
+if ($sourceIdentityMismatches.Count -gt 0) {
+    $details = $sourceIdentityMismatches | ForEach-Object { $_.Label }
+    throw "Release identity mismatch. BuildRelease.ps1 targets $version but these source identities do not: $($details -join ', '). Update every release identity together before packaging."
 }
 $codexSignature = Get-AuthenticodeSignature -LiteralPath $codexSource
 if ($codexSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
@@ -145,18 +171,24 @@ Copy-Item -LiteralPath (Join-Path $installerOutput 'iRacing Coach Setup.exe') -D
 $hash = (Get-FileHash -LiteralPath $setupDestination -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -LiteralPath "$setupDestination.sha256" -Value "$hash  $setupName" -Encoding ascii
 
-$portableName = "iRacingCoach-$version-Portable-win-x64.zip"
-$portableDestination = Join-Path $destination $portableName
-Copy-Item -LiteralPath $payloadArchive -Destination $portableDestination -Force
-$portableHash = (Get-FileHash -LiteralPath $portableDestination -Algorithm SHA256).Hash.ToLowerInvariant()
-Set-Content -LiteralPath "$portableDestination.sha256" -Value "$portableHash  $portableName" -Encoding ascii
+$portableDestination = $null
+$portableHash = $null
+$portableBytes = $null
+if ($IncludePortable) {
+    $portableName = "iRacingCoach-$version-Portable-win-x64.zip"
+    $portableDestination = Join-Path $destination $portableName
+    Copy-Item -LiteralPath $payloadArchive -Destination $portableDestination -Force
+    $portableHash = (Get-FileHash -LiteralPath $portableDestination -Algorithm SHA256).Hash.ToLowerInvariant()
+    Set-Content -LiteralPath "$portableDestination.sha256" -Value "$portableHash  $portableName" -Encoding ascii
+    $portableBytes = (Get-Item -LiteralPath $portableDestination).Length
+}
 
 [pscustomobject]@{
     Installer = $setupDestination
     Bytes = (Get-Item -LiteralPath $setupDestination).Length
     Sha256 = $hash
     Portable = $portableDestination
-    PortableBytes = (Get-Item -LiteralPath $portableDestination).Length
+    PortableBytes = $portableBytes
     PortableSha256 = $portableHash
     PayloadFiles = (Get-ChildItem -LiteralPath $payload -Recurse -File).Count
 }

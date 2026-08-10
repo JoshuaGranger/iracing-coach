@@ -10,8 +10,7 @@
             <h2 id="tuning-map-heading">@Workspace.Track <small>@Workspace.Layout</small></h2>
         </div>
         <div class="tuning-map-source" title="@SourceTitle">
-            <span class="status-label @(Resolution.Verified ? "success" : "neutral")">@(Resolution.Verified ? "Verified map" : "Needs verification")</span>
-            <small>@Resolution.SourceLabel</small>
+            <span class="status-label @(Resolution.Verified ? "success" : "neutral")">@(Resolution.Verified ? "Map ready" : "Verify turns")</span>
         </div>
     </header>
 
@@ -118,7 +117,7 @@
                             @onblur="ClearHover"
                             @onclick="() => Select(turn)">
                         <strong>@turn.Label</strong>
-                        <small>@TurnStatus(turn)</small>
+                        <small>@TurnListDetail(turn)</small>
                     </button>
                 }
             }
@@ -148,7 +147,7 @@
     {
         <form class="tuning-turn-correction" @onsubmit="SaveCorrection" @onsubmit:preventDefault="true">
             <div class="tuning-correction-heading">
-                <div><strong>Verify this turn</strong><small>Saved with your portable Coach data.</small></div>
+                <div><strong>Verify this turn</strong><small>Saved in your Coach folder.</small></div>
                 <button type="button" aria-label="Close correction" @onclick="CloseCorrection"><ProductIcon Name="close" Size="15" /></button>
             </div>
             <p class="tuning-correction-instruction">Click the track for <strong>@CorrectionHandleLabel(_activeCorrectionHandle)</strong>. Select a handle to adjust it again.</p>
@@ -174,6 +173,10 @@
     [Parameter] public EventCallback<string> SelectedChanged { get; set; }
     [Parameter] public EventCallback<TuningTurn> TurnSelected { get; set; }
     [Parameter] public Func<ProgressiveTurnCorrectionRequest, Task<bool>>? CorrectionRequested { get; set; }
+    [Parameter] public EventCallback<bool> CorrectionModeChanged { get; set; }
+    [Parameter] public IReadOnlyList<ProgressiveTuningFeedback> Feedback { get; set; } = [];
+    [Parameter] public string ActiveRunPhase { get; set; } = "early";
+    [Parameter] public string PriorityCornerId { get; set; } = string.Empty;
 
     private ProgressiveProjectedTrack Projection { get; set; } = new(false, "Geometry unavailable", "0 0 720 420", [], [], [], [], null);
     private ProgressiveTurnMapResolution Resolution { get; set; } = new("", "telemetry-derived", "Recorded telemetry", null, "low", false, false, "", []);
@@ -234,7 +237,43 @@
         if (string.Equals(ActiveCornerId, turn.CornerId, StringComparison.OrdinalIgnoreCase)) states.Add("active");
         if (IsSelected(turn)) states.Add("selected");
         if (!Resolution.Verified && !turn.UserVerified) states.Add("unverified");
+        if (string.Equals(PriorityCornerId, turn.CornerId, StringComparison.Ordinal)) states.Add("priority");
+        var feedback = ActiveFeedback(turn);
+        if (feedback.Count > 0)
+        {
+            var primary = feedback.Where(item => item.SymptomId is "tight" or "good" or "loose").ToArray();
+            var hasTight = primary.Any(item => item.SymptomId == "tight");
+            var hasComfortable = primary.Any(item => item.SymptomId == "good");
+            var hasLoose = primary.Any(item => item.SymptomId == "loose");
+            states.Add(hasTight && hasLoose ? "feedback-mixed"
+                : hasTight ? "feedback-tight"
+                : hasLoose ? "feedback-loose"
+                : hasComfortable ? "feedback-comfortable"
+                : "feedback-detail");
+            states.Add($"feedback-level-{Math.Clamp(feedback.Max(item => item.Severity), 1, 5)}");
+        }
         return string.Join(" ", states);
+    }
+
+    private IReadOnlyList<ProgressiveTuningFeedback> ActiveFeedback(ProgressiveTurnAnnotation turn) => Feedback
+        .Where(item => string.Equals(item.CornerId, turn.CornerId, StringComparison.Ordinal)
+            && string.Equals(item.RunPhase, ActiveRunPhase, StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+
+    private string TurnListDetail(ProgressiveTurnAnnotation turn)
+    {
+        var feedback = ActiveFeedback(turn);
+        if (feedback.Count == 0) return TurnStatus(turn);
+        var details = feedback
+            .Where(item => item.SymptomId is "tight" or "good" or "loose")
+            .SelectMany(item => (item.CornerPhases.Count == 0 ? ["whole"] : item.CornerPhases)
+                .Select(phase => $"{PhaseLabel(phase)} {BalanceLabel(item.SymptomId)}"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToArray();
+        return details.Length > 0
+            ? string.Join(" · ", details)
+            : $"{feedback.Count} detail{(feedback.Count == 1 ? string.Empty : "s")}";
     }
 
     private async Task Select(ProgressiveTurnAnnotation turn)
@@ -272,7 +311,7 @@
     private void Hover(string cornerId) => _hoveredCornerId = cornerId;
     private void ClearHover() => _hoveredCornerId = null;
 
-    private void OpenCorrection()
+    private async Task OpenCorrection()
     {
         if (SelectedTurn is not { } turn) return;
         _correctionLabel = turn.Label;
@@ -282,12 +321,14 @@
         _activeCorrectionHandle = "entry";
         _correctionError = string.Empty;
         _correctionOpen = true;
+        await CorrectionModeChanged.InvokeAsync(true);
     }
 
-    private void CloseCorrection()
+    private async Task CloseCorrection()
     {
         _correctionOpen = false;
         _correctionError = string.Empty;
+        await CorrectionModeChanged.InvokeAsync(false);
     }
 
     private void ClearCorrectionError() => _correctionError = string.Empty;
@@ -363,6 +404,7 @@
             return;
         _correctionOpen = false;
         _correctionError = string.Empty;
+        await CorrectionModeChanged.InvokeAsync(false);
         await Select(corrected);
     }
 
@@ -373,13 +415,21 @@
         return label.Length <= 4 ? label : label[..4];
     }
 
-    private static string TurnAccessibleName(ProgressiveTurnAnnotation turn) =>
-        $"{turn.Label}, {turn.StartPct:P0} to {turn.EndPct:P0}, {TurnStatus(turn).ToLowerInvariant()}";
+    private string TurnAccessibleName(ProgressiveTurnAnnotation turn) =>
+        $"{turn.Label}, {turn.StartPct:P0} to {turn.EndPct:P0}, {TurnListDetail(turn).ToLowerInvariant()}";
     private static string TurnStatus(ProgressiveTurnAnnotation turn) => turn.UserVerified
         ? "Bounds verified"
         : turn.IsOfficial
             ? "Official label · bounds unverified"
             : "Recorded zone · bounds unverified";
+    private static string PhaseLabel(string phase) => phase switch
+    {
+        "entry" => "Entry",
+        "center" => "Center",
+        "exit" => "Exit",
+        _ => "Whole"
+    };
+    private static string BalanceLabel(string symptom) => symptom == "good" ? "comfortable" : symptom;
     private static string AriaBoolean(bool value) => value ? "true" : "false";
     private static string CorrectionHandleLabel(string handle) => handle switch { "entry" => "entry", "apex" => "apex", _ => "exit" };
     private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);

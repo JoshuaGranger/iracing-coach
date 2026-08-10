@@ -219,8 +219,14 @@
     return captured;
   }
 
+  function structuralMotionMs(root) {
+    const configured = Number.parseFloat(getComputedStyle(root).getPropertyValue("--motion-structure"));
+    return Number.isFinite(configured) ? Math.max(0, configured) : 500;
+  }
+
   function animateReflow(state, before) {
     if (state.options.reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const duration = structuralMotionMs(state.root);
     for (const element of state.root.querySelectorAll("[data-analysis-render-row], .trace-row-label-shell")) {
       const prefix = element.hasAttribute("data-analysis-render-row") ? "chart" : "label";
       const prior = before.get(`${prefix}:${element.dataset.rowId}`);
@@ -228,7 +234,7 @@
       const next = element.getBoundingClientRect();
       const deltaY = prior.top - next.top;
       if (Math.abs(deltaY) < .5) continue;
-      element.animate([{ transform: `translateY(${deltaY}px)` }, { transform: "none" }], { duration: 200, easing: "cubic-bezier(.2,0,0,1)" });
+      element.animate([{ transform: `translateY(${deltaY}px)` }, { transform: "none" }], { duration, easing: "cubic-bezier(.2,0,0,1)" });
     }
   }
 

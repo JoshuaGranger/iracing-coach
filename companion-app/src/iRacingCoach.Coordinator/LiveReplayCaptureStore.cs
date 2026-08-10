@@ -103,7 +103,7 @@ public sealed class LiveReplayCaptureStore : IDisposable
         var archiveRoot = Path.GetFullPath(_archiveRoot());
         var baseDirectory = Path.GetFullPath(Path.Combine(archiveRoot, "telemetry-traces", "live-replay"));
         if (!baseDirectory.StartsWith(archiveRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The live replay path escaped the portable archive.");
+            throw new InvalidOperationException("The live replay path escaped the Coach data folder.");
         var safeKey = string.Concat(frame.SessionKey.Select(character =>
             char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '-'));
         if (safeKey.Length == 0) throw new InvalidOperationException("Live replay session identity is empty.");

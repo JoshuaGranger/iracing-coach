@@ -6,6 +6,21 @@
   const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
   const finite = (value) => typeof value === "number" && Number.isFinite(value);
 
+  function setAttributeIfChanged(node, name, value) {
+    const rendered = String(value);
+    if (node.getAttribute(name) !== rendered) node.setAttribute(name, rendered);
+  }
+
+  function setTextIfChanged(node, value) {
+    const rendered = String(value);
+    if (node.textContent !== rendered) node.textContent = rendered;
+  }
+
+  function setVisible(node, visible) {
+    const display = visible ? "" : "none";
+    if (node.style.display !== display) node.style.display = display;
+  }
+
   function createSvg(name, attributes) {
     const node = document.createElementNS(svgNamespace, name);
     for (const [key, value] of Object.entries(attributes || {})) node.setAttribute(key, String(value));
@@ -114,29 +129,42 @@
     state.renderWidth = elementWidth;
     state.plotLeft = state.config.plotLeft;
     state.plotWidth = Math.max(40, elementWidth - state.plotLeft - 20);
-    state.element.setAttribute("viewBox", `0 0 ${elementWidth.toFixed(3)} ${state.config.chartHeight}`);
+    setAttributeIfChanged(state.element, "viewBox", `0 0 ${elementWidth.toFixed(3)} ${state.config.chartHeight}`);
 
     for (const rowNode of state.element.querySelectorAll("[data-analysis-chart-row]"))
-      rowNode.setAttribute("width", state.plotWidth.toFixed(3));
+      setAttributeIfChanged(rowNode, "width", state.plotWidth.toFixed(3));
     for (const line of state.element.querySelectorAll("[data-analysis-horizontal-grid]"))
-      line.setAttribute("x2", (state.plotLeft + state.plotWidth).toFixed(3));
+      setAttributeIfChanged(line, "x2", (state.plotLeft + state.plotWidth).toFixed(3));
     for (const line of state.element.querySelectorAll("[data-analysis-vertical-grid]")) {
       const tick = Number(line.dataset.analysisVerticalGrid);
       const x = state.plotLeft + clamp(tick, 0, 4) * state.plotWidth / 4;
-      line.setAttribute("x1", x.toFixed(3));
-      line.setAttribute("x2", x.toFixed(3));
+      setAttributeIfChanged(line, "x1", x.toFixed(3));
+      setAttributeIfChanged(line, "x2", x.toFixed(3));
     }
     for (const label of state.element.querySelectorAll("[data-analysis-x-tick]")) {
       const tick = Number(label.dataset.analysisXTick);
-      label.setAttribute("x", (state.plotLeft + clamp(tick, 0, 4) * state.plotWidth / 4).toFixed(3));
+      setAttributeIfChanged(label, "x", (state.plotLeft + clamp(tick, 0, 4) * state.plotWidth / 4).toFixed(3));
     }
+
+    // Structural CSS transitions can issue many ResizeObserver callbacks. Keep
+    // one exact path geometry and scale only its x axis while the panel moves;
+    // configuration changes still perform one exact sample-by-sample rebuild.
+    const rebuildPaths = force || !finite(state.pathBasePlotWidth) || state.pathBasePlotWidth <= 0;
+    const pathScale = rebuildPaths ? 1 : state.plotWidth / state.pathBasePlotWidth;
+    const pathTransform = Math.abs(pathScale - 1) < 0.000001
+      ? ""
+      : `translate(${state.plotLeft.toFixed(3)} 0) scale(${pathScale.toFixed(6)} 1) translate(${(-state.plotLeft).toFixed(3)} 0)`;
     for (const path of state.element.querySelectorAll("[data-analysis-trace-path]")) {
-      const rowIndex = Number(path.dataset.row);
-      const trace = state.config.traces.find(candidate => candidate.lap === Number(path.dataset.lap));
-      const row = state.config.rows[rowIndex];
-      const signalIndex = row?.signals.findIndex(signal => signal.id === path.dataset.signal) ?? -1;
-      path.setAttribute("d", trace && row && signalIndex >= 0 ? resizedTracePath(state, trace, row, rowIndex, signalIndex) : "");
+      if (rebuildPaths) {
+        const rowIndex = Number(path.dataset.row);
+        const trace = state.config.traces.find(candidate => candidate.lap === Number(path.dataset.lap));
+        const row = state.config.rows[rowIndex];
+        const signalIndex = row?.signals.findIndex(signal => signal.id === path.dataset.signal) ?? -1;
+        setAttributeIfChanged(path, "d", trace && row && signalIndex >= 0 ? resizedTracePath(state, trace, row, rowIndex, signalIndex) : "");
+      }
+      setAttributeIfChanged(path, "transform", pathTransform);
     }
+    if (rebuildPaths) state.pathBasePlotWidth = state.plotWidth;
   }
 
   function buildOverlay(state) {
@@ -221,9 +249,10 @@
   function hideCursorIfInactive(state) {
     if (cursorActive(state)) return;
     state.lapOffset = 0;
+    state.inputSource = null;
     if (state.frame) cancelAnimationFrame(state.frame);
     state.frame = 0;
-    if (state.layer) state.layer.style.display = "none";
+    if (state.layer) setVisible(state.layer, false);
   }
 
   function mapPointAt(points, fraction) {
@@ -308,28 +337,28 @@
     const point = mapPointAt(state.config.trackPoints, fraction);
     if (point) {
       for (const cursor of state.trackPoints) {
-        cursor.setAttribute("cx", point.x.toFixed(3));
-        cursor.setAttribute("cy", point.y.toFixed(3));
+        setAttributeIfChanged(cursor, "cx", point.x.toFixed(3));
+        setAttributeIfChanged(cursor, "cy", point.y.toFixed(3));
       }
     } else if (state.config.distanceStrip && state.trackPoints.length) {
       const x = 28 + fraction * 364;
       for (const cursor of state.trackPoints) {
-        cursor.setAttribute("cx", x.toFixed(3));
-        cursor.setAttribute("cy", "140");
+        setAttributeIfChanged(cursor, "cx", x.toFixed(3));
+        setAttributeIfChanged(cursor, "cy", "140");
       }
     } else if (state.trackLine) {
       const x = 28 + fraction * 364;
-      state.trackLine.setAttribute("x1", x.toFixed(3));
-      state.trackLine.setAttribute("x2", x.toFixed(3));
+      setAttributeIfChanged(state.trackLine, "x1", x.toFixed(3));
+      setAttributeIfChanged(state.trackLine, "x2", x.toFixed(3));
     }
-    if (state.trackPercent) state.trackPercent.textContent = `${(fraction * 100).toFixed(1)}%`;
+    if (state.trackPercent) setTextIfChanged(state.trackPercent, `${(fraction * 100).toFixed(1)}%`);
     if (!state.trackSummary) return;
     const speed = averageAt(state, "speed", fraction);
     const throttle = averageAt(state, "throttle", fraction);
     const brake = averageAt(state, "brake", fraction);
     const delta = averageAt(state, "delta", fraction);
     if (speed === null && throttle === null && brake === null && delta === null) {
-      state.trackSummary.textContent = "No sample";
+      setTextIfChanged(state.trackSummary, "No sample");
       return;
     }
     const parts = [];
@@ -337,22 +366,29 @@
     if (throttle !== null) parts.push(`${(throttle * 100).toFixed(0)}% throttle`);
     if (brake !== null) parts.push(`${(brake * 100).toFixed(0)}% brake`);
     if (delta !== null) parts.push(`${signed(delta, 3)} s`);
-    state.trackSummary.textContent = parts.join(" · ");
+    setTextIfChanged(state.trackSummary, parts.join(" · "));
   }
 
   function renderCursor(state) {
     state.frame = 0;
+    if (state.resizePending) {
+      state.resizePending = false;
+      state.rect = state.element.getBoundingClientRect();
+      resizeChartDom(state, state.rect.width, false);
+    }
     if (!cursorActive(state)) return;
+    if (state.inputSource === "track" && state.trackInside) updateFractionFromTrackPointer(state);
+    else if (state.chartInside) updateFractionFromPointer(state);
     const fraction = state.fraction;
     if (!state.chartInside || !state.layer) {
-      if (state.layer) state.layer.style.display = "none";
+      if (state.layer) setVisible(state.layer, false);
       updateTrack(state, fraction);
       return;
     }
     const cursorX = state.plotLeft + fraction * state.plotWidth;
-    state.layer.style.display = "";
-    state.sharedLine.setAttribute("x1", cursorX.toFixed(3));
-    state.sharedLine.setAttribute("x2", cursorX.toFixed(3));
+    setVisible(state.layer, true);
+    setAttributeIfChanged(state.sharedLine, "x1", cursorX.toFixed(3));
+    setAttributeIfChanged(state.sharedLine, "x2", cursorX.toFixed(3));
 
     const maximumOffset = Math.max(0, state.config.traces.length - state.config.tooltipCapacity);
     state.lapOffset = clamp(state.lapOffset, 0, maximumOffset);
@@ -367,48 +403,39 @@
           const marker = slotMarkers[signalIndex];
           const value = trace ? rowValue(trace, rowIndex, signalIndex, pointIndex) : null;
           if (!trace || value === null) {
-            marker.style.display = "none";
+            setVisible(marker, false);
             return;
           }
           const span = Math.max(0.000001, signal.maximum - signal.minimum);
           const y = row.top + row.plotHeight - 4 - (value - signal.minimum) / span * (row.plotHeight - 8);
-          marker.setAttribute("cx", cursorX.toFixed(3));
-          marker.setAttribute("cy", y.toFixed(3));
-          marker.setAttribute("fill", trace.color);
-          marker.style.display = "";
+          setAttributeIfChanged(marker, "cx", cursorX.toFixed(3));
+          setAttributeIfChanged(marker, "cy", y.toFixed(3));
+          setAttributeIfChanged(marker, "fill", trace.color);
+          setVisible(marker, true);
         });
       });
 
       const formatted = visibleTraces.map((trace) => formattedRowValue(row, trace, rowIndex, fraction));
       const widest = formatted.reduce((width, value) => Math.max(width, value.length), 1);
-      dom.tooltip.style.display = visibleTraces.length ? "" : "none";
-      let widestRenderedValue = 0;
+      setVisible(dom.tooltip, visibleTraces.length > 0);
       dom.slots.forEach((slot, slotIndex) => {
         const trace = visibleTraces[slotIndex];
-        const display = trace ? "" : "none";
-        slot.lap.style.display = display;
-        slot.swatch.style.display = display;
-        slot.value.style.display = display;
+        setVisible(slot.lap, Boolean(trace));
+        setVisible(slot.swatch, Boolean(trace));
+        setVisible(slot.value, Boolean(trace));
         if (!trace) return;
         const baseline = row.top + 22 + slotIndex * state.config.tooltipRowHeight;
-        slot.lap.setAttribute("y", baseline.toFixed(3));
-        slot.lap.textContent = String(trace.lap);
-        slot.swatch.setAttribute("y", (baseline - 9).toFixed(3));
-        slot.swatch.setAttribute("fill", trace.color);
-        slot.value.setAttribute("y", baseline.toFixed(3));
-        slot.value.textContent = formatted[slotIndex];
-        try {
-          const measured = slot.value.getComputedTextLength();
-          if (Number.isFinite(measured)) widestRenderedValue = Math.max(widestRenderedValue, measured);
-        } catch {
-          // SVG measurement can be unavailable during an initial/test layout;
-          // the configured character estimate remains a safe fallback.
-        }
+        setAttributeIfChanged(slot.lap, "y", baseline.toFixed(3));
+        setTextIfChanged(slot.lap, trace.lap);
+        setAttributeIfChanged(slot.swatch, "y", (baseline - 9).toFixed(3));
+        setAttributeIfChanged(slot.swatch, "fill", trace.color);
+        setAttributeIfChanged(slot.value, "y", baseline.toFixed(3));
+        setTextIfChanged(slot.value, formatted[slotIndex]);
       });
 
-      const estimatedValueWidth = widest * state.config.tooltipCharacterWidth;
-      const valueContentWidth = widestRenderedValue > 0 ? widestRenderedValue : estimatedValueWidth;
-      const desiredTooltipWidth = Math.ceil(55 + valueContentWidth);
+      // Values use the metric monospace font, so character count is stable.
+      // SVG text measurement here forced layout once per lap and row per frame.
+      const desiredTooltipWidth = Math.ceil(55 + widest * state.config.tooltipCharacterWidth);
       const plotInset = 4;
       const plotStart = state.plotLeft + plotInset;
       const plotEnd = state.plotLeft + state.plotWidth - plotInset;
@@ -421,14 +448,14 @@
       else if (rightCandidate + tooltipWidth <= plotEnd) tooltipX = rightCandidate;
       else tooltipX = clamp(leftCandidate, plotStart, Math.max(plotStart, plotEnd - tooltipWidth));
 
-      dom.background.setAttribute("x", tooltipX.toFixed(3));
-      dom.background.setAttribute("width", tooltipWidth.toFixed(3));
-      dom.background.setAttribute("height", String(14 + visibleTraces.length * state.config.tooltipRowHeight));
+      setAttributeIfChanged(dom.background, "x", tooltipX.toFixed(3));
+      setAttributeIfChanged(dom.background, "width", tooltipWidth.toFixed(3));
+      setAttributeIfChanged(dom.background, "height", 14 + visibleTraces.length * state.config.tooltipRowHeight);
       dom.slots.forEach((slot, slotIndex) => {
         if (!visibleTraces[slotIndex]) return;
-        slot.lap.setAttribute("x", (tooltipX + 8).toFixed(3));
-        slot.swatch.setAttribute("x", (tooltipX + 30).toFixed(3));
-        slot.value.setAttribute("x", (tooltipX + 47).toFixed(3));
+        setAttributeIfChanged(slot.lap, "x", (tooltipX + 8).toFixed(3));
+        setAttributeIfChanged(slot.swatch, "x", (tooltipX + 30).toFixed(3));
+        setAttributeIfChanged(slot.value, "x", (tooltipX + 47).toFixed(3));
       });
     });
     updateTrack(state, fraction);
@@ -476,9 +503,11 @@
       trackElement,
       config,
       frame: 0,
-      resizeTimer: 0,
+      resizePending: false,
+      pathBasePlotWidth: null,
       chartInside: false,
       trackInside: false,
+      inputSource: null,
       clientX: 0,
       trackClientX: 0,
       trackClientY: 0,
@@ -496,15 +525,15 @@
 
     state.enter = (event) => {
       state.chartInside = true;
+      state.inputSource = "chart";
       state.rect = element.getBoundingClientRect();
       state.clientX = event.clientX;
-      updateFractionFromPointer(state);
       schedule(state);
     };
     state.move = (event) => {
       state.chartInside = true;
+      state.inputSource = "chart";
       state.clientX = event.clientX;
-      updateFractionFromPointer(state);
       schedule(state);
     };
     state.leave = () => {
@@ -513,16 +542,16 @@
     };
     state.trackEnter = (event) => {
       state.trackInside = true;
+      state.inputSource = "track";
       state.trackClientX = event.clientX;
       state.trackClientY = event.clientY;
-      updateFractionFromTrackPointer(state);
       schedule(state);
     };
     state.trackMove = (event) => {
       state.trackInside = true;
+      state.inputSource = "track";
       state.trackClientX = event.clientX;
       state.trackClientY = event.clientY;
-      updateFractionFromTrackPointer(state);
       schedule(state);
     };
     state.trackLeave = () => {
@@ -538,28 +567,12 @@
       schedule(state);
     };
     state.resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
-      state.rect = element.getBoundingClientRect();
-      if (state.chartInside) {
-        updateFractionFromPointer(state);
-        schedule(state);
-      }
-      if (state.resizeTimer) clearTimeout(state.resizeTimer);
-      state.resizeTimer = setTimeout(() => {
-        state.resizeTimer = 0;
-        state.rect = element.getBoundingClientRect();
-        resizeChartDom(state, state.rect.width, false);
-        if (state.chartInside) {
-          updateFractionFromPointer(state);
-          schedule(state);
-        }
-      }, 60);
+      state.resizePending = true;
+      schedule(state);
     }) : null;
     state.scrolled = () => {
       state.rect = element.getBoundingClientRect();
-      if (state.chartInside) {
-        updateFractionFromPointer(state);
-        schedule(state);
-      }
+      if (state.chartInside) schedule(state);
     };
 
     element.addEventListener("pointerenter", state.enter);
@@ -578,21 +591,15 @@
     if (!state) return;
     updateDomReferences(state, trackElement);
     state.rect = element.getBoundingClientRect();
-    // A toolbox toggle rerenders the component while CSS is still animating its
-    // width. ResizeObserver owns that motion and settles the expensive path
-    // rebuild once; forcing a resize here redraws at an intermediate width and
-    // is visible as a hitch near the start of the drawer transition.
-    if (!state.resizeObserver) resizeChartDom(state, state.rect.width, true);
+    state.resizePending = true;
     if (!state.element.querySelector("[data-analysis-cursor-layer] > *")) buildOverlay(state);
-    if (cursorActive(state)) schedule(state);
-    else updateTrack(state, state.fraction);
+    schedule(state);
   }
 
   function dispose(element) {
     const state = sessions.get(element);
     if (!state) return;
     if (state.frame) cancelAnimationFrame(state.frame);
-    if (state.resizeTimer) clearTimeout(state.resizeTimer);
     state.resizeObserver?.disconnect();
     element.removeEventListener("pointerenter", state.enter);
     element.removeEventListener("pointermove", state.move);

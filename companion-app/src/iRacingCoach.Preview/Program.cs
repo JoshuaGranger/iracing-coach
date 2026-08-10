@@ -3,6 +3,9 @@ using iRacingCoach.Coordinator;
 using iRacingCoach.Preview.Components;
 
 var builder = WebApplication.CreateBuilder(args);
+// Preview is also launched under Production for release-mode visual QA. Explicitly
+// load the build-time manifest so referenced-project and framework assets resolve.
+builder.WebHost.UseStaticWebAssets();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var isolatedCoachHome = builder.Configuration["qa-coach-home"];
 if (string.IsNullOrWhiteSpace(isolatedCoachHome))

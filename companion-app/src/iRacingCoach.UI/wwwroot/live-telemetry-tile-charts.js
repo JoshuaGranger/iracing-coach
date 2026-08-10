@@ -4,6 +4,7 @@
   const studios = new WeakMap();
   const maximumPoints = 36_000;
   const verticesPerPixel = 4;
+  const resizeSettleMilliseconds = 72;
   const domainShrinkDelayMilliseconds = 6_000;
   const domainDecayIntervalMilliseconds = 1_500;
   const domainDecayFactor = 0.22;
@@ -113,32 +114,44 @@
   }
 
   function trim(chart, studio) {
-    if (chart.points.length === 0) return;
-    let removeCount = 0;
+    if (chart.points.length === chart.pointStart) return;
+    let nextStart = chart.pointStart;
     const windowMilliseconds = secondsWindow(chart.configuration);
     if (windowMilliseconds !== null) {
-      const newest = studio.latestSourceAt ?? [...chart.points].reverse().find(point => point.at !== null)?.at;
+      const newest = studio.latestSourceAt ?? latestTimestamp(chart);
       if (newest !== undefined && newest !== null) {
         const cutoff = newest - windowMilliseconds - 2000 / studio.sourceRate;
-        while (removeCount < chart.points.length) {
-          const at = chart.points[removeCount].at;
+        while (nextStart < chart.points.length) {
+          const at = chart.points[nextStart].at;
           if (at !== null && at >= cutoff) break;
-          removeCount++;
+          nextStart++;
         }
       }
     } else {
       const newestProgress = studio.latestLapProgress ?? lapProgress(chart.points[chart.points.length - 1]);
       if (newestProgress !== null) {
         const cutoff = newestProgress - lapWindow(chart.configuration) - 0.02;
-        while (removeCount < chart.points.length) {
-          const progress = lapProgress(chart.points[removeCount]);
+        while (nextStart < chart.points.length) {
+          const progress = lapProgress(chart.points[nextStart]);
           if (progress !== null && progress >= cutoff) break;
-          removeCount++;
+          nextStart++;
         }
       }
     }
-    if (removeCount > 0) chart.points.splice(0, removeCount);
-    if (chart.points.length > maximumPoints) chart.points.splice(0, chart.points.length - maximumPoints);
+    chart.pointStart = Math.max(nextStart, chart.points.length - maximumPoints);
+    // Removing one expired sample with splice shifts the whole history on every
+    // SDK tick. A moving start index makes steady-state trimming O(1); compact
+    // only after the unreachable prefix is both large and dominant.
+    if (chart.pointStart > 4096 && chart.pointStart * 2 > chart.points.length) {
+      chart.points = chart.points.slice(chart.pointStart);
+      chart.pointStart = 0;
+    }
+  }
+
+  function latestTimestamp(chart) {
+    for (let index = chart.points.length - 1; index >= chart.pointStart; index--)
+      if (chart.points[index].at !== null) return chart.points[index].at;
+    return null;
   }
 
   function resetDomain(chart) {
@@ -151,6 +164,7 @@
     for (const chart of studio.charts.values()) {
       if (secondsWindow(chart.configuration) !== null) continue;
       chart.points.length = 0;
+      chart.pointStart = 0;
       chart.path = null;
       chart.absPath = null;
       chart.pathAnchorAt = null;
@@ -169,6 +183,7 @@
     studio.lapRatePerMillisecond = 0;
     for (const chart of studio.charts.values()) {
       chart.points.length = 0;
+      chart.pointStart = 0;
       chart.path = null;
       chart.absPath = null;
       chart.pathAnchorAt = null;
@@ -187,12 +202,14 @@
     };
   }
 
-  function createChart(canvas, configuration) {
+  function createChart(canvas, configuration, studio) {
+    const initial = canvas.getBoundingClientRect();
     const chart = {
       canvas,
       context: canvas.getContext("2d", { alpha: true, desynchronized: true }),
       configuration,
       points: [],
+      pointStart: 0,
       path: null,
       absPath: null,
       pathAnchorAt: null,
@@ -200,8 +217,9 @@
       width: 0,
       height: 0,
       scale: 1,
-      pendingWidth: 0,
-      pendingHeight: 0,
+      pendingWidth: initial.width,
+      pendingHeight: initial.height,
+      resizeObservedAt: 0,
       resizeDirty: true,
       pathDirty: true,
       dirty: true,
@@ -215,21 +233,26 @@
       const size = entries[0] && entries[0].contentRect;
       chart.pendingWidth = size ? size.width : canvas.clientWidth;
       chart.pendingHeight = size ? size.height : canvas.clientHeight;
+      chart.resizeObservedAt = performance.now();
       chart.resizeDirty = true;
-      chart.pathDirty = true;
-      chart.dirty = true;
+      requestStudioDraw(studio);
     });
     chart.resizeObserver.observe(canvas);
     return chart;
   }
 
-  function resize(chart) {
+  function resize(chart, now) {
     if (!chart.resizeDirty && chart.width > 0 && chart.height > 0) {
       chart.context.setTransform(chart.scale, 0, 0, chart.scale, 0, 0);
-      return;
+      return true;
     }
-    const width = Math.max(80, Math.round(chart.pendingWidth || chart.canvas.clientWidth || 1));
-    const height = Math.max(44, Math.round(chart.pendingHeight || chart.canvas.clientHeight || 1));
+    // During the 500 ms toolbox/reflow animation the canvas CSS box changes on
+    // every frame. Keep the existing bitmap and let the compositor scale it;
+    // resizing the backing store each step clears the canvas and forces every
+    // history path to be rebuilt. Commit once the box has settled.
+    if (chart.width > 0 && now - chart.resizeObservedAt < resizeSettleMilliseconds) return false;
+    const width = Math.max(80, Math.round(chart.pendingWidth || chart.width || 1));
+    const height = Math.max(44, Math.round(chart.pendingHeight || chart.height || 1));
     const scale = clamp(window.devicePixelRatio || 1, 1, 2.5);
     const pixelWidth = Math.round(width * scale);
     const pixelHeight = Math.round(height * scale);
@@ -243,10 +266,12 @@
     }
     chart.resizeDirty = false;
     chart.context.setTransform(scale, 0, 0, scale, 0, 0);
+    return true;
   }
 
   function seed(chart, values, studio) {
     chart.points = [];
+    chart.pointStart = 0;
     resetDomain(chart);
     const arrivedAt = performance.now();
     let localLapProgress = null;
@@ -261,6 +286,7 @@
         // The durable history can span a qualifying/race transition without
         // an SDK disconnect. A lap chart must contain only the newest session.
         chart.points.length = 0;
+        chart.pointStart = 0;
         resetDomain(chart);
       }
       chart.points.push(point);
@@ -279,7 +305,8 @@
     let minimum = Infinity;
     let maximum = -Infinity;
     let count = 0;
-    for (const point of chart.points) {
+    for (let index = chart.pointStart; index < chart.points.length; index++) {
+      const point = chart.points[index];
       if (point.value === null) continue;
       minimum = Math.min(minimum, point.value);
       maximum = Math.max(maximum, point.value);
@@ -359,7 +386,7 @@
       : null;
   }
 
-  function decimatedSegments(chart, studio, valueRange) {
+  function buildPixelEnvelope(chart, studio, valueRange) {
     const windowMilliseconds = secondsWindow(chart.configuration);
     const top = 4;
     const bottom = chart.height - 4;
@@ -367,28 +394,65 @@
     const y = value => bottom - (value - valueRange.minimum) / span * (bottom - top);
     const gapThreshold = Math.max(40, 3500 / studio.sourceRate);
     const bucketCount = Math.max(1, Math.ceil(chart.width));
-    const segments = [];
-    let segment = [];
-    let bucket = null;
+    const maximumVertices = Math.max(8, bucketCount * verticesPerPixel);
+    let path = new Path2D();
+    let vertexCount = 0;
+    let segmentOpen = false;
+    let previousY = 0;
+    let bucketIndex = -1;
+    let firstOrder = -1, firstX = 0, firstY = 0;
+    let minimumOrder = -1, minimumX = 0, minimumY = 0, minimumValue = 0;
+    let maximumOrder = -1, maximumX = 0, maximumY = 0, maximumValue = 0;
+    let lastOrder = -1, lastX = 0, lastY = 0;
     let previousAt = null;
     let order = 0;
 
-    const flushBucket = () => {
-      if (!bucket) return;
-      const unique = new Map();
-      for (const candidate of [bucket.first, bucket.minimum, bucket.maximum, bucket.absFirst, bucket.absLast, bucket.last])
-        if (candidate) unique.set(candidate.order, candidate);
-      const ordered = Array.from(unique.values()).sort((left, right) => left.order - right.order);
-      for (const candidate of ordered) segment.push(candidate);
-      bucket = null;
-    };
-    const finishSegment = () => {
-      flushBucket();
-      if (segment.length > 0) segments.push(segment);
-      segment = [];
+    const emit = (x, py) => {
+      if (vertexCount >= maximumVertices) {
+        // Path2D cannot discard its prefix. Starting a fresh path here keeps
+        // the newest visible envelope bounded under pathological gap data.
+        path = new Path2D();
+        vertexCount = 0;
+        segmentOpen = false;
+      }
+      if (!segmentOpen) path.moveTo(x, py);
+      else {
+        if (chart.configuration.shape === "step") path.lineTo(x, previousY);
+        path.lineTo(x, py);
+      }
+      previousY = py;
+      segmentOpen = true;
+      vertexCount += chart.configuration.shape === "step" && vertexCount > 0 ? 2 : 1;
     };
 
-    for (const point of chart.points) {
+    const flushBucket = () => {
+      if (bucketIndex < 0) return;
+      let emittedOrder = -1;
+      // first/minimum/maximum/last preserves brief extrema and
+      // source order. Primitive slots avoid a candidate object plus a Map and
+      // sorted array for every horizontal pixel on every SDK sample.
+      for (let slot = 0; slot < verticesPerPixel; slot++) {
+        let bestOrder = Number.MAX_SAFE_INTEGER;
+        let bestX = 0;
+        let bestY = 0;
+        if (firstOrder > emittedOrder && firstOrder < bestOrder) { bestOrder = firstOrder; bestX = firstX; bestY = firstY; }
+        if (minimumOrder > emittedOrder && minimumOrder < bestOrder) { bestOrder = minimumOrder; bestX = minimumX; bestY = minimumY; }
+        if (maximumOrder > emittedOrder && maximumOrder < bestOrder) { bestOrder = maximumOrder; bestX = maximumX; bestY = maximumY; }
+        if (lastOrder > emittedOrder && lastOrder < bestOrder) { bestOrder = lastOrder; bestX = lastX; bestY = lastY; }
+        if (bestOrder === Number.MAX_SAFE_INTEGER) break;
+        emit(bestX, bestY);
+        emittedOrder = bestOrder;
+      }
+      bucketIndex = -1;
+    };
+
+    const finishSegment = () => {
+      flushBucket();
+      segmentOpen = false;
+    };
+
+    for (let index = chart.pointStart; index < chart.points.length; index++) {
+      const point = chart.points[index];
       order++;
       if (point.value === null) {
         finishSegment();
@@ -399,42 +463,72 @@
       previousAt = point.at;
       const x = pointX(chart, point, windowMilliseconds);
       if (x === null || x < -2 || x > chart.width + 2) continue;
-      const candidate = {
-        x,
-        y: y(point.value),
-        value: point.value,
-        order,
-        absActive: point.absActive === true
-      };
-      const bucketIndex = clamp(Math.floor(x), 0, bucketCount - 1);
-      if (!bucket || bucket.index !== bucketIndex) {
+      const py = y(point.value);
+      const nextBucket = clamp(Math.floor(x), 0, bucketCount - 1);
+      if (bucketIndex !== nextBucket) {
         flushBucket();
-        bucket = { index: bucketIndex, first: candidate, minimum: candidate, maximum: candidate, last: candidate, absFirst: candidate.absActive ? candidate : null, absLast: candidate.absActive ? candidate : null };
+        bucketIndex = nextBucket;
+        firstOrder = minimumOrder = maximumOrder = lastOrder = order;
+        firstX = minimumX = maximumX = lastX = x;
+        firstY = minimumY = maximumY = lastY = py;
+        minimumValue = maximumValue = point.value;
       } else {
-        bucket.last = candidate;
-        if (candidate.value < bucket.minimum.value) bucket.minimum = candidate;
-        if (candidate.value > bucket.maximum.value) bucket.maximum = candidate;
-        if (candidate.absActive) {
-          if (!bucket.absFirst) bucket.absFirst = candidate;
-          bucket.absLast = candidate;
-        }
+        lastOrder = order; lastX = x; lastY = py;
+        if (point.value < minimumValue) { minimumOrder = order; minimumX = x; minimumY = py; minimumValue = point.value; }
+        if (point.value > maximumValue) { maximumOrder = order; maximumX = x; maximumY = py; maximumValue = point.value; }
       }
     }
     finishSegment();
+    return { path, vertexCount, y, windowMilliseconds, maximumVertices, gapThreshold };
+  }
 
-    // Each horizontal pixel contributes at most first/min/max/last. Keeping
-    // candidates in source order preserves brief extrema without drawing tens
-    // of thousands of redundant vertices at every display refresh.
-    const maximumVertices = Math.max(8, bucketCount * verticesPerPixel);
-    let remaining = maximumVertices;
-    const bounded = [];
-    for (let index = segments.length - 1; index >= 0 && remaining > 0; index--) {
-      const source = segments[index];
-      if (source.length > remaining) bounded.unshift(source.slice(source.length - remaining));
-      else bounded.unshift(source);
-      remaining -= Math.min(source.length, remaining);
+  function buildAbsPath(chart, envelope) {
+    if (!chart.configuration.highlightAbs) return { path: null, vertexCount: 0 };
+    let path = new Path2D();
+    let vertexCount = 0;
+    let runOpen = false;
+    let previousValidX = null;
+    let previousValidY = null;
+    let previousY = 0;
+    let previousAt = null;
+    for (let index = chart.pointStart; index < chart.points.length; index++) {
+      const point = chart.points[index];
+      if (point.value === null) {
+        runOpen = false;
+        previousValidX = previousValidY = null;
+        previousAt = point.at;
+        continue;
+      }
+      if (previousAt !== null && point.at !== null && point.at - previousAt > envelope.gapThreshold) {
+        runOpen = false;
+        previousValidX = previousValidY = null;
+      }
+      previousAt = point.at;
+      const x = pointX(chart, point, envelope.windowMilliseconds);
+      if (x === null || x < -2 || x > chart.width + 2) continue;
+      const py = envelope.y(point.value);
+      if (point.absActive === true) {
+        if (vertexCount >= envelope.maximumVertices) {
+          path = new Path2D();
+          vertexCount = 0;
+          runOpen = false;
+        }
+        if (!runOpen) {
+          path.moveTo(previousValidX ?? x, previousValidY ?? py);
+          runOpen = true;
+          vertexCount++;
+        }
+        if (chart.configuration.shape === "step") path.lineTo(x, previousY);
+        path.lineTo(x, py);
+        vertexCount += chart.configuration.shape === "step" ? 2 : 1;
+      } else {
+        runOpen = false;
+      }
+      previousValidX = x;
+      previousValidY = py;
+      previousY = py;
     }
-    return bounded;
+    return { path, vertexCount };
   }
 
   function buildPath(chart, studio, now) {
@@ -448,48 +542,40 @@
       chart.pathDirty = false;
       return;
     }
-    chart.pathAnchorAt = studio.latestSourceAt ?? [...chart.points].reverse().find(point => point.at !== null)?.at ?? null;
+    chart.pathAnchorAt = studio.latestSourceAt ?? latestTimestamp(chart);
     chart.pathAnchorLap = studio.latestLapProgress ?? lapProgress(chart.points[chart.points.length - 1]);
-    const segments = decimatedSegments(chart, studio, stableRange(chart, observed, now));
-    const path = new Path2D();
-    const absPath = new Path2D();
-    let vertexCount = 0;
-    let absVertexCount = 0;
-    for (const segment of segments) {
-      if (segment.length === 0) continue;
-      path.moveTo(segment[0].x, segment[0].y);
-      vertexCount++;
-      let previous = segment[0];
-      let absRunOpen = false;
-      if (segment[0].absActive) {
-        absPath.moveTo(segment[0].x, segment[0].y);
-        absPath.lineTo(segment[0].x + 0.01, segment[0].y);
-        absRunOpen = true;
-        absVertexCount += 2;
-      }
-      for (let index = 1; index < segment.length; index++) {
-        const next = segment[index];
-        if (chart.configuration.shape === "step") path.lineTo(next.x, previous.y);
-        path.lineTo(next.x, next.y);
-        vertexCount += chart.configuration.shape === "step" ? 2 : 1;
-        if (next.absActive) {
-          if (!absRunOpen) {
-            absPath.moveTo(previous.x, previous.y);
-            absRunOpen = true;
-            absVertexCount++;
-          }
-          if (chart.configuration.shape === "step") absPath.lineTo(next.x, previous.y);
-          absPath.lineTo(next.x, next.y);
-          absVertexCount += chart.configuration.shape === "step" ? 2 : 1;
-        } else {
-          absRunOpen = false;
-        }
-        previous = next;
-      }
-    }
-    chart.path = vertexCount > 1 ? path : null;
-    chart.absPath = chart.configuration.highlightAbs && absVertexCount > 1 ? absPath : null;
+    const envelope = buildPixelEnvelope(chart, studio, stableRange(chart, observed, now));
+    const abs = buildAbsPath(chart, envelope);
+    chart.path = envelope.vertexCount > 1 ? envelope.path : null;
+    chart.absPath = abs.vertexCount > 1 ? abs.path : null;
     chart.pathDirty = false;
+  }
+
+  function canDrawStudio(studio) {
+    return !studio.disposed && studio.root.isConnected && !document.hidden && studio.intersecting !== false;
+  }
+
+  function stopStudioDraw(studio) {
+    if (!studio.animationFrame) return;
+    cancelAnimationFrame(studio.animationFrame);
+    studio.animationFrame = 0;
+  }
+
+  function requestStudioDraw(studio) {
+    if (studio.animationFrame || !canDrawStudio(studio)) return;
+    studio.animationFrame = requestAnimationFrame(now => {
+      studio.animationFrame = 0;
+      if (drawStudio(studio, now)) requestStudioDraw(studio);
+    });
+  }
+
+  function studioVisibilityChanged(studio) {
+    if (!canDrawStudio(studio)) {
+      stopStudioDraw(studio);
+      return;
+    }
+    for (const chart of studio.charts.values()) chart.dirty = true;
+    requestStudioDraw(studio);
   }
 
   function configure(root, configurations, options) {
@@ -503,6 +589,7 @@
         reducedMotion: false,
         disposed: false,
         animationFrame: 0,
+        intersecting: true,
         latestSourceAt: null,
         latestArrivalAt: null,
         latestLapProgress: null,
@@ -511,7 +598,16 @@
         sessionEpoch: null
       };
       studios.set(root, studio);
-      studio.animationFrame = requestAnimationFrame(now => drawStudio(studio, now));
+      studio.documentVisibilityHandler = () => studioVisibilityChanged(studio);
+      document.addEventListener("visibilitychange", studio.documentVisibilityHandler);
+      if (typeof IntersectionObserver === "function") {
+        studio.intersectionObserver = new IntersectionObserver(entries => {
+          const entry = entries[entries.length - 1];
+          studio.intersecting = !!entry && entry.isIntersecting && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0;
+          studioVisibilityChanged(studio);
+        });
+        studio.intersectionObserver.observe(root);
+      }
     }
     const previousSessionEpoch = studio.sessionEpoch;
     if (!updateOptions(studio, options)) return;
@@ -526,7 +622,7 @@
       const identity = `${configuration.metricId}|${configuration.unit}|${configuration.duration}|${configuration.shape}|${!!configuration.highlightAbs}`;
       if (!chart || chart.canvas !== canvas) {
         if (chart) chart.resizeObserver.disconnect();
-        chart = createChart(canvas, configuration);
+        chart = createChart(canvas, configuration, studio);
         chart.identity = identity;
         studio.charts.set(configuration.id, chart);
         seed(chart, configuration.seed, studio);
@@ -544,6 +640,7 @@
       chart.resizeObserver.disconnect();
       studio.charts.delete(id);
     }
+    requestStudioDraw(studio);
   }
 
   function append(root, frames, options) {
@@ -579,13 +676,15 @@
       chart.pathDirty = true;
       chart.dirty = true;
     }
+    requestStudioDraw(studio);
   }
 
   function drawChart(chart, studio, now) {
-    if (!chart.canvas.isConnected || chart.canvas.offsetParent === null) return;
+    if (!chart.canvas.isConnected) return false;
     const scrolling = !studio.reducedMotion && chart.path !== null && studio.latestArrivalAt !== null && now - studio.latestArrivalAt <= Math.max(40, 2500 / studio.sourceRate);
-    if (!chart.dirty && !scrolling) return;
-    resize(chart);
+    if (!chart.dirty && !scrolling && !chart.resizeDirty) return false;
+    const resizeReady = resize(chart, now);
+    if (!resizeReady && !chart.dirty && !scrolling) return true;
     if (chart.pathDirty) buildPath(chart, studio, now);
     const context = chart.context;
     const width = chart.width;
@@ -624,20 +723,23 @@
       context.restore();
     }
     chart.dirty = false;
+    return scrolling || chart.resizeDirty;
   }
 
   function drawStudio(studio, now) {
-    if (studio.disposed) return;
-    studio.animationFrame = requestAnimationFrame(next => drawStudio(studio, next));
-    if (!studio.root.isConnected) return;
-    for (const chart of studio.charts.values()) drawChart(chart, studio, now);
+    if (!canDrawStudio(studio)) return false;
+    let continueDrawing = false;
+    for (const chart of studio.charts.values()) continueDrawing = drawChart(chart, studio, now) || continueDrawing;
+    return continueDrawing;
   }
 
   function dispose(root) {
     const studio = studios.get(root);
     if (!studio) return;
     studio.disposed = true;
-    cancelAnimationFrame(studio.animationFrame);
+    stopStudioDraw(studio);
+    document.removeEventListener("visibilitychange", studio.documentVisibilityHandler);
+    if (studio.intersectionObserver) studio.intersectionObserver.disconnect();
     for (const chart of studio.charts.values()) chart.resizeObserver.disconnect();
     studio.charts.clear();
     studios.delete(root);

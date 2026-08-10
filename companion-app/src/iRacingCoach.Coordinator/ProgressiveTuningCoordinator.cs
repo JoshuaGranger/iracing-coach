@@ -432,7 +432,7 @@ public sealed class PortableTuningDraftStore
         var root = Path.GetFullPath(coachHome);
         _draftRoot = Path.GetFullPath(Path.Combine(root, "portable-settings", "tuning-drafts"));
         if (!_draftRoot.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The tuning draft path escaped the Coach archive.");
+            throw new InvalidOperationException("The tuning draft path escaped the Coach data folder.");
     }
 
     public string PathFor(TuningSessionIdentity identity) =>

@@ -3,9 +3,12 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<section class="telemetry-workspace" aria-labelledby="telemetry-heading" @onkeydown="HandleWorkspaceKeyDown" @onclick="CloseSpotlightMenu">
-    <div class="analysis-section-heading">
-        <div><span class="eyebrow">Telemetry</span><h2 id="telemetry-heading">Compare laps</h2></div>
+<section class="telemetry-workspace" aria-label="Telemetry lap comparison" @onkeydown="HandleWorkspaceKeyDown" @onclick="CloseSpotlightMenu">
+    <div class="analysis-section-heading @(IsRaceWorkspace ? "context-only" : null)">
+        @if (!IsRaceWorkspace)
+        {
+            <div><span class="eyebrow">Telemetry</span><h2>Compare laps</h2></div>
+        }
         @if (IsRaceWorkspace)
         {
             <div class="analysis-context-toggles" role="group" aria-label="Telemetry context panels" @onclick:stopPropagation="true">
@@ -32,7 +35,7 @@
     else
     {
         <div class="telemetry-workstation-grid @(IsRaceWorkspace ? "race-workstation" : "qualifying-workstation") @ContextColumnState">
-        <div class="telemetry-context-column">
+        <div @ref="ContextColumnElement" class="telemetry-context-column">
         <section class="track-panel telemetry-context-panel @(TrackPanelCollapsed ? "collapsed" : null)"
                  aria-labelledby="track-panel-title"
                  aria-hidden="@(IsRaceWorkspace && TrackPanelCollapsed ? "true" : null)"
@@ -47,7 +50,8 @@
                     <div class="context-heading-static"><strong id="track-panel-title">@(Workspace.GeometryMode == "track_shape" ? "Track position" : "Lap distance")</strong><span>Average of selected laps</span></div>
                 }
                 <div class="track-panel-actions">
-                    <label class="track-color-control"><span>Type</span><select data-map-type @bind="Mode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label>
+                    <label class="track-color-control"><span>Type</span><select @ref="MapTypeElement" data-map-type value="@Mode" @onchange="ChangeMapMode">@foreach (var option in Modes) { <option value="@option.Key">@option.Label</option> }</select></label>
+                    <button type="button" class="track-fit-button" title="Fit track" aria-label="Fit track" @onclick="FitTrackMap"><ProductIcon Name="contract" Size="13" /><span>Fit track</span></button>
                 </div>
             </div>
             <div id="race-track-panel-content"
@@ -58,10 +62,10 @@
                     @if (HasMapGeometry)
                     {
                         var startFinishLine = StartFinishLine;
-                        <path d="@TrackRibbonPath" class="track-main-ribbon-halo" data-map-layer="main" />
-                        <path d="@TrackRibbonPath" class="track-main-ribbon" data-map-layer="main" />
                         @if (Mode == "traces")
                         {
+                            <path d="@TrackRibbonPath" class="track-main-ribbon-halo" data-map-layer="main" />
+                            <path d="@TrackRibbonPath" class="track-main-ribbon" data-map-layer="main" />
                             @foreach (var tracePath in MapTracePaths)
                             {
                                 <path d="@tracePath.Path" stroke="@tracePath.Color" class="track-lap-trace" data-map-layer="lap-trace" data-lap="@tracePath.Lap" />
@@ -69,9 +73,10 @@
                         }
                         else
                         {
-                            @foreach (var segment in MapSegments)
+                            <path d="@TrackRibbonPath" class="track-metric-route" data-map-layer="main" />
+                            @foreach (var segment in MetricRibbonSegments)
                             {
-                                <line x1="@F(segment.A.X)" y1="@F(segment.A.Y)" x2="@F(segment.B.X)" y2="@F(segment.B.Y)" stroke="@segment.Color" class="track-metric-segment" data-map-layer="@Mode" />
+                                <path d="@segment.Path" fill="@segment.Color" stroke="@segment.Color" class="track-metric-ribbon-segment" data-map-layer="@Mode" data-width-start="@F(segment.StartWidth)" data-width-end="@F(segment.EndWidth)" />
                             }
                         }
                         @foreach (var layer in PitMapLayers)
@@ -106,26 +111,29 @@
                         <svg:text x="28" y="205" class="chart-label">Start / finish</svg:text><svg:text x="392" y="205" text-anchor="end" class="chart-label">100%</svg:text>
                     }
                 </svg>
-                <div class="track-map-legend" data-map-legend data-mode="@Mode">
-                    @if (Mode == "traces")
-                    {
-                        @foreach (var trace in MapTracePaths)
-                        {
-                            <span style="@($"--legend-color:{trace.Color}")"><i></i>Lap @trace.Lap</span>
-                        }
-                        @if (MapTraceUnavailableCount > 0)
-                        {
-                            <span class="map-trace-unavailable">@MapTraceUnavailableCount without racing-line coordinates</span>
-                        }
-                    }
-                    else
-                    {
+                @if (Mode != "traces")
+                {
+                    <div class="track-map-legend" data-map-legend data-mode="@Mode">
                         <span class="map-scale-copy"><b>@MapLegendMinimum</b><i class="map-scale-gradient @Mode"></i><b>@MapLegendMaximum</b></span>
-                    }
-                </div>
+                    </div>
+                }
                 <div class="cursor-readout"><strong data-analysis-track-percent>@((Cursor * 100).ToString("0.0"))%</strong><span data-analysis-track-summary>@CursorSummary</span></div>
             </div>
         </section>
+
+        @if (IsRaceWorkspace)
+        {
+            <div @ref="ContextSplitterElement"
+                 class="analysis-context-splitter"
+                 data-analysis-context-splitter
+                 role="separator"
+                 aria-label="Resize Track position and Laps and runs"
+                 aria-orientation="horizontal"
+                 aria-valuemin="33"
+                 aria-valuemax="67"
+                 aria-valuenow="43"
+                 tabindex="0"><span aria-hidden="true"></span></div>
+        }
 
         <aside class="lap-rail telemetry-context-panel @(LapRailCollapsed ? "collapsed" : null)"
                aria-labelledby="lap-rail-title"
@@ -323,7 +331,7 @@
                                          <strong>@($"Lap {trace.Lap} · x{incidentPoints}")</strong>
                                          @foreach (var incident in lapIncidents)
                                          {
-                                             var description = IncidentEventDescription(trace, incident, lapIncidents.Count > 1);
+                                             var description = IncidentEventDescription(incident, lapIncidents.Count > 1);
                                              @if (!string.IsNullOrWhiteSpace(description))
                                              {
                                                  <span>@description</span>
@@ -344,12 +352,14 @@
         <div class="telemetry-grid">
             <div @ref="TraceStudioElement"
                  class="trace-panel analysis-trace-studio @(TraceExpanded ? "trace-panel-expanded" : null) @(TraceToolboxOpen ? "editing toolbox-open" : "viewing toolbox-closed")"
-                 data-analysis-trace-studio>
+                 data-analysis-trace-studio
+                 tabindex="-1">
                 <div class="panel-title trace-panel-title">
                     <div class="trace-panel-summary"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare</span></div>
                     <div @ref="SpotlightControlElement" class="trace-spotlight-control" @onfocusout="HandleSpotlightFocusOut" @onclick:stopPropagation="true">
                         <button @ref="SpotlightTriggerElement" type="button"
                                 class="spotlight-menu-trigger"
+                                data-pointer-no-focus
                                 aria-label="Spotlight lap"
                                 aria-haspopup="listbox"
                                 aria-expanded="@AriaBoolean(SpotlightMenuOpen)"
@@ -390,7 +400,7 @@
                         <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@AriaBoolean(TraceToolboxOpen)" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
                             <ProductIcon Name="setup" Size="15" /><span>Customize</span>
                         </button>
-                        <button type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@AriaBoolean(TraceExpanded)" @onclick="ToggleTraceExpanded">
+                        <button @ref="TraceExpandButtonElement" type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@AriaBoolean(TraceExpanded)" @onclick="() => ToggleTraceExpanded(false)">
                             <ProductIcon Name="@(TraceExpanded ? "contract" : "expand")" Size="16" />
                         </button>
                     </div>
@@ -402,7 +412,7 @@
                        aria-label="Race analysis trace toolbox">
                     <header class="trace-toolbox-heading">
                         <div><span class="eyebrow">Race analysis</span><h2>Customize traces</h2><p>Drag telemetry onto a chart. Drag a chart title to reorder.</p></div>
-                        <button type="button" class="trace-toolbox-close" aria-label="Hide trace toolbox" title="Hide toolbox" @onclick="CloseTraceToolbox"><ProductIcon Name="close" Size="17" /></button>
+                        <button type="button" class="trace-toolbox-close" aria-label="Hide trace toolbox" title="Hide toolbox" @onclick="() => CloseTraceToolbox(false)"><ProductIcon Name="close" Size="17" /></button>
                     </header>
                     <div class="analysis-trace-toolbox-body">
                         <section class="trace-toolbox-layout-section">
@@ -421,7 +431,6 @@
                             {
                                 <label class="analysis-layout-name"><span>Name</span><input data-analysis-layout-rename value="@ActiveTraceLayout.Named.Name" maxlength="40" @onchange="RenameTraceLayout" /></label>
                             }
-                            <button type="button" class="trace-layout-reset" disabled="@ActiveTraceLayout.IsFactory" title="Restore the default trace charts in this custom layout" @onclick="ResetTraceLayout"><ProductIcon Name="reset" Size="15" /> Reset charts</button>
                         </section>
                         @if (SelectedTraceRow is { } selectedRow && PanelFor(selectedRow) is { } selectedPanel)
                         {
@@ -512,6 +521,18 @@
                                      @onkeydown="args => HandleTraceRowKeyDown(panel.Preferences.Id, args)">
                                     <ProductIcon Name="grip" Size="14" Class="trace-row-grip" />
                                     <span class="trace-row-label-copy"><strong>@RowLabel(panel)</strong><span class="trace-row-unit">@RowUnit(panel)</span></span>
+                                    @if (TraceToolboxOpen)
+                                    {
+                                        <button type="button"
+                                                class="trace-row-remove"
+                                                data-analysis-no-drag
+                                                disabled="@(TraceRows.Count <= 1)"
+                                                title="Remove chart"
+                                                aria-label="Remove @RowLabel(panel) chart"
+                                                @onclick:stopPropagation="true"
+                                                @onkeydown:stopPropagation="true"
+                                                @onclick="() => RemoveTraceRow(panel.Preferences.Id)"><ProductIcon Name="close" Size="13" /></button>
+                                    }
                                 </div>
                                 <span id="@helpId" class="trace-row-label-tooltip" role="tooltip">@RowHelp(panel)</span>
                             </div>
@@ -532,7 +553,7 @@
                         {
                             @foreach (var indexedSignal in panel.Signals.Where(HasSignalData).Select((signal, index) => new { Signal = signal, Index = index }))
                             {
-                                <path data-analysis-trace-path data-row="@row" data-lap="@trace.Lap" data-signal="@indexedSignal.Signal.Id" data-spotlight="@(SpotlightLap == trace.Lap)" d="@TracePath(trace, panel, indexedSignal.Signal, top)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="@TraceStrokeWidth(trace, indexedSignal.Index)" stroke-dasharray="@(indexedSignal.Index == 0 ? null : "4 3")" opacity="@TraceOpacity(trace, indexedSignal.Index)" vector-effect="non-scaling-stroke" />
+                                <path data-analysis-trace-path data-row="@row" data-lap="@trace.Lap" data-signal="@indexedSignal.Signal.Id" data-spotlight="@AriaBoolean(SpotlightLap == trace.Lap)" d="@TracePath(trace, panel, indexedSignal.Signal, top)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="@TraceStrokeWidth(trace, indexedSignal.Index)" stroke-dasharray="@(indexedSignal.Index == 0 ? null : "4 3")" opacity="@TraceOpacity(trace, indexedSignal.Index)" vector-effect="non-scaling-stroke" />
                             }
                         }
                         </svg:g>
@@ -599,21 +620,27 @@
     private IReadOnlyList<PitMapLayer> _pitMapLayers = [];
     private IReadOnlyList<MapTracePath>? _mapTracePaths;
     private string _mapTracePathsSignature = string.Empty;
-    private int _mapTraceUnavailableCount;
+    private readonly Dictionary<int, IReadOnlyList<ProjectedTracePoint>> _projectedTracePoints = [];
     private IReadOnlyDictionary<int, string> _lapColorCache = new Dictionary<int, string>();
     private double _fastestLapTime = double.MaxValue;
-    private readonly Dictionary<string, IReadOnlyList<MapSegment>> _mapSegmentCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<MetricRibbonSegment>> _metricRibbonCache = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<StripSegment>> _stripSegmentCache = new(StringComparer.Ordinal);
     private double Cursor { get; set; } = .25;
     private ElementReference ChartElement;
     private ElementReference TrackElement;
+    private ElementReference MapTypeElement;
+    private ElementReference ContextColumnElement;
+    private ElementReference ContextSplitterElement;
     private ElementReference TraceStudioElement;
     private ElementReference TraceToolboxButtonElement;
+    private ElementReference TraceExpandButtonElement;
     private ElementReference SpotlightControlElement;
     private ElementReference SpotlightTriggerElement;
     private DotNetObjectReference<TelemetryWorkspace>? _traceLayoutDotNetReference;
     private bool _cursorInteropAttached;
     private bool _traceLayoutInteropAttached;
+    private bool _trackMapInteropAttached;
+    private bool _contextSplitterInteropAttached;
     private double _chartWidth = 1000;
     private string _cursorInteropSignature = string.Empty;
     private string _traceLayoutInteropSignature = string.Empty;
@@ -667,6 +694,8 @@
         // Layout editing is independent of lap selection. Keep drag/drop and
         // keyboard reordering available after Clear leaves the chart empty.
         await ConfigureTraceLayoutInteropAsync();
+        await ConfigureTrackMapInteropAsync();
+        await ConfigureContextSplitterInteropAsync();
         if (Selected.Count == 0) return;
         if (!_cursorInteropAttached && await MeasureChart()) return;
         var signature = CursorInteropSignature;
@@ -682,9 +711,68 @@
         }
     }
 
-    private void ToggleTraceExpanded()
+    private async Task ConfigureTrackMapInteropAsync()
+    {
+        if (!HasMapGeometry) return;
+        try
+        {
+            await JS.InvokeVoidAsync("iracingCoachAnalysisTrackMap.initialize", TrackElement, Workspace.AnalysisId, TrackViewBox);
+            _trackMapInteropAttached = true;
+        }
+        catch (JSDisconnectedException)
+        {
+            _trackMapInteropAttached = false;
+        }
+        catch (InvalidOperationException)
+        {
+            // Static prerender has no browser yet; the next interactive render retries.
+            _trackMapInteropAttached = false;
+        }
+    }
+
+    private async Task ChangeMapMode(ChangeEventArgs args)
+    {
+        var requested = args.Value?.ToString();
+        Mode = Modes.Any(option => string.Equals(option.Key, requested, StringComparison.Ordinal)) ? requested! : "traces";
+        try { await JS.InvokeVoidAsync("iracingCoachAnalysisTrackMap.blur", MapTypeElement); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private async Task FitTrackMap()
+    {
+        if (!HasMapGeometry) return;
+        try { await JS.InvokeVoidAsync("iracingCoachAnalysisTrackMap.fit", TrackElement); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private async Task ConfigureContextSplitterInteropAsync()
+    {
+        if (!IsRaceWorkspace) return;
+        try
+        {
+            await JS.InvokeVoidAsync("iracingCoachAnalysisContextSplitter.initialize", ContextColumnElement, ContextSplitterElement);
+            _contextSplitterInteropAttached = true;
+        }
+        catch (JSDisconnectedException)
+        {
+            _contextSplitterInteropAttached = false;
+        }
+        catch (InvalidOperationException)
+        {
+            // Static prerender has no browser yet; the next interactive render retries.
+            _contextSplitterInteropAttached = false;
+        }
+    }
+
+    private async Task ToggleTraceExpanded(bool restoreKeyboardFocus)
     {
         TraceExpanded = !TraceExpanded;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        if (TraceExpanded) await TraceStudioElement.FocusAsync();
+        else if (restoreKeyboardFocus) await TraceExpandButtonElement.FocusAsync();
     }
     private string ContextColumnState => IsRaceWorkspace
         ? (!TrackPanelCollapsed, !LapRailCollapsed) switch
@@ -711,13 +799,13 @@
         if (TraceToolboxOpen && SelectedTraceRow is null) _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
     }
 
-    private async Task CloseTraceToolbox()
+    private async Task CloseTraceToolbox(bool restoreKeyboardFocus)
     {
         if (!TraceToolboxOpen) return;
         TraceToolboxOpen = false;
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
-        await TraceToolboxButtonElement.FocusAsync();
+        if (restoreKeyboardFocus) await TraceToolboxButtonElement.FocusAsync();
     }
 
     private async Task HandleWorkspaceKeyDown(KeyboardEventArgs args)
@@ -730,8 +818,8 @@
             await Task.Yield();
             await SpotlightTriggerElement.FocusAsync();
         }
-        else if (TraceToolboxOpen) await CloseTraceToolbox();
-        else if (TraceExpanded) ToggleTraceExpanded();
+        else if (TraceToolboxOpen) await CloseTraceToolbox(true);
+        else if (TraceExpanded) await ToggleTraceExpanded(true);
     }
 
     private void RebuildCalculatedTireWear()
@@ -847,6 +935,7 @@
         await Task.Yield();
         try
         {
+            if (await JS.InvokeAsync<bool>("iracingCoachInteractionPolicy.consumePointerFocusRelease", SpotlightTriggerElement)) return;
             if (await JS.InvokeAsync<bool>("iracingCoach.elementContainsActiveElement", SpotlightControlElement)) return;
         }
         catch (JSDisconnectedException)
@@ -970,15 +1059,6 @@
     private void ActivateTraceRow(string rowId)
     {
         if (TraceToolboxOpen) _selectedTraceRowId = rowId;
-    }
-    private void ResetTraceLayout()
-    {
-        if (ActiveTraceLayout.IsFactory) return;
-        var layout = ActiveTraceLayout.Named.Layout;
-        layout.Rows.Clear();
-        _ = AnalysisTraceLayouts.ValidateAndRepair(layout);
-        _selectedTraceRowId = layout.Rows.FirstOrDefault()?.Id;
-        SaveTraceLayout();
     }
     private void ChangeTraceLayout(ChangeEventArgs args)
     {
@@ -1404,6 +1484,26 @@
         _traceLayoutDotNetReference?.Dispose();
         _traceLayoutDotNetReference = null;
     }
+    private async Task DisposeTrackMapInteropAsync()
+    {
+        if (_trackMapInteropAttached)
+        {
+            try { await JS.InvokeVoidAsync("iracingCoachAnalysisTrackMap.dispose", TrackElement); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        _trackMapInteropAttached = false;
+    }
+    private async Task DisposeContextSplitterInteropAsync()
+    {
+        if (_contextSplitterInteropAttached)
+        {
+            try { await JS.InvokeVoidAsync("iracingCoachAnalysisContextSplitter.dispose", ContextSplitterElement); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
+        _contextSplitterInteropAttached = false;
+    }
     private string CursorInteropSignature => string.Join('|',
         _analysisId,
         SelectionSignature,
@@ -1479,15 +1579,11 @@
     private void RebuildMapRenderCache()
     {
         _canonicalGeometryPoints = CompleteVectorGeometry is { } vector
-            ? vector.MainPath
-                .Concat(vector.PitLane)
-                .Concat(vector.PitEntryPath)
-                .Concat(vector.PitExitPath)
-                .Concat(LinePoints(vector.StartFinishLine))
-                .Concat(LinePoints(vector.PitCommitmentLine))
-                .Concat(LinePoints(vector.PitMergeLine))
-                .ToArray()
+            ? vector.MainPath.ToArray()
             : [];
+        // The verified closed main loop owns projection and Fit bounds. Pit
+        // geometry is an overlay from the same provenance and must never make
+        // a short entry/exit path become the apparent track.
         _vectorProjection = CreateVectorProjection(_canonicalGeometryPoints);
         _allRecordedGpsPoints = Workspace.Traces
             .SelectMany(trace => trace.Points)
@@ -1512,14 +1608,22 @@
 
         _mapPoints = BuildMapPoints();
         _mapBounds = CreateMapBounds(_mapPoints);
+        _projectedTracePoints.Clear();
+        foreach (var trace in Workspace.Traces)
+        {
+            _projectedTracePoints[trace.Lap] = trace.Points
+                .Where(HasRecordedGps)
+                .Select(point => new ProjectedTracePoint(WrapPercent(point.LapPercent), ProjectGpsPoint(point), point))
+                .OrderBy(point => point.Percent)
+                .ToArray();
+        }
         _trackRibbonPath = SvgPath(_mapPoints, HasMapGeometry);
         _trackViewBox = BuildTrackViewBox();
         _startFinishLine = BuildStartFinishLine();
         _pitMapLayers = BuildPitMapLayers();
         _mapTracePaths = null;
         _mapTracePathsSignature = string.Empty;
-        _mapTraceUnavailableCount = 0;
-        _mapSegmentCache.Clear();
+        _metricRibbonCache.Clear();
         _stripSegmentCache.Clear();
     }
 
@@ -1543,16 +1647,18 @@
     {
         MainPath.Count: >= 3,
         Quality.MainLoopComplete: true
-    } vector && !vector.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ? vector : null;
+    } vector
+        && !vector.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase)
+        && AnalysisTrackMapGeometry.IsCanonicalMainLoop(vector.MainPath)
+            ? vector
+            : null;
     private bool HasCompleteTrackShape => IsCompleteTrackShape(Workspace.TrackShape);
     private bool HasMapGeometry => CompleteVectorGeometry is not null || HasCompleteTrackShape;
     private string TrackViewBox => _trackViewBox;
     private string BuildTrackViewBox()
     {
         if (!HasMapGeometry) return "0 0 420 280";
-        var points = CompleteVectorGeometry is not null
-            ? _canonicalGeometryPoints.Select(ProjectVectorPoint).ToArray()
-            : MapPoints;
+        var points = MapPoints;
         if (points.Count == 0) return "0 0 420 280";
         const double padding = 18;
         var minX = points.Min(point => point.X) - padding;
@@ -1592,17 +1698,14 @@
             if (_mapTracePaths is not null && string.Equals(_mapTracePathsSignature, SelectionSignature, StringComparison.Ordinal)) return _mapTracePaths;
             _mapTracePathsSignature = SelectionSignature;
             var selected = RenderedSelectedTraces.ToArray();
-            _mapTraceUnavailableCount = selected.Count(trace => trace.Points.Count(point => point.Latitude.HasValue && point.Longitude.HasValue) < 3);
             if (_allRecordedGpsPoints.Count < 3) return _mapTracePaths = [];
             return _mapTracePaths = selected
-                .Select(trace => new { Trace = trace, Points = trace.Points.Where(point => point.Latitude.HasValue && point.Longitude.HasValue).Select(ProjectGpsPoint).ToArray() })
-                .Where(item => item.Points.Length >= 3)
-                .Select(item => new MapTracePath(item.Trace.Lap, LapColor(item.Trace.Lap), SvgPath(item.Points, item.Trace.Complete)))
+                .Select(trace => new { Trace = trace, Points = _projectedTracePoints.GetValueOrDefault(trace.Lap) ?? [] })
+                .Where(item => item.Points.Count >= 3)
+                .Select(item => new MapTracePath(item.Trace.Lap, LapColor(item.Trace.Lap), SvgPath(item.Points.Select(point => point.Point).ToArray(), item.Trace.Complete)))
                 .ToArray();
         }
     }
-    private IReadOnlyList<AnalysisTracePoint> AllRecordedGpsPoints => _allRecordedGpsPoints;
-    private int MapTraceUnavailableCount => _mapTraceUnavailableCount;
     private IReadOnlyList<PitMapLayer> PitMapLayers => _pitMapLayers;
     private IReadOnlyList<PitMapLayer> BuildPitMapLayers()
     {
@@ -1626,8 +1729,9 @@
         if (_vectorProjection is not { } projection) return new MapPoint(WrapPercent(point.LapPercent ?? 0), point.X, point.Y);
         return new MapPoint(WrapPercent(point.LapPercent ?? 0), 210 + (point.X - projection.CenterX) * projection.Scale, 140 + (point.Y - projection.CenterY) * projection.Scale);
     }
-    private IReadOnlyList<AnalysisVectorPoint> CanonicalGeometryPoints => _canonicalGeometryPoints;
-    private static IEnumerable<AnalysisVectorPoint> LinePoints(AnalysisVectorLine? line) => line is null ? [] : [line.A, line.B];
+    private static bool HasRecordedGps(AnalysisTracePoint point) =>
+        point.Latitude is { } latitude && double.IsFinite(latitude)
+        && point.Longitude is { } longitude && double.IsFinite(longitude);
     private MapPoint ProjectGpsPoint(AnalysisTracePoint point)
     {
         if (_gpsBounds is not { } gps) return MapPointAt(point.LapPercent);
@@ -1687,21 +1791,89 @@
         for (var index = 1; index < points.Count; index++) path += $" L {F(points[index].X)} {F(points[index].Y)}";
         return close ? path + " Z" : path;
     }
-    private IReadOnlyList<MapSegment> MapSegments
+    private IReadOnlyList<MetricRibbonSegment> MetricRibbonSegments
     {
         get
         {
             var key = $"{Mode}|{SelectionSignature}";
-            if (_mapSegmentCache.TryGetValue(key, out var cached)) return cached;
-            var points = MapPoints;
-            var segments = new MapSegment[points.Count];
-            for (var index = 0; index < points.Count; index++)
+            if (_metricRibbonCache.TryGetValue(key, out var cached)) return cached;
+            var samples = BuildMetricRibbonSamples();
+            if (samples.Count < 2) return _metricRibbonCache[key] = [];
+            var segments = new MetricRibbonSegment[samples.Count];
+            for (var index = 0; index < samples.Count; index++)
             {
-                var a = points[index]; var b = points[(index + 1) % points.Count];
-                segments[index] = new MapSegment(a, b, MetricColor(MetricAt(SegmentPercent(a.Percent, b.Percent, .5))));
+                var a = samples[index];
+                var b = samples[(index + 1) % samples.Count];
+                var leftA = new MapPoint(a.Percent, a.Center.X + a.NormalX * a.Width / 2, a.Center.Y + a.NormalY * a.Width / 2);
+                var rightA = new MapPoint(a.Percent, a.Center.X - a.NormalX * a.Width / 2, a.Center.Y - a.NormalY * a.Width / 2);
+                var leftB = new MapPoint(b.Percent, b.Center.X + b.NormalX * b.Width / 2, b.Center.Y + b.NormalY * b.Width / 2);
+                var rightB = new MapPoint(b.Percent, b.Center.X - b.NormalX * b.Width / 2, b.Center.Y - b.NormalY * b.Width / 2);
+                var path = $"M {F(leftA.X)} {F(leftA.Y)} L {F(leftB.X)} {F(leftB.Y)} L {F(rightB.X)} {F(rightB.Y)} L {F(rightA.X)} {F(rightA.Y)} Z";
+                segments[index] = new MetricRibbonSegment(path, MetricColor(Median([a.Metric, b.Metric])), a.Width, b.Width);
             }
-            return _mapSegmentCache[key] = segments;
+            return _metricRibbonCache[key] = segments;
         }
+    }
+
+    private IReadOnlyList<MetricRibbonSample> BuildMetricRibbonSamples()
+    {
+        const int bins = 160;
+        var selected = RenderedSelectedTraces.ToArray();
+        var seeds = new MetricRibbonSeed[bins];
+        for (var index = 0; index < bins; index++)
+        {
+            var percent = index / (double)bins;
+            var observed = selected
+                .Select(trace => _projectedTracePoints.TryGetValue(trace.Lap, out var points) ? NearestProjected(points, percent) : null)
+                .Where(point => point is not null)
+                .Cast<ProjectedTracePoint>()
+                .ToArray();
+            var center = observed.Length == 0
+                ? MapPointAt(percent)
+                : new MapPoint(percent, Median(observed.Select(point => (double?)point.Point.X)) ?? MapPointAt(percent).X, Median(observed.Select(point => (double?)point.Point.Y)) ?? MapPointAt(percent).Y);
+            seeds[index] = new MetricRibbonSeed(percent, center, observed.Select(point => point.Point).ToArray(), MedianMetricAt(percent));
+        }
+
+        var samples = new MetricRibbonSample[bins];
+        for (var index = 0; index < bins; index++)
+        {
+            var seed = seeds[index];
+            var before = seeds[(index - 1 + bins) % bins].Center;
+            var after = seeds[(index + 1) % bins].Center;
+            var tangentX = after.X - before.X;
+            var tangentY = after.Y - before.Y;
+            var tangentLength = Math.Sqrt(tangentX * tangentX + tangentY * tangentY);
+            var normalX = tangentLength < .000001 ? 0 : -tangentY / tangentLength;
+            var normalY = tangentLength < .000001 ? 1 : tangentX / tangentLength;
+            var offsets = seed.ObservedPoints
+                .Select(point => (point.X - seed.Center.X) * normalX + (point.Y - seed.Center.Y) * normalY)
+                .ToArray();
+            var minimumOffset = offsets.Length == 0 ? 0 : offsets.Min();
+            var maximumOffset = offsets.Length == 0 ? 0 : offsets.Max();
+            var envelopeCenter = (minimumOffset + maximumOffset) / 2;
+            var center = new MapPoint(seed.Percent, seed.Center.X + normalX * envelopeCenter, seed.Center.Y + normalY * envelopeCenter);
+            var width = Math.Max(1, maximumOffset - minimumOffset);
+            samples[index] = new MetricRibbonSample(seed.Percent, center, normalX, normalY, width, seed.Metric);
+        }
+        return samples;
+    }
+
+    private static ProjectedTracePoint? NearestProjected(IReadOnlyList<ProjectedTracePoint> points, double percent)
+    {
+        if (points.Count == 0) return null;
+        var target = WrapPercent(percent);
+        var low = 0;
+        var high = points.Count - 1;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            if (points[middle].Percent < target) low = middle + 1;
+            else if (points[middle].Percent > target) high = middle - 1;
+            else return points[middle];
+        }
+        var after = low >= points.Count ? points[0] : points[low];
+        var before = high < 0 ? points[^1] : points[high];
+        return CircularDistance(after.Percent, target) < CircularDistance(before.Percent, target) ? after : before;
     }
     private MapPoint MapPointAt(double percent) => MapPointAt(percent, MapPoints);
     private static MapPoint MapPointAt(double percent, IReadOnlyList<MapPoint> points)
@@ -1754,8 +1926,28 @@
     }
     private double? MetricAt(double percent)
     {
-        var sample = AverageAt(percent);
-        return Mode switch { "throttle" => sample.Throttle, "brake" => sample.Brake, "steering" => sample.SteeringRadians, "stress" => sample.TireStress, _ => sample.SpeedMph };
+        return MedianMetricAt(percent);
+    }
+    private double? MedianMetricAt(double percent)
+    {
+        return Median(RenderedSelectedTraces.Select(trace => Nearest(trace, percent)).Where(point => point is not null).Select(point => MetricValue(point!)));
+    }
+    private double? MetricValue(AnalysisTracePoint point)
+    {
+        return Mode switch
+        {
+            "throttle" => point.Throttle,
+            "brake" => point.Brake,
+            "stress" => point.TireStressProxy,
+            _ => point.SpeedMph
+        };
+    }
+    private static double? Median(IEnumerable<double?> values)
+    {
+        var recorded = values.Where(value => value.HasValue && double.IsFinite(value.Value)).Select(value => value!.Value).Order().ToArray();
+        if (recorded.Length == 0) return null;
+        var middle = recorded.Length / 2;
+        return recorded.Length % 2 == 0 ? (recorded[middle - 1] + recorded[middle]) / 2 : recorded[middle];
     }
     private string MetricColor(double? value)
     {
@@ -2086,39 +2278,8 @@
     private IReadOnlyList<AnalysisIncident> LapIncidents(int lap) =>
         Workspace.Damage.Incidents?.Where(item => item.Lap == lap).ToArray() ?? [];
     private int IncidentPoints(int lap) => LapIncidents(lap).Sum(item => item.Points);
-    private string IncidentEventDescription(AnalysisLapTrace trace, AnalysisIncident incident, bool includePoints)
-    {
-        var parts = new List<string>();
-        if (includePoints) parts.Add($"x{incident.Points}");
-        if (!string.IsNullOrWhiteSpace(incident.EventType)) parts.Add(HumanizeIncidentValue(incident.EventType));
-        if (!string.IsNullOrWhiteSpace(incident.ContactTarget)) parts.Add($"Contact: {HumanizeIncidentValue(incident.ContactTarget)}");
-        if (!string.IsNullOrWhiteSpace(incident.TrackLocation)) parts.Add(HumanizeIncidentValue(incident.TrackLocation));
-        if (incident.OnPitRoad == true) parts.Add("Pit road");
-        if (incident.SpeedMph is { } speed) parts.Add($"{speed:0} mph");
-        if (incident.YawRateDegreesPerSecond is { } yaw) parts.Add($"Yaw rate {yaw:+0.0;-0.0;0.0}°/s");
-        if (incident.SlipAngleDegrees is { } slip) parts.Add($"Slip angle {slip:+0.0;-0.0;0.0}°");
-        if (IncidentLapPercent(trace, incident) is { } percent) parts.Add($"{percent * 100:0}% lap");
-        if (incident.SessionTimeSeconds is { } sessionTime) parts.Add(FormatSessionTime(sessionTime));
-        return string.Join(" · ", parts);
-    }
-    private static string HumanizeIncidentValue(string value)
-    {
-        var words = value.Trim().Replace('_', ' ').Replace('-', ' ');
-        return words.Length == 0 ? string.Empty : char.ToUpperInvariant(words[0]) + words[1..];
-    }
-    private static double? IncidentLapPercent(AnalysisLapTrace trace, AnalysisIncident incident)
-    {
-        if (!incident.SessionTimeSeconds.HasValue) return null;
-        return trace.Points
-            .Where(point => point.SessionTimeSeconds.HasValue)
-            .MinBy(point => Math.Abs(point.SessionTimeSeconds!.Value - incident.SessionTimeSeconds.Value))?
-            .LapPercent;
-    }
-    private static string FormatSessionTime(double seconds)
-    {
-        var time = TimeSpan.FromSeconds(Math.Max(0, seconds));
-        return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss\.f") : time.ToString(@"m\:ss\.f");
-    }
+    private static string IncidentEventDescription(AnalysisIncident incident, bool includePoints) =>
+        IncidentPresentation.Describe(incident, includePoints);
     private static string IncidentSeverity(int points) => points <= 0 ? "none" : points >= 4 ? "high" : points >= 2 ? "medium" : "low";
     private IReadOnlyList<double> SectorStarts => Workspace.SectorStartPercents?.Where(value => value >= 0 && value < 1).Distinct().Order().ToArray() ?? [];
     private SectorStatus SectorState(AnalysisLapTrace trace, int sector)
@@ -2184,8 +2345,7 @@
         _signalAvailabilityCache.Clear();
         _mapTracePaths = null;
         _mapTracePathsSignature = string.Empty;
-        _mapTraceUnavailableCount = 0;
-        _mapSegmentCache.Clear();
+        _metricRibbonCache.Clear();
         _stripSegmentCache.Clear();
     }
     public async ValueTask DisposeAsync()
@@ -2193,6 +2353,8 @@
         KeepPitPopoverOpen();
         await DisposeCursorInteropAsync();
         await DisposeTraceLayoutInteropAsync();
+        await DisposeTrackMapInteropAsync();
+        await DisposeContextSplitterInteropAsync();
     }
     private sealed record TracePanelRow(AnalysisTraceRow Preferences, IReadOnlyList<AnalysisTraceSignalDefinition> Signals)
     {
@@ -2203,7 +2365,10 @@
     private sealed record VectorProjection(double CenterX, double CenterY, double Scale);
     private sealed record GpsBounds(double MinimumLongitude, double MaximumLongitude, double MinimumLatitude, double MaximumLatitude);
     private sealed record MapBounds(double MinimumX, double MaximumX, double MinimumY, double MaximumY);
-    private sealed record MapSegment(MapPoint A, MapPoint B, string Color);
+    private sealed record ProjectedTracePoint(double Percent, MapPoint Point, AnalysisTracePoint Source);
+    private sealed record MetricRibbonSeed(double Percent, MapPoint Center, IReadOnlyList<MapPoint> ObservedPoints, double? Metric);
+    private sealed record MetricRibbonSample(double Percent, MapPoint Center, double NormalX, double NormalY, double Width, double? Metric);
+    private sealed record MetricRibbonSegment(string Path, string Color, double StartWidth, double EndWidth);
     private sealed record MapTracePath(int Lap, string Color, string Path);
     private sealed record PitMapLayer(string PitRoad, string Entry, string Exit, MapLine? EntryCommitment, MapLine? ExitCommitment);
     private sealed record StripSegment(double X1, double X2, string Color);

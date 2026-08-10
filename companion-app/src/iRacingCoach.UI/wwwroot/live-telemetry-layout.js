@@ -14,6 +14,10 @@
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
+  function rectSnapshot(rect) {
+    return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+  }
+
   function configure(root, options) {
     const state = layouts.get(root);
     if (!state) return;
@@ -62,10 +66,9 @@
   }
 
   function gridMetrics(state) {
-    fitGrid(state);
     const grid = state.root.querySelector("[data-live-grid]");
     if (!grid) return null;
-    const rect = grid.getBoundingClientRect();
+    const rect = rectSnapshot(grid.getBoundingClientRect());
     const style = getComputedStyle(grid);
     const columns = Math.max(1, number(grid.dataset.columns, state.options.columns));
     const rows = Math.max(1, number(grid.dataset.rows, state.options.rows));
@@ -108,56 +111,48 @@
     };
   }
 
-  function tileAtCell(state, row, column, excludedTileId = null) {
-    return Array.from(state.root.querySelectorAll("[data-live-tile]"), tileData)
+  function captureTileGeometry(state) {
+    return Array.from(state.root.querySelectorAll("[data-live-tile]"), element => ({
+      data: tileData(element),
+      rect: rectSnapshot(element.getBoundingClientRect())
+    }));
+  }
+
+  function tileAtCell(session, row, column, excludedTileId = null) {
+    return session.tiles.map(item => item.data)
       .find(tile => tile.id !== excludedTileId && row >= tile.row && row < tile.row + tile.rowSpan && column >= tile.column && column < tile.column + tile.columnSpan) || null;
   }
 
-  function tileAtPointer(state, event, row, column, excludedTileId = null) {
-    for (const tileElement of state.root.querySelectorAll("[data-live-tile]")) {
-      if (tileElement.dataset.tileId === excludedTileId) continue;
-      const rect = tileElement.getBoundingClientRect();
-      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) return tileData(tileElement);
+  function tileAtPointer(session, event, row, column, excludedTileId = null) {
+    for (const tile of session.tiles) {
+      if (tile.data.id === excludedTileId) continue;
+      const rect = tile.rect;
+      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) return tile.data;
     }
-    const hoveredElement = document.elementFromPoint(event.clientX, event.clientY);
-    const hoveredTile = hoveredElement?.closest?.("[data-live-tile]");
-    if (hoveredTile && hoveredTile.dataset.tileId !== excludedTileId) return tileData(hoveredTile);
-    return tileAtCell(state, row, column, excludedTileId);
+    return tileAtCell(session, row, column, excludedTileId);
   }
 
   function placementCanPack(state, session, placement, metrics) {
-    const pendingMetricId = "__pending_metric__";
-    const tiles = Array.from(state.root.querySelectorAll("[data-live-tile]"), tileData);
-    const firstId = session.kind === "metric" ? pendingMetricId : session.original.id;
-    if (session.kind === "metric") {
-      tiles.push({ id: pendingMetricId, row: placement.row, column: placement.column, rowSpan: 1, columnSpan: 1 });
-    } else {
-      const active = tiles.find(tile => tile.id === firstId);
-      if (!active) return false;
-      Object.assign(active, placement);
-    }
-
-    tiles.sort((left, right) => {
-      const leftPriority = left.id === firstId ? 0 : 1;
-      const rightPriority = right.id === firstId ? 0 : 1;
-      return leftPriority - rightPriority || left.row - right.row || left.column - right.column || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
-    });
-
-    const occupied = new Set();
+    const occupied = session.occupied;
+    occupied.fill(0);
     const fits = (row, column, rowSpan, columnSpan) => {
       if (row < 0 || column < 0 || row + rowSpan > metrics.rows || column + columnSpan > metrics.columns) return false;
-      for (let r = row; r < row + rowSpan; r++) for (let c = column; c < column + columnSpan; c++) if (occupied.has(`${r}:${c}`)) return false;
+      for (let r = row; r < row + rowSpan; r++)
+        for (let c = column; c < column + columnSpan; c++)
+          if (occupied[r * metrics.columns + c]) return false;
       return true;
     };
     const occupy = (row, column, rowSpan, columnSpan) => {
-      for (let r = row; r < row + rowSpan; r++) for (let c = column; c < column + columnSpan; c++) occupied.add(`${r}:${c}`);
+      for (let r = row; r < row + rowSpan; r++)
+        for (let c = column; c < column + columnSpan; c++)
+          occupied[r * metrics.columns + c] = 1;
     };
 
-    for (const tile of tiles) {
-      const rowSpan = clamp(tile.rowSpan, 1, metrics.rows);
-      const columnSpan = clamp(tile.columnSpan, 1, metrics.columns);
-      let row = tile.row;
-      let column = tile.column;
+    const place = (initialRow, initialColumn, initialRowSpan, initialColumnSpan) => {
+      const rowSpan = clamp(initialRowSpan, 1, metrics.rows);
+      const columnSpan = clamp(initialColumnSpan, 1, metrics.columns);
+      let row = initialRow;
+      let column = initialColumn;
       if (!fits(row, column, rowSpan, columnSpan)) {
         let found = false;
         for (let candidateRow = 0; candidateRow <= metrics.rows - rowSpan && !found; candidateRow++) {
@@ -172,6 +167,13 @@
         if (!found) return false;
       }
       occupy(row, column, rowSpan, columnSpan);
+      return true;
+    };
+
+    if (!place(placement.row, placement.column, placement.rowSpan, placement.columnSpan)) return false;
+    for (const tile of session.packTiles) {
+      if (session.kind !== "metric" && tile.id === session.original.id) continue;
+      if (!place(tile.row, tile.column, tile.rowSpan, tile.columnSpan)) return false;
     }
     return true;
   }
@@ -210,15 +212,15 @@
       session.preview.className = "live-grid-drop-preview";
       session.preview.innerHTML = "<span></span>";
       document.body.appendChild(session.preview);
+      session.previewLabel = session.preview.firstElementChild;
     }
     const rect = placementRect(metrics, placement);
-    session.preview.style.left = `${Math.round(rect.left)}px`;
-    session.preview.style.top = `${Math.round(rect.top)}px`;
+    session.preview.style.transform = `translate3d(${Math.round(rect.left)}px,${Math.round(rect.top)}px,0)`;
     session.preview.style.width = `${Math.round(rect.width)}px`;
     session.preview.style.height = `${Math.round(rect.height)}px`;
     session.preview.classList.toggle("invalid", !valid);
     session.preview.classList.toggle("replacement", valid && replacementMessage !== null);
-    session.preview.querySelector("span").textContent = valid
+    session.previewLabel.textContent = valid
       ? replacementMessage || `${placement.columnSpan} x ${placement.rowSpan}`
       : invalidMessage;
     session.placement = placement;
@@ -227,7 +229,7 @@
 
   function createGhost(session, event) {
     const source = session.source;
-    const rect = source.getBoundingClientRect();
+    const rect = session.sourceRect;
     const ghost = source.cloneNode(true);
     ghost.removeAttribute("id");
     ghost.className = "live-layout-drag-ghost";
@@ -235,15 +237,16 @@
     ghost.style.height = `${Math.min(160, Math.max(54, rect.height))}px`;
     document.body.appendChild(ghost);
     session.ghost = ghost;
+    session.ghostWidth = Math.min(320, Math.max(190, rect.width));
+    session.ghostHeight = Math.min(160, Math.max(54, rect.height));
     moveGhost(session, event);
   }
 
   function moveGhost(session, event) {
     if (!session.ghost) return;
-    const left = clamp(event.clientX + 14, 8, Math.max(8, window.innerWidth - session.ghost.offsetWidth - 8));
-    const top = clamp(event.clientY + 14, 8, Math.max(8, window.innerHeight - session.ghost.offsetHeight - 8));
-    session.ghost.style.left = `${Math.round(left)}px`;
-    session.ghost.style.top = `${Math.round(top)}px`;
+    const left = clamp(event.clientX + 14, 8, Math.max(8, window.innerWidth - session.ghostWidth - 8));
+    const top = clamp(event.clientY + 14, 8, Math.max(8, window.innerHeight - session.ghostHeight - 8));
+    session.ghost.style.transform = `translate3d(${Math.round(left)}px,${Math.round(top)}px,0) rotate(.35deg)`;
   }
 
   function beginVisibleGesture(state, event) {
@@ -266,7 +269,7 @@
     session.targetColumn = placement.column;
     session.targetRow = placement.row;
     const inside = pointerInsideGrid(event, metrics);
-    const target = inside ? tileAtPointer(state, event, placement.row, placement.column, session.original.id) : null;
+    const target = inside ? tileAtPointer(session, event, placement.row, placement.column, session.original.id) : null;
     session.replacementTileId = target?.id || null;
     if (target) {
       const replacementPlacement = { row: target.row, column: target.column, rowSpan: target.rowSpan, columnSpan: target.columnSpan };
@@ -289,7 +292,7 @@
     session.targetColumn = placement.column;
     session.targetRow = placement.row;
     const inside = pointerInsideGrid(event, metrics);
-    const target = inside ? tileAtPointer(state, event, placement.row, placement.column) : null;
+    const target = inside ? tileAtPointer(session, event, placement.row, placement.column) : null;
     session.replacementTileId = target?.id || null;
     if (target) {
       const replacementPlacement = { row: target.row, column: target.column, rowSpan: target.rowSpan, columnSpan: target.columnSpan };
@@ -323,16 +326,52 @@
     updatePreview(session, metrics, placement, placementCanPack(state, session, placement, metrics));
   }
 
+  function shiftGestureGeometry(session, scrollDelta) {
+    if (!scrollDelta) return;
+    session.metrics.rect.top -= scrollDelta;
+    session.metrics.rect.bottom -= scrollDelta;
+    session.metrics.contentTop -= scrollDelta;
+    session.sourceRect.top -= scrollDelta;
+    session.sourceRect.bottom -= scrollDelta;
+    for (const tile of session.tiles) {
+      tile.rect.top -= scrollDelta;
+      tile.rect.bottom -= scrollDelta;
+    }
+  }
+
   function autoScroll(state, event) {
-    const scrollHost = state.root.closest(".workspace");
-    if (!scrollHost || scrollHost.scrollHeight <= scrollHost.clientHeight) return;
-    const rect = scrollHost.getBoundingClientRect();
+    const session = state.session;
+    const scrollHost = session.scrollHost;
+    if (!scrollHost || session.maximumScroll <= 0) return 0;
+    const rect = session.scrollHostRect;
     const threshold = 54;
     const maximumStep = 22;
     let delta = 0;
     if (event.clientY < rect.top + threshold) delta = -maximumStep * (1 - clamp((event.clientY - rect.top) / threshold, 0, 1));
     else if (event.clientY > rect.bottom - threshold) delta = maximumStep * (1 - clamp((rect.bottom - event.clientY) / threshold, 0, 1));
-    if (Math.abs(delta) >= 1) scrollHost.scrollTop += delta;
+    if (Math.abs(delta) < 1) return 0;
+    const before = scrollHost.scrollTop;
+    scrollHost.scrollTop = clamp(before + delta, 0, session.maximumScroll);
+    return scrollHost.scrollTop - before;
+  }
+
+  function pointerSample(event) {
+    return { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
+  }
+
+  function processPointerMove(state, event, allowAutoScroll = true) {
+    const session = state.session;
+    if (!session || event.pointerId !== session.pointerId) return;
+    const distance = Math.hypot(event.clientX - session.startX, event.clientY - session.startY);
+    if (!session.active && distance < dragThreshold) return;
+    beginVisibleGesture(state, event);
+    if (allowAutoScroll) shiftGestureGeometry(session, autoScroll(state, event));
+    moveGhost(session, event);
+    const metrics = session.metrics;
+    if (!metrics) return;
+    if (session.kind === "tile") moveTileGesture(state, event, metrics);
+    else if (session.kind === "metric") moveMetricGesture(state, event, metrics);
+    else moveResizeGesture(state, event, metrics);
   }
 
   function onPointerMove(state, event) {
@@ -340,15 +379,15 @@
     if (!session || event.pointerId !== session.pointerId) return;
     const distance = Math.hypot(event.clientX - session.startX, event.clientY - session.startY);
     if (!session.active && distance < dragThreshold) return;
-    beginVisibleGesture(state, event);
     event.preventDefault();
-    autoScroll(state, event);
-    moveGhost(session, event);
-    const metrics = gridMetrics(state);
-    if (!metrics) return;
-    if (session.kind === "tile") moveTileGesture(state, event, metrics);
-    else if (session.kind === "metric") moveMetricGesture(state, event, metrics);
-    else moveResizeGesture(state, event, metrics);
+    state.latestPointer = pointerSample(event);
+    if (state.pointerMoveFrame) return;
+    state.pointerMoveFrame = requestAnimationFrame(() => {
+      state.pointerMoveFrame = 0;
+      const latest = state.latestPointer;
+      state.latestPointer = null;
+      if (latest) processPointerMove(state, latest);
+    });
   }
 
   function captureRects(root) {
@@ -357,12 +396,20 @@
     return captured;
   }
 
+  function motionMilliseconds(root) {
+    const raw = getComputedStyle(root).getPropertyValue("--motion-structure").trim();
+    const parsed = Number.parseFloat(raw);
+    if (!Number.isFinite(parsed)) return 500;
+    return raw.endsWith("s") && !raw.endsWith("ms") ? parsed * 1000 : parsed;
+  }
+
   function animateReflow(state, before) {
-    if (state.options.reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const duration = motionMilliseconds(state.root);
+    if (duration <= 0 || state.options.reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     for (const tile of state.root.querySelectorAll("[data-live-tile]")) {
       const prior = before.get(tile.dataset.tileId);
       if (!prior) {
-        tile.animate([{ opacity: 0, transform: "scale(.96)" }, { opacity: 1, transform: "none" }], { duration: 180, easing: "cubic-bezier(.2,0,0,1)" });
+        tile.animate([{ opacity: 0, transform: "scale(.96)" }, { opacity: 1, transform: "none" }], { duration, easing: "cubic-bezier(.2,0,0,1)" });
         continue;
       }
       const next = tile.getBoundingClientRect();
@@ -374,7 +421,7 @@
       tile.animate([
         { transformOrigin: "top left", transform: `translate(${deltaX}px,${deltaY}px) scale(${scaleX},${scaleY})` },
         { transformOrigin: "top left", transform: "none" }
-      ], { duration: 200, easing: "cubic-bezier(.2,0,0,1)" });
+      ], { duration, easing: "cubic-bezier(.2,0,0,1)" });
     }
   }
 
@@ -389,19 +436,15 @@
   async function completeGesture(state, event, cancelled) {
     const session = state.session;
     if (!session || event.pointerId !== undefined && event.pointerId !== session.pointerId) return;
-    if (!cancelled && session.active && (session.kind === "metric" || session.kind === "tile")) {
-      const metrics = gridMetrics(state);
-      if (metrics && pointerInsideGrid(event, metrics)) {
-        // Pointer capture can deliver an up event at a newer position than the
-        // last move. Re-evaluate the exact drop point so the visible preview and
-        // committed action cannot disagree.
-        if (session.kind === "tile") moveTileGesture(state, event, metrics);
-        else moveMetricGesture(state, event, metrics);
-      } else {
-        session.replacementTileId = null;
-        session.valid = false;
-      }
+    if (state.pointerMoveFrame) {
+      cancelAnimationFrame(state.pointerMoveFrame);
+      state.pointerMoveFrame = 0;
     }
+    state.latestPointer = null;
+    if (!cancelled) processPointerMove(state, pointerSample(event), false);
+    // Pointer capture can deliver an up event at a newer position than the
+    // last display frame. The direct call above commits that exact position so
+    // the visible preview and stored placement cannot disagree.
     state.session = null;
     if (cancelled || !session.active || !session.valid || !session.placement) {
       removeGestureVisuals(state, session);
@@ -438,6 +481,11 @@
   function cancelGesture(state) {
     const session = state.session;
     if (!session) return;
+    if (state.pointerMoveFrame) {
+      cancelAnimationFrame(state.pointerMoveFrame);
+      state.pointerMoveFrame = 0;
+    }
+    state.latestPointer = null;
     state.session = null;
     removeGestureVisuals(state, session);
   }
@@ -453,18 +501,34 @@
     const tile = capture.closest("[data-live-tile]");
     const kind = resizeHandle ? "resize" : tileHandle ? "tile" : "metric";
     if (kind !== "metric" && !tile) return;
+    const original = tile ? tileData(tile) : null;
+    const source = tile || capture.closest("[data-live-catalog-item]") || capture;
+    const metrics = gridMetrics(state);
+    if (!metrics) return;
+    const sourceRect = rectSnapshot(source.getBoundingClientRect());
+    const scrollHost = state.root.closest(".workspace");
+    const scrollHostRect = scrollHost ? rectSnapshot(scrollHost.getBoundingClientRect()) : null;
     event.preventDefault();
     event.stopPropagation();
     try { capture.setPointerCapture(event.pointerId); } catch (_) { }
-    const original = tile ? tileData(tile) : null;
+    const tiles = captureTileGeometry(state);
+    const packTiles = tiles.map(item => item.data).sort((left, right) =>
+      left.row - right.row || left.column - right.column || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
     state.session = {
       kind,
-      source: tile || capture.closest("[data-live-catalog-item]") || capture,
+      source,
       capture,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      sourceRect: tile ? tile.getBoundingClientRect() : capture.getBoundingClientRect(),
+      sourceRect,
+      metrics,
+      tiles,
+      packTiles,
+      occupied: new Uint8Array(metrics.rows * metrics.columns),
+      scrollHost,
+      scrollHostRect,
+      maximumScroll: scrollHost ? Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight) : 0,
       original,
       metricId: metricHandle ? metricHandle.dataset.liveDragMetric : null,
       metricName: metricHandle
@@ -479,7 +543,10 @@
       valid: false,
       placement: null,
       ghost: null,
+      ghostWidth: 0,
+      ghostHeight: 0,
       preview: null,
+      previewLabel: null,
       replacementTileId: null
     };
   }
@@ -492,7 +559,7 @@
       configure(root, options);
       return;
     }
-    const state = { root, dotnet, options: {}, session: null, committing: false, fitFrame: 0, resizeObserver: null };
+    const state = { root, dotnet, options: {}, session: null, committing: false, fitFrame: 0, pointerMoveFrame: 0, latestPointer: null, resizeObserver: null };
     state.pointerDown = event => onPointerDown(state, event);
     state.pointerMove = event => onPointerMove(state, event);
     state.pointerUp = event => void completeGesture(state, event, false);
@@ -541,6 +608,7 @@
     window.removeEventListener("blur", state.windowBlur);
     window.removeEventListener("resize", state.windowResize);
     if (state.fitFrame) cancelAnimationFrame(state.fitFrame);
+    if (state.pointerMoveFrame) cancelAnimationFrame(state.pointerMoveFrame);
     if (state.resizeObserver) state.resizeObserver.disconnect();
     layouts.delete(root);
   }

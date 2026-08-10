@@ -19,7 +19,7 @@
   ],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "name": { "const": "gentle-charcoal-dark" },
+    "name": { "const": "mineral-glass-dark" },
     "mode": { "const": "dark" },
     "colors": {
       "type": "object",

@@ -39,7 +39,7 @@
                 <button class="icon-button" title="@(State.Settings.LiveMonitor.Visible ? "Hide telemetry popout" : "Open telemetry popout")" aria-label="@(State.Settings.LiveMonitor.Visible ? "Hide telemetry popout" : "Open telemetry popout")" @onclick="State.ToggleLiveMonitor"><ProductIcon Name="monitor" Size="17" /></button>
                 @if (_editing)
                 {
-                    <button @ref="_toolboxToggleElement" class="button secondary compact toolbox-toggle" @onclick="ToggleToolbox" aria-expanded="@_toolboxOpen" aria-controls="live-telemetry-toolbox">
+                    <button @ref="_toolboxToggleElement" class="button secondary compact toolbox-toggle" @onclick="ToggleToolbox" aria-expanded="@(_toolboxOpen ? "true" : "false")" aria-controls="live-telemetry-toolbox">
                         <ProductIcon Name="setup" Size="16" /> @(_toolboxOpen ? "Hide tools" : "Show tools")
                     </button>
                 }
@@ -104,7 +104,7 @@
                                 <span class="live-tile-heading">@definition.Name</span>
                             </button>
                             <div class="live-tile-actions">
-                                <button type="button" class="live-tile-action" aria-label="Configure @definition.Name" title="Widget display settings" aria-expanded="@(_openTileMenuId == tile.Id)" @onclick="() => ToggleTileMenu(tile.Id)" @onclick:stopPropagation="true"><ProductIcon Name="chevron-down" Size="15" /></button>
+                                <button type="button" class="live-tile-action" aria-label="Configure @definition.Name" title="Widget display settings" aria-expanded="@(_openTileMenuId == tile.Id ? "true" : "false")" @onclick="() => ToggleTileMenu(tile.Id)" @onclick:stopPropagation="true"><ProductIcon Name="chevron-down" Size="15" /></button>
                                 <button type="button" class="live-tile-action remove" aria-label="Remove @definition.Name" title="Remove widget" @onclick="() => RemoveTile(tile.Id)" @onclick:stopPropagation="true"><ProductIcon Name="trash" Size="15" /></button>
                             </div>
                             <span class="live-tile-heading live-tile-heading-compact" aria-hidden="true">@definition.Name</span>
@@ -126,7 +126,7 @@
                             </label>
                             @if (UsesAccent(tile.DisplayStyle))
                             {
-                                <fieldset class="tile-color-field"><legend>Color</legend><div class="tile-color-options">@foreach (var accent in AccentOptions) { <button type="button" class="tile-color-swatch @accent.Value @(tile.Accent == accent.Value ? "active" : null)" style="--swatch-color:@AccentToken(accent.Value)" title="@accent.Label" aria-label="@($"Use {accent.Label.ToLowerInvariant()} color")" aria-pressed="@(tile.Accent == accent.Value)" @onclick="() => SetTileAccent(tile.Id, accent.Value)"></button> }</div></fieldset>
+                                <fieldset class="tile-color-field"><legend>Color</legend><div class="tile-color-options">@foreach (var accent in AccentOptions) { <button type="button" class="tile-color-swatch @accent.Value @(tile.Accent == accent.Value ? "active" : null)" style="--swatch-color:@AccentToken(accent.Value)" title="@accent.Label" aria-label="@($"Use {accent.Label.ToLowerInvariant()} color")" aria-pressed="@(tile.Accent == accent.Value ? "true" : "false")" @onclick="() => SetTileAccent(tile.Id, accent.Value)"></button> }</div></fieldset>
                             }
                             @if (tile.DisplayStyle == LiveMonitorDisplayStyle.Trend)
                             {
@@ -201,7 +201,7 @@
 
     <aside id="live-telemetry-toolbox"
            class="live-toolbox @(_toolboxOpen ? "open" : null)"
-           aria-hidden="@(!_toolboxOpen)"
+           aria-hidden="@(_toolboxOpen ? "false" : "true")"
            inert="@(!_toolboxOpen ? string.Empty : null)"
            aria-label="Live telemetry toolbox">
             <header class="live-toolbox-heading">
@@ -236,7 +236,7 @@
                         <div class="tile-style-picker" role="group" aria-label="Display style">
                             @foreach (var style in selectedDefinition.Styles)
                             {
-                                <button class="@(selected.DisplayStyle == style ? "active" : null)" aria-pressed="@(selected.DisplayStyle == style)" @onclick="() => SetTileStyle(selected.Id, style)"><ProductIcon Name="@StyleIcon(style)" Size="17" /><span>@StyleLabel(style)</span></button>
+                                <button class="@(selected.DisplayStyle == style ? "active" : null)" aria-pressed="@(selected.DisplayStyle == style ? "true" : "false")" @onclick="() => SetTileStyle(selected.Id, style)"><ProductIcon Name="@StyleIcon(style)" Size="17" /><span>@StyleLabel(style)</span></button>
                             }
                         </div>
                         <div class="toolbox-grid-controls">
@@ -248,7 +248,7 @@
                         </div>
                         @if (UsesAccent(selected.DisplayStyle))
                         {
-                            <fieldset class="tile-color-field"><legend>Widget color</legend><div class="tile-color-options large">@foreach (var accent in AccentOptions) { <button type="button" class="tile-color-swatch @accent.Value @(selected.Accent == accent.Value ? "active" : null)" style="--swatch-color:@AccentToken(accent.Value)" title="@accent.Label" aria-label="@($"Use {accent.Label.ToLowerInvariant()} color")" aria-pressed="@(selected.Accent == accent.Value)" @onclick="() => SetTileAccent(selected.Id, accent.Value)"></button> }</div></fieldset>
+                            <fieldset class="tile-color-field"><legend>Widget color</legend><div class="tile-color-options large">@foreach (var accent in AccentOptions) { <button type="button" class="tile-color-swatch @accent.Value @(selected.Accent == accent.Value ? "active" : null)" style="--swatch-color:@AccentToken(accent.Value)" title="@accent.Label" aria-label="@($"Use {accent.Label.ToLowerInvariant()} color")" aria-pressed="@(selected.Accent == accent.Value ? "true" : "false")" @onclick="() => SetTileAccent(selected.Id, accent.Value)"></button> }</div></fieldset>
                         }
                         @if (selected.DisplayStyle == LiveMonitorDisplayStyle.Trend)
                         {
@@ -487,6 +487,7 @@
 
     private static IReadOnlyList<LiveTracePoint> CompactPendingFrames(IReadOnlyList<LiveTracePoint> frames, IReadOnlyList<LiveMonitorTile> tiles, int maximumFrames)
     {
+        if (frames.Count <= maximumFrames) return frames;
         var selectors = tiles
             .GroupBy(tile => (tile.MetricId, tile.Unit))
             .Select(group => group.First())

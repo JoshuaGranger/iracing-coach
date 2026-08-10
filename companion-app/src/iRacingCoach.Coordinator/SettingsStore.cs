@@ -67,6 +67,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             var normalizedThemeColor = ThemeColors.Normalize(settings.ThemeColor);
             var repairedThemeColor = !string.Equals(settings.ThemeColor, normalizedThemeColor, StringComparison.Ordinal);
             settings.ThemeColor = normalizedThemeColor;
+            var normalizedCustomThemeColor = ThemeColors.NormalizeCustomHex(settings.CustomThemeColor);
+            var repairedCustomThemeColor = !string.Equals(settings.CustomThemeColor, normalizedCustomThemeColor, StringComparison.Ordinal);
+            settings.CustomThemeColor = normalizedCustomThemeColor;
             var repairedAnalysisTraces = AnalysisTraceLayouts.ValidateAndRepair(settings.RaceAnalysisTraces);
             var repairedAnalysisTraceLayouts = AnalysisTraceLayoutSets.ValidateAndRepair(settings.RaceAnalysisTraceLayouts, settings.RaceAnalysisTraces);
             var migratedMonitor = serialized is not null && settings.SettingsSchemaVersion < 4 && TryMigrateLegacyMonitor(serialized, settings.LiveMonitor);
@@ -77,9 +80,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             try
             {
                 var migrated = TryMigrateGarage61Credential(settings);
-                var schemaMigrated = settings.SettingsSchemaVersion < 4;
-                settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
-                if (migrated || legacyCredentialPresent || migratedMachineLayout || migratedMonitor || repairedMonitor || repairedAnalysisTraces || repairedAnalysisTraceLayouts || repairedThemeColor || schemaMigrated) Save(settings);
+                var schemaMigrated = settings.SettingsSchemaVersion < 5;
+                settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 5);
+                if (migrated || legacyCredentialPresent || migratedMachineLayout || migratedMonitor || repairedMonitor || repairedAnalysisTraces || repairedAnalysisTraceLayouts || repairedThemeColor || repairedCustomThemeColor || schemaMigrated) Save(settings);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException or PlatformNotSupportedException) { }
             return settings;
@@ -100,7 +103,8 @@ public sealed class JsonSettingsStore : ISettingsStore
                 settings.Garage61ApiKey = string.Empty;
             }
             settings.ThemeColor = ThemeColors.Normalize(settings.ThemeColor);
-            settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 4);
+            settings.CustomThemeColor = ThemeColors.NormalizeCustomHex(settings.CustomThemeColor);
+            settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 5);
             _ = LiveMonitorLayouts.ValidateAndRepair(settings.LiveMonitor, out _);
             settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
             settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();

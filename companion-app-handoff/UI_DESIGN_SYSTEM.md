@@ -2,9 +2,9 @@
 
 ## Product character
 
-Build a quiet telemetry workstation: modern, calm, precise, and comfortable for long sessions on a second monitor. The visual atmosphere may feel similar to Codex's restrained dark workspace, but the layout, icons, components, and racing language must be original.
+Build a focused telemetry workstation: modern, precise, vibrant enough to feel alive, and comfortable for long sessions on a second monitor. Its layout, icons, components, and racing language must be original.
 
-Use layered charcoal grays rather than black, restrained saturation rather than neon, and contrast where it communicates hierarchy or driving information rather than around every panel. Avoid pure black backgrounds, pure white body text, decorative gradients, glow effects, glass on working surfaces, oversized warnings, and race imagery that competes with coaching.
+Use layered mineral green-charcoal surfaces rather than black, restrained saturation rather than neon, and contrast where it communicates hierarchy or driving information rather than around every panel. Subtle translucent glass and low-saturation color are welcome in app chrome and background layers; dense working charts remain solid and legible. The user's global theme color influences interaction accents without recoloring semantic telemetry. Avoid pure black backgrounds, pure white body text, decorative excess, oversized warnings, and race imagery that competes with coaching.
 
 Default body copy uses `textSecondary`. Reserve the brighter `textPrimary` token for headings, selected controls, direct coaching, and key metrics; this keeps long reading surfaces gentle even though every token remains accessible.
 
@@ -94,8 +94,9 @@ Race Planning shows fuel feasibility first, then all-green, observed-caution, an
 
 ## Motion, scaling, and accessibility
 
-- Hover/color transitions: 120-140 ms.
-- Panel/expander transitions: 180-220 ms.
+- Hover/color feedback is immediate or 120-140 ms and MUST NOT delay pointer tracking, telemetry paint, cursor motion, scrolling, or drag feedback.
+- `motionMs.structure` is the single app-wide duration for structural motion. It is 500 ms for panel expansion/collapse, drawers, and post-drop reflow; change this one token if later observation proves the app should feel faster or slower.
+- Every element participating in one structural change MUST begin and finish on that same token. Do not combine delayed visibility, independent cleanup timers, or multiple layout durations.
 - Maximum movement: 4-6 px using `cubic-bezier(.2, 0, 0, 1)`.
 - Never continuously animate telemetry, health, or status indicators.
 - Honor Windows reduced-motion and high-contrast preferences.

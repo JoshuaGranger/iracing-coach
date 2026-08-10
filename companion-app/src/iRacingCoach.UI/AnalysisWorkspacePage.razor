@@ -3,9 +3,9 @@
     {
         <header class="analysis-context-bar race-analysis-toolbar">
             <div class="event-session-switch analysis-data-switch analysis-data-primary" role="tablist" aria-label="Race analysis section">
-                <button class="segmented @(RaceDataSection == "telemetry" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "telemetry")" @onclick='() => RaceDataSection = "telemetry"'>Telemetry</button>
-                <button class="segmented @(RaceDataSection == "technical" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "technical")" @onclick='() => RaceDataSection = "technical"'>Technical data</button>
-                <button class="segmented @(RaceDataSection == "replay" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "replay")" @onclick='() => RaceDataSection = "replay"'>Race replay</button>
+                <button class="segmented @(RaceDataSection == "telemetry" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "telemetry" ? "true" : "false")" @onclick='() => RaceDataSection = "telemetry"'>Telemetry</button>
+                <button class="segmented @(RaceDataSection == "technical" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "technical" ? "true" : "false")" @onclick='() => RaceDataSection = "technical"'>Technical data</button>
+                <button class="segmented @(RaceDataSection == "replay" ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == "replay" ? "true" : "false")" @onclick='() => RaceDataSection = "replay"'>Race replay</button>
             </div>
             <div class="analysis-event-title race-analysis-title">
                 <div class="race-analysis-title-cluster">
@@ -19,7 +19,7 @@
                     <div class="event-session-switch" role="group" aria-label="Event session">
                         @foreach (var session in EventSessions)
                         {
-                            <button class="segmented @(session.Id == State.SelectedRaceSessionId ? "selected" : null)" aria-pressed="@(session.Id == State.SelectedRaceSessionId)" @onclick="() => ShowEventSession(session)">@SessionName(session)</button>
+                                <button class="segmented @(session.Id == State.SelectedRaceSessionId ? "selected" : null)" aria-pressed="@(session.Id == State.SelectedRaceSessionId ? "true" : "false")" @onclick="() => ShowEventSession(session)">@SessionName(session)</button>
                         }
                     </div>
                 }
@@ -40,7 +40,7 @@
                     <div class="event-session-switch" role="group" aria-label="Event session">
                         @foreach (var session in EventSessions)
                         {
-                            <button class="segmented @(session.Id == State.SelectedRaceSessionId ? "selected" : null)" aria-pressed="@(session.Id == State.SelectedRaceSessionId)" @onclick="() => ShowEventSession(session)">@SessionName(session)</button>
+                                    <button class="segmented @(session.Id == State.SelectedRaceSessionId ? "selected" : null)" aria-pressed="@(session.Id == State.SelectedRaceSessionId ? "true" : "false")" @onclick="() => ShowEventSession(session)">@SessionName(session)</button>
                         }
                     </div>
                 }
