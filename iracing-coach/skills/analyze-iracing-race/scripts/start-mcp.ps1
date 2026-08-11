@@ -1,5 +1,14 @@
 $ErrorActionPreference = 'Stop'
 
+# MCP is a UTF-8 JSON-lines protocol. Windows PowerShell otherwise decodes a
+# native child's UTF-8 stdout using the active console code page before
+# forwarding it to the companion, which turns characters such as `·` and `→`
+# into visible mojibake. Pin every side of the PowerShell/Python bridge.
+$taskUtf8 = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $taskUtf8
+[Console]::OutputEncoding = $taskUtf8
+$OutputEncoding = $taskUtf8
+
 $taskScriptPath = Join-Path $PSScriptRoot 'mcp_server.py'
 $taskUserProfile = if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
     [System.IO.Path]::GetFullPath($env:USERPROFILE)
@@ -40,5 +49,6 @@ if ($taskVersion -lt [Version]'3.10') {
 }
 
 $env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
 & $taskPython -X utf8 -u $taskScriptPath
 exit $LASTEXITCODE

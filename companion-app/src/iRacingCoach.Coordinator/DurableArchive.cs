@@ -182,8 +182,8 @@ public sealed class DurableArchiveService : IDurableArchiveService
 
         var restored = BuildRestoreSummary(canonicalRoot, manifest);
         var restoredMessage = restored.TotalItems == 0 ? "Coach folder is ready." : $"Restored {restored.TotalItems:N0} Coach item{(restored.TotalItems == 1 ? string.Empty : "s")}.";
-        if (integrityVerified == true) restoredMessage += " The last prepared-copy checksum was verified.";
-        if (integrityVerified == false) restoredMessage += " Portable files changed since the last prepared copy; prepare a new copy to refresh its integrity record.";
+        if (integrityVerified == true) restoredMessage += " The last copy check still matches every Coach file.";
+        if (integrityVerified == false) restoredMessage += " Coach files changed since the last copy check; use Move or back up before copying again.";
         return new(true, integrityVerified, manifest.SchemaVersion, manifest.ArchiveId, canonicalRoot, restored, manifest.LastIntegrityCheckUtc, restoredMessage);
     }
 

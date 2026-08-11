@@ -13,7 +13,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '0.15.0'
+$version = '0.16.0'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot '..'))
 $backendSource = Join-Path $workspaceRoot 'iracing-coach'
@@ -81,6 +81,11 @@ $releaseSourceIdentities = @(
         Label = 'backend client version'
         Path = (Join-Path $projectRoot 'src\iRacingCoach.Contracts\Models.cs')
         Expected = "string ClientVersion = `"$version`""
+    },
+    [pscustomobject]@{
+        Label = 'Coach Engine client version'
+        Path = (Join-Path $projectRoot 'src\iRacingCoach.Coordinator\CoachEngine.cs')
+        Expected = "version = `"$version`""
     }
 )
 $sourceIdentityMismatches = $releaseSourceIdentities | Where-Object {
@@ -89,6 +94,17 @@ $sourceIdentityMismatches = $releaseSourceIdentities | Where-Object {
 if ($sourceIdentityMismatches.Count -gt 0) {
     $details = $sourceIdentityMismatches | ForEach-Object { $_.Label }
     throw "Release identity mismatch. BuildRelease.ps1 targets $version but these source identities do not: $($details -join ', '). Update every release identity together before packaging."
+}
+$gitStatus = @(& git -C $workspaceRoot status --porcelain --untracked-files=all 2>&1)
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to verify release source provenance with git: $($gitStatus -join [Environment]::NewLine)"
+}
+if ($gitStatus.Count -gt 0) {
+    throw "Release source is not clean. Commit every intended tracked and untracked file before packaging:`n$($gitStatus -join [Environment]::NewLine)"
+}
+$releaseCommit = (& git -C $workspaceRoot rev-parse HEAD | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $releaseCommit -notmatch '^[0-9a-f]{40}$') {
+    throw "Unable to resolve the release source commit: $releaseCommit"
 }
 $codexSignature = Get-AuthenticodeSignature -LiteralPath $codexSource
 if ($codexSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
@@ -143,6 +159,7 @@ $codexHash = (Get-FileHash -LiteralPath $codexSource -Algorithm SHA256).Hash.ToL
 $coachEngineManifest = [ordered]@{
     manifestVersion = 1
     appVersion = $version
+    sourceCommit = $releaseCommit
     runtimeVersion = '0.146.0-alpha.9.2'
     runtimeSha256 = $codexHash
     runtimePublisher = 'OpenAI OpCo, LLC'

@@ -34,6 +34,32 @@ public sealed record LiveReplayCarSample(
     double? LastLapSeconds,
     double? BestLapSeconds);
 
+public sealed record LiveReplayPlayerTelemetry(
+    int? IncidentPoints,
+    int? DriverIncidentPoints,
+    int? TeamIncidentPoints,
+    int? TrackSurface,
+    bool OnPitRoad,
+    bool Towing,
+    bool RepairRequired,
+    double? MandatoryRepairSeconds,
+    double? OptionalRepairSeconds,
+    double? SpeedMetersPerSecond,
+    double? Throttle,
+    double? Brake,
+    double? SteeringWheelAngleRadians,
+    int? Gear,
+    double? Rpm,
+    double? YawRateRadiansPerSecond,
+    double? LateralAccelerationG,
+    double? LongitudinalAccelerationG);
+
+public sealed record LiveReplayObservedEvent(
+    string Kind,
+    string Label,
+    string SourceChannel,
+    double? Delta = null);
+
 public sealed record LiveReplayCaptureFrame(
     string SessionKey,
     DateTimeOffset CapturedAt,
@@ -47,7 +73,11 @@ public sealed record LiveReplayCaptureFrame(
     int? PlayerCarIndex,
     IReadOnlyList<LiveReplayChannelCoverage> Coverage,
     IReadOnlyList<LiveReplayParticipant> Participants,
-    IReadOnlyList<LiveReplayCarSample> Cars);
+    IReadOnlyList<LiveReplayCarSample> Cars,
+    int SourceTick = 0,
+    int SourceTickRate = 0,
+    LiveReplayPlayerTelemetry? PlayerTelemetry = null,
+    IReadOnlyList<LiveReplayObservedEvent>? Events = null);
 
 public sealed record LiveTelemetrySample
 {
@@ -103,6 +133,10 @@ public sealed record LiveTelemetrySample
     public int? SessionNumber { get; init; }
     public string? SessionType { get; init; }
     public int? PlayerCarIndex { get; init; }
+    public int? PlayerIncidentPoints { get; init; }
+    public int? DriverIncidentPoints { get; init; }
+    public int? TeamIncidentPoints { get; init; }
+    public int? PlayerTrackSurface { get; init; }
     public IReadOnlyList<LiveReplayChannelCoverage> ReplayCoverage { get; init; } = [];
     public IReadOnlyList<LiveReplayParticipant> ReplayParticipants { get; init; } = [];
     public IReadOnlyList<LiveReplayCarSample> ReplayCars { get; init; } = [];
@@ -135,9 +169,15 @@ public sealed class LiveTelemetryService : IDisposable
     private long _sessionEpoch;
     private int? _lastConnectedLap;
     private DateTimeOffset? _lastConnectedTimestamp;
+    private long? _lastConnectedSessionUniqueId;
+    private long? _lastConnectedSubsessionId;
+    private int? _lastConnectedSessionNumber;
+    private string? _lastConnectedSessionPhase;
     private int? _lastSourceTick;
     private DateTimeOffset _replaySessionStartedAt = DateTimeOffset.MinValue;
-    private DateTimeOffset _lastReplayCaptureAt = DateTimeOffset.MinValue;
+    private int? _lastReplayCaptureTick;
+    private LiveReplayPlayerTelemetry? _lastReplayPlayerTelemetry;
+    private long? _lastReplaySessionFlags;
 
     public LiveTelemetryService(ILiveTelemetrySource source, LiveMonitorLayout layout)
     {
@@ -232,7 +272,9 @@ public sealed class LiveTelemetryService : IDisposable
                     _historySnapshot = [];
                     _lastHistorySnapshot = sample.Timestamp;
                     _replaySessionStartedAt = sample.Timestamp;
-                    _lastReplayCaptureAt = DateTimeOffset.MinValue;
+                    _lastReplayCaptureTick = null;
+                    _lastReplayPlayerTelemetry = null;
+                    _lastReplaySessionFlags = null;
                 }
                 ObserveSourceTicks(sample, sessionChanged);
                 var snapshot = _engine.Update(sample, Current.Layout.SafeGlanceEnabled, CoachingPaused);
@@ -337,13 +379,38 @@ public sealed class LiveTelemetryService : IDisposable
             return false;
         }
 
+        var sessionPhase = NormalizeSessionPhase(sample.SessionType);
         var sessionChanged = !Current.Snapshot.Connected ||
             (_lastConnectedTimestamp.HasValue && sample.Timestamp < _lastConnectedTimestamp.Value) ||
-            (_lastConnectedLap.HasValue && sample.Lap.HasValue && sample.Lap.Value < _lastConnectedLap.Value);
+            (_lastConnectedLap.HasValue && sample.Lap.HasValue && sample.Lap.Value < _lastConnectedLap.Value) ||
+            IdentityChanged(_lastConnectedSessionUniqueId, sample.SessionUniqueId) ||
+            IdentityChanged(_lastConnectedSubsessionId, sample.SubsessionId) ||
+            IdentityChanged(_lastConnectedSessionNumber, sample.SessionNumber) ||
+            (!string.IsNullOrWhiteSpace(_lastConnectedSessionPhase)
+                && !string.IsNullOrWhiteSpace(sessionPhase)
+                && !string.Equals(_lastConnectedSessionPhase, sessionPhase, StringComparison.Ordinal));
         if (sessionChanged) _sessionEpoch++;
         _lastConnectedTimestamp = sample.Timestamp;
         if (sample.Lap.HasValue) _lastConnectedLap = sample.Lap;
+        if (sample.SessionUniqueId.HasValue) _lastConnectedSessionUniqueId = sample.SessionUniqueId;
+        if (sample.SubsessionId.HasValue) _lastConnectedSubsessionId = sample.SubsessionId;
+        if (sample.SessionNumber.HasValue) _lastConnectedSessionNumber = sample.SessionNumber;
+        if (!string.IsNullOrWhiteSpace(sessionPhase)) _lastConnectedSessionPhase = sessionPhase;
         return sessionChanged;
+    }
+
+    private static bool IdentityChanged<T>(T? previous, T? current) where T : struct =>
+        previous.HasValue && current.HasValue && !EqualityComparer<T>.Default.Equals(previous.Value, current.Value);
+
+    private static string? NormalizeSessionPhase(string? value)
+    {
+        var normalized = string.Concat((value ?? string.Empty).Where(char.IsLetterOrDigit)).ToLowerInvariant();
+        if (normalized.Length == 0) return null;
+        if (normalized.Contains("qual", StringComparison.Ordinal)) return "qualifying";
+        if (normalized.Contains("race", StringComparison.Ordinal)) return "race";
+        if (normalized.Contains("practice", StringComparison.Ordinal)) return "practice";
+        if (normalized.Contains("warmup", StringComparison.Ordinal)) return "warmup";
+        return normalized;
     }
 
     private void ObserveSourceTicks(LiveTelemetrySample sample, bool sessionChanged)
@@ -377,18 +444,48 @@ public sealed class LiveTelemetryService : IDisposable
         }
         _lastConnectedTimestamp = null;
         _lastConnectedLap = null;
+        _lastConnectedSessionUniqueId = null;
+        _lastConnectedSubsessionId = null;
+        _lastConnectedSessionNumber = null;
+        _lastConnectedSessionPhase = null;
         _lastSourceTick = null;
     }
 
     private void CaptureReplayFrame(LiveTelemetrySample sample, bool sessionChanged)
     {
         if (!sample.Connected) return;
-        if (!sessionChanged && sample.Timestamp - _lastReplayCaptureAt < TimeSpan.FromMilliseconds(500)) return;
+        var sourceRate = sample.TickRate > 0 ? sample.TickRate : 60;
+        var sourceTicksPerCapture = Math.Max(1, (int)Math.Ceiling(sourceRate / 60d));
+        if (!sessionChanged && _lastReplayCaptureTick is { } priorTick)
+        {
+            var elapsedTicks = unchecked((uint)(sample.Tick - priorTick));
+            if (elapsedTicks < sourceTicksPerCapture) return;
+        }
         if (_replaySessionStartedAt == DateTimeOffset.MinValue) _replaySessionStartedAt = sample.Timestamp;
-        _lastReplayCaptureAt = sample.Timestamp;
+        _lastReplayCaptureTick = sample.Tick;
         var normalizedSessionType = string.Concat((sample.SessionType ?? "unknown").Where(char.IsLetterOrDigit)).ToLowerInvariant();
         var identity = $"sub-{sample.SubsessionId?.ToString() ?? "unknown"}-sid-{sample.SessionUniqueId?.ToString() ?? "unknown"}-num-{sample.SessionNumber?.ToString() ?? "unknown"}-type-{normalizedSessionType}";
         var sessionKey = $"{identity}-epoch-{_sessionEpoch}-{_replaySessionStartedAt:yyyyMMddHHmmssfff}";
+        var playerTelemetry = new LiveReplayPlayerTelemetry(
+            sample.PlayerIncidentPoints,
+            sample.DriverIncidentPoints,
+            sample.TeamIncidentPoints,
+            sample.PlayerTrackSurface,
+            sample.OnPitRoad,
+            sample.Towing,
+            sample.RepairFlag,
+            sample.MandatoryRepairSeconds,
+            sample.OptionalRepairSeconds,
+            sample.SpeedMetersPerSecond,
+            sample.Throttle,
+            sample.Brake,
+            sample.SteeringWheelAngleRadians,
+            sample.Gear,
+            sample.Rpm,
+            sample.YawRateRadiansPerSecond,
+            sample.LateralAccelerationG,
+            sample.LongitudinalAccelerationG);
+        var observedEvents = ReplayObservedEvents(playerTelemetry, sample.SessionFlags, sessionChanged);
         ReplayFrameCaptured?.Invoke(new LiveReplayCaptureFrame(
             sessionKey,
             sample.Timestamp,
@@ -402,8 +499,87 @@ public sealed class LiveTelemetryService : IDisposable
             sample.PlayerCarIndex,
             sample.ReplayCoverage,
             sample.ReplayParticipants,
-            sample.ReplayCars));
+            sample.ReplayCars,
+            sample.Tick,
+            sourceRate,
+            playerTelemetry,
+            observedEvents));
+        _lastReplayPlayerTelemetry = playerTelemetry;
+        _lastReplaySessionFlags = sample.SessionFlags;
     }
+
+    private IReadOnlyList<LiveReplayObservedEvent> ReplayObservedEvents(
+        LiveReplayPlayerTelemetry current,
+        long? sessionFlags,
+        bool sessionChanged)
+    {
+        if (sessionChanged || _lastReplayPlayerTelemetry is null) return [];
+        var previous = _lastReplayPlayerTelemetry;
+        var result = new List<LiveReplayObservedEvent>(4);
+        AddCounterEvent(result, "incident_points", "Incident points changed", "PlayerCarMyIncidentCount", previous.IncidentPoints, current.IncidentPoints);
+        AddCounterEvent(result, "driver_incident_points", "Driver incident points changed", "PlayerCarDriverIncidentCount", previous.DriverIncidentPoints, current.DriverIncidentPoints);
+        AddCounterEvent(result, "team_incident_points", "Team incident points changed", "PlayerCarTeamIncidentCount", previous.TeamIncidentPoints, current.TeamIncidentPoints);
+        if (previous.TrackSurface != current.TrackSurface && current.TrackSurface is { } surface)
+            result.Add(new("track_surface", TrackSurfaceEventLabel(surface), "PlayerTrackSurface"));
+        AddBooleanEvent(result, previous.OnPitRoad, current.OnPitRoad, "pit_road", "Entered pit road", "Exited pit road", "OnPitRoad");
+        AddBooleanEvent(result, previous.Towing, current.Towing, "tow", "Tow started", "Tow ended", "PlayerCarTowTime");
+        AddBooleanEvent(result, previous.RepairRequired, current.RepairRequired, "repair_required", "Repair-required flag started", "Repair-required flag ended", "SessionFlags");
+        AddTimerEvent(result, previous.MandatoryRepairSeconds, current.MandatoryRepairSeconds, "mandatory_repair", "Mandatory repair timer started", "Mandatory repair timer ended", "PitRepairLeft");
+        AddTimerEvent(result, previous.OptionalRepairSeconds, current.OptionalRepairSeconds, "optional_repair", "Optional repair timer started", "Optional repair timer ended", "PitOptRepairLeft");
+        if (_lastReplaySessionFlags.HasValue && sessionFlags.HasValue && _lastReplaySessionFlags.Value != sessionFlags.Value)
+            result.Add(new("session_flags", "Session flag state changed", "SessionFlags"));
+        return result;
+    }
+
+    private static void AddCounterEvent(
+        ICollection<LiveReplayObservedEvent> events,
+        string kind,
+        string label,
+        string channel,
+        int? previous,
+        int? current)
+    {
+        if (!previous.HasValue || !current.HasValue || previous.Value == current.Value) return;
+        events.Add(new(kind, label, channel, current.Value - previous.Value));
+    }
+
+    private static void AddBooleanEvent(
+        ICollection<LiveReplayObservedEvent> events,
+        bool previous,
+        bool current,
+        string kind,
+        string started,
+        string ended,
+        string channel)
+    {
+        if (previous == current) return;
+        events.Add(new(kind, current ? started : ended, channel));
+    }
+
+    private static void AddTimerEvent(
+        ICollection<LiveReplayObservedEvent> events,
+        double? previous,
+        double? current,
+        string kind,
+        string started,
+        string ended,
+        string channel)
+    {
+        var wasActive = previous is > 0;
+        var active = current is > 0;
+        if (wasActive == active) return;
+        events.Add(new(kind, active ? started : ended, channel));
+    }
+
+    private static string TrackSurfaceEventLabel(int surface) => surface switch
+    {
+        -1 => "Car left the recorded world",
+        0 => "Car entered an off-track surface",
+        1 => "Car entered its pit stall",
+        2 => "Car entered the pit approach",
+        3 => "Car returned to the racing surface",
+        _ => $"Track-surface state changed to {surface}"
+    };
 
     public void Dispose()
     {

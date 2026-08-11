@@ -517,7 +517,7 @@ public sealed record AnalysisReplayParticipant(
 
 public sealed record AnalysisReplayCarState(
     int CarIndex,
-    double LapPercent,
+    double? LapPercent,
     int? Lap,
     int? CompletedLaps,
     int? OverallPosition,
@@ -529,12 +529,52 @@ public sealed record AnalysisReplayCarState(
     double? LastLapSeconds,
     double? BestLapSeconds);
 
+public sealed record AnalysisReplayPlayerTelemetry(
+    int? IncidentPoints,
+    int? DriverIncidentPoints,
+    int? TeamIncidentPoints,
+    int? TrackSurface,
+    bool? OnPitRoad,
+    bool? Towing,
+    bool? RepairRequired,
+    double? MandatoryRepairSeconds,
+    double? OptionalRepairSeconds,
+    double? SpeedMetersPerSecond,
+    double? Throttle,
+    double? Brake,
+    double? SteeringWheelAngleRadians,
+    int? Gear,
+    double? Rpm,
+    double? YawRateRadiansPerSecond,
+    double? LateralAccelerationG,
+    double? LongitudinalAccelerationG);
+
+public sealed record AnalysisReplayObservedEvent(
+    string Kind,
+    string Label,
+    string? SourceChannel,
+    double? Delta);
+
+public sealed record AnalysisReplayRepresentation(
+    int? SourceFrameCount,
+    int? DisplayFrameCount,
+    double? SourceSampleRateHz,
+    double? DisplaySampleRateHz,
+    int? FrameBudget,
+    bool? Decimated,
+    double? RoutineIntervalSeconds,
+    bool? KeyframesPreserved,
+    int? DroppedKeyframeCount);
+
 public sealed record AnalysisReplayFrame(
     double SessionTimeSeconds,
     string SessionState,
     long GlobalFlags,
     IReadOnlyList<string> GlobalFlagLabels,
-    IReadOnlyList<AnalysisReplayCarState> Cars);
+    IReadOnlyList<AnalysisReplayCarState> Cars,
+    AnalysisReplayPlayerTelemetry? PlayerTelemetry = null,
+    IReadOnlyList<AnalysisReplayObservedEvent>? Events = null,
+    bool GapBefore = false);
 
 public sealed record AnalysisRaceReplay(
     string Status,
@@ -547,7 +587,8 @@ public sealed record AnalysisRaceReplay(
     int? PlayerCarIndex,
     string Interpolation,
     AnalysisReplayTemporalCoverage? TemporalCoverage = null,
-    IReadOnlyList<AnalysisReplayParticipantCoverage>? ParticipantCoverage = null);
+    IReadOnlyList<AnalysisReplayParticipantCoverage>? ParticipantCoverage = null,
+    AnalysisReplayRepresentation? Representation = null);
 
 public sealed record AnalysisTireBandPrediction(
     double? RemainingPercent,
@@ -711,7 +752,7 @@ public sealed class CompanionSettings
     public bool LaunchAtSignIn { get; set; }
     public bool UseReducedMotion { get; set; }
     public string ThemeColor { get; set; } = "mint";
-    public string CustomThemeColor { get; set; } = "#65D0B6";
+    public string CustomThemeColor { get; set; } = "#5CE8C3";
     public bool DiagnosticIncludeConfounded { get; set; }
     public LiveMonitorLayout LiveMonitor { get; set; } = new();
     public AnalysisTraceLayout RaceAnalysisTraces { get; set; } = new();
@@ -1060,7 +1101,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.15.0");
+    string ClientVersion = "0.16.0");
 
 public sealed record BackendHealthResult(
     bool Ok,

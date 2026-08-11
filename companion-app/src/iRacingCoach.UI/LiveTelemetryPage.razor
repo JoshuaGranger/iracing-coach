@@ -2,32 +2,34 @@
     var snapshot = State.LiveState.Snapshot;
 }
 
-<div class="page-heading compact-heading live-heading">
-    <div><span class="eyebrow">Live telemetry</span><h1>Race dashboard</h1></div>
-</div>
-
-@if (!snapshot.Connected)
-{
-    <div class="inline-alert neutral-alert live-waiting" role="status"><span class="status-orb neutral"></span><div><strong>Waiting for iRacing</strong><span>Start a session and telemetry appears here automatically.</span></div></div>
-}
-
-<LiveTelemetryLayoutGrid State="State" />
-
-<section class="live-driving-disclosure @(_tracesExpanded ? "open" : null)">
-    <button type="button" class="live-driving-toggle" aria-expanded="@(_tracesExpanded ? "true" : "false")" aria-controls="live-driving-traces" @onclick="ToggleTraces">
-        <ProductIcon Name="analysis" Size="16" />
-        <span>Driving traces</span>
-        <ProductIcon Name="chevron-down" Size="15" />
-    </button>
-    <div id="live-driving-traces" class="live-driving-body" aria-hidden="@(_tracesExpanded ? "false" : "true")" inert="@(_tracesExpanded ? null : string.Empty)">
-        <div>
-            @if (_tracesMounted)
-            {
-                <LiveTelemetryVisuals State="State" />
-            }
-        </div>
+<div class="live-telemetry-page" data-live-telemetry-page>
+    <div class="page-heading compact-heading live-heading">
+        <div><span class="eyebrow">Live telemetry</span><h1>Race dashboard</h1></div>
     </div>
-</section>
+
+    @if (!snapshot.Connected)
+    {
+        <div class="inline-alert neutral-alert live-waiting" role="status"><span class="status-orb neutral"></span><div><strong>Waiting for iRacing</strong><span>Start a session and telemetry appears here automatically.</span></div></div>
+    }
+
+    <LiveTelemetryLayoutGrid State="State" />
+
+    <section class="live-driving-disclosure @(_tracesExpanded ? "open" : null)" data-live-trailing-panel>
+        <button type="button" class="live-driving-toggle" aria-expanded="@(_tracesExpanded ? "true" : "false")" aria-controls="live-driving-traces" @onclick="ToggleTraces">
+            <ProductIcon Name="analysis" Size="16" />
+            <span>Driving traces</span>
+            <ProductIcon Name="chevron-down" Size="15" />
+        </button>
+        <div id="live-driving-traces" class="live-driving-body" aria-hidden="@(_tracesExpanded ? "false" : "true")" inert="@(_tracesExpanded ? null : string.Empty)">
+            <div>
+                @if (_tracesMounted)
+                {
+                    <LiveTelemetryVisuals State="State" />
+                }
+            </div>
+        </div>
+    </section>
+</div>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;

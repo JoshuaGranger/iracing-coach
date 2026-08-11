@@ -39,9 +39,17 @@ Normal user-feedback iterations produce a direct development executable, not an 
 
 The development loop MUST NOT run `BuildRelease.ps1`, create `installer-payload.zip`, compress a portable app, rerun unchanged upgrade/uninstall certification, or rewrite an earlier release record. Installer, portable-package, checksum, lifecycle, and clean-checkout gates resume only when Joshua asks for a packaged release candidate.
 
-## Current 0.15.0 development evidence
+## Current 0.16.0 development evidence
 
-The current source identifies 0.15.0 and has integrated evidence from 232/232 .NET tests and 230/230 Python tests. The verified handoff exposes 17 MCP tools across 114 manifested files. An explicitly requested 499,357,736-byte installer candidate was built from commit `9e4befbde2fea8c2d51e4bf40f1ed1586ed23187`; its SHA-256 is `9545666f9de5325158397a8a2dc1ccc92fd35c2b64a5f48993d412929dc6be7a`. The guarded lifecycle test passed install, rollback, replacement, preservation, uninstall, reinstall, and final uninstall. This remains development feedback evidence rather than a stable packaged-release record. Real simulator cadence, external Garage61 results, clean-PC behavior, and user acceptance remain separate claims unless explicitly recorded.
+The current source identifies 0.16.0. The integrated development gates passed 255/255 .NET tests, 247/247 Python tests, 9/9 first-party JavaScript syntax checks, and a Release solution build with zero warnings and zero errors. This iteration adds real Iowa/Daytona geometry repair, bounded 500-lap Race Analysis rendering, high-rate bounded replay capture plus long-race materialization guards, deeper Technical Data and planning decisions, native/full Live Telemetry parity, and a synchronized high-contrast graphite theme.
+
+Direct browser checks used real supplied recordings as well as bounded synthetic stress data. The August 9 Iowa Open replay reconstructed 7,775 legacy frames and was exercised at 1280x720 and 1920x1080. A real 82-lap analysis retained all logical selections while bounding rendered paths and DOM work; actual pointer-tool round trips measured 62 ms average/113 ms maximum over charts and 66 ms average/70 ms maximum over the map. Fifty Customize open/close cycles produced no endpoint drift or overflow. The synthetic 500-lap case verifies bounded selection/render budgets, not real 500-lap source breadth or a display-refresh guarantee.
+
+These results are current-source development acceptance only. They do not close every `QA-004` through `QA-015` matrix cell, certify real SDK/display cadence, or provide a 0.16.0 installer hash, source commit, clean-PC lifecycle result, or user acceptance. Exact details and known limits are recorded in the [0.16.0 development snapshot](../06-reality/implementation-snapshot-0.16.0-development.md); package evidence is added only after the frozen artifact passes its own gates.
+
+## Prior 0.15.0 development evidence
+
+The 0.15.0 source had integrated evidence from 232/232 .NET tests and 230/230 Python tests. Its verified handoff exposed 17 MCP tools across 114 manifested files. An explicitly requested 499,357,736-byte installer candidate was built from commit `9e4befbde2fea8c2d51e4bf40f1ed1586ed23187`; its SHA-256 is `9545666f9de5325158397a8a2dc1ccc92fd35c2b64a5f48993d412929dc6be7a`. The guarded lifecycle test passed install, rollback, replacement, preservation, uninstall, reinstall, and final uninstall. This remains historical development-feedback evidence rather than proof of the current source or a stable packaged-release record. Real simulator cadence, external Garage61 results, clean-PC behavior, and user acceptance remain separate claims unless explicitly recorded.
 
 ## Stable packaged 0.14.2 evidence
 

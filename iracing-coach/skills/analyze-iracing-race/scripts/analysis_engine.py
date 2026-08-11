@@ -50,7 +50,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v11"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v12"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "groove_analysis.py",
@@ -5302,6 +5302,17 @@ def build_technical_insights(
             if str(value).upper() in TIRES
         })
         tire_call = "four" if len(changed) == 4 else "two" if len(changed) == 2 else "other"
+        tire_call_side = (
+            "four"
+            if len(changed) == 4
+            else "right_side"
+            if changed == ["RF", "RR"]
+            else "left_side"
+            if changed == ["LF", "LR"]
+            else "diagonal"
+            if len(changed) == 2
+            else "partial_or_unknown"
+        )
         run_number = int(_finite(run.get("run_number")) or 0)
         assessment = assessment_by_run.get(run_number)
         if assessment is None and ordinal < len(pit_assessments):
@@ -5325,7 +5336,9 @@ def build_technical_insights(
         pit_profiles.append({
             "run_number": run_number,
             "tire_call": tire_call,
+            "tire_call_side": tire_call_side,
             "changed": changed,
+            "confirmation": service.get("tire_change_confirmation"),
             "service_s": end - start if start is not None and end is not None and end >= start else None,
             "next_early_pace_s": (
                 _finite((next_run.get("pace") or {}).get("early_average_lap_s"))
@@ -5346,6 +5359,22 @@ def build_technical_insights(
     two_tire_profiles = [item for item in pit_profiles if item["tire_call"] == "two"]
     four_tire_profiles = [item for item in pit_profiles if item["tire_call"] == "four"]
     pit_metrics: list[dict[str, Any]] = []
+    strategy_forecast = strategy.get("forecast") or {}
+    scheduled_distance = _finite(race.get("scheduled_laps"))
+    recorded_distance = _finite(race.get("recorded_laps"))
+    all_green_range = _finite(strategy_forecast.get("all_green_range_laps"))
+    completed_distance = recorded_distance or (
+        max(
+            (
+                value
+                for run in runs
+                if (value := _finite(run.get("end_lap"))) is not None
+            ),
+            default=None,
+        )
+        if runs
+        else None
+    )
     if cycle_changes:
         cycle_total = int(round(sum(cycle_changes)))
         pit_metrics.append(
@@ -5371,6 +5400,46 @@ def build_technical_insights(
                 group="execution",
             )
         )
+    elif runs:
+        pit_metrics.append(
+            metric(
+                "Stops completed",
+                0,
+                detail="The race was completed without a pit stop.",
+                action="Keep the no-stop plan when the selected race distance remains inside the measured fuel range.",
+                tone="positive",
+                group="outcome",
+            )
+        )
+        if completed_distance is not None:
+            pit_metrics.append(
+                metric(
+                    "Distance completed",
+                    int(round(completed_distance)),
+                    "laps",
+                    detail="Completed recorded race distance.",
+                    group="outcome",
+                )
+            )
+        if scheduled_distance is not None and all_green_range is not None:
+            no_stop_headroom = all_green_range - scheduled_distance
+            pit_metrics.append(
+                metric(
+                    "No-stop headroom",
+                    round(no_stop_headroom, 1),
+                    "green laps",
+                    "derived",
+                    signed=True,
+                    detail="Measured all-green range after the operational reserve minus the scheduled race distance.",
+                    action=(
+                        "The available fuel range covered the scheduled distance; verify the same capacity and burn before the next race."
+                        if no_stop_headroom >= 0.0
+                        else "The selected distance exceeds the measured no-stop range and needs a fuel stop."
+                    ),
+                    tone="positive" if no_stop_headroom >= 0.0 else "attention",
+                    group="strategy",
+                )
+            )
     if service_seconds:
         pit_metrics.append(
             metric(
@@ -5431,6 +5500,29 @@ def build_technical_insights(
                 group="tires",
             )
         )
+        for profile in pit_profiles:
+            if not profile["changed"]:
+                continue
+            changed_label = " + ".join(profile["changed"])
+            call_label = {
+                "right_side": "Right-side tire call",
+                "left_side": "Left-side tire call",
+                "diagonal": "Two-tire call",
+                "four": "Four-tire call",
+            }.get(str(profile["tire_call_side"]), "Confirmed tire call")
+            pit_metrics.append(
+                metric(
+                    f"Run {profile['run_number']} service",
+                    changed_label,
+                    detail=f"{call_label}: only confirmed tire changes are listed.",
+                    action=(
+                        "Compare its shorter service against the following run's pace, position, and unchanged-side wear before repeating it."
+                        if profile["tire_call"] == "two"
+                        else "Use this as the four-tire baseline when a comparable two-tire call is available."
+                    ),
+                    group="tires",
+                )
+            )
     two_service = profile_mean(two_tire_profiles, "service_s")
     four_service = profile_mean(four_tire_profiles, "service_s")
     two_pace = profile_mean(two_tire_profiles, "next_early_pace_s")
@@ -5514,6 +5606,16 @@ def build_technical_insights(
         pit_takeaway = f"The tightest stop was {abs(min(post_stop_margins)):.1f} all-green lap(s) short of scheduled distance."
     elif service_seconds:
         pit_takeaway = f"Service totaled {sum(service_seconds):.1f} s across {len(pit_runs)} stop(s)."
+    elif runs and scheduled_distance is not None and all_green_range is not None:
+        no_stop_headroom = all_green_range - scheduled_distance
+        pit_takeaway = (
+            f"No fuel stop was needed for {scheduled_distance:.0f} laps; all-green range retained "
+            f"{no_stop_headroom:.1f} lap(s) beyond the scheduled distance."
+            if no_stop_headroom >= 0.0
+            else f"No stop occurred, but all-green range was {abs(no_stop_headroom):.1f} lap(s) short of the scheduled distance."
+        )
+    elif runs:
+        pit_takeaway = "The race used a no-stop plan; stop execution is not part of this debrief."
     else:
         pit_takeaway = "No complete pit-cycle comparison is available."
     pit_rating = (
@@ -5521,18 +5623,45 @@ def build_technical_insights(
         else "gain" if cycle_changes and sum(cycle_changes) > 0
         else "review"
     )
-    pit_unavailable = [] if pit_runs else ["No run ended with a confirmed pit stop."]
+    pit_unavailable: list[str] = []
     if pit_runs and not (two_tire_profiles and four_tire_profiles):
         pit_unavailable.append("Both confirmed two-tire and four-tire stops are required for a direct retrospective comparison.")
-    pit_unavailable.append("Race tire-service rules were not present, so legality and mandatory-service conclusions are withheld.")
-    pit_unavailable.append("Comparable historical two-tire and four-tire strategy outcomes were not available in the local tire model.")
+    if pit_runs:
+        pit_unavailable.append("Race tire-service rules were not present, so legality and mandatory-service conclusions are withheld.")
+        pit_unavailable.append("Comparable historical two-tire and four-tire strategy outcomes were not available in the local tire model.")
+    observed_tire_calls = [
+        {
+            "run_number": profile["run_number"],
+            "tires_changed": list(profile["changed"]),
+            "call_type": profile["tire_call"],
+            "side": profile["tire_call_side"],
+            "service_s": _round(profile["service_s"], 2),
+            "next_run_early_pace_s": _round(profile["next_early_pace_s"], 3),
+            "pit_cycle_position_change": _round(profile["cycle_change"], 1),
+            "confirmation": profile["confirmation"],
+        }
+        for profile in pit_profiles
+        if profile["changed"]
+    ]
     pit_insight = {
         "key": "pit",
         "label": "Pit strategy",
-        "status": "available" if pit_runs else "unavailable",
-        "rating": pit_rating if pit_runs else "unavailable",
-        "takeaway": pit_takeaway if pit_runs else "No pit stop is available for review.",
-        "metrics": pit_metrics if pit_runs else [],
+        "status": "available" if runs else "unavailable",
+        "rating": pit_rating if pit_runs else "no-stop" if runs else "unavailable",
+        "takeaway": pit_takeaway,
+        "metrics": pit_metrics,
+        "tire_strategy": {
+            "observed_calls": observed_tire_calls,
+            "right_side_calls": sum(item["side"] == "right_side" for item in observed_tire_calls),
+            "left_side_calls": sum(item["side"] == "left_side" for item in observed_tire_calls),
+            "four_tire_calls": len(four_tire_profiles),
+            "direct_two_vs_four_comparison": {
+                "status": "usable" if two_tire_profiles and four_tire_profiles else "unavailable",
+                "two_tire_samples": len(two_tire_profiles),
+                "four_tire_samples": len(four_tire_profiles),
+                "rule": "A direct comparison is emitted only when both confirmed call types occurred.",
+            },
+        },
         "evidence": (
             (["pit-road state"] if pit_runs else [])
             + (["position before and after pit cycle"] if cycle_changes else [])
@@ -5589,6 +5718,28 @@ def build_technical_insights(
         int(_finite(representative_run.get("run_number")) or 0)
         if representative_run is not None else None
     )
+    dynamics_run = max(
+        (
+            run
+            for run in runs
+            if isinstance(run.get("vehicle_dynamics"), Mapping)
+            and any(
+                _finite((run.get("vehicle_dynamics") or {}).get(key)) is not None
+                for key in (
+                    "front_wheel_lock_proxy_s",
+                    "rear_wheelspin_proxy_s",
+                    "abs_active_s",
+                    "yaw_rate_abs_p95_deg_s_mean",
+                )
+            )
+        ),
+        key=lambda item: (
+            _finite(item.get("green_laps"))
+            or _finite(item.get("total_laps"))
+            or 0.0
+        ),
+        default=None,
+    )
 
     load_changes: list[tuple[float, str]] = []
     if representative_run is not None:
@@ -5601,6 +5752,11 @@ def build_technical_insights(
             if early not in (None, 0.0) and late is not None:
                 load_changes.append(((late / early - 1.0) * 100.0, label))
     strongest_load = max(load_changes, key=lambda item: abs(item[0]), default=None)
+    material_load = (
+        strongest_load
+        if strongest_load is not None and abs(strongest_load[0]) >= 0.5
+        else None
+    )
     latest_measured_run = max(
         measured_tire_runs,
         key=lambda item: _finite(item.get("run_number")) or -1.0,
@@ -5696,25 +5852,62 @@ def build_technical_insights(
                 )
             )
 
-    dynamics = (representative_run.get("vehicle_dynamics") or {}) if representative_run is not None else {}
+    dynamics_source = representative_run or dynamics_run
+    dynamics = (
+        dynamics_source.get("vehicle_dynamics") or {}
+        if dynamics_source is not None
+        else {}
+    )
+    dynamics_run_number = (
+        int(_finite(dynamics_source.get("run_number")) or 0)
+        if dynamics_source is not None
+        else None
+    )
+    dynamics_green_laps = (
+        _finite(dynamics_source.get("green_laps"))
+        if dynamics_source is not None
+        else None
+    )
     for label, key, action in (
-        ("Front lock", "front_wheel_lock_proxy_s", "Review brake release and pressure where the wheel-speed trace confirms front lock."),
-        ("Rear wheelspin", "rear_wheelspin_proxy_s", "Review throttle pickup where the wheel-speed trace confirms rear spin."),
+        ("Front lock proxy", "front_wheel_lock_proxy_s", "Review brake release and pressure only where the wheel-speed trace confirms front lock."),
+        ("Rear wheelspin proxy", "rear_wheelspin_proxy_s", "Review throttle pickup only where the wheel-speed trace confirms rear spin."),
         ("ABS active", "abs_active_s", "Review the brake trace with ABS highlighting to see where intervention occurred."),
     ):
         value = _finite(dynamics.get(key))
         if value is not None and value > 0.0:
+            per_green_lap = (
+                value / dynamics_green_laps
+                if dynamics_green_laps not in (None, 0.0)
+                else None
+            )
             tire_metrics.append(
                 metric(
                     label,
                     round(value, 2),
                     "s",
-                    detail="Time accumulated on complete green laps in the representative run.",
+                    detail=(
+                        f"Run {dynamics_run_number}: {per_green_lap:.3f} s per green lap across {dynamics_green_laps:.0f} green laps."
+                        if per_green_lap is not None
+                        else f"Run {dynamics_run_number}: accumulated event-proxy time."
+                    ),
                     action=action,
                     tone="attention",
                     group="tire events",
                 )
             )
+    yaw_rate_p95 = _finite(dynamics.get("yaw_rate_abs_p95_deg_s_mean"))
+    if yaw_rate_p95 is not None:
+        tire_metrics.append(
+            metric(
+                "Corner rotation",
+                round(yaw_rate_p95, 1),
+                "deg/s p95",
+                "derived",
+                detail=f"Run {dynamics_run_number}: mean lap-level 95th-percentile absolute yaw rate.",
+                action="Compare rotation with steering and throttle traces at the load zones; this value describes motion and does not diagnose balance by itself.",
+                group="driver load",
+            )
+        )
 
     predicted_life = _finite(tire_prediction.get("laps_remaining"))
     predicted_pace = _finite(tire_prediction.get("capability_pace_s"))
@@ -5759,12 +5952,17 @@ def build_technical_insights(
 
     tire_takeaway_parts: list[str] = []
     if pace_delta is not None and representative_run_number:
-        direction = "slower" if pace_delta > 0 else "faster"
-        tire_takeaway_parts.append(f"Run {representative_run_number} was {abs(pace_delta):.3f} s {direction} late")
-    if strongest_load is not None:
-        direction = "higher" if strongest_load[0] > 0 else "lower"
+        if abs(pace_delta) < 0.01:
+            tire_takeaway_parts.append(
+                f"Run {representative_run_number} pace was stable early-to-late"
+            )
+        else:
+            direction = "slower" if pace_delta > 0 else "faster"
+            tire_takeaway_parts.append(f"Run {representative_run_number} was {abs(pace_delta):.3f} s {direction} late")
+    if material_load is not None:
+        direction = "higher" if material_load[0] > 0 else "lower"
         tire_takeaway_parts.append(
-            f"late {strongest_load[1]} was {abs(strongest_load[0]):.1f}% {direction}"
+            f"late {material_load[1]} was {abs(material_load[0]):.1f}% {direction}"
         )
     if predicted_life is not None and tire_prediction.get("status") == "predicted":
         tire_takeaway_parts.append(f"matched local life is {predicted_life:.1f} green laps")
@@ -5774,6 +5972,16 @@ def build_technical_insights(
     elif measured_bands:
         lowest_value, corner, band, _ = min(measured_bands, key=lambda item: item[0])
         tire_takeaway = f"The most-worn band was {corner} {band}, with {lowest_value:.1f}% remaining."
+    elif (_finite(dynamics.get("front_wheel_lock_proxy_s")) or 0.0) > 0.0:
+        front_lock_total = float(_finite(dynamics.get("front_wheel_lock_proxy_s")) or 0.0)
+        tire_takeaway = (
+            f"Run {dynamics_run_number} showed {front_lock_total:.2f} s of front wheel-speed divergence; inspect the highlighted brake zones before changing technique."
+        )
+    elif (_finite(dynamics.get("rear_wheelspin_proxy_s")) or 0.0) > 0.0:
+        rear_spin_total = float(_finite(dynamics.get("rear_wheelspin_proxy_s")) or 0.0)
+        tire_takeaway = (
+            f"Run {dynamics_run_number} showed {rear_spin_total:.2f} s of rear wheel-speed divergence; inspect the highlighted throttle zones before changing technique."
+        )
     else:
         tire_takeaway = "No tire-condition endpoint or comparable run trend is available."
     tire_attention = (
@@ -5792,6 +6000,7 @@ def build_technical_insights(
             (["measured pit-service O/M/I wear"] if measured_bands else [])
             + (["clean-run early and late pace"] if pace_delta is not None else [])
             + (["recorded controls/load"] if strongest_load is not None else [])
+            + (["wheel-speed and chassis motion"] if dynamics else [])
             + (["matched local tire observations"] if tire_prediction.get("status") == "predicted" else [])
         ),
         "unavailable_reasons": (
@@ -5966,6 +6175,13 @@ def build_technical_insights(
         fuel_takeaway = f"Finish fuel equaled {finish_reserve_laps:.1f} green lap(s) at the measured burn rate."
     elif post_stop_margins:
         fuel_takeaway = f"Every post-stop all-green projection retained at least {min(post_stop_margins):.1f} lap(s)."
+    elif not pit_runs and scheduled_laps is not None and range_laps is not None:
+        headroom = range_laps - scheduled_laps
+        fuel_takeaway = (
+            f"The {scheduled_laps:.0f}-lap distance fit inside measured all-green range with {headroom:.1f} lap(s) of headroom."
+            if headroom >= 0.0
+            else f"The {scheduled_laps:.0f}-lap distance exceeded measured all-green range by {abs(headroom):.1f} lap(s)."
+        )
     elif fuel_metrics:
         fuel_takeaway = "Fuel burn supports a range estimate, but no complete post-stop margin is available."
     else:
@@ -5995,11 +6211,51 @@ def build_technical_insights(
         [lap for lap in laps if lap.get("complete")],
         key=lambda item: _finite(item.get("lap")) or -1.0,
     )
-    usable_times = [
-        value for lap in completed
+    valid_reference_numbers = {
+        int(number)
+        for run in runs
+        for raw_number in (run.get("valid_green_lap_numbers") or ())
+        if (number := _finite(raw_number)) is not None
+    }
+    green_timed_laps = [
+        lap
+        for lap in completed
         if lap.get("flag_state") == "green"
-        and (value := _finite(lap.get("lap_time_s"))) is not None
+        and (_finite(lap.get("lap_time_s")) or 0.0) > 0.0
         and (_finite(lap.get("pit_time_s")) or 0.0) < 1.0
+    ]
+    raw_race_times = [
+        float(value)
+        for lap in green_timed_laps
+        if (value := _finite(lap.get("lap_time_s"))) is not None
+    ]
+    race_time_median = _median(raw_race_times)
+    race_time_mad = (
+        _median(abs(value - race_time_median) for value in raw_race_times)
+        if race_time_median is not None
+        else None
+    )
+    race_time_limit = max(0.75, 6.0 * (race_time_mad or 0.0))
+    race_pace_laps = [
+        lap
+        for lap in green_timed_laps
+        if (
+            (value := _finite(lap.get("lap_time_s"))) is not None
+            and race_time_median is not None
+            and abs(value - race_time_median) <= race_time_limit
+        )
+    ]
+    reference_laps = [
+        lap
+        for lap in green_timed_laps
+        if int(_finite(lap.get("lap")) or -1) in valid_reference_numbers
+    ]
+    pace_laps = reference_laps if len(reference_laps) >= 2 else race_pace_laps
+    pace_scope = "clean reference" if len(reference_laps) >= 2 else "representative race pace"
+    usable_times = [
+        float(value)
+        for lap in pace_laps
+        if (value := _finite(lap.get("lap_time_s"))) is not None
     ]
     start_position = _finite(race.get("starting_position"))
     finish_position = _finite(race.get("final_recorded_position"))
@@ -6084,20 +6340,24 @@ def build_technical_insights(
     if usable_times:
         racecraft_metrics.append(
             metric(
-                "Fastest clean",
+                "Fastest clean" if pace_scope == "clean reference" else "Fastest race pace",
                 round(min(usable_times), 3),
                 "s",
-                detail="Fastest complete green lap without pit service.",
-                action="Use this lap as the personal execution reference for this race.",
+                detail=(
+                    "Fastest damage-, traffic-, restart-, off-track-, and pit-screened green lap."
+                    if pace_scope == "clean reference"
+                    else "Fastest lap inside the robust green-race pace band; traffic context may remain."
+                ),
+                action="Use this lap as the personal execution reference for this race." if pace_scope == "clean reference" else "Compare its controls with the median race-pace lap before copying it.",
                 group="pace",
             )
         )
         racecraft_metrics.append(
             metric(
-                "Median clean",
+                "Median clean" if pace_scope == "clean reference" else "Median race pace",
                 round(float(_median(usable_times) or 0.0), 3),
                 "s",
-                detail="Middle clean green-lap time, which is less sensitive to a single exceptional lap.",
+                detail=f"Middle {pace_scope} lap across {len(usable_times)} lap(s).",
                 action="The gap to fastest indicates how consistently peak pace was reproduced.",
                 group="pace",
             )
@@ -6106,14 +6366,110 @@ def build_technical_insights(
         pace_spread = statistics.pstdev(usable_times)
         racecraft_metrics.append(
             metric(
-                "Clean-lap variation",
+                "Clean-lap variation" if pace_scope == "clean reference" else "Race-pace variation",
                 round(pace_spread, 3),
                 "s",
                 "derived",
-                detail="Population standard deviation across usable clean green laps.",
+                detail=f"Population standard deviation across {len(usable_times)} {pace_scope} laps.",
                 action="Lower variation means the available pace was reproduced more consistently.",
                 tone="attention" if pace_spread > 0.5 else "positive",
                 group="consistency",
+            )
+        )
+    control_laps = pace_laps or race_pace_laps
+
+    def control_values(key: str) -> list[float]:
+        return [
+            value
+            for lap in control_laps
+            if (value := _finite((lap.get("controls") or {}).get(key))) is not None
+        ]
+
+    throttle_means = control_values("throttle_mean")
+    brake_peaks = control_values("brake_max")
+    brake_steer_overlap = control_values("brake_steer_overlap_s")
+    steering_corrections = control_values("steering_corrections")
+    steering_angles = control_values("steering_abs_mean_rad")
+    top_speeds = [
+        value
+        for lap in control_laps
+        if (value := _finite((lap.get("speed") or {}).get("maximum_mph"))) is not None
+    ]
+    minimum_speeds = [
+        value
+        for lap in control_laps
+        if (value := _finite((lap.get("speed") or {}).get("minimum_mph"))) is not None
+    ]
+    if throttle_means:
+        racecraft_metrics.append(
+            metric(
+                "Throttle commitment",
+                round(float(_median(throttle_means) or 0.0) * 100.0, 1),
+                "% average",
+                "derived",
+                detail=f"Median throttle fraction across {len(throttle_means)} {pace_scope} lap(s).",
+                action="Compare laps above and below this value with lap time; more throttle time is useful only when the lap is also controlled and faster.",
+                group="driver execution",
+            )
+        )
+    if brake_peaks:
+        racecraft_metrics.append(
+            metric(
+                "Brake peak",
+                round(float(_median(brake_peaks) or 0.0) * 100.0, 1),
+                "%",
+                "derived",
+                detail=f"Median lap-level peak brake input across {len(brake_peaks)} {pace_scope} lap(s).",
+                action="Use the aligned brake trace to identify where peak pressure or release differs from the fastest reference.",
+                group="driver execution",
+            )
+        )
+    if brake_steer_overlap:
+        racecraft_metrics.append(
+            metric(
+                "Brake / steer overlap",
+                round(float(_median(brake_steer_overlap) or 0.0), 2),
+                "s/lap",
+                "derived",
+                detail="Median time per lap with simultaneous braking and material steering input.",
+                action="Compare overlap locations with the faster laps; the measurement describes technique and does not prove that overlap is harmful.",
+                group="driver execution",
+            )
+        )
+    if steering_corrections:
+        racecraft_metrics.append(
+            metric(
+                "Steering corrections",
+                round(float(_median(steering_corrections) or 0.0), 1),
+                "/ lap",
+                "derived",
+                detail="Median threshold-crossing steering reversals per lap.",
+                action="Use the steering trace to find repeatable correction clusters, then compare those zones with the fastest stable lap.",
+                group="driver execution",
+            )
+        )
+    if steering_angles:
+        racecraft_metrics.append(
+            metric(
+                "Average steering load",
+                round(math.degrees(float(_median(steering_angles) or 0.0)), 1),
+                "deg",
+                "derived",
+                detail="Median lap-level mean absolute steering-wheel angle.",
+                action="Compare this value by race phase; an increase can reflect line, traffic, or correction changes and is not a balance diagnosis by itself.",
+                group="driver execution",
+            )
+        )
+    if top_speeds and minimum_speeds:
+        racecraft_metrics.append(
+            metric(
+                "Speed envelope",
+                f"{float(_median(minimum_speeds) or 0.0):.1f}-{max(top_speeds):.1f}",
+                "mph",
+                "derived",
+                detail="Median lap minimum to highest recorded maximum across the selected pace laps.",
+                action="Use corner minimum speed with entry and exit traces; top speed alone does not identify where lap time was gained.",
+                group="driver execution",
             )
         )
     long_run_delta = (
@@ -6171,10 +6527,18 @@ def build_technical_insights(
         ),
         "takeaway": racecraft_takeaway,
         "metrics": racecraft_metrics,
+        "pace_sample": {
+            "scope": pace_scope if usable_times else "unavailable",
+            "lap_numbers": [lap.get("lap") for lap in pace_laps],
+            "lap_count": len(pace_laps),
+            "raw_green_timed_laps": len(green_timed_laps),
+            "robust_race_pace_laps": len(race_pace_laps),
+            "valid_reference_laps": len(reference_laps),
+        },
         "evidence": (
             (["player position endpoints"] if position_evidence else [])
             + (["lap-by-lap player position and flags"] if phases else [])
-            + (["clean green lap timing"] if usable_times else [])
+            + ([f"{pace_scope} timing and controls"] if usable_times else [])
         ),
         "unavailable_reasons": (
             ([] if position_evidence else ["Start and finish position endpoints were not both recorded."])

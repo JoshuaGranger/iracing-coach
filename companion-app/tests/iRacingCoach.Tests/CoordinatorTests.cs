@@ -798,7 +798,7 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
-    public async Task HomeRefresh_RegeneratesSchemaNineCacheForProgressiveTuningGeometryIdentity()
+    public async Task HomeRefresh_RegeneratesLegacyCacheToSchemaEleven()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache-upgrade", Guid.NewGuid().ToString("N"));
         var analysis = HomeAnalysisResponse();
@@ -817,8 +817,8 @@ public sealed class CoordinatorTests
 
         var cachePath = UiAnalysisCachePath(root, selector);
         using var regenerated = JsonDocument.Parse(File.ReadAllText(cachePath));
-        Assert.AreEqual(10, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-9 cache predates the authoritative progressive-tuning geometry identity and must be regenerated exactly once.");
+        Assert.AreEqual(11, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-9 cache predates the current UI projection contract and must be regenerated exactly once.");
         Assert.IsEmpty(state.Jobs, "Cache migration remains quiet background maintenance.");
     }
 
@@ -1394,6 +1394,9 @@ public sealed class CoordinatorTests
         Assert.AreEqual(1, restored.Restored.DriverModels);
         Assert.AreEqual(1, restored.Restored.AiCoachingFiles);
         Assert.AreEqual(1, restored.Restored.TuningExperiments);
+        StringAssert.Contains(restored.Message, "last copy check still matches every Coach file");
+        Assert.DoesNotContain("portable", restored.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("prepared copy", restored.Message, StringComparison.OrdinalIgnoreCase);
         Assert.IsTrue(File.Exists(Path.Combine(destination, DurableArchiveService.ManifestFileName)));
         Assert.IsTrue(File.Exists(Path.Combine(destination, DurableArchiveService.PortableStateFileName)));
         Assert.DoesNotContain(source, File.ReadAllText(Path.Combine(destination, DurableArchiveService.ManifestFileName)));
@@ -2112,7 +2115,7 @@ public sealed class CoordinatorTests
         }).ToArray()
     });
 
-    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 10, string sessionType = "Race", string? storedSelector = null)
+    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 11, string sessionType = "Race", string? storedSelector = null)
     {
         var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
         Directory.CreateDirectory(directory);

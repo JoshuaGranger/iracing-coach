@@ -1,28 +1,31 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- Generated from companion-app-handoff/config/theme.dark.json. -->
-    <Color x:Key="AppColor">#101516</Color>
-    <Color x:Key="NavigationColor">#13191A</Color>
-    <Color x:Key="Surface1Color">#182022</Color>
-    <Color x:Key="Surface2Color">#1E2729</Color>
-    <Color x:Key="Surface3Color">#263033</Color>
-    <Color x:Key="SurfaceHoverColor">#2D393B</Color>
-    <Color x:Key="BorderSubtleColor">#304043</Color>
-    <Color x:Key="BorderStrongColor">#465A5E</Color>
-    <Color x:Key="TextPrimaryColor">#F1F3EF</Color>
-    <Color x:Key="TextSecondaryColor">#C2CAC8</Color>
-    <Color x:Key="TextMutedColor">#94A19F</Color>
-    <Color x:Key="TextDisabledColor">#687572</Color>
-    <Color x:Key="AccentColor">#65D0B6</Color>
-    <Color x:Key="AccentFillColor">#287565</Color>
-    <Color x:Key="AccentHoverColor">#328B78</Color>
-    <Color x:Key="AccentSubtleColor">#17302C</Color>
-    <Color x:Key="FocusColor">#91E8D3</Color>
-    <Color x:Key="SuccessColor">#5DE59C</Color>
-    <Color x:Key="WarningColor">#FFC857</Color>
-    <Color x:Key="DangerColor">#FF6F7D</Color>
-    <Color x:Key="InfoColor">#66D5CE</Color>
+    <Color x:Key="AppColor">#0B1015</Color>
+    <Color x:Key="NavigationColor">#0F161C</Color>
+    <Color x:Key="Surface1Color">#151E25</Color>
+    <Color x:Key="Surface2Color">#1B2630</Color>
+    <Color x:Key="Surface3Color">#25333D</Color>
+    <Color x:Key="SurfaceHoverColor">#30414D</Color>
+    <Color x:Key="BorderSubtleColor">#334752</Color>
+    <Color x:Key="BorderStrongColor">#4C6572</Color>
+    <Color x:Key="TextPrimaryColor">#F6F8FA</Color>
+    <Color x:Key="TextSecondaryColor">#D0D8DC</Color>
+    <Color x:Key="TextMutedColor">#96A6AE</Color>
+    <Color x:Key="TextDisabledColor">#6F7E85</Color>
+    <Color x:Key="AccentColor">#5CE8C3</Color>
+    <Color x:Key="AccentFillColor">#167A66</Color>
+    <Color x:Key="AccentHoverColor">#20947B</Color>
+    <Color x:Key="AccentSubtleColor">#153832</Color>
+    <Color x:Key="FocusColor">#9FF8DF</Color>
+    <Color x:Key="SuccessColor">#57EEA0</Color>
+    <Color x:Key="WarningColor">#FFD05C</Color>
+    <Color x:Key="DangerColor">#FF7187</Color>
+    <Color x:Key="InfoColor">#61DAF3</Color>
     <Color x:Key="UnavailableColor">#8E98A5</Color>
+    <Color x:Key="ChartBackgroundColor">#172028</Color>
+    <Color x:Key="ChartGridColor">#354853</Color>
+    <Color x:Key="ChartReferenceColor">#728892</Color>
     <Color x:Key="TelemetrySpeedColor">#61C8F5</Color>
     <Color x:Key="TelemetryThrottleColor">#5DE59C</Color>
     <Color x:Key="TelemetryBrakeColor">#FF6F7D</Color>
@@ -50,6 +53,9 @@
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
     <SolidColorBrush x:Key="InfoBrush" Color="{StaticResource InfoColor}" />
     <SolidColorBrush x:Key="UnavailableBrush" Color="{StaticResource UnavailableColor}" />
+    <SolidColorBrush x:Key="ChartBackgroundBrush" Color="{StaticResource ChartBackgroundColor}" />
+    <SolidColorBrush x:Key="ChartGridBrush" Color="{StaticResource ChartGridColor}" />
+    <SolidColorBrush x:Key="ChartReferenceBrush" Color="{StaticResource ChartReferenceColor}" />
     <SolidColorBrush x:Key="TelemetrySpeedBrush" Color="{StaticResource TelemetrySpeedColor}" />
     <SolidColorBrush x:Key="TelemetryThrottleBrush" Color="{StaticResource TelemetryThrottleColor}" />
     <SolidColorBrush x:Key="TelemetryBrakeBrush" Color="{StaticResource TelemetryBrakeColor}" />

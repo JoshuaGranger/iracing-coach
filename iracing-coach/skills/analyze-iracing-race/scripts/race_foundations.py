@@ -42,6 +42,12 @@ TIRE_MODEL_VERSION = "nascar-tire-condition-load-match-v1"
 MIN_MAIN_LOOP_LAP_PERCENT_COVERAGE = 0.95
 MAX_MAIN_LOOP_LAP_PERCENT_GAP = 0.05
 MAX_MAIN_LOOP_CLOSURE_DISTANCE = 0.15
+MIN_MAIN_LOOP_NORMALIZED_SPAN = 0.20
+MAX_MAIN_LOOP_RELATIVE_SEGMENT_DISTANCE = 0.35
+MAX_AUXILIARY_BOUNDS_MARGIN = 0.45
+MAX_AUXILIARY_RELATIVE_SEGMENT_DISTANCE = 0.55
+GPS_PLACEHOLDER_EPSILON = 1e-9
+GPS_CLUSTER_RADIUS_DEGREES = 0.25
 
 
 def _finite(value: Any) -> float | None:
@@ -165,9 +171,15 @@ def _average_paths(paths: Sequence[Sequence[Mapping[str, Any]]], count: int) -> 
 def _normalize_geometry(
     paths: Mapping[str, Sequence[Mapping[str, Any]]],
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
-    all_points = [point for path in paths.values() for point in path]
-    xs = [number for point in all_points if (number := _finite(point.get("x"))) is not None]
-    ys = [number for point in all_points if (number := _finite(point.get("y"))) is not None]
+    # The verified racing surface is the projection anchor.  A single iRacing
+    # GPS placeholder in a pit-entry window used to make the 0/0 coordinate an
+    # extrema for every layer, compressing an Iowa-sized oval to ~0.00005 of the
+    # normalized canvas and producing kilometre-long synthetic lines.
+    anchor_points = list(paths.get("main_path") or ())
+    if not anchor_points:
+        anchor_points = [point for path in paths.values() for point in path]
+    xs = [number for point in anchor_points if (number := _finite(point.get("x"))) is not None]
+    ys = [number for point in anchor_points if (number := _finite(point.get("y"))) is not None]
     if not xs or not ys:
         return {name: [] for name in paths}, {}
     min_x, max_x = min(xs), max(xs)
@@ -197,6 +209,101 @@ def _normalize_geometry(
     }
 
 
+def _geometry_extents(path: Sequence[Mapping[str, Any]]) -> tuple[float, float, float, float] | None:
+    points = [
+        (x, y)
+        for point in path
+        if (x := _finite(point.get("x"))) is not None
+        and (y := _finite(point.get("y"))) is not None
+    ]
+    if not points:
+        return None
+    return (
+        min(point[0] for point in points),
+        max(point[0] for point in points),
+        min(point[1] for point in points),
+        max(point[1] for point in points),
+    )
+
+
+def _path_is_plausible_relative_to_main(
+    path: Sequence[Mapping[str, Any]],
+    main_path: Sequence[Mapping[str, Any]],
+) -> bool:
+    if len(path) < 2:
+        return False
+    main_bounds = _geometry_extents(main_path)
+    path_bounds = _geometry_extents(path)
+    if main_bounds is None or path_bounds is None:
+        return False
+    main_span = max(main_bounds[1] - main_bounds[0], main_bounds[3] - main_bounds[2])
+    if not math.isfinite(main_span) or main_span <= 1e-9:
+        return False
+    margin = main_span * MAX_AUXILIARY_BOUNDS_MARGIN
+    if (
+        path_bounds[0] < main_bounds[0] - margin
+        or path_bounds[1] > main_bounds[1] + margin
+        or path_bounds[2] < main_bounds[2] - margin
+        or path_bounds[3] > main_bounds[3] + margin
+    ):
+        return False
+    points = [
+        (float(point["x"]), float(point["y"]))
+        for point in path
+        if _finite(point.get("x")) is not None and _finite(point.get("y")) is not None
+    ]
+    if len(points) != len(path):
+        return False
+    maximum_segment = max(
+        (math.hypot(after[0] - before[0], after[1] - before[1]) for before, after in zip(points, points[1:])),
+        default=0.0,
+    )
+    return maximum_segment <= main_span * MAX_AUXILIARY_RELATIVE_SEGMENT_DISTANCE
+
+
+def _line_is_plausible_relative_to_main(
+    line: Mapping[str, Any] | None,
+    main_path: Sequence[Mapping[str, Any]],
+) -> bool:
+    if not isinstance(line, Mapping):
+        return False
+    a, b = line.get("a"), line.get("b")
+    if not isinstance(a, Mapping) or not isinstance(b, Mapping):
+        return False
+    if not _path_is_plausible_relative_to_main([a, b], main_path):
+        return False
+    bounds = _geometry_extents(main_path)
+    if bounds is None:
+        return False
+    span = max(bounds[1] - bounds[0], bounds[3] - bounds[2])
+    length = math.hypot(float(b["x"]) - float(a["x"]), float(b["y"]) - float(a["y"]))
+    return length <= span * 0.20
+
+
+def _sanitize_geometry_layers(value: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Drop impossible overlays rather than publishing off-canvas SVG work."""
+
+    sanitized = dict(value)
+    main_path = list(sanitized.get("main_path") or ())
+    rejected: list[str] = []
+    for field in ("pit_lane", "pit_entry_path", "pit_exit_path"):
+        path = list(sanitized.get(field) or ())
+        if path and not _path_is_plausible_relative_to_main(path, main_path):
+            sanitized[field] = []
+            rejected.append(field)
+    line_fields = {
+        "start_finish_line": "start_finish_line",
+        "pit_commitment_line": "pit_commitment_line",
+        "pit_merge_line": "pit_merge_line",
+    }
+    for field in line_fields:
+        line = sanitized.get(field)
+        if line is not None and not _line_is_plausible_relative_to_main(line, main_path):
+            sanitized[field] = None
+            rejected.append(field)
+    return sanitized, rejected
+
+
 def _main_loop_quality(path: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Measure whether recorded points describe one complete, closed circuit loop.
 
@@ -206,7 +313,13 @@ def _main_loop_quality(path: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     normalized endpoint distance independently verifies geometric closure.
     """
 
-    usable_path = [point for point in path if isinstance(point, Mapping)]
+    usable_path = [
+        point
+        for point in path
+        if isinstance(point, Mapping)
+        and _finite(point.get("x")) is not None
+        and _finite(point.get("y")) is not None
+    ]
     lap_percentages = sorted(
         {
             value % 1.0
@@ -227,6 +340,8 @@ def _main_loop_quality(path: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         coverage = 0.0
 
     closure_distance = 1.0
+    main_path_span = 0.0
+    maximum_segment_distance = math.inf
     if len(usable_path) >= 2:
         first_x = _finite(usable_path[0].get("x"))
         first_y = _finite(usable_path[0].get("y"))
@@ -234,18 +349,50 @@ def _main_loop_quality(path: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         last_y = _finite(usable_path[-1].get("y"))
         if None not in (first_x, first_y, last_x, last_y):
             closure_distance = math.hypot(last_x - first_x, last_y - first_y)
+        bounds = _geometry_extents(usable_path)
+        if bounds is not None:
+            main_path_span = max(bounds[1] - bounds[0], bounds[3] - bounds[2])
+        maximum_segment_distance = max(
+            (
+                math.hypot(
+                    float(after["x"]) - float(before["x"]),
+                    float(after["y"]) - float(before["y"]),
+                )
+                for before, after in zip(usable_path, usable_path[1:])
+            ),
+            default=0.0,
+        )
+
+    relative_segment_distance = (
+        maximum_segment_distance / main_path_span
+        if main_path_span > 1e-12 and math.isfinite(maximum_segment_distance)
+        else math.inf
+    )
+    geometry_plausible = bool(
+        main_path_span >= MIN_MAIN_LOOP_NORMALIZED_SPAN
+        and relative_segment_distance <= MAX_MAIN_LOOP_RELATIVE_SEGMENT_DISTANCE
+    )
 
     complete = bool(
         len(usable_path) >= 3
         and coverage >= MIN_MAIN_LOOP_LAP_PERCENT_COVERAGE
         and maximum_gap <= MAX_MAIN_LOOP_LAP_PERCENT_GAP
         and closure_distance <= MAX_MAIN_LOOP_CLOSURE_DISTANCE
+        and geometry_plausible
     )
     return {
         "main_loop_complete": complete,
         "lap_percent_coverage": round(coverage, 6),
         "maximum_lap_percent_gap": round(maximum_gap, 6),
         "closure_distance": round(closure_distance, 8),
+        "geometry_plausible": geometry_plausible,
+        "main_path_span": round(main_path_span, 8),
+        "maximum_segment_distance": (
+            round(maximum_segment_distance, 8) if math.isfinite(maximum_segment_distance) else None
+        ),
+        "maximum_relative_segment_distance": (
+            round(relative_segment_distance, 8) if math.isfinite(relative_segment_distance) else None
+        ),
     }
 
 
@@ -355,6 +502,10 @@ def build_track_geometry(
             "lap_percent_coverage": 0.0,
             "maximum_lap_percent_gap": 1.0,
             "closure_distance": 1.0,
+            "geometry_plausible": False,
+            "main_path_span": 0.0,
+            "maximum_segment_distance": None,
+            "maximum_relative_segment_distance": None,
             "main_path_points": 0,
             "observed_main_path_points": 0,
             "pit_lane_points": 0,
@@ -375,9 +526,44 @@ def build_track_geometry(
     count = min(len(pct), len(lat), len(lon), len(pit))
     bins: list[list[dict[str, Any]]] = [[] for _ in range(main_bins)]
     valid: list[dict[str, Any] | None] = [None] * count
+    candidates: list[tuple[int, float, float, float]] = []
+    rejected_gps_samples = 0
     for index in range(count):
         lap_pct, y, x = _finite(pct[index]), _finite(lat[index]), _finite(lon[index])
-        if lap_pct is None or x is None or y is None or lap_pct < -0.01 or lap_pct > 1.01:
+        if (
+            lap_pct is None
+            or x is None
+            or y is None
+            or lap_pct < -0.01
+            or lap_pct > 1.01
+            or abs(y) > 90
+            or abs(x) > 180
+            or (abs(x) <= GPS_PLACEHOLDER_EPSILON and abs(y) <= GPS_PLACEHOLDER_EPSILON)
+        ):
+            if x is not None and y is not None:
+                rejected_gps_samples += 1
+            continue
+        candidates.append((index, lap_pct, y, x))
+
+    # iRacing can emit isolated finite GPS sentinels during session-state or
+    # pit transitions.  Keep the dominant local cluster and leave rejected
+    # samples as gaps; never bridge an entire continent into track geometry.
+    center_x = _median(item[3] for item in candidates)
+    center_y = _median(item[2] for item in candidates)
+    distances = (
+        [math.hypot(item[3] - center_x, item[2] - center_y) for item in candidates]
+        if center_x is not None and center_y is not None
+        else []
+    )
+    median_distance = _median(distances) or 0.0
+    distance_mad = _median(abs(distance - median_distance) for distance in distances) or 0.0
+    cluster_radius = max(
+        GPS_CLUSTER_RADIUS_DEGREES,
+        median_distance + max(0.0005, distance_mad) * 12.0,
+    )
+    for index, lap_pct, y, x in candidates:
+        if center_x is None or center_y is None or math.hypot(x - center_x, y - center_y) > cluster_radius:
+            rejected_gps_samples += 1
             continue
         point = {"x": x, "y": y, "lap_pct": lap_pct % 1.0, "sample_index": index}
         valid[index] = point
@@ -436,6 +622,8 @@ def build_track_geometry(
         "pit_exit_path": _average_paths(exit_paths, 70),
     }
     paths, transform = _normalize_geometry(raw_paths)
+    sanitized_paths, rejected_layers = _sanitize_geometry_layers(paths)
+    paths = {name: list(sanitized_paths.get(name) or ()) for name in raw_paths}
     result.update(paths)
     result["transform"] = transform
     loop_quality = _main_loop_quality(paths["main_path"])
@@ -455,6 +643,8 @@ def build_track_geometry(
         "pit_exit_observations": len(exit_paths),
         "main_source_samples": sum(len(items) for items in bins),
         "pit_source_samples": sum(len(items) for items in pit_episodes),
+        "rejected_gps_samples": rejected_gps_samples,
+        "rejected_geometry_layers": rejected_layers,
     }
     if not main_loop_complete:
         result["status"] = "unavailable"
@@ -474,6 +664,11 @@ def build_track_geometry(
     elif not paths["pit_lane"]:
         result["status"] = "partial" if main_loop_complete else "unavailable"
         result["unavailable_reasons"].append("No complete recorded pit-road traversal was available.")
+    if rejected_layers:
+        result["status"] = "partial" if main_loop_complete else "unavailable"
+        result["unavailable_reasons"].append(
+            "Implausible recorded track overlays were omitted: " + ", ".join(sorted(rejected_layers)) + "."
+        )
     if main_loop_complete:
         # This analysis-owned hash is the cross-language geometry identity.
         # Consumers carry it verbatim; they must not derive a different hash

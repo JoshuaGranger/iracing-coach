@@ -88,6 +88,205 @@ class RaceFoundationTests(unittest.TestCase):
         self.assertGreater(result["quality"]["maximum_lap_percent_gap"], 0.05)
         self.assertGreater(result["quality"]["observed_main_path_points"], 20)
 
+    def test_zero_gps_sentinel_cannot_compress_main_loop_or_publish_long_overlays(self) -> None:
+        count = 720
+        pct = [(index % 240) / 240 for index in range(count)]
+        latitude = [41.675 + 0.0022 * math.sin(2 * math.pi * value) for value in pct]
+        longitude = [-93.013 + 0.0031 * math.cos(2 * math.pi * value) for value in pct]
+        on_pit = [False] * count
+        for index in range(484, 516):
+            on_pit[index] = True
+        # Reproduce the finite 0/0 transition sample present in the broken Iowa
+        # archive.  It sits inside the entry look-back window that previously
+        # owned the normalization extrema.
+        latitude[480] = 0.0
+        longitude[480] = 0.0
+
+        result = build_track_geometry(
+            {
+                "LapDistPct": pct,
+                "Lat": latitude,
+                "Lon": longitude,
+                "OnPitRoad": on_pit,
+            },
+            {"sample_rate": 60},
+            {"track_id": 559, "track_name": "Iowa Speedway", "track_config": "Oval"},
+            main_bins=240,
+        )
+
+        self.assertTrue(result["quality"]["main_loop_complete"])
+        self.assertTrue(result["quality"]["geometry_plausible"])
+        self.assertGreaterEqual(result["quality"]["main_path_span"], 0.99)
+        self.assertGreater(result["transform"]["source_bounds"]["minimum_x"], -94)
+        self.assertLess(result["transform"]["source_bounds"]["maximum_x"], -92)
+        self.assertGreater(result["transform"]["source_bounds"]["minimum_y"], 41)
+        self.assertGreaterEqual(result["quality"]["rejected_gps_samples"], 1)
+        for field in ("pit_lane", "pit_entry_path", "pit_exit_path"):
+            for point in result[field]:
+                self.assertLess(abs(point["x"]), 2)
+                self.assertLess(abs(point["y"]), 2)
+
+    def test_cache_replaces_microscopic_legacy_geometry_and_drops_its_auxiliary_lines(self) -> None:
+        def loop(scale: float, count: int = 100) -> list[dict]:
+            return [
+                {
+                    "x": scale * (0.5 + 0.5 * math.cos(2 * math.pi * index / count)),
+                    "y": scale * (0.5 + 0.5 * math.sin(2 * math.pi * index / count)),
+                    "lap_pct": index / count,
+                }
+                for index in range(count)
+            ]
+
+        poisoned = {
+            "schema_version": 1,
+            "status": "usable",
+            "track_configuration_key": "559-oval",
+            "track_id": 559,
+            "track_name": "Iowa Speedway",
+            "track_config": "Oval",
+            "coordinate_system": "normalized_local_vector",
+            "main_path": loop(0.00005),
+            "pit_lane": [],
+            "pit_entry_path": [{"x": 0.00004, "y": 0.00004}, {"x": 1.0, "y": 0.44}],
+            "pit_exit_path": [],
+            "start_finish_line": {"a": {"x": -0.01, "y": -0.01}, "b": {"x": 0.01, "y": 0.01}},
+            "pit_commitment_line": None,
+            "pit_merge_line": None,
+            "unavailable_reasons": [],
+            "source_sha256": ["1" * 64],
+            "quality": {"main_loop_complete": True, "lap_percent_coverage": 0.99},
+        }
+        healthy = {
+            **poisoned,
+            "main_path": loop(1.0),
+            "pit_entry_path": [],
+            "start_finish_line": None,
+            "source_sha256": ["2" * 64],
+        }
+
+        with tempfile.TemporaryDirectory() as folder:
+            store = ArchiveStore(Path(folder) / "portable")
+            first = store.cache_track_geometry(poisoned)
+            chosen = store.cache_track_geometry(healthy)
+
+        self.assertEqual(first["status"], "unavailable")
+        self.assertEqual(first["main_path"], [])
+        self.assertEqual(first["pit_entry_path"], [])
+        self.assertIsNone(first["start_finish_line"])
+        self.assertTrue(chosen["quality"]["main_loop_complete"])
+        self.assertTrue(chosen["quality"]["geometry_plausible"])
+        self.assertGreaterEqual(chosen["quality"]["main_path_span"], 0.99)
+        self.assertEqual(chosen["contributing_source_sha256"], ["2" * 64])
+
+    def test_actual_iowa_and_daytona_cache_corruption_is_rejected_before_regeneration(self) -> None:
+        """Lock the exact compression pattern found in the supplied simulator corpus."""
+
+        def loop(scale: float, count: int = 500) -> list[dict]:
+            return [
+                {
+                    "x": scale * (0.5 + 0.5 * math.cos(2 * math.pi * index / count)),
+                    "y": scale * (0.5 + 0.5 * math.sin(2 * math.pi * index / count)),
+                    "lap_pct": index / count,
+                }
+                for index in range(count)
+            ]
+
+        cases = (
+            {
+                "key": "559-oval",
+                "track_id": 559,
+                "track_name": "Iowa Speedway",
+                "compressed_span": 0.000057,
+                "source_bounds": {
+                    "minimum_x": -93.01586771,
+                    "maximum_x": 0.0,
+                    "minimum_y": 0.0,
+                    "maximum_y": 41.67691307,
+                },
+            },
+            {
+                "key": "191-oval",
+                "track_id": 191,
+                "track_name": "Daytona International Speedway",
+                "compressed_span": 0.000153,
+                "source_bounds": {
+                    "minimum_x": -81.07493337,
+                    "maximum_x": 0.0,
+                    "minimum_y": 0.0,
+                    "maximum_y": 29.19148735,
+                },
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as folder:
+            store = ArchiveStore(Path(folder) / "portable")
+            for index, case in enumerate(cases, start=1):
+                with self.subTest(track=case["track_name"]):
+                    poisoned = {
+                        "schema_version": 1,
+                        "status": "usable",
+                        "track_configuration_key": case["key"],
+                        "track_id": case["track_id"],
+                        "track_name": case["track_name"],
+                        "track_config": "Oval",
+                        "coordinate_system": "normalized_local_vector",
+                        "main_path": loop(case["compressed_span"]),
+                        "pit_lane": [],
+                        "pit_entry_path": [
+                            {"x": case["compressed_span"] * .7, "y": case["compressed_span"] * .8},
+                            {"x": 1.0, "y": .4480624},
+                        ],
+                        "pit_exit_path": [],
+                        "start_finish_line": {
+                            "a": {"x": .011, "y": -.014},
+                            "b": {"x": -.011, "y": .014},
+                        },
+                        "pit_commitment_line": None,
+                        "pit_merge_line": None,
+                        "unavailable_reasons": [],
+                        "source_sha256": [str(index) * 64],
+                        "transform": {
+                            "source_bounds": case["source_bounds"],
+                            "normalization_scale": max(
+                                case["source_bounds"]["maximum_x"] - case["source_bounds"]["minimum_x"],
+                                case["source_bounds"]["maximum_y"] - case["source_bounds"]["minimum_y"],
+                            ),
+                        },
+                        "quality": {"main_loop_complete": True, "lap_percent_coverage": .998},
+                    }
+                    healthy = {
+                        **poisoned,
+                        "main_path": loop(1.0),
+                        "pit_entry_path": [],
+                        "start_finish_line": None,
+                        "source_sha256": [chr(96 + index) * 64],
+                        "transform": {
+                            "source_bounds": {
+                                "minimum_x": -1.0,
+                                "maximum_x": 1.0,
+                                "minimum_y": -1.0,
+                                "maximum_y": 1.0,
+                            },
+                            "normalization_scale": 2.0,
+                        },
+                    }
+
+                    rejected = store.cache_track_geometry(poisoned)
+                    regenerated = store.cache_track_geometry(healthy)
+
+                    self.assertEqual(rejected["status"], "unavailable")
+                    self.assertEqual(rejected["main_path"], [])
+                    self.assertEqual(rejected["pit_entry_path"], [])
+                    self.assertIsNone(rejected["start_finish_line"])
+                    self.assertEqual(regenerated["status"], "usable")
+                    self.assertTrue(regenerated["quality"]["geometry_plausible"])
+                    self.assertEqual(regenerated["quality"]["main_path_span"], 1.0)
+                    self.assertEqual(
+                        rejected["cache"]["path"],
+                        regenerated["cache"]["path"],
+                        "The clean producer output must replace the poisoned cache for the same layout.",
+                    )
+
     def test_geometry_cache_isolated_by_exact_configuration_and_keeps_best_coverage(self) -> None:
         def geometry(key: str, count: int, source_hash: str, offset: float = 0.0) -> dict:
             points = [
@@ -725,9 +924,11 @@ class RaceFoundationTests(unittest.TestCase):
             self.assertIsNotNone(replay)
             self.assertEqual(replay["status"], "usable")
             self.assertEqual(replay["player_car_index"], 0)
-            self.assertEqual(replay["frames"][0]["cars"][0]["overall_position"], 1)
-            self.assertEqual(replay["frames"][0]["cars"][0]["last_lap_time_s"], 24.7)
-            self.assertEqual(replay["frames"][0]["cars"][0]["best_lap_time_s"], 24.5)
+            columns = replay["car_columns"]
+            player_row = replay["frames"][0]["car_rows"][0]
+            self.assertEqual(player_row[columns.index("overall_position")], 1)
+            self.assertEqual(player_row[columns.index("last_lap_time_s")], 24.7)
+            self.assertEqual(player_row[columns.index("best_lap_time_s")], 24.5)
             self.assertIsNone(store.live_replay_for_analysis({"identity": {"subsession_id": 999}}))
 
     def test_live_replay_merge_requires_phase_and_deduplicates_reconnect_overlap(self) -> None:
@@ -779,7 +980,7 @@ class RaceFoundationTests(unittest.TestCase):
 
             self.assertIsNotNone(replay)
             self.assertEqual(replay["frame_count"], 1)
-            self.assertEqual(len(replay["frames"][0]["cars"]), 2)
+            self.assertEqual(len(replay["frames"][0]["car_rows"]), 2)
             self.assertEqual(len(replay["capture_manifests"]), 2)
             self.assertTrue(all("qualifying" not in path for path in replay["capture_manifests"]))
 

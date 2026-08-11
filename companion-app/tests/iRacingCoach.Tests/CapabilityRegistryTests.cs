@@ -269,7 +269,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "data-analysis-cursor-layer");
         Assert.DoesNotContain("@onmousemove=\"ChartMoved\"", telemetry);
         StringAssert.Contains(cursorInterop, "requestAnimationFrame");
-        StringAssert.Contains(cursorInterop, "trace-cursor-tooltip");
+        StringAssert.Contains(cursorInterop, "analysis-cursor-tooltip-card");
         StringAssert.Contains(cursorInterop, "updateTrack");
         StringAssert.Contains(cursorInterop, "replaceChildren");
         Assert.DoesNotContain("invokeMethodAsync", cursorInterop);
@@ -357,7 +357,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(telemetry, "ClearSelection");
         StringAssert.Contains(telemetry, "No laps selected");
         Assert.DoesNotContain("Selected.Count >= 5", telemetry);
-        StringAssert.Contains(telemetry, "var hue = 280 * fraction");
+        StringAssert.Contains(telemetry, "TracePalette[index % TracePalette.Length]");
+        StringAssert.Contains(telemetry, "private static readonly string[] TracePalette");
         StringAssert.Contains(telemetry, "Math.Abs(lapTime - _fastestLapTime) < .0001");
         StringAssert.Contains(telemetry, "new KeyValuePair<int, string>(lap, \"#F05CDB\")");
         StringAssert.Contains(cursorInterop, "{ passive: false }");
@@ -435,7 +436,8 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(coachCss, ".telemetry-empty-selection");
         Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(coachCss, "font-size:\\s*(9|10)px"));
         Assert.DoesNotContain("<span class=\"lap-state", telemetry);
-        StringAssert.Contains(telemetry, "stroke-width=\"@TraceStrokeWidth(trace, indexedSignal.Index)\"");
+        StringAssert.Contains(telemetry, "stroke-width=\"@traceGroup.StrokeWidth\"");
+        StringAssert.Contains(telemetry, "vector-effect=\"non-scaling-stroke\"");
         StringAssert.Contains(telemetry, "return signalIndex == 0 ? \"1.35\" : \"1.05\";");
         StringAssert.Contains(telemetry, "140 + (point.Y - projection.CenterY) * projection.Scale");
         StringAssert.Contains(telemetry, "HeatmapColor(normalized, SpeedHeatmapStops)");
@@ -466,7 +468,9 @@ public sealed class CapabilityRegistryTests
         var liveVisuals = File.ReadAllText(Path.Combine(ui, "LiveTelemetryVisuals.razor"));
         StringAssert.Contains(liveVisuals, "<canvas");
         StringAssert.Contains(liveVisuals, "LiveTelemetryFrame");
-        StringAssert.Contains(liveVisuals, "display-synced");
+        StringAssert.Contains(liveVisuals, "data-source-rate");
+        StringAssert.Contains(liveVisuals, "sourceRate = State.LiveState.SourceTickRate");
+        Assert.DoesNotContain("Hz source", liveVisuals);
         StringAssert.Contains(liveVisuals, "@(((Snapshot.LapDistancePercent ?? 0) * 100).ToString(\"0\"))%");
         Assert.DoesNotContain("* 100).ToString(\"0\")%", liveVisuals);
         Assert.DoesNotContain("<svg class=\"live-trend-chart\"", liveVisuals);
@@ -510,6 +514,11 @@ public sealed class CapabilityRegistryTests
         Assert.Contains("document.addEventListener(\"pointerup\"", source, StringComparison.Ordinal);
         Assert.Contains("document.addEventListener(\"change\"", source, StringComparison.Ordinal);
         Assert.Contains("control instanceof HTMLSelectElement", source, StringComparison.Ordinal);
+        Assert.Contains("const pointerSelectOrigins = new WeakSet();", source, StringComparison.Ordinal);
+        Assert.Contains("const pointerSelectAt = new WeakMap();", source, StringComparison.Ordinal);
+        Assert.Contains("pointerSelectOrigins.has(control)", source, StringComparison.Ordinal);
+        Assert.Contains("pointerSelectAt.get(control)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("lastPointerAt", source, StringComparison.Ordinal);
         Assert.Contains("button,[role='button'],[role='tab']", source, StringComparison.Ordinal);
         Assert.Contains("document.activeElement === control", source, StringComparison.Ordinal);
         Assert.Contains("control.blur()", source, StringComparison.Ordinal);
@@ -638,8 +647,13 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(script, "iRacingCoach.Uninstaller.csproj");
         StringAssert.Contains(script, "iRacingCoach.Installer\\Program.cs");
         StringAssert.Contains(script, "iRacingCoach.Coordinator\\CompanionState.cs");
+        StringAssert.Contains(script, "iRacingCoach.Coordinator\\CoachEngine.cs");
         StringAssert.Contains(script, "iRacingCoach.Contracts\\Models.cs");
         StringAssert.Contains(script, "$sourceIdentityMismatches");
+        StringAssert.Contains(script, "status --porcelain --untracked-files=all");
+        StringAssert.Contains(script, "Release source is not clean.");
+        StringAssert.Contains(script, "$releaseCommit");
+        StringAssert.Contains(script, "sourceCommit = $releaseCommit");
         StringAssert.Contains(script, "Release identity mismatch.");
         StringAssert.Contains(script, "[switch]$IncludePortable");
         StringAssert.Contains(script, "if ($IncludePortable)");
@@ -652,7 +666,7 @@ public sealed class CapabilityRegistryTests
     [TestMethod]
     public void ReleaseIdentity_IsSynchronizedAcrossPackagingAndRepairSurfaces()
     {
-        const string version = "0.15.0";
+        const string version = "0.16.0";
         var root = CompanionRoot();
         var releaseScript = File.ReadAllText(Path.Combine(root, "tools", "BuildRelease.ps1"));
         var appProject = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "iRacingCoach.App.csproj"));
@@ -660,7 +674,9 @@ public sealed class CapabilityRegistryTests
         var uninstallerProject = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Uninstaller", "iRacingCoach.Uninstaller.csproj"));
         var installer = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Installer", "Program.cs"));
         var coordinator = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "CompanionState.cs"));
+        var coachEngine = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "CoachEngine.cs"));
         var contracts = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Contracts", "Models.cs"));
+        var appHost = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "wwwroot", "index.html"));
 
         StringAssert.Contains(releaseScript, $"$version = '{version}'");
         StringAssert.Contains(appProject, $"<Version>{version}</Version>");
@@ -672,7 +688,11 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(installer, "Program.RepairInstallerFileName");
         StringAssert.Contains(coordinator, $"private const string AppVersion = \"{version}\";");
         StringAssert.Contains(coordinator, "$\"iRacingCoach-{AppVersion}-Setup.exe\"");
+        StringAssert.Contains(coachEngine, $"version = \"{version}\"");
         StringAssert.Contains(contracts, $"string ClientVersion = \"{version}\"");
+        StringAssert.Contains(appHost, $"coach.css?v={version}");
+        StringAssert.Contains(appHost, $"analysis-telemetry-cursor.js?v={version}-bounded-cursor");
+        StringAssert.Contains(appHost, $"live-telemetry-layout.js?v={version}-viewport-fit");
 
         foreach (var liveIdentitySource in new[]
         {
@@ -682,11 +702,14 @@ public sealed class CapabilityRegistryTests
             uninstallerProject,
             installer,
             coordinator,
+            coachEngine,
             contracts
         })
         {
             Assert.DoesNotContain("0.14.2", liveIdentitySource,
                 "Historical release identities must not remain in active packaging or repair surfaces.");
+            Assert.DoesNotContain("0.15.0", liveIdentitySource,
+                "The prior development candidate must not remain in active 0.16.0 packaging or repair surfaces.");
         }
     }
 

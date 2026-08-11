@@ -63,12 +63,6 @@
                     aria-expanded="@AriaBoolean(_showNote)"
                     title="Add note"
                     @onclick="ToggleNotePanel"><span class="tuning-note-glyph" aria-hidden="true">✎</span></button>
-            <button type="button"
-                    class="tuning-icon-action @(_showRatings ? "selected" : null)"
-                    aria-label="Adjust severity and confidence"
-                    aria-expanded="@AriaBoolean(_showRatings)"
-                    title="Severity and confidence"
-                    @onclick="ToggleRatingsPanel"><ProductIcon Name="setup" Size="15" /></button>
             @if (IsPriorityCorner)
             {
                 <span class="tuning-priority-label"><span aria-hidden="true">★</span> Highest priority</span>
@@ -114,21 +108,18 @@
                 </label>
             }
 
-            @if (_showRatings)
-            {
-                <section class="tuning-ratings">
-                    <label>
-                        <span>Severity</span>
-                        <input type="range" min="1" max="5" step="1" value="@_severity" @oninput="SeverityChanged" />
-                        <output>@_severity</output>
-                    </label>
-                    <label>
-                        <span>Confidence</span>
-                        <input type="range" min="1" max="5" step="1" value="@_confidence" @oninput="ConfidenceChanged" />
-                        <output>@_confidence</output>
-                    </label>
-                </section>
-            }
+            <section class="tuning-ratings" aria-label="Feedback strength">
+                <label title="Severity: how much this behavior hurt your ability to drive the corner. 1 is minor; 5 is race-limiting.">
+                    <span>Severity <ProductIcon Name="info" Size="13" /></span>
+                    <input aria-label="Severity, from minor to race-limiting" type="range" min="1" max="5" step="1" value="@_severity" @oninput="SeverityChanged" />
+                    <output>@_severity</output>
+                </label>
+                <label title="Confidence: how certain you are that the feeling was repeatable rather than traffic, a mistake, or one unusual lap. 1 is uncertain; 5 is repeatable.">
+                    <span>Confidence <ProductIcon Name="info" Size="13" /></span>
+                    <input aria-label="Confidence, from uncertain to repeatable" type="range" min="1" max="5" step="1" value="@_confidence" @oninput="ConfidenceChanged" />
+                    <output>@_confidence</output>
+                </label>
+            </section>
         </div>
 
         <footer class="tuning-editor-footer">
@@ -204,7 +195,6 @@
     private int _confidence = 3;
     private bool _showSymptoms;
     private bool _showNote;
-    private bool _showRatings;
 
     private string RunPhaseLabel => RunPhase switch
     {
@@ -259,7 +249,6 @@
 
         _showSymptoms = _extraSymptoms.Count > 0;
         _showNote = _note.Length > 0;
-        _showRatings = relevant.Length > 0 && (_severity != 3 || _confidence != 3);
     }
 
     private string BalanceFor(string stage) => _balanceByStage.GetValueOrDefault(stage) ?? string.Empty;
@@ -273,7 +262,6 @@
 
     private void ToggleSymptomPanel() => _showSymptoms = !_showSymptoms;
     private void ToggleNotePanel() => _showNote = !_showNote;
-    private void ToggleRatingsPanel() => _showRatings = !_showRatings;
     private Task TogglePriority() => PriorityChanged.InvokeAsync(!IsPriorityCorner);
 
     private bool HasExtraSymptom(string stage, string symptom) => _extraSymptoms.Contains(ExtraKey(stage, symptom));

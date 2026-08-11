@@ -1,0 +1,111 @@
+/* Race Analysis rendering/performance overrides.
+   Kept separate from the shared theme so high-frequency chart/map behavior can
+   be profiled and reverted without changing unrelated application surfaces. */
+
+.race-workstation .lap-rail-row {
+  grid-template-columns: max-content max-content minmax(0,1fr) max-content max-content max-content max-content;
+  grid-template-rows: minmax(36px,auto);
+  column-gap: clamp(4px,.55vw,9px);
+  min-height: 46px;
+  padding: 5px 7px;
+  overflow: visible;
+  white-space: nowrap;
+}
+.race-workstation .lap-flags,
+.race-workstation .lap-identity,
+.race-workstation .lap-time,
+.race-workstation .lap-sector-column,
+.race-workstation .lap-incident-column,
+.race-workstation .lap-fuel-column,
+.race-workstation .lap-pit-column { min-width: 0; grid-row: 1; }
+.race-workstation .lap-flags { grid-column: 1; justify-content: flex-start; }
+.race-workstation .lap-identity { grid-column: 2; }
+.race-workstation .lap-time { grid-column: 3; width: auto; justify-self: stretch; }
+.race-workstation .lap-sector-column { grid-column: 4; }
+.race-workstation .lap-incident-column { grid-column: 5; }
+.race-workstation .lap-fuel-column { grid-column: 6; }
+.race-workstation .lap-pit-column { grid-column: 7; align-items: center; }
+.race-workstation .lap-pace-value,
+.race-workstation .lap-time small,
+.race-workstation .lap-fuel-column,
+.race-workstation .lap-pit-column { white-space: nowrap; }
+
+.track-lap-trace {
+  stroke-width: 1;
+  shape-rendering: geometricPrecision;
+}
+.map-cursor-halo,
+.map-cursor { vector-effect: non-scaling-stroke; }
+
+.configurable-trace-chart [data-analysis-trace-render-layer] {
+  transform-origin: left center;
+  will-change: transform;
+}
+
+/* Cursor cards are deliberately outside the preserveAspectRatio="none" SVG.
+   Their typography and boxes therefore stay in screen pixels at every window
+   and drawer size. */
+.analysis-cursor-tooltips {
+  position: absolute;
+  z-index: 12;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.analysis-cursor-tooltip-card {
+  position: absolute;
+  min-width: 102px;
+  max-width: calc(100% - 8px);
+  display: grid;
+  gap: 2px;
+  padding: 6px 7px;
+  color: var(--text-primary);
+  background: color-mix(in srgb,var(--surface-3) 96%,#05080d);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 7px 20px color-mix(in srgb,var(--shadow) 74%,transparent);
+  font: 600 12px/16px var(--metric-font,Consolas,monospace);
+  font-stretch: normal;
+  letter-spacing: normal;
+  transform: none;
+}
+.analysis-cursor-tooltip-slot {
+  min-width: 0;
+  height: 18px;
+  display: grid;
+  grid-template-columns: 2.5ch 10px minmax(0,1fr);
+  align-items: center;
+  gap: 6px;
+}
+.analysis-cursor-tooltip-slot .trace-tooltip-lap { color: var(--text-secondary); }
+.analysis-cursor-tooltip-slot .trace-tooltip-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 1px;
+  box-shadow: 0 0 6px color-mix(in srgb,currentColor 35%,transparent);
+}
+.analysis-cursor-tooltip-slot .trace-tooltip-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The drawer itself is compositor-only. The page retains its shared 500 ms
+   structural clock, while expensive blur and shadow interpolation are removed. */
+.analysis-trace-studio .analysis-trace-toolbox {
+  background: color-mix(in srgb,var(--surface-1) 98%,#05080d);
+  backdrop-filter: none;
+  box-shadow: -12px 0 34px var(--shadow);
+  contain: layout paint style;
+  will-change: transform,opacity;
+  transition-property: opacity,transform,visibility;
+}
+.analysis-trace-studio .analysis-trace-toolbox:not(.open) { box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .configurable-trace-chart [data-analysis-trace-render-layer],
+  .analysis-trace-studio .analysis-trace-toolbox { will-change: auto; }
+}
+.reduced-motion .configurable-trace-chart [data-analysis-trace-render-layer],
+.reduced-motion .analysis-trace-studio .analysis-trace-toolbox { will-change: auto; }

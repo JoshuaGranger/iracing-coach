@@ -13,11 +13,11 @@ public static class ThemeColors
 {
     public const string DefaultId = "mint";
     public const string CustomId = "custom";
-    public const string DefaultCustomHex = "#65D0B6";
+    public const string DefaultCustomHex = "#5CE8C3";
 
     public static IReadOnlyList<ThemeColorPalette> Choices { get; } =
     [
-        new(DefaultId, "Mint", "#65D0B6", "#287565", "#328B78", "#17302C", "#91E8D3"),
+        new(DefaultId, "Mint", "#5CE8C3", "#167A66", "#20947B", "#153832", "#9FF8DF"),
         new("blue", "Blue", "#61C8F5", "#315F8B", "#3B73A6", "#182B3B", "#A8E0FA"),
         new("violet", "Violet", "#C89CFF", "#68458E", "#7B55A4", "#2D2139", "#E0C5FF"),
         new("coral", "Coral", "#FF8B7D", "#93463F", "#AA574D", "#3C2421", "#FFB8AF"),
@@ -60,8 +60,8 @@ public static class ThemeColors
     {
         _ = TryParseHex(NormalizeCustomHex(value), out var requested);
         var accent = KeepAccentVisible(requested);
-        var app = (R: 20, G: 21, B: 23);
-        var white = (R: 232, G: 233, B: 231);
+        var app = (R: 11, G: 16, B: 21);
+        var white = (R: 246, G: 248, B: 250);
         var fill = Mix(app, accent, .46);
         while (Contrast(fill, white) < 4.5) fill = Mix(app, fill, .86);
         return new(

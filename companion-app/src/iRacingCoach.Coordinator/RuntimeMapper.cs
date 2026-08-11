@@ -712,20 +712,181 @@ public static class RuntimeMapper
         var pitTargets = requestedDistanceValue > 0 && plannedLaps > 0 && calculatedStops is > 0
             ? Enumerable.Range(1, calculatedStops.Value).Select(stop => (int)Math.Round(plannedLaps * stop / (calculatedStops.Value + 1d), MidpointRounding.AwayFromZero)).ToArray()
             : requestedDistanceValue > 0 ? [] : sourcePitTargets;
-        var actions = Array(card, "actions").Select(item => new RaceAction(Text(item, "label") ?? "Priority", Claim(item))).ToArray();
-        var tire = actions.FirstOrDefault(item => item.Label.Contains("long", StringComparison.OrdinalIgnoreCase) || item.Label.Contains("tire", StringComparison.OrdinalIgnoreCase));
+        var sourceActions = Array(card, "actions").Select(item => new RaceAction(Text(item, "label") ?? "Priority", Claim(item))).ToArray();
+        var sourceStart = sourceActions.FirstOrDefault(item => item.Label.Equals("Start", StringComparison.OrdinalIgnoreCase));
+        var sourcePace = sourceActions.FirstOrDefault(item =>
+            item.Label.Contains("long", StringComparison.OrdinalIgnoreCase) ||
+            item.Label.Contains("pace", StringComparison.OrdinalIgnoreCase) ||
+            item.Label.Contains("tire", StringComparison.OrdinalIgnoreCase));
+        var tire = PlanningTire(sourcePace?.Claim.Text);
+        var shortRace = plannedLaps is > 0 and <= 25;
+        var startClaim = PlanningStartClaim(sourceStart?.Claim, tire);
+        var paceClaim = PlanningPaceClaim(sourcePace?.Claim, tire, plannedLaps, shortRace);
+        var strategyClaim = PlanningStrategyClaim(
+            sourceActions.FirstOrDefault(item => item.Label.Equals("Strategy", StringComparison.OrdinalIgnoreCase))?.Claim,
+            plannedLaps,
+            range,
+            calculatedStops,
+            pitTargets);
+        var actions = new[]
+        {
+            new RaceAction("Start", startClaim),
+            new RaceAction(shortRace ? "Race pace" : "Long run", paceClaim),
+            new RaceAction("Strategy", strategyClaim)
+        };
+        var triggers = PlanningTriggers(
+            Array(card, "race_triggers").Select(item => new RaceTrigger(Text(item, "label") ?? "Race trigger", Claim(item))).ToArray(),
+            plannedLaps,
+            range,
+            calculatedStops,
+            pitTargets);
         return new RacePlanBriefing(
             DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")) ?? "Recorded track", DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
             Boolean(identity, "is_fixed_setup") == true ? "Fixed" : "Open", plannedLaps > 0 ? plannedLaps : scheduledLaps,
             Number(strategy, "measured_green_fuel_gal_per_lap"), Number(strategy, "measured_caution_fuel_gal_per_lap"),
             rangeText, stopCount, pitTargets,
-            tire?.Claim.Text ?? "Use the recorded early-, middle-, and late-run comparison to set tire-management targets.", actions,
+            paceClaim.Text, actions,
             Array(playbook, "rows").Select(row => new CornerCoachingRow(
                 Text(row, "corner_phase") ?? Text(row, "zone_id") ?? "Recorded load zone",
                 Claim(Object(row, "phase_1")), Claim(Object(row, "phase_2")), Claim(Object(row, "phase_3")), Claim(Object(row, "groove")))).ToArray(),
-            Array(card, "race_triggers").Select(item => new RaceTrigger(Text(item, "label") ?? "Race trigger", Claim(item))).ToArray(),
+            triggers,
             Array(forecast, "assumptions").Select(Value).Where(value => value.Length > 0).ToArray(),
             Humanize(Text(strategy, "confidence")) ?? "Low");
+    }
+
+    private static string? PlanningTire(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var match = Regex.Match(text, @"\b(LF|RF|LR|RR)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success ? match.Value.ToUpperInvariant() : null;
+    }
+
+    private static EvidenceText PlanningStartClaim(EvidenceText? source, string? tire)
+    {
+        if (PlanningInstructionIsActionable(source)) return source!;
+        return new EvidenceText(
+            EvidenceKind.Inferred,
+            tire is not null
+                ? $"Protect the {tire} from the start: finish brake release before adding steering."
+                : "Open conservatively: finish brake release before adding steering, then build throttle.");
+    }
+
+    private static EvidenceText PlanningPaceClaim(EvidenceText? source, string? tire, int plannedLaps, bool shortRace)
+    {
+        if (source?.Text.Contains("repair", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return new EvidenceText(
+                EvidenceKind.Inferred,
+                "Reset the baseline after repairs; judge pace only on a clean repaired-car run.");
+        }
+        if (shortRace && plannedLaps > 0)
+        {
+            return new EvidenceText(
+                EvidenceKind.Inferred,
+                tire is not null
+                    ? $"For all {plannedLaps} laps, protect the {tire} with repeatable entries and progressive brake release."
+                    : $"For all {plannedLaps} laps, keep brake release, throttle pickup, and steering corrections repeatable.");
+        }
+        if (PlanningInstructionIsActionable(source)) return source!;
+        return new EvidenceText(
+            EvidenceKind.Inferred,
+            tire is not null
+                ? $"As the run ages, protect the {tire} with repeatable entries and progressive brake release."
+                : "As the run ages, keep entries, throttle pickup, and steering corrections repeatable.");
+    }
+
+    private static EvidenceText PlanningStrategyClaim(
+        EvidenceText? source,
+        int plannedLaps,
+        IReadOnlyList<double> range,
+        int? stops,
+        IReadOnlyList<int> pitTargets)
+    {
+        var conservativeRange = range.Count > 0 ? range.Min() : (double?)null;
+        if (plannedLaps > 0 && conservativeRange is > 0 && stops == 0)
+        {
+            var margin = Math.Max(0, conservativeRange.Value - plannedLaps);
+            return new EvidenceText(
+                EvidenceKind.Derived,
+                $"No fuel stop for {plannedLaps} laps; protect the {margin:0.0}-lap conservative finish margin.");
+        }
+        if (plannedLaps > 0 && stops is > 0)
+        {
+            var target = pitTargets.Count > 0
+                ? $"; target {string.Join(" and ", pitTargets.Select(lap => $"Lap {lap}"))}"
+                : string.Empty;
+            return new EvidenceText(
+                EvidenceKind.Derived,
+                $"Plan {stops} fuel stop{(stops == 1 ? string.Empty : "s")} for {plannedLaps} laps{target}.");
+        }
+        if (source is { Kind: not EvidenceKind.Unavailable } && !string.IsNullOrWhiteSpace(source.Text)) return source;
+        return new EvidenceText(EvidenceKind.Unavailable, "A finish-range decision needs another clean fuel sample.");
+    }
+
+    private static IReadOnlyList<RaceTrigger> PlanningTriggers(
+        IReadOnlyList<RaceTrigger> source,
+        int plannedLaps,
+        IReadOnlyList<double> range,
+        int? stops,
+        IReadOnlyList<int> pitTargets)
+    {
+        var result = new List<RaceTrigger>();
+        var phase = source.FirstOrDefault(item =>
+            item.Label.Contains("checkpoint", StringComparison.OrdinalIgnoreCase) ||
+            item.Label.Contains("evolution", StringComparison.OrdinalIgnoreCase));
+        if (phase is { Claim.Kind: not EvidenceKind.Unavailable } && !string.IsNullOrWhiteSpace(phase.Claim.Text))
+        {
+            var text = Regex.Replace(phase.Claim.Text, @"^Set-age\s+", "Recheck balance at ", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+                .Replace("->", "-");
+            result.Add(new RaceTrigger("Balance checkpoint", new EvidenceText(phase.Claim.Kind, text)));
+        }
+
+        var conservativeRange = range.Count > 0 ? range.Min() : (double?)null;
+        if (plannedLaps > 0 && conservativeRange is > 0 && stops == 0)
+        {
+            result.Add(new RaceTrigger(
+                "Fuel margin",
+                new EvidenceText(EvidenceKind.Derived,
+                    $"Stay out while projected range clears the {plannedLaps}-lap finish; reconsider only if the margin disappears.")));
+        }
+        else if (plannedLaps > 0 && stops is > 0)
+        {
+            var window = pitTargets.Count > 0
+                ? string.Join(" or ", pitTargets.Select(lap => $"Lap {lap}"))
+                : "the balanced stint window";
+            result.Add(new RaceTrigger(
+                "Pit window",
+                new EvidenceText(EvidenceKind.Derived,
+                    $"Target {window}; move the stop only when live burn no longer supports the next stint.")));
+        }
+        else
+        {
+            result.Add(new RaceTrigger(
+                "Fuel check",
+                new EvidenceText(EvidenceKind.Inferred,
+                    "Update the fuel call only after live burn establishes a finish margin.")));
+        }
+
+        var repair = source.FirstOrDefault(item => item.Claim.Text.Contains("repaired-car", StringComparison.OrdinalIgnoreCase));
+        result.Add(repair is not null
+            ? new RaceTrigger("Repair baseline", repair.Claim)
+            : new RaceTrigger(
+                "Balance response",
+                new EvidenceText(EvidenceKind.Inferred,
+                    "If balance changes, alter one driving input at a time; undo it if pace or stability worsens.")));
+        return result;
+    }
+
+    private static bool PlanningInstructionIsActionable(EvidenceText? claim)
+    {
+        if (claim is null || claim.Kind == EvidenceKind.Unavailable || string.IsNullOrWhiteSpace(claim.Text)) return false;
+        if (Regex.IsMatch(
+            claim.Text,
+            @"\b(?:positive|negative) (?:value )?(?:is|means)|\b(?:higher|lower) (?:means|indicates)|\bthis (?:value|metric|measurement) (?:means|describes)|\bcompare the same run(?:'s)? tire condition\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return false;
+        var opening = claim.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.TrimEnd(':').ToLowerInvariant();
+        return opening is "avoid" or "brake" or "build" or "carry" or "enter" or "exit" or "feed" or "finish" or "hold" or "keep" or "open" or "protect" or "reduce" or "release" or "reset" or "roll" or "stabilize" or "turn" or "unwind" or "validate";
     }
 
     private static double? RepresentativeLapSeconds(JsonElement view)
@@ -1012,24 +1173,64 @@ public static class RuntimeMapper
             Text(item, "team_name"),
             Boolean(item, "is_player") == true,
             Boolean(item, "is_spectator") == true)).ToArray();
-        var frames = Array(replay, "frames").Select(frame => new AnalysisReplayFrame(
-            Number(frame, "session_time_s") ?? 0,
-            Text(frame, "session_state") ?? "unknown",
-            Long(frame, "global_flags") ?? 0,
-            Array(frame, "global_flag_labels").Select(Value).Where(value => value.Length > 0).ToArray(),
-            Array(frame, "cars").Select(car => new AnalysisReplayCarState(
-                Integer(car, "car_index"),
-                Number(car, "lap_pct") ?? 0,
-                NullableInteger(car, "lap"),
-                NullableInteger(car, "completed_laps"),
-                NullableInteger(car, "overall_position"),
-                NullableInteger(car, "class_position"),
-                Boolean(car, "on_pit_road"),
-                NullableInteger(car, "track_surface"),
-                Text(car, "track_surface_label"),
-                NullableInteger(car, "pace_flags"),
-                Number(car, "last_lap_time_s"),
-                Number(car, "best_lap_time_s"))).ToArray())).ToArray();
+        var frames = Array(replay, "frames").Select(frame =>
+        {
+            var player = Object(frame, "player_telemetry");
+            var playerTelemetry = player.ValueKind == JsonValueKind.Object
+                ? new AnalysisReplayPlayerTelemetry(
+                    NullableInteger(player, "incidentPoints"),
+                    NullableInteger(player, "driverIncidentPoints"),
+                    NullableInteger(player, "teamIncidentPoints"),
+                    NullableInteger(player, "trackSurface"),
+                    Boolean(player, "onPitRoad"),
+                    Boolean(player, "towing"),
+                    Boolean(player, "repairRequired"),
+                    Number(player, "mandatoryRepairSeconds"),
+                    Number(player, "optionalRepairSeconds"),
+                    Number(player, "speedMetersPerSecond"),
+                    Number(player, "throttle"),
+                    Number(player, "brake"),
+                    Number(player, "steeringWheelAngleRadians"),
+                    NullableInteger(player, "gear"),
+                    Number(player, "rpm"),
+                    Number(player, "yawRateRadiansPerSecond"),
+                    Number(player, "lateralAccelerationG"),
+                    Number(player, "longitudinalAccelerationG"))
+                : null;
+            var events = Array(frame, "events").Select(item => new AnalysisReplayObservedEvent(
+                Text(item, "kind") ?? "event",
+                Text(item, "label") ?? "Recorded event",
+                Text(item, "sourceChannel") ?? Text(item, "source_channel"),
+                Number(item, "delta"))).ToArray();
+            var cars = Array(frame, "cars").Select(MapReplayCarObject).ToArray();
+            if (cars.Length == 0)
+                cars = Array(frame, "car_rows")
+                    .Where(row => row.ValueKind == JsonValueKind.Array)
+                    .Select(MapReplayCarRow)
+                    .ToArray();
+            return new AnalysisReplayFrame(
+                Number(frame, "session_time_s") ?? 0,
+                Text(frame, "session_state") ?? "unknown",
+                Long(frame, "global_flags") ?? 0,
+                Array(frame, "global_flag_labels").Select(Value).Where(value => value.Length > 0).ToArray(),
+                cars,
+                playerTelemetry,
+                events,
+                Boolean(frame, "gap_before") == true);
+        }).ToArray();
+        var representationRoot = Object(replay, "representation");
+        var representation = representationRoot.ValueKind == JsonValueKind.Object
+            ? new AnalysisReplayRepresentation(
+                NullableInteger(representationRoot, "source_frame_count"),
+                NullableInteger(representationRoot, "display_frame_count"),
+                Number(representationRoot, "source_sample_rate_hz"),
+                Number(representationRoot, "display_sample_rate_hz"),
+                NullableInteger(representationRoot, "frame_budget"),
+                Boolean(representationRoot, "decimated"),
+                Number(representationRoot, "routine_interval_s"),
+                Boolean(representationRoot, "keyframes_preserved"),
+                NullableInteger(representationRoot, "dropped_keyframe_count"))
+            : null;
         return new AnalysisRaceReplay(
             Text(replay, "status") ?? "unavailable",
             Array(replay, "unavailable_reasons").Select(Value).Where(value => value.Length > 0).ToArray(),
@@ -1041,7 +1242,70 @@ public static class RuntimeMapper
             NullableInteger(replay, "player_car_index"),
             Text(replay, "interpolation") ?? string.Empty,
             temporalCoverage,
-            participantCoverage);
+            participantCoverage,
+            representation);
+    }
+
+    private static AnalysisReplayCarState MapReplayCarObject(JsonElement car) => new(
+        Integer(car, "car_index"),
+        Number(car, "lap_pct"),
+        NullableInteger(car, "lap"),
+        NullableInteger(car, "completed_laps"),
+        NullableInteger(car, "overall_position"),
+        NullableInteger(car, "class_position"),
+        Boolean(car, "on_pit_road"),
+        NullableInteger(car, "track_surface"),
+        Text(car, "track_surface_label"),
+        NullableInteger(car, "pace_flags"),
+        Number(car, "last_lap_time_s"),
+        Number(car, "best_lap_time_s"));
+
+    private static AnalysisReplayCarState MapReplayCarRow(JsonElement row) => new(
+        ReplayRowInteger(row, 0) ?? 0,
+        ReplayRowNumber(row, 1),
+        ReplayRowInteger(row, 2),
+        ReplayRowInteger(row, 3),
+        ReplayRowInteger(row, 4),
+        ReplayRowInteger(row, 5),
+        ReplayRowBoolean(row, 6),
+        ReplayRowInteger(row, 7),
+        null,
+        ReplayRowInteger(row, 8),
+        ReplayRowNumber(row, 9),
+        ReplayRowNumber(row, 10));
+
+    private static JsonElement ReplayRowValue(JsonElement row, int index) =>
+        row.ValueKind == JsonValueKind.Array && index >= 0 && index < row.GetArrayLength()
+            ? row[index]
+            : default;
+
+    private static double? ReplayRowNumber(JsonElement row, int index)
+    {
+        var value = ReplayRowValue(row, index);
+        return value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var parsed) && double.IsFinite(parsed)
+            ? parsed
+            : null;
+    }
+
+    private static int? ReplayRowInteger(JsonElement row, int index)
+    {
+        var value = ReplayRowValue(row, index);
+        if (value.ValueKind != JsonValueKind.Number) return null;
+        if (value.TryGetInt32(out var integer)) return integer;
+        return value.TryGetDouble(out var parsed) && double.IsFinite(parsed)
+            ? (int)Math.Round(parsed)
+            : null;
+    }
+
+    private static bool? ReplayRowBoolean(JsonElement row, int index)
+    {
+        var value = ReplayRowValue(row, index);
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
     }
 
     private static AnalysisTireLearningPrediction? MapTirePrediction(JsonElement learning)

@@ -43,7 +43,6 @@ public partial class LiveMonitorWindow : Window
     private bool _lastRenderedConnected;
     private int? _lastRenderedLap;
     private bool _trendSeedPending = true;
-    private double? _scaleSettingsBackup;
     private double _cellWidth = 180;
     private double _cellHeight = 180;
     private string _lastKnownEditorSignature;
@@ -164,7 +163,6 @@ public partial class LiveMonitorWindow : Window
         var signature = VisualSignature();
         if (string.Equals(signature, _lastKnownEditorSignature, StringComparison.Ordinal)) return;
         _lastKnownEditorSignature = signature;
-        _scaleSettingsBackup = null;
         _scaleSettingsOpen = false;
         _trendRanges.Clear();
         RenderAll();
@@ -287,8 +285,6 @@ public partial class LiveMonitorWindow : Window
         var dense = tileWidth < 88 || tileHeight < 64;
         var padding = dense ? 2d : compact ? 7d : 11d;
         var margin = dense ? 1d : 4d;
-        var accentHeight = dense ? 1d : 2d;
-        var accent = AccentFor(tile, definition);
         var border = new Border
         {
             Margin = new Thickness(margin),
@@ -302,11 +298,9 @@ public partial class LiveMonitorWindow : Window
         };
 
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(accentHeight) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.Children.Add(new Border { Height = accentHeight, Background = accent, CornerRadius = new CornerRadius(1), Opacity = .9 });
 
         var header = new TextBlock
         {
@@ -316,21 +310,21 @@ public partial class LiveMonitorWindow : Window
             Foreground = Resource<Brush>("TextSecondaryBrush"),
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
-            Margin = new Thickness(0, compact ? 3 : 6, 0, 2),
+            Margin = new Thickness(0, 0, 0, compact ? 2 : 5),
             Visibility = dense ? Visibility.Collapsed : Visibility.Visible
         };
-        Grid.SetRow(header, 1);
+        Grid.SetRow(header, 0);
         root.Children.Add(header);
 
         var contentWidth = Math.Max(12, tileWidth - (padding + margin) * 2);
-        var headerReserve = dense ? accentHeight : compact ? 19 : 25;
+        var headerReserve = dense ? 0 : compact ? 18 : 24;
         var contentHeight = Math.Max(12, tileHeight - (padding + margin) * 2 - headerReserve);
         var readingVisual = BuildReading(tile, definition, contentWidth, contentHeight);
         var missingVisual = BuildMissing(contentHeight);
         var contentHost = new Grid();
         contentHost.Children.Add(readingVisual.Root);
         contentHost.Children.Add(missingVisual.Root);
-        Grid.SetRow(contentHost, 2);
+        Grid.SetRow(contentHost, 1);
         root.Children.Add(contentHost);
 
         var secondary = new TextBlock
@@ -342,7 +336,7 @@ public partial class LiveMonitorWindow : Window
             Margin = new Thickness(0, 3, 0, 0),
             Visibility = Visibility.Collapsed
         };
-        Grid.SetRow(secondary, 3);
+        Grid.SetRow(secondary, 2);
         root.Children.Add(secondary);
 
         border.Child = root;
@@ -578,10 +572,15 @@ public partial class LiveMonitorWindow : Window
 
     private ReadingVisual BuildTrend(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition, Brush accent, double width, double height)
     {
-        width = Math.Max(30, width);
-        height = Math.Max(24, height);
-        var canvas = new Canvas { Width = width, Height = height, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HAlignment.Stretch };
-        canvas.Children.Add(new Line { X1 = 0, X2 = width, Y1 = height / 2, Y2 = height / 2, Stroke = Resource<Brush>("BorderSubtleBrush"), StrokeThickness = 1 });
+        width = Math.Max(30, width - 12);
+        height = Math.Max(24, height - 12);
+        var canvas = new Canvas { Width = width, Height = height, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HAlignment.Center };
+        for (var index = 1; index < 4; index++)
+        {
+            var x = Math.Round(width * index / 4) + .5;
+            canvas.Children.Add(new Line { X1 = x, X2 = x, Y1 = 0, Y2 = height, Stroke = Resource<Brush>("MonitorChartGridBrush"), StrokeThickness = 1, Opacity = .32 });
+        }
+        canvas.Children.Add(new Line { X1 = 0, X2 = width, Y1 = Math.Round(height / 2) + .5, Y2 = Math.Round(height / 2) + .5, Stroke = Resource<Brush>("MonitorChartGridBrush"), StrokeThickness = 1, Opacity = .66 });
         var translation = new TranslateTransform();
         var trace = new Path
         {
@@ -594,10 +593,22 @@ public partial class LiveMonitorWindow : Window
             RenderTransform = translation
         };
         canvas.Children.Add(trace);
-        var label = new TextBlock { FontSize = 12, FontWeight = FontWeights.SemiBold, Background = Resource<Brush>("MonitorSurfaceBrush"), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = Math.Max(24, width - 8), Padding = new Thickness(2, 0, 3, 1) };
+        var label = new TextBlock { FontSize = 12, FontWeight = FontWeights.SemiBold, Background = Resource<Brush>("MonitorSurfaceBrush"), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = Math.Max(24, width - 8), Padding = new Thickness(3, 1, 4, 2) };
         Canvas.SetLeft(label, 3);
-        Canvas.SetTop(label, 2);
+        Canvas.SetBottom(label, 2);
         canvas.Children.Add(label);
+        var chartWell = new Border
+        {
+            Padding = new Thickness(5),
+            ClipToBounds = true,
+            CornerRadius = new CornerRadius(5),
+            Background = Resource<Brush>("MonitorChartBrush"),
+            BorderBrush = Resource<Brush>("MonitorBorderBrush"),
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Child = canvas
+        };
         var buffer = new TrendBuffer(tile.TrendDuration, tile.MetricId, tile.Unit);
         void Update(LiveTelemetryMetricReading reading, LiveMonitorState state)
         {
@@ -622,7 +633,7 @@ public partial class LiveMonitorWindow : Window
             if (Math.Abs(translation.X - target) >= .01) translation.X = target;
             return motion.Continue;
         }
-        return new ReadingVisual(canvas, Update, Reset, Animate, true);
+        return new ReadingVisual(chartWell, Update, Reset, Animate, true);
     }
 
     private (double Minimum, double Maximum) TrendRange(string tileId, IReadOnlyList<double> values)
@@ -766,7 +777,6 @@ public partial class LiveMonitorWindow : Window
     {
         if (_updatingControls || LayoutSelector.SelectedValue is not string id || id == Preferences.ActiveLayoutId) return;
         _scaleSettingsOpen = false;
-        _scaleSettingsBackup = null;
         Preferences.ActiveLayoutId = id;
         _trendRanges.Clear();
         SavePreferences();
@@ -782,40 +792,54 @@ public partial class LiveMonitorWindow : Window
 
     private void ScaleSettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_scaleSettingsOpen) { CloseScaleSettings(commit: true); return; }
-        _scaleSettingsBackup = Preferences.OverallScale;
+        if (_scaleSettingsOpen) { CloseScaleSettings(); return; }
         _scaleSettingsOpen = true;
-        _updatingControls = true;
-        ScaleSlider.Value = Math.Round(Preferences.OverallScale * 100 / 10) * 10;
-        ScaleValue.Text = $"{Preferences.OverallScale:P0}";
-        _updatingControls = false;
+        UpdateSizePresetSelection();
         RenderSurfaceState();
     }
 
-    private void CancelScaleSettings_Click(object sender, RoutedEventArgs e) => CloseScaleSettings(commit: false);
-    private void ApplyScaleSettings_Click(object sender, RoutedEventArgs e) => CloseScaleSettings(commit: true);
+    private void CloseScaleSettings_Click(object sender, RoutedEventArgs e) => CloseScaleSettings();
 
-    private void CloseScaleSettings(bool commit)
+    private void CloseScaleSettings()
     {
-        if (!commit && _scaleSettingsBackup.HasValue) Preferences.OverallScale = _scaleSettingsBackup.Value;
         _scaleSettingsOpen = false;
-        _scaleSettingsBackup = null;
-        SavePreferences();
-        RenderAll();
+        RenderSurfaceState();
     }
 
-    private void ScaleSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void SizePresetButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updatingControls || !_scaleSettingsOpen || !IsLoaded) return;
-        Preferences.OverallScale = Math.Clamp(Math.Round(ScaleSlider.Value / 10) / 10, .7, 2);
-        ScaleValue.Text = $"{Preferences.OverallScale:P0}";
+        if (sender is not Button { CommandParameter: string raw } ||
+            !double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var requested)) return;
+
+        // Button.Click occurs after pointer release. Hide the chooser first and
+        // defer the one scale/layout commit until the routed input event has
+        // unwound, so no control can move while it still owns mouse capture.
+        CloseScaleSettings();
+        _ = Dispatcher.BeginInvoke(() => ApplySizePreset(requested), DispatcherPriority.ContextIdle);
+    }
+
+    private void ApplySizePreset(double requested)
+    {
+        Preferences.OverallScale = Math.Clamp(requested, .8, 1.25);
+        SavePreferences();
         ApplyScale();
-        Dispatcher.BeginInvoke(EnsureWindowVisible, DispatcherPriority.ContextIdle);
+        EnsureWindowVisible();
+    }
+
+    private void UpdateSizePresetSelection()
+    {
+        var current = Preferences.OverallScale;
+        var nearest = new[] { .8d, 1d, 1.25d }.MinBy(candidate => Math.Abs(candidate - current));
+        CompactSizeButton.Tag = Math.Abs(nearest - .8) < .001 ? "selected" : null;
+        StandardSizeButton.Tag = Math.Abs(nearest - 1) < .001 ? "selected" : null;
+        ExpandedSizeButton.Tag = Math.Abs(nearest - 1.25) < .001 ? "selected" : null;
     }
 
     private void ApplyScale()
     {
-        var scale = Math.Clamp(Preferences.OverallScale, .7, 2);
+        var scale = Math.Clamp(Preferences.OverallScale, .8, 1.25);
+        if (RootScale.LayoutTransform is ScaleTransform current &&
+            Math.Abs(current.ScaleX - scale) < .001 && Math.Abs(current.ScaleY - scale) < .001) return;
         RootScale.LayoutTransform = new ScaleTransform(scale, scale);
     }
 
@@ -839,6 +863,7 @@ public partial class LiveMonitorWindow : Window
         return null;
     }
 
+    private void ReturnToAppButton_Click(object sender, RoutedEventArgs e) => _state.SetLiveMonitorVisible(false);
     private void CloseButton_Click(object sender, RoutedEventArgs e) => _state.SetLiveMonitorVisible(false);
 
     private void SavePreferences()

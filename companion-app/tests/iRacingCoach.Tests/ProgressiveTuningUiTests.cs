@@ -131,12 +131,20 @@ public sealed class ProgressiveTuningUiTests
         var editor = File.ReadAllText(Path.Combine(ui, "ProgressiveTuningFeedbackEditor.razor"));
         var selector = File.ReadAllText(Path.Combine(ui, "TuningTrackSelector.razor"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        var iterationCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "iteration-ux.css"));
+        var state = File.ReadAllText(Path.Combine(Directory.GetParent(ui)!.FullName, "iRacingCoach.Coordinator", "CompanionState.cs"));
 
         StringAssert.Contains(page, "tuning-workbench-v3");
         StringAssert.Contains(page, "tuning-session-bar");
-        StringAssert.Contains(page, "tuning-feedback-popover");
+        StringAssert.Contains(page, "data-active-corner-editor");
         StringAssert.Contains(page, "tuning-toolbox");
+        StringAssert.Contains(page, "Open setup · can receive changes");
+        StringAssert.Contains(page, "Fixed setup · driving evidence only");
         StringAssert.Contains(page, "Run phase for all turns");
+        StringAssert.Contains(page, "State.TuningActiveRunPhase");
+        Assert.DoesNotContain("_activeRunPhase", page);
+        StringAssert.Contains(state, "public string TuningActiveRunPhase { get; set; } = \"early\";");
+        Assert.DoesNotContain("TuningActiveRunPhase", File.ReadAllText(Path.Combine(Directory.GetParent(ui)!.FullName, "iRacingCoach.Contracts", "Models.cs")), "The phase selector is launch-session UI state, not a persisted setting contract.");
         StringAssert.Contains(page, "Recorded tire wear");
         StringAssert.Contains(page, "Begin analysis");
         StringAssert.Contains(page, "SetPriorityCorner");
@@ -147,6 +155,9 @@ public sealed class ProgressiveTuningUiTests
         StringAssert.Contains(editor, "(\"loose\", \"Loose\")");
         StringAssert.Contains(editor, "aria-label=\"Add symptom\"");
         StringAssert.Contains(editor, "aria-label=\"Add note\"");
+        StringAssert.Contains(editor, "Severity: how much this behavior hurt");
+        StringAssert.Contains(editor, "Confidence: how certain you are");
+        Assert.DoesNotContain("ToggleRatingsPanel", editor);
         Assert.DoesNotContain("Not assessed", editor, StringComparison.OrdinalIgnoreCase);
         StringAssert.Contains(selector, "ActiveRunPhase");
         StringAssert.Contains(selector, "feedback-comfortable");
@@ -156,7 +167,11 @@ public sealed class ProgressiveTuningUiTests
         StringAssert.Contains(css, ".page-frame:has(.tuning-workbench-v3)");
         StringAssert.Contains(css, "overflow: hidden");
         StringAssert.Contains(css, "grid-template-columns: minmax(0, 2fr) minmax(318px, 1fr)");
+        StringAssert.Contains(css, "grid-template-columns: minmax(0, 1fr) clamp(238px, 34vw, 300px)");
+        Assert.DoesNotContain(".tuning-workbench-v3 { height: auto; min-height: 900px; }", css);
         StringAssert.Contains(css, "var(--motion-structure)");
+        StringAssert.Contains(iterationCss, ".tuning-active-corner-panel");
+        StringAssert.Contains(iterationCss, ".tuning-turn-segment.active:not(.selected)");
     }
 
     [TestMethod]

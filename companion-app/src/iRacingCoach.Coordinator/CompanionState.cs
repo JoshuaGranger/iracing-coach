@@ -25,8 +25,8 @@ public sealed class CompanionState : IDisposable
     // The cached backend response is part of the UI contract. Bump this when
     // mapped analysis fields change so an older response cannot silently hide
     // newly available maps, replay coverage, tire learning, or technical data.
-    private const int UiAnalysisCacheSchemaVersion = 10;
-    private const string AppVersion = "0.15.0";
+    private const int UiAnalysisCacheSchemaVersion = 11;
+    private const string AppVersion = "0.16.0";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
@@ -115,6 +115,10 @@ public sealed class CompanionState : IDisposable
     public string PlanMessage { get; private set; } = "Choose one of your recorded races to use its exact car, track, and setup context.";
     public string SetupMessage { get; private set; } = "Only setup files found on this PC are shown.";
     public string TuningMessage { get; private set; } = "Choose an analyzed open-setup race and describe what the car did.";
+    // UI-only launch-session preference. This intentionally does not live in
+    // CompanionSettings, so every app launch starts on Early while navigation
+    // within the running app preserves the driver's selected phase.
+    public string TuningActiveRunPhase { get; set; } = "early";
     public string SymptomText { get; set; } = string.Empty;
     public string TuningRunPhase { get; set; } = "Late run";
     public string TuningCornerPhase { get; set; } = "Center";

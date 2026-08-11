@@ -72,7 +72,9 @@ public sealed class RaceFoundationMapperTests
                 0,
                 coverage,
                 [new LiveReplayParticipant(0, "7", 1, "Class", "Car", "Driver", null, false)],
-                [new LiveReplayCarSample(0, index / 21d, 1, 0, 1, 1, false, 3, 0, 25.1, 24.9)]);
+                [new LiveReplayCarSample(0, index / 21d, 1, 0, 1, 1, false, 3, 0, 25.1, 24.9)],
+                index,
+                2);
             using (var first = new LiveReplayCaptureStore(() => root))
             {
                 for (var index = 0; index < 20; index++) first.Capture(frame(index));
@@ -85,13 +87,16 @@ public sealed class RaceFoundationMapperTests
             }
 
             var directory = Directory.GetDirectories(Path.Combine(root, "telemetry-traces", "live-replay")).Single();
-            Assert.HasCount(2, Directory.GetFiles(directory, "chunk-*.json"));
+            Assert.HasCount(2, Directory.GetFiles(directory, $"chunk-*{LiveReplayChunkCodec.FileExtension}"));
             using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "manifest.json")));
+            Assert.AreEqual(2, manifest.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.AreEqual("iracing-coach-live-replay-v2-delta-gzip", manifest.RootElement.GetProperty("format").GetString());
             Assert.AreEqual("finalized", manifest.RootElement.GetProperty("status").GetString());
             Assert.AreEqual("disconnected", manifest.RootElement.GetProperty("finalizationReason").GetString());
             Assert.AreEqual(21, manifest.RootElement.GetProperty("frameCount").GetInt32());
             Assert.AreEqual(2, manifest.RootElement.GetProperty("chunks").GetArrayLength());
             Assert.AreEqual("Race", manifest.RootElement.GetProperty("sessionType").GetString());
+            Assert.AreEqual(21, manifest.RootElement.GetProperty("captureMetrics").GetProperty("writtenFrameCount").GetInt32());
         }
         finally
         {
@@ -137,11 +142,13 @@ public sealed class RaceFoundationMapperTests
             "race_replay": {
               "status": "usable", "unavailable_reasons": [], "limitations": [], "sample_rate_hz": 2,
               "player_car_index": 0, "interpolation": "linear",
+              "representation":{"source_frame_count":3600,"display_frame_count":900,"source_sample_rate_hz":60,"display_sample_rate_hz":15,"frame_budget":10000,"decimated":true,"routine_interval_s":0.066667,"keyframes_preserved":true,"dropped_keyframe_count":0},
               "coverage": [{"channel":"CarIdxLapDistPct","status":"partial","recorded_segment_count":3,"segment_count":4,"recorded_fraction":0.75,"all_segments_recorded":false,"temporal_gap_count":1}],
               "temporal_coverage":{"status":"partial","recorded_frame_count":180,"expected_frame_count":200,"recorded_fraction":0.9,"gap_count":1,"largest_gap_s":4.5,"start_session_time_s":10,"end_session_time_s":110},
               "participant_coverage":[{"car_index":0,"status":"partial","recorded_frame_count":175,"total_frame_count":180,"recorded_fraction":0.9722,"recorded_segment_count":3,"segment_count":4,"first_session_time_s":10,"last_session_time_s":109.5}],
               "participants": [{"car_index":0,"car_number":"7","class_id":1,"driver_name":"Player","is_player":true,"is_spectator":false}],
-              "frames": [{"session_time_s":10,"session_state":"racing","global_flags":4,"global_flag_labels":["green"],"cars":[{"car_index":0,"lap_pct":0.25,"lap":1,"overall_position":2,"on_pit_road":false,"last_lap_time_s":24.7,"best_lap_time_s":24.5}]}]
+              "car_columns":["car_index","lap_pct","lap","completed_laps","overall_position","class_position","on_pit_road","track_surface","pace_flags","last_lap_time_s","best_lap_time_s"],
+              "frames": [{"session_time_s":10,"session_state":"racing","global_flags":4,"global_flag_labels":["green"],"gap_before":true,"player_telemetry":{"incidentPoints":2,"onPitRoad":false,"towing":false,"repairRequired":false,"speedMetersPerSecond":45.5,"throttle":0.8},"events":[{"kind":"incident_points","label":"Incident points changed","sourceChannel":"PlayerCarMyIncidentCount","delta":2}],"car_rows":[[0,0.25,1,null,2,null,false,3,0,24.7,24.5],[1,null,null,null,null,null,null,null,null,null,null]]}]
             },
             "tire_learning": {
               "context": {"family":"nascar_truck","track_id":7,"track_config":"Oval","setup_type":"fixed","tire_compound":0},
@@ -187,6 +194,17 @@ public sealed class RaceFoundationMapperTests
         Assert.AreEqual(2, mapped.Replay?.Frames[0].Cars[0].OverallPosition);
         Assert.AreEqual(24.7d, mapped.Replay?.Frames[0].Cars[0].LastLapSeconds);
         Assert.AreEqual(24.5d, mapped.Replay?.Frames[0].Cars[0].BestLapSeconds);
+        Assert.IsNull(mapped.Replay?.Frames[0].Cars[1].LapPercent, "A missing car position must not be mapped to the start/finish line.");
+        Assert.IsTrue(mapped.Replay!.Frames[0].GapBefore);
+        Assert.AreEqual(2, mapped.Replay?.Frames[0].PlayerTelemetry?.IncidentPoints);
+        Assert.AreEqual(45.5d, mapped.Replay?.Frames[0].PlayerTelemetry?.SpeedMetersPerSecond);
+        Assert.AreEqual("incident_points", mapped.Replay?.Frames[0].Events?.Single().Kind);
+        Assert.AreEqual("PlayerCarMyIncidentCount", mapped.Replay?.Frames[0].Events?.Single().SourceChannel);
+        Assert.AreEqual(3_600, mapped.Replay?.Representation?.SourceFrameCount);
+        Assert.AreEqual(900, mapped.Replay?.Representation?.DisplayFrameCount);
+        Assert.AreEqual(15d, mapped.Replay?.Representation?.DisplaySampleRateHz);
+        Assert.IsTrue(mapped.Replay!.Representation!.KeyframesPreserved!.Value);
+        Assert.AreEqual(0, mapped.Replay.Representation.DroppedKeyframeCount);
         var replayCarProperties = mapped.Replay!.Frames[0].Cars[0].GetType().GetProperties().Select(property => property.Name).ToArray();
         foreach (var forbidden in new[] { "Fuel", "Throttle", "Brake", "Steering", "Setup", "TireWear", "TireTemperature" })
             CollectionAssert.DoesNotContain(replayCarProperties, forbidden, $"Replay must not invent competitor {forbidden} data.");

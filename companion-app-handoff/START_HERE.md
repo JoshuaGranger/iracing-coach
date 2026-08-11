@@ -2,7 +2,9 @@
 
 This packet is intended to be copied with the entire `iRacing Coach` folder to the Windows development machine. It contains the product contract, deterministic backend, schemas, sanitized fixtures, tests, deployment rules, and verification scripts needed to build the companion app.
 
-Version boundary: `0.14.2` is the latest stable packaged release. The current tree identifies `0.15.0` development source and uses direct development executables for feedback; it is not a 0.15.0 installer or portable release. The current integrated evidence is 211 .NET tests, 229 Python tests, and a verified 17-tool/114-file handoff.
+Version boundary: `0.14.2` is the latest accepted stable packaged release. The current tree identifies `0.16.0` development source and is producing an explicitly requested simulator-feedback installer; it is not accepted merely because it builds. The current source gates passed 255/255 .NET tests, 247/247 Python tests, 9/9 first-party JavaScript syntax checks, and a Release solution build with zero warnings and zero errors. The exact 0.16.0 source commit, handoff inventory, installer hash, and lifecycle evidence remain package-stage records and are not inherited from 0.15.0.
+
+Real-data browser evidence for this source includes the August 9 Iowa legacy Race replay (7,775 frames across five segments) at 1280x720 and 1920x1080, a complete logical 82-lap selection with bounded rendering, and an automated bounded synthetic 500-lap case. These are development checks, not a stable-package designation, real high-refresh cadence certification, or Joshua's acceptance. See `../documentation/06-reality/implementation-snapshot-0.16.0-development.md` for measurements and known limits.
 
 ## Current development round
 
@@ -17,7 +19,7 @@ Use this exact direction:
 ## Required reading order
 
 1. `BUILD_SPEC.md` - product, screens, architecture, and delivery sequence.
-2. `UI_DESIGN_SYSTEM.md` and `config/theme.dark.json` - binding technology choice, gentle dark visual language, components, telemetry palette, and accessibility rules.
+2. `UI_DESIGN_SYSTEM.md` and `config/theme.dark.json` - binding technology choice, high-contrast graphite visual language, components, telemetry palette, and accessibility rules.
 3. `BACKEND_INTEGRATION.md` - MCP/CLI process contract and environment configuration.
 4. `AI_ORCHESTRATION.md` - optional Codex background synthesis and authentication boundary.
 5. `SECURITY_AND_TRANSFER.md` - private data, credentials, logging, packaging, and upgrade rules.
@@ -36,11 +38,11 @@ If prose and executable behavior differ, the current MCP `tools/list`, compatibi
 ## What is included
 
 - A standard-library-only Python 3.10+ deterministic backend.
-- Seventeen bounded MCP tools plus JSON CLI fallbacks.
+- Bounded MCP tools plus JSON CLI fallbacks; use the generated contracts and current `tools/list` rather than a prose count.
 - Race selection, telemetry decoding, tires, fuel, cautions, strategy, damage/tow/repair, corner phases, groove evidence, archives, setup packages, and controlled tuning history.
 - Garage61 client/auth plumbing, ready to activate after API approval and local PAT configuration.
 - Product and UI requirements for all four workflows.
-- A binding C#/.NET 10 WPF + Blazor Hybrid decision and a machine-readable gentle charcoal dark theme.
+- A binding C#/.NET 10 WPF + Blazor Hybrid decision and a machine-readable high-contrast graphite theme with controlled vivid semantic color.
 - Sanitized frontend fixtures, partial forward-compatible JSON Schemas, a contract exporter, and a handoff verifier.
 - The complete backend unit suite.
 
@@ -49,19 +51,19 @@ If prose and executable behavior differ, the current MCP `tools/list`, compatibi
 - Joshua's Garage61 token, browser cookies, Codex/ChatGPT tokens, or password state.
 - Raw `.ibt`, replay, `.sto`, or purchased HTML source files.
 - A redistributable Codex executable or OpenAI credential.
-- The later IRSDK shared-memory live sidecar.
+- Private real-race telemetry/replay captures or simulator-PC cadence evidence. The current product source contains the live SDK and bounded replay-capture paths, but this sanitized handoff does not include personal recordings or turn those paths into real-system acceptance.
 - A claim that Garage61 global-visible lap search is approved. It remains disabled until Garage61 explicitly grants it.
 
 The copied `data/` folder is optional private material. It contains derived race/setup artifacts and absolute racing-PC paths. Use the sanitized fixtures for normal frontend tests. Native telemetry queries on the development PC require synthetic test IBTs or separately supplied source recordings.
 
-## Delivery sequence
+## Current 0.16 verification and delivery sequence
 
-1. Build the process supervisor, settings, diagnostics, dashboard, and deterministic Race Card.
-2. Build Race Analysis, the Interruptions panel, charts, and track/tire-age visualization.
-3. Build Race Planning, starting-package creation, and progressive tuning with experiment history.
-4. Add optional Codex app-server synthesis without putting it on the local-analysis critical path.
-5. Add Garage61 after approval; keep offline behavior complete.
-6. Add semi-live IRSDK lap blocks only after the post-race release is stable.
+1. Verify the handoff and generated contracts against the frozen source.
+2. Run all .NET, Python, and JavaScript gates and the warning-free Release solution build.
+3. Repeat the binding browser/native matrices, real-recording checks, and high-density performance cases against the exact candidate executable.
+4. Build the self-contained installer/portable artifacts only from a clean identified commit, then record immutable sizes and hashes.
+5. Exercise install, prior-version replacement, rollback, running-app replacement, data preservation, uninstall, reinstall, and final uninstall against that exact installer.
+6. Keep deterministic local workflows complete when Codex or Garage61 is absent; activate broader Garage61 behavior only after approval.
 
 Run the verifier before beginning and after any backend or contract change:
 

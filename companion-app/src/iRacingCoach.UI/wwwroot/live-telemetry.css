@@ -1,0 +1,120 @@
+/* Live telemetry owns the remaining application viewport. Keep this scoped so
+   the rest of the product can retain normal document scrolling. */
+.page-frame:has(.live-telemetry-page) {
+  width: 100%;
+  max-width: none;
+  height: calc(100dvh - var(--command-bar-height));
+  min-height: 0;
+  padding: 10px 22px 12px;
+  overflow: hidden;
+}
+
+.page-frame:has(.live-telemetry-page) > * {
+  height: 100%;
+  min-height: 0;
+}
+
+.live-telemetry-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.live-telemetry-page > .live-heading,
+.live-telemetry-page > .live-waiting,
+.live-telemetry-page > .live-driving-disclosure {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.live-telemetry-page > .live-layout-studio {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+
+.live-telemetry-page .live-layout-main {
+  height: 100%;
+  min-height: 0;
+}
+
+.live-telemetry-page .live-layout-toolbar {
+  position: relative;
+  top: auto;
+}
+
+.live-telemetry-page .live-layout-viewport {
+  height: auto;
+  min-height: 0;
+  padding: 10px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 82%, #293033), color-mix(in srgb, var(--surface-1) 94%, #111719));
+}
+
+/* An expanded secondary trace view stays inside the page rather than creating
+   a document scrollbar. Its own content is the intentional scroll boundary. */
+.live-telemetry-page .live-driving-disclosure.open {
+  max-height: min(48%, 520px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.live-telemetry-page .live-driving-disclosure.open .live-driving-body,
+.live-telemetry-page .live-driving-disclosure.open .live-driving-body > div {
+  min-height: 0;
+}
+
+.live-telemetry-page .live-driving-disclosure.open .live-driving-body > div {
+  overflow: auto;
+}
+
+/* Trend widgets are instruments, not fixed-height black strips. The chart well
+   consumes the card after its heading while retaining a small optical inset. */
+.live-layout-tile.style-trend .live-tile-content {
+  align-content: stretch;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.live-layout-tile.style-trend .live-tile-chart {
+  width: 100%;
+  height: 100%;
+  min-height: 24px;
+  align-items: end;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-3) 62%, var(--surface-1)), color-mix(in srgb, var(--surface-2) 76%, var(--surface-1)));
+  border: 1px solid color-mix(in srgb, var(--border-strong) 62%, transparent);
+  border-radius: 5px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+
+.live-layout-tile.style-trend .live-tile-chart canvas {
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+}
+
+.live-layout-tile.style-trend .live-tile-chart-value,
+.live-layout-tile.style-trend .live-tile-chart-missing {
+  margin: 0 7px 7px;
+  background: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--app) 58%, transparent);
+}
+
+@media (max-height: 760px) {
+  .page-frame:has(.live-telemetry-page) { padding-block: 7px 9px; }
+  .live-telemetry-page { gap: 7px; }
+  .live-telemetry-page .live-heading .eyebrow { display: none; }
+  .live-telemetry-page .live-heading h1 { margin: 0; font-size: 21px; line-height: 27px; }
+  .live-telemetry-page .live-layout-toolbar { min-height: 44px; padding-block: 4px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-telemetry-page * { scroll-behavior: auto; }
+}

@@ -68,7 +68,7 @@
                             <path d="@TrackRibbonPath" class="track-main-ribbon" data-map-layer="main" />
                             @foreach (var tracePath in MapTracePaths)
                             {
-                                <path d="@tracePath.Path" stroke="@tracePath.Color" class="track-lap-trace" data-map-layer="lap-trace" data-lap="@tracePath.Lap" />
+                                <path d="@tracePath.Path" stroke="@tracePath.Color" class="track-lap-trace" data-map-layer="lap-trace" data-laps="@tracePath.Laps" />
                             }
                         }
                         else
@@ -89,8 +89,8 @@
                         }
                         <line x1="@F(startFinishLine.X1)" y1="@F(startFinishLine.Y1)" x2="@F(startFinishLine.X2)" y2="@F(startFinishLine.Y2)" class="track-start-line-halo" data-map-layer="start-finish" />
                         <line x1="@F(startFinishLine.X1)" y1="@F(startFinishLine.Y1)" x2="@F(startFinishLine.X2)" y2="@F(startFinishLine.Y2)" class="track-start-line" data-map-layer="start-finish" />
-                        <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="8" class="map-cursor-halo" />
-                        <circle data-analysis-track-cursor-point cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="4" class="map-cursor" />
+                        <circle data-analysis-track-cursor-point data-map-cursor-radius="8" cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="8" class="map-cursor-halo" />
+                        <circle data-analysis-track-cursor-point data-map-cursor-radius="4" cx="@F(CursorMapPoint.X)" cy="@F(CursorMapPoint.Y)" r="4" class="map-cursor" />
                     }
                     else
                     {
@@ -106,8 +106,8 @@
                         }
                         <line x1="28" y1="124" x2="28" y2="156" class="track-start-line-halo" />
                         <line x1="28" y1="124" x2="28" y2="156" class="track-start-line" />
-                        <circle data-analysis-track-cursor-point cx="@F(28 + Cursor * 364)" cy="140" r="8" class="map-cursor-halo" />
-                        <circle data-analysis-track-cursor-point cx="@F(28 + Cursor * 364)" cy="140" r="4" class="map-cursor" />
+                        <circle data-analysis-track-cursor-point data-map-cursor-radius="8" cx="@F(28 + Cursor * 364)" cy="140" r="8" class="map-cursor-halo" />
+                        <circle data-analysis-track-cursor-point data-map-cursor-radius="4" cx="@F(28 + Cursor * 364)" cy="140" r="4" class="map-cursor" />
                         <svg:text x="28" y="205" class="chart-label">Start / finish</svg:text><svg:text x="392" y="205" text-anchor="end" class="chart-label">100%</svg:text>
                     }
                 </svg>
@@ -549,13 +549,15 @@
                         {
                             <svg:text x="@(PlotLeft + 12)" y="@(top + ChartPlotHeight / 2 + 4)" class="chart-unavailable">Not recorded for this race</svg:text>
                         }
-                        @foreach (var trace in RenderedSelectedTraces)
+                        <svg:g data-analysis-trace-render-layer>
+                        @foreach (var indexedSignal in panel.Signals.Where(HasSignalData).Select((signal, index) => new { Signal = signal, Index = index }))
                         {
-                            @foreach (var indexedSignal in panel.Signals.Where(HasSignalData).Select((signal, index) => new { Signal = signal, Index = index }))
+                            @foreach (var traceGroup in ChartTracePaths(panel, indexedSignal.Signal, indexedSignal.Index, top))
                             {
-                                <path data-analysis-trace-path data-row="@row" data-lap="@trace.Lap" data-signal="@indexedSignal.Signal.Id" data-spotlight="@AriaBoolean(SpotlightLap == trace.Lap)" d="@TracePath(trace, panel, indexedSignal.Signal, top)" fill="none" stroke="@LapColor(trace.Lap)" stroke-width="@TraceStrokeWidth(trace, indexedSignal.Index)" stroke-dasharray="@(indexedSignal.Index == 0 ? null : "4 3")" opacity="@TraceOpacity(trace, indexedSignal.Index)" vector-effect="non-scaling-stroke" />
+                                <path data-analysis-trace-path data-row="@row" data-signal="@indexedSignal.Signal.Id" data-laps="@traceGroup.Laps" data-spotlight="@AriaBoolean(traceGroup.Spotlight)" d="@traceGroup.Path" fill="none" stroke="@traceGroup.Color" stroke-width="@traceGroup.StrokeWidth" stroke-dasharray="@(indexedSignal.Index == 0 ? null : "4 3")" opacity="@traceGroup.Opacity" vector-effect="non-scaling-stroke" />
                             }
                         }
+                        </svg:g>
                         </svg:g>
                     }
                     @for (var tick = 0; tick <= 4; tick++)
@@ -566,6 +568,7 @@
                     }
                     <g data-analysis-cursor-layer class="analysis-cursor-layer" style="display:none" aria-hidden="true"></g>
                 </svg>
+                <div class="analysis-cursor-tooltips" data-analysis-cursor-tooltips aria-hidden="true"></div>
                 }
                 </div>
             </div>
@@ -643,18 +646,26 @@
     private bool _contextSplitterInteropAttached;
     private double _chartWidth = 1000;
     private string _cursorInteropSignature = string.Empty;
+    private object? _cursorConfigurationCache;
+    private string _cursorConfigurationCacheKey = string.Empty;
     private string _traceLayoutInteropSignature = string.Empty;
     private readonly Dictionary<AnalysisTracePoint, double?> _calculatedWearByPoint = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<AnalysisTracePoint, double?> _timeDeltaByPoint = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<int, double?> _traceStartTimeByLap = new();
     private readonly Dictionary<string, (double Min, double Max)> _traceRangeCache = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _tracePathCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<ChartTracePath>> _chartTraceGroupCache = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (double Min, double Max)> _trackRangeCache = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _signalAvailabilityCache = new(StringComparer.Ordinal);
+    private AnalysisLapTrace? _referenceTraceCache;
     private string _selectionSignature = string.Empty;
     private const double PlotLeft = 126;
     private const int ChartTop = 12;
     private const double TraceRowsHeight = 820;
     private const int TooltipRowHeight = 20;
     private const double TooltipCharacterWidth = 7.1;
+    private const int CursorSampleBins = AnalysisRenderBudget.CursorSampleBins;
+    private const int CursorComparisonBudget = AnalysisRenderBudget.CursorComparisonBudget;
     private static readonly (string Key, string Label)[] Modes = [("traces", "Traces"), ("speed", "Speed"), ("throttle", "Throttle"), ("brake", "Brake"), ("stress", "Tire load")];
     private static readonly HeatStop[] SpeedHeatmapStops =
     [
@@ -663,6 +674,13 @@
         new(0.58, 242, 203, 76),
         new(0.78, 116, 222, 108),
         new(1.00, 34, 220, 116)
+    ];
+    private static readonly string[] TracePalette =
+    [
+        "#63F5D2", "#FF62D5", "#FFD45B", "#69A7FF", "#A879FF",
+        "#FF7B72", "#66F06A", "#54D6FF", "#FF9D4D", "#E78BFF",
+        "#8EF0FF", "#F5F56B", "#4FE0A4", "#FF6A9A", "#7F8CFF",
+        "#B8F25D", "#FFB56B", "#54ECE5", "#D58CFF", "#F07B67"
     ];
 
     protected override void OnParametersSet()
@@ -877,7 +895,8 @@
         new[] { AnalysisTraceLayouts.Signal(row.PrimarySignalId), AnalysisTraceLayouts.Signal(row.SecondarySignalId) }
             .Where(signal => signal is not null).Cast<AnalysisTraceSignalDefinition>().ToArray())).ToArray();
     private AnalysisLapTrace PrimaryTrace => SelectedTraces.FirstOrDefault() ?? Workspace.Traces[0];
-    private AnalysisLapTrace ReferenceTrace => SelectedTraces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).FirstOrDefault() ?? PrimaryTrace;
+    private AnalysisLapTrace ReferenceTrace => _referenceTraceCache ??=
+        SelectedTraces.Where(IsClean).OrderBy(trace => trace.LapTimeSeconds ?? double.MaxValue).FirstOrDefault() ?? PrimaryTrace;
     private double ChartRowHeight => TraceRowsHeight / Math.Max(1, TraceRows.Count);
     private double ChartPlotHeight => Math.Max(48, ChartRowHeight - 14);
     private double ChartBottom => ChartTop + TraceRows.Count * ChartRowHeight - (ChartRowHeight - ChartPlotHeight);
@@ -900,6 +919,34 @@
         if (!SpotlightLap.HasValue) return signalIndex == 0 ? "1" : ".72";
         if (SpotlightLap == trace.Lap) return signalIndex == 0 ? "1" : ".82";
         return signalIndex == 0 ? ".42" : ".30";
+    }
+    private IReadOnlyList<ChartTracePath> ChartTracePaths(
+        TracePanelRow panel,
+        AnalysisTraceSignalDefinition signal,
+        int signalIndex,
+        double top)
+    {
+        var key = $"{SelectionSignature}|{SpotlightLap}|{panel.Signature}|{signal.Id}|{signalIndex}|{F(_chartWidth)}|{F(top)}|{F(ChartPlotHeight)}";
+        if (_chartTraceGroupCache.TryGetValue(key, out var cached)) return cached;
+        var result = RenderedSelectedTraces
+            .Where(trace => trace.Points.Any(point => SignalPointValue(signal, trace, point).HasValue))
+            .GroupBy(trace => new { Color = LapColor(trace.Lap), Spotlight = SpotlightLap == trace.Lap })
+            .Select(group =>
+            {
+                var representative = group.First();
+                return new ChartTracePath(
+                    string.Join(',', group.Select(trace => trace.Lap)),
+                    group.Key.Color,
+                    string.Join(' ', group.Select(trace => TracePath(trace, panel, signal, top)).Where(path => path.Length > 0)),
+                    TraceStrokeWidth(representative, signalIndex),
+                    TraceOpacity(representative, signalIndex),
+                    group.Key.Spotlight);
+            })
+            .Where(group => group.Path.Length > 0)
+            .OrderBy(group => group.Spotlight)
+            .ThenBy(group => group.Color, StringComparer.Ordinal)
+            .ToArray();
+        return _chartTraceGroupCache[key] = result;
     }
     private string CursorSummary
     {
@@ -1513,11 +1560,18 @@
         string.Join(',', TraceRows.Select(row => row.Signature)));
     private object BuildCursorInteropConfiguration()
     {
+        var cacheKey = CursorInteropSignature;
+        if (_cursorConfigurationCache is not null && string.Equals(cacheKey, _cursorConfigurationCacheKey, StringComparison.Ordinal))
+            return _cursorConfigurationCache;
         var panels = TraceRows;
         var availableSignals = panels
             .Select(panel => panel.Signals.Where(HasSignalData).ToArray())
             .ToArray();
-        var traces = CursorSelectedTraces.ToArray();
+        var allTraces = CursorSelectedTraces.ToArray();
+        var traces = BoundedCursorTraces(allTraces);
+        var percents = Enumerable.Range(0, CursorSampleBins)
+            .Select(index => index / (double)(CursorSampleBins - 1))
+            .ToArray();
         var rows = panels.Select((panel, index) => new
         {
             top = ChartTop + index * ChartRowHeight,
@@ -1537,26 +1591,35 @@
         }).ToArray();
         var traceData = traces.Select(trace =>
         {
-            var points = trace.Points.ToArray();
+            var pointIndices = trace.Points.Count == 0
+                ? Enumerable.Repeat(-1, percents.Length).ToArray()
+                : percents.Select(percent => NearestIndex(trace.Points, percent)).ToArray();
+            var points = pointIndices
+                .Select(index => index >= 0 ? trace.Points[index] : null)
+                .ToArray();
             return new
             {
                 lap = trace.Lap,
                 color = LapColor(trace.Lap),
-                percents = points.Select(point => double.IsFinite(point.LapPercent) ? Math.Clamp(point.LapPercent, 0, 1) : 0).ToArray(),
+                percents,
                 rowValues = availableSignals.Select(signals => signals.Select(signal =>
-                    points.Select((_, pointIndex) => InteropNumber(SmoothedValue(signal, trace, pointIndex))).ToArray()).ToArray()).ToArray(),
+                    pointIndices.Select(index => InteropNumber(index < 0 ? null : SmoothedValue(signal, trace, index))).ToArray()).ToArray()).ToArray(),
                 summary = new
                 {
-                    speed = points.Select(point => InteropNumber(point.SpeedMph)).ToArray(),
-                    throttle = points.Select(point => InteropNumber(point.Throttle)).ToArray(),
-                    brake = points.Select(point => InteropNumber(point.Brake)).ToArray(),
-                    delta = points.Select(point => InteropNumber(TimeDelta(trace, point))).ToArray()
+                    speed = points.Select(point => InteropNumber(point?.SpeedMph)).ToArray(),
+                    throttle = points.Select(point => InteropNumber(point?.Throttle)).ToArray(),
+                    brake = points.Select(point => InteropNumber(point?.Brake)).ToArray(),
+                    delta = points.Select(point => InteropNumber(point is null ? null : TimeDelta(trace, point))).ToArray()
                 }
             };
         }).ToArray();
-        return new
+        var aggregatePoints = percents.Select(percent => allTraces
+            .Select(trace => new { Trace = trace, Point = Nearest(trace, percent) })
+            .Where(sample => sample.Point is not null)
+            .ToArray()).ToArray();
+        var result = new
         {
-            key = CursorInteropSignature,
+            key = cacheKey,
             initialFraction = Cursor,
             elementWidth = _chartWidth,
             chartHeight = ChartHeight,
@@ -1569,11 +1632,46 @@
             tooltipCharacterWidth = TooltipCharacterWidth,
             rows,
             traces = traceData,
+            logicalTraceCount = allTraces.Length,
+            logicalLaps = allTraces.Select(trace => trace.Lap).ToArray(),
+            aggregate = new
+            {
+                percents,
+                summary = new
+                {
+                    speed = aggregatePoints.Select(samples => InteropNumber(Average(samples.Select(sample => sample.Point!.SpeedMph)))).ToArray(),
+                    throttle = aggregatePoints.Select(samples => InteropNumber(Average(samples.Select(sample => sample.Point!.Throttle)))).ToArray(),
+                    brake = aggregatePoints.Select(samples => InteropNumber(Average(samples.Select(sample => sample.Point!.Brake)))).ToArray(),
+                    delta = aggregatePoints.Select(samples => InteropNumber(Average(samples.Select(sample => TimeDelta(sample.Trace, sample.Point!))))).ToArray()
+                }
+            },
             trackPoints = HasMapGeometry
                 ? MapPoints.Select(point => new { percent = point.Percent, x = point.X, y = point.Y }).ToArray()
                 : [],
             distanceStrip = !HasMapGeometry
         };
+        _cursorConfigurationCacheKey = cacheKey;
+        return _cursorConfigurationCache = result;
+    }
+    private IReadOnlyList<AnalysisLapTrace> BoundedCursorTraces(IReadOnlyList<AnalysisLapTrace> traces)
+    {
+        if (traces.Count <= CursorComparisonBudget) return traces;
+        var chosen = new Dictionary<int, AnalysisLapTrace>();
+        void Add(AnalysisLapTrace? trace)
+        {
+            if (trace is not null) chosen.TryAdd(trace.Lap, trace);
+        }
+        Add(SpotlightLap.HasValue ? traces.FirstOrDefault(trace => trace.Lap == SpotlightLap.Value) : null);
+        Add(traces.FirstOrDefault(trace => trace.Lap == ReferenceTrace.Lap));
+        Add(traces[0]);
+        Add(traces[^1]);
+        foreach (var index in AnalysisRenderBudget.RepresentativeIndices(traces.Count, CursorComparisonBudget))
+            Add(traces[index]);
+        return chosen.Values
+            .OrderBy(trace => SpotlightLap == trace.Lap ? 0 : 1)
+            .ThenBy(trace => trace.Lap)
+            .Take(CursorComparisonBudget)
+            .ToArray();
     }
     private static double? InteropNumber(double? value) => value is { } number && double.IsFinite(number) ? number : null;
     private void RebuildMapRenderCache()
@@ -1587,7 +1685,7 @@
         _vectorProjection = CreateVectorProjection(_canonicalGeometryPoints);
         _allRecordedGpsPoints = Workspace.Traces
             .SelectMany(trace => trace.Points)
-            .Where(point => point.Latitude.HasValue && point.Longitude.HasValue)
+            .Where(HasUsableRecordedGps)
             .ToArray();
         _gpsBounds = CreateGpsBounds(_allRecordedGpsPoints);
         _fastestLapTime = Workspace.Traces
@@ -1601,9 +1699,7 @@
             var trace = Workspace.Traces.FirstOrDefault(item => item.Lap == lap);
             if (trace?.LapTimeSeconds is { } lapTime && Math.Abs(lapTime - _fastestLapTime) < .0001)
                 return new KeyValuePair<int, string>(lap, "#F05CDB");
-            var fraction = laps.Length <= 1 ? 0 : index / (double)(laps.Length - 1);
-            var hue = 280 * fraction;
-            return new KeyValuePair<int, string>(lap, $"hsl({hue.ToString("0.##", CultureInfo.InvariantCulture)} 82% 62%)");
+            return new KeyValuePair<int, string>(lap, TracePalette[index % TracePalette.Length]);
         }).ToDictionary(pair => pair.Key, pair => pair.Value);
 
         _mapPoints = BuildMapPoints();
@@ -1612,7 +1708,7 @@
         foreach (var trace in Workspace.Traces)
         {
             _projectedTracePoints[trace.Lap] = trace.Points
-                .Where(HasRecordedGps)
+                .Where(HasUsableRecordedGps)
                 .Select(point => new ProjectedTracePoint(WrapPercent(point.LapPercent), ProjectGpsPoint(point), point))
                 .OrderBy(point => point.Percent)
                 .ToArray();
@@ -1671,7 +1767,9 @@
     private MapLine StartFinishLine => _startFinishLine;
     private MapLine BuildStartFinishLine()
     {
-        if (CompleteVectorGeometry?.StartFinishLine is { } recorded)
+        if (CompleteVectorGeometry is { } vector
+            && vector.StartFinishLine is { } recorded
+            && AnalysisTrackMapGeometry.IsPlausibleOverlayLine(vector.MainPath, recorded))
         {
             var first = ProjectVectorPoint(recorded.A);
             var second = ProjectVectorPoint(recorded.B);
@@ -1702,7 +1800,18 @@
             return _mapTracePaths = selected
                 .Select(trace => new { Trace = trace, Points = _projectedTracePoints.GetValueOrDefault(trace.Lap) ?? [] })
                 .Where(item => item.Points.Count >= 3)
-                .Select(item => new MapTracePath(item.Trace.Lap, LapColor(item.Trace.Lap), SvgPath(item.Points.Select(point => point.Point).ToArray(), item.Trace.Complete)))
+                .GroupBy(item => LapColor(item.Trace.Lap))
+                .Select(group => new MapTracePath(
+                    string.Join(',', group.Select(item => item.Trace.Lap)),
+                    group.Key,
+                    string.Join(' ', group.Select(item =>
+                    {
+                        var budget = AnalysisRenderBudget.PointBudgetPerTrace(selected.Length, 420);
+                        var points = AnalysisRenderBudget.RepresentativeIndices(item.Points.Count, budget)
+                            .Select(index => item.Points[index].Point)
+                            .ToArray();
+                        return SvgPath(points, item.Trace.Complete);
+                    }))))
                 .ToArray();
         }
     }
@@ -1710,11 +1819,21 @@
     private IReadOnlyList<PitMapLayer> BuildPitMapLayers()
     {
         if (CompleteVectorGeometry is not { } vector) return [];
-        var pitRoad = VectorPath(vector.PitLane);
-        var entry = VectorPath(vector.PitEntryPath);
-        var exit = VectorPath(vector.PitExitPath);
-        var commitment = vector.PitCommitmentLine is { } entryLine ? ProjectVectorLine(entryLine) : null;
-        var merge = vector.PitMergeLine is { } exitLine ? ProjectVectorLine(exitLine) : null;
+        var pitRoad = AnalysisTrackMapGeometry.IsPlausibleOverlayPath(vector.MainPath, vector.PitLane)
+            ? VectorPath(vector.PitLane)
+            : string.Empty;
+        var entry = AnalysisTrackMapGeometry.IsPlausibleOverlayPath(vector.MainPath, vector.PitEntryPath)
+            ? VectorPath(vector.PitEntryPath)
+            : string.Empty;
+        var exit = AnalysisTrackMapGeometry.IsPlausibleOverlayPath(vector.MainPath, vector.PitExitPath)
+            ? VectorPath(vector.PitExitPath)
+            : string.Empty;
+        var commitment = AnalysisTrackMapGeometry.IsPlausibleOverlayLine(vector.MainPath, vector.PitCommitmentLine)
+            ? ProjectVectorLine(vector.PitCommitmentLine!)
+            : null;
+        var merge = AnalysisTrackMapGeometry.IsPlausibleOverlayLine(vector.MainPath, vector.PitMergeLine)
+            ? ProjectVectorLine(vector.PitMergeLine!)
+            : null;
         if (pitRoad.Length == 0 && entry.Length == 0 && exit.Length == 0 && commitment is null && merge is null) return [];
         return [new PitMapLayer(pitRoad, entry, exit, commitment, merge)];
     }
@@ -1729,9 +1848,17 @@
         if (_vectorProjection is not { } projection) return new MapPoint(WrapPercent(point.LapPercent ?? 0), point.X, point.Y);
         return new MapPoint(WrapPercent(point.LapPercent ?? 0), 210 + (point.X - projection.CenterX) * projection.Scale, 140 + (point.Y - projection.CenterY) * projection.Scale);
     }
-    private static bool HasRecordedGps(AnalysisTracePoint point) =>
-        point.Latitude is { } latitude && double.IsFinite(latitude)
-        && point.Longitude is { } longitude && double.IsFinite(longitude);
+    private bool HasUsableRecordedGps(AnalysisTracePoint point)
+    {
+        if (point.Latitude is not { } latitude || !double.IsFinite(latitude)
+            || point.Longitude is not { } longitude || !double.IsFinite(longitude)
+            || (Math.Abs(latitude) <= 1e-9 && Math.Abs(longitude) <= 1e-9))
+            return false;
+        if (CompleteVectorGeometry is not { } vector) return true;
+        var transform = vector.Transform ?? vector.GeometryProvenance?.NormalizationTransform;
+        return transform?.TryNormalize(longitude, latitude, out var normalizedX, out var normalizedY) != true
+            || AnalysisTrackMapGeometry.IsPlausibleNormalizedPoint(vector.MainPath, normalizedX, normalizedY);
+    }
     private MapPoint ProjectGpsPoint(AnalysisTracePoint point)
     {
         if (_gpsBounds is not { } gps) return MapPointAt(point.LapPercent);
@@ -2110,13 +2237,22 @@
     };
     private double? TimeDelta(AnalysisLapTrace trace, AnalysisTracePoint point)
     {
-        if (!point.SessionTimeSeconds.HasValue) return null;
-        var traceStart = trace.Points.FirstOrDefault(item => item.SessionTimeSeconds.HasValue)?.SessionTimeSeconds;
+        if (_timeDeltaByPoint.TryGetValue(point, out var cached)) return cached;
+        if (!point.SessionTimeSeconds.HasValue) return _timeDeltaByPoint[point] = null;
+        var traceStart = TraceStartTime(trace);
         var reference = ReferenceTrace;
         var referencePoint = Nearest(reference, point.LapPercent);
-        var referenceStart = reference.Points.FirstOrDefault(item => item.SessionTimeSeconds.HasValue)?.SessionTimeSeconds;
-        if (!traceStart.HasValue || referencePoint?.SessionTimeSeconds is not double referenceTime || !referenceStart.HasValue) return null;
-        return (point.SessionTimeSeconds.Value - traceStart.Value) - (referenceTime - referenceStart.Value);
+        var referenceStart = TraceStartTime(reference);
+        if (!traceStart.HasValue || referencePoint?.SessionTimeSeconds is not double referenceTime || !referenceStart.HasValue)
+            return _timeDeltaByPoint[point] = null;
+        return _timeDeltaByPoint[point] =
+            (point.SessionTimeSeconds.Value - traceStart.Value) - (referenceTime - referenceStart.Value);
+    }
+    private double? TraceStartTime(AnalysisLapTrace trace)
+    {
+        if (_traceStartTimeByLap.TryGetValue(trace.Lap, out var cached)) return cached;
+        return _traceStartTimeByLap[trace.Lap] =
+            trace.Points.FirstOrDefault(item => item.SessionTimeSeconds.HasValue)?.SessionTimeSeconds;
     }
     private string RowLabel(TracePanelRow panel)
     {
@@ -2174,13 +2310,18 @@
     }
     private string TracePath(AnalysisLapTrace trace, TracePanelRow panel, AnalysisTraceSignalDefinition signal, double top)
     {
-        var cacheKey = $"{SelectionSignature}|{panel.Signature}|{signal.Id}|{trace.Lap}|{F(_chartWidth)}|{F(top)}|{F(ChartPlotHeight)}";
+        var pointBudget = AnalysisRenderBudget.PointBudgetPerTrace(
+            Selected.Count,
+            PlotWidth,
+            SpotlightLap == trace.Lap);
+        var cacheKey = $"{SelectionSignature}|{SpotlightLap}|{pointBudget}|{panel.Signature}|{signal.Id}|{trace.Lap}|{F(_chartWidth)}|{F(top)}|{F(ChartPlotHeight)}";
         if (_tracePathCache.TryGetValue(cacheKey, out var cached)) return cached;
         if (!trace.Points.Any(point => SignalPointValue(signal, trace, point).HasValue)) return _tracePathCache[cacheKey] = string.Empty;
         var (min, max) = SignalRange(signal);
         var started = false;
-        var commands = new List<string>(trace.Points.Count);
-        for (var index = 0; index < trace.Points.Count; index++)
+        var sampledIndices = AnalysisRenderBudget.RepresentativeIndices(trace.Points.Count, pointBudget);
+        var commands = new List<string>(sampledIndices.Count);
+        foreach (var index in sampledIndices)
         {
             var value = SmoothedValue(signal, trace, index);
             if (!value.HasValue) { started = false; continue; }
@@ -2339,8 +2480,14 @@
     private void InvalidateTraceRender()
     {
         _selectionSignature = string.Join(",", Selected.Order());
+        _referenceTraceCache = null;
+        _timeDeltaByPoint.Clear();
+        _traceStartTimeByLap.Clear();
         _traceRangeCache.Clear();
         _tracePathCache.Clear();
+        _chartTraceGroupCache.Clear();
+        _cursorConfigurationCache = null;
+        _cursorConfigurationCacheKey = string.Empty;
         _trackRangeCache.Clear();
         _signalAvailabilityCache.Clear();
         _mapTracePaths = null;
@@ -2369,7 +2516,8 @@
     private sealed record MetricRibbonSeed(double Percent, MapPoint Center, IReadOnlyList<MapPoint> ObservedPoints, double? Metric);
     private sealed record MetricRibbonSample(double Percent, MapPoint Center, double NormalX, double NormalY, double Width, double? Metric);
     private sealed record MetricRibbonSegment(string Path, string Color, double StartWidth, double EndWidth);
-    private sealed record MapTracePath(int Lap, string Color, string Path);
+    private sealed record MapTracePath(string Laps, string Color, string Path);
+    private sealed record ChartTracePath(string Laps, string Color, string Path, string StrokeWidth, string Opacity, bool Spotlight);
     private sealed record PitMapLayer(string PitRoad, string Entry, string Exit, MapLine? EntryCommitment, MapLine? ExitCommitment);
     private sealed record StripSegment(double X1, double X2, string Color);
     private sealed record LapGroup(string Label, IReadOnlyList<AnalysisLapTrace> Traces, AnalysisRun? Run);

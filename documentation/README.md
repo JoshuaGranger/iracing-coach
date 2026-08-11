@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.15.0-development.md)
+7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.16.0-development.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -38,6 +38,8 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Race planning](02-workflows/race-planning.md)
   - [Setups and progressive tuning](02-workflows/setups-and-progressive-tuning.md)
   - [Connections, settings, and diagnostics](02-workflows/connections-settings-and-diagnostics.md)
+  - [Simulator race development corpus agent prompt](02-workflows/simulator-race-development-corpus-agent-prompt.md)
+  - [Simulator track-map capture agent prompt](02-workflows/simulator-track-map-capture-agent-prompt.md)
 - `03-data`
   - [Evidence and truthfulness](03-data/evidence-and-truthfulness.md)
   - [Telemetry, sessions, and analysis](03-data/telemetry-session-and-analysis.md)
@@ -50,10 +52,13 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - `05-quality`
   - [Acceptance, test, and release](05-quality/acceptance-test-and-release.md)
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
+  - [Race Analysis geometry and performance evidence](05-quality/race-analysis-geometry-and-performance.md)
+  - [Technical strategy corpus evidence](05-quality/technical-strategy-corpus-check-2026-08-11.md)
 - [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
-  - [Current development snapshot: 0.15.0](06-reality/implementation-snapshot-0.15.0-development.md)
+  - [Current development snapshot: 0.16.0](06-reality/implementation-snapshot-0.16.0-development.md)
+  - [Prior development candidate: 0.15.0](06-reality/implementation-snapshot-0.15.0-development.md)
   - [Technical Data signal coverage: 0.15.0 development](06-reality/technical-data-signal-coverage-0.15.0-development.md)
   - [Stable packaged snapshot: 0.14.2](06-reality/implementation-snapshot-0.14.2.md)
   - [Prior implementation snapshot: 0.14.1](06-reality/implementation-snapshot-0.14.1.md)
@@ -89,11 +94,13 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 ## Current baseline
 
 - Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
-- Current source version: `0.15.0` development; a guarded installer candidate exists for simulator feedback, but no stable or portable 0.15.0 release is claimed
+- Current source version: `0.16.0` development; its explicitly requested installer is a simulator-feedback candidate until the exact artifact completes the release gates and Joshua accepts it
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Current development verification: 232/232 .NET tests and 230/230 Python tests passed; the verified handoff contains 17 MCP tools and 114 files
-- Installer lifecycle: the final 0.15.0 candidate passed guarded install, rollback, running-app replacement, data-preservation, uninstall, reinstall, and final-uninstall checks
+- Current source verification: 255/255 .NET tests, 247/247 Python tests, 9/9 JavaScript syntax checks, and a Release solution build with zero warnings and zero errors
+- Current direct-browser evidence: the real August 9 Iowa 7,775-frame replay was exercised at 1280x720 and 1920x1080; a real 82-lap selection remained logically complete with bounded rendering; a synthetic 500-lap case passed the fixed rendering budgets; measured pointer-tool round trips and remaining caveats are recorded in the 0.16.0 snapshot
+- Current package boundary: no 0.16.0 installer hash, source commit, lifecycle certification, or user acceptance is claimed until the exact frozen package passes those separate gates
+- Prior installer lifecycle evidence: the 0.15.0 feedback candidate passed guarded install, rollback, running-app replacement, data-preservation, uninstall, reinstall, and final-uninstall checks; this is historical evidence, not proof of the 0.16.0 candidate
 - Development focus: Race Analysis, Technical data, Race replay, global analysis layouts, exact-configuration maps, retained raw telemetry, NASCAR-first tire/capability foundations, and Progressive Tuning evidence-contract v2. Supported and unavailable states remain evidence-gated; development implementation is not user acceptance.
 
-The current source reality is summarized in `06-reality/implementation-snapshot-0.15.0-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. The 0.15.0 installer candidate is a feedback artifact, not an accepted release. Build binaries and private user data are not part of the source repository.
+The current source reality is summarized in `06-reality/implementation-snapshot-0.16.0-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. The 0.15.0 installer candidate remains historical feedback evidence, not an accepted release. Build binaries and private user data are not part of the source repository.

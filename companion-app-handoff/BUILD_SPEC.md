@@ -1,5 +1,11 @@
 # Companion app build specification
 
+## Version and evidence boundary
+
+This specification describes the current `0.16.0` development source. `0.14.2` remains the latest accepted stable packaged release; the prior 0.15.0 installer is historical simulator-feedback evidence and must not be used as proof of this tree. The current development gates passed 255/255 .NET tests, 247/247 Python tests, 9/9 first-party JavaScript syntax checks, and a Release solution build with zero warnings and zero errors.
+
+Direct real-data browser checks include the August 9 Iowa legacy replay (7,775 frames across five segments) at 1280x720 and 1920x1080 and a real 82-lap analysis with bounded paths/DOM work. The automated synthetic 500-lap case verifies fixed rendering budgets. These are source-development results only; the exact 0.16.0 commit, installer/portable hashes, installed lifecycle, real SDK/high-refresh cadence, and Joshua's acceptance require separate package evidence.
+
 ## Product outcome
 
 Build a fast Windows desktop application that lets Joshua use iRacing Coach without opening a general-purpose chat. The deterministic backend must produce a trustworthy result first; optional AI then explains, condenses, researches, or coaches from that evidence.
@@ -44,7 +50,7 @@ Use stdio for both local backend processes. Do not open a localhost HTTP port fo
 
 ## Visual system
 
-The binding visual specification is `UI_DESIGN_SYSTEM.md`; the machine-readable token source is `config/theme.dark.json`. The app is dark-only for release one: mineral green-tinted glass layers, softened text, a user-selected interaction color, and brighter colors reserved for telemetry/evidence. It must not fall back to pure black panels, pure white body text, neon traces, generic Bootstrap styling, or a wall of high-contrast cards.
+The binding visual specification is `UI_DESIGN_SYSTEM.md`; the machine-readable token source is `config/theme.dark.json`. The app is dark-only for release one: neutral high-contrast graphite layers, softened readable text, a user-selected interaction color, and controlled vivid color for telemetry, selection, evidence, and warnings. It should feel like focused race-engineering software with restrained modern desktop polish. Avoid green-on-green surfaces, pure-black chart wells, low-contrast sameness, glow-heavy neon decoration, generic Bootstrap styling, and dense walls of identical cards. Vivid semantic traces and selected states are intentional; decorative glow is not.
 
 Generate CSS custom properties and any WPF resource equivalents from the token file so native and Hybrid surfaces remain identical. The look may share Codex's calm workspace atmosphere but must use original layout, components, icons, and branding.
 
@@ -59,12 +65,12 @@ Generate CSS custom properties and any WPF resource equivalents from the token f
 
 ### Race Analysis
 
-- Show the returned deterministic Race Card immediately.
-- Tabs: Overview, Corner Plan, Runs/Tires, Fuel/Strategy, Interruptions, Telemetry, Evidence.
-- Overview includes run length, green/caution exposure, pit stops, fuel, tire endpoints, and limitations.
-- Interruptions aligns incident-point changes, pit-road transit, stall occupancy, service-active spans, mandatory/optional repair countdowns, tow, and fast-repair confirmation. Overlapping clocks must be drawn in parallel, never added.
-- Affected laps/runs receive a visible repair-confounded badge and are excluded from clean trendlines and target generation by default. Provide a diagnostic include toggle.
-- Every claim retains `[M]`, `[D]`, `[I]`, `[P]`, or `[U]` evidence status.
+- Use one compact event header with `Telemetry`, `Technical data`, and `Race replay`; replacing the former section set must not leave a second legacy review surface.
+- Telemetry combines a cursor-synchronized exact-configuration track map, one-row Laps and runs list, and globally portable named trace layouts. Track/Laps visibility, the shared splitter, cursor-centered zoom, one-pixel individual traces, literal selected-lap spread, and the Customize toolbox must preserve state and remain bounded at high lap counts.
+- Technical data opens as a fixed two-by-two overview containing `Pit strategy`, `Tire management`, `Fuel management`, and `Racecraft & pace`. Opening a category changes presentation depth rather than substituting unrelated facts; all supported findings remain available in its full-area investigation.
+- Race replay is a read-only reconstruction from recorded position/scoring/event/player evidence, not video and not an iRacing `.rpy` player. It uses one shared clock and one flag-colored seek rail across the map, participants, running order, events, comparison, and player telemetry.
+- Runs affected by repairs, tow, cautions, pit traffic, or unsupported evidence remain truthfully gated from clean comparisons and targets. Incident counters do not identify semantic cause unless an explicit source event supplies it.
+- Keep provenance and evidence status in the underlying contracts and diagnostic detail, while normal driving surfaces lead with conclusions, values, actions, and concise unavailable states instead of source-method explanations.
 
 ### Race Planning
 
@@ -82,26 +88,32 @@ Generate CSS custom properties and any WPF resource equivalents from the token f
 
 ### Progressive Tuning
 
-- Capture the driver's own entry/center/exit, transient/long-run, tight/loose/bottoming/bump/traction description.
-- Analyze the finalized run and display corroborating telemetry separately from the symptom.
-- Recommend one setup system, expected effect, risk, success criteria, and exact rollback fingerprint.
-- Block setup conclusions for fixed sessions or repair/tow-affected evidence.
-- Record improved/worse/no-change/inconclusive and retain failed experiments.
+- Fit the workflow without page scrolling: a thin representative-race chooser, a large exact-configuration map in the left two-thirds, and one consolidated evidence/feedback toolbox in the right third.
+- Distinguish corner hover from selected-corner emphasis. Selecting a turn opens the active editor in the toolbox, not over the map, and covers Early/Middle/Late Entry/Center/Exit/Whole feedback.
+- Make tight/comfortable/loose fast to record graphically. Keep severity and driver confidence visible with plain-language hover explanations; add secondary symptoms and notes through compact icon actions rather than displaying every option initially.
+- Allow one highest-priority corner overall. Color-code turns with feedback for the active run phase without displaying a `not assessed` status.
+- Keep tire-wear/run evidence and general feedback in the same toolbox, with general feedback and `Begin analysis` anchored at the bottom.
+- Analyze the finalized run and display corroborating telemetry separately from the driver's wording. Recommend one supported setup system, expected effect, risk, success criteria, and exact rollback fingerprint.
+- A fixed race may be representative driving evidence, but a garage recommendation requires a compatible analyzed open-setup target. Block conclusions for repair/tow-confounded evidence.
+- Record improved/unchanged/worse/inconclusive and retain failed experiments.
 
 ### Settings and Diagnostics
 
-- Configure iRacing root, coach archive root, packaged Python, Codex availability, and optional Garage61 state.
+- Use the Coach folder as the only displayed portable root; derived archives live beneath it rather than appearing as a second user-configured `Coach archive` location. Configure iRacing Documents/installation discovery, packaged Python, Codex availability, and optional Garage61 state where relevant.
 - Validate roots before saving and show that raw iRacing/setup files are read-only.
-- Show backend/version/contract compatibility, timings, logs, and a one-click health test.
+- Provide one human-readable staged `Move or back up PCs` guide that reviews, checks, and then authorizes copying; do not expose internal `portable preferences` or `prepare copy` terminology.
+- Render Troubleshooting with the same expandable bar pattern as Connections. Show backend/version/contract compatibility, timings, logs, and a one-click health test inside the expanded content.
 - Never display or log credential values.
 
 ## Track and tire-age visualization
 
-Provide an interactive track view synchronized with speed, throttle, brake, steering, and optional comparison traces.
+Provide an interactive exact-configuration track view synchronized with speed, throttle, brake, steering, and optional comparison traces.
 
-- Draw recorded GPS/telemetry shape when available; otherwise show a normalized distance strip. Never invent geometry.
+- Derive the recorded GPS/telemetry shape only after rejecting sentinel coordinates and implausible auxiliary layers. Otherwise show a normalized distance strip. Never invent geometry or borrow a different configuration.
 - The horizontal slider represents only supported phase or green-lap-on-set evidence. If continuous tire-age interpolation is unsupported, snap to observed early/middle/late or fresh/settled/worn states and explain why.
 - Color the car/path by speed or selected control. A cursor on the map moves every trace cursor, and vice versa.
+- Wheel zoom centers on the pointer and cannot zoom out beyond Fit; the map cursor and labels remain a constant screen size while geometry zooms.
+- Keep every logical selected lap even when rendering detail is bounded. Individual traces remain visually distinct while the aggregate colored ribbon represents the literal spatial edges of all selected laps.
 - Show observed local values as observations. Show a target trace only when `comparison_quality.status == "usable"`; otherwise show relative coaching and `Exact target unavailable`.
 - Display entry speed, minimum speed, brake onset/peak/release, turn-in, throttle pickup, steering work, and groove evidence per load zone/corner when available.
 - Directional groove labels require calibrated inside/outside geometry. Uncalibrated path movement remains unlabeled.
@@ -126,5 +138,5 @@ Provide an interactive track view synchronized with speed, throttle, brake, stee
 ## Deferred milestones
 
 - Garage61 activation after API approval and PAT setup.
-- Semi-live IRSDK shared-memory sidecar, updating locally by lap block/pit stop rather than streaming raw samples to AI.
+- Representative real-race validation and cadence instrumentation for the implemented live shared-memory and bounded high-rate replay-capture paths; no raw samples are streamed to AI.
 - Optional official results enrichment for final reason-out/field context.

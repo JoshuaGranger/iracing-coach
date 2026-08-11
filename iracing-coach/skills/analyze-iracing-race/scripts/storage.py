@@ -7,12 +7,14 @@ reinstalling the plugin must never remove race history or cached references.
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import math
 import os
 import re
 import shutil
 import sqlite3
+import statistics
 import tempfile
 import time
 from contextlib import contextmanager
@@ -21,19 +23,29 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 try:  # Package import and direct script execution are both supported.
+    from .live_replay_v2 import (
+        LiveReplayV2Error,
+        decode_live_replay_v2,
+    )
     from .path_security import local_path
     from .race_foundations import (
         TIRE_MODEL_VERSION,
         _main_loop_quality,
+        _sanitize_geometry_layers,
         build_tire_prediction,
         model_file_name,
         track_geometry_sha256,
     )
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+    from live_replay_v2 import (
+        LiveReplayV2Error,
+        decode_live_replay_v2,
+    )
     from path_security import local_path
     from race_foundations import (
         TIRE_MODEL_VERSION,
         _main_loop_quality,
+        _sanitize_geometry_layers,
         build_tire_prediction,
         model_file_name,
         track_geometry_sha256,
@@ -54,6 +66,305 @@ _OPTIONAL_BUNDLE_FILES = {
     "notes": "knowledge.md",
 }
 _SOURCE_HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+# Replays remain append-only at up to 60 Hz on disk.  The MCP/runtime payload
+# is intentionally smaller: short sessions retain up to 20 Hz, while longer
+# sessions adapt to a fixed budget and let the UI interpolate at refresh rate.
+# Exact event/flag/state/pit keyframes are kept outside the routine-motion
+# budget, with a hard ceiling sized for far more transitions than a real race.
+_REPLAY_DISPLAY_BASE_INTERVAL_S = 1.0 / 20.0
+_REPLAY_DISPLAY_ROUTINE_FRAME_BUDGET = 8_000
+_REPLAY_DISPLAY_HARD_FRAME_BUDGET = 10_000
+_REPLAY_LEGACY_CHUNK_MAX_BYTES = 128 * 1024 * 1024
+_REPLAY_MANIFEST_MAX_BYTES = 4 * 1024 * 1024
+_REPLAY_CAR_COLUMNS = (
+    "car_index",
+    "lap_pct",
+    "lap",
+    "completed_laps",
+    "overall_position",
+    "class_position",
+    "on_pit_road",
+    "track_surface",
+    "pace_flags",
+    "last_lap_time_s",
+    "best_lap_time_s",
+)
+
+
+def _finite_number(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _replay_frame_score(frame: Mapping[str, Any]) -> tuple[int, int, int, int]:
+    cars = [car for car in frame.get("cars") or () if isinstance(car, Mapping)]
+    car_rows = [row for row in frame.get("car_rows") or () if isinstance(row, Sequence)]
+    car_count = len(cars) if cars else len(car_rows)
+    field_count = sum(len(car) for car in cars) if cars else sum(len(row) for row in car_rows)
+    return (
+        len(frame.get("events") or ()),
+        1 if isinstance(frame.get("player_telemetry"), Mapping) else 0,
+        car_count,
+        field_count,
+    )
+
+
+def _merge_replay_frames(
+    prior: Mapping[str, Any] | None,
+    current: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Choose the richest duplicate while retaining every explicit event."""
+
+    selected = dict(current if prior is None or _replay_frame_score(current) >= _replay_frame_score(prior) else prior)
+    events: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, Any]] = set()
+    for source in (prior, current):
+        for event in (source or {}).get("events") or ():
+            if not isinstance(event, Mapping):
+                continue
+            normalized = dict(event)
+            key = (
+                str(normalized.get("kind") or ""),
+                str(normalized.get("label") or ""),
+                str(normalized.get("sourceChannel") or normalized.get("source_channel") or ""),
+                normalized.get("delta"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            events.append(normalized)
+    selected["events"] = events
+    reasons = {
+        str(reason)
+        for source in (prior, current)
+        for reason in (source or {}).get("_keyframe_reasons") or ()
+        if str(reason)
+    }
+    if reasons:
+        selected["_keyframe_reasons"] = sorted(reasons)
+    return selected
+
+
+class _ReplayDisplaySampler:
+    """Bounded deterministic replay materializer with exact keyframe retention."""
+
+    def __init__(self, duration_hint_s: float | None = None):
+        hinted_interval = (
+            duration_hint_s / max(1, _REPLAY_DISPLAY_ROUTINE_FRAME_BUDGET - 1)
+            if duration_hint_s is not None and duration_hint_s > 0
+            else 0.0
+        )
+        self.interval_s = max(_REPLAY_DISPLAY_BASE_INTERVAL_S, hinted_interval)
+        self._origin: float | None = None
+        self._routine: dict[int, dict[str, Any]] = {}
+        self._keyframes: dict[int, dict[str, Any]] = {}
+        self._keyframe_priorities: dict[int, int] = {}
+        self._keyframe_heaps: tuple[
+            list[tuple[int, int]],
+            list[tuple[int, int]],
+            list[tuple[int, int]],
+        ] = ([], [], [])
+        self.keyframes_preserved = True
+        self.dropped_keyframe_count = 0
+
+    @staticmethod
+    def _time_key(session_time_s: float) -> int:
+        return int(round(session_time_s * 1_000_000))
+
+    @staticmethod
+    def _sort_time(frame: Mapping[str, Any]) -> float:
+        value = _finite_number(frame.get("session_time_s"))
+        return value if value is not None else float("-inf")
+
+    @staticmethod
+    def _reservoir_rank(time_key: int) -> int:
+        """Stable SplitMix64 rank used for bounded, repeatable event sampling."""
+
+        value = time_key & 0xFFFFFFFFFFFFFFFF
+        value = (value + 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+        value = ((value ^ (value >> 30)) * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+        value = ((value ^ (value >> 27)) * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF
+        return value ^ (value >> 31)
+
+    @staticmethod
+    def _keyframe_priority(frame: Mapping[str, Any]) -> int:
+        reasons = set(frame.get("_keyframe_reasons") or ())
+        if reasons & {"gap", "boundary"}:
+            return 2
+        if frame.get("events"):
+            return 1
+        return 0
+
+    def _store_keyframe(self, time_key: int, frame: dict[str, Any]) -> None:
+        priority = self._keyframe_priority(frame)
+        self._keyframes[time_key] = frame
+        self._keyframe_priorities[time_key] = priority
+        # heapq is a min-heap; negative rank puts the least desirable
+        # (largest stable rank) retained frame at the root.
+        heapq.heappush(
+            self._keyframe_heaps[priority],
+            (-self._reservoir_rank(time_key), time_key),
+        )
+
+    def _worst_keyframe(self, priority: int) -> tuple[int, int] | None:
+        heap = self._keyframe_heaps[priority]
+        while heap:
+            negative_rank, time_key = heap[0]
+            if (
+                time_key in self._keyframes
+                and self._keyframe_priorities.get(time_key) == priority
+                and -negative_rank == self._reservoir_rank(time_key)
+            ):
+                return time_key, -negative_rank
+            heapq.heappop(heap)
+        return None
+
+    def _retain_keyframe(self, time_key: int, frame: dict[str, Any]) -> None:
+        existing = self._keyframes.get(time_key)
+        if existing is not None:
+            merged = _merge_replay_frames(existing, frame)
+            old_priority = self._keyframe_priorities[time_key]
+            new_priority = self._keyframe_priority(merged)
+            self._keyframes[time_key] = merged
+            if new_priority != old_priority:
+                self._keyframe_priorities[time_key] = new_priority
+                heapq.heappush(
+                    self._keyframe_heaps[new_priority],
+                    (-self._reservoir_rank(time_key), time_key),
+                )
+            return
+
+        if len(self._keyframes) < _REPLAY_DISPLAY_HARD_FRAME_BUDGET:
+            self._store_keyframe(time_key, frame)
+            return
+
+        incoming_priority = self._keyframe_priority(frame)
+        lowest_priority = next(
+            (
+                priority
+                for priority in range(3)
+                if self._worst_keyframe(priority) is not None
+            ),
+            None,
+        )
+        worst = (
+            self._worst_keyframe(lowest_priority)
+            if lowest_priority is not None
+            else None
+        )
+        incoming_rank = self._reservoir_rank(time_key)
+        if (
+            worst is None
+            or incoming_priority < lowest_priority
+            or (incoming_priority == lowest_priority and incoming_rank >= worst[1])
+        ):
+            self.keyframes_preserved = False
+            self.dropped_keyframe_count += 1
+            return
+
+        evicted_time_key = worst[0]
+        self._keyframes.pop(evicted_time_key, None)
+        self._keyframe_priorities.pop(evicted_time_key, None)
+        self.keyframes_preserved = False
+        self.dropped_keyframe_count += 1
+        self._store_keyframe(time_key, frame)
+
+    def observe(
+        self,
+        frame: Mapping[str, Any],
+        *,
+        keyframe: bool = False,
+        keyframe_reason: str | None = None,
+    ) -> None:
+        session_time = _finite_number(frame.get("session_time_s"))
+        if session_time is None:
+            return
+        if self._origin is None:
+            self._origin = session_time
+            keyframe = True
+            keyframe_reason = keyframe_reason or "boundary"
+        time_key = self._time_key(session_time)
+        if keyframe:
+            materialized = dict(frame)
+            if keyframe_reason:
+                materialized["_keyframe_reasons"] = [keyframe_reason]
+            self._retain_keyframe(time_key, materialized)
+            return
+        bucket = int(math.floor((session_time - self._origin) / self.interval_s + 1e-9))
+        self._routine[bucket] = _merge_replay_frames(self._routine.get(bucket), frame)
+        if len(self._routine) > _REPLAY_DISPLAY_ROUTINE_FRAME_BUDGET:
+            self._compact()
+
+    def promote(self, frame: Mapping[str, Any], reason: str = "transition") -> None:
+        self.observe(frame, keyframe=True, keyframe_reason=reason)
+
+    def _compact(self) -> None:
+        if self._origin is None:
+            return
+        self.interval_s *= 2
+        compacted: dict[int, dict[str, Any]] = {}
+        for frame in self._routine.values():
+            session_time = _finite_number(frame.get("session_time_s"))
+            if session_time is None:
+                continue
+            bucket = int(math.floor((session_time - self._origin) / self.interval_s + 1e-9))
+            compacted[bucket] = _merge_replay_frames(compacted.get(bucket), frame)
+        self._routine = compacted
+
+    @staticmethod
+    def _evenly_spaced(values: Sequence[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+        if count <= 0 or not values:
+            return []
+        if len(values) <= count:
+            return list(values)
+        if count == 1:
+            return [values[0]]
+        indexes = {
+            int(round(index * (len(values) - 1) / (count - 1)))
+            for index in range(count)
+        }
+        return [values[index] for index in sorted(indexes)]
+
+    def finish(self) -> list[dict[str, Any]]:
+        keyframes = sorted(
+            self._keyframes.values(),
+            key=self._sort_time,
+        )
+        key_times = {
+            self._time_key(_finite_number(frame.get("session_time_s")) or 0.0)
+            for frame in keyframes
+        }
+        routine = sorted(
+            (
+                frame
+                for frame in self._routine.values()
+                if self._time_key(_finite_number(frame.get("session_time_s")) or 0.0) not in key_times
+            ),
+            key=self._sort_time,
+        )
+        routine_limit = min(
+            _REPLAY_DISPLAY_ROUTINE_FRAME_BUDGET,
+            max(0, _REPLAY_DISPLAY_HARD_FRAME_BUDGET - len(keyframes)),
+        )
+        selected = keyframes + self._evenly_spaced(routine, routine_limit)
+        deduplicated: dict[int, dict[str, Any]] = {}
+        for frame in selected:
+            session_time = _finite_number(frame.get("session_time_s"))
+            if session_time is None:
+                continue
+            key = self._time_key(session_time)
+            deduplicated[key] = _merge_replay_frames(deduplicated.get(key), frame)
+        result = sorted(
+            deduplicated.values(),
+            key=self._sort_time,
+        )
+        for frame in result:
+            frame.pop("_keyframe_reasons", None)
+        return result
 
 
 def utc_now() -> str:
@@ -1803,14 +2114,19 @@ class ArchiveStore:
             "lap_percent_coverage": round(coverage, 6),
             "maximum_lap_percent_gap": round(maximum_gap, 6),
             "closure_distance": round(closure_distance, 8),
+            "geometry_plausible": bool(measured.get("geometry_plausible")),
+            "main_path_span": float(measured.get("main_path_span") or 0.0),
+            "maximum_segment_distance": measured.get("maximum_segment_distance"),
+            "maximum_relative_segment_distance": measured.get("maximum_relative_segment_distance"),
             "main_path_points": len(main_path) if complete else 0,
             "observed_main_path_points": observed_points,
         }
 
     @classmethod
-    def _geometry_score(cls, value: Mapping[str, Any]) -> tuple[int, int, int, int, int, int, int]:
+    def _geometry_score(cls, value: Mapping[str, Any]) -> tuple[int, int, int, int, int, int, int, int]:
         quality = cls._verified_geometry_quality(value)
         return (
+            1 if quality.get("geometry_plausible") else 0,
             1 if quality["main_loop_complete"] else 0,
             int(round(float(quality["lap_percent_coverage"]) * 1_000_000)),
             -int(round(float(quality["maximum_lap_percent_gap"]) * 1_000_000)),
@@ -1943,7 +2259,12 @@ class ArchiveStore:
             # never retain a synthetic start/finish line for unknown geometry.
             chosen["status"] = "unavailable"
             chosen["main_path"] = []
+            chosen["pit_lane"] = []
+            chosen["pit_entry_path"] = []
+            chosen["pit_exit_path"] = []
             chosen["start_finish_line"] = None
+            chosen["pit_commitment_line"] = None
+            chosen["pit_merge_line"] = None
             reasons = [str(item) for item in chosen.get("unavailable_reasons") or () if str(item).strip()]
             completeness_reason = "A complete closed main circuit loop could not be verified."
             if completeness_reason not in reasons:
@@ -1951,6 +2272,18 @@ class ArchiveStore:
             chosen["unavailable_reasons"] = reasons
             chosen["geometry_hash"] = None
         else:
+            chosen, rejected_layers = _sanitize_geometry_layers(chosen)
+            if rejected_layers:
+                reasons = [str(item) for item in chosen.get("unavailable_reasons") or () if str(item).strip()]
+                reason = "Implausible cached track overlays were omitted: " + ", ".join(sorted(rejected_layers)) + "."
+                if reason not in reasons:
+                    reasons.append(reason)
+                chosen["unavailable_reasons"] = reasons
+                chosen["status"] = "partial"
+                chosen["quality"] = {
+                    **verified_quality,
+                    "rejected_geometry_layers": sorted(rejected_layers),
+                }
             # A re-analysis upgrades legacy cache entries even when their
             # recorded point coverage still wins canonical selection.
             chosen["geometry_hash"] = track_geometry_sha256(chosen)
@@ -2062,6 +2395,8 @@ class ArchiveStore:
         matches: list[tuple[Path, Mapping[str, Any]]] = []
         for manifest_path in root.glob("*/manifest.json"):
             try:
+                if manifest_path.stat().st_size > _REPLAY_MANIFEST_MAX_BYTES:
+                    continue
                 decoded = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
@@ -2086,11 +2421,30 @@ class ArchiveStore:
         if not matches:
             return None
 
+        hinted_times = [
+            value
+            for _, manifest in matches
+            for chunk in manifest.get("chunks") or ()
+            if isinstance(chunk, Mapping)
+            for key in ("startSessionTimeSeconds", "endSessionTimeSeconds")
+            if (value := _finite_number(chunk.get(key))) is not None
+        ]
+        duration_hint_s = (
+            max(hinted_times) - min(hinted_times)
+            if len(hinted_times) >= 2 and max(hinted_times) > min(hinted_times)
+            else None
+        )
+        display_sampler = _ReplayDisplaySampler(duration_hint_s)
         participants_by_index: dict[int, dict[str, Any]] = {}
         participant_segments: dict[int, set[int]] = {}
-        frames: list[dict[str, Any]] = []
+        participant_frame_counts: dict[int, int] = {}
+        participant_first_times: dict[int, float] = {}
+        participant_last_times: dict[int, float] = {}
+        finite_time_keys: set[int] = set()
+        raw_frame_count = 0
         manifests: list[str] = []
         capture_segments: list[dict[str, Any]] = []
+        manifest_sample_rates: list[float] = []
         player_index: int | None = None
         session_states = {0: "invalid", 1: "get_in_car", 2: "warmup", 3: "parade_laps", 4: "racing", 5: "checkered", 6: "cooldown"}
 
@@ -2110,6 +2464,22 @@ class ArchiveStore:
 
         for segment_index, (manifest_path, manifest) in enumerate(matches):
             manifests.append(str(manifest_path))
+            capture_metrics = manifest.get("captureMetrics")
+            observed_sample_rate = (
+                capture_metrics.get("observedSampleRateHz")
+                if isinstance(capture_metrics, Mapping)
+                else None
+            )
+            segment_sample_rate: float | None = None
+            for candidate in (manifest.get("sampleRateHz"), observed_sample_rate):
+                try:
+                    parsed_rate = float(candidate)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if math.isfinite(parsed_rate) and parsed_rate > 0:
+                    segment_sample_rate = parsed_rate
+                    manifest_sample_rates.append(parsed_rate)
+                    break
             if player_index is None:
                 player_index = integer(manifest.get("playerCarIndex"))
             segment_channels: dict[str, dict[str, Any]] = {}
@@ -2137,29 +2507,50 @@ class ArchiveStore:
                 }
             verified_chunk_count = 0
             segment_frame_count = 0
+            previous_segment_frame: dict[str, Any] | None = None
+            previous_segment_signature: tuple[Any, ...] | None = None
+            previous_segment_time: float | None = None
             for chunk in manifest.get("chunks") or ():
                 if not isinstance(chunk, Mapping) or not chunk.get("file") or not chunk.get("sha256"):
                     continue
                 chunk_path = (manifest_path.parent / str(chunk["file"])).resolve()
                 if manifest_path.parent.resolve() not in chunk_path.parents or not chunk_path.is_file():
                     continue
+                if (
+                    chunk_path.suffix.lower() != ".ircr2"
+                    and chunk_path.stat().st_size > _REPLAY_LEGACY_CHUNK_MAX_BYTES
+                ):
+                    continue
                 expected = str(chunk["sha256"]).lower()
                 if not _SOURCE_HASH_PATTERN.fullmatch(expected) or file_sha256(chunk_path) != expected:
                     continue
                 try:
-                    decoded_chunk = json.loads(chunk_path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
+                    decoded_chunk = (
+                        decode_live_replay_v2(chunk_path)
+                        if chunk_path.suffix.lower() == ".ircr2"
+                        else json.loads(chunk_path.read_text(encoding="utf-8"))
+                    )
+                except (
+                    OSError,
+                    json.JSONDecodeError,
+                    LiveReplayV2Error,
+                ):
                     continue
                 verified_chunk_count += 1
                 for raw_frame in (decoded_chunk.get("frames") or ()) if isinstance(decoded_chunk, Mapping) else ():
                     if not isinstance(raw_frame, Mapping):
                         continue
                     segment_frame_count += 1
+                    raw_frame_count += 1
                     raw_flags = integer(raw_frame.get("sessionFlags")) or 0
                     cars: list[dict[str, Any]] = []
+                    observed_cars: set[int] = set()
                     for raw_car in raw_frame.get("cars") or ():
                         if not isinstance(raw_car, Mapping) or (car_index := integer(raw_car.get("carIndex"))) is None:
                             continue
+                        if car_index in observed_cars:
+                            continue
+                        observed_cars.add(car_index)
                         participant_segments.setdefault(car_index, set()).add(segment_index)
                         participants_by_index.setdefault(
                             car_index,
@@ -2175,7 +2566,12 @@ class ArchiveStore:
                                 "is_spectator": False,
                             },
                         )
-                        lap_pct = raw_car.get("lapDistancePercent")
+                        lap_pct = _finite_number(raw_car.get("lapDistancePercent"))
+                        if lap_pct is not None and not 0 <= lap_pct <= 1:
+                            # iRacing uses negative sentinels for cars whose
+                            # world position is unavailable.  Keep that as
+                            # missing; never draw it at the start/finish line.
+                            lap_pct = None
                         cars.append({
                             "car_index": car_index,
                             "lap_pct": lap_pct,
@@ -2189,15 +2585,93 @@ class ArchiveStore:
                             "last_lap_time_s": raw_car.get("lastLapSeconds"),
                             "best_lap_time_s": raw_car.get("bestLapSeconds"),
                         })
-                    frames.append({
-                        "session_time_s": raw_frame.get("sessionTimeSeconds"),
+                    session_time = _finite_number(raw_frame.get("sessionTimeSeconds"))
+                    if session_time is not None:
+                        finite_time_keys.add(int(round(session_time * 1_000_000)))
+                    for car_index in observed_cars:
+                        participant_frame_counts[car_index] = participant_frame_counts.get(car_index, 0) + 1
+                        if session_time is not None:
+                            participant_first_times[car_index] = min(
+                                participant_first_times.get(car_index, session_time),
+                                session_time,
+                            )
+                            participant_last_times[car_index] = max(
+                                participant_last_times.get(car_index, session_time),
+                                session_time,
+                            )
+                    player_telemetry = (
+                        dict(raw_frame["playerTelemetry"])
+                        if isinstance(raw_frame.get("playerTelemetry"), Mapping)
+                        else None
+                    )
+                    events = [
+                        dict(event)
+                        for event in raw_frame.get("events") or ()
+                        if isinstance(event, Mapping)
+                    ]
+                    frame = {
+                        "session_time_s": session_time,
                         "session_state": session_states.get(integer(raw_frame.get("sessionState")) or -1, "unknown"),
                         "global_flags": raw_flags,
                         "global_flag_labels": flag_labels(raw_flags),
-                        "cars": cars,
+                        "car_rows": [
+                            [car.get(column) for column in _REPLAY_CAR_COLUMNS]
+                            for car in cars
+                        ],
                         "captured_at": raw_frame.get("capturedAt"),
+                        "player_telemetry": player_telemetry,
+                        "events": events,
                         "_capture_segment": segment_index,
-                    })
+                    }
+                    player_car = next(
+                        (car for car in cars if car.get("car_index") == player_index),
+                        None,
+                    )
+                    signature = (
+                        raw_flags,
+                        frame["session_state"],
+                        (player_telemetry or {}).get("onPitRoad"),
+                        (player_telemetry or {}).get("towing"),
+                        (player_telemetry or {}).get("repairRequired"),
+                        (player_telemetry or {}).get("trackSurface"),
+                        (player_car or {}).get("on_pit_road"),
+                        (player_car or {}).get("track_surface"),
+                    )
+                    keyframe = previous_segment_frame is None or bool(events) or (
+                        previous_segment_signature is not None
+                        and signature != previous_segment_signature
+                    )
+                    keyframe_reason = (
+                        "boundary"
+                        if previous_segment_frame is None
+                        else "event"
+                        if events
+                        else "transition"
+                        if keyframe
+                        else None
+                    )
+                    if (
+                        session_time is not None
+                        and previous_segment_time is not None
+                        and session_time - previous_segment_time
+                        > 3.0 / max(segment_sample_rate or 2.0, 0.001) + 1e-9
+                    ):
+                        # Retain both sides of a real source gap so the player
+                        # never interpolates cars through missing time.
+                        if previous_segment_frame is not None:
+                            display_sampler.promote(previous_segment_frame, "gap")
+                        keyframe = True
+                        keyframe_reason = "gap"
+                    display_sampler.observe(
+                        frame,
+                        keyframe=keyframe,
+                        keyframe_reason=keyframe_reason,
+                    )
+                    previous_segment_frame = frame
+                    previous_segment_signature = signature
+                    previous_segment_time = session_time
+            if previous_segment_frame is not None:
+                display_sampler.promote(previous_segment_frame, "boundary")
             capture_segments.append(
                 {
                     "index": segment_index,
@@ -2205,57 +2679,31 @@ class ArchiveStore:
                     "channels": segment_channels,
                     "verified_chunk_count": verified_chunk_count,
                     "frame_count": segment_frame_count,
+                    "sample_rate_hz": segment_sample_rate,
                 }
             )
         def finite_session_time(frame: Mapping[str, Any]) -> float | None:
-            try:
-                value = float(frame.get("session_time_s"))
-            except (TypeError, ValueError, OverflowError):
-                return None
-            return value if math.isfinite(value) else None
+            return _finite_number(frame.get("session_time_s"))
 
-        frames.sort(
-            key=lambda frame: (
-                finite_session_time(frame)
-                if finite_session_time(frame) is not None
-                else -1.0,
-                str(frame.get("captured_at") or ""),
-            )
-        )
-        deduplicated_by_time: dict[tuple[str, Any], dict[str, Any]] = {}
-        for frame in frames:
+        deduplicated = display_sampler.finish()
+        for frame in deduplicated:
             frame.pop("captured_at", None)
-            finite_time = finite_session_time(frame)
-            key = (
-                ("time", round(finite_time, 3))
-                if finite_time is not None
-                else ("content", stable_hash(frame, 32))
+        finite_times = [key / 1_000_000.0 for key in sorted(finite_time_keys)]
+        positive_deltas = [
+            later - earlier
+            for earlier, later in zip(finite_times, finite_times[1:])
+            if math.isfinite(later - earlier) and later - earlier > 0
+        ]
+        if manifest_sample_rates:
+            sample_rate_hz = float(statistics.median(manifest_sample_rates))
+        elif len(positive_deltas) >= 2:
+            sample_rate_hz = min(
+                60.0,
+                max(1.0, 1.0 / float(statistics.median(positive_deltas))),
             )
-            prior = deduplicated_by_time.get(key)
-            frame_score = (
-                len(frame.get("cars") or ()),
-                sum(len(car) for car in frame.get("cars") or () if isinstance(car, Mapping)),
-            )
-            prior_score = (
-                len(prior.get("cars") or ()),
-                sum(len(car) for car in prior.get("cars") or () if isinstance(car, Mapping)),
-            ) if prior is not None else (-1, -1)
-            if prior is None or frame_score > prior_score:
-                deduplicated_by_time[key] = frame
-        deduplicated = sorted(
-            deduplicated_by_time.values(),
-            key=lambda frame: finite_session_time(frame) or -1.0,
-        )
-
-        sample_rate_hz = 2.0
+        else:
+            sample_rate_hz = 2.0
         expected_interval_s = 1.0 / sample_rate_hz
-        finite_times = sorted(
-            {
-                value
-                for frame in deduplicated
-                if (value := finite_session_time(frame)) is not None
-            }
-        )
         start_time = finite_times[0] if finite_times else None
         end_time = finite_times[-1] if finite_times else None
         expected_frame_count = (
@@ -2264,18 +2712,48 @@ class ArchiveStore:
                 int(round((end_time - start_time) * sample_rate_hz)) + 1,
             )
             if start_time is not None and end_time is not None
-            else len(deduplicated)
+            else len(finite_times)
         )
         frame_fraction = (
             min(1.0, len(finite_times) / expected_frame_count)
             if expected_frame_count > 0
             else 0.0
         )
-        gaps = [
-            later - earlier
+        gap_boundaries = [
+            (earlier, later)
             for earlier, later in zip(finite_times, finite_times[1:])
             if later - earlier > expected_interval_s * 3.0 + 1e-9
         ]
+        gaps = [later - earlier for earlier, later in gap_boundaries]
+        gap_index = 0
+        previous_display_time: float | None = None
+        for frame in deduplicated:
+            current_display_time = finite_session_time(frame)
+            frame["gap_before"] = False
+            if current_display_time is None:
+                continue
+            while gap_index < len(gap_boundaries) and gap_boundaries[gap_index][1] <= current_display_time + 1e-9:
+                earlier, later = gap_boundaries[gap_index]
+                if previous_display_time is not None and previous_display_time <= earlier + 1e-9:
+                    frame["gap_before"] = True
+                gap_index += 1
+            previous_display_time = current_display_time
+        display_deltas = []
+        for prior, current in zip(deduplicated, deduplicated[1:]):
+            earlier = finite_session_time(prior)
+            later = finite_session_time(current)
+            if (
+                earlier is not None
+                and later is not None
+                and later > earlier
+                and current.get("gap_before") is not True
+            ):
+                display_deltas.append(later - earlier)
+        display_sample_rate_hz = (
+            min(20.0, 1.0 / float(statistics.median(display_deltas)))
+            if display_deltas
+            else min(20.0, sample_rate_hz)
+        )
         temporal_status = (
             "unavailable"
             if not finite_times
@@ -2363,7 +2841,7 @@ class ArchiveStore:
             for channel in required
             if coverage_by_channel.get(channel, {}).get("status") != "recorded"
         ]
-        has_cars = any(frame.get("cars") for frame in deduplicated)
+        has_cars = any(frame.get("cars") or frame.get("car_rows") for frame in deduplicated)
         required_unavailable = any(
             coverage_by_channel.get(channel, {}).get("status") == "unavailable"
             for channel in required
@@ -2371,6 +2849,7 @@ class ArchiveStore:
         status = "unavailable" if required_unavailable or not has_cars else (
             "partial"
             if temporal_status != "recorded"
+            or not display_sampler.keyframes_preserved
             or any(item.get("status") != "recorded" for item in coverage_by_channel.values())
             else "usable"
         )
@@ -2378,25 +2857,12 @@ class ArchiveStore:
             unavailable.append("No recorded competitor lap-distance rows were captured.")
 
         participant_coverage: list[dict[str, Any]] = []
-        total_frame_count = len(deduplicated)
+        total_frame_count = raw_frame_count
         for car_index in sorted(participants_by_index):
-            participant_frames = [
-                frame
-                for frame in deduplicated
-                if any(
-                    integer(car.get("car_index")) == car_index
-                    for car in frame.get("cars") or ()
-                    if isinstance(car, Mapping)
-                )
-            ]
-            participant_times = [
-                value
-                for frame in participant_frames
-                if (value := finite_session_time(frame)) is not None
-            ]
+            participant_frame_count = participant_frame_counts.get(car_index, 0)
             participant_segment_count = len(participant_segments.get(car_index, set()))
             frame_coverage_fraction = (
-                len(participant_frames) / total_frame_count if total_frame_count else 0.0
+                participant_frame_count / total_frame_count if total_frame_count else 0.0
             )
             segment_coverage_fraction = (
                 participant_segment_count / segment_count if segment_count else 0.0
@@ -2408,28 +2874,32 @@ class ArchiveStore:
             )
             participant_status = (
                 "recorded"
-                if participant_frames
-                and len(participant_frames) == total_frame_count
+                if participant_frame_count
+                and participant_frame_count == total_frame_count
                 and participant_segment_count == segment_count
                 and temporal_status == "recorded"
                 else "partial"
-                if participant_frames
+                if participant_frame_count
                 else "unavailable"
             )
             participant_coverage.append(
                 {
                     "car_index": car_index,
                     "status": participant_status,
-                    "recorded_frame_count": len(participant_frames),
+                    "recorded_frame_count": participant_frame_count,
                     "total_frame_count": total_frame_count,
                     "recorded_fraction": round(participant_fraction, 4),
                     "recorded_segment_count": participant_segment_count,
                     "segment_count": segment_count,
                     "first_session_time_s": (
-                        round(min(participant_times), 3) if participant_times else None
+                        round(participant_first_times[car_index], 3)
+                        if car_index in participant_first_times
+                        else None
                     ),
                     "last_session_time_s": (
-                        round(max(participant_times), 3) if participant_times else None
+                        round(participant_last_times[car_index], 3)
+                        if car_index in participant_last_times
+                        else None
                     ),
                 }
             )
@@ -2444,16 +2914,29 @@ class ArchiveStore:
             "coverage": sorted(coverage_by_channel.values(), key=lambda item: item["channel"]),
             "temporal_coverage": temporal_coverage,
             "sample_rate_hz": sample_rate_hz,
-            "interpolation": "linear lap-distance interpolation between recorded live SDK frames",
+            "representation": {
+                "source_frame_count": len(finite_times),
+                "display_frame_count": len(deduplicated) if status != "unavailable" else 0,
+                "source_sample_rate_hz": sample_rate_hz,
+                "display_sample_rate_hz": round(display_sample_rate_hz, 3),
+                "frame_budget": _REPLAY_DISPLAY_HARD_FRAME_BUDGET,
+                "decimated": len(deduplicated) < len(finite_times),
+                "routine_interval_s": round(display_sampler.interval_s, 6),
+                "keyframes_preserved": display_sampler.keyframes_preserved,
+                "dropped_keyframe_count": display_sampler.dropped_keyframe_count,
+            },
+            "interpolation": "linear lap-distance interpolation between contiguous display frames; source gaps are never interpolated",
             "participant_count": len(participants_by_index),
             "player_car_index": player_index,
             "participants": [participants_by_index[index] for index in sorted(participants_by_index)],
+            "car_columns": list(_REPLAY_CAR_COLUMNS),
             "participant_coverage": participant_coverage,
             "frames": deduplicated if status != "unavailable" else [],
             "frame_count": len(deduplicated) if status != "unavailable" else 0,
             "capture_manifests": manifests,
             "limitations": [
                 "Only SHA-verified recorded values are present; reconnect and time-gap coverage is quantified explicitly.",
+                "Routine motion is adaptively sampled for display; recorded events and flag, session-state, pit, surface, repair, tow, and gap-boundary keyframes are retained.",
                 "Competitor fuel, tire wear, tire temperature, setup, and private penalties are not inferred.",
             ],
         }

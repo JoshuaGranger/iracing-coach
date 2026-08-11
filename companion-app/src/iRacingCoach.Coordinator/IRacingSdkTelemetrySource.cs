@@ -159,6 +159,11 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                     ? sessionType
                     : null,
                 PlayerCarIndex = playerIndex,
+                PlayerIncidentPoints = ReadInt("PlayerCarMyIncidentCount", bestOffset)
+                    ?? ReadInt("PlayerIncidents", bestOffset),
+                DriverIncidentPoints = ReadInt("PlayerCarDriverIncidentCount", bestOffset),
+                TeamIncidentPoints = ReadInt("PlayerCarTeamIncidentCount", bestOffset),
+                PlayerTrackSurface = ReadInt("PlayerTrackSurface", bestOffset),
                 ReplayCoverage = _replayCoverage,
                 ReplayParticipants = _replayParticipants,
                 ReplayCars = replayCars

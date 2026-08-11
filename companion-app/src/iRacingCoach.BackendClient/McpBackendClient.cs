@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using iRacingCoach.Contracts;
 
@@ -121,6 +122,9 @@ public sealed class McpBackendClient : IBackendClient
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardInputEncoding = new UTF8Encoding(false),
+                StandardOutputEncoding = new UTF8Encoding(false),
+                StandardErrorEncoding = new UTF8Encoding(false),
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden
             };

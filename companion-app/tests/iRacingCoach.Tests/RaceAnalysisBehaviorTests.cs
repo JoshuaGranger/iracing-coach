@@ -220,6 +220,7 @@ public sealed class RaceAnalysisBehaviorTests
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        var performanceCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-performance.css"));
 
         StringAssert.Contains(telemetry, "<span>Type</span><select @ref=\"MapTypeElement\" data-map-type value=\"@Mode\" @onchange=\"ChangeMapMode\"");
         StringAssert.Contains(telemetry, "[(\"traces\", \"Traces\"), (\"speed\", \"Speed\"), (\"throttle\", \"Throttle\"), (\"brake\", \"Brake\"), (\"stress\", \"Tire load\")]");
@@ -231,17 +232,22 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "data-map-legend data-mode=\"@Mode\"");
         Assert.DoesNotContain("--legend-color:{trace.Color}", telemetry, "Trace identity belongs on the line/cursor, not in a space-consuming map footer.");
         Assert.DoesNotContain("map-trace-unavailable", telemetry);
-        StringAssert.Contains(telemetry, "new MapTracePath(item.Trace.Lap, LapColor(item.Trace.Lap)");
+        StringAssert.Contains(telemetry, ".GroupBy(item => LapColor(item.Trace.Lap))");
+        StringAssert.Contains(telemetry, "AnalysisRenderBudget.RepresentativeIndices(item.Points.Count, budget)");
+        StringAssert.Contains(telemetry, "return SvgPath(points, item.Trace.Complete);");
         StringAssert.Contains(telemetry, "Quality.MainLoopComplete: true");
         StringAssert.Contains(telemetry, "if (CompleteVectorGeometry is { } vector)");
         StringAssert.Contains(telemetry, ".Select((point, index) => ProjectVectorPoint(point with { LapPercent = point.LapPercent ?? index / (double)vector.MainPath.Count }))");
-        StringAssert.Contains(telemetry, "var pitRoad = VectorPath(vector.PitLane)");
-        StringAssert.Contains(telemetry, "var entry = VectorPath(vector.PitEntryPath)");
-        StringAssert.Contains(telemetry, "var exit = VectorPath(vector.PitExitPath)");
-        StringAssert.Contains(telemetry, "vector.PitCommitmentLine is { } entryLine");
-        StringAssert.Contains(telemetry, "vector.PitMergeLine is { } exitLine");
+        StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsPlausibleOverlayPath(vector.MainPath, vector.PitLane)");
+        StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsPlausibleOverlayPath(vector.MainPath, vector.PitEntryPath)");
+        StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsPlausibleOverlayPath(vector.MainPath, vector.PitExitPath)");
+        StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsPlausibleOverlayLine(vector.MainPath, vector.PitCommitmentLine)");
+        StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsPlausibleOverlayLine(vector.MainPath, vector.PitMergeLine)");
         StringAssert.Contains(telemetry, "? vector.MainPath.ToArray()");
         StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsCanonicalMainLoop(vector.MainPath)");
+        StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsPlausibleOverlayPath(vector.MainPath, vector.PitEntryPath)");
+        StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsPlausibleOverlayLine(vector.MainPath, recorded)");
+        StringAssert.Contains(telemetry, "AnalysisTrackMapGeometry.IsPlausibleNormalizedPoint(vector.MainPath, normalizedX, normalizedY)");
         Assert.DoesNotContain(".Concat(vector.PitLane)", telemetry, "Pit geometry must never redefine the main-loop projection or Fit bounds.");
         Assert.DoesNotContain(".Concat(vector.PitEntryPath)", telemetry);
         Assert.DoesNotContain(".Concat(vector.PitExitPath)", telemetry);
@@ -276,7 +282,7 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(css, ".map-scale-gradient.throttle { background: linear-gradient(90deg,#484f58,#2ae27e); }");
         StringAssert.Contains(css, ".map-scale-gradient.brake { background: linear-gradient(90deg,#484f58,#ff4556); }");
         StringAssert.Contains(css, ".map-scale-gradient.stress { background: linear-gradient(90deg,#f7d24a,#f7414c); }");
-        Assert.IsTrue(Regex.IsMatch(css, @"\.track-lap-trace\s*\{[^}]*stroke-width:\s*1\.05;", RegexOptions.Singleline));
+        Assert.IsTrue(Regex.IsMatch(performanceCss, @"\.track-lap-trace\s*\{[^}]*stroke-width:\s*1;", RegexOptions.Singleline));
         StringAssert.Contains(css, ".track-metric-ribbon-segment");
         Assert.IsTrue(Regex.IsMatch(css, @"\.track-pit-entry\s*\{[^}]*stroke:\s*#f0c94d;[^}]*stroke-dasharray:", RegexOptions.Singleline));
         Assert.IsTrue(Regex.IsMatch(css, @"\.track-pit-exit\s*\{[^}]*stroke:\s*#54a9ff;[^}]*stroke-dasharray:", RegexOptions.Singleline));
@@ -308,6 +314,20 @@ public sealed class RaceAnalysisBehaviorTests
             "A dense, complete Iowa-like oval must remain the projection anchor.");
         Assert.IsFalse(iRacingCoach.UI.AnalysisTrackMapGeometry.IsCanonicalMainLoop(pitBranch),
             "A dense pit branch with lap labels is not a closed canonical race surface.");
+        var microscopicPoisonedLoop = mainLoop
+            .Select(point => point with { X = point.X * .00005, Y = point.Y * .00005 })
+            .ToArray();
+        var continentalEntry = new[]
+        {
+            new AnalysisVectorPoint(.00004, .00004),
+            new AnalysisVectorPoint(1, .44)
+        };
+        Assert.IsFalse(iRacingCoach.UI.AnalysisTrackMapGeometry.IsCanonicalMainLoop(microscopicPoisonedLoop),
+            "A sentinel-compressed legacy loop must never become the projection anchor.");
+        Assert.IsFalse(iRacingCoach.UI.AnalysisTrackMapGeometry.IsPlausibleOverlayPath(mainLoop, continentalEntry),
+            "An off-canvas pit-entry discontinuity must be omitted defensively.");
+        Assert.IsTrue(iRacingCoach.UI.AnalysisTrackMapGeometry.IsPlausibleNormalizedPoint(mainLoop, .5, .5));
+        Assert.IsFalse(iRacingCoach.UI.AnalysisTrackMapGeometry.IsPlausibleNormalizedPoint(mainLoop, 17000, 8000));
 
         var root = CompanionRoot();
         var ui = Path.Combine(root, "src", "iRacingCoach.UI");
@@ -315,6 +335,7 @@ public sealed class RaceAnalysisBehaviorTests
         var map = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-track-map.js"));
         var splitter = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-context-splitter.js"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        var performanceCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-performance.css"));
         var preview = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Preview", "Components", "App.razor"));
         var app = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "wwwroot", "index.html"));
 
@@ -346,9 +367,11 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "@onclick=\"() => RemoveTraceRow(panel.Preferences.Id)\"");
         Assert.DoesNotContain("Reset charts", telemetry);
         Assert.DoesNotContain("trace-layout-reset", telemetry);
-        Assert.IsTrue(Regex.IsMatch(css, @"\.race-workstation \.lap-rail-row\s*\{[^}]*grid-template-columns:\s*50px 42px minmax\(80px,1fr\) 34px 28px 64px 64px;[^}]*grid-template-rows:\s*minmax\(38px,auto\);", RegexOptions.Singleline));
-        StringAssert.Contains(css, ".race-workstation .lap-incident-column { grid-column: 5; grid-row: 1; }");
-        StringAssert.Contains(css, ".race-workstation .lap-pit-column { grid-column: 7; grid-row: 1;");
+        Assert.IsTrue(Regex.IsMatch(performanceCss, @"\.race-workstation \.lap-rail-row\s*\{[^}]*grid-template-columns:\s*max-content max-content minmax\(0,1fr\) max-content max-content max-content max-content;[^}]*grid-template-rows:\s*minmax\(36px,auto\);", RegexOptions.Singleline));
+        StringAssert.Contains(performanceCss, ".race-workstation .lap-incident-column { grid-column: 5;");
+        StringAssert.Contains(performanceCss, ".race-workstation .lap-pit-column { grid-column: 7;");
+        StringAssert.Contains(preview, "analysis-performance.css");
+        StringAssert.Contains(app, "analysis-performance.css");
         StringAssert.Contains(preview, "analysis-track-map.js");
         StringAssert.Contains(preview, "analysis-context-splitter.js");
         StringAssert.Contains(app, "analysis-track-map.js");
@@ -363,6 +386,7 @@ public sealed class RaceAnalysisBehaviorTests
         var technical = File.ReadAllText(Path.Combine(ui, "RaceTechnicalData.razor"));
         var unavailable = File.ReadAllText(Path.Combine(ui, "TechnicalUnavailable.razor"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        var iterationCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "iteration-ux.css"));
 
         StringAssert.Contains(page, ">Telemetry</button>");
         StringAssert.Contains(page, ">Technical data</button>");
@@ -385,8 +409,8 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(technical, "Workspace.TechnicalInsights");
         StringAssert.Contains(technical, "Workspace.TirePrediction");
         StringAssert.Contains(technical, "Workspace.Garage61References");
-        StringAssert.Contains(technical, "Garage61 reference laps");
-        StringAssert.Contains(technical, "Find Garage61 reference");
+        StringAssert.Contains(technical, "Comparable reference laps");
+        StringAssert.Contains(technical, "Find reference laps");
         StringAssert.Contains(technical, "Estimated life");
         StringAssert.Contains(technical, "new(\"Most wear\", MostTireWearReading");
         Assert.DoesNotContain("new(\"Lowest\", LowestTireReading", technical);
@@ -398,7 +422,7 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(unavailable, "data-technical-unavailable-action");
         StringAssert.Contains(unavailable, "[Parameter, EditorRequired] public string Action");
         Assert.AreEqual(4, technical.Split("data-technical-card=", StringSplitOptions.None).Length - 1);
-        Assert.IsGreaterThanOrEqualTo(5, technical.Split("Action=", StringSplitOptions.None).Length - 1,
+        Assert.IsGreaterThanOrEqualTo(4, technical.Split("Action=", StringSplitOptions.None).Length - 1,
             "Every missing Technical data branch must explain a useful next action.");
 
         StringAssert.Contains(css, ".race-technical-data { height: 100%; min-height: 0; }");
@@ -411,8 +435,22 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(technical, "@foreach (var metric in ActiveMetrics)");
         Assert.DoesNotContain("Metrics.Take(3)", technical,
             "Technical data must not hide supported findings behind an arbitrary three-item cap.");
+        Assert.DoesNotContain(".Take(", technical,
+            "Neither overview values, graphical groups, nor reference comparisons may silently cap supported facts.");
+        StringAssert.Contains(technical, "data-metric-count=\"@RacecraftCardMetrics.Count\"");
+        StringAssert.Contains(technical, "data-tire-call=\"@TireCallKey(pitRun)\"");
+        StringAssert.Contains(technical, "data-two-vs-four=\"supported\"");
+        StringAssert.Contains(technical, "data-two-vs-four=\"inconclusive\"");
+        StringAssert.Contains(technical, "data-two-vs-four=\"single-call\"");
+        StringAssert.Contains(technical, "data-tire-dynamics");
+        StringAssert.Contains(technical, "data-racecraft-story");
         StringAssert.Contains(css, ".technical-findings-list{min-width:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));");
         StringAssert.Contains(css, ".analysis-page-frame:has(.race-analysis-toolbar) .race-technical-data");
+        StringAssert.Contains(iterationCss, ".race-technical-data .technical-overview {");
+        StringAssert.Contains(iterationCss, ".race-technical-data .technical-card-metrics.metric-density-dense");
+        StringAssert.Contains(iterationCss, ".race-technical-data .technical-investigation-content.metric-density-dense");
+        StringAssert.Contains(iterationCss, ".race-technical-data .technical-overview-card:hover,");
+        StringAssert.Contains(iterationCss, "transform: none;");
     }
 
     [TestMethod]
@@ -486,7 +524,8 @@ public sealed class RaceAnalysisBehaviorTests
     {
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
         var replay = File.ReadAllText(Path.Combine(ui, "RaceReplayWorkspace.razor"));
-        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"))
+            + File.ReadAllText(Path.Combine(ui, "wwwroot", "replay-overhaul.css"));
 
         StringAssert.Contains(replay, "data-analysis-section=\"replay\" data-race-replay");
         StringAssert.Contains(replay, "@if (!ReplayAvailable)");
@@ -531,18 +570,26 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.IsTrue(gridStart >= 0 && gridRows > gridStart);
         Assert.DoesNotContain("@if", replay[gridStart..gridRows],
             "The recorded running-order grid must not be gated by checkered state.");
-        StringAssert.Contains(replay, "data-replay-flag-timeline");
+        StringAssert.Contains(replay, "data-replay-seek-rail");
+        Assert.DoesNotContain("data-replay-flag-timeline", replay,
+            "Replay status and seeking must be one segmented rail, not two stacked timelines.");
         Assert.DoesNotContain("ShowTimeline", replay,
             "The persistent flag timeline must not hide behind a button that unexpectedly seeks to the checker.");
         var playbackStart = replay.IndexOf("<footer class=\"replay-playback\" data-replay-playback>", StringComparison.Ordinal);
-        var flagTimeline = replay.IndexOf("data-replay-flag-timeline", playbackStart, StringComparison.Ordinal);
+        var flagTimeline = replay.IndexOf("data-replay-seek-rail", playbackStart, StringComparison.Ordinal);
         Assert.IsTrue(playbackStart >= 0 && flagTimeline > playbackStart);
         Assert.DoesNotContain("@if", replay[playbackStart..flagTimeline],
             "The horizontal flag-state timeline must stay mounted throughout playback, including before the checker.");
         StringAssert.Contains(replay, "@foreach (var segment in FlagSegments)");
+        StringAssert.Contains(replay, "class=\"replay-event-markers\"");
+        StringAssert.Contains(replay, "foreach (var observed in frame.Events ?? [])");
+        StringAssert.Contains(replay, "TimelinePosition(item.SessionTimeSeconds)");
         StringAssert.Contains(replay, "left:{segment.Left:0.###}%;width:{segment.Width:0.###}%");
         StringAssert.Contains(replay, "private IReadOnlyList<FlagSegment> FlagSegments");
         StringAssert.Contains(replay, "private static string FrameFlagKind(AnalysisReplayFrame frame)");
+        StringAssert.Contains(replay, "TrimToPlayableInterval(phaseFrames, _playerCarIndex)");
+        StringAssert.Contains(replay, "data-replay-instant-unavailable");
+        StringAssert.Contains(replay, "private bool CurrentInstantAvailable");
         StringAssert.Contains(replay, "CurrentFrame.GlobalFlagLabels");
         StringAssert.Contains(replay, "var leader = ClassLeader(CurrentFrame);");
         StringAssert.Contains(replay, "player.ClassPosition ?? player.OverallPosition");
@@ -552,6 +599,8 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(replay, "private IReadOnlyList<TimelineItem> TimelineEvents => _timelineEvents;");
         StringAssert.Contains(replay, "private IReadOnlyList<FlagSegment> FlagSegments => _flagSegments;");
         StringAssert.Contains(replay, "CanInterpolateFrameTransition(CurrentFrame, NextFrame, car.CarIndex)");
+        StringAssert.Contains(replay, "if (next.GapBefore) return false;");
+        StringAssert.Contains(replay, "Replay?.Representation?.DisplaySampleRateHz ?? Replay?.SampleRateHz");
         StringAssert.Contains(replay, "Replay?.Interpolation.StartsWith(\"linear\"");
         StringAssert.Contains(replay, "gap <= limit");
         StringAssert.Contains(replay, "string.Equals(current.SessionState, next.SessionState, StringComparison.OrdinalIgnoreCase)");
@@ -581,6 +630,8 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.IsFalse(replay.Contains("competitor throttle", StringComparison.OrdinalIgnoreCase));
         StringAssert.Contains(css, ".race-replay-workspace { position:relative;");
         StringAssert.Contains(css, ".replay-layout { height:100%;min-height:0;");
+        StringAssert.Contains(css, ".replay-scrubber.replay-seek-rail");
+        StringAssert.Contains(css, "background: transparent;");
         StringAssert.Contains(css, "@media (prefers-reduced-motion: reduce)");
     }
 
@@ -686,7 +737,9 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(replay, "if (DisplayLap(leader) is not { } leaderLap || DisplayLap(player) is not { } playerLap) return null;");
         StringAssert.Contains(replay, "if (CarDistance(leader) is not { } leaderDistance || CarDistance(player) is not { } playerDistance) return null;");
         StringAssert.Contains(replay, "RecordedLapCount(current) is not { } currentLapCount");
-        StringAssert.Contains(replay, "var distance = Wrap(car.LapPercent);");
+        StringAssert.Contains(replay, "car.LapPercent is { } percent && double.IsFinite(percent)");
+        StringAssert.Contains(replay, "var distance = Wrap(car.LapPercent!.Value);");
+        StringAssert.Contains(replay, "Position unavailable");
         Assert.DoesNotContain("var distance = CarDistance(car);", replay,
             "Track markers may use recorded lap percent without inventing a lap count.");
     }
@@ -1055,8 +1108,9 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "await JS.InvokeVoidAsync(\"iracingCoach.blurActiveElement\")");
         StringAssert.Contains(telemetry, "private IEnumerable<AnalysisLapTrace> RenderedSelectedTraces");
         StringAssert.Contains(telemetry, ".OrderBy(trace => SpotlightLap == trace.Lap ? 1 : 0)");
-        StringAssert.Contains(telemetry, "@foreach (var trace in RenderedSelectedTraces)");
-        StringAssert.Contains(telemetry, "data-spotlight=\"@AriaBoolean(SpotlightLap == trace.Lap)\"");
+        StringAssert.Contains(telemetry, "@foreach (var traceGroup in ChartTracePaths(panel, indexedSignal.Signal, indexedSignal.Index, top))");
+        StringAssert.Contains(telemetry, "data-spotlight=\"@AriaBoolean(traceGroup.Spotlight)\"");
+        StringAssert.Contains(telemetry, ".GroupBy(trace => new { Color = LapColor(trace.Lap), Spotlight = SpotlightLap == trace.Lap })");
         StringAssert.Contains(telemetry, "private string TraceStrokeWidth(AnalysisLapTrace trace, int signalIndex)");
         StringAssert.Contains(telemetry, "private string TraceOpacity(AnalysisLapTrace trace, int signalIndex)");
         StringAssert.Contains(telemetry, "return signalIndex == 0 ? \"2.35\" : \"1.8\";");
@@ -1195,6 +1249,70 @@ public sealed class RaceAnalysisBehaviorTests
     }
 
     [TestMethod]
+    public void RaceAnalysisPerformance_BoundsDomAndCursorWorkAtFiveHundredLogicalLaps()
+    {
+        var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var cursor = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-telemetry-cursor.js"));
+        var map = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-track-map.js"));
+        var layout = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-trace-layout.js"));
+        var performanceCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-performance.css"));
+        var geometry = File.ReadAllText(Path.Combine(ui, "AnalysisTrackMapGeometry.cs"));
+
+        StringAssert.Contains(telemetry, "private const int CursorSampleBins = AnalysisRenderBudget.CursorSampleBins;");
+        StringAssert.Contains(telemetry, "private const int CursorComparisonBudget = AnalysisRenderBudget.CursorComparisonBudget;");
+        StringAssert.Contains(telemetry, "AnalysisRenderBudget.PointBudgetPerTrace(");
+        StringAssert.Contains(telemetry, "AnalysisRenderBudget.RepresentativeIndices(trace.Points.Count, pointBudget)");
+        StringAssert.Contains(geometry, "public const int TraceVertexBudgetPerSignal = 48_000;");
+        StringAssert.Contains(telemetry, "var allTraces = CursorSelectedTraces.ToArray();");
+        StringAssert.Contains(telemetry, "var traces = BoundedCursorTraces(allTraces);");
+        StringAssert.Contains(telemetry, "logicalTraceCount = allTraces.Length");
+        StringAssert.Contains(telemetry, "logicalLaps = allTraces.Select(trace => trace.Lap).ToArray()");
+        StringAssert.Contains(telemetry, "aggregatePoints");
+        StringAssert.Contains(telemetry, "data-analysis-trace-render-layer");
+        StringAssert.Contains(telemetry, ".GroupBy(trace => new { Color = LapColor(trace.Lap), Spotlight = SpotlightLap == trace.Lap })");
+        StringAssert.Contains(telemetry, ".GroupBy(item => LapColor(item.Trace.Lap))");
+        StringAssert.Contains(cursor, "state.config.aggregate");
+        StringAssert.Contains(cursor, "logicalTraceCount: state.config.logicalTraceCount");
+        StringAssert.Contains(cursor, "renderedPathNodes:");
+        StringAssert.Contains(cursor, "aggregateBins:");
+        StringAssert.Contains(cursor, "data-analysis-cursor-tooltips");
+        StringAssert.Contains(performanceCss, ".analysis-cursor-tooltip-card");
+        StringAssert.Contains(performanceCss, "font-stretch: normal;");
+        StringAssert.Contains(map, "[data-map-cursor-radius]");
+        StringAssert.Contains(map, "baseRadius / zoom");
+        StringAssert.Contains(layout, "benchmarkStructuralMotion(root, cycles = 50)");
+        StringAssert.Contains(layout, "for (let cycle = 0; cycle < count; cycle++)");
+        StringAssert.Contains(layout, "framesOver25ms");
+        StringAssert.Contains(layout, "layoutShiftScore");
+
+        var expected = new Dictionary<int, (int ColorGroups, int CursorTraces, int PointsPerTrace)>
+        {
+            [1] = (1, 1, 500),
+            [3] = (3, 3, 500),
+            [20] = (20, 20, 500),
+            [82] = (20, 24, 500),
+            [500] = (20, 24, 96),
+        };
+        foreach (var (logicalCount, budget) in expected)
+        {
+            Assert.AreEqual(budget.ColorGroups, iRacingCoach.UI.AnalysisRenderBudget.ColorGroupCount(logicalCount));
+            Assert.AreEqual(budget.CursorTraces, Math.Min(logicalCount, iRacingCoach.UI.AnalysisRenderBudget.CursorComparisonBudget));
+            var pointBudget = iRacingCoach.UI.AnalysisRenderBudget.PointBudgetPerTrace(logicalCount, 1_000);
+            Assert.HasCount(
+                budget.PointsPerTrace,
+                iRacingCoach.UI.AnalysisRenderBudget.RepresentativeIndices(500, pointBudget));
+        }
+
+        var syntheticFiveHundred = Enumerable.Range(1, 500).ToArray();
+        Assert.HasCount(20, syntheticFiveHundred.GroupBy(lap => (lap - 1) % 20).ToArray());
+        var fiveHundredPointBudget = iRacingCoach.UI.AnalysisRenderBudget.PointBudgetPerTrace(500, 1_000);
+        Assert.IsLessThanOrEqualTo(
+            iRacingCoach.UI.AnalysisRenderBudget.TraceVertexBudgetPerSignal,
+            syntheticFiveHundred.Length * iRacingCoach.UI.AnalysisRenderBudget.RepresentativeIndices(500, fiveHundredPointBudget).Count);
+    }
+
+    [TestMethod]
     public void AnalysisCursor_CoalescesPointerAndResizeWorkWithoutForcedLayout()
     {
         var cursor = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "wwwroot", "analysis-telemetry-cursor.js"));
@@ -1204,11 +1322,14 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.DoesNotContain("setTimeout", cursor,
             "Cursor and ResizeObserver work must remain animation-frame owned, not timer-debounced.");
         Assert.DoesNotContain("resizeTimer", cursor);
-        StringAssert.Contains(cursor, "if (!state.frame) state.frame = requestAnimationFrame(() => renderCursor(state));");
+        StringAssert.Contains(cursor, "if (!state.frame) state.frame = requestAnimationFrame(timestamp => renderCursor(state, timestamp));");
         StringAssert.Contains(cursor, "if (state.resizePending)");
         StringAssert.Contains(cursor, "state.resizePending = true;");
-        StringAssert.Contains(cursor, "const rebuildPaths = force || !finite(state.pathBasePlotWidth)");
-        StringAssert.Contains(cursor, "setAttributeIfChanged(path, \"transform\", pathTransform)");
+        StringAssert.Contains(cursor, "state.pathBasePlotWidth = Math.max(1, state.config.plotWidth || state.plotWidth)");
+        StringAssert.Contains(cursor, "[data-analysis-trace-render-layer]");
+        StringAssert.Contains(cursor, "setAttributeIfChanged(layer, \"transform\", pathTransform)");
+        Assert.DoesNotContain("state.config.traces.find(candidate => candidate.lap", cursor,
+            "ResizeObserver work must never search every selected lap for every rendered path.");
         StringAssert.Contains(cursor, "state.inputSource = \"chart\"");
         StringAssert.Contains(cursor, "state.inputSource = \"track\"");
         StringAssert.Contains(cursor, "if (state.inputSource === \"track\" && state.trackInside) updateFractionFromTrackPointer(state);");
@@ -1252,7 +1373,7 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(cursor, "if (!cursorActive(state)) return");
         StringAssert.Contains(cursor, "if (!state.chartInside || !state.layer)");
         StringAssert.Contains(cursor, "if (state.layer) setVisible(state.layer, false)");
-        StringAssert.Contains(cursor, "requestAnimationFrame(() => renderCursor(state))");
+        StringAssert.Contains(cursor, "requestAnimationFrame(timestamp => renderCursor(state, timestamp))");
     }
 
     [TestMethod]

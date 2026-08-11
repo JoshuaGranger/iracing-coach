@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "bundle": "iracing-coach-companion-app-build-inputs",
   "scope": "clean build inputs; private data and credentials excluded",
-  "generated_at_utc": "2026-08-10T19:28:59.394491Z",
+  "generated_at_utc": "2026-08-11T06:57:18.226837Z",
   "excluded": [
     "data/ (optional private regression corpus)",
     ".git/",
@@ -74,8 +74,8 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/analysis_engine.py",
-      "bytes": 310838,
-      "sha256": "10a6e0a3eaef07d2cfd2fdc7718fedae4537d1a0e8898906732e44d4ea0ed39f"
+      "bytes": 326735,
+      "sha256": "b6c59632bc8607e57bdb03aaaa51d415b85cdf61d503434da3a63e5d04cc7625"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/coach_cli.py",
@@ -103,6 +103,11 @@
       "sha256": "eb43f93d53cb953445b40bf09dfd5c529fdf489aa359a76c6ec9f907a96403c4"
     },
     {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/live_replay_v2.py",
+      "bytes": 14126,
+      "sha256": "6fc9cf22e29e20d209c1c9aba5d2f9d73ccdb7e33c064bc9672e9766d41e8955"
+    },
+    {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py",
       "bytes": 48137,
       "sha256": "ca77b5cc3e01df336b567c7f1bed8fbc6921f79fa6a142a20f35d28b91aa884c"
@@ -119,13 +124,13 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/race_card.py",
-      "bytes": 51659,
-      "sha256": "9e335cfb08c5b7f04e20f27e4ebda823da6b5754cd563417059f25138db4de44"
+      "bytes": 57292,
+      "sha256": "c2d4094e2b80d2dbb27e1612102b22740735f8ffaddabe39e8195931a3eba8aa"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/race_foundations.py",
-      "bytes": 48939,
-      "sha256": "01db0bacbd91718b23ab672708369e6a2a5630f450305bce43534f8ea6c5905d"
+      "bytes": 56657,
+      "sha256": "ba7ea80fbeae332ff7accfb0e50b657a79886e06c8820c55f7e1663ff3ba7b26"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/reporting.py",
@@ -144,13 +149,13 @@
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/start-mcp.ps1",
-      "bytes": 1888,
-      "sha256": "1af3afdc7c9511d846323a11e413fe7ec7115592919478c480365ae5a920f23d"
+      "bytes": 2378,
+      "sha256": "105b6beaecf04b18fe408b2b1c4a341638eaa9c59b7665fc53a69728d6a13027"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/storage.py",
-      "bytes": 107963,
-      "sha256": "bbdef0fb9a94f9ef41baa0aa3ff8cc85fe14a97a9b44c54a4746a4fb65688bde"
+      "bytes": 129167,
+      "sha256": "842a38942668bbb5484d06938979db7a313d8a93149fa9407fa8d85ad20105d6"
     },
     {
       "path": "iracing-coach/skills/analyze-iracing-race/scripts/tuning_engine.py",
@@ -175,7 +180,7 @@
     {
       "path": "iracing-coach/tests/test_analysis_engine.py",
       "bytes": 47520,
-      "sha256": "1ac4a93fd5f0d82f5c459ae2654b88e950b7a5a614809494f9dfe8c7e3d95305"
+      "sha256": "94da399c160eb9dce69d5e31bb7e9014d2ca641dee051b53ad0837fbd76af498"
     },
     {
       "path": "iracing-coach/tests/test_coach_cli.py",
@@ -213,6 +218,11 @@
       "sha256": "b5c23a79a32f49ca1df60315d70c37e689975f039c516f6122dfc11326644f74"
     },
     {
+      "path": "iracing-coach/tests/test_live_replay_v2.py",
+      "bytes": 17360,
+      "sha256": "6f0556f3dd934670ff2ea5c1cc922f2a7515c218686c1e8d1c852c83ce324bfe"
+    },
+    {
       "path": "iracing-coach/tests/test_mcp_full_telemetry.py",
       "bytes": 5883,
       "sha256": "ffe01ad92515b869b8f61e7209661b77c1e305201cd6f8a55439a42eab34eb1c"
@@ -239,8 +249,8 @@
     },
     {
       "path": "iracing-coach/tests/test_race_foundations.py",
-      "bytes": 46730,
-      "sha256": "51ac5c83adb1366d776c5f5d6329fd85a46694b24b7b024c0ebf8ada8095c233"
+      "bytes": 55969,
+      "sha256": "74bfc2dd11f19a2ca72b5c2938216ec13ee4bc43c50b01ba1f212dd317107536"
     },
     {
       "path": "iracing-coach/tests/test_reporting.py",
@@ -266,6 +276,11 @@
       "path": "iracing-coach/tests/test_structured_tuning.py",
       "bytes": 24726,
       "sha256": "d51b402ae84c7f91306ab923be0e2a91b5fe2d76d9187d5b77fc0c102ec7aff3"
+    },
+    {
+      "path": "iracing-coach/tests/test_technical_strategy_depth.py",
+      "bytes": 10913,
+      "sha256": "6e1733b28c21662e7bf35484a09c032cf7c6d804252cb7c0bd0e5a1431e5dbf9"
     },
     {
       "path": "iracing-coach/tests/test_telemetry_profile.py",
@@ -314,8 +329,8 @@
     },
     {
       "path": "companion-app-handoff/BUILD_SPEC.md",
-      "bytes": 8851,
-      "sha256": "fefa7149e00b945bda56e4f5ed53798515ed0f14bba233f30fb56e26ab41227a"
+      "bytes": 12828,
+      "sha256": "85941b672cfe29e52ecab40379f54b6019f4939d0f539e00f0cf6c29f4c2f7a6"
     },
     {
       "path": "companion-app-handoff/config/appsettings.example.json",
@@ -324,8 +339,8 @@
     },
     {
       "path": "companion-app-handoff/config/theme.dark.json",
-      "bytes": 2649,
-      "sha256": "b23cfff15f44dff21e6c65c9da754621ba1d285649e9ea8957d90fbff8984cf5"
+      "bytes": 2633,
+      "sha256": "86741663d38cc956ff70a5afc6eceb572d5ca23c5a600bb406c999500e4ff733"
     },
     {
       "path": "companion-app-handoff/contracts/ai-coaching-output.schema.json",
@@ -350,7 +365,7 @@
     {
       "path": "companion-app-handoff/contracts/compatibility.json",
       "bytes": 1828,
-      "sha256": "6136eccc9ba3807955b4bb1f6b8aa580e4c07496ed2332c854bb5af51623b2d8"
+      "sha256": "cf4da73c881457ab5f5be3cfe5d66b1b3a0b3a126f24eb8cdef189adece34845"
     },
     {
       "path": "companion-app-handoff/contracts/damage-repair-v1.schema.json",
@@ -574,8 +589,8 @@
     },
     {
       "path": "companion-app-handoff/START_HERE.md",
-      "bytes": 6174,
-      "sha256": "94bc944af6ed0da4bd59202b417d5aa1ddd254dbb841404ed03b2cf57ab67ab5"
+      "bytes": 7533,
+      "sha256": "4003456623a73ad7c9f3bab7aac37c43b220186450b7d3dd7c0d9ce0e2c44245"
     },
     {
       "path": "companion-app-handoff/UI_DESIGN_SYSTEM.md",
@@ -584,7 +599,7 @@
     }
   ],
   "totals": {
-    "file_count": 114,
-    "bytes": 2361800
+    "file_count": 117,
+    "bytes": 2469700
   }
 }

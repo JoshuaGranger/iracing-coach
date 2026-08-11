@@ -7,10 +7,18 @@
             <label class="tuning-race-picker">
                 <span>Race</span>
                 <select value="@State.SelectedTuningRaceId" @onchange="ChangeRace" disabled="@_working" aria-label="Representative race">
-                    @foreach (var race in EvidenceRaces)
-                    {
-                        <option value="@race.Id">@race.Track · @race.Car · @race.Date</option>
-                    }
+                    <optgroup label="Open setup · can receive changes">
+                        @foreach (var race in EvidenceRaces.Where(IsOpenRace))
+                        {
+                            <option value="@race.Id">● OPEN · @race.Track · @race.Car · @race.Date</option>
+                        }
+                    </optgroup>
+                    <optgroup label="Fixed setup · driving evidence only">
+                        @foreach (var race in EvidenceRaces.Where(race => !IsOpenRace(race)))
+                        {
+                            <option value="@race.Id">◆ FIXED · @race.Track · @race.Car · @race.Date</option>
+                        }
+                    </optgroup>
                 </select>
             </label>
         }
@@ -19,7 +27,8 @@
             @if (State.SelectedTuningRace is { } selectedRace)
             {
                 <strong>@selectedRace.Track <small>@selectedRace.Layout</small></strong>
-                <span>@selectedRace.Car · @selectedRace.SetupType</span>
+                <span>@selectedRace.Car</span>
+                <b class="tuning-setup-badge @(IsOpenRace(selectedRace) ? "open" : "fixed")">@selectedRace.SetupType</b>
             }
         </div>
 
@@ -66,21 +75,9 @@
                                      CorrectionRequested="SaveCorrection"
                                      CorrectionModeChanged="HandleCorrectionModeChanged"
                                      Feedback="State.TuningDraft.Feedback"
-                                     ActiveRunPhase="@_activeRunPhase"
+                                     ActiveRunPhase="@State.TuningActiveRunPhase"
                                      PriorityCornerId="@PriorityCornerId" />
 
-                <aside class="tuning-feedback-popover @(_editorOpen ? "open" : null)"
-                       aria-hidden="@AriaBoolean(!_editorOpen)"
-                       inert="@(!_editorOpen)">
-                    <ProgressiveTuningFeedbackEditor Turn="_selectedTurn"
-                                                     RunPhase="@_activeRunPhase"
-                                                     ExistingFeedback="State.TuningDraft.Feedback"
-                                                     IsPriorityCorner="@IsSelectedPriorityCorner"
-                                                     FeedbackChanged="SaveFeedback"
-                                                     PriorityChanged="SetPriorityCorner"
-                                                     CloseRequested="CloseFeedbackEditor"
-                                                     SaveStatus="@_feedbackSaveStatus" />
-                </aside>
             </div>
 
             <aside class="tuning-toolbox" aria-label="Tuning evidence and controls">
@@ -105,8 +102,8 @@
                     {
                         <button type="button"
                                 role="tab"
-                                aria-selected="@AriaBoolean(_activeRunPhase == phase.Id)"
-                                class="@(_activeRunPhase == phase.Id ? "selected" : null)"
+                                aria-selected="@AriaBoolean(State.TuningActiveRunPhase == phase.Id)"
+                                class="@(State.TuningActiveRunPhase == phase.Id ? "selected" : null)"
                                 @onclick="() => SelectRunPhase(phase.Id)">
                             <span>@phase.Label</span>
                             @if (PhaseFeedbackCount(phase.Id) > 0)
@@ -118,6 +115,19 @@
                 </div>
 
                 <div class="tuning-toolbox-scroll">
+                    @if (_editorOpen)
+                    {
+                        <div class="tuning-active-corner-panel" data-active-corner-editor>
+                            <ProgressiveTuningFeedbackEditor Turn="_selectedTurn"
+                                                             RunPhase="@State.TuningActiveRunPhase"
+                                                             ExistingFeedback="State.TuningDraft.Feedback"
+                                                             IsPriorityCorner="@IsSelectedPriorityCorner"
+                                                             FeedbackChanged="SaveFeedback"
+                                                             PriorityChanged="SetPriorityCorner"
+                                                             CloseRequested="CloseFeedbackEditor"
+                                                             SaveStatus="@_feedbackSaveStatus" />
+                        </div>
+                    }
                     @if (State.StructuredTuningResult is { } result && !_hideStructuredResult)
                     {
                         var selectedChange = result.CandidateWhitelist.FirstOrDefault(item =>
@@ -292,7 +302,6 @@
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _noteSave;
     private TuningTurn? _selectedTurn;
-    private string _activeRunPhase = "early";
     private string _generalNote = string.Empty;
     private string _feedbackSaveStatus = string.Empty;
     private string _generalSaveStatus = string.Empty;
@@ -319,6 +328,8 @@
         .OrderByDescending(race => race.StartTimeUtc, StringComparer.Ordinal)
         .ThenByDescending(race => race.Date, StringComparer.Ordinal)
         .ToArray();
+
+    private static bool IsOpenRace(RecentRace race) => race.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase);
 
     private IReadOnlyList<AnalysisRun> EligibleRuns => (State.CurrentAnalysis?.Runs ?? [])
         .Where(run => run.ComparisonEligible && run.CoachingReferenceLapCount >= 6)
@@ -386,7 +397,7 @@
         && State.SelectedTuningRace is { } race
         && string.Equals(State.TuningDraft.RepresentativeSession.RaceId, race.Id, StringComparison.Ordinal);
 
-    private string ActivePhaseLabel => _activeRunPhase switch
+    private string ActivePhaseLabel => State.TuningActiveRunPhase switch
     {
         "early" => "Early run",
         "late" => "Late run",
@@ -563,7 +574,7 @@
 
     private void SelectRunPhase(string phase)
     {
-        _activeRunPhase = phase;
+        State.TuningActiveRunPhase = phase;
         _hideStructuredResult = true;
     }
 

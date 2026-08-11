@@ -732,11 +732,11 @@ public sealed class LiveMonitorTests
     }
 
     [TestMethod]
-    public void LiveMonitorMarkup_IsAReadOnlyEqualSplitViewerWithIndependentScale()
+    public void LiveMonitorMarkup_IsAReadOnlyEqualSplitViewerWithStableSizePresets()
     {
         var root = CompanionAppRoot();
         var xaml = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "LiveMonitorWindow.xaml"));
-        foreach (var accessibleName in new[] { "Layout selector", "Monitor scale", "Close telemetry popout", "Overall monitor scale" })
+        foreach (var accessibleName in new[] { "Layout selector", "Popout size", "Return to full app", "Close telemetry popout" })
             StringAssert.Contains(xaml, accessibleName);
         StringAssert.Contains(xaml, "x:Name=\"ScaleSettingsSurface\"");
         StringAssert.Contains(xaml, "x:Name=\"WorkspaceHost\"");
@@ -744,8 +744,13 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(xaml, "MouseLeftButtonDown=\"ControlStrip_MouseLeftButtonDown\"");
         StringAssert.Contains(xaml, "TextTrimming=\"CharacterEllipsis\"");
         StringAssert.Contains(xaml, "Topmost=\"True\"");
-        StringAssert.Contains(xaml, "Color=\"#65D0B6\"");
+        StringAssert.Contains(xaml, "Color=\"{StaticResource AccentColor}\"");
+        StringAssert.Contains(xaml, "Color=\"{StaticResource ChartBackgroundColor}\"");
         StringAssert.Contains(xaml, "AllowsTransparency=\"False\"");
+        StringAssert.Contains(xaml, "<ColumnDefinition Width=\"3*\"/><ColumnDefinition Width=\"10*\"/><ColumnDefinition Width=\"3*\"/>");
+        foreach (var preset in new[] { "CompactSizeButton", "StandardSizeButton", "ExpandedSizeButton", "CommandParameter=\"0.8\"", "CommandParameter=\"1.0\"", "CommandParameter=\"1.25\"" })
+            StringAssert.Contains(xaml, preset);
+        Assert.DoesNotContain("<Slider", xaml, "The size chooser must not resize a transformed control while it owns pointer capture.");
         foreach (var removedEditorContract in new[] { "Unlock layout editing", "Grid settings", "GridSettingsSurface", "EditorPanel", "Search telemetry catalog", "Telemetry catalog", "Tile display style", "AllowDrop=\"True\"", "DragGripButton" })
             Assert.IsFalse(xaml.Contains(removedEditorContract, StringComparison.Ordinal), $"The pop-out must not duplicate main-app editing: {removedEditorContract}");
 
@@ -757,7 +762,10 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(monitorCode, "new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }");
         StringAssert.Contains(monitorCode, "new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }");
         StringAssert.Contains(monitorCode, "RootScale.LayoutTransform = new ScaleTransform(scale, scale)");
-        StringAssert.Contains(monitorCode, "ScaleSlider.Value = Math.Round(Preferences.OverallScale * 100 / 10) * 10");
+        StringAssert.Contains(monitorCode, "SizePresetButton_Click");
+        StringAssert.Contains(monitorCode, "Dispatcher.BeginInvoke(() => ApplySizePreset(requested), DispatcherPriority.ContextIdle)");
+        StringAssert.Contains(monitorCode, "Math.Clamp(requested, .8, 1.25)");
+        Assert.DoesNotContain("ScaleSlider_ValueChanged", monitorCode);
         StringAssert.Contains(monitorCode, "private const double MinimumFontSize = 11.67");
         StringAssert.Contains(monitorCode, "var dense = tileWidth < 88 || tileHeight < 64");
         StringAssert.Contains(monitorCode, "Visibility = dense ? Visibility.Collapsed : Visibility.Visible");
@@ -766,6 +774,9 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(monitorCode, "DragMove()");
         StringAssert.Contains(monitorCode, "FittedValue");
         StringAssert.Contains(monitorCode, "StretchDirection = StretchDirection.DownOnly");
+        StringAssert.Contains(monitorCode, "Canvas.SetBottom(label, 2)");
+        StringAssert.Contains(monitorCode, "MonitorChartGridBrush");
+        Assert.DoesNotContain("accentHeight", monitorCode, "Native cards must not add a visual strip that the full dashboard does not use.");
         StringAssert.Contains(monitorCode, "CompositionTarget.Rendering += OnCompositionRendering");
         StringAssert.Contains(monitorCode, "CompositionTarget.Rendering -= OnCompositionRendering");
         StringAssert.Contains(monitorCode, "Interlocked.Exchange(ref _renderDirty, 0)");
@@ -860,7 +871,45 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(mainWindow, "OnMonitorVisibilityRequested(bool visible, bool activate)");
         StringAssert.Contains(mainWindow, "if (visible && !_state.LiveMonitorVisible) return;");
         StringAssert.Contains(mainWindow, "_liveMonitor.ShowMonitor(activate)");
+        StringAssert.Contains(mainWindow, "HideToTray(false)");
+        StringAssert.Contains(mainWindow, "var returnToPrimary = _liveMonitor.IsVisible && !_restoringPrimaryUi;");
+        StringAssert.Contains(mainWindow, "if (returnToPrimary) ShowFromTray()");
+        StringAssert.Contains(mainWindow, "_trayIcon.MouseClick");
+        StringAssert.Contains(mainWindow, "args.Button == Forms.MouseButtons.Left");
+        Assert.DoesNotContain("_trayIcon.DoubleClick", mainWindow);
         StringAssert.Contains(mainWindow, "_liveMonitor.CloseMonitor");
+    }
+
+    [TestMethod]
+    public void LiveTelemetryViewportAndCharts_FitThePageAndShareInstrumentStyling()
+    {
+        var root = CompanionAppRoot();
+        var ui = Path.Combine(root, "src", "iRacingCoach.UI");
+        var page = File.ReadAllText(Path.Combine(ui, "LiveTelemetryPage.razor"));
+        var razor = File.ReadAllText(Path.Combine(ui, "LiveTelemetryLayoutGrid.razor"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry.css"));
+        var layout = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-layout.js"));
+        var charts = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-tile-charts.js"));
+        var host = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "wwwroot", "index.html"));
+        var previewHost = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Preview", "Components", "App.razor"));
+
+        StringAssert.Contains(page, "class=\"live-telemetry-page\" data-live-telemetry-page");
+        StringAssert.Contains(page, "data-live-trailing-panel");
+        StringAssert.Contains(css, ".page-frame:has(.live-telemetry-page)");
+        StringAssert.Contains(css, "height: calc(100dvh - var(--command-bar-height))");
+        StringAssert.Contains(css, "overflow: hidden");
+        StringAssert.Contains(css, ".live-telemetry-page > .live-layout-studio");
+        StringAssert.Contains(css, "flex: 1 1 0");
+        StringAssert.Contains(css, ".live-layout-tile.style-trend .live-tile-content");
+        StringAssert.Contains(css, "grid-template-rows: minmax(0, 1fr) auto");
+        StringAssert.Contains(css, ".live-layout-tile.style-trend .live-tile-chart");
+        StringAssert.Contains(css, "height: 100%");
+        StringAssert.Contains(layout, "state.root.closest(\"[data-live-telemetry-page]\")");
+        StringAssert.Contains(layout, "viewport.style.removeProperty(\"height\")");
+        StringAssert.Contains(charts, "for (let index = 1; index < 4; index++)");
+        StringAssert.Contains(host, "_content/iRacingCoach.UI/live-telemetry.css");
+        StringAssert.Contains(previewHost, "_content/iRacingCoach.UI/live-telemetry.css");
+        StringAssert.Contains(razor, "class=\"live-tile-chart\"");
     }
 
     [TestMethod]
@@ -911,10 +960,11 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(script, "event.preventDefault()");
         StringAssert.Contains(host, "live-telemetry-layout.js");
         StringAssert.Contains(previewHost, "live-telemetry-layout.js");
-        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.15.0-fluid-grid");
+        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.16.0-viewport-fit");
+        StringAssert.Contains(host, "live-telemetry-tile-charts.js?v=0.16.0-instrument-grid");
         StringAssert.Contains(previewHost, "@Assets[\"_content/iRacingCoach.UI/live-telemetry-layout.js\"]");
         StringAssert.Contains(previewHost, "@Assets[\"_content/iRacingCoach.UI/coach.css\"]");
-        Assert.DoesNotContain("?v=0.15.0", previewHost,
+        Assert.DoesNotContain("?v=0.16.0", previewHost,
             "The Preview host uses generated static-asset fingerprints instead of manual query-string versions.");
 
         foreach (var interactionHook in new[]

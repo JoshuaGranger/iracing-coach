@@ -18,6 +18,19 @@ public sealed class BackendClientTests
     }
 
     [TestMethod]
+    public void ParseToolResult_PreservesUnicodeDriverFacingText()
+    {
+        using var response = JsonDocument.Parse("""
+        {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\"label\":\"RF inner · run 1\",\"phase\":\"early→late\"}"}],"isError":false}}
+        """);
+
+        var parsed = McpBackendClient.ParseToolResult(response.RootElement);
+
+        Assert.AreEqual("RF inner · run 1", parsed.GetProperty("label").GetString());
+        Assert.AreEqual("early→late", parsed.GetProperty("phase").GetString());
+    }
+
+    [TestMethod]
     public void ParseToolResult_ThrowsActionableDomainError()
     {
         using var response = JsonDocument.Parse("""

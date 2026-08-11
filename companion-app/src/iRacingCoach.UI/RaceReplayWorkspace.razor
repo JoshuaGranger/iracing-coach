@@ -48,9 +48,16 @@
                 <section class="replay-map-card" data-replay-map>
                     <header>
                         <div><span class="eyebrow">Track</span><strong>@Workspace.Track <span>@Workspace.Layout</span></strong></div>
-                        <span class="replay-map-status">@CurrentFlagSummary · @CurrentLapLabel · @((CurrentLapPercent * 100).ToString("0.0"))%</span>
+                        <span class="replay-map-status">@CurrentFlagSummary · @CurrentLapLabel · @CurrentLapPercentLabel</span>
                     </header>
-                    <svg class="replay-track-map" viewBox="@TrackViewBox" role="img" aria-label="Full-field race replay track map">
+                    @if (!CurrentInstantAvailable)
+                    {
+                        <div class="replay-instant-unavailable" data-replay-instant-unavailable role="status">
+                            <ProductIcon Name="info" Size="16" />
+                            <span>@CurrentInstantUnavailableReason</span>
+                        </div>
+                    }
+                    <svg class="replay-track-map @(CurrentInstantAvailable ? null : "coverage-gap")" viewBox="@TrackViewBox" role="img" aria-label="Full-field race replay track map">
                         <path d="@TrackPath" class="replay-track-ribbon-halo" />
                         <path d="@TrackPath" class="replay-track-ribbon" data-map-layer="main" />
                         @if (!string.IsNullOrWhiteSpace(PitLanePath))
@@ -141,12 +148,19 @@
                 <button type="button" class="replay-play" title="@(Playing ? "Pause replay" : "Play replay")" aria-label="@(Playing ? "Pause replay" : "Play replay")" aria-pressed="@(Playing ? "true" : "false")" @onclick="TogglePlayback"><ProductIcon Name="@(Playing ? "pause" : "play")" Size="18" /></button>
                     <button type="button" class="replay-skip" title="Next lap" aria-label="Next lap" disabled="@(!CurrentLapNumber.HasValue)" @onclick="NextLap"><ProductIcon Name="chevron-right" Size="16" /></button>
                     <span class="replay-time">@PlaybackTime</span>
-                    <div class="replay-scrubber">
-                        <div class="replay-flag-strip" data-replay-flag-timeline aria-hidden="true">
+                    <div class="replay-scrubber replay-seek-rail" data-replay-seek-rail>
+                        <div class="replay-flag-strip" aria-hidden="true">
                             @foreach (var segment in FlagSegments) { <i class="@segment.Kind" style="@($"left:{segment.Left:0.###}%;width:{segment.Width:0.###}%")"></i> }
-                            <b style="@($"left:{PlaybackFraction * 100:0.###}%")"></b>
                         </div>
-                        <input type="range" min="0" max="1000" step="1" value="@PlaybackSlider" @oninput="Seek" aria-label="Replay position" />
+                        <div class="replay-event-markers" aria-label="Recorded replay events">
+                            @foreach (var item in TimelineEvents)
+                            {
+                                <button type="button" class="@item.Kind" style="@($"left:{TimelinePosition(item.SessionTimeSeconds):0.###}%")"
+                                        title="@item.Label" aria-label="@($"{Clock(item.SessionTimeSeconds - ReplayStartSeconds)}: {item.Label}")"
+                                        @onclick="() => SeekToTime(item.SessionTimeSeconds)"></button>
+                            }
+                        </div>
+                        <input type="range" min="0" max="1000" step="1" value="@PlaybackSlider" @oninput="Seek" aria-label="Replay position on the flag-colored race timeline" />
                     </div>
                     <span class="replay-time">@TotalReplayTime</span>
                     <label class="replay-speed"><span class="sr-only">Playback speed</span><select value="@PlaybackSpeed.ToString("0.0", CultureInfo.InvariantCulture)" @onchange="ChangePlaybackSpeed" aria-label="Playback speed">@foreach (var speed in PlaybackSpeeds) { <option value="@speed.ToString("0.0", CultureInfo.InvariantCulture)">@speed.ToString("0.#")&times;</option> }</select></label>
@@ -245,6 +259,8 @@
     private AnalysisLapTrace? _fastestTrace;
     private int? _playerCarIndex;
     private int _maximumLeaderLap;
+    private int _recordedFrameCount;
+    private bool _hasReplayPhaseFrames;
     private int _playbackGeneration;
     private bool _hasRecordedCars;
     private bool _hasPlayerFrame;
@@ -288,10 +304,11 @@
     private void RebuildReplayCache()
     {
         var replay = Workspace.Replay;
-        _frames = replay?.Frames
+        var orderedFrames = replay?.Frames
             .Where(frame => double.IsFinite(frame.SessionTimeSeconds))
             .OrderBy(frame => frame.SessionTimeSeconds)
             .ToArray() ?? [];
+        _recordedFrameCount = orderedFrames.Length;
         _participants = replay?.Participants
             .GroupBy(participant => participant.CarIndex)
             .ToDictionary(group => group.Key, group => group.Last())
@@ -302,6 +319,9 @@
             ?? new Dictionary<int, AnalysisReplayParticipantCoverage>();
         _playerCarIndex = replay?.PlayerCarIndex
             ?? replay?.Participants.FirstOrDefault(participant => participant.IsPlayer)?.CarIndex;
+        var phaseFrames = orderedFrames.Where(IsReplayPhase).ToArray();
+        _hasReplayPhaseFrames = phaseFrames.Length > 0;
+        _frames = TrimToPlayableInterval(phaseFrames, _playerCarIndex);
         _hasRecordedCars = _frames.Any(frame => frame.Cars.Count > 0);
         _hasPlayerFrame = _playerCarIndex is { } playerIndex
             && ParticipantHasReplayData(playerIndex)
@@ -329,6 +349,37 @@
         _timelineEvents = BuildTimelineEvents();
         _flagSegments = BuildFlagSegments();
         RebuildReplayMapCache();
+    }
+
+    private static IReadOnlyList<AnalysisReplayFrame> TrimToPlayableInterval(
+        IReadOnlyList<AnalysisReplayFrame> frames,
+        int? playerCarIndex)
+    {
+        if (frames.Count == 0 || !playerCarIndex.HasValue) return [];
+        var first = -1;
+        var last = -1;
+        for (var index = 0; index < frames.Count; index++)
+        {
+            if (!FrameHasPlayablePlayer(frames[index], playerCarIndex.Value)) continue;
+            if (first < 0) first = index;
+            last = index;
+        }
+        return first < 0 ? [] : frames.Skip(first).Take(last - first + 1).ToArray();
+    }
+
+    private static bool FrameHasPlayablePlayer(AnalysisReplayFrame frame, int playerCarIndex) =>
+        frame.Cars.Count > 0
+        && frame.Cars.Any(car => car.CarIndex == playerCarIndex && car.LapPercent is { } percent && double.IsFinite(percent));
+
+    private static bool IsReplayPhase(AnalysisReplayFrame frame)
+    {
+        var state = frame.SessionState.Replace('-', '_').Replace(' ', '_');
+        return state.Contains("warmup", StringComparison.OrdinalIgnoreCase)
+            || state.Contains("grid", StringComparison.OrdinalIgnoreCase)
+            || state.Contains("parade", StringComparison.OrdinalIgnoreCase)
+            || state.Contains("race", StringComparison.OrdinalIgnoreCase)
+            || state.Contains("check", StringComparison.OrdinalIgnoreCase)
+            || state.Contains("cool", StringComparison.OrdinalIgnoreCase);
     }
 
     private IReadOnlyDictionary<int, IReadOnlyList<PitEvent>> BuildPitEventIndex()
@@ -360,8 +411,9 @@
     private bool ReplayFramesAreContinuous(int previousFrameIndex, int currentFrameIndex)
     {
         if (previousFrameIndex < 0 || currentFrameIndex <= previousFrameIndex || currentFrameIndex >= _frames.Count) return false;
+        if (_frames[currentFrameIndex].GapBefore) return false;
         var gap = _frames[currentFrameIndex].SessionTimeSeconds - _frames[previousFrameIndex].SessionTimeSeconds;
-        var recordedRate = Replay?.SampleRateHz;
+        var recordedRate = Replay?.Representation?.DisplaySampleRateHz ?? Replay?.SampleRateHz;
         var sampleRate = recordedRate is > 0 ? recordedRate.Value : 2;
         var limit = Math.Clamp(2.5 / sampleRate, .25, 2);
         return gap > 0 && gap <= limit;
@@ -376,6 +428,13 @@
         for (var frameIndex = 0; frameIndex < _frames.Count; frameIndex++)
         {
             var frame = _frames[frameIndex];
+            foreach (var observed in frame.Events ?? [])
+            {
+                var delta = observed.Delta is { } value && Math.Abs(value) > .0001
+                    ? $" ({(value > 0 ? "+" : string.Empty)}{value:0.##})"
+                    : string.Empty;
+                events.Add(new(frame.SessionTimeSeconds, EventKind(observed.Kind), $"{observed.Label}{delta}"));
+            }
             foreach (var label in frame.GlobalFlagLabels.Where(label => !flags.Contains(label)))
                 events.Add(new(frame.SessionTimeSeconds, FlagKind(label), FriendlyFlag(label)));
             flags = frame.GlobalFlagLabels.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -446,6 +505,8 @@
             var coverage = Replay.Coverage.FirstOrDefault(item => item.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.Reason));
             if (coverage?.Reason is { Length: > 0 } reason) return HumanizeReplayUnavailableReason(reason);
             if (!TemporalCoverageIsUsable(Replay.TemporalCoverage)) return "Too little of the race timeline is available to replay it reliably.";
+            if (_recordedFrameCount > 0 && !_hasReplayPhaseFrames) return "The recording did not include the grid, parade laps, race, or post-checker phase.";
+            if (_recordedFrameCount > 0 && Frames.Count == 0) return "No synchronized position for your car was recorded during the playable race timeline.";
             if (PlayerCarIndex is { } player && !ParticipantHasReplayData(player)) return "There are not enough synchronized positions for your car to replay this race.";
             if (!HasTrackGeometry) return "The track map needed for replay is unavailable for this race.";
             return "The synchronized full-field timeline needed for replay is unavailable for this race.";
@@ -495,7 +556,8 @@
             var timeline = replay.TemporalCoverage;
             var partialCars = replay.ParticipantCoverage?.Count(item => !ParticipantCoverageIsComplete(item)) ?? 0;
             var timelinePartial = timeline is not null && !CoverageStatusIsComplete(timeline.Status);
-            if (!timelinePartial && partialCars == 0) return null;
+            var keyframesPartial = replay.Representation?.KeyframesPreserved == false;
+            if (!timelinePartial && partialCars == 0 && !keyframesPartial) return null;
             if (timeline?.RecordedFraction is { } fraction) return $"Partial replay · {fraction * 100:0}%";
             return "Partial replay";
         }
@@ -515,6 +577,8 @@
             }
             var partialCars = replay.ParticipantCoverage?.Count(item => !ParticipantCoverageIsComplete(item)) ?? 0;
             if (partialCars > 0) details.Add($"{partialCars:N0} car{(partialCars == 1 ? string.Empty : "s")} only partially recorded");
+            if (replay.Representation?.DroppedKeyframeCount is > 0)
+                details.Add($"{replay.Representation.DroppedKeyframeCount:N0} noisy transition frames omitted");
             return details.Count > 0 ? string.Join(" · ", details) : "Some replay data was not recorded.";
         }
     }
@@ -530,9 +594,28 @@
         ? 0
         : Math.Clamp((CurrentReplaySeconds - CurrentFrame.SessionTimeSeconds) / (NextFrame.SessionTimeSeconds - CurrentFrame.SessionTimeSeconds), 0, 1);
     private AnalysisReplayCarState? CurrentPlayerState => PlayerCarIndex is { } player ? CurrentFrame.Cars.FirstOrDefault(car => car.CarIndex == player) : null;
+    private bool CurrentInstantAvailable
+    {
+        get
+        {
+            if (CurrentPlayerState is not { LapPercent: { } lapPercent } || !double.IsFinite(lapPercent) || CurrentFrame.Cars.Count == 0) return false;
+            if (CurrentFrameIndex >= Frames.Count - 1 || CurrentFrameBlend <= .001) return true;
+            return ReplayFramesAreContinuous(CurrentFrameIndex, CurrentFrameIndex + 1);
+        }
+    }
+    private string CurrentInstantUnavailableReason => CurrentFrame.Cars.Count == 0
+        ? "Car positions were not recorded at this moment."
+        : CurrentPlayerState is null
+            ? "Your car position was not recorded at this moment."
+            : CurrentPlayerState.LapPercent is not { } lapPercent || !double.IsFinite(lapPercent)
+                ? "Your lap position was not recorded at this moment."
+                : "The recording has a gap here. Replay resumes at the next recorded position.";
     private int? CurrentLapNumber => CurrentPlayerState is null ? null : DisplayLap(CurrentPlayerState);
     private string CurrentLapLabel => CurrentLapNumber is { } lap ? $"L{lap}" : "Lap —";
-    private double CurrentLapPercent => CurrentPlayerState is { LapPercent: var percent } && double.IsFinite(percent) ? Math.Clamp(percent, 0, 1) : 0;
+    private double CurrentLapPercent => CurrentPlayerState is { LapPercent: { } percent } && double.IsFinite(percent) ? Math.Clamp(percent, 0, 1) : 0;
+    private string CurrentLapPercentLabel => CurrentPlayerState is { LapPercent: { } percent } && double.IsFinite(percent)
+        ? $"{Math.Clamp(percent, 0, 1) * 100:0.0}%"
+        : "Position unavailable";
     private string CurrentFlagSummary => CurrentFrame.GlobalFlagLabels.FirstOrDefault() ?? FriendlySessionState(CurrentFrame.SessionState);
     private bool AtChecker => CurrentFrame.GlobalFlagLabels.Any(IsChecker) || CurrentFrame.SessionState.Contains("check", StringComparison.OrdinalIgnoreCase) || CurrentFrame.SessionState.Contains("cool", StringComparison.OrdinalIgnoreCase);
     private int PlaybackSlider => (int)Math.Round(PlaybackFraction * 1000);
@@ -577,13 +660,13 @@
         get
         {
             var next = NextFrame.Cars.ToDictionary(car => car.CarIndex);
-            return CurrentFrame.Cars.Where(car => ParticipantHasReplayData(car.CarIndex) && double.IsFinite(car.LapPercent)).Select(car =>
+            return CurrentFrame.Cars.Where(car => ParticipantHasReplayData(car.CarIndex) && car.LapPercent is { } percent && double.IsFinite(percent)).Select(car =>
             {
                 var participant = Participant(car.CarIndex);
-                var distance = Wrap(car.LapPercent);
-                if (next.TryGetValue(car.CarIndex, out var upcoming) && double.IsFinite(upcoming.LapPercent) && CanInterpolateFrameTransition(CurrentFrame, NextFrame, car.CarIndex))
+                var distance = Wrap(car.LapPercent!.Value);
+                if (next.TryGetValue(car.CarIndex, out var upcoming) && upcoming.LapPercent is { } upcomingPercent && double.IsFinite(upcomingPercent) && CanInterpolateFrameTransition(CurrentFrame, NextFrame, car.CarIndex))
                 {
-                    var nextDistance = Wrap(upcoming.LapPercent);
+                    var nextDistance = Wrap(upcomingPercent);
                     if (nextDistance < distance - .65) nextDistance += 1;
                     if (nextDistance >= distance && nextDistance - distance < .35) distance += (nextDistance - distance) * CurrentFrameBlend;
                 }
@@ -615,6 +698,7 @@
     {
         get
         {
+            if (!CurrentInstantAvailable) return null;
             var player = CurrentPlayerState;
             var leader = ClassLeader(CurrentFrame);
             if (player is null || leader is null || (!player.ClassPosition.HasValue && !player.OverallPosition.HasValue)) return null;
@@ -695,6 +779,7 @@
     {
         get
         {
+            if (!CurrentInstantAvailable) return null;
             if (CurrentPlayerState is not { } state) return null;
             var candidates = new[] { state.Lap, state.CompletedLaps.HasValue ? state.CompletedLaps + 1 : null, state.Lap.HasValue ? state.Lap + 1 : null }
                 .Where(value => value.HasValue).Select(value => value!.Value).Distinct();
@@ -817,8 +902,9 @@
 
     private bool CanInterpolateFrameTransition(AnalysisReplayFrame current, AnalysisReplayFrame next, int carIndex)
     {
+        if (next.GapBefore) return false;
         var gap = next.SessionTimeSeconds - current.SessionTimeSeconds;
-        var recordedRate = Replay?.SampleRateHz;
+        var recordedRate = Replay?.Representation?.DisplaySampleRateHz ?? Replay?.SampleRateHz;
         var sampleRate = recordedRate is > 0 ? recordedRate.Value : 2;
         var limit = Math.Clamp(2.5 / sampleRate, .25, 2);
         return Replay?.Interpolation.StartsWith("linear", StringComparison.OrdinalIgnoreCase) == true
@@ -911,6 +997,8 @@
         Math.Clamp((start - ReplayStartSeconds) / ReplayDurationSeconds * 100, 0, 100),
         Math.Max(.2, Math.Clamp((end - start) / ReplayDurationSeconds * 100, 0, 100)),
         kind);
+    private double TimelinePosition(double seconds) =>
+        Math.Clamp((seconds - ReplayStartSeconds) / ReplayDurationSeconds * 100, 0, 100);
 
     private string ReplayChartPath(AnalysisLapTrace trace, string signal)
     {
@@ -1019,8 +1107,8 @@
     private static int? RecordedLapCount(AnalysisReplayCarState car) => car.CompletedLaps is >= 0
         ? car.CompletedLaps
         : car.Lap is >= 0 ? car.Lap : null;
-    private static double? CarDistance(AnalysisReplayCarState car) => RecordedLapCount(car) is { } laps && double.IsFinite(car.LapPercent)
-        ? laps + Wrap(car.LapPercent)
+    private static double? CarDistance(AnalysisReplayCarState car) => RecordedLapCount(car) is { } laps && car.LapPercent is { } percent && double.IsFinite(percent)
+        ? laps + Wrap(percent)
         : null;
     private static int? DisplayLap(AnalysisReplayCarState car) => car.Lap is > 0
         ? car.Lap
@@ -1052,6 +1140,12 @@
     private static bool IsChecker(string label) => label.Contains("check", StringComparison.OrdinalIgnoreCase);
     private static bool IsSignificantState(string state) => state.Contains("race", StringComparison.OrdinalIgnoreCase) || state.Contains("green", StringComparison.OrdinalIgnoreCase) || state.Contains("check", StringComparison.OrdinalIgnoreCase) || state.Contains("cool", StringComparison.OrdinalIgnoreCase);
     private static string FlagKind(string label) => label.Contains("yellow", StringComparison.OrdinalIgnoreCase) || label.Contains("caution", StringComparison.OrdinalIgnoreCase) ? "caution" : IsChecker(label) ? "checker" : label.Contains("pit", StringComparison.OrdinalIgnoreCase) ? "pit" : "flag";
+    private static string EventKind(string kind) => kind.Contains("incident", StringComparison.OrdinalIgnoreCase) ? "incident"
+        : kind.Contains("pit", StringComparison.OrdinalIgnoreCase) ? "pit"
+        : kind.Contains("tow", StringComparison.OrdinalIgnoreCase) || kind.Contains("repair", StringComparison.OrdinalIgnoreCase) ? "service"
+        : kind.Contains("surface", StringComparison.OrdinalIgnoreCase) ? "surface"
+        : kind.Contains("flag", StringComparison.OrdinalIgnoreCase) ? "flag"
+        : "event";
     private static string FrameFlagKind(AnalysisReplayFrame frame) => frame.GlobalFlagLabels.Any(label => label.Contains("yellow", StringComparison.OrdinalIgnoreCase) || label.Contains("caution", StringComparison.OrdinalIgnoreCase)) ? "caution" : frame.GlobalFlagLabels.Any(IsChecker) || frame.SessionState.Contains("check", StringComparison.OrdinalIgnoreCase) ? "checker" : frame.GlobalFlagLabels.Any(label => label.Contains("white", StringComparison.OrdinalIgnoreCase)) ? "white" : frame.GlobalFlagLabels.Any(label => label.Contains("green", StringComparison.OrdinalIgnoreCase)) || frame.SessionState.Contains("race", StringComparison.OrdinalIgnoreCase) ? "green" : "neutral";
     private static string FriendlyFlag(string label) => label.Replace('_', ' ').Trim();
     private static string FriendlySessionState(string state) => string.IsNullOrWhiteSpace(state) ? "Session state not recorded" : state.Replace('_', ' ').Trim();

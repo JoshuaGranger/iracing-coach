@@ -5,43 +5,63 @@
     {
         <div class="technical-overview" data-technical-overview>
             <button type="button" class="technical-overview-card pit" data-technical-card="pit" @onclick='() => OpenInvestigation("pit")'>
-                <span class="technical-card-heading"><span><ProductIcon Name="strategy" Size="17" />Pit strategy</span><ProductIcon Name="chevron-right" Size="15" /></span>
+                <span class="technical-card-heading"><span><ProductIcon Name="strategy" Size="17" />Pit strategy</span><span class="technical-card-heading-status"><span class="technical-state @PitStateClass">@PitState</span><ProductIcon Name="chevron-right" Size="15" /></span></span>
                 <strong>@PitSummary</strong>
-                <span class="technical-state @PitStateClass">@PitState</span>
-                <span class="technical-card-metrics">
-                    @foreach (var metric in PitCardMetrics) { <span class="technical-card-metric @metric.Tone" data-evidence="@metric.Evidence" title="@metric.Detail"><small>@metric.Label</small><b>@metric.Value</b></span> }
+                <span class="technical-card-metrics @MetricDensityClass(PitCardMetrics.Count)" data-metric-count="@PitCardMetrics.Count">
+                    @foreach (var metric in PitCardMetrics)
+                    {
+                        <span class="technical-card-metric @metric.Tone" data-group="@metric.Group" title="@MetricTooltip(metric)" aria-label="@MetricAriaLabel(metric)">
+                            <small>@metric.Label</small><b>@metric.Value</b>
+                        </span>
+                    }
                 </span>
-                <span class="technical-card-foot">@PitTakeaway</span>
+                <span class="technical-card-foot"><b>What to carry forward</b><span>@PitTakeaway</span></span>
             </button>
 
             <button type="button" class="technical-overview-card tires" data-technical-card="tires" @onclick='() => OpenInvestigation("tires")'>
-                <span class="technical-card-heading"><span><ProductIcon Name="tire" Size="17" />Tire management</span><ProductIcon Name="chevron-right" Size="15" /></span>
+                <span class="technical-card-heading"><span><ProductIcon Name="tire" Size="17" />Tire management</span><span class="technical-card-heading-status"><span class="technical-state @TireStateClass">@TireState</span><ProductIcon Name="chevron-right" Size="15" /></span></span>
                 <strong>@TireSummary</strong>
-                <span class="technical-state @TireStateClass">@TireState</span>
-                <span class="technical-card-metrics">
-                    @foreach (var metric in TireCardMetrics) { <span class="technical-card-metric @metric.Tone" data-evidence="@metric.Evidence" title="@metric.Detail"><small>@metric.Label</small><b>@metric.Value</b></span> }
+                <span class="technical-card-metrics @MetricDensityClass(TireCardMetrics.Count)" data-metric-count="@TireCardMetrics.Count">
+                    @foreach (var metric in TireCardMetrics)
+                    {
+                        <span class="technical-card-metric @metric.Tone" data-group="@metric.Group" title="@MetricTooltip(metric)" aria-label="@MetricAriaLabel(metric)">
+                            <small>@metric.Label</small><b>@metric.Value</b>
+                        </span>
+                    }
                 </span>
-                <span class="technical-card-foot">@TireTakeaway</span>
+                <span class="technical-card-foot"><b>What to carry forward</b><span>@TireTakeaway</span></span>
             </button>
 
             <button type="button" class="technical-overview-card fuel" data-technical-card="fuel" @onclick='() => OpenInvestigation("fuel")'>
-                <span class="technical-card-heading"><span><ProductIcon Name="fuel" Size="17" />Fuel management</span><ProductIcon Name="chevron-right" Size="15" /></span>
+                <span class="technical-card-heading"><span><ProductIcon Name="fuel" Size="17" />Fuel management</span><span class="technical-card-heading-status"><span class="technical-state @FuelStateClass">@FuelState</span><ProductIcon Name="chevron-right" Size="15" /></span></span>
                 <strong>@FuelSummary</strong>
-                <span class="technical-state @FuelStateClass">@FuelState</span>
-                <span class="technical-card-metrics">
-                    @foreach (var metric in FuelCardMetrics) { <span class="technical-card-metric @metric.Tone" data-evidence="@metric.Evidence" title="@metric.Detail"><small>@metric.Label</small><b>@metric.Value</b></span> }
+                <span class="technical-card-metrics @MetricDensityClass(FuelCardMetrics.Count)" data-metric-count="@FuelCardMetrics.Count">
+                    @foreach (var metric in FuelCardMetrics)
+                    {
+                        <span class="technical-card-metric @metric.Tone" data-group="@metric.Group" title="@MetricTooltip(metric)" aria-label="@MetricAriaLabel(metric)">
+                            <small>@metric.Label</small><b>@metric.Value</b>
+                        </span>
+                    }
                 </span>
-                <span class="technical-card-foot">@FuelTakeaway</span>
+                <span class="technical-card-foot"><b>What to carry forward</b><span>@FuelTakeaway</span></span>
             </button>
 
             <button type="button" class="technical-overview-card racecraft" data-technical-card="racecraft" @onclick='() => OpenInvestigation("racecraft")'>
-                <span class="technical-card-heading"><span><ProductIcon Name="analysis" Size="17" />Racecraft &amp; pace</span><ProductIcon Name="chevron-right" Size="15" /></span>
+                <span class="technical-card-heading"><span><ProductIcon Name="analysis" Size="17" />Racecraft &amp; pace</span><span class="technical-card-heading-status"><span class="technical-state @PaceStateClass">@PaceState</span><ProductIcon Name="chevron-right" Size="15" /></span></span>
                 <strong>@PaceSummary</strong>
-                <span class="technical-state @PaceStateClass">@PaceState</span>
-                <span class="technical-card-metrics">
-                    @foreach (var metric in RacecraftCardMetrics) { <span class="technical-card-metric @metric.Tone" data-evidence="@metric.Evidence" title="@metric.Detail"><small>@metric.Label</small><b>@metric.Value</b></span> }
+                <span class="technical-card-metrics @MetricDensityClass(RacecraftCardMetrics.Count)" data-metric-count="@RacecraftCardMetrics.Count">
+                    @foreach (var metric in RacecraftCardMetrics)
+                    {
+                        <span class="technical-card-metric @metric.Tone" data-group="@metric.Group" title="@MetricTooltip(metric)" aria-label="@MetricAriaLabel(metric)">
+                            <small>@metric.Label</small><b>@metric.Value</b>
+                        </span>
+                    }
                 </span>
-                <span class="technical-card-foot">@PaceTakeaway</span>
+                @if (Garage61Laps.Count > 0)
+                {
+                    <span class="technical-card-reference"><small>Reference pace</small><b>@ReferencePaceSummary</b></span>
+                }
+                <span class="technical-card-foot"><b>What to carry forward</b><span>@PaceTakeaway</span></span>
             </button>
         </div>
     }
@@ -54,7 +74,7 @@
                 <span class="technical-investigation-summary">@InvestigationSummary</span>
             </header>
 
-            <div class="technical-investigation-content">
+            <div class="technical-investigation-content @MetricDensityClass(ActiveMetrics.Count)">
                 <section class="technical-complete-findings" data-technical-complete-findings>
                     <header><span>Race findings</span><strong>@ActiveTakeaway</strong></header>
                     @if (ActiveMetrics.Count == 0)
@@ -63,13 +83,13 @@
                     }
                     else
                     {
-                        <div class="technical-findings-list">
+                        <div class="technical-findings-list @MetricDensityClass(ActiveMetrics.Count)" data-metric-count="@ActiveMetrics.Count">
                             @foreach (var metric in ActiveMetrics)
                             {
-                                <article class="@MetricTone(metric)">
-                                    <div><span>@metric.Label</span><strong>@metric.Value</strong></div>
+                                <article class="@MetricTone(metric)" title="@MetricDetailTooltip(metric)" aria-label="@MetricDetailAriaLabel(metric)">
+                                    <header><span class="technical-finding-group">@MetricGroupLabel(metric)</span><div><span>@metric.Label</span><strong>@metric.Value</strong></div></header>
                                     @if (!string.IsNullOrWhiteSpace(metric.Detail)) { <p>@metric.Detail</p> }
-                                    @if (!string.IsNullOrWhiteSpace(metric.Action)) { <small>@metric.Action</small> }
+                                    @if (!string.IsNullOrWhiteSpace(metric.Action)) { <small><b>Next lap</b>@metric.Action</small> }
                                 </article>
                             }
                         </div>
@@ -82,7 +102,19 @@
                     <div class="technical-investigation-body pit-investigation">
                         @if (PitRuns.Count == 0)
                         {
-                            <TechnicalUnavailable Title="No pit service available" Detail="There is no completed pit-stop service snapshot for this race." Action="Complete a pit stop with service telemetry available to populate this view." />
+                            <div class="technical-no-stop-story" data-technical-no-stop>
+                                <div class="technical-decision-dial"><strong>0</strong><span>recorded stops</span></div>
+                                <div class="technical-decision-copy">
+                                    <span class="eyebrow">What happened</span>
+                                    <h3>@NoStopHeadline</h3>
+                                    <p>@NoStopExplanation</p>
+                                    <div class="technical-decision-facts">
+                                        <span><small>Race distance</small><b>@ScheduledDistance</b></span>
+                                        <span><small>Longest green run</small><b>@LongestRun</b></span>
+                                        <span><small>Fuel range</small><b>@FuelRange</b></span>
+                                    </div>
+                                </div>
+                            </div>
                         }
                         else
                         {
@@ -94,16 +126,63 @@
                             </nav>
                             @if (SelectedPitRun is { } pitRun)
                             {
-                                <div class="technical-detail-grid">
-                                    <article class="technical-detail-hero"><span>Service window</span><strong>@Duration(pitRun.PitStop?.ServiceSeconds)</strong><small>@PitLap(pitRun)</small></article>
-                                    <article><span>Fuel added</span><strong>@Gallons(pitRun.PitStop?.FuelAddedGallons)</strong></article>
-                                    <article><span>Tires changed</span><strong>@ChangedTires(pitRun)</strong></article>
-                                    <article><span>Damage repair</span><strong>@Duration(pitRun.PitStop?.DamageRepairedSeconds)</strong></article>
-                                    <article><span>Penalty service</span><strong>@Duration(pitRun.PitStop?.PenaltyServedSeconds)</strong></article>
-                                    <article><span>Fuel range after stop</span><strong>@Laps(pitRun.PitStop?.EstimatedFuelLapsRemaining)</strong></article>
-                                    <article><span>Pit-cycle positions</span><strong>@Positions(pitRun.PitStop?.PitCyclePositionChange)</strong></article>
-                                    <article><span>Race laps remaining</span><strong>@Laps(pitRun.PitStop?.RaceLapsRemainingAfterStop)</strong></article>
-                                    <article><span>Flag at stop</span><strong>@(pitRun.EndedUnderCaution is true ? "Caution" : pitRun.EndedUnderCaution is false ? "Green" : "Unknown")</strong></article>
+                                <div class="technical-pit-timeline" aria-label="Recorded pit-service timeline">
+                                    <span class="technical-pit-timeline-label">Start</span>
+                                    <i></i>
+                                    @foreach (var recordedRun in PitRuns)
+                                    {
+                                        <b style="--pit-at:@PitPosition(recordedRun)" title="@PitTimelineTitle(recordedRun)"><span>@PitCall(recordedRun)</span></b>
+                                    }
+                                    <span class="technical-pit-timeline-label finish">Finish</span>
+                                </div>
+                                <div class="technical-pit-review">
+                                    <section class="technical-tire-call" data-tire-call="@TireCallKey(pitRun)">
+                                        <header><span>Tire call</span><strong>@TireCallLabel(pitRun)</strong></header>
+                                        <div class="technical-tire-call-car" aria-label="@TireCallAriaLabel(pitRun)">
+                                            @foreach (var corner in TireCornerOrder)
+                                            {
+                                                <span class="@(TireChanged(pitRun, corner) ? "changed" : "kept")" data-corner="@corner"><b>@corner</b><small>@(TireChanged(pitRun, corner) ? "changed" : "kept")</small></span>
+                                            }
+                                            <i aria-hidden="true"></i>
+                                        </div>
+                                        <footer>@ChangedTires(pitRun)</footer>
+                                    </section>
+                                    <div class="technical-detail-grid">
+                                        <article class="technical-detail-hero"><span>Service window</span><strong>@Duration(pitRun.PitStop?.ServiceSeconds)</strong><small>@PitLap(pitRun)</small></article>
+                                        <article><span>Fuel added</span><strong>@Gallons(pitRun.PitStop?.FuelAddedGallons)</strong></article>
+                                        <article><span>Pit-cycle positions</span><strong>@Positions(pitRun.PitStop?.PitCyclePositionChange)</strong></article>
+                                        <article><span>Damage repair</span><strong>@Duration(pitRun.PitStop?.DamageRepairedSeconds)</strong></article>
+                                        <article><span>Penalty service</span><strong>@Duration(pitRun.PitStop?.PenaltyServedSeconds)</strong></article>
+                                        <article><span>Fuel range after stop</span><strong>@Laps(pitRun.PitStop?.EstimatedFuelLapsRemaining)</strong></article>
+                                        <article><span>Race laps remaining</span><strong>@Laps(pitRun.PitStop?.RaceLapsRemainingAfterStop)</strong></article>
+                                        <article><span>Flag at stop</span><strong>@(pitRun.EndedUnderCaution is true ? "Caution" : pitRun.EndedUnderCaution is false ? "Green" : "Unknown")</strong></article>
+                                    </div>
+                                    @if (TwoVsFourMetrics.Count > 0)
+                                    {
+                                        <section class="technical-two-vs-four" data-two-vs-four="supported">
+                                            <header><span>Two tires vs four</span><strong>Both calls happened in this race</strong></header>
+                                            <div>
+                                                @foreach (var metric in TwoVsFourMetrics)
+                                                {
+                                                    <span class="@MetricTone(metric)"><small>@metric.Label</small><b>@metric.Value</b><em>@metric.Detail</em></span>
+                                                }
+                                            </div>
+                                        </section>
+                                    }
+                                    else if (HasTwoAndFourCalls)
+                                    {
+                                        <section class="technical-two-vs-four unavailable" data-two-vs-four="inconclusive">
+                                            <header><span>Two tires vs four</span><strong>No like-for-like result</strong></header>
+                                            <p>Both call types occurred, but the following pace, position, wear, or service context was not complete enough to state which call performed better.</p>
+                                        </section>
+                                    }
+                                    else if (HasConfirmedTireCall)
+                                    {
+                                        <section class="technical-two-vs-four unavailable" data-two-vs-four="single-call">
+                                            <header><span>Two tires vs four</span><strong>No direct race result</strong></header>
+                                            <p>This race exercised only one confirmed call type. The selected stop remains useful on its own, but it does not establish whether two or four tires was faster overall.</p>
+                                        </section>
+                                    }
                                 </div>
                             }
                         }
@@ -111,12 +190,12 @@
                     break;
                 case "tires":
                     <div class="technical-investigation-body tire-investigation">
-                        <div class="technical-tire-investigation-shell">
+                        <div class="technical-tire-investigation-shell @(TireDriverMetrics.Count > 0 ? "with-dynamics" : null)">
                             <section class="technical-tire-source measured" data-tire-source="measured">
-                                <header><strong>Pit-stop condition</strong></header>
+                                <header><strong>Tire condition at stop</strong></header>
                                 @if (TireStops.Count == 0)
                                 {
-                                    <TechnicalUnavailable Title="No tire snapshot available" Detail="There is no completed pit-stop O/M/I tire reading for this race." Action="Complete a pit stop with tire telemetry available to capture tire condition." />
+                                    <TechnicalUnavailable Title="No tire condition available" Detail="This race did not produce a completed outer, middle, and inner tire reading." Action="Use the dynamics panel for immediate technique review; a completed stop will add physical tire condition next time." />
                                 }
                                 else
                                 {
@@ -133,7 +212,7 @@
                                             {
                                                 <article class="technical-tire-card">
                                                     <header><strong>@tire.Corner</strong><span>@(ChangedAtStop(SelectedTireRun, tire.Corner) ? "Changed" : "Kept")</span></header>
-                                                    <div class="technical-tire-bands" aria-label="@tire.Corner measured wear outer middle inner">
+                                                    <div class="technical-tire-bands" aria-label="@tire.Corner wear outer middle inner">
                                                         @foreach (var band in TireBands(tire))
                                                         {
                                                             <span><small>@band.Label</small><b>@Percent(band.Value)</b></span>
@@ -151,7 +230,7 @@
                                 }
                             </section>
                             <section class="technical-tire-source predicted" data-tire-source="predicted">
-                                <header><strong>Estimated tire outlook</strong></header>
+                                <header><strong>Next-run outlook</strong></header>
                                 @if (!PredictionAvailable)
                                 {
                                     <TechnicalUnavailable Title="Tire estimate unavailable" Detail="@PredictionUnavailableReason" Action="Complete more comparable green-flag runs with tire endpoints to improve this estimate." />
@@ -172,6 +251,22 @@
                                     </div>
                                 }
                             </section>
+                            @if (TireDriverMetrics.Count > 0)
+                            {
+                                <section class="technical-tire-source dynamics" data-tire-dynamics>
+                                    <header><strong>Dynamics &amp; balance</strong></header>
+                                    <div class="technical-dynamics-grid">
+                                        @foreach (var metric in TireDriverMetrics)
+                                        {
+                                            <article class="@MetricTone(metric)">
+                                                <span><small>@metric.Label</small><b>@metric.Value</b></span>
+                                                <i aria-hidden="true"><b></b></i>
+                                                @if (!string.IsNullOrWhiteSpace(metric.Action)) { <p>@metric.Action</p> }
+                                            </article>
+                                        }
+                                    </div>
+                                </section>
+                            }
                         </div>
                     </div>
                     break;
@@ -183,6 +278,18 @@
                         }
                         else
                         {
+                            <section class="technical-fuel-decision" data-fuel-decision>
+                                <div>
+                                    <span class="eyebrow">Race-distance decision</span>
+                                    <h3>@FuelDecisionHeadline</h3>
+                                    <p>@FuelDecisionExplanation</p>
+                                </div>
+                                <div class="technical-fuel-distance" style="--fuel-distance:@FuelDistancePercent">
+                                    <span><b>@ScheduledDistance</b><small>scheduled</small></span>
+                                    <i><b></b><em></em></i>
+                                    <span><b>@FuelRange</b><small>estimated range</small></span>
+                                </div>
+                            </section>
                             <div class="technical-fuel-summary">
                                 <article><span>Green-lap use</span><strong>@FuelPerGreenLap</strong></article>
                                 <article><span>Caution-lap use</span><strong>@Gallons(Workspace.Strategy.CautionFuelGallonsPerLap)</strong></article>
@@ -200,13 +307,7 @@
                     break;
                 default:
                     <div class="technical-investigation-body pace-investigation">
-                        @if (ComparableRuns.Count == 0)
-                        {
-                            <div class="technical-racecraft-no-comparison" data-racecraft-no-comparison>
-                                <TechnicalUnavailable Title="Clean-run pace comparison unavailable" Detail="Cautions, pit laps, or missing timing prevented a comparable early-to-late run." Action="Record a multi-lap green run without pit service to unlock this comparison." />
-                            </div>
-                        }
-                        else
+                        @if (ComparableRuns.Count > 0)
                         {
                             <nav class="technical-record-selector" aria-label="Comparable runs">
                                 @foreach (var run in ComparableRuns)
@@ -214,26 +315,47 @@
                                     <button type="button" class="@(_selectedRunNumber == run.Number ? "selected" : null)" aria-pressed="@(_selectedRunNumber == run.Number ? "true" : "false")" @onclick="() => SelectRun(run.Number)"><span>Run @run.Number</span><b>@PaceTrend(run)</b></button>
                                 }
                             </nav>
-                            @if (SelectedComparableRun is { } paceRun)
-                            {
-                                <div class="technical-pace-stage">
-                                    <div class="technical-pace-line" style="--pace-slope:@PaceSlope(paceRun)" aria-hidden="true"><i></i><b></b></div>
-                                    <div class="technical-pace-endpoints"><span><small>Early pace</small><strong>@LapTime(paceRun.EarlyAverageLapSeconds)</strong></span><span><small>Late pace</small><strong>@LapTime(paceRun.LateAverageLapSeconds)</strong></span></div>
-                                    <div class="technical-detail-grid">
-                                        <article><span>Early to late</span><strong>@Delta(paceRun.EarlyToLateDeltaSeconds)</strong></article>
-                                        <article><span>Trend</span><strong>@PaceTrend(paceRun)</strong></article>
-                                        <article><span>Green laps</span><strong>@paceRun.GreenLaps</strong></article>
-                                        <article><span>Lowest tire</span><strong>@LowestTire(paceRun)</strong></article>
-                                    </div>
-                                </div>
-                            }
                         }
+                        <section class="technical-racecraft-story" data-racecraft-story>
+                        @if (ComparableRuns.Count == 0)
+                        {
+                            <div class="technical-racecraft-no-comparison" data-racecraft-no-comparison>
+                                <TechnicalUnavailable Title="Clean-run pace comparison unavailable" Detail="Cautions, pit laps, or missing timing prevented a comparable early-to-late run." Action="Use the race-pace and controls findings below now; a multi-lap green run will add the early-to-late vector next time." />
+                            </div>
+                        }
+                        else if (SelectedComparableRun is { } paceRun)
+                        {
+                            <div class="technical-pace-vector @PaceDirectionClass(paceRun)">
+                                <span><small>Early</small><strong>@LapTime(paceRun.EarlyAverageLapSeconds)</strong></span>
+                                <i aria-hidden="true"><b></b></i>
+                                <em>@Delta(paceRun.EarlyToLateDeltaSeconds)</em>
+                                <span><small>Late</small><strong>@LapTime(paceRun.LateAverageLapSeconds)</strong></span>
+                                <span class="technical-pace-vector-context"><b>@paceRun.GreenLaps green laps</b><small>@PaceTrend(paceRun)</small></span>
+                            </div>
+                        }
+                        @if (RacecraftMetricGroups.Count > 0)
+                        {
+                            <div class="technical-racecraft-groups">
+                                @foreach (var group in RacecraftMetricGroups)
+                                {
+                                    <article>
+                                        <header>@GroupTitle(group.Key)</header>
+                                        <div>
+                                            @foreach (var metric in group.Metrics)
+                                            {
+                                                <span class="@MetricTone(metric)"><small>@metric.Label</small><b>@metric.Value</b></span>
+                                            }
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        }
+                        </section>
                         @if (Garage61Laps.Count > 0)
                         {
                             <section class="technical-reference-laps" data-garage61-references>
                                 <header>
-                                    <span>Garage61 reference laps</span>
-                                    <small>@Garage61Scope</small>
+                                    <span>Comparable reference laps</span>
                                     @if (State.Garage61ReferenceActionVisible)
                                     {
                                         <button type="button" class="technical-reference-action" disabled="@State.IsGarage61ReferenceSyncing" @onclick="FindGarage61ReferencesAsync">@(State.IsGarage61ReferenceSyncing ? "Refreshing…" : "Refresh")</button>
@@ -245,18 +367,16 @@
                                         <article>
                                             <span>@ReferenceRole(reference)</span>
                                             <strong>@LapTime(reference.LapTimeSeconds)</strong>
-                                            <small>@ReferenceEvidence(reference)</small>
                                         </article>
                                     }
                                 </div>
-                                @if (Garage61Evidence.Length > 0) { <footer>@Garage61Evidence</footer> }
                             </section>
                         }
                         else if (State.Garage61ReferenceActionVisible)
                         {
                             <section class="technical-reference-empty" data-garage61-reference-action>
-                                <span><strong>Garage61 reference</strong><small>Find comparable laps for this race.</small></span>
-                                <button type="button" class="technical-reference-action" disabled="@State.IsGarage61ReferenceSyncing" @onclick="FindGarage61ReferencesAsync">@(State.IsGarage61ReferenceSyncing ? "Finding…" : "Find Garage61 reference")</button>
+                                <span><strong>Comparable reference laps</strong><small>Find laps that can sharpen this race comparison.</small></span>
+                                <button type="button" class="technical-reference-action" disabled="@State.IsGarage61ReferenceSyncing" @onclick="FindGarage61ReferencesAsync">@(State.IsGarage61ReferenceSyncing ? "Finding…" : "Find reference laps")</button>
                             </section>
                         }
                         @if (State.Garage61ReferenceMessage.Length > 0)
@@ -296,9 +416,19 @@
     private AnalysisTechnicalInsight? Insight(string key) => Workspace.TechnicalInsights?.FirstOrDefault(item => item.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
     private AnalysisTechnicalInsight? ActiveInsight => ActiveInvestigation switch { "pit" => PitInsight, "tires" => TireInsight, "fuel" => FuelInsight, "racecraft" => RacecraftInsight, _ => null };
     private IReadOnlyList<AnalysisTechnicalMetric> ActiveMetrics => ActiveInsight?.Metrics ?? [];
+    private IReadOnlyList<AnalysisTechnicalMetric> TwoVsFourMetrics => ActiveMetrics.Where(metric => metric.Label.StartsWith("2 vs 4", StringComparison.OrdinalIgnoreCase)).ToArray();
+    private IReadOnlyList<AnalysisTechnicalMetric> TireDriverMetrics => ActiveMetrics.Where(metric => metric.Group is "tire events" or "driver load" or "balance" or "pace").ToArray();
+    private IReadOnlyList<MetricGroup> RacecraftMetricGroups => ActiveMetrics
+        .GroupBy(metric => string.IsNullOrWhiteSpace(metric.Group) ? "race" : metric.Group, StringComparer.OrdinalIgnoreCase)
+        .Select(group => new MetricGroup(group.Key, group.ToArray()))
+        .ToArray();
     private string ActiveTakeaway => InsightTakeaway(ActiveInsight) ?? "Open the detail view to review the available race data.";
     private double? FastestCleanSeconds => Workspace.Traces.Where(trace => trace.IsComparable() && trace.LapTimeSeconds.HasValue).Select(trace => trace.LapTimeSeconds).Min();
     private int IncidentPoints => (Workspace.Damage.Incidents ?? []).Sum(incident => incident.Points);
+    private static IReadOnlyList<string> TireCornerOrder { get; } = ["LF", "RF", "LR", "RR"];
+    private bool HasConfirmedTireCall => PitRuns.Any(run => run.PitStop?.TiresChanged is { Count: 2 or 4 });
+    private bool HasTwoAndFourCalls => PitRuns.Any(run => run.PitStop?.TiresChanged?.Count == 2)
+        && PitRuns.Any(run => run.PitStop?.TiresChanged?.Count == 4);
     private string PitSummary => PitRuns.Count switch { 0 => "No stop", 1 => "One stop", _ => $"{PitRuns.Count} stops" };
     private string LongestRun => LongestGreenRun is null ? "—" : $"{LongestGreenRun.GreenLaps} laps";
     private string RecordedServiceTime { get { var total = PitRuns.Sum(run => run.PitStop?.ServiceSeconds ?? 0); return Duration(total > 0 ? total : null); } }
@@ -309,7 +439,38 @@
     private string FuelPerGreenLap => Gallons(Workspace.Strategy.GreenFuelGallonsPerLap);
     private string FuelRange => Laps(Workspace.Strategy.AllGreenRangeLaps);
     private string FuelReserve => Gallons(Workspace.Strategy.ReserveFuelGallons);
+    private string ScheduledDistance => Workspace.ScheduledLaps > 0 ? $"{Workspace.ScheduledLaps} laps" : "Distance unavailable";
+    private string NoStopHeadline => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps
+        ? "The race fit inside the fuel window"
+        : "No service decision was exercised";
+    private string NoStopExplanation => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps
+        ? $"The estimated all-green range covered the scheduled distance by {range - Workspace.ScheduledLaps:0.0} laps, so a fuel stop was not required. Tire-call performance cannot be compared because no service was recorded."
+        : "No pit service was recorded, so there is no measured two-tire, four-tire, fuel-only, or pit-cycle outcome to compare for this race.";
+    private string FuelDecisionHeadline => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0
+        ? range >= Workspace.ScheduledLaps
+            ? $"Stay out: estimated range clears the race by {range - Workspace.ScheduledLaps:0.0} laps"
+            : $"Plan at least {Workspace.Strategy.MinimumStopsAllGreen ?? 1} fuel stop{((Workspace.Strategy.MinimumStopsAllGreen ?? 1) == 1 ? string.Empty : "s")}"
+        : "Use the race burn as the next planning baseline";
+    private string FuelDecisionExplanation => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0
+        ? range >= Workspace.ScheduledLaps
+            ? $"For this {Workspace.ScheduledLaps}-lap distance, the useful result is the positive finish margin—not the raw {range:0.0}-lap tank range. Protect that margin under green and reassess only if consumption rises."
+            : $"The scheduled distance exceeds one all-green fuel window by {Workspace.ScheduledLaps - range:0.0} laps. Use caution consumption and the recorded run bars below to choose the safest stop window."
+        : "The race supplied a consumption baseline, but the scheduled distance or complete range calculation is unavailable.";
+    private string FuelDistancePercent
+    {
+        get
+        {
+            var range = Workspace.Strategy.AllGreenRangeLaps ?? 0;
+            var scheduled = Math.Max(Workspace.ScheduledLaps, 0);
+            var scale = Math.Max(range, scheduled);
+            var percent = scale <= 0 ? 0 : Math.Clamp(scheduled / scale * 100, 0, 100);
+            return percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+        }
+    }
     private string PaceSummary => ComparableRuns.Count > 0 ? $"{ComparableRuns.Count} clean run comparison{(ComparableRuns.Count == 1 ? string.Empty : "s")}" : "No clean run comparison";
+    private string ReferencePaceSummary => Garage61Laps.Count == 0
+        ? "—"
+        : $"{LapTime(Garage61Laps.Min(lap => lap.LapTimeSeconds))} · {Garage61Laps.Count} lap{(Garage61Laps.Count == 1 ? string.Empty : "s")}";
     private string FastestCleanLap => LapTime(FastestCleanSeconds);
     private string IncidentSummary => (Workspace.Damage.Incidents ?? []).Count == 0 ? "None" : $"x{IncidentPoints}";
     private string InvestigationTitle => ActiveInvestigation switch { "pit" => "Pit strategy", "tires" => "Tire condition", "fuel" => "Fuel use", _ => "Racecraft & pace" };
@@ -358,21 +519,46 @@
             metric.Value,
             metric.Evidence.ToString().ToLowerInvariant(),
             metric.Detail,
-            metric.Tone)).ToList() ?? [];
+            metric.Tone,
+            metric.Action,
+            metric.Group)).ToList() ?? [];
         if (metrics.Count == 0)
         {
             metrics.AddRange(fallback);
         }
         return metrics;
     }
-    private static string? InsightRating(AnalysisTechnicalInsight? insight) => insight is null ? null : Humanize(insight.Rating.Length > 0 ? insight.Rating : insight.Status);
-    private static string? InsightStateClass(AnalysisTechnicalInsight? insight) => insight is null ? null
-        : insight.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ? "unavailable"
-        : insight.Rating is "attention" or "loss" or "short" or "tight" ? "attention"
-        : insight.Rating is "gain" or "stable" or "safe" ? "positive"
-        : "neutral";
+    private static string? InsightRating(AnalysisTechnicalInsight? insight)
+    {
+        if (insight is null) return null;
+        var value = insight.Rating.Length > 0 ? insight.Rating : insight.Status;
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "available" or "measured" or "recorded" or "derived" or "calculated" or "baseline" => null,
+            _ => Humanize(value)
+        };
+    }
+    private static string? InsightStateClass(AnalysisTechnicalInsight? insight)
+    {
+        if (insight is null) return null;
+        if (insight.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase)) return "unavailable";
+        return insight.Rating.Trim().ToLowerInvariant() switch
+        {
+            "attention" or "loss" or "short" or "tight" => "attention",
+            "gain" or "stable" or "safe" => "positive",
+            "" or "available" or "measured" or "recorded" or "derived" or "calculated" or "baseline" => null,
+            _ => "neutral"
+        };
+    }
     private static string? InsightTakeaway(AnalysisTechnicalInsight? insight) => string.IsNullOrWhiteSpace(insight?.Takeaway) ? null : insight.Takeaway;
     private static string MetricTone(AnalysisTechnicalMetric metric) => metric.Tone is "positive" or "attention" ? metric.Tone : "neutral";
+    private static string MetricDensityClass(int count) => count switch { <= 4 => "metric-density-sparse", <= 9 => "metric-density-standard", _ => "metric-density-dense" };
+    private static string MetricTooltip(CardMetric metric) => string.Join(" · ", new[] { metric.Detail, metric.Action }.Where(value => !string.IsNullOrWhiteSpace(value)));
+    private static string MetricAriaLabel(CardMetric metric) => string.Join(". ", new[] { $"{metric.Label}: {metric.Value}", metric.Detail, metric.Action }.Where(value => !string.IsNullOrWhiteSpace(value)));
+    private static string MetricDetailTooltip(AnalysisTechnicalMetric metric) => string.Join(" · ", new[] { metric.Detail, metric.Action }.Where(value => !string.IsNullOrWhiteSpace(value)));
+    private static string MetricDetailAriaLabel(AnalysisTechnicalMetric metric) => string.Join(". ", new[] { $"{metric.Label}: {metric.Value}", metric.Detail, metric.Action }.Where(value => !string.IsNullOrWhiteSpace(value)));
+    private static string MetricGroupLabel(AnalysisTechnicalMetric metric) => GroupTitle(metric.Group);
+    private static string GroupTitle(string value) => string.IsNullOrWhiteSpace(value) ? "Race" : Humanize(value);
     private static string Humanize(string value) => string.IsNullOrWhiteSpace(value) ? "Available" : char.ToUpperInvariant(value[0]) + value[1..].Replace('-', ' ').Replace('_', ' ');
 
     private bool PredictionAvailable => Workspace.TirePrediction is { } prediction
@@ -386,7 +572,7 @@
         return low.HasValue && high.HasValue ? $"{value.Value:0.000} {unit} ({low.Value:0.000}–{high.Value:0.000})" : $"{value.Value:0.000} {unit}";
     }
     private static string PredictionPace(AnalysisTireLearningPrediction prediction) => PredictionRange(prediction.CapabilityPaceSeconds, prediction.CapabilityPaceLowSeconds, prediction.CapabilityPaceHighSeconds, "s");
-    private static string PredictionConfidence(AnalysisTireLearningPrediction prediction) => string.IsNullOrWhiteSpace(prediction.Confidence) ? $"{prediction.EligibleObservations} observations" : $"{Humanize(prediction.Confidence)} · {prediction.EligibleObservations} observations";
+    private static string PredictionConfidence(AnalysisTireLearningPrediction prediction) => string.IsNullOrWhiteSpace(prediction.Confidence) ? "Unrated" : Humanize(prediction.Confidence);
     private static IReadOnlyList<(string Label, AnalysisTireBandPrediction? Value)> PredictionBands(AnalysisTireCornerPrediction tire) =>
         new[] { "outer", "middle", "inner" }.Select(key => (key[..1].ToUpperInvariant(), tire.Bands.TryGetValue(key, out var value) ? value : null)).ToArray();
     private static string PredictionBand(AnalysisTireBandPrediction? band)
@@ -395,37 +581,8 @@
         return band.LowPercent.HasValue && band.HighPercent.HasValue ? $"{value:0.0}% ({band.LowPercent:0.0}–{band.HighPercent:0.0})" : $"{value:0.0}%";
     }
     private IReadOnlyList<AnalysisGarage61ReferenceLap> Garage61Laps => Workspace.Garage61References is { } references
-        && !references.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ? references.Laps.Where(lap => lap.LapTimeSeconds.HasValue).Take(4).ToArray() : [];
-    private string Garage61Scope => Workspace.Garage61References?.ComparisonScope is { Length: > 0 } scope ? Humanize(scope) : "Own and team references";
+        && !references.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ? references.Laps.Where(lap => lap.LapTimeSeconds.HasValue).ToArray() : [];
     private static string ReferenceRole(AnalysisGarage61ReferenceLap reference) => string.IsNullOrWhiteSpace(reference.ComparisonRole) ? "Reference" : Humanize(reference.ComparisonRole);
-    private string Garage61Evidence
-    {
-        get
-        {
-            if (Workspace.Garage61References is not { } references) return string.Empty;
-            var parts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(references.ComparisonStatus)) parts.Add(Humanize(references.ComparisonStatus));
-            if (references.UsableReferenceLaps is { } usable) parts.Add($"{usable} aligned");
-            if (references.MedianCoverageFraction is { } coverage) parts.Add($"{coverage * 100:0}% coverage");
-            if (references.RetrievedAt is { } retrieved) parts.Add($"updated {retrieved.ToLocalTime():MMM d, h:mm tt}");
-            return string.Join(" · ", parts);
-        }
-    }
-    private static string ReferenceEvidence(AnalysisGarage61ReferenceLap reference)
-    {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(reference.SetupType)) parts.Add(Humanize(reference.SetupType));
-        if (reference.AlignmentCoverageFraction is { } coverage) parts.Add($"{coverage * 100:0}% aligned");
-        if (reference.AvailableSignals is { Count: > 0 }) parts.Add(string.Join(", ", reference.AvailableSignals.Select(SignalName).Take(3)));
-        return string.Join(" · ", parts);
-    }
-    private static string SignalName(string value) => value switch
-    {
-        "speed_mph" => "speed",
-        "steering_abs_rad" => "steering",
-        "lateral_g" => "lateral G",
-        _ => Humanize(value)
-    };
     private Task FindGarage61ReferencesAsync() => State.SyncGarage61ReferencesAsync();
 
     private void OpenInvestigation(string key)
@@ -443,6 +600,42 @@
     private void CloseInvestigation() { ActiveInvestigation = null; _selectedRunNumber = null; }
     private void SelectRun(int number) => _selectedRunNumber = number;
     private static string PitLap(AnalysisRun run) => run.Laps.Count == 0 ? "Lap —" : $"Lap {run.Laps.Max()}";
+    private string PitPosition(AnalysisRun run)
+    {
+        var pitLap = run.Laps.Count == 0 ? 0 : run.Laps.Max();
+        var raceLaps = Math.Max(Workspace.ScheduledLaps, Workspace.Laps.Select(lap => lap.Lap).DefaultIfEmpty(0).Max());
+        var percent = raceLaps <= 0 ? 0 : Math.Clamp(pitLap / (double)raceLaps * 100, 0, 100);
+        return percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+    private static string PitCall(AnalysisRun run) => run.PitStop?.TiresChanged?.Count switch
+    {
+        2 => "2 tires",
+        4 => "4 tires",
+        > 0 => $"{run.PitStop.TiresChanged.Count} tires",
+        _ when (run.PitStop?.FuelAddedGallons ?? 0) > 0 => "Fuel only",
+        _ => "Service"
+    };
+    private static string PitTimelineTitle(AnalysisRun run) => $"{PitLap(run)} · {PitCall(run)} · {Duration(run.PitStop?.ServiceSeconds)}";
+    private static bool TireChanged(AnalysisRun run, string corner) => run.PitStop?.TiresChanged?.Contains(corner, StringComparer.OrdinalIgnoreCase) == true;
+    private static string TireCallKey(AnalysisRun run) => run.PitStop?.TiresChanged is { } tires ? tires.Count switch
+    {
+        4 => "four",
+        2 when tires.Contains("RF", StringComparer.OrdinalIgnoreCase) && tires.Contains("RR", StringComparer.OrdinalIgnoreCase) => "right-side",
+        2 when tires.Contains("LF", StringComparer.OrdinalIgnoreCase) && tires.Contains("LR", StringComparer.OrdinalIgnoreCase) => "left-side",
+        2 => "two",
+        > 0 => "partial",
+        _ => "none"
+    } : "none";
+    private static string TireCallLabel(AnalysisRun run) => TireCallKey(run) switch
+    {
+        "four" => "Four tires",
+        "right-side" => "Right-side tires",
+        "left-side" => "Left-side tires",
+        "two" => "Two tires",
+        "partial" => "Partial tire service",
+        _ => "No confirmed tire change"
+    };
+    private static string TireCallAriaLabel(AnalysisRun run) => $"{TireCallLabel(run)}. {string.Join(", ", TireCornerOrder.Select(corner => $"{corner} {(TireChanged(run, corner) ? "changed" : "kept")}"))}.";
     private static string ChangedTires(AnalysisRun run) => run.PitStop?.TiresChanged is { Count: > 0 } tires ? string.Join(", ", tires) : "No change confirmed";
     private static string Gallons(double? value) => value.HasValue ? $"{value.Value:0.000} gal" : "—";
     private static string Laps(double? value) => value.HasValue ? $"{value.Value:0.0} laps" : "—";
@@ -465,7 +658,7 @@
         var maximum = FuelRuns.Select(item => item.FuelUsedGallons ?? 0).DefaultIfEmpty(0).Max();
         return maximum <= 0 ? "0%" : $"{Math.Clamp((run.FuelUsedGallons ?? 0) / maximum * 100, 0, 100):0.#}%";
     }
-    private static string PaceSlope(AnalysisRun run) => Math.Clamp(50 + (run.EarlyToLateDeltaSeconds ?? 0) * 12, 14, 86).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    private static string PaceDirectionClass(AnalysisRun run) => run.EarlyToLateDeltaSeconds switch { > .01 => "slower", < -.01 => "faster", _ => "stable" };
     private double? MostRecordedTireWear() => TireStops
         .SelectMany(run => TireConditions(run.PitStop!))
         .SelectMany(tire => TireBands(tire))
@@ -496,5 +689,6 @@
             ? [("I", tire.WearPercent.Inner), ("M", tire.WearPercent.Middle), ("O", tire.WearPercent.Outer)]
             : [("O", tire.WearPercent.Outer), ("M", tire.WearPercent.Middle), ("I", tire.WearPercent.Inner)];
     }
-    private sealed record CardMetric(string Label, string Value, string Evidence, string Detail = "", string Tone = "neutral");
+    private sealed record CardMetric(string Label, string Value, string Evidence, string Detail = "", string Tone = "neutral", string Action = "", string Group = "");
+    private sealed record MetricGroup(string Key, IReadOnlyList<AnalysisTechnicalMetric> Metrics);
 }

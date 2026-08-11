@@ -373,5 +373,84 @@
     editors.delete(root);
   }
 
-  window.iracingCoachAnalysisTraceLayout = { initialize, configure, dispose };
+  function sampleStructuralFrames(root, duration) {
+    return new Promise(resolve => {
+      const started = performance.now();
+      let prior = started;
+      const gaps = [];
+      const widths = [];
+      function frame(timestamp) {
+        gaps.push(timestamp - prior);
+        prior = timestamp;
+        widths.push(root.getBoundingClientRect().width);
+        if (timestamp - started < duration) requestAnimationFrame(frame);
+        else resolve({ gaps, widths });
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  async function benchmarkStructuralMotion(root, cycles = 50) {
+    const state = editors.get(root);
+    if (!state) return null;
+    const toolbox = root.querySelector(".analysis-trace-toolbox");
+    if (!toolbox) return null;
+    const count = clamp(Math.round(Number(cycles) || 50), 1, 50);
+    const duration = structuralMotionMs(root);
+    const originalRootOpen = root.classList.contains("toolbox-open");
+    const originalToolboxOpen = toolbox.classList.contains("open");
+    const allGaps = [];
+    const widths = [];
+    let layoutShiftScore = 0;
+    const observer = typeof PerformanceObserver === "function"
+      ? new PerformanceObserver(list => {
+          for (const entry of list.getEntries())
+            if (!entry.hadRecentInput) layoutShiftScore += entry.value || 0;
+        })
+      : null;
+    try { observer?.observe({ type: "layout-shift", buffered: false }); } catch (_) { }
+    try {
+      for (let cycle = 0; cycle < count; cycle++) {
+        for (const open of [true, false]) {
+          root.classList.toggle("toolbox-open", open);
+          toolbox.classList.toggle("open", open);
+          const sample = await sampleStructuralFrames(root, duration + 34);
+          allGaps.push(...sample.gaps);
+          widths.push(...sample.widths);
+        }
+      }
+    } finally {
+      root.classList.toggle("toolbox-open", originalRootOpen);
+      toolbox.classList.toggle("open", originalToolboxOpen);
+      observer?.disconnect();
+    }
+    const sorted = allGaps.slice().sort((left, right) => left - right);
+    const percentile = fraction => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] : 0;
+    const result = {
+      cycles: count,
+      transitions: count * 2,
+      duration,
+      sampledFrames: allGaps.length,
+      framesOver25ms: allGaps.filter(gap => gap > 25).length,
+      maximumFrameGap: sorted.at(-1) || 0,
+      p95FrameGap: percentile(.95),
+      minimumWidth: widths.length ? Math.min(...widths) : 0,
+      maximumWidth: widths.length ? Math.max(...widths) : 0,
+      layoutShiftScore
+    };
+    state.lastStructuralBenchmark = result;
+    return result;
+  }
+
+  function structuralDiagnostics(root) {
+    return editors.get(root)?.lastStructuralBenchmark || null;
+  }
+
+  window.iracingCoachAnalysisTraceLayout = {
+    initialize,
+    configure,
+    benchmarkStructuralMotion,
+    structuralDiagnostics,
+    dispose
+  };
 })();

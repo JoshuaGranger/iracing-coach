@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private bool _exitRequested;
     private bool _trayNoticeShown;
     private bool _disposed;
+    private bool _restoringPrimaryUi;
     private HwndSource? _windowSource;
     private DateTimeOffset _lastTrayLiveUpdate = DateTimeOffset.MinValue;
 
@@ -64,7 +65,7 @@ public partial class MainWindow : Window
 
         var trayIcon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
         _trayIcon = new Forms.NotifyIcon { Icon = trayIcon, Visible = true, Text = "iRacing Coach · Waiting for iRacing", ContextMenuStrip = trayMenu };
-        _trayIcon.DoubleClick += (_, _) => ShowFromTray();
+        _trayIcon.MouseClick += (_, args) => { if (args.Button == Forms.MouseButtons.Left) ShowFromTray(); };
 
         SourceInitialized += (_, _) =>
         {
@@ -98,12 +99,25 @@ public partial class MainWindow : Window
     public void ShowFromTray()
     {
         if (_disposed || _exitRequested) return;
-        _state.SetPrimaryUiVisible(true);
-        Show();
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Activate();
-        Topmost = true; Topmost = false;
-        Focus();
+        if (!Dispatcher.CheckAccess())
+        {
+            if (!Dispatcher.HasShutdownStarted) _ = Dispatcher.BeginInvoke(ShowFromTray);
+            return;
+        }
+
+        _restoringPrimaryUi = true;
+        try
+        {
+            if (_state.LiveMonitorVisible) _state.SetLiveMonitorVisible(false);
+            else if (_liveMonitor.IsVisible) _liveMonitor.HideMonitor();
+            _state.SetPrimaryUiVisible(true);
+            Show();
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Activate();
+            Topmost = true; Topmost = false;
+            Focus();
+        }
+        finally { _restoringPrimaryUi = false; }
     }
 
     private void OpenSettings()
@@ -151,7 +165,17 @@ public partial class MainWindow : Window
         if (_disposed || _exitRequested) return;
         if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => OnMonitorVisibilityRequested(visible, activate)); return; }
         if (visible && !_state.LiveMonitorVisible) return;
-        if (visible) _liveMonitor.ShowMonitor(activate); else _liveMonitor.HideMonitor();
+        if (visible)
+        {
+            HideToTray(false);
+            _liveMonitor.ShowMonitor(activate);
+        }
+        else
+        {
+            var returnToPrimary = _liveMonitor.IsVisible && !_restoringPrimaryUi;
+            _liveMonitor.HideMonitor();
+            if (returnToPrimary) ShowFromTray();
+        }
         RefreshTrayMenu();
     }
 

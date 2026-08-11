@@ -10,7 +10,7 @@ namespace iRacingCoach.Installer;
 
 internal static class Program
 {
-    internal const string ProductVersion = "0.15.0";
+    internal const string ProductVersion = "0.16.0";
     internal static string RepairInstallerFileName => $"iRacingCoach-{ProductVersion}-Setup.exe";
     internal static string PerUserTarget => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "iRacing Coach");
 

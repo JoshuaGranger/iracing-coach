@@ -691,8 +691,20 @@
     const height = chart.height;
     context.clearRect(0, 0, width, height);
     context.strokeStyle = chart.palette.grid;
-    context.globalAlpha = 0.74;
     context.lineWidth = 1;
+
+    // A quiet instrument grid gives the traces depth without returning to the
+    // pure-black strip used by the first monitor prototype. Draw from cached
+    // dimensions only; this remains free of layout reads in the frame loop.
+    context.globalAlpha = 0.32;
+    context.beginPath();
+    for (let index = 1; index < 4; index++) {
+      const x = Math.round(width * index / 4) + 0.5;
+      context.moveTo(x, 0);
+      context.lineTo(x, height);
+    }
+    context.stroke();
+    context.globalAlpha = 0.66;
     context.beginPath();
     context.moveTo(0, Math.round(height / 2) + 0.5);
     context.lineTo(width, Math.round(height / 2) + 0.5);

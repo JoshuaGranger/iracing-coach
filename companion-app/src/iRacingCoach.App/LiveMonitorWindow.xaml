@@ -4,23 +4,25 @@
         xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
         Title="iRacing Coach Telemetry Popout"
         WindowStyle="None" ResizeMode="NoResize" Topmost="True" ShowInTaskbar="True"
-        SizeToContent="Manual" Background="#13191A" Foreground="{StaticResource TextPrimaryBrush}"
+        SizeToContent="Manual" Background="{StaticResource NavigationBrush}" Foreground="{StaticResource TextPrimaryBrush}"
         Icon="Assets\iRacingCoach.ico" SnapsToDevicePixels="True" UseLayoutRounding="True">
     <Window.Resources>
-        <SolidColorBrush x:Key="MonitorAppBrush" Color="#13191A"/>
-        <SolidColorBrush x:Key="MonitorSurfaceBrush" Color="#192122"/>
-        <SolidColorBrush x:Key="MonitorSurface2Brush" Color="#20292A"/>
-        <SolidColorBrush x:Key="MonitorSurfaceHoverBrush" Color="#293536"/>
-        <SolidColorBrush x:Key="MonitorBorderBrush" Color="#344345"/>
-        <SolidColorBrush x:Key="MonitorAccentBrush" Color="#65D0B6"/>
-        <SolidColorBrush x:Key="MonitorAccentFillBrush" Color="#287565"/>
-        <SolidColorBrush x:Key="MonitorAccentSubtleBrush" Color="#17302C"/>
-        <SolidColorBrush x:Key="MonitorFocusBrush" Color="#91E8D3"/>
-        <SolidColorBrush x:Key="MonitorMintBrush" Color="#65D0B6"/>
-        <SolidColorBrush x:Key="MonitorAmberBrush" Color="#FFC857"/>
-        <SolidColorBrush x:Key="MonitorGreenBrush" Color="#5DE59C"/>
-        <SolidColorBrush x:Key="MonitorCoralBrush" Color="#FF6F7D"/>
-        <SolidColorBrush x:Key="MonitorVioletBrush" Color="#C89CFF"/>
+        <SolidColorBrush x:Key="MonitorAppBrush" Color="{StaticResource NavigationColor}"/>
+        <SolidColorBrush x:Key="MonitorSurfaceBrush" Color="{StaticResource Surface1Color}"/>
+        <SolidColorBrush x:Key="MonitorSurface2Brush" Color="{StaticResource Surface2Color}"/>
+        <SolidColorBrush x:Key="MonitorSurfaceHoverBrush" Color="{StaticResource SurfaceHoverColor}"/>
+        <SolidColorBrush x:Key="MonitorBorderBrush" Color="{StaticResource BorderSubtleColor}"/>
+        <SolidColorBrush x:Key="MonitorChartBrush" Color="{StaticResource ChartBackgroundColor}"/>
+        <SolidColorBrush x:Key="MonitorChartGridBrush" Color="{StaticResource ChartGridColor}"/>
+        <SolidColorBrush x:Key="MonitorAccentBrush" Color="{StaticResource AccentColor}"/>
+        <SolidColorBrush x:Key="MonitorAccentFillBrush" Color="{StaticResource AccentFillColor}"/>
+        <SolidColorBrush x:Key="MonitorAccentSubtleBrush" Color="{StaticResource AccentSubtleColor}"/>
+        <SolidColorBrush x:Key="MonitorFocusBrush" Color="{StaticResource FocusColor}"/>
+        <SolidColorBrush x:Key="MonitorMintBrush" Color="{StaticResource AccentColor}"/>
+        <SolidColorBrush x:Key="MonitorAmberBrush" Color="{StaticResource WarningColor}"/>
+        <SolidColorBrush x:Key="MonitorGreenBrush" Color="{StaticResource SuccessColor}"/>
+        <SolidColorBrush x:Key="MonitorCoralBrush" Color="{StaticResource DangerColor}"/>
+        <SolidColorBrush x:Key="MonitorVioletBrush" Color="{StaticResource TelemetrySteeringColor}"/>
         <Style x:Key="IconButton" TargetType="Button">
             <Setter Property="Width" Value="40"/>
             <Setter Property="Height" Value="40"/>
@@ -88,45 +90,59 @@
         </Style>
         <Style TargetType="ComboBoxItem"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="Padding" Value="10,7"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Style.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="{StaticResource MonitorSurfaceHoverBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource MonitorAccentSubtleBrush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/></Trigger></Style.Triggers></Style>
         <Style TargetType="ToolTip"><Setter Property="Background" Value="{StaticResource MonitorSurface2Brush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{StaticResource MonitorBorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="8,5"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToolTip"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border></ControlTemplate></Setter.Value></Setter></Style>
-        <Style TargetType="Slider"><Setter Property="Margin" Value="8,2"/></Style>
         <Style x:Key="ActionButton" TargetType="Button">
             <Setter Property="MinWidth" Value="78"/><Setter Property="MinHeight" Value="38"/><Setter Property="Padding" Value="14,8"/><Setter Property="Background" Value="{StaticResource MonitorSurface2Brush}"/><Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{StaticResource MonitorBorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style x:Key="SizePresetButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="Margin" Value="4"/>
+            <Style.Triggers>
+                <Trigger Property="Tag" Value="selected">
+                    <Setter Property="Background" Value="{DynamicResource MonitorAccentSubtleBrush}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource MonitorAccentBrush}"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
 
     <Border x:Name="OuterBorder" BorderBrush="{StaticResource MonitorBorderBrush}" BorderThickness="1" Background="{StaticResource MonitorAppBrush}" CornerRadius="9">
         <Grid x:Name="RootScale" RenderTransformOrigin="0,0">
-            <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
             <Grid x:Name="ControlStrip" Grid.Row="0" Background="{StaticResource MonitorSurfaceBrush}" Margin="1,1,1,0" Cursor="SizeAll" MouseLeftButtonDown="ControlStrip_MouseLeftButtonDown">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <Ellipse x:Name="ConnectionDot" Grid.Column="0" Width="8" Height="8" Fill="{StaticResource UnavailableBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="iRacing connection"/>
-                <ComboBox x:Name="LayoutSelector" Grid.Column="1" MinWidth="180" Margin="0,6,8,6" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="LayoutSelector_SelectionChanged" automation:AutomationProperties.Name="Layout selector" ToolTip="Switch dashboard" Cursor="Hand"/>
-                <Button x:Name="ScaleSettingsButton" Grid.Column="2" Style="{StaticResource IconButton}" automation:AutomationProperties.Name="Monitor scale" ToolTip="Change pop-out size" Click="ScaleSettingsButton_Click">
-                    <Path Width="17" Height="17" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5" Data="M2,7 L2,2 L7,2 M2,2 L7,7 M15,10 L15,15 L10,15 M15,15 L10,10"/>
-                </Button>
-                <Button x:Name="CloseButton" Grid.Column="3" Style="{StaticResource IconButton}" automation:AutomationProperties.Name="Close telemetry popout" ToolTip="Hide telemetry popout" Click="CloseButton_Click">
-                    <Path Width="15" Height="15" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" Data="M2,2 L13,13 M13,2 L2,13"/>
-                </Button>
+                <Grid Grid.Column="1" Margin="0,0,8,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="10*"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
+                    <ComboBox x:Name="LayoutSelector" Grid.Column="1" MinWidth="180" Margin="0,8" DisplayMemberPath="Name" SelectedValuePath="Id" SelectionChanged="LayoutSelector_SelectionChanged" automation:AutomationProperties.Name="Layout selector" ToolTip="Switch dashboard" Cursor="Hand"/>
+                </Grid>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,5,0">
+                    <Button x:Name="ReturnToAppButton" Style="{StaticResource IconButton}" automation:AutomationProperties.Name="Return to full app" ToolTip="Return to full app" Click="ReturnToAppButton_Click">
+                        <Path Width="17" Height="17" Margin="1" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M14,3 L6,3 Q3,3 3,6 L3,12 M3,12 L7,8 M3,12 L7,16"/>
+                    </Button>
+                    <Button x:Name="ScaleSettingsButton" Style="{StaticResource IconButton}" automation:AutomationProperties.Name="Popout size" ToolTip="Choose popout size" Click="ScaleSettingsButton_Click">
+                        <Path Width="17" Height="17" Margin="1" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M3,7 L3,3 L7,3 M3,3 L8,8 M14,10 L14,14 L10,14 M14,14 L9,9"/>
+                    </Button>
+                    <Button x:Name="CloseButton" Style="{StaticResource IconButton}" automation:AutomationProperties.Name="Close telemetry popout" ToolTip="Return to full app" Click="CloseButton_Click">
+                        <Path Width="15" Height="15" Margin="1" Stretch="Uniform" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M2,2 L13,13 M13,2 L2,13"/>
+                    </Button>
+                </StackPanel>
             </Grid>
 
             <Grid x:Name="WorkspaceHost" Grid.Row="1" Width="540" Height="360" Margin="8" ClipToBounds="True" Background="{StaticResource MonitorAppBrush}">
                 <Grid x:Name="TileGrid" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent"/>
                 <Border x:Name="ScaleSettingsSurface" Visibility="Collapsed" Background="{StaticResource MonitorSurfaceBrush}" BorderBrush="{StaticResource MonitorBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="22">
                     <Grid>
-                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Monitor size" FontSize="18" FontWeight="SemiBold"/>
-                        <TextBlock Grid.Row="1" Text="Adjust the physical size of this pop-out. Dashboard proportions stay unchanged." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,0,22"/>
-                        <Grid Grid.Row="2">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="78"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Scale" VerticalAlignment="Center"/>
-                            <Slider x:Name="ScaleSlider" Grid.Column="1" Minimum="70" Maximum="200" TickFrequency="10" IsSnapToTickEnabled="True" ValueChanged="ScaleSlider_ValueChanged" automation:AutomationProperties.Name="Overall monitor scale"/>
-                            <TextBlock x:Name="ScaleValue" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Cascadia Mono, Consolas" FontSize="14"/>
-                        </Grid>
-                        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-                            <Button Style="{StaticResource ActionButton}" Margin="0,0,8,0" Content="Cancel" Click="CancelScaleSettings_Click"/>
-                            <Button Style="{StaticResource ActionButton}" Background="{DynamicResource MonitorAccentFillBrush}" BorderBrush="{DynamicResource MonitorAccentBrush}" Content="Done" Click="ApplyScaleSettings_Click"/>
-                        </StackPanel>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Popout size" FontSize="18" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Row="1" Text="Choose a stable size. The window changes once after your click is released." Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,0,18"/>
+                        <UniformGrid Grid.Row="2" Columns="3" VerticalAlignment="Center">
+                            <Button x:Name="CompactSizeButton" Style="{StaticResource SizePresetButton}" CommandParameter="0.8" Click="SizePresetButton_Click"><StackPanel><TextBlock Text="Compact" HorizontalAlignment="Center" FontWeight="SemiBold"/><TextBlock Text="80%" HorizontalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" FontFamily="Cascadia Mono, Consolas"/></StackPanel></Button>
+                            <Button x:Name="StandardSizeButton" Style="{StaticResource SizePresetButton}" CommandParameter="1.0" Click="SizePresetButton_Click"><StackPanel><TextBlock Text="Standard" HorizontalAlignment="Center" FontWeight="SemiBold"/><TextBlock Text="100%" HorizontalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" FontFamily="Cascadia Mono, Consolas"/></StackPanel></Button>
+                            <Button x:Name="ExpandedSizeButton" Style="{StaticResource SizePresetButton}" CommandParameter="1.25" Click="SizePresetButton_Click"><StackPanel><TextBlock Text="Expanded" HorizontalAlignment="Center" FontWeight="SemiBold"/><TextBlock Text="125%" HorizontalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" FontFamily="Cascadia Mono, Consolas"/></StackPanel></Button>
+                        </UniformGrid>
+                        <Button Grid.Row="3" Style="{StaticResource ActionButton}" HorizontalAlignment="Right" Margin="0,18,0,0" Content="Close" Click="CloseScaleSettings_Click"/>
                     </Grid>
                 </Border>
             </Grid>

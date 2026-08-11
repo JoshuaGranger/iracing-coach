@@ -300,7 +300,7 @@ public sealed class CodexAppServerSupervisor : ICoachEngineSupervisor
 
             await RequestAsync("initialize", new
             {
-                clientInfo = new { name = "iracing_coach", title = "iRacing Coach", version = "0.15.0" }
+                clientInfo = new { name = "iracing_coach", title = "iRacing Coach", version = "0.16.0" }
             }, cancellationToken);
             await NotifyAsync("initialized", new { }, cancellationToken);
             SetCurrent(new(true, true, false, "running", "Coach Engine is running.", installation.RuntimeVersion));

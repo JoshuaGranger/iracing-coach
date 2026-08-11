@@ -6,31 +6,15 @@
 
     <section class="surface-card form-panel starting-tune" aria-labelledby="starting-tune-heading">
         <div class="starting-tune-card-heading"><div><span class="eyebrow">Step @State.StartingTuneStep of 4</span><h2 id="starting-tune-heading">@StartingTuneHeading</h2></div></div>
-        <nav class="progress-rail" aria-label="Starting Tune progress">
-            @foreach (var step in new[] { (1, "Event"), (2, "Source"), (3, "Checks"), (4, "Run") })
+        <div class="starting-tune-step-rail">
+            <nav class="progress-rail" aria-label="Starting Tune progress">
+                @foreach (var step in new[] { (1, "Event"), (2, "Source"), (3, "Checks"), (4, "Run") })
+                {
+                    <button type="button" class="@(State.StartingTuneStep == step.Item1 ? "active" : State.StartingTuneStep > step.Item1 ? "done" : null)" disabled="@(step.Item1 > 1 && State.StartingTunePackage is null)" @onclick="() => State.SetStartingTuneStep(step.Item1)"><span>@step.Item1</span>@step.Item2</button>
+                }
+            </nav>
+            @if (State.StartingTuneStep == 1)
             {
-                <button type="button" class="@(State.StartingTuneStep == step.Item1 ? "active" : State.StartingTuneStep > step.Item1 ? "done" : null)" disabled="@(step.Item1 > 1 && State.StartingTunePackage is null)" @onclick="() => State.SetStartingTuneStep(step.Item1)"><span>@step.Item1</span>@step.Item2</button>
-            }
-        </nav>
-        @if (State.StartingTuneStep == 1)
-        {
-            <div class="starting-tune-event-grid">
-                <label class="searchable-local-field">
-                    <span>Car</span>
-                    <input list="starting-tune-cars" autocomplete="off" placeholder="Search installed cars" @bind="State.StartingTuneCar" @bind:event="oninput" />
-                    <datalist id="starting-tune-cars">
-                        @foreach (var car in CarChoices) { <option value="@car.Name" label="@car.Source"></option> }
-                    </datalist>
-                    <small>@(State.Cars.Count > 0 ? $"{State.Cars.Count} found on this PC" : "Type the exact iRacing car name")</small>
-                </label>
-                <label class="searchable-local-field">
-                    <span>Track and layout</span>
-                    <input list="starting-tune-tracks" autocomplete="off" placeholder="Search installed tracks" @bind="State.StartingTuneTrack" @bind:event="oninput" />
-                    <datalist id="starting-tune-tracks">
-                        @foreach (var track in TrackChoices) { <option value="@track.Name" label="@track.Source"></option> }
-                    </datalist>
-                    <small>@(State.Tracks.Count > 0 ? $"{State.Tracks.Count} layouts found" : "Type the exact track and layout")</small>
-                </label>
                 <fieldset class="starting-tune-purpose">
                     <legend>Session</legend>
                     <div role="group" aria-label="Starting Tune session">
@@ -40,6 +24,41 @@
                         }
                     </div>
                 </fieldset>
+            }
+        </div>
+        @if (State.StartingTuneStep == 1)
+        {
+            <div class="starting-tune-event-grid">
+                <label class="searchable-local-field">
+                    <span>Car</span>
+                    <input class="catalog-combobox"
+                           list="starting-tune-cars"
+                           autocomplete="off"
+                           placeholder="Type or browse installed cars"
+                           aria-describedby="starting-tune-car-status"
+                           aria-invalid="@(CarSelectionValid ? "false" : "true")"
+                           @bind="State.StartingTuneCar"
+                           @bind:event="oninput" />
+                    <datalist id="starting-tune-cars">
+                        @foreach (var car in CarChoices) { <option value="@car.Name"></option> }
+                    </datalist>
+                    <small id="starting-tune-car-status" class="@(CarSelectionValid ? null : "validation-message")">@CarSelectionStatus</small>
+                </label>
+                <label class="searchable-local-field">
+                    <span>Track and layout</span>
+                    <input class="catalog-combobox"
+                           list="starting-tune-tracks"
+                           autocomplete="off"
+                           placeholder="Type or browse installed layouts"
+                           aria-describedby="starting-tune-track-status"
+                           aria-invalid="@(TrackSelectionValid ? "false" : "true")"
+                           @bind="State.StartingTuneTrack"
+                           @bind:event="oninput" />
+                    <datalist id="starting-tune-tracks">
+                        @foreach (var track in TrackChoices) { <option value="@track.Name"></option> }
+                    </datalist>
+                    <small id="starting-tune-track-status" class="@(TrackSelectionValid ? null : "validation-message")">@TrackSelectionStatus</small>
+                </label>
             </div>
             <div class="starting-tune-primary-action">
                 <span>Local setups and recorded sessions only</span>
@@ -50,8 +69,8 @@
         {
             @if (State.StartingTuneStep == 2)
             {
-                <div class="source-details"><div><span>Source</span><strong>@package.Source</strong></div><div><span>Setup</span><strong>@package.Donor</strong></div><div><span>Car</span><strong>@package.Car</strong></div><div><span>Track</span><strong>@package.Track</strong></div></div>
-                <p class="section-copy">@package.Confirmation @package.DonorReason</p>
+                <div class="source-details" data-setup-source="@package.Source" data-setup-fingerprint="@package.Fingerprint"><div><span>Starting setup</span><strong>@package.Donor</strong></div><div><span>Car</span><strong>@package.Car</strong></div><div><span>Track</span><strong>@package.Track</strong></div></div>
+                <p class="section-copy">@package.Confirmation</p>
                 @if (package.Risks.Count > 0) { <details class="evidence-details"><summary>Cautions</summary><ul>@foreach (var risk in package.Risks) { <li>@risk</li> }</ul></details> }
                 <div class="workflow-actions"><button class="button secondary" @onclick="State.ResetStartingTune">Change event</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(3)">Review checks</button></div>
             }
@@ -59,7 +78,6 @@
             {
                 <div class="source-details tune-check-summary"><div><span>Session</span><strong>@package.Purpose</strong></div><div><span>Status</span><strong>@package.Status</strong></div></div>
                 <ol class="baseline-checks">@foreach (var check in package.BaselineChecks) { <li>@check</li> }</ol>
-                <details class="evidence-details"><summary>Technical record</summary><p class="mono">@package.Fingerprint</p></details>
                 <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(2)">Back</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(4)">Baseline run</button></div>
             }
             else
@@ -81,7 +99,11 @@
     private IEnumerable<InstalledTrack> TrackChoices => State.Tracks
         .DistinctBy(track => track.Name, StringComparer.CurrentCultureIgnoreCase)
         .OrderBy(track => track.Name, StringComparer.CurrentCultureIgnoreCase);
-    private bool CanBuildStartingTune => !State.StartingTuneBusy && !string.IsNullOrWhiteSpace(State.StartingTuneCar) && !string.IsNullOrWhiteSpace(State.StartingTuneTrack);
+    private bool CarSelectionValid => CatalogSelectionValid(State.StartingTuneCar, CarChoices.Select(car => car.Name), State.Cars.Count == 0);
+    private bool TrackSelectionValid => CatalogSelectionValid(State.StartingTuneTrack, TrackChoices.Select(track => track.Name), State.Tracks.Count == 0);
+    private string CarSelectionStatus => SelectionStatus(State.StartingTuneCar, CarSelectionValid, State.Cars.Count, "car");
+    private string TrackSelectionStatus => SelectionStatus(State.StartingTuneTrack, TrackSelectionValid, State.Tracks.Count, "track layout");
+    private bool CanBuildStartingTune => !State.StartingTuneBusy && CarSelectionValid && TrackSelectionValid;
     private string StartingTuneHeading => State.StartingTuneStep switch { 1 => "Choose the event", 2 => "Confirm the source", 3 => "Verify the baseline", _ => "Record the baseline" };
 
     protected override void OnParametersSet()
@@ -103,6 +125,18 @@
     }
     private bool PurposeSelected(string purpose) => State.StartingTunePurpose.Equals(purpose, StringComparison.OrdinalIgnoreCase);
     private void SelectPurpose(string purpose) => State.StartingTunePurpose = purpose;
+    private static bool CatalogSelectionValid(string value, IEnumerable<string> choices, bool allowTypedFallback) =>
+        !string.IsNullOrWhiteSpace(value)
+        && (allowTypedFallback || choices.Any(choice => string.Equals(choice, value.Trim(), StringComparison.CurrentCultureIgnoreCase)));
+
+    private static string SelectionStatus(string value, bool valid, int count, string noun) =>
+        count == 0
+            ? $"No local catalog was found; type the exact iRacing {noun}."
+            : string.IsNullOrWhiteSpace(value)
+                ? $"Choose an installed {noun} from {count} available."
+                : valid
+                    ? $"Installed {noun} selected."
+                    : $"Keep typing or choose one of the {count} installed options.";
     private Task BuildStartingTune() => State.BuildStartingTuneAsync();
     private void OpenTuning() => State.Navigate("tuning");
 }

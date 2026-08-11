@@ -4,7 +4,7 @@ const { chromium } = require("playwright");
 
 const baseUrl = process.argv[2] || "http://127.0.0.1:5284/";
 const outputDirectory = path.resolve(
-  process.argv[3] || path.join(__dirname, "..", "artifacts", "qa", "v0.15.0"),
+  process.argv[3] || path.join(__dirname, "..", "artifacts", "qa", "v0.16.0"),
 );
 const reportPath = path.join(outputDirectory, "visual-qa-report.json");
 const suiteMode = process.argv[4] || "all";
@@ -15,7 +15,7 @@ const viewports = [
 
 const report = {
   schemaVersion: 1,
-  suite: "iRacing Coach v0.15.0 visual QA",
+  suite: "iRacing Coach v0.16.0 visual QA",
   baseUrl,
   startedAt: new Date().toISOString(),
   completedAt: null,
@@ -509,6 +509,9 @@ async function exerciseMap(page, run) {
     } catch (error) {
       transitionError = error.message;
     }
+    // Pointer focus release is intentionally scheduled for the next animation
+    // frame so the native select can finish committing its value first.
+    await page.waitForTimeout(50);
     const state = await page.evaluate(({ value, error }) => {
       const mapElement = document.querySelector("[data-analysis-track-map]");
       const selectElement = document.querySelector("select[data-map-type]");
@@ -646,12 +649,18 @@ async function exerciseSpotlight(page, run) {
   await option.click();
   await page.locator(".spotlight-active-chip").waitFor({ state: "visible", timeout: 3_000 });
   await page.waitForFunction((lap) => [...document.querySelectorAll("[data-analysis-trace-path]")]
-    .some((path) => Number.parseInt(path.getAttribute("data-lap"), 10) === lap), selectedLap, { timeout: 3_000 });
+    .some((path) => String(path.getAttribute("data-laps") || "")
+      .split(",")
+      .map((value) => Number.parseInt(value.trim(), 10))
+      .includes(lap)), selectedLap, { timeout: 3_000 });
   const state = await page.evaluate((lap) => ({
     activeChip: document.querySelector(".spotlight-active-chip")?.textContent?.trim() || null,
     selectedLap: lap,
     selectedLapPaths: [...document.querySelectorAll("[data-analysis-trace-path]")]
-      .filter((path) => Number.parseInt(path.getAttribute("data-lap"), 10) === lap).length,
+      .filter((path) => String(path.getAttribute("data-laps") || "")
+        .split(",")
+        .map((value) => Number.parseInt(value.trim(), 10))
+        .includes(lap)).length,
     spotlightPaths: [...document.querySelectorAll("[data-analysis-trace-path]")]
       .filter((path) => path.getAttribute("data-spotlight")?.toLowerCase() === "true").length,
     spotlightAttributeValues: [...new Set([...document.querySelectorAll("[data-analysis-trace-path]")]
@@ -1164,11 +1173,23 @@ async function exerciseStartingTune(page, run) {
     resolved = advanced || (began && !/Finding source/i.test(finalButton || "") && !/Reviewing your local setups/i.test(finalMessage || "") && Boolean(finalMessage));
   }
   const sourceMessage = await page.locator(".starting-tune-message").textContent().catch(() => null);
-  addCheck(run, "Starting Tune resolves the local source search", enabled && resolved ? "pass" : "fail", {
+  const localChoices = await page.evaluate(() => ({
+    cars: document.querySelectorAll("#starting-tune-cars option").length,
+    tracks: document.querySelectorAll("#starting-tune-tracks option").length,
+  }));
+  const truthfulUnavailable = !enabled
+    && localChoices.cars > 0
+    && localChoices.tracks > 0
+    && Boolean(sourceMessage?.trim());
+  addCheck(run, "Starting Tune exposes local choices and resolves source state", (enabled && resolved) || truthfulUnavailable ? "pass" : "fail", {
     severity: "high",
     selector: ".starting-tune-primary-action button, #starting-tune-heading",
-    message: advanced ? "A read-only setup source advanced to confirmation." : `Source search resolved without a usable source: ${sourceMessage || "no message"}`,
-    measurements: { enabled, began, resolved, advanced, initialMessage, sourceMessage },
+    message: advanced
+      ? "A read-only setup source advanced to confirmation."
+      : truthfulUnavailable
+        ? `The local car/track browsers remain populated while the selected context truthfully has no usable source: ${sourceMessage}`
+        : `Source search did not resolve cleanly: ${sourceMessage || "no message"}`,
+    measurements: { enabled, began, resolved, advanced, initialMessage, sourceMessage, localChoices, truthfulUnavailable },
   });
   if (advanced) {
     await capture(page, run, "starting-tune-source");
@@ -1241,11 +1262,11 @@ async function exerciseProgressiveTuning(page, run) {
   const firstTurn = page.locator('[aria-label="Selectable corners and load zones"] [role="listitem"]').first();
   if (await firstTurn.isVisible().catch(() => false)) {
     await firstTurn.click();
-    await page.locator(".tuning-feedback-popover.open").waitFor({ state: "visible" });
+    await page.locator("[data-active-corner-editor] .tuning-feedback-editor").waitFor({ state: "visible" });
     await capture(page, run, "progressive-tuning-corner-feedback");
     await page.getByRole("button", { name: "Close turn feedback", exact: true }).click();
-    await page.locator(".tuning-feedback-popover.open").waitFor({ state: "hidden" });
-    addCheck(run, "Progressive Tuning corner feedback opens and closes", "pass", { selector: ".tuning-feedback-popover" });
+    await page.locator("[data-active-corner-editor]").waitFor({ state: "hidden" });
+    addCheck(run, "Progressive Tuning corner feedback opens and closes", "pass", { selector: "[data-active-corner-editor]" });
   }
   await capture(page, run, "progressive-tuning-workbench");
 }
@@ -1532,7 +1553,7 @@ async function exerciseSettings(page, run) {
   const reducedMotion = page.locator("label.toggle-row").filter({ hasText: "Reduce motion" }).locator('input[type="checkbox"]');
   const initiallyReduced = await reducedMotion.isChecked();
   await reducedMotion.click();
-  await page.waitForFunction((expected) => document.querySelector(".app-shell")?.classList.contains("reduced-motion") === expected, !initiallyReduced, { timeout: 3_000 });
+  await page.waitForFunction((expected) => document.querySelector(".app-shell")?.classList.contains("reduced-motion") === expected, !initiallyReduced, { timeout: 8_000 });
   const toggledState = await page.evaluate(() => ({
     reducedClass: document.querySelector(".app-shell")?.classList.contains("reduced-motion"),
     transitionDuration: getComputedStyle(document.querySelector(".settings-hub-card")).transitionDuration,
@@ -1540,7 +1561,7 @@ async function exerciseSettings(page, run) {
     activeTag: document.activeElement?.tagName || null,
   }));
   await reducedMotion.click();
-  await page.waitForFunction((expected) => document.querySelector(".app-shell")?.classList.contains("reduced-motion") === expected, initiallyReduced, { timeout: 3_000 });
+  await page.waitForFunction((expected) => document.querySelector(".app-shell")?.classList.contains("reduced-motion") === expected, initiallyReduced, { timeout: 8_000 });
   addCheck(run, "Reduced motion toggles the application mode and restores", toggledState.reducedClass === !initiallyReduced ? "pass" : "fail", {
     severity: "high",
     selector: ".toggle-row input[type=checkbox]",

@@ -1,7 +1,6 @@
 <div class="planning-page">
     <div class="page-heading compact-heading planning-heading">
         <div><span class="eyebrow">Race planning</span><h1>Next race</h1></div>
-        @if (State.PlanGenerated) { <button class="button secondary compact" @onclick="State.ResetPlan">Start over</button> }
     </div>
 
     @if (State.Races.Count == 0)
@@ -46,7 +45,7 @@
                 @if (State.SelectedPlanRace is { } selected)
                 {
                     <div class="planning-reference-summary">
-                        <span class="status-label neutral">Recorded reference</span>
+                        <span class="status-label success">Ready to build</span>
                         <strong>@selected.Track@(string.IsNullOrWhiteSpace(selected.Layout) ? string.Empty : $" · {selected.Layout}")</strong>
                         <span>@selected.Car</span>
                         <small>@ReferenceFacts(selected)</small>
@@ -54,7 +53,7 @@
                 }
                 else
                 {
-                    <p class="planning-reference-missing">Choose a matching recording to build an evidence-based plan.</p>
+                    <p class="planning-reference-missing">Choose a matching race to build the plan.</p>
                 }
             </section>
 
@@ -63,35 +62,47 @@
                 <div class="planning-results">
                     @if (State.PlanBriefing is { } plan)
                     {
-                        <section class="surface-card plan-briefing">
+                        <section class="surface-card plan-briefing" data-assumption-count="@plan.Assumptions.Count">
                             <div class="analysis-section-heading"><div><span class="eyebrow">Race briefing</span><h2>@plan.Track · @plan.Car</h2></div><span class="status-label @(plan.Confidence.Equals("Low", StringComparison.OrdinalIgnoreCase) ? "warning" : "success")">@plan.Confidence confidence</span></div>
-                            <div class="briefing-metrics">
+                            <div class="planning-decision-hero" data-planning-decision>
+                                <div>
+                                    <span class="eyebrow">Recommended opening plan</span>
+                                    <strong>@OpeningPlan(plan)</strong>
+                                    <p>@OpeningPlanExplanation(plan)</p>
+                                </div>
+                                <div class="planning-decision-distance">
+                                    <span><small>Race</small><b>@plan.ScheduledLaps laps</b></span>
+                                    <i style="--distance-marker:@DistanceMarker(plan)"><b></b><em></em></i>
+                                    <span><small>Conservative range</small><b>@ConservativeRangeLabel(plan)</b></span>
+                                </div>
+                            </div>
+                            <div class="briefing-metrics planning-briefing-metrics">
+                                <div><span>Fuel decision</span><strong>@FuelDecision(plan)</strong><small>@FuelMargin(plan)</small></div>
+                                <div><span>Planned stops</span><strong>@PlannedStops(plan)</strong><small>@PitWindowSummary(plan)</small></div>
                                 @if (plan.GreenFuelGallonsPerLap.HasValue) { <div><span>Green fuel use</span><strong>@plan.GreenFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                                 @if (plan.CautionFuelGallonsPerLap.HasValue) { <div><span>Caution fuel use</span><strong>@plan.CautionFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
-                                <div><span>Fuel range</span><strong>@plan.FuelRange</strong></div><div><span>All-green baseline</span><strong>@plan.StopCount</strong></div>
                             </div>
-                            @if (plan.PitTargets.Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>Equal-stint pit targets</span><strong>@string.Join(" · ", plan.PitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
-                            @if (plan.Priorities.Any(UsefulPriority) || UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => CapabilityRegistry.IsSupported(item.Claim)))
+                            @if (plan.PitTargets.Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>Equal-stint windows</span><strong>@string.Join(" · ", plan.PitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
+                            @if (plan.Priorities.Any(UsefulPriority) || UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => UsefulTrigger(plan, item)))
                             {
                                 <div class="briefing-columns">
-                                    @if (plan.Priorities.Any(UsefulPriority)) { <div><h3>Race priorities</h3>@foreach (var action in plan.Priorities.Where(UsefulPriority).Take(3)) { <article class="briefing-action"><span>@action.Label</span><p>@action.Claim.Text</p></article> }</div> }
-                                    @if (UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => CapabilityRegistry.IsSupported(item.Claim))) { <div><h3>Tires and long-run approach</h3>@if (UsefulTireGuidance(plan.TireGuidance)) { <p class="tire-guidance">@plan.TireGuidance</p> }@if (plan.Triggers.Any(item => CapabilityRegistry.IsSupported(item.Claim))) { <h3>Race triggers</h3>@foreach (var trigger in plan.Triggers.Where(item => CapabilityRegistry.IsSupported(item.Claim))) { <article class="briefing-trigger"><strong>@trigger.Label</strong><span>@trigger.Claim.Text</span></article> } }</div> }
+                                    @if (plan.Priorities.Any(UsefulPriority)) { <div><h3>Race priorities</h3>@foreach (var action in plan.Priorities.Where(UsefulPriority).Take(4)) { <article class="briefing-action"><span>@action.Label</span><p>@action.Claim.Text</p></article> }</div> }
+                                    @if (UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => UsefulTrigger(plan, item))) { <div><h3>Tires and long-run approach</h3>@if (UsefulTireGuidance(plan.TireGuidance)) { <p class="tire-guidance">@plan.TireGuidance</p> }@if (plan.Triggers.Any(item => UsefulTrigger(plan, item))) { <h3>Respond during the race</h3>@foreach (var trigger in plan.Triggers.Where(item => UsefulTrigger(plan, item))) { <article class="briefing-trigger"><strong>@trigger.Label</strong><span>@FriendlyTrigger(plan, trigger)</span></article> } }</div> }
                                 </div>
                             }
                             @if (plan.Corners.Any(HasSupportedPhase)) { <div class="plan-corners"><h3>Corner evidence by run phase</h3>@foreach (var corner in plan.Corners.Where(HasSupportedPhase)) { <article><strong>@corner.Zone</strong>@if (UsefulCornerPhase(corner.Early)) { <span><b>Early</b> @FriendlyCornerText(corner.Early.Text)</span> }@if (UsefulCornerPhase(corner.Middle)) { <span><b>Middle</b> @FriendlyCornerText(corner.Middle.Text)</span> }@if (UsefulCornerPhase(corner.Late)) { <span><b>Late</b> @FriendlyCornerText(corner.Late.Text)</span> }</article> }</div> }
-                            @if (plan.Assumptions.Count > 0) { <details class="settings-disclosure"><summary>How this briefing was calculated</summary><ul>@foreach (var item in plan.Assumptions) { <li>@item</li> }</ul></details> }
                         </section>
                     }
                     <section class="surface-card planning-history">
-                        <div class="card-header"><div><span class="eyebrow">Recorded comparisons</span><h2>Comparable races</h2></div><span class="status-label neutral">Local recordings</span></div>
-                        <p class="section-copy">@State.PlanMessage</p>
+                        <div class="card-header"><div><span class="eyebrow">Race comparisons</span><h2>Comparable races</h2></div></div>
+                        <p class="section-copy">@ScenarioCountMessage</p>
                         @if (State.StrategyScenarios.Count == 0)
                         {
                             <div class="empty-state compact-empty"><span class="empty-icon"><ProductIcon Name="planning" Size="22" /></span><h3>No comparable runs yet</h3><p>Analyze more races with the same car, layout, setup type, and distance.</p></div>
                         }
                         else
                         {
-                            <div class="scenario-grid">@foreach (var run in State.StrategyScenarios) { <article class="scenario-card"><div class="scenario-title"><EvidenceBadge Kind="run.Evidence" /><strong>@run.Label</strong></div>@if (!string.IsNullOrWhiteSpace(run.Window)) { <b>@FriendlyWindow(run.Window)</b> }@if (!string.IsNullOrWhiteSpace(run.Stops)) { <span>@run.Stops</span> }@if (!string.IsNullOrWhiteSpace(run.Fuel)) { <span>@run.Fuel</span> }@if (!string.IsNullOrWhiteSpace(run.Note)) { <small>@run.Note</small> }</article> }</div>
+                            <div class="scenario-grid">@foreach (var run in State.StrategyScenarios) { <article class="scenario-card"><div class="scenario-title"><strong>@FriendlyScenarioLabel(run.Label)</strong></div>@if (!string.IsNullOrWhiteSpace(run.Window)) { <b>@FriendlyWindow(run.Window)</b> }@if (!string.IsNullOrWhiteSpace(run.Stops)) { <span>@run.Stops</span> }@if (!string.IsNullOrWhiteSpace(run.Fuel)) { <span>@run.Fuel</span> }@if (UsefulScenarioNote(run.Note)) { <small>@run.Note</small> }</article> }</div>
                         }
                     </section>
                 </div>
@@ -154,8 +165,19 @@
         return string.Join(" · ", facts);
     }
     private static string FriendlyWindow(string value) => DateTimeOffset.TryParse(value, out var date) ? date.ToLocalTime().ToString("MMM d · h:mm tt") : value;
+    private string ScenarioCountMessage => State.StrategyScenarios.Count switch
+    {
+        0 => "No comparable race is available yet.",
+        1 => "One comparable race can inform this plan.",
+        var count => $"{count} comparable races can inform this plan."
+    };
+    private static string FriendlyScenarioLabel(string value) => value.Replace("Recorded ", string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+    private static bool UsefulScenarioNote(string value) => !string.IsNullOrWhiteSpace(value)
+        && !value.Contains("local race history", StringComparison.OrdinalIgnoreCase)
+        && !value.Contains("recorded source", StringComparison.OrdinalIgnoreCase);
     private static bool Supported(EvidenceText claim) => CapabilityRegistry.IsSupported(claim) && !claim.Text.Contains("No eligible lap", StringComparison.OrdinalIgnoreCase) && !claim.Text.Contains("enough samples", StringComparison.OrdinalIgnoreCase);
     private static bool UsefulPriority(RaceAction action) => Supported(action.Claim)
+        && !System.Text.RegularExpressions.Regex.IsMatch(action.Claim.Text, @"\b(?:positive|negative) (?:value )?(?:is|means)|\b(?:higher|lower) (?:means|indicates)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant)
         && !action.Claim.Text.Contains("rollback", StringComparison.OrdinalIgnoreCase)
         && !action.Claim.Text.Contains("change one setup system", StringComparison.OrdinalIgnoreCase)
         && !action.Claim.Text.Contains("match this wear pattern", StringComparison.OrdinalIgnoreCase)
@@ -173,4 +195,58 @@
         double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var radians)
             ? $"{radians * 180d / Math.PI:0.0}° median steering"
             : match.Value);
+    private static double? ConservativeRange(RacePlanBriefing plan)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(plan.FuelRange, @"\d+(?:\.\d+)?");
+        return match.Success && double.TryParse(match.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+    }
+    private static int CalculatedStops(RacePlanBriefing plan)
+    {
+        var range = ConservativeRange(plan);
+        return range is > 0 && plan.ScheduledLaps > 0 ? Math.Max(0, (int)Math.Ceiling(plan.ScheduledLaps / range.Value) - 1) : plan.PitTargets.Count;
+    }
+    private static string OpeningPlan(RacePlanBriefing plan) => plan.ScheduledLaps <= 0
+        ? "Use the recorded run as the planning baseline"
+        : CalculatedStops(plan) == 0
+            ? $"Start with a no-stop plan for {plan.ScheduledLaps} laps"
+            : $"Start with a {CalculatedStops(plan)}-stop all-green plan";
+    private static string OpeningPlanExplanation(RacePlanBriefing plan)
+    {
+        var range = ConservativeRange(plan);
+        if (range is null || plan.ScheduledLaps <= 0) return "Use the recorded fuel burn as the baseline and update the call if live consumption moves outside it.";
+        if (range >= plan.ScheduledLaps) return $"The conservative recorded range clears this race by {range.Value - plan.ScheduledLaps:0.0} laps. There is no useful fuel pit window unless conditions change.";
+        return plan.PitTargets.Count > 0
+            ? $"The measured range cannot cover the full distance. The first balanced window opens around lap {plan.PitTargets[0]}."
+            : "The measured range cannot cover the full distance; use live burn to establish the safest stop window.";
+    }
+    private static string ConservativeRangeLabel(RacePlanBriefing plan) => ConservativeRange(plan) is { } range ? $"{range:0.0} laps" : "Not available";
+    private static string DistanceMarker(RacePlanBriefing plan)
+    {
+        var range = ConservativeRange(plan) ?? 0;
+        var scale = Math.Max(range, plan.ScheduledLaps);
+        var percent = scale <= 0 ? 0 : Math.Clamp(plan.ScheduledLaps / scale * 100, 0, 100);
+        return percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+    private static string FuelDecision(RacePlanBriefing plan) => CalculatedStops(plan) == 0 ? "Stay out" : $"{CalculatedStops(plan)} stop{(CalculatedStops(plan) == 1 ? string.Empty : "s")}";
+    private static string FuelMargin(RacePlanBriefing plan)
+    {
+        var range = ConservativeRange(plan);
+        if (range is null || plan.ScheduledLaps <= 0) return "Range needs another clean sample";
+        var margin = range.Value - plan.ScheduledLaps;
+        return margin >= 0 ? $"+{margin:0.0} laps beyond the finish" : $"{-margin:0.0} laps beyond one tank";
+    }
+    private static string PlannedStops(RacePlanBriefing plan) => CalculatedStops(plan).ToString(System.Globalization.CultureInfo.InvariantCulture);
+    private static string PitWindowSummary(RacePlanBriefing plan) => plan.PitTargets.Count > 0 ? string.Join(" · ", plan.PitTargets.Select(lap => $"lap {lap}")) : "No scheduled fuel stop";
+    private static bool UsefulTrigger(RacePlanBriefing plan, RaceTrigger trigger) => CapabilityRegistry.IsSupported(trigger.Claim)
+        && !trigger.Label.Contains("adjust", StringComparison.OrdinalIgnoreCase)
+        && !trigger.Label.Contains("rollback", StringComparison.OrdinalIgnoreCase)
+        && !(CalculatedStops(plan) == 0 && trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase));
+    private static string FriendlyTrigger(RacePlanBriefing plan, RaceTrigger trigger)
+    {
+        if (trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase) && CalculatedStops(plan) == 0)
+            return "No planned stop. Reconsider only if live fuel use removes the finish margin.";
+        return trigger.Claim.Text;
+    }
 }

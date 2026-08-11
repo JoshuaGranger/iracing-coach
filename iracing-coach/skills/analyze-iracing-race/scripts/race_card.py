@@ -146,6 +146,37 @@ def _safe_coaching(value: Any, *, numeric_targets_usable: bool) -> str | None:
     return text
 
 
+def _driver_instruction(value: Any, *, numeric_targets_usable: bool) -> str | None:
+    """Return only copy that tells the driver what to do on track.
+
+    Technical metric actions also contain definitions such as ``a positive
+    value is falloff``.  Those are useful beside the metric, but they are not
+    opening-lap instructions and must never be promoted into the Race Card's
+    Start priority.
+    """
+
+    text = _safe_coaching(value, numeric_targets_usable=numeric_targets_usable)
+    if not text:
+        return None
+    if re.search(
+        r"\b(?:positive|negative) (?:value )?(?:is|means)|"
+        r"\b(?:higher|lower) (?:means|indicates)|"
+        r"\bthis (?:value|metric|measurement) (?:means|describes)|"
+        r"\bcompare the same run(?:'s)? tire condition\b",
+        text,
+        re.I,
+    ):
+        return None
+    opening_verb = text.split(" ", 1)[0].lower().rstrip(":")
+    if opening_verb not in {
+        "avoid", "brake", "build", "carry", "enter", "exit", "feed",
+        "finish", "hold", "keep", "open", "protect", "reduce", "release",
+        "reset", "roll", "stabilize", "turn", "unwind", "validate",
+    }:
+        return None
+    return text
+
+
 def _is_oval(identity: Mapping[str, Any]) -> bool:
     config = _ascii_text(identity.get("track_config")).lower()
     return "oval" in config and "road" not in config
@@ -160,8 +191,13 @@ def _fmt_number(value: Any, digits: int = 1) -> str | None:
     return f"{number:.{digits}f}".rstrip("0").rstrip(".")
 
 
-def _distance_label(race: Mapping[str, Any]) -> str:
-    scheduled = _fmt_number(race.get("scheduled_laps"), 0)
+def _distance_label(
+    race: Mapping[str, Any], planned_laps: float | None = None
+) -> str:
+    scheduled = _fmt_number(
+        planned_laps if planned_laps is not None else race.get("scheduled_laps"),
+        0,
+    )
     recorded = _fmt_number(race.get("recorded_laps"), 0)
     if scheduled:
         return f"{scheduled} laps"
@@ -801,6 +837,7 @@ def _strategy_claim(
     historical_runs: Sequence[Mapping[str, Any]] = (),
     *,
     words: int = 14,
+    planned_laps: float | None = None,
 ) -> dict[str, str]:
     eligible_history = [
         row
@@ -815,20 +852,46 @@ def _strategy_claim(
     strategy = _mapping(analysis.get("strategy"))
     forecast = _mapping(strategy.get("forecast"))
     if forecast.get("status") == "usable":
-        stops = _fmt_number(forecast.get("minimum_stops_all_green"), 0)
-        targets = [
-            _fmt_number(value, 0)
-            for value in _sequence(forecast.get("equal_stint_pit_targets_all_green"))[:3]
+        race = _mapping(analysis.get("race_summary"))
+        distance = planned_laps
+        if distance is None:
+            distance = _number(race.get("scheduled_laps"))
+        range_number = _number(forecast.get("all_green_range_laps"))
+        stop_count = _number(forecast.get("minimum_stops_all_green"))
+        target_numbers = [
+            value
+            for raw in _sequence(forecast.get("equal_stint_pit_targets_all_green"))[:3]
+            if (value := _number(raw)) is not None
         ]
-        targets = [value for value in targets if value]
+        if distance is not None and distance > 0.0 and range_number not in (None, 0.0):
+            stop_count = max(0, math.ceil(distance / float(range_number) - 1e-9) - 1)
+            stint_count = stop_count + 1
+            target_numbers = [
+                distance * index / stint_count
+                for index in range(1, stint_count)
+            ][:3]
+        stops = _fmt_number(stop_count, 0)
+        targets = [
+            rendered
+            for value in target_numbers
+            if (rendered := _fmt_number(value, 0))
+        ]
         reserve = _fmt_number(forecast.get("operational_reserve_green_laps"), 0)
-        if stops and targets:
+        if stop_count == 0 and distance is not None and range_number is not None:
+            margin = range_number - distance
+            text = (
+                f"No fuel stop needed for {distance:.0f} laps; {margin:.1f}-lap range margin"
+                if margin >= 0.0
+                else f"Measured range is {abs(margin):.1f} laps short for {distance:.0f} laps"
+            )
+        elif stops and targets:
             stop_word = "stop" if stops == "1" else "stops"
-            text = f"Plan at least {stops} fuel {stop_word}; pit near Lap {'/'.join(targets)}"
+            distance_part = f" for {distance:.0f} laps" if distance is not None else ""
+            text = f"Plan {stops} fuel {stop_word}{distance_part}; target Lap {'/'.join(targets)}"
         else:
-            range_laps = _fmt_number(forecast.get("all_green_range_laps"))
-            text = f"Treat {range_laps}-lap all-green range as the ceiling" if range_laps else "Fuel forecast usable"
-        if reserve and len(text.split()) < words - 3:
+            range_laps = _fmt_number(range_number)
+            text = f"Measured all-green range is {range_laps} laps" if range_laps else "Fuel range is available"
+        if reserve and stop_count != 0 and len(text.split()) < words - 3:
             text += f" with {reserve}-lap reserve"
         if eligible_history and len(text.split()) < words - 3:
             text += f"; {len(eligible_history)} screened prior runs"
@@ -845,6 +908,49 @@ def _strategy_claim(
             parts.append(f"{historical_burn:.3f} gal/green lap")
         return _claim("; ".join(parts), "derived", words=words, chars=100)
     return _claim("Fuel and pit window unavailable", "unavailable", words=words, chars=100)
+
+
+def _fuel_response_claim(
+    analysis: Mapping[str, Any],
+    *,
+    planned_laps: float | None = None,
+) -> dict[str, str]:
+    """Turn fuel feasibility into an explicit in-race decision rule."""
+
+    forecast = _mapping(_mapping(analysis.get("strategy")).get("forecast"))
+    race = _mapping(analysis.get("race_summary"))
+    distance = planned_laps
+    if distance is None:
+        distance = _number(race.get("scheduled_laps"))
+    range_laps = _number(forecast.get("all_green_range_laps"))
+    if forecast.get("status") != "usable" or distance is None or range_laps in (None, 0.0):
+        return _claim(
+            "Update the fuel call only after live burn establishes a finish margin",
+            "inferred",
+            words=16,
+            chars=116,
+        )
+
+    stops = max(0, math.ceil(distance / float(range_laps) - 1e-9) - 1)
+    if stops == 0:
+        return _claim(
+            f"Stay out while projected range clears the {distance:.0f}-lap finish; reconsider only if the margin disappears",
+            "derived",
+            words=18,
+            chars=126,
+        )
+
+    targets = [
+        max(1, int(round(distance * index / (stops + 1))))
+        for index in range(1, stops + 1)
+    ]
+    target_text = "/".join(str(value) for value in targets[:3])
+    return _claim(
+        f"Target Lap {target_text}; move the stop only when live burn no longer supports the next stint",
+        "derived",
+        words=18,
+        chars=126,
+    )
 
 
 def _phase_trigger(
@@ -875,10 +981,9 @@ def _phase_trigger(
         value = bounds.get(str(column.get("phase")))
         if value is not None:
             label = _ascii_text(column.get("label")).replace("/older-set proxy", "").replace("/new-set", "")
-            parts.append(f"{label} {value[0]:.1f}->{value[1]:.1f}")
-    suffix = "; new set confirmed" if selected_run.get("new_set_confirmed") is True else ""
+            parts.append(f"{label} {value[0]:.1f}-{value[1]:.1f}")
     return _claim(
-        ("Set-age " + ", ".join(parts) + " green laps" + suffix) if parts else "Phase green-lap bounds unavailable",
+        ("Recheck balance at " + ", ".join(parts) + " green laps") if parts else "Phase green-lap bounds unavailable",
         "derived" if parts else "unavailable",
         words=16,
         chars=116,
@@ -957,6 +1062,7 @@ def build_race_card(
     *,
     historical_runs: Sequence[Mapping[str, Any]] | None = None,
     knowledge: Mapping[str, Any] | None = None,
+    race_distance_laps: float | int | None = None,
 ) -> dict[str, Any]:
     """Build a bounded, JSON-safe Race Card object without performing I/O."""
 
@@ -968,6 +1074,9 @@ def build_race_card(
     cached = _mapping(knowledge)
     identity = _mapping(analysis.get("identity"))
     race = _mapping(analysis.get("race_summary"))
+    planned_laps = _number(race_distance_laps)
+    if planned_laps is not None and planned_laps <= 0.0:
+        raise ValueError("race_distance_laps must be greater than zero")
     oval = _is_oval(identity)
     exact_usable, targets, comparison_quality = _comparison_components(cached)
     rows, corner_meta = _corner_rows(
@@ -996,7 +1105,7 @@ def build_race_card(
             text
             for row in rows
             if (
-                text := _safe_coaching(
+                text := _driver_instruction(
                     _mapping(row.get("phase_cue")).get("text"),
                     numeric_targets_usable=False,
                 )
@@ -1008,58 +1117,83 @@ def build_race_card(
         (
             text
             for signal in signals
-            if (text := _safe_coaching(signal.get("coaching"), numeric_targets_usable=exact_usable))
+            if signal.get("run_number") is not None
+            and (text := _driver_instruction(signal.get("coaching"), numeric_targets_usable=exact_usable))
         ),
         None,
     )
-    primary = corner_primary or signal_primary
+    technical_primary = next(
+        (
+            text
+            for insight in _sequence(analysis.get("technical_insights"))
+            if isinstance(insight, Mapping)
+            for item in _sequence(insight.get("metrics"))
+            if isinstance(item, Mapping)
+            and str(item.get("tone") or "").lower() == "attention"
+            and (text := _driver_instruction(item.get("action"), numeric_targets_usable=False))
+        ),
+        None,
+    )
+    primary = corner_primary or signal_primary or technical_primary
     if not primary:
         primary = (
-            f"Protect the {tire} early with repeatable entry and brake release"
+            f"Protect the {tire} from the start: finish brake release before adding steering"
             if tire
-            else "Build the run around repeatable entry, brake release, and tire load"
+            else "Open conservatively: finish brake release before adding steering, then build throttle"
         )
-    strategy = _strategy_claim(analysis, history_rows)
+    primary = _compact(primary.split(";", 1)[0], words=12, chars=82)
+    strategy = _strategy_claim(
+        analysis,
+        history_rows,
+        planned_laps=planned_laps,
+    )
+    effective_distance = planned_laps
+    if effective_distance is None:
+        effective_distance = _number(race.get("scheduled_laps"))
+    short_race = effective_distance is not None and effective_distance <= 25.0
+    long_run_label = "Race pace" if short_race else "Long run"
+    long_run_text = (
+        "Reset the baseline after repairs; judge pace only on a clean repaired-car run"
+        if damage_context.get("selected_run_eligible") is False
+        else (
+            f"For {effective_distance:.0f} laps, protect the {tire} with repeatable entries and progressive brake release"
+            if short_race and tire
+            else f"As the run ages, protect the {tire} with repeatable entries and progressive brake release"
+        )
+        if tire
+        else f"For {effective_distance:.0f} laps, keep brake release, throttle pickup, and steering corrections repeatable"
+        if short_race
+        else "Keep entries, throttle pickup, and steering corrections repeatable as the run ages"
+    )
     actions = [
-        {"label": "Start", **_claim(primary, "inferred", words=14, chars=100)},
+        {"label": "Start", **_claim(primary, "inferred", words=12, chars=82)},
         {
-            "label": "Long run",
-            **_claim(
-                "Use screened pre-incident laps; do not attribute repair-confounded fade to tires"
-                if damage_context.get("selected_run_eligible") is False
-                else f"Protect the {tire} with repeatable entry and control load; verify cause next run"
-                if tire
-                else "Keep entries and steering corrections repeatable as the run ages",
-                "inferred",
-                words=14,
-                chars=100,
-            ),
+            "label": long_run_label,
+            **_claim(long_run_text, "inferred", words=14, chars=96),
         },
         {"label": "Strategy", **strategy},
     ]
     phase_trigger = _phase_trigger(corner_meta, selected_run)
     setup_open = identity.get("is_fixed_setup") is False
     if damage_context.get("selected_run_eligible") is False:
-        adjust = _claim(
+        respond = _claim(
             "Validate a clean repaired-car run before changing setup or target traces",
             "inferred",
             words=16,
             chars=116,
         )
     else:
-        adjust = _claim(
-            "Change one setup system; rollback if the named symptom or pace worsens"
-            if setup_open
-            else "Fixed setup: change driving only and validate on the next clean run",
+        respond = _claim(
+            "If balance changes, alter one driving input at a time; undo it if pace or stability worsens",
             "inferred",
-            words=16,
-            chars=116,
+            words=18,
+            chars=126,
         )
     car = _ascii_text(identity.get("car_name") or identity.get("car_path") or "Unknown car")
     track = _ascii_text(identity.get("track_name") or "Unknown track")
     setup = "Fixed" if identity.get("is_fixed_setup") is True else "Open" if setup_open else "Setup unknown"
     title = _compact(
-        f"{track} Race Card - {car} | {setup} | {_distance_label(race)}",
+        f"{track} Race Card - {car} | {setup} | {_distance_label(race, planned_laps)}",
         words=18,
         chars=140,
     )
@@ -1080,7 +1214,7 @@ def build_race_card(
             else _claim(
                 f"{tire} was the lowest measured tire; use the phase plan and fuel window"
                 if tire
-                else "Use the phase plan to protect long-run pace; strategy remains fuel-feasibility only",
+                else "Use the strongest race phase as the execution baseline and follow the distance-specific fuel plan",
                 "inferred",
                 words=18,
                 chars=126,
@@ -1094,15 +1228,22 @@ def build_race_card(
             "alert_rule": "Repair/tow context screens automatic corner and target-lap evidence",
         },
         "race_triggers": [
-            {"label": "Tire phase", **phase_trigger},
-            {"label": "Pit", **_strategy_claim(analysis, history_rows, words=16)},
-            {"label": "Adjust/rollback", **adjust},
+            {"label": "Balance checkpoint", **phase_trigger},
+            {
+                "label": "Fuel response",
+                **_fuel_response_claim(
+                    analysis,
+                    planned_laps=planned_laps,
+                ),
+            },
+            {"label": "Balance response", **respond},
         ],
         "evidence_appendix": _evidence_appendix(
             analysis, corner_meta, comparison_quality, len(history_rows)
         ),
         "summary": {
             "scheduled_laps": race.get("scheduled_laps"),
+            "planned_laps": int(round(planned_laps)) if planned_laps is not None else None,
             "recorded_laps": race.get("recorded_laps"),
             "green_laps": race.get("green_laps_estimated"),
             "caution_laps": race.get("caution_laps_estimated"),

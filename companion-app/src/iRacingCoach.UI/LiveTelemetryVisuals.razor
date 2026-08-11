@@ -44,8 +44,8 @@
                 @if (Snapshot.LateralAccelerationG.HasValue) { <div><span>Lateral load</span><strong>@Snapshot.LateralAccelerationG.Value.ToString("+0.00;-0.00;0.00")</strong><small>g</small></div> }
                 @if (Snapshot.YawRateDegreesPerSecond.HasValue) { <div><span>Yaw rate</span><strong>@Snapshot.YawRateDegreesPerSecond.Value.ToString("+0.0;-0.0;0.0")</strong><small>deg/s</small></div> }
             </div>
-            <div class="panel-title live-trend-title"><strong>Recent traces</strong><span>@ChartRateLabel</span></div>
-            <canvas @ref="ChartElement" class="live-trend-chart" role="img" aria-label="Display-synchronized live speed, throttle, brake, and steering history">
+            <div class="panel-title live-trend-title"><strong>Recent traces</strong></div>
+            <canvas @ref="ChartElement" class="live-trend-chart" data-source-rate="@State.LiveState.SourceTickRate" role="img" aria-label="Display-synchronized live speed, throttle, brake, and steering history">
                 Live speed, throttle, brake, and steering traces.
             </canvas>
         </div>
@@ -91,9 +91,6 @@
     private LiveRaceSnapshot Snapshot => State.LiveState.Snapshot;
     private IReadOnlyList<LiveTracePoint> History => State.LiveState.History ?? [];
     private IReadOnlyList<LiveTracePoint> VisibleHistory { get { EnsureHistoryProjection(); return _visibleHistory; } }
-    private string ChartRateLabel => State.LiveState.SourceTickRate > 0
-        ? $"{State.LiveState.SourceTickRate} Hz source · display-synced"
-        : "Local SDK · display-synced";
     private bool HasPhysicalLine => PhysicalPoints.Count >= 3;
     private IReadOnlyList<MapPoint> PhysicalPoints { get { EnsureHistoryProjection(); return _physicalPoints; } }
     private string PhysicalPath => string.Join(" ", PhysicalPoints.Select((point, index) => $"{(index == 0 ? "M" : "L")}{F(point.X)},{F(point.Y)}"));

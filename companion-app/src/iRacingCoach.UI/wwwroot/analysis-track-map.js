@@ -18,7 +18,13 @@
   function apply(state) {
     const view = state.view;
     state.element.setAttribute("viewBox", `${view.x.toFixed(4)} ${view.y.toFixed(4)} ${view.width.toFixed(4)} ${view.height.toFixed(4)}`);
-    state.element.dataset.mapZoom = (state.base.width / view.width).toFixed(3);
+    const zoom = state.base.width / view.width;
+    state.element.dataset.mapZoom = zoom.toFixed(3);
+    for (const cursor of state.element.querySelectorAll("[data-map-cursor-radius]")) {
+      const baseRadius = Number(cursor.dataset.mapCursorRadius);
+      if (Number.isFinite(baseRadius) && baseRadius > 0)
+        cursor.setAttribute("r", (baseRadius / zoom).toFixed(4));
+    }
   }
 
   function constrain(state, view) {

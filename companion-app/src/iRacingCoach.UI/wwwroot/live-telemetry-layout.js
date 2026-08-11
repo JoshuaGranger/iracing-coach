@@ -36,6 +36,21 @@
     const grid = state.root.querySelector("[data-live-grid]");
     if (!viewport || !grid) return;
 
+    // The dedicated live page is a viewport-sized flex/grid composition. Let
+    // CSS give the dashboard the exact remaining track after the heading,
+    // connection state, toolbar, and collapsed trace disclosure. Measuring and
+    // writing a second height here would count only the content above the
+    // disclosure and recreate a page scrollbar.
+    const livePage = state.root.closest("[data-live-telemetry-page]");
+    if (livePage) {
+      viewport.style.removeProperty("height");
+      viewport.style.removeProperty("min-height");
+      grid.style.removeProperty("--live-cell-size");
+      grid.style.width = "100%";
+      grid.style.height = "100%";
+      return;
+    }
+
     // Measure from the viewport's real top edge instead of subtracting a fixed
     // header estimate. This keeps the grid inside narrow, short and disconnected
     // layouts where the toolbar or connection message wraps to another line.

@@ -1,0 +1,903 @@
+/* 0.16 development-round layout and information-design refinements.
+   Feature-specific hot-path styles remain in their dedicated stylesheets. */
+
+/* Premium high-contrast graphite: canonical colors come from theme.generated.css. */
+:root {
+  --glass-highlight: color-mix(in srgb, #dffaff 9%, transparent);
+}
+
+body {
+  background:
+    radial-gradient(circle at 88% -12%, color-mix(in srgb, var(--telemetry-steering) 10%, transparent), transparent 34%),
+    radial-gradient(circle at 12% 112%, color-mix(in srgb, var(--info) 7%, transparent), transparent 42%),
+    radial-gradient(circle at 48% 110%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 38%),
+    var(--app);
+}
+
+.workspace {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--info) 3.6%, transparent), transparent 36%),
+    linear-gradient(24deg, color-mix(in srgb, var(--telemetry-steering) 3.2%, transparent), transparent 44%);
+}
+
+.surface-card {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 96%, #dffaff), color-mix(in srgb, var(--surface-1) 97%, var(--telemetry-steering)));
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 16px 38px -30px rgba(0, 0, 0, .9);
+}
+
+.diagnostics-section.settings-accordion {
+  margin-top: 12px;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Technical Data depth pass: every contract metric stays visible on the 2x2
+   overview; drill-ins repeat those facts as decisions, instruments, and calls. */
+.race-technical-data {
+  --technical-blue: #57b8ff;
+  --technical-yellow: #ffd65f;
+  --technical-green: #55efa8;
+  --technical-magenta: #ff72dc;
+}
+
+.race-technical-data .technical-overview {
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  overflow: hidden;
+}
+
+.race-technical-data .technical-overview-card {
+  position: relative;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 7px;
+  padding: clamp(11px, 1.1vw, 17px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--technical-accent) 24%, var(--border-subtle));
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 96% 0%, color-mix(in srgb, var(--technical-accent) 16%, transparent), transparent 39%),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-2) 92%, #03070a), color-mix(in srgb, var(--surface-1) 94%, var(--technical-accent)));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent), 0 18px 38px -32px rgba(0, 0, 0, .95);
+  transform: none;
+  transition: border-color var(--motion-hover) var(--ease), box-shadow var(--motion-hover) var(--ease);
+}
+
+.race-technical-data .technical-overview-card::before { opacity: .12; }
+.race-technical-data .technical-overview-card::after {
+  height: 2px;
+  opacity: .72;
+  background: linear-gradient(90deg, var(--technical-accent), color-mix(in srgb, var(--technical-accent) 18%, transparent) 72%, transparent);
+}
+
+.race-technical-data .technical-overview-card:hover,
+.race-technical-data .technical-overview-card:focus-visible {
+  border-color: color-mix(in srgb, var(--technical-accent) 78%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--technical-accent) 34%, transparent), 0 0 24px color-mix(in srgb, var(--technical-accent) 12%, transparent);
+  transform: none;
+}
+
+.race-technical-data .technical-card-heading { gap: 8px; }
+.race-technical-data .technical-card-heading > span:first-child {
+  min-width: 0;
+  color: color-mix(in srgb, var(--technical-accent) 86%, white);
+}
+.race-technical-data .technical-card-heading-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.race-technical-data .technical-card-heading-status .technical-state {
+  max-width: 190px;
+  padding: 2px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.race-technical-data .technical-overview-card > strong {
+  min-width: 0;
+  overflow: visible;
+  font-size: clamp(17px, 1.42vw, 23px);
+  line-height: 1.12;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.race-technical-data .technical-card-metrics {
+  min-height: 0;
+  display: grid;
+  align-content: stretch;
+  gap: 5px;
+}
+.race-technical-data .technical-card-metrics.metric-density-sparse { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.race-technical-data .technical-card-metrics.metric-density-standard { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.race-technical-data .technical-card-metrics.metric-density-dense { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.race-technical-data .technical-card-metrics > .technical-card-metric {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 2px;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--technical-accent) 12%, var(--border-subtle));
+  border-left: 3px solid color-mix(in srgb, var(--technical-accent) 42%, var(--border-strong));
+  border-radius: 6px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-3) 76%, #05090c), color-mix(in srgb, var(--surface-2) 88%, transparent));
+}
+.race-technical-data .technical-card-metrics > .technical-card-metric.positive { border-left-color: var(--success); }
+.race-technical-data .technical-card-metrics > .technical-card-metric.attention { border-left-color: var(--warning); }
+.race-technical-data .technical-card-metric small {
+  min-width: 0;
+  overflow: visible;
+  color: var(--text-secondary);
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.race-technical-data .technical-card-metric b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font: 680 var(--font-size-min)/1.12 var(--metric-font, Consolas, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.race-technical-data .technical-card-foot {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--technical-accent) 25%, var(--border-subtle));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--technical-accent) 7%, var(--surface-2));
+}
+.race-technical-data .technical-card-foot b {
+  color: color-mix(in srgb, var(--technical-accent) 80%, white);
+  white-space: nowrap;
+}
+.race-technical-data .technical-card-foot span {
+  min-width: 0;
+  overflow: visible;
+  color: var(--text-secondary);
+  line-height: 1.22;
+  text-overflow: clip;
+  white-space: normal;
+}
+.race-technical-data .technical-card-reference {
+  position: absolute;
+  top: 46px;
+  right: clamp(11px, 1.1vw, 17px);
+  max-width: 42%;
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--technical-accent) 22%, var(--border-subtle));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+}
+.race-technical-data .technical-card-reference small { color: var(--text-muted); }
+.race-technical-data .technical-card-reference b { font: 650 var(--font-size-min) var(--metric-font, Consolas, monospace); }
+.race-technical-data .technical-overview-card.racecraft > strong { padding-right: 44%; }
+
+.race-technical-data .technical-investigation {
+  border-color: color-mix(in srgb, var(--border-strong) 72%, var(--border-subtle));
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 92% 2%, color-mix(in srgb, var(--info) 7%, transparent), transparent 32%),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-2) 92%, #020608), var(--surface-1));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent);
+}
+.race-technical-data .technical-investigation-content {
+  min-height: 0;
+  gap: 9px;
+  padding: 9px;
+}
+.race-technical-data .technical-investigation-content.metric-density-sparse { grid-template-rows: minmax(150px, .43fr) minmax(0, .57fr); }
+.race-technical-data .technical-investigation-content.metric-density-standard { grid-template-rows: minmax(220px, .56fr) minmax(0, .44fr); }
+.race-technical-data .technical-investigation-content.metric-density-dense { grid-template-rows: minmax(285px, .66fr) minmax(0, .34fr); }
+.race-technical-data .technical-complete-findings {
+  min-height: 0;
+  gap: 7px;
+  overflow: hidden;
+}
+.race-technical-data .technical-complete-findings > header {
+  min-height: 25px;
+  gap: 10px;
+  padding: 0 3px;
+}
+.race-technical-data .technical-complete-findings > header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.race-technical-data .technical-findings-list {
+  min-height: 0;
+  grid-auto-rows: minmax(0, 1fr);
+  align-content: stretch;
+  gap: 6px;
+  overflow: hidden;
+}
+.race-technical-data .technical-findings-list.metric-density-sparse { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.race-technical-data .technical-findings-list.metric-density-standard { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.race-technical-data .technical-findings-list.metric-density-dense { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.race-technical-data .technical-findings-list article {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+  align-content: stretch;
+  gap: 4px;
+  padding: 7px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 56%, var(--border-subtle));
+  border-left: 3px solid var(--border-strong);
+  border-radius: 6px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-3) 82%, #060b0f), color-mix(in srgb, var(--surface-2) 94%, transparent));
+}
+.race-technical-data .technical-findings-list article > header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+.race-technical-data .technical-finding-group {
+  padding: 2px 5px;
+  color: color-mix(in srgb, var(--info) 78%, white);
+  font-size: var(--font-size-min);
+  line-height: 1.1;
+  text-transform: uppercase;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--info) 9%, var(--surface-2));
+}
+.race-technical-data .technical-findings-list article > header > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.race-technical-data .technical-findings-list article > header > div span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-size-min);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.race-technical-data .technical-findings-list article > header > div strong {
+  flex: 0 0 auto;
+  font: 680 var(--font-size-min) var(--metric-font, Consolas, monospace);
+}
+.race-technical-data .technical-findings-list p,
+.race-technical-data .technical-findings-list small {
+  min-height: 0;
+  margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-size-min);
+  line-height: 1.2;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.race-technical-data .technical-findings-list small { color: color-mix(in srgb, var(--info) 62%, var(--text-secondary)); }
+.race-technical-data .technical-findings-list small b { margin-right: 5px; color: var(--text-primary); }
+
+.race-technical-data .technical-investigation-visual {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 42%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chart-background) 72%, transparent);
+}
+.race-technical-data .technical-investigation-body { height: 100%; padding: 7px; }
+
+.race-technical-data .pit-investigation {
+  grid-template-columns: minmax(132px, .17fr) minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr);
+  gap: 6px;
+}
+.race-technical-data .pit-investigation > .technical-record-selector { grid-row: 1 / -1; }
+.race-technical-data .technical-pit-timeline {
+  position: relative;
+  grid-column: 2;
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+}
+.race-technical-data .technical-pit-timeline > i {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--technical-blue) 38%, var(--surface-3)), var(--technical-blue));
+}
+.race-technical-data .technical-pit-timeline > b {
+  position: absolute;
+  left: clamp(48px, var(--pit-at), calc(100% - 48px));
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #c9e9ff;
+  border-radius: 50%;
+  background: var(--technical-blue);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--technical-blue) 62%, transparent);
+}
+.race-technical-data .technical-pit-timeline > b span {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  transform: translateX(-50%);
+  color: var(--text-secondary);
+  font-size: var(--font-size-min);
+  white-space: nowrap;
+}
+.race-technical-data .technical-pit-timeline-label { color: var(--text-muted); font-size: var(--font-size-min); }
+.race-technical-data .technical-pit-review {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(150px, .22fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 6px;
+  overflow: hidden;
+}
+.race-technical-data .technical-tire-call {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--technical-blue) 32%, var(--border-subtle));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--technical-blue) 6%, var(--surface-2));
+}
+.race-technical-data .technical-tire-call > header { display: grid; gap: 2px; }
+.race-technical-data .technical-tire-call > header span,
+.race-technical-data .technical-tire-call > footer { color: var(--text-muted); font-size: var(--font-size-min); }
+.race-technical-data .technical-tire-call > header strong { color: #bde5ff; }
+.race-technical-data .technical-tire-call-car {
+  position: relative;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 7px 38px;
+}
+.race-technical-data .technical-tire-call-car > i {
+  position: absolute;
+  inset: 5px calc(50% - 14px);
+  border: 1px solid var(--border-strong);
+  border-radius: 45% 45% 30% 30%;
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-1));
+}
+.race-technical-data .technical-tire-call-car > span {
+  z-index: 1;
+  min-width: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-3);
+}
+.race-technical-data .technical-tire-call-car > span.changed {
+  color: #06130f;
+  border-color: var(--technical-green);
+  background: var(--technical-green);
+  box-shadow: 0 0 13px color-mix(in srgb, var(--technical-green) 28%, transparent);
+}
+.race-technical-data .technical-tire-call-car small { font-size: var(--font-size-min); opacity: .76; }
+.race-technical-data .technical-pit-review > .technical-detail-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: minmax(42px, 1fr);
+  gap: 5px;
+}
+.race-technical-data .technical-pit-review > .technical-detail-grid article { padding: 6px 7px; }
+.race-technical-data .technical-two-vs-four {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(170px, .23fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--technical-yellow) 30%, var(--border-subtle));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--technical-yellow) 6%, var(--surface-2));
+}
+.race-technical-data .technical-two-vs-four > header { display: grid; gap: 1px; }
+.race-technical-data .technical-two-vs-four > header span { color: var(--technical-yellow); }
+.race-technical-data .technical-two-vs-four > header strong,
+.race-technical-data .technical-two-vs-four p { color: var(--text-secondary); font-size: var(--font-size-min); line-height: 1.2; }
+.race-technical-data .technical-two-vs-four > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 5px; }
+.race-technical-data .technical-two-vs-four > div > span { min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; padding: 4px 6px; background: var(--surface-3); border-radius: 4px; }
+.race-technical-data .technical-two-vs-four em { grid-column: 1 / -1; overflow: hidden; color: var(--text-muted); font-size: var(--font-size-min); font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.race-technical-data .technical-two-vs-four p { margin: 0; }
+
+.race-technical-data .technical-no-stop-story {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(104px, .16fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(15px, 3vw, 46px);
+  padding: clamp(10px, 2vw, 24px);
+  border: 1px solid color-mix(in srgb, var(--technical-blue) 28%, var(--border-subtle));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 10% 50%, color-mix(in srgb, var(--technical-blue) 18%, transparent), transparent 31%),
+    color-mix(in srgb, var(--surface-2) 82%, transparent);
+}
+.race-technical-data .technical-decision-dial {
+  aspect-ratio: 1;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  border: 6px solid color-mix(in srgb, var(--technical-blue) 46%, var(--surface-3));
+  border-radius: 50%;
+  box-shadow: 0 0 28px color-mix(in srgb, var(--technical-blue) 18%, transparent), inset 0 0 20px color-mix(in srgb, var(--technical-blue) 9%, transparent);
+}
+.race-technical-data .technical-decision-dial strong { font: 720 clamp(30px, 3.2vw, 52px) var(--metric-font, Consolas, monospace); }
+.race-technical-data .technical-decision-dial span,
+.race-technical-data .technical-decision-copy p { color: var(--text-secondary); }
+.race-technical-data .technical-decision-copy h3 { margin: 2px 0 5px; }
+.race-technical-data .technical-decision-copy p { max-width: 82ch; margin: 0; line-height: 1.35; }
+.race-technical-data .technical-decision-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
+.race-technical-data .technical-decision-facts > span { display: grid; gap: 3px; padding: 7px 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: color-mix(in srgb, var(--surface-3) 74%, transparent); }
+.race-technical-data .technical-decision-facts small { color: var(--text-muted); }
+.race-technical-data .technical-decision-facts b { font: 650 var(--font-size-min) var(--metric-font, Consolas, monospace); }
+
+.race-technical-data .tire-investigation { grid-template-columns: 1fr; padding: 6px; }
+.race-technical-data .technical-tire-investigation-shell {
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.race-technical-data .technical-tire-investigation-shell.with-dynamics { grid-template-columns: minmax(0, 1.2fr) minmax(0, .92fr) minmax(0, .88fr); }
+.race-technical-data .technical-tire-source {
+  gap: 5px;
+  padding: 6px;
+  border-radius: 7px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-3) 68%, #04080b), color-mix(in srgb, var(--surface-2) 88%, transparent));
+}
+.race-technical-data .technical-tire-source.measured { border-color: color-mix(in srgb, var(--technical-yellow) 26%, var(--border-subtle)); }
+.race-technical-data .technical-tire-source.predicted { border-color: color-mix(in srgb, var(--technical-green) 24%, var(--border-subtle)); }
+.race-technical-data .technical-tire-source.dynamics { border-color: color-mix(in srgb, var(--technical-magenta) 25%, var(--border-subtle)); }
+.race-technical-data .technical-tire-source > header strong { color: var(--text-primary); }
+.race-technical-data .tire-investigation .technical-tire-card { border-radius: 6px; background: color-mix(in srgb, var(--surface-3) 86%, #08090a); }
+.race-technical-data .technical-dynamics-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 5px;
+  overflow: hidden;
+}
+.race-technical-data .technical-dynamics-grid article {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 4px minmax(0, 1fr);
+  gap: 4px;
+  padding: 5px 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--surface-2);
+}
+.race-technical-data .technical-dynamics-grid article > span { min-width: 0; display: grid; gap: 1px; }
+.race-technical-data .technical-dynamics-grid article small { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.race-technical-data .technical-dynamics-grid article b { font: 680 var(--font-size-min) var(--metric-font, Consolas, monospace); }
+.race-technical-data .technical-dynamics-grid article > i { overflow: hidden; border-radius: 999px; background: var(--surface-3); }
+.race-technical-data .technical-dynamics-grid article > i > b { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, var(--technical-magenta), var(--technical-yellow)); opacity: .78; }
+.race-technical-data .technical-dynamics-grid p {
+  min-height: 0;
+  margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-size-min);
+  line-height: 1.18;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.race-technical-data .fuel-investigation {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 6px;
+  padding: 6px;
+}
+.race-technical-data .technical-fuel-decision {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(290px, .88fr);
+  align-items: center;
+  gap: 16px;
+  padding: 9px 12px;
+  border: 1px solid;
+  border-color: color-mix(in srgb, var(--technical-green) 42%, var(--border-subtle));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 88% 50%, color-mix(in srgb, var(--technical-green) 14%, transparent), transparent 37%),
+    color-mix(in srgb, var(--surface-2) 86%, transparent);
+}
+.race-technical-data .technical-fuel-decision h3 { margin: 2px 0 4px; }
+.race-technical-data .technical-fuel-decision p { max-width: 82ch; margin: 0; color: var(--text-secondary); line-height: 1.28; }
+.race-technical-data .technical-fuel-distance {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+.race-technical-data .technical-fuel-distance > span { display: grid; gap: 2px; }
+.race-technical-data .technical-fuel-distance > span:last-child { text-align: right; }
+.race-technical-data .technical-fuel-distance small { color: var(--text-muted); }
+.race-technical-data .technical-fuel-distance > span b { font: 650 var(--font-size-min) var(--metric-font, Consolas, monospace); }
+.race-technical-data .technical-fuel-distance > i { position: relative; height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--surface-3) 84%, #020405); }
+.race-technical-data .technical-fuel-distance > i b { position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg, #27c77c, var(--technical-green)); box-shadow: 0 0 16px color-mix(in srgb, var(--technical-green) 26%, transparent); }
+.race-technical-data .technical-fuel-distance > i em { position: absolute; left: var(--fuel-distance); top: -5px; width: 2px; height: 20px; transform: translateX(-50%); background: white; box-shadow: 0 0 8px rgba(255, 255, 255, .5); }
+.race-technical-data .technical-fuel-summary { gap: 6px; }
+.race-technical-data .technical-fuel-summary article { min-height: 46px; padding: 6px 8px; border-left: 3px solid var(--technical-green); }
+.race-technical-data .technical-bar-list { gap: 6px; padding: 4px; }
+.race-technical-data .technical-bar-list > div { grid-template-columns: 58px minmax(100px, 1fr) 82px 64px; gap: 7px; }
+.race-technical-data .technical-bar-list i { background: color-mix(in srgb, var(--surface-3) 78%, #05080a); }
+.race-technical-data .technical-bar-list i b { box-shadow: 0 0 12px color-mix(in srgb, var(--technical-green) 25%, transparent); }
+
+.race-technical-data .pace-investigation {
+  grid-template-columns: minmax(125px, .15fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 6px;
+}
+.race-technical-data .pace-investigation > .technical-record-selector { grid-row: 1; }
+.race-technical-data .technical-racecraft-story {
+  grid-column: 2;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 6px;
+  overflow: hidden;
+}
+.race-technical-data .pace-investigation > .technical-racecraft-story:first-child { grid-column: 1 / -1; }
+.race-technical-data .technical-racecraft-no-comparison { grid-column: auto; }
+.race-technical-data .technical-racecraft-no-comparison > .technical-unavailable { min-height: 42px; padding: 6px 8px; }
+.race-technical-data .technical-pace-vector {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(80px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--technical-magenta) 28%, var(--border-subtle));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--technical-magenta) 5%, var(--surface-2));
+}
+.race-technical-data .technical-pace-vector > span { display: grid; gap: 1px; }
+.race-technical-data .technical-pace-vector small { color: var(--text-muted); }
+.race-technical-data .technical-pace-vector strong,
+.race-technical-data .technical-pace-vector em { font: 680 var(--font-size-min) var(--metric-font, Consolas, monospace); font-style: normal; }
+.race-technical-data .technical-pace-vector > i { position: relative; height: 2px; background: var(--border-strong); }
+.race-technical-data .technical-pace-vector > i::after { content: ""; position: absolute; right: 0; top: -4px; border: 5px solid transparent; border-left-color: var(--technical-magenta); }
+.race-technical-data .technical-pace-vector > i > b { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, var(--technical-magenta), var(--technical-yellow)); }
+.race-technical-data .technical-pace-vector.faster > em { color: var(--success); }
+.race-technical-data .technical-pace-vector.slower > em { color: var(--warning); }
+.race-technical-data .technical-pace-vector.stable > em { color: var(--info); }
+.race-technical-data .technical-pace-vector-context { padding-left: 8px; border-left: 1px solid var(--border-subtle); }
+.race-technical-data .technical-racecraft-groups {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 5px;
+  overflow: hidden;
+}
+.race-technical-data .technical-racecraft-groups > article {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 3px;
+  padding: 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--technical-magenta) 20%, var(--border-subtle));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-3) 74%, #06070a);
+}
+.race-technical-data .technical-racecraft-groups > article > header { color: color-mix(in srgb, var(--technical-magenta) 76%, white); text-transform: uppercase; }
+.race-technical-data .technical-racecraft-groups > article > div { min-height: 0; display: grid; grid-auto-rows: minmax(0, 1fr); gap: 2px; }
+.race-technical-data .technical-racecraft-groups > article > div > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border-left: 2px solid var(--border-strong);
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+}
+.race-technical-data .technical-racecraft-groups span.positive { border-left-color: var(--success); }
+.race-technical-data .technical-racecraft-groups span.attention { border-left-color: var(--warning); }
+.race-technical-data .technical-racecraft-groups small { min-width: 0; overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.race-technical-data .technical-racecraft-groups b { font: 650 var(--font-size-min) var(--metric-font, Consolas, monospace); white-space: nowrap; }
+.race-technical-data .technical-reference-laps,
+.race-technical-data .technical-reference-empty,
+.race-technical-data .technical-reference-message { grid-column: 2; }
+.race-technical-data .technical-reference-laps > div {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(135px, 1fr);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.race-technical-data .pace-investigation:not(:has(> .technical-record-selector)) > .technical-reference-laps,
+.race-technical-data .pace-investigation:not(:has(> .technical-record-selector)) > .technical-reference-empty,
+.race-technical-data .pace-investigation:not(:has(> .technical-record-selector)) > .technical-reference-message { grid-column: 1 / -1; }
+
+@media (max-width: 1180px) {
+  .race-technical-data .technical-overview-card { padding: 10px; gap: 6px; }
+  .race-technical-data .technical-card-metrics { gap: 4px; }
+  .race-technical-data .technical-card-metrics > .technical-card-metric { padding: 4px 5px; }
+  .race-technical-data .technical-card-foot { grid-template-columns: 1fr; gap: 2px; }
+  .race-technical-data .technical-card-foot b { white-space: normal; }
+  .race-technical-data .technical-findings-list article { padding: 6px; }
+  .race-technical-data .technical-finding-group { display: none; }
+  .race-technical-data .technical-findings-list article > header { grid-template-columns: 1fr; }
+  .race-technical-data .technical-tire-investigation-shell.with-dynamics { grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); }
+  .race-technical-data .technical-tire-source.dynamics { grid-column: 1 / -1; }
+  .race-technical-data .technical-dynamics-grid { grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); }
+}
+
+/* Race Planning: make the requested race distance the decision, not an irrelevant tank-range headline. */
+.planning-decision-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, .72fr);
+  align-items: center;
+  gap: 26px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-subtle));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 88% 45%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 37%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-3) 78%, transparent), color-mix(in srgb, var(--surface-2) 94%, transparent));
+}
+
+.planning-decision-hero > div:first-child { display: grid; gap: 6px; }
+.planning-decision-hero > div:first-child > strong {
+  font-size: clamp(20px, 2vw, 30px);
+  letter-spacing: -.025em;
+}
+.planning-decision-hero p {
+  max-width: 78ch;
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.planning-decision-distance {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(130px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.planning-decision-distance > span { display: grid; gap: 3px; }
+.planning-decision-distance > span:last-child { text-align: right; }
+.planning-decision-distance small { color: var(--text-muted); }
+.planning-decision-distance span b { font: 650 14px var(--metric-font, Consolas, monospace); }
+.planning-decision-distance > i {
+  position: relative;
+  height: 10px;
+  overflow: visible;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-4, var(--surface-3)) 74%, black);
+}
+.planning-decision-distance > i > b {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 74%, #34f6bc), #68f0ae);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.planning-decision-distance > i > em {
+  position: absolute;
+  left: var(--distance-marker);
+  top: -5px;
+  width: 2px;
+  height: 20px;
+  transform: translateX(-50%);
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, .5);
+}
+
+.planning-briefing-metrics > div {
+  min-height: 88px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--telemetry-fuel);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-3) 78%, transparent);
+}
+.planning-briefing-metrics strong { font-size: 18px; }
+.planning-briefing-metrics small { margin-top: 4px; line-height: 1.25; }
+.plan-briefing .briefing-columns { align-items: stretch; }
+.plan-briefing .briefing-columns > div {
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+.plan-briefing .briefing-action {
+  grid-template-columns: minmax(78px, .22fr) minmax(0, 1fr);
+  align-items: start;
+  min-height: 58px;
+}
+.plan-briefing .briefing-action p,
+.plan-briefing .briefing-trigger span {
+  overflow: visible;
+  line-height: 1.4;
+  white-space: normal;
+  text-overflow: clip;
+}
+.plan-briefing .briefing-trigger {
+  grid-template-columns: minmax(110px, .28fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+@media (max-width: 1050px) {
+  .planning-decision-hero { grid-template-columns: 1fr; gap: 14px; }
+}
+
+/* Starting Tune: one editable native combobox per local catalog and a coherent event rail. */
+.starting-tune-step-rail {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.starting-tune-step-rail .starting-tune-purpose {
+  min-width: 210px;
+}
+.starting-tune-step-rail .starting-tune-purpose legend {
+  text-align: right;
+}
+.starting-tune-event-grid {
+  grid-template-columns: minmax(260px, 1fr) minmax(300px, 1.25fr);
+}
+.starting-tune .source-details { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.catalog-combobox {
+  min-width: 0;
+  width: 100%;
+  background-color: color-mix(in srgb, var(--surface-2) 92%, var(--accent));
+}
+.catalog-combobox:focus {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 18%, transparent));
+}
+.catalog-combobox[aria-invalid="true"] { border-color: color-mix(in srgb, var(--warning) 58%, var(--border-strong)); }
+.searchable-local-field .validation-message { color: var(--warning); }
+
+@media (max-width: 820px) {
+  .starting-tune-step-rail { align-items: stretch; flex-direction: column; }
+  .starting-tune-step-rail .starting-tune-purpose legend { text-align: left; }
+  .starting-tune-event-grid { grid-template-columns: 1fr; }
+}
+
+/* Progressive Tuning: one right-side toolbox; hover previews without impersonating selection. */
+.tuning-session-context .tuning-setup-badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: var(--font-size-min);
+  line-height: 16px;
+  text-transform: uppercase;
+}
+.tuning-session-context .tuning-setup-badge.open {
+  color: #61efb2;
+  border-color: color-mix(in srgb, #61efb2 52%, var(--border-subtle));
+  background: color-mix(in srgb, #61efb2 11%, transparent);
+}
+.tuning-session-context .tuning-setup-badge.fixed {
+  color: #ffc85c;
+  border-color: color-mix(in srgb, #ffc85c 52%, var(--border-subtle));
+  background: color-mix(in srgb, #ffc85c 11%, transparent);
+}
+
+.tuning-turn-segment.active:not(.selected) {
+  stroke: color-mix(in srgb, var(--info) 58%, var(--text-muted));
+  stroke-width: 19;
+  opacity: .48;
+}
+.tuning-turn-segment.selected {
+  stroke: color-mix(in srgb, var(--accent) 88%, white);
+  stroke-width: 24;
+  opacity: 1;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 48%, transparent));
+}
+.tuning-turn-marker.active:not(.selected) circle {
+  fill: color-mix(in srgb, var(--info) 22%, var(--surface-2));
+  stroke: color-mix(in srgb, var(--info) 62%, var(--border-strong));
+}
+.tuning-turn-marker.selected circle {
+  fill: color-mix(in srgb, var(--accent) 44%, var(--surface-2));
+  stroke: color-mix(in srgb, var(--accent) 82%, white);
+  stroke-width: 3;
+}
+
+.tuning-active-corner-panel {
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--border-strong));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 90% 5%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 34%),
+    color-mix(in srgb, var(--accent) 6%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent), 0 0 20px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.tuning-active-corner-panel .tuning-feedback-editor {
+  min-height: 0;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 9px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.tuning-active-corner-panel .tuning-feedback-detail-region {
+  overflow: visible;
+}
+.tuning-active-corner-panel .tuning-symptom-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: visible;
+}
+.tuning-active-corner-panel .tuning-feedback-note {
+  display: grid;
+  gap: 4px;
+}
+.tuning-active-corner-panel .tuning-feedback-note textarea {
+  min-height: 58px;
+  resize: none;
+}
+.tuning-active-corner-panel .tuning-ratings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border-subtle));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface-1) 66%, transparent);
+}
+.tuning-active-corner-panel .tuning-ratings label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-min);
+}
+.tuning-active-corner-panel .tuning-ratings label > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+}
+.tuning-active-corner-panel .tuning-ratings label > span .product-icon { color: var(--text-muted); }
+.tuning-active-corner-panel .tuning-ratings input { min-width: 0; accent-color: var(--accent); }
+.tuning-active-corner-panel .tuning-ratings output { font-family: var(--metric-font, Consolas, monospace); }

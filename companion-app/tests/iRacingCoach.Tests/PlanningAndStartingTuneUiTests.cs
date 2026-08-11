@@ -11,15 +11,23 @@ public sealed class PlanningAndStartingTuneUiTests
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
         var page = File.ReadAllText(Path.Combine(ui, "SetupPage.razor"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        var iterationCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "iteration-ux.css"));
 
         Assert.DoesNotContain("<label>Season", page);
         Assert.DoesNotContain("@bind=\"State.StartingTuneSeason\"", page);
         StringAssert.Contains(page, "FriendlySeason(State.StartingTuneSeason)");
-        StringAssert.Contains(page, "datalist id=\"starting-tune-cars\"");
-        StringAssert.Contains(page, "datalist id=\"starting-tune-tracks\"");
+        StringAssert.Contains(page, "class=\"catalog-combobox\"");
+        StringAssert.Contains(page, "list=\"starting-tune-cars\"");
+        StringAssert.Contains(page, "<datalist id=\"starting-tune-cars\"");
+        StringAssert.Contains(page, "list=\"starting-tune-tracks\"");
+        StringAssert.Contains(page, "<datalist id=\"starting-tune-tracks\"");
+        StringAssert.Contains(page, "aria-invalid=");
         StringAssert.Contains(page, "State.Cars");
         StringAssert.Contains(page, "State.Tracks");
         StringAssert.Contains(page, "@bind:event=\"oninput\"");
+        StringAssert.Contains(page, "CatalogSelectionValid");
+        Assert.DoesNotContain("class=\"type-or-browse\"", page);
+        Assert.DoesNotContain("<select aria-label=\"Browse installed", page);
         StringAssert.Contains(page, "new[] { \"Race\", \"Qualifying\" }");
         StringAssert.Contains(page, "aria-pressed=");
         StringAssert.Contains(page, "CanBuildStartingTune");
@@ -27,6 +35,8 @@ public sealed class PlanningAndStartingTuneUiTests
         StringAssert.Contains(css, ".starting-tune-event-grid");
         StringAssert.Contains(css, ".starting-tune-purpose button.selected");
         StringAssert.Contains(css, ".starting-tune-primary-action");
+        StringAssert.Contains(iterationCss, ".starting-tune-step-rail");
+        StringAssert.Contains(iterationCss, ".catalog-combobox");
     }
 
     [TestMethod]
@@ -35,6 +45,7 @@ public sealed class PlanningAndStartingTuneUiTests
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
         var page = File.ReadAllText(Path.Combine(ui, "PlanningPage.razor"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        var iterationCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "iteration-ux.css"));
 
         StringAssert.Contains(page, "planning-setup-card");
         StringAssert.Contains(page, "planning-setup-grid");
@@ -47,12 +58,16 @@ public sealed class PlanningAndStartingTuneUiTests
         StringAssert.Contains(page, "State.PlanDistanceValue");
         StringAssert.Contains(page, "UseReferenceDistance");
         StringAssert.Contains(page, "State.SelectedPlanRace?.Overview?.RecordedLaps");
+        StringAssert.Contains(page, "data-planning-decision");
+        StringAssert.Contains(page, "OpeningPlanExplanation");
+        Assert.DoesNotContain(">Start over</button>", page);
         Assert.DoesNotContain("workflow-layout planning-layout", page);
         Assert.DoesNotContain("button primary full", page);
         Assert.DoesNotContain(".planning-layout.setup-only", css);
         StringAssert.Contains(css, ".planning-setup-grid { display: grid;");
         StringAssert.Contains(css, ".planning-results { min-width: 0; display: grid;");
         StringAssert.Contains(css, "@media (max-width: 620px)");
+        StringAssert.Contains(iterationCss, ".planning-decision-hero");
     }
 
     [TestMethod]

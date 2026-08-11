@@ -3,17 +3,21 @@
 
   if (window.iracingCoachInteractionPolicy) return;
 
-  let lastPointerAt = -Infinity;
   const pointerWindowMs = 1600;
   const pointerFocusReleases = new WeakSet();
+  const pointerSelectOrigins = new WeakSet();
+  const pointerSelectAt = new WeakMap();
 
   const controlSelector = "button,[role='button'],[role='tab'],input[type='button'],input[type='submit'],input[type='reset'],input[type='checkbox'],input[type='radio'],input[type='range'],input[type='color']";
 
   const rememberPointer = (event) => {
-    lastPointerAt = performance.now();
-
     const target = event.target;
     if (!(target instanceof Element)) return;
+    const pointerSelect = target.closest("select");
+    if (pointerSelect instanceof HTMLSelectElement) {
+      pointerSelectOrigins.add(pointerSelect);
+      pointerSelectAt.set(pointerSelect, performance.now());
+    }
     const control = target.closest("[data-pointer-no-focus]");
     if (!(control instanceof HTMLElement)) return;
 
@@ -39,7 +43,13 @@
   const releasePointerSelect = (event) => {
     const control = event.target;
     if (!(control instanceof HTMLSelectElement)) return;
-    if ((performance.now() - lastPointerAt) > pointerWindowMs) return;
+    const pointerAt = pointerSelectAt.get(control);
+    const fromThisControl = pointerSelectOrigins.has(control)
+      && pointerAt !== undefined
+      && (performance.now() - pointerAt) <= pointerWindowMs;
+    pointerSelectOrigins.delete(control);
+    pointerSelectAt.delete(control);
+    if (!fromThisControl) return;
 
     requestAnimationFrame(() => releaseFocus(control));
   };

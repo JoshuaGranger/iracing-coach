@@ -1,4 +1,4 @@
-<section class="diagnostics-section settings-accordion @(State.DiagnosticsExpanded ? "open" : null)" aria-labelledby="diagnostics-heading">
+<section class="surface-card settings-accordion diagnostics-section @(State.DiagnosticsExpanded ? "open" : null)" aria-labelledby="diagnostics-heading">
     <button class="settings-accordion-toggle diagnostics-toggle" aria-expanded="@(State.DiagnosticsExpanded ? "true" : "false")" @onclick="State.ToggleDiagnostics">
         <span><ProductIcon Name="info" Size="17" /><strong id="diagnostics-heading">Troubleshooting</strong></span>
         <small>@TroubleshootingSummary</small>

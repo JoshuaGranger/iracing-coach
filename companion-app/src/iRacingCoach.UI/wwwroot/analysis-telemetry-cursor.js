@@ -102,27 +102,6 @@
     return values.length ? values.join(" · ") : "—";
   }
 
-  function resizedTracePath(state, trace, row, rowIndex, signalIndex) {
-    const values = trace.rowValues?.[rowIndex]?.[signalIndex];
-    if (!values?.length) return "";
-    const signal = row.signals[signalIndex];
-    const span = Math.max(0.000001, signal.maximum - signal.minimum);
-    let started = false;
-    const commands = [];
-    for (let pointIndex = 0; pointIndex < trace.percents.length; pointIndex++) {
-      const value = values[pointIndex];
-      if (!finite(value)) {
-        started = false;
-        continue;
-      }
-      const x = state.plotLeft + trace.percents[pointIndex] * state.plotWidth;
-      const y = row.top + row.plotHeight - 4 - (value - signal.minimum) / span * (row.plotHeight - 8);
-      commands.push(`${started ? "L" : "M"}${x.toFixed(3)},${y.toFixed(3)}`);
-      started = true;
-    }
-    return commands.join(" ");
-  }
-
   function resizeChartDom(state, elementWidth, force) {
     if (!finite(elementWidth) || elementWidth <= 0) return;
     if (!force && Math.abs(elementWidth - state.renderWidth) < 0.5) return;
@@ -146,31 +125,26 @@
       setAttributeIfChanged(label, "x", (state.plotLeft + clamp(tick, 0, 4) * state.plotWidth / 4).toFixed(3));
     }
 
-    // Structural CSS transitions can issue many ResizeObserver callbacks. Keep
-    // one exact path geometry and scale only its x axis while the panel moves;
-    // configuration changes still perform one exact sample-by-sample rebuild.
-    const rebuildPaths = force || !finite(state.pathBasePlotWidth) || state.pathBasePlotWidth <= 0;
-    const pathScale = rebuildPaths ? 1 : state.plotWidth / state.pathBasePlotWidth;
+    // Every selected lap remains in the compound trace paths, but the DOM has
+    // one bounded render layer. During structural motion only that compositor
+    // layer scales; no per-lap path is mutated in ResizeObserver callbacks.
+    if (force || !finite(state.pathBasePlotWidth) || state.pathBasePlotWidth <= 0)
+      state.pathBasePlotWidth = Math.max(1, state.config.plotWidth || state.plotWidth);
+    const pathScale = state.plotWidth / state.pathBasePlotWidth;
     const pathTransform = Math.abs(pathScale - 1) < 0.000001
       ? ""
       : `translate(${state.plotLeft.toFixed(3)} 0) scale(${pathScale.toFixed(6)} 1) translate(${(-state.plotLeft).toFixed(3)} 0)`;
-    for (const path of state.element.querySelectorAll("[data-analysis-trace-path]")) {
-      if (rebuildPaths) {
-        const rowIndex = Number(path.dataset.row);
-        const trace = state.config.traces.find(candidate => candidate.lap === Number(path.dataset.lap));
-        const row = state.config.rows[rowIndex];
-        const signalIndex = row?.signals.findIndex(signal => signal.id === path.dataset.signal) ?? -1;
-        setAttributeIfChanged(path, "d", trace && row && signalIndex >= 0 ? resizedTracePath(state, trace, row, rowIndex, signalIndex) : "");
-      }
-      setAttributeIfChanged(path, "transform", pathTransform);
-    }
-    if (rebuildPaths) state.pathBasePlotWidth = state.plotWidth;
+    for (const layer of state.element.querySelectorAll("[data-analysis-trace-render-layer]"))
+      setAttributeIfChanged(layer, "transform", pathTransform);
   }
 
   function buildOverlay(state) {
     const layer = state.element.querySelector("[data-analysis-cursor-layer]");
-    if (!layer) return false;
+    const tooltipLayer = state.element.parentElement?.querySelector("[data-analysis-cursor-tooltips]");
+    if (!layer || !tooltipLayer) return false;
     layer.replaceChildren();
+    tooltipLayer.replaceChildren();
+    state.tooltipLayer = tooltipLayer;
     state.layer = layer;
     state.domRows = [];
 
@@ -197,20 +171,26 @@
         return marker;
       }));
 
-      const tooltip = createSvg("g", { class: "trace-cursor-tooltip" });
-      const background = createSvg("rect", { x: 0, y: row.top + 4, width: 102, height: 14, rx: 4 });
-      tooltip.appendChild(background);
+      const tooltip = document.createElement("div");
+      tooltip.className = "analysis-cursor-tooltip-card";
       const slots = [];
       for (let slotIndex = 0; slotIndex < state.config.tooltipCapacity; slotIndex++) {
-        const lap = createSvg("text", { x: 0, y: 0, class: "trace-tooltip-lap" });
-        const swatch = createSvg("rect", { x: 0, y: 0, width: 10, height: 10, rx: 1 });
-        const value = createSvg("text", { x: 0, y: 0, class: "trace-tooltip-value" });
-        tooltip.append(lap, swatch, value);
-        slots.push({ lap, swatch, value });
+        const slot = document.createElement("div");
+        slot.className = "analysis-cursor-tooltip-slot";
+        const lap = document.createElement("span");
+        lap.className = "trace-tooltip-lap";
+        const swatch = document.createElement("i");
+        swatch.className = "trace-tooltip-swatch";
+        const value = document.createElement("span");
+        value.className = "trace-tooltip-value";
+        slot.append(lap, swatch, value);
+        tooltip.appendChild(slot);
+        slots.push({ slot, lap, swatch, value });
       }
-      layer.appendChild(tooltip);
-      state.domRows.push({ markers, tooltip, background, slots });
+      tooltipLayer.appendChild(tooltip);
+      state.domRows.push({ markers, tooltip, slots });
     });
+    setVisible(tooltipLayer, false);
     return true;
   }
 
@@ -253,6 +233,7 @@
     if (state.frame) cancelAnimationFrame(state.frame);
     state.frame = 0;
     if (state.layer) setVisible(state.layer, false);
+    if (state.tooltipLayer) setVisible(state.tooltipLayer, false);
   }
 
   function mapPointAt(points, fraction) {
@@ -324,6 +305,12 @@
   }
 
   function averageAt(state, property, fraction) {
+    const aggregate = state.config.aggregate;
+    if (aggregate?.percents?.length) {
+      const pointIndex = nearestIndex(aggregate.percents, fraction);
+      const value = pointIndex >= 0 ? aggregate.summary?.[property]?.[pointIndex] : null;
+      return finite(value) ? value : null;
+    }
     const values = [];
     for (const trace of state.config.traces) {
       const pointIndex = traceIndex(trace, fraction);
@@ -369,11 +356,22 @@
     setTextIfChanged(state.trackSummary, parts.join(" · "));
   }
 
-  function renderCursor(state) {
+  function renderCursor(state, timestamp) {
     state.frame = 0;
+    if (finite(timestamp)) {
+      const metrics = state.metrics;
+      if (finite(metrics.lastFrame)) {
+        const gap = timestamp - metrics.lastFrame;
+        metrics.maximumFrameGap = Math.max(metrics.maximumFrameGap, gap);
+        if (gap > 25) metrics.framesOver25ms++;
+      }
+      metrics.lastFrame = timestamp;
+      metrics.renderedFrames++;
+    }
     if (state.resizePending) {
       state.resizePending = false;
       state.rect = state.element.getBoundingClientRect();
+      state.frameRect = state.tooltipLayer?.parentElement?.getBoundingClientRect?.() || state.rect;
       resizeChartDom(state, state.rect.width, false);
     }
     if (!cursorActive(state)) return;
@@ -382,11 +380,23 @@
     const fraction = state.fraction;
     if (!state.chartInside || !state.layer) {
       if (state.layer) setVisible(state.layer, false);
+      if (state.tooltipLayer) setVisible(state.tooltipLayer, false);
       updateTrack(state, fraction);
       return;
     }
     const cursorX = state.plotLeft + fraction * state.plotWidth;
+    const frameRect = state.frameRect || state.rect;
+    const chartRect = state.rect || state.element.getBoundingClientRect();
+    const viewBox = state.element.viewBox?.baseVal;
+    const logicalWidth = viewBox?.width || state.renderWidth || chartRect.width;
+    const logicalHeight = viewBox?.height || state.config.chartHeight;
+    const scaleX = chartRect.width / Math.max(1, logicalWidth);
+    const scaleY = chartRect.height / Math.max(1, logicalHeight);
+    const chartOffsetX = chartRect.left - frameRect.left;
+    const chartOffsetY = chartRect.top - frameRect.top;
+    const cursorPixelX = chartOffsetX + (cursorX - (viewBox?.x || 0)) * scaleX;
     setVisible(state.layer, true);
+    if (state.tooltipLayer) setVisible(state.tooltipLayer, true);
     setAttributeIfChanged(state.sharedLine, "x1", cursorX.toFixed(3));
     setAttributeIfChanged(state.sharedLine, "x2", cursorX.toFixed(3));
 
@@ -420,49 +430,36 @@
       setVisible(dom.tooltip, visibleTraces.length > 0);
       dom.slots.forEach((slot, slotIndex) => {
         const trace = visibleTraces[slotIndex];
-        setVisible(slot.lap, Boolean(trace));
-        setVisible(slot.swatch, Boolean(trace));
-        setVisible(slot.value, Boolean(trace));
+        setVisible(slot.slot, Boolean(trace));
         if (!trace) return;
-        const baseline = row.top + 22 + slotIndex * state.config.tooltipRowHeight;
-        setAttributeIfChanged(slot.lap, "y", baseline.toFixed(3));
         setTextIfChanged(slot.lap, trace.lap);
-        setAttributeIfChanged(slot.swatch, "y", (baseline - 9).toFixed(3));
-        setAttributeIfChanged(slot.swatch, "fill", trace.color);
-        setAttributeIfChanged(slot.value, "y", baseline.toFixed(3));
+        if (slot.swatch.style.backgroundColor !== trace.color) slot.swatch.style.backgroundColor = trace.color;
         setTextIfChanged(slot.value, formatted[slotIndex]);
       });
 
-      // Values use the metric monospace font, so character count is stable.
-      // SVG text measurement here forced layout once per lap and row per frame.
+      // Tooltip typography lives in an HTML overlay measured in CSS pixels.
+      // It never inherits the chart SVG's non-uniform responsive transform.
       const desiredTooltipWidth = Math.ceil(55 + widest * state.config.tooltipCharacterWidth);
       const plotInset = 4;
-      const plotStart = state.plotLeft + plotInset;
-      const plotEnd = state.plotLeft + state.plotWidth - plotInset;
+      const plotStart = chartOffsetX + (state.plotLeft + plotInset - (viewBox?.x || 0)) * scaleX;
+      const plotEnd = chartOffsetX + (state.plotLeft + state.plotWidth - plotInset - (viewBox?.x || 0)) * scaleX;
       const availableTooltipWidth = Math.max(40, plotEnd - plotStart);
       const tooltipWidth = Math.min(Math.max(102, desiredTooltipWidth), availableTooltipWidth);
-      const leftCandidate = cursorX - tooltipWidth - 12;
-      const rightCandidate = cursorX + 12;
+      const leftCandidate = cursorPixelX - tooltipWidth - 12;
+      const rightCandidate = cursorPixelX + 12;
       let tooltipX;
       if (leftCandidate >= plotStart) tooltipX = leftCandidate;
       else if (rightCandidate + tooltipWidth <= plotEnd) tooltipX = rightCandidate;
       else tooltipX = clamp(leftCandidate, plotStart, Math.max(plotStart, plotEnd - tooltipWidth));
-
-      setAttributeIfChanged(dom.background, "x", tooltipX.toFixed(3));
-      setAttributeIfChanged(dom.background, "width", tooltipWidth.toFixed(3));
-      setAttributeIfChanged(dom.background, "height", 14 + visibleTraces.length * state.config.tooltipRowHeight);
-      dom.slots.forEach((slot, slotIndex) => {
-        if (!visibleTraces[slotIndex]) return;
-        setAttributeIfChanged(slot.lap, "x", (tooltipX + 8).toFixed(3));
-        setAttributeIfChanged(slot.swatch, "x", (tooltipX + 30).toFixed(3));
-        setAttributeIfChanged(slot.value, "x", (tooltipX + 47).toFixed(3));
-      });
+      dom.tooltip.style.left = `${tooltipX.toFixed(1)}px`;
+      dom.tooltip.style.top = `${(chartOffsetY + (row.top + 4) * scaleY).toFixed(1)}px`;
+      dom.tooltip.style.width = `${tooltipWidth.toFixed(1)}px`;
     });
     updateTrack(state, fraction);
   }
 
   function schedule(state) {
-    if (!state.frame) state.frame = requestAnimationFrame(() => renderCursor(state));
+    if (!state.frame) state.frame = requestAnimationFrame(timestamp => renderCursor(state, timestamp));
   }
 
   function updateFractionFromPointer(state) {
@@ -491,7 +488,9 @@
       existing.plotLeft = config.plotLeft;
       existing.lapOffset = clamp(existing.lapOffset, 0, Math.max(0, config.traces.length - config.tooltipCapacity));
       updateDomReferences(existing, trackElement);
-      resizeChartDom(existing, element.getBoundingClientRect().width, true);
+      existing.rect = element.getBoundingClientRect();
+      existing.frameRect = existing.tooltipLayer?.parentElement?.getBoundingClientRect?.() || existing.rect;
+      resizeChartDom(existing, existing.rect.width, true);
       buildOverlay(existing);
       if (cursorActive(existing)) schedule(existing);
       else updateTrack(existing, existing.fraction);
@@ -515,9 +514,17 @@
       fraction: clamp(config.initialFraction ?? 0.25, 0, 1),
       lapOffset: 0,
       rect: element.getBoundingClientRect(),
+      frameRect: element.parentElement?.getBoundingClientRect?.() || element.getBoundingClientRect(),
       renderWidth: config.elementWidth,
       plotLeft: config.plotLeft,
-      plotWidth: config.plotWidth
+      plotWidth: config.plotWidth,
+      metrics: {
+        renderedFrames: 0,
+        framesOver25ms: 0,
+        maximumFrameGap: 0,
+        lastFrame: null,
+        resizeCallbacks: 0
+      }
     };
     updateDomReferences(state, trackElement);
     resizeChartDom(state, state.rect.width, true);
@@ -527,6 +534,7 @@
       state.chartInside = true;
       state.inputSource = "chart";
       state.rect = element.getBoundingClientRect();
+      state.frameRect = state.tooltipLayer?.parentElement?.getBoundingClientRect?.() || state.rect;
       state.clientX = event.clientX;
       schedule(state);
     };
@@ -567,11 +575,13 @@
       schedule(state);
     };
     state.resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
+      state.metrics.resizeCallbacks++;
       state.resizePending = true;
       schedule(state);
     }) : null;
     state.scrolled = () => {
       state.rect = element.getBoundingClientRect();
+      state.frameRect = state.tooltipLayer?.parentElement?.getBoundingClientRect?.() || state.rect;
       if (state.chartInside) schedule(state);
     };
 
@@ -591,6 +601,7 @@
     if (!state) return;
     updateDomReferences(state, trackElement);
     state.rect = element.getBoundingClientRect();
+    state.frameRect = state.tooltipLayer?.parentElement?.getBoundingClientRect?.() || state.rect;
     state.resizePending = true;
     if (!state.element.querySelector("[data-analysis-cursor-layer] > *")) buildOverlay(state);
     schedule(state);
@@ -610,5 +621,25 @@
     sessions.delete(element);
   }
 
-  window.iracingCoachAnalysisCursor = { initialize, sync, dispose };
+  function diagnostics(element) {
+    const state = sessions.get(element);
+    if (!state) return null;
+    return {
+      ...state.metrics,
+      logicalTraceCount: state.config.logicalTraceCount || state.config.traces.length,
+      tooltipTraceCount: state.config.traces.length,
+      renderedPathNodes: state.element.querySelectorAll("[data-analysis-trace-path]").length,
+      renderedPathLayers: state.element.querySelectorAll("[data-analysis-trace-render-layer]").length,
+      configuredRows: state.config.rows.length,
+      aggregateBins: state.config.aggregate?.percents?.length || 0
+    };
+  }
+
+  function resetDiagnostics(element) {
+    const state = sessions.get(element);
+    if (!state) return;
+    state.metrics = { renderedFrames: 0, framesOver25ms: 0, maximumFrameGap: 0, lastFrame: null, resizeCallbacks: 0 };
+  }
+
+  window.iracingCoachAnalysisCursor = { initialize, sync, diagnostics, resetDiagnostics, dispose };
 })();
