@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 
 namespace iRacingCoach.Tests;
 
@@ -88,6 +87,5 @@ public sealed class PlanningAndStartingTuneUiTests
         Assert.DoesNotContain("foreach (var directory in Directory.EnumerateDirectories(root))", state, StringComparison.Ordinal);
     }
 
-    private static string CompanionRoot([CallerFilePath] string source = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", ".."));
+    private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
 }

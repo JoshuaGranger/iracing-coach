@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using iRacingCoach.Contracts;
@@ -759,6 +758,6 @@ public sealed class CapabilityRegistryTests
         CoachEngineInstalled = true, CoachEngineRunning = true, ChatGptConnected = true, Garage61Configured = true, Garage61Available = true
     };
 
-    private static string CompanionRoot([CallerFilePath] string source = "") => Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", ".."));
-    private static string RepositoryRoot([CallerFilePath] string source = "") => Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", "..", ".."));
+    private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
+    private static string RepositoryRoot() => TestRepositoryPaths.RepositoryRoot;
 }

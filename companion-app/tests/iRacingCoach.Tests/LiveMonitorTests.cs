@@ -1116,24 +1116,7 @@ public sealed class LiveMonitorTests
         return directory;
     }
 
-    private static string CompanionAppRoot([System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "")
-    {
-        if (!string.IsNullOrWhiteSpace(sourceFile))
-        {
-            var sourceRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourceFile)!, "..", ".."));
-            if (File.Exists(Path.Combine(sourceRoot, "iRacingCoach.sln"))) return sourceRoot;
-        }
-        foreach (var start in new[] { AppContext.BaseDirectory, Environment.CurrentDirectory })
-        {
-            for (var directory = new DirectoryInfo(start); directory is not null; directory = directory.Parent)
-            {
-                if (File.Exists(Path.Combine(directory.FullName, "iRacingCoach.sln"))) return directory.FullName;
-                var nested = Path.Combine(directory.FullName, "companion-app", "iRacingCoach.sln");
-                if (File.Exists(nested)) return Path.GetDirectoryName(nested)!;
-            }
-        }
-        throw new DirectoryNotFoundException("Could not locate the companion-app source root.");
-    }
+    private static string CompanionAppRoot() => TestRepositoryPaths.CompanionAppRoot;
 
     private static LiveMonitorState MissingState() => new(
         LiveTelemetryEngine.Disconnected(), new LiveMonitorLayout(), false, 0, 0, 0, DateTimeOffset.UtcNow);

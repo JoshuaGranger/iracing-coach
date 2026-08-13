@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using iRacingCoach.Coordinator;
 
@@ -62,6 +61,5 @@ public sealed class ThemeParityTests
         Assert.DoesNotContain("Color=\"#65D0B6\"", monitor);
     }
 
-    private static string CompanionRoot([CallerFilePath] string source = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", ".."));
+    private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
 }

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -2162,8 +2161,7 @@ public sealed class CoordinatorTests
         Assert.IsTrue(predicate(), $"Condition was not met within {timeout}.");
     }
 
-    private static string CompanionRoot([CallerFilePath] string source = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", ".."));
+    private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
 
     private sealed class FakeBackend(JsonElement? dashboard = null, JsonElement? tuning = null, Exception? failure = null, TimeSpan? callDelay = null, JsonElement? analysis = null, JsonElement? discovery = null, TimeSpan? analysisDelay = null, int analysisFailuresBeforeSuccess = 0) : IBackendClient
     {

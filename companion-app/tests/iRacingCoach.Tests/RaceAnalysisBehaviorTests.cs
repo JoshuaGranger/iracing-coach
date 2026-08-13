@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using iRacingCoach.Contracts;
@@ -1430,6 +1429,5 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(css, ".analysis-trace-studio:focus { outline: none; }");
     }
 
-    private static string CompanionRoot([CallerFilePath] string source = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", ".."));
+    private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
 }

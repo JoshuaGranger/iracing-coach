@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -165,6 +164,5 @@ public sealed class IterationUxTests
 
     private static string UiRoot() => Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
 
-    private static string CompanionRoot([CallerFilePath] string source = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", ".."));
+    private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
 }

@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using iRacingCoach.Contracts;
 using iRacingCoach.Coordinator;
 
@@ -84,6 +83,5 @@ public sealed class ThemeColorTests
         StringAssert.Contains(code, "|theme:{ThemeColors.Normalize(_state.Settings.ThemeColor)}:{ThemeColors.NormalizeCustomHex(_state.Settings.CustomThemeColor)}");
     }
 
-    private static string CompanionRoot([CallerFilePath] string source = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", ".."));
+    private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
 }
