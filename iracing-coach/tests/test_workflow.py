@@ -122,9 +122,9 @@ class WorkflowLocalTests(unittest.TestCase):
                 os.environ,
                 {"IRACING_COACH_IRACING_ROOT": directory},
             ):
-                self.assertEqual(
-                    workflow._default_iracing_root(),
-                    Path(directory),
+                self.assertTrue(
+                    os.path.samefile(workflow._default_iracing_root(), Path(directory)),
+                    "The configured iRacing root should resolve to the same directory even when Windows uses an 8.3 alias.",
                 )
 
     def test_analysis_pipeline_fingerprint_is_stable_sha256(self) -> None:

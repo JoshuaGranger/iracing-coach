@@ -24,7 +24,7 @@ for import_path in (str(SCRIPT_DIR), str(VENDOR_DIR)):
         sys.path.insert(0, import_path)
 
 from storage import ArchiveStore, default_archive_root  # noqa: E402
-from path_security import local_path  # noqa: E402
+from path_security import local_path, path_is_within  # noqa: E402
 from native_events import (  # noqa: E402
     SUPPORTED_EVENT_SELECTION_MODES,
     SUPPORTED_EVENT_TYPES,
@@ -73,10 +73,8 @@ def _bounded_path(value: Any, base: Path, label: str) -> Path:
     raw = _reject_network_or_device_path(value, label)
     candidate = Path(raw).expanduser().resolve()
     resolved_base = base.resolve()
-    try:
-        candidate.relative_to(resolved_base)
-    except ValueError as exc:
-        raise ValueError(f"{label} must stay within {resolved_base}.") from exc
+    if not path_is_within(candidate, resolved_base):
+        raise ValueError(f"{label} must stay within {resolved_base}.")
     return candidate
 
 
@@ -97,10 +95,8 @@ def _analysis_path(value: Any, archive_root: Path) -> Path:
         raise ValueError("analysis_path is required.")
     path = _bounded_path(value, archive_root, "analysis_path")
     reports_root = archive_root / "reports"
-    try:
-        path.relative_to(reports_root)
-    except ValueError as exc:
-        raise ValueError(f"analysis_path must stay within {reports_root}.") from exc
+    if not path_is_within(path, reports_root):
+        raise ValueError(f"analysis_path must stay within {reports_root}.")
     if path.name.lower() != "analysis.json":
         raise ValueError("analysis_path must name an archived analysis.json file.")
     return path
