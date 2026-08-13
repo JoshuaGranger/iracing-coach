@@ -120,7 +120,7 @@ public sealed class IterationUxTests
     public void ThemeContract_UsesHighContrastGraphiteAndTroubleshootingMatchesConnections()
     {
         var root = CompanionRoot();
-        var themePath = Path.Combine(root, "..", "companion-app-contract", "config", "theme.dark.json");
+        var themePath = Path.Combine(root, "..", "config", "theme.dark.json");
         using var theme = JsonDocument.Parse(File.ReadAllText(themePath));
         var colors = theme.RootElement.GetProperty("colors");
         Assert.AreEqual("#0B1015", colors.GetProperty("app").GetString());

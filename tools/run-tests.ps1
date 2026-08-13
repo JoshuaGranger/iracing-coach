@@ -1,7 +1,7 @@
 param([string]$PythonPath)
 
 $ErrorActionPreference = 'Stop'
-$workspaceRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$workspaceRoot = Split-Path -Parent $PSScriptRoot
 $python = $PythonPath
 if ([string]::IsNullOrWhiteSpace($python)) {
     $command = Get-Command python.exe -ErrorAction SilentlyContinue
@@ -13,4 +13,3 @@ if ([string]::IsNullOrWhiteSpace($python)) {
 $env:PYTHONUTF8 = '1'
 & $python -X utf8 -m unittest discover -s (Join-Path $workspaceRoot 'iracing-coach\tests') -p 'test_*.py'
 exit $LASTEXITCODE
-

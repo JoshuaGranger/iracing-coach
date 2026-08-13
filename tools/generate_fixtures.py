@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate sanitized deterministic UI contracts and tiny synthetic IBTs."""
+"""Generate sanitized deterministic UI fixtures and tiny synthetic IBTs."""
 
 from __future__ import annotations
 
@@ -11,11 +11,10 @@ from pathlib import Path
 from typing import Any
 
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_ROOT = PACKAGE_ROOT.parent
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = WORKSPACE_ROOT / "iracing-coach"
 SCRIPT_ROOT = PLUGIN_ROOT / "skills" / "analyze-iracing-race" / "scripts"
-FIXTURE_ROOT = PACKAGE_ROOT / "fixtures"
+FIXTURE_ROOT = WORKSPACE_ROOT / "test-data"
 sys.path.insert(0, str(SCRIPT_ROOT))
 
 from race_card import race_card_word_count, render_race_card  # noqa: E402

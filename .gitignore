@@ -40,5 +40,5 @@ companion-app/tools/installer-payload.zip
 
 # Personal telemetry is private. Only the named sanitized test fixtures are source.
 *.ibt
-!companion-app-contract/fixtures/ibt/synthetic-race.ibt
-!companion-app-contract/fixtures/ibt/truncated-race.ibt
+!test-data/ibt/synthetic-race.ibt
+!test-data/ibt/truncated-race.ibt

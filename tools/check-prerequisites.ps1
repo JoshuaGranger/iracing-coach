@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$workspaceRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$workspaceRoot = Split-Path -Parent $PSScriptRoot
 
 $dotnet = Get-Command dotnet.exe -ErrorAction SilentlyContinue
 $dotnetSdks = @()
@@ -97,7 +97,7 @@ $arguments = @(
     '-ExecutionPolicy',
     'Bypass',
     '-File',
-    (Join-Path $PSScriptRoot 'verify-contract.ps1'),
+    (Join-Path $PSScriptRoot 'verify-repository.ps1'),
     '-PythonPath',
     $python
 )

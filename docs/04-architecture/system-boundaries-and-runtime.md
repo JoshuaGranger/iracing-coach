@@ -37,4 +37,4 @@ The released application is a per-user Windows desktop product. A native WPF hos
 | `PROC-004` | Logs MUST correlate app, backend, job, event, and request identifiers without containing secrets. |
 | `PROC-005` | The app MUST distinguish not installed, not configured, disconnected, unavailable, degraded, and failed states when their remedies differ. |
 
-Implementation references: `App.xaml.cs`, `StartupRegistration.cs`, `CoachEngine.cs`, `McpBackendClient.cs`, `RuntimeMapper.cs`, and the MCP contracts under `companion-app-contract/contracts/`.
+Implementation references: `App.xaml.cs`, `StartupRegistration.cs`, `CoachEngine.cs`, `McpBackendClient.cs`, `RuntimeMapper.cs`, and the MCP contracts under `contracts/`.

@@ -10,11 +10,10 @@ from pathlib import Path
 from typing import Any
 
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_ROOT = PACKAGE_ROOT.parent
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = WORKSPACE_ROOT / "iracing-coach"
 SCRIPT_ROOT = PLUGIN_ROOT / "skills" / "analyze-iracing-race" / "scripts"
-CONTRACT_ROOT = PACKAGE_ROOT / "contracts"
+CONTRACT_ROOT = WORKSPACE_ROOT / "contracts"
 
 sys.path.insert(0, str(SCRIPT_ROOT))
 
@@ -42,7 +41,7 @@ def _plugin_manifest() -> dict[str, Any]:
 def exported_values() -> dict[Path, Any]:
     plugin = _plugin_manifest()
     compatibility = {
-        "handoff_contract_version": 1,
+        "repository_contract_version": 1,
         "plugin": {
             "name": plugin.get("name"),
             "version": plugin.get("version"),

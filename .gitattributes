@@ -1,4 +1,4 @@
-# Stable checkout bytes keep the hash-based contract manifest reproducible on Windows.
+# Keep text files consistent across Windows development and GitHub CI.
 * text=auto eol=lf
 
 *.ico binary

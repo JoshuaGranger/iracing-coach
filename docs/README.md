@@ -75,6 +75,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Review protocol](07-agent-review/review-protocol.md)
   - [Finding template](07-agent-review/finding-template.md)
   - [Change impact checklist](07-agent-review/change-impact-checklist.md)
+- [`releases`](releases/) - immutable historical release, acceptance, audit, and development records.
 
 ## Stable requirement identifiers
 

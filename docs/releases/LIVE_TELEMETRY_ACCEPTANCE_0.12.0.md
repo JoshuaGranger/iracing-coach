@@ -2,7 +2,7 @@
 
 Date: 2026-08-05
 
-Scope: live telemetry only. This record completes the applicable development-machine portion of `companion-app-contract/ACCEPTANCE_CHECKLIST.md`; it does not claim unrelated product workflows or racing-PC-only checks were re-certified.
+Scope: live telemetry only. This historical record completed the applicable development-machine portion of the then-current acceptance checklist; it does not claim unrelated product workflows or racing-PC-only checks were re-certified.
 
 ## Interaction and layout
 

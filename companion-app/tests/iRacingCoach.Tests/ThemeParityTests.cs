@@ -11,7 +11,7 @@ public sealed class ThemeParityTests
     public void CanonicalTheme_IsSynchronizedAcrossWebNativeAndTelemetryPopout()
     {
         var companion = CompanionRoot();
-        using var theme = JsonDocument.Parse(File.ReadAllText(Path.Combine(companion, "..", "companion-app-contract", "config", "theme.dark.json")));
+        using var theme = JsonDocument.Parse(File.ReadAllText(Path.Combine(companion, "..", "config", "theme.dark.json")));
         var colors = theme.RootElement.GetProperty("colors");
         var web = File.ReadAllText(Path.Combine(companion, "src", "iRacingCoach.UI", "wwwroot", "theme.generated.css"));
         var native = File.ReadAllText(Path.Combine(companion, "src", "iRacingCoach.App", "Theme.Generated.xaml"));

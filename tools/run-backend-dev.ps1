@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$workspaceRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$workspaceRoot = Split-Path -Parent $PSScriptRoot
 $pluginRoot = Join-Path $workspaceRoot 'iracing-coach'
 $launcher = Join-Path $pluginRoot 'skills\analyze-iracing-race\scripts\start-mcp.ps1'
 

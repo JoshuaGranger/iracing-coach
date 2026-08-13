@@ -153,8 +153,8 @@ New-Item -ItemType Directory -Path $codexDestination, $schemaDestination -Force 
 Copy-Item -LiteralPath $codexSource -Destination (Join-Path $codexDestination 'codex.exe')
 & robocopy $codexSchemaSource $schemaDestination /E /R:1 /W:1 | Out-Null
 if ($LASTEXITCODE -gt 7) { throw "Codex schema copy failed with robocopy code $LASTEXITCODE." }
-Copy-Item -LiteralPath (Join-Path $workspaceRoot 'companion-app-contract\contracts\ai-coaching-output.schema.json') -Destination $schemaDestination
-Copy-Item -LiteralPath (Join-Path $workspaceRoot 'companion-app-contract\contracts\ai-tuning-output.schema.json') -Destination $schemaDestination
+Copy-Item -LiteralPath (Join-Path $workspaceRoot 'contracts\ai-coaching-output.schema.json') -Destination $schemaDestination
+Copy-Item -LiteralPath (Join-Path $workspaceRoot 'contracts\ai-tuning-output.schema.json') -Destination $schemaDestination
 $codexHash = (Get-FileHash -LiteralPath $codexSource -Algorithm SHA256).Hash.ToLowerInvariant()
 $coachEngineManifest = [ordered]@{
     manifestVersion = 1

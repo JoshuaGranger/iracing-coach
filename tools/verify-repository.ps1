@@ -4,8 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$contractRoot = Split-Path -Parent $PSScriptRoot
-$workspaceRoot = Split-Path -Parent $contractRoot
+$workspaceRoot = Split-Path -Parent $PSScriptRoot
 
 $userProfilePath = if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
     [System.IO.Path]::GetFullPath($env:USERPROFILE)
@@ -35,10 +34,7 @@ $env:PYTHONUTF8 = '1'
 & $python -X utf8 (Join-Path $PSScriptRoot 'export_contracts.py') --check
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& $python -X utf8 (Join-Path $PSScriptRoot 'build_manifest.py') --check
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-$arguments = @('-X', 'utf8', (Join-Path $PSScriptRoot 'verify_contract.py'))
+$arguments = @('-X', 'utf8', (Join-Path $PSScriptRoot 'verify_repository.py'))
 if (-not $SkipTests) { $arguments += '--full' }
 & $python @arguments
 exit $LASTEXITCODE

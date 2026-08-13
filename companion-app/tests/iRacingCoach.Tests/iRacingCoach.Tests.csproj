@@ -16,13 +16,13 @@
     <ProjectReference Include="..\..\src\iRacingCoach.UI\iRacingCoach.UI.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\companion-app-contract\contracts\**\*.json" Link="fixtures\contracts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\companion-app-contract\config\theme.dark.json" Link="fixtures\theme.dark.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\companion-app-contract\fixtures\dashboard-populated.json" Link="fixtures\dashboard-populated.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\companion-app-contract\fixtures\dashboard-empty.json" Link="fixtures\dashboard-empty.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\companion-app-contract\fixtures\analyze-repair-heavy.json" Link="fixtures\analyze-repair-heavy.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\companion-app-contract\fixtures\setup-recommendation.json" Link="fixtures\setup-recommendation.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\companion-app-contract\fixtures\setup-package.json" Link="fixtures\setup-package.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\contracts\**\*.json" Link="fixtures\contracts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\config\theme.dark.json" Link="fixtures\theme.dark.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\test-data\dashboard-populated.json" Link="fixtures\dashboard-populated.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\test-data\dashboard-empty.json" Link="fixtures\dashboard-empty.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\test-data\analyze-repair-heavy.json" Link="fixtures\analyze-repair-heavy.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\test-data\setup-recommendation.json" Link="fixtures\setup-recommendation.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\test-data\setup-package.json" Link="fixtures\setup-package.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\analysis-nullable-kentucky-shape.json" Link="fixtures\analysis-nullable-kentucky-shape.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

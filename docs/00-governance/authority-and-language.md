@@ -11,8 +11,7 @@ The authority order for intended behavior is:
 1. Joshua's later explicit decisions.
 2. The 2026-08-03 final-product completion specification recorded in the [source register](source-register.md).
 3. This normalized documentation tree.
-4. `companion-app-contract/NEXT_DEVELOPMENT_PROMPT.md`.
-5. Older contract prose and release notes.
+4. Historical source prompts and release notes recorded in Git history.
 
 ### What does the product actually do?
 

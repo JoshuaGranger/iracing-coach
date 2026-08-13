@@ -457,7 +457,7 @@ public sealed class CodexAppServerSupervisor : ICoachEngineSupervisor
             var current = new DirectoryInfo(root);
             while (current is not null)
             {
-                var candidate = Path.Combine(current.FullName, "companion-app-contract", "contracts", fileName);
+                var candidate = Path.Combine(current.FullName, "contracts", fileName);
                 if (File.Exists(candidate)) return candidate;
                 current = current.Parent;
             }

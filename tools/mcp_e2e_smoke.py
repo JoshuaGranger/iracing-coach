@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_ROOT = PACKAGE_ROOT.parent
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 SERVER_PATH = (
     WORKSPACE_ROOT
     / "iracing-coach"
@@ -22,7 +21,7 @@ SERVER_PATH = (
     / "scripts"
     / "mcp_server.py"
 )
-FIXTURE_ROOT = PACKAGE_ROOT / "fixtures" / "ibt"
+FIXTURE_ROOT = WORKSPACE_ROOT / "test-data" / "ibt"
 
 
 def _domain(response: dict[str, Any], request_id: int) -> dict[str, Any]:

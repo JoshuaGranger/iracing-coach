@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Verify the companion-app contract package without third-party packages."""
+"""Verify repository contracts, fixtures, safeguards, and backend behavior."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import subprocess
@@ -13,26 +12,18 @@ from pathlib import Path
 from typing import Any
 
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_ROOT = PACKAGE_ROOT.parent
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = WORKSPACE_ROOT / "iracing-coach"
 SCRIPT_ROOT = PLUGIN_ROOT / "skills" / "analyze-iracing-race" / "scripts"
-CONTRACT_ROOT = PACKAGE_ROOT / "contracts"
-FIXTURE_ROOT = PACKAGE_ROOT / "fixtures"
+CONTRACT_ROOT = WORKSPACE_ROOT / "contracts"
+FIXTURE_ROOT = WORKSPACE_ROOT / "test-data"
+CONFIG_ROOT = WORKSPACE_ROOT / "config"
+TOOL_ROOT = WORKSPACE_ROOT / "tools"
 
 REQUIRED_FILES = (
     WORKSPACE_ROOT / "README.md",
     WORKSPACE_ROOT / "AGENTS.md",
-    PACKAGE_ROOT / "START_HERE.md",
-    PACKAGE_ROOT / "BUILD_SPEC.md",
-    PACKAGE_ROOT / "BACKEND_INTEGRATION.md",
-    PACKAGE_ROOT / "AI_ORCHESTRATION.md",
-    PACKAGE_ROOT / "SECURITY_AND_TRANSFER.md",
-    PACKAGE_ROOT / "ACCEPTANCE_CHECKLIST.md",
-    PACKAGE_ROOT / "IMPLEMENTATION_PLAN.md",
-    PACKAGE_ROOT / "UI_DESIGN_SYSTEM.md",
-    PACKAGE_ROOT / "manifest.json",
-    PACKAGE_ROOT / "SHA256SUMS.txt",
+    WORKSPACE_ROOT / "docs" / "README.md",
     CONTRACT_ROOT / "compatibility.json",
     CONTRACT_ROOT / "mcp-tools.v1.json",
     CONTRACT_ROOT / "dashboard-v1.schema.json",
@@ -48,24 +39,16 @@ REQUIRED_FILES = (
     CONTRACT_ROOT / "tuning-recommendation-v1.schema.json",
     CONTRACT_ROOT / "garage61-auth-status-v1.schema.json",
     CONTRACT_ROOT / "theme-v1.schema.json",
-    PACKAGE_ROOT / "config" / "theme.dark.json",
+    CONFIG_ROOT / "theme.dark.json",
     PLUGIN_ROOT / ".codex-plugin" / "plugin.json",
     SCRIPT_ROOT / "mcp_server.py",
     SCRIPT_ROOT / "coach_cli.py",
-    PACKAGE_ROOT / "scripts" / "mcp_e2e_smoke.py",
+    TOOL_ROOT / "mcp_e2e_smoke.py",
 )
 
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _validate_fixture_shape(path: Path, required: tuple[str, ...]) -> None:
@@ -113,7 +96,7 @@ def _theme_contrast(foreground: str, background: str) -> float:
 
 
 def _validate_theme_contract() -> None:
-    theme = _load_json(PACKAGE_ROOT / "config" / "theme.dark.json")
+    theme = _load_json(CONFIG_ROOT / "theme.dark.json")
     _require(theme.get("schemaVersion") == 1, "theme schemaVersion must be 1")
     _require(theme.get("name") == "mineral-glass-dark", "unexpected theme name")
     _require(theme.get("mode") == "dark", "default theme must be dark")
@@ -395,7 +378,7 @@ def _validate_backend_fixture_shapes() -> None:
     _require(jobs.get("fixture_kind") == "companion-ui-projection" and isinstance(jobs.get("states"), dict), "job-state projection must be explicitly marked as UI-only")
 
 
-def _scan_contract_for_secret_values() -> list[str]:
+def _scan_tracked_files_for_secret_values() -> tuple[list[str], int]:
     findings: list[str] = []
     patterns = (
         re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
@@ -407,27 +390,39 @@ def _scan_contract_for_secret_values() -> list[str]:
             re.IGNORECASE,
         ),
     )
-    manifest = _load_json(PACKAGE_ROOT / "manifest.json")
-    files = manifest.get("files") if isinstance(manifest, dict) else None
-    if not isinstance(files, list):
-        raise ValueError("manifest.json files must be an array before secret scanning")
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=WORKSPACE_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "Unable to enumerate Git-tracked files for secret scanning: "
+            + completed.stderr.decode("utf-8", errors="replace").strip()
+        )
+    files = completed.stdout.decode("utf-8", errors="surrogateescape").split("\0")
     workspace = WORKSPACE_ROOT.resolve()
-    for item in files:
-        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
-            raise ValueError("manifest.json contains an invalid file entry")
-        path = (WORKSPACE_ROOT / item["path"]).resolve()
+    scanned = 0
+    for relative in files:
+        if not relative:
+            continue
+        path = (WORKSPACE_ROOT / relative).resolve()
         try:
             path.relative_to(workspace)
         except ValueError as exc:
-            raise ValueError(f"Manifest path escapes workspace: {item['path']}") from exc
+            raise ValueError(f"Tracked path escapes workspace: {relative}") from exc
         if not path.is_file() or path.suffix.lower() not in {
-            ".md", ".json", ".py", ".ps1", ".txt"
+            ".cs", ".css", ".js", ".json", ".md", ".ps1", ".py",
+            ".razor", ".txt", ".xaml", ".xml", ".yaml", ".yml",
         }:
             continue
+        scanned += 1
         text = path.read_text(encoding="utf-8", errors="replace")
         if any(pattern.search(text) for pattern in patterns):
             findings.append(str(path.relative_to(WORKSPACE_ROOT)))
-    return findings
+    return findings, scanned
 
 
 def _run_mcp_e2e_smoke() -> dict[str, Any]:
@@ -436,7 +431,7 @@ def _run_mcp_e2e_smoke() -> dict[str, Any]:
             sys.executable,
             "-X",
             "utf8",
-            str(PACKAGE_ROOT / "scripts" / "mcp_e2e_smoke.py"),
+            str(TOOL_ROOT / "mcp_e2e_smoke.py"),
         ],
         cwd=WORKSPACE_ROOT,
         text=True,
@@ -460,49 +455,6 @@ def _run_mcp_e2e_smoke() -> dict[str, Any]:
     return value
 
 
-def _verify_manifest() -> dict[str, Any]:
-    path = PACKAGE_ROOT / "manifest.json"
-    if not path.is_file():
-        return {"present": False, "verified_files": 0}
-    manifest = _load_json(path)
-    files = manifest.get("files") if isinstance(manifest, dict) else None
-    if not isinstance(files, list):
-        raise ValueError("manifest.json files must be an array")
-    checksum_path = PACKAGE_ROOT / "SHA256SUMS.txt"
-    checksum_lines = checksum_path.read_text(encoding="utf-8").splitlines()
-    checksums: dict[str, str] = {}
-    for line in checksum_lines:
-        if not line.strip():
-            continue
-        digest, separator, relative = line.partition("  ")
-        if not separator or not relative:
-            raise ValueError("Invalid SHA256SUMS.txt line")
-        checksums[relative] = digest
-    verified = 0
-    for item in files:
-        if not isinstance(item, dict):
-            raise ValueError("manifest.json file entries must be objects")
-        relative = item.get("path")
-        expected = item.get("sha256")
-        expected_bytes = item.get("bytes")
-        target = (WORKSPACE_ROOT / str(relative)).resolve()
-        try:
-            target.relative_to(WORKSPACE_ROOT.resolve())
-        except ValueError as exc:
-            raise ValueError(f"Manifest path escapes workspace: {relative}") from exc
-        if (
-            not target.is_file()
-            or target.stat().st_size != expected_bytes
-            or _sha256(target) != expected
-            or checksums.get(str(relative)) != expected
-        ):
-            raise ValueError(f"Manifest mismatch: {relative}")
-        verified += 1
-    if len(checksums) != verified:
-        raise ValueError("SHA256SUMS.txt entry count differs from manifest")
-    return {"present": True, "verified_files": verified}
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--full", action="store_true", help="Run the complete backend test suite.")
@@ -512,7 +464,7 @@ def main() -> int:
 
     missing = [str(path.relative_to(WORKSPACE_ROOT)) for path in REQUIRED_FILES if not path.is_file()]
     if missing:
-        raise FileNotFoundError("Missing required contract files: " + ", ".join(missing))
+        raise FileNotFoundError("Missing required repository files: " + ", ".join(missing))
 
     for path in CONTRACT_ROOT.glob("*.json"):
         _load_json(path)
@@ -574,12 +526,11 @@ def main() -> int:
     _validate_backend_fixture_shapes()
     _validate_theme_contract()
 
-    manifest_result = _verify_manifest()
     mcp_e2e = _run_mcp_e2e_smoke()
 
-    secrets = _scan_contract_for_secret_values()
+    secrets, tracked_files_scanned = _scan_tracked_files_for_secret_values()
     if secrets:
-        raise RuntimeError("Potential secret values in contract package: " + ", ".join(secrets))
+        raise RuntimeError("Potential secret values in tracked files: " + ", ".join(secrets))
 
     tests: dict[str, Any] = {"run": False}
     if args.full:
@@ -618,7 +569,7 @@ def main() -> int:
         "mcp_tool_count": len(mcp_server.TOOLS),
         "contracts_loaded": len(list(CONTRACT_ROOT.glob("*.json"))),
         "fixtures_loaded": len(list(FIXTURE_ROOT.rglob("*.json"))),
-        "manifest": manifest_result,
+        "tracked_files_scanned": tracked_files_scanned,
         "mcp_e2e": mcp_e2e,
         "tests": tests,
     }

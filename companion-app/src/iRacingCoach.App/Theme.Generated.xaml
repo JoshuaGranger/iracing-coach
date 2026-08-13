@@ -1,6 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- Generated from companion-app-contract/config/theme.dark.json. -->
+    <!-- Generated from config/theme.dark.json. -->
     <Color x:Key="AppColor">#0B1015</Color>
     <Color x:Key="NavigationColor">#0F161C</Color>
     <Color x:Key="Surface1Color">#151E25</Color>

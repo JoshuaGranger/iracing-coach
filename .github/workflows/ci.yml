@@ -27,9 +27,9 @@ jobs:
         with:
           global-json-file: companion-app/global.json
 
-      - name: Verify contracts, fixtures, and backend
+      - name: Verify repository, contracts, fixtures, and backend
         shell: pwsh
-        run: .\companion-app-contract\scripts\verify-contract.ps1
+        run: .\tools\verify-repository.ps1
 
       - name: Check first-party JavaScript syntax
         shell: pwsh
