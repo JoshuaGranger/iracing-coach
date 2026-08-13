@@ -97,7 +97,7 @@ $arguments = @(
     '-ExecutionPolicy',
     'Bypass',
     '-File',
-    (Join-Path $PSScriptRoot 'verify-handoff.ps1'),
+    (Join-Path $PSScriptRoot 'verify-contract.ps1'),
     '-PythonPath',
     $python
 )

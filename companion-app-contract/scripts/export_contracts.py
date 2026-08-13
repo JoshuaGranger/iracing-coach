@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any
 
 
-HANDOFF_ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_ROOT = HANDOFF_ROOT.parent
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = PACKAGE_ROOT.parent
 PLUGIN_ROOT = WORKSPACE_ROOT / "iracing-coach"
 SCRIPT_ROOT = PLUGIN_ROOT / "skills" / "analyze-iracing-race" / "scripts"
-CONTRACT_ROOT = HANDOFF_ROOT / "contracts"
+CONTRACT_ROOT = PACKAGE_ROOT / "contracts"
 
 sys.path.insert(0, str(SCRIPT_ROOT))
 

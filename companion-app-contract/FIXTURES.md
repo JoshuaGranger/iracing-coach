@@ -21,10 +21,10 @@ Every fixture in this directory is synthetic and contains no real driver/account
 | `ibt/synthetic-race.ibt` | Tiny valid Race IBT for real MCP scan, dashboard, query, and deliberately low-evidence full-analysis smoke tests. |
 | `ibt/truncated-race.ibt` | One-byte-truncated IBT for rejection tests. |
 
-Regenerate them from the workspace root with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\companion-app-handoff\scripts\generate-fixtures.ps1`. Golden frontend snapshots should be derived from these files, not from the private `data/` directory.
+Regenerate them from the workspace root with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\companion-app-contract\scripts\generate-fixtures.ps1`. Golden frontend snapshots should be derived from these files, not from the private `data/` directory.
 
 Both visualization fixtures conform to `contracts/track-phase-visualization-v1.schema.json`. A usable comparison authorizes only a **Best-supported target**, never an unqualified optimal-lap claim. When interpolation, signed/normalized steering, inside/outside calibration, or comparison evidence is unavailable, the corresponding UI control or claim must remain unavailable.
 
 Except for the two track-visualization projections and `ui-job-states.json`, JSON fixtures in this catalog model current backend domain results or MCP framing. The UI may derive additional view fields, but must not treat projection-only fields as backend fields.
 
-Run `python -X utf8 .\companion-app-handoff\scripts\mcp_e2e_smoke.py` to start the real stdio backend with `fixtures/ibt` as its trusted source root and a temporary archive, then execute a dashboard call and complete analysis of `synthetic-race.ibt`. It requires no private telemetry.
+Run `python -X utf8 .\companion-app-contract\scripts\mcp_e2e_smoke.py` to start the real stdio backend with `fixtures/ibt` as its trusted source root and a temporary archive, then execute a dashboard call and complete analysis of `synthetic-race.ibt`. It requires no private telemetry.

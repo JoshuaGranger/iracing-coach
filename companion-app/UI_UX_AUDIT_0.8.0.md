@@ -116,7 +116,7 @@ These are fixture/test measurements, not predictions of IBT parsing time on the 
 
 - Final screenshots and exact-hash manifest: `artifacts/qa/v0.8.0/`
 - Visual verifier: `tools/VerifyVisualBaselines.ps1`
-- Canonical theme: `../companion-app-handoff/config/theme.dark.json`
+- Canonical theme: `../companion-app-contract/config/theme.dark.json`
 - Generated web theme: `src/iRacingCoach.UI/wwwroot/theme.generated.css`
 - Generated native theme: `src/iRacingCoach.App/Theme.Generated.xaml`
 

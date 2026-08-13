@@ -23,12 +23,12 @@ companion-app/
 
 Names may change, but keep UI, process orchestration, contracts, deterministic backend access, and optional AI separated.
 
-## Milestone 0: prove the handoff
+## Milestone 0: prove the contract package
 
-1. From the workspace root, run `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\companion-app-handoff\scripts\verify-handoff.ps1`.
+1. From the workspace root, run `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\companion-app-contract\scripts\verify-contract.ps1`.
 2. Load every schema and fixture without touching the private `data/` directory.
 3. Start the MCP backend, perform `initialize`, `ping`, and `tools/list`, and compare the tool list with `contracts/mcp-tools.v1.json`.
-4. Run `python -X utf8 .\companion-app-handoff\scripts\mcp_e2e_smoke.py` to execute a real dashboard and full analysis against the sanitized synthetic IBT.
+4. Run `python -X utf8 .\companion-app-contract\scripts\mcp_e2e_smoke.py` to execute a real dashboard and full analysis against the sanitized synthetic IBT.
 5. Record the compatibility manifest in a diagnostics model.
 
 Exit gate: the build machine can run the backend and tests with no racing-PC data or credentials.

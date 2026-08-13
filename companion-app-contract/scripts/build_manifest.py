@@ -11,12 +11,16 @@ from pathlib import Path
 from typing import Iterator
 
 
-HANDOFF_ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_ROOT = HANDOFF_ROOT.parent
-MANIFEST_PATH = HANDOFF_ROOT / "manifest.json"
-CHECKSUM_PATH = HANDOFF_ROOT / "SHA256SUMS.txt"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = PACKAGE_ROOT.parent
+MANIFEST_PATH = PACKAGE_ROOT / "manifest.json"
+CHECKSUM_PATH = PACKAGE_ROOT / "SHA256SUMS.txt"
 ROOT_FILES = (WORKSPACE_ROOT / "README.md", WORKSPACE_ROOT / "AGENTS.md")
-INCLUDED_DIRECTORIES = (WORKSPACE_ROOT / "iracing-coach", HANDOFF_ROOT)
+INCLUDED_DIRECTORIES = (
+    WORKSPACE_ROOT / "companion-app",
+    WORKSPACE_ROOT / "iracing-coach",
+    PACKAGE_ROOT,
+)
 GENERATED_RELATIVE_PATHS = {
     MANIFEST_PATH.relative_to(WORKSPACE_ROOT).as_posix(),
     CHECKSUM_PATH.relative_to(WORKSPACE_ROOT).as_posix(),
@@ -25,9 +29,21 @@ EXCLUDED_DIRECTORY_NAMES = {
     ".git",
     ".pytest_cache",
     ".validation-deps",
+    "TestResults",
     "__pycache__",
+    "artifacts",
+    "bin",
+    "credentials",
+    "obj",
 }
-EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
+EXCLUDED_FILENAMES = {
+    "archive-manifest.json",
+    "auth.json",
+    "installer-payload.zip",
+    "portable-state.json",
+    "settings.json",
+}
+EXCLUDED_SUFFIXES = {".log", ".pyc", ".pyo"}
 
 
 def _relative(path: Path) -> str:
@@ -39,6 +55,10 @@ def _included(path: Path) -> bool:
     if relative in GENERATED_RELATIVE_PATHS:
         return False
     if any(part in EXCLUDED_DIRECTORY_NAMES for part in path.relative_to(WORKSPACE_ROOT).parts):
+        return False
+    if path.name in EXCLUDED_FILENAMES or path.name.endswith(".machine-local.json"):
+        return False
+    if path.name == ".env" or path.name.startswith(".env."):
         return False
     if path.suffix.lower() in EXCLUDED_SUFFIXES:
         return False
@@ -91,6 +111,7 @@ def generate() -> dict[str, object]:
             ".git/",
             ".validation-deps/",
             "data/test-artifacts/",
+            "companion-app build, test, and release outputs",
             "__pycache__/ and compiled Python files",
             "all credentials and browser/Codex authentication state",
         ],

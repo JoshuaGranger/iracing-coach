@@ -2,9 +2,9 @@
 
 You are the primary development agent responsible for advancing an existing Windows iRacing coaching companion application. Work directly in the copied `iRacing Coach` workspace on the development PC. This is an implementation assignment, not a request for a design-only response, a mockup-only response, or a new project that ignores the existing backend.
 
-Read this file completely before acting. Then read `companion-app-handoff/START_HERE.md` and every document it marks required. Inspect the actual current application source, the `iracing-coach` backend, the handoff schemas, fixtures, tests, and the current UI before choosing what to preserve or replace.
+Read this file completely before acting. Then read `companion-app-contract/START_HERE.md` and every document it marks required. Inspect the actual current application source, the `iracing-coach` backend, the contract schemas, fixtures, tests, and the current UI before choosing what to preserve or replace.
 
-This prompt contains the newest product decisions from Joshua. It supersedes older handoff prose when they conflict, especially concerning navigation, screen behavior, diagnostic visibility, progressive-tuning experiments, AI/local responsibility, Garage61 readiness, and freedom to reconsider the frontend technology. The deterministic backend's evidence rules, source-file protections, credential handling, and truthfulness requirements remain authoritative.
+This prompt contains the newest product decisions from Joshua. It supersedes older contract prose when they conflict, especially concerning navigation, screen behavior, diagnostic visibility, progressive-tuning experiments, AI/local responsibility, Garage61 readiness, and freedom to reconsider the frontend technology. The deterministic backend's evidence rules, source-file protections, credential handling, and truthfulness requirements remain authoritative.
 
 Do not stop after producing a plan. Implement as much of this specification as can be completed safely in the current development round, verify it, and leave a clear continuation record for anything genuinely unfinished. Ask Joshua only when a missing decision would materially change the product or require new authority. Make reasonable implementation choices within this specification without repeatedly asking for preferences already answered here.
 
@@ -35,9 +35,9 @@ The app should feel like a real product, not a frontend pasted over a chat box. 
 
 Before changing code:
 
-1. Run the handoff verifier and existing backend/frontend tests.
+1. Run the contract verifier and existing backend/frontend tests.
 2. Inventory the existing solution, language, UI stack, process boundaries, and implemented screens.
-3. Exercise the current app enough to understand Joshua's complaints rather than assuming the handoff documents describe the exact current state.
+3. Exercise the current app enough to understand Joshua's complaints rather than assuming the contract documents describe the exact current state.
 4. Record an architecture decision for the retained or revised technology stack.
 5. Identify the smallest set of additive backend-contract changes needed for the new workflows.
 
@@ -54,7 +54,7 @@ Use contract-first development:
 
 ## 3. Technology freedom and quality bar
 
-You may use C#, C++, Rust, Python, TypeScript, WPF, WinUI, Blazor Hybrid, a native canvas, or another appropriate supported stack. The existing handoff recommends .NET 10 with a WPF host and Blazor Hybrid views because it balances Windows integration, process supervision, deployment, and rich SVG/canvas telemetry UI. Treat that as the default unless the current code or measured evidence supports something better.
+You may use C#, C++, Rust, Python, TypeScript, WPF, WinUI, Blazor Hybrid, a native canvas, or another appropriate supported stack. The existing contract recommends .NET 10 with a WPF host and Blazor Hybrid views because it balances Windows integration, process supervision, deployment, and rich SVG/canvas telemetry UI. Treat that as the default unless the current code or measured evidence supports something better.
 
 Technology freedom is not permission for an unnecessary rewrite. Choose the stack that maximizes:
 
@@ -744,7 +744,7 @@ At minimum test:
 
 Capture visual QA screenshots for every primary screen in populated, empty, loading, unavailable, warning, repair-confounded, and long-content states. A technically functional but confusing or visually unfinished screen does not meet acceptance.
 
-Run the handoff verifier after changing contracts/fixtures and regenerate the manifest/checksums only through the supplied scripts.
+Run the contract verifier after changing contracts/fixtures and regenerate the manifest/checksums only through the supplied scripts.
 
 ## 18. Delivery order
 
@@ -794,7 +794,7 @@ Use this recommended sequence while keeping the app runnable after every milesto
 
 Do not postpone a simple deterministic capability merely because a later AI or Garage61 milestone could enhance it.
 
-## 19. Required final handoff from you
+## 19. Required final delivery record
 
 At the end of this development round, provide Joshua with:
 
@@ -832,4 +832,4 @@ Do not ask these again:
 - Use AI extensively for nuanced reasoning and development acceleration, but local code for repeatable work.
 - You may substantially redesign the frontend and may choose the best technology stack, provided capability, polish, packaging, performance, truthfulness, and tested backend behavior are preserved.
 
-Begin by verifying the copied handoff and inspecting the current app. Then produce a short implementation plan and start implementing it.
+Begin by verifying the contract package and inspecting the current app. Then produce a short implementation plan and start implementing it.

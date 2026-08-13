@@ -1,8 +1,8 @@
-# Start here: iRacing Coach companion app
+# Companion app product and build contract
 
-This packet is intended to be copied with the entire `iRacing Coach` folder to the Windows development machine. It contains the product contract, deterministic backend, schemas, sanitized fixtures, tests, deployment rules, and verification scripts needed to build the companion app.
+This permanent contract package contains the product rules, schemas, sanitized fixtures, tests, deployment requirements, and verification scripts needed to build and release the companion app. It can also be copied with the repository to a separate Windows development machine.
 
-Version boundary: `0.14.2` is the latest accepted stable packaged release. The current tree identifies `0.16.0` development source and is producing an explicitly requested simulator-feedback installer; it is not accepted merely because it builds. The current source gates passed 255/255 .NET tests, 247/247 Python tests, 9/9 first-party JavaScript syntax checks, and a Release solution build with zero warnings and zero errors. The exact 0.16.0 source commit, handoff inventory, installer hash, and lifecycle evidence remain package-stage records and are not inherited from 0.15.0.
+Version boundary: `0.14.2` is the latest accepted stable packaged release. The current tree identifies `0.16.0` development source and is producing an explicitly requested simulator-feedback installer; it is not accepted merely because it builds. The current source gates passed 255/255 .NET tests, 247/247 Python tests, 9/9 first-party JavaScript syntax checks, and a Release solution build with zero warnings and zero errors. The exact 0.16.0 source commit, contract inventory, installer hash, and lifecycle evidence remain package-stage records and are not inherited from 0.15.0.
 
 Real-data browser evidence for this source includes the August 9 Iowa legacy Race replay (7,775 frames across five segments) at 1280x720 and 1920x1080, a complete logical 82-lap selection with bounded rendering, and an automated bounded synthetic 500-lap case. These are development checks, not a stable-package designation, real high-refresh cadence certification, or Joshua's acceptance. See `../documentation/06-reality/implementation-snapshot-0.16.0-development.md` for measurements and known limits.
 
@@ -14,7 +14,7 @@ Read `NEXT_DEVELOPMENT_PROMPT.md` first. It contains Joshua's latest approved pr
 
 Use this exact direction:
 
-> Read `companion-app-handoff/START_HERE.md` and every document it marks required. Build the Windows companion app in C#/.NET 10 with a WPF host and Blazor Hybrid views around the existing `iracing-coach` MCP/CLI backend. Implement `UI_DESIGN_SYSTEM.md` and generate resources from `config/theme.dark.json`. Treat backend telemetry calculations, archive writes, evidence labels, setup safeguards, and credential handling as authoritative. Do not reimplement them in the UI. Complete the acceptance checklist before producing a self-contained `win-x64` installer or portable package.
+> Read `companion-app-contract/START_HERE.md` and every document it marks required. Build the Windows companion app in C#/.NET 10 with a WPF host and Blazor Hybrid views around the existing `iracing-coach` MCP/CLI backend. Implement `UI_DESIGN_SYSTEM.md` and generate resources from `config/theme.dark.json`. Treat backend telemetry calculations, archive writes, evidence labels, setup safeguards, and credential handling as authoritative. Do not reimplement them in the UI. Complete the acceptance checklist before producing a self-contained `win-x64` installer or portable package.
 
 ## Required reading order
 
@@ -43,7 +43,7 @@ If prose and executable behavior differ, the current MCP `tools/list`, compatibi
 - Garage61 client/auth plumbing, ready to activate after API approval and local PAT configuration.
 - Product and UI requirements for all four workflows.
 - A binding C#/.NET 10 WPF + Blazor Hybrid decision and a machine-readable high-contrast graphite theme with controlled vivid semantic color.
-- Sanitized frontend fixtures, partial forward-compatible JSON Schemas, a contract exporter, and a handoff verifier.
+- Sanitized frontend fixtures, partial forward-compatible JSON Schemas, a contract exporter, and a contract verifier.
 - The complete backend unit suite.
 
 ## What is deliberately not included
@@ -51,14 +51,14 @@ If prose and executable behavior differ, the current MCP `tools/list`, compatibi
 - Joshua's Garage61 token, browser cookies, Codex/ChatGPT tokens, or password state.
 - Raw `.ibt`, replay, `.sto`, or purchased HTML source files.
 - A redistributable Codex executable or OpenAI credential.
-- Private real-race telemetry/replay captures or simulator-PC cadence evidence. The current product source contains the live SDK and bounded replay-capture paths, but this sanitized handoff does not include personal recordings or turn those paths into real-system acceptance.
+- Private real-race telemetry/replay captures or simulator-PC cadence evidence. The current product source contains the live SDK and bounded replay-capture paths, but this sanitized contract package does not include personal recordings or turn those paths into real-system acceptance.
 - A claim that Garage61 global-visible lap search is approved. It remains disabled until Garage61 explicitly grants it.
 
 The copied `data/` folder is optional private material. It contains derived race/setup artifacts and absolute racing-PC paths. Use the sanitized fixtures for normal frontend tests. Native telemetry queries on the development PC require synthetic test IBTs or separately supplied source recordings.
 
 ## Current 0.16 verification and delivery sequence
 
-1. Verify the handoff and generated contracts against the frozen source.
+1. Verify the contract package and generated contracts against the frozen source.
 2. Run all .NET, Python, and JavaScript gates and the warning-free Release solution build.
 3. Repeat the binding browser/native matrices, real-recording checks, and high-density performance cases against the exact candidate executable.
 4. Build the self-contained installer/portable artifacts only from a clean identified commit, then record immutable sizes and hashes.
@@ -69,23 +69,23 @@ Run the verifier before beginning and after any backend or contract change:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\companion-app-handoff\scripts\verify-handoff.ps1
+  -File .\companion-app-contract\scripts\verify-contract.ps1
 ```
 
 For a clean transfer instead of copying the full private workspace, run:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\companion-app-handoff\scripts\prepare-transfer.ps1
+  -File .\companion-app-contract\scripts\prepare-transfer.ps1
 ```
 
 It verifies the backend, contracts, fixtures, manifest, and checksums before producing a ZIP containing only build inputs.
 
-On the development machine, run the read-only prerequisite and handoff check before scaffolding the solution:
+On the development machine, run the read-only prerequisite and contract check before scaffolding the solution:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\companion-app-handoff\scripts\check-build-machine.ps1
+  -File .\companion-app-contract\scripts\check-build-machine.ps1
 ```
 
 It requires a .NET 10 SDK and Python 3.10 or newer. Codex app-server is reported separately and is optional for every deterministic workflow.

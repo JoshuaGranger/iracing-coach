@@ -1,0 +1,3491 @@
+{
+  "manifest_version": 1,
+  "bundle": "iracing-coach-companion-app-build-inputs",
+  "scope": "clean build inputs; private data and credentials excluded",
+  "generated_at_utc": "2026-08-13T00:43:03.150540Z",
+  "excluded": [
+    "data/ (optional private regression corpus)",
+    ".git/",
+    ".validation-deps/",
+    "data/test-artifacts/",
+    "companion-app build, test, and release outputs",
+    "__pycache__/ and compiled Python files",
+    "all credentials and browser/Codex authentication state"
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2766,
+      "sha256": "7a2e9843eed55ac49064e6098c9518710851167ebf0d025cc0ec2cdff8a1fa4a"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 1942,
+      "sha256": "d5dbd170ad6f131d604a6293f2d1cd10bcb753f186406032ec251b9e5e13a830"
+    },
+    {
+      "path": "companion-app/ACCEPTANCE_0.9.0.md",
+      "bytes": 5933,
+      "sha256": "99751d8f8eef2744b225e17b2d21fc6787b783d70dcbffa871908d90cb31af4c"
+    },
+    {
+      "path": "companion-app/ARCHITECTURE_DECISION.md",
+      "bytes": 4437,
+      "sha256": "d132ae0500e43dc90a2ead41883245a4c2b2d12e57bb70b5827e933ce7c7cf48"
+    },
+    {
+      "path": "companion-app/CAPABILITY_AUDIT_0.7.0.md",
+      "bytes": 8850,
+      "sha256": "964a2746759b42f8a72530f8675eef0ebf54e345a9e65b9fdf419df394730766"
+    },
+    {
+      "path": "companion-app/COACH_ENGINE_ACCEPTANCE_0.5.0.md",
+      "bytes": 5387,
+      "sha256": "17083f85938a9f6d89a42e258e28e197cfcfb4b36872c0e9afac168e99406215"
+    },
+    {
+      "path": "companion-app/DEVELOPMENT_REPORT.md",
+      "bytes": 8066,
+      "sha256": "53f400ea6c2319afffccf2cf0f8ce2fd05343ec4d169c15054659c0cea90cc43"
+    },
+    {
+      "path": "companion-app/Directory.Build.props",
+      "bytes": 364,
+      "sha256": "37d98d593eb8c721f32e590690c568a31ad2bdbd2ba6401939053a5d6c81b7dd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ApplyPatchApprovalParams.json",
+      "bytes": 2657,
+      "sha256": "9de5a28a543214033b546db66ad8d34748a949c9878a7e51ec57a99feb2b8e67"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ApplyPatchApprovalResponse.json",
+      "bytes": 3989,
+      "sha256": "2b9fe9eec357d940bef643bb656707efea0889787f31c4e69c12e58606468a0e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/AttestationGenerateParams.json",
+      "bytes": 118,
+      "sha256": "b85df8f169cfbca98724df3a5f7550fc4649fa69b23f5160aafdb52e027133a8"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/AttestationGenerateResponse.json",
+      "bytes": 277,
+      "sha256": "f7c8935c414ac74060cbc0fd4b298c022757e2dea50b3d21a7d507cb24d3318d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ChatgptAuthTokensRefreshParams.json",
+      "bytes": 971,
+      "sha256": "8ca65b2cf4a991e5149535d987d7dcf3a1cda0f887d6c4bc102ee56f83417456"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ChatgptAuthTokensRefreshResponse.json",
+      "bytes": 406,
+      "sha256": "0407a673d393e20836652e1c8449e851dac0b510819712aa05be3a80e92c9115"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ClientNotification.json",
+      "bytes": 431,
+      "sha256": "a30b3041578845b11add3d07d5a63cd3a12d5d126e87b8c591862b4aeb68d97c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ClientRequest.json",
+      "bytes": 235923,
+      "sha256": "41188ef1f3507f7a6dfc238a935dabd39eaa71c954c27fb27e6c55c6d9dd8176"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/codex_app_server_protocol.schemas.json",
+      "bytes": 690631,
+      "sha256": "d3992fec1398afdbec658da2c720c6993fbf3c1ce4900785694d2196679eddfc"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/codex_app_server_protocol.v2.schemas.json",
+      "bytes": 591327,
+      "sha256": "070b28910e1e778043a64c1bc8e20f07aafca700e0464ea1c54e6f83c48b866e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/CommandExecutionRequestApprovalParams.json",
+      "bytes": 15972,
+      "sha256": "0366a8c0590a270997f29f86c29bba119dad6d1be3e3e822c99532aea24a6a3e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/CommandExecutionRequestApprovalResponse.json",
+      "bytes": 3202,
+      "sha256": "42010a48dd9ad989171728c30338e1ff8144c31bd33921cbfb5608fd6c85a3b5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/CurrentTimeReadParams.json",
+      "bytes": 220,
+      "sha256": "67730cc837220b541295ed562a1a8492fa6865766018a6d187d311b44c9715b1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/CurrentTimeReadResponse.json",
+      "bytes": 318,
+      "sha256": "faeda6ee245ecb21425977e56d702fee7cafb9f7a0f054498e7b8258c9716fa1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/DynamicToolCallParams.json",
+      "bytes": 519,
+      "sha256": "e36242b331ca665c74993e55abbea381b1c8a961b29a42579029cff1ad26b20d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/DynamicToolCallResponse.json",
+      "bytes": 2010,
+      "sha256": "b5fd10c265be9023f038fe3e4c937a8e215906c8ab31e35d61d28bbc0b755af9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ExecCommandApprovalParams.json",
+      "bytes": 3768,
+      "sha256": "6b34b7c6c999280f51146c8f44b08a368987c0c3624b02a89904330b0178cd9e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ExecCommandApprovalResponse.json",
+      "bytes": 3990,
+      "sha256": "d044005b62cb8de446cbaf7f598916974b5c6546b04f3fe552d7b8f880f069c7"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FileChangeRequestApprovalParams.json",
+      "bytes": 968,
+      "sha256": "7b465f7c5671adffdc5c339f50799860950307456e2a2b52c5ce1d3018f4babd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FileChangeRequestApprovalResponse.json",
+      "bytes": 1158,
+      "sha256": "7ccbd29e5f8840c7c8aa96c5c3b6d52bc71ec5c5d7e1ad05ab958afd44c0c94c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchParams.json",
+      "bytes": 413,
+      "sha256": "44cdbbe54965661bef1452223b6096307741fb41e5a5cf5c161c5feb8474f492"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchResponse.json",
+      "bytes": 1332,
+      "sha256": "45d5c686e50887d8fb590ecc090e05fb5b0023305682e932b4dc4db4c0f55045"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchSessionCompletedNotification.json",
+      "bytes": 244,
+      "sha256": "74f204b562a0c336678bfb1ebb0938636dc16b00e2ad9fdd646663eb0e4301cd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchSessionStartParams.json",
+      "bytes": 342,
+      "sha256": "e943029d7349f68e886a69d3ec8ac6b265cb648ea770e63025feb93f3f8a79b1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchSessionStartResponse.json",
+      "bytes": 128,
+      "sha256": "396bc50ae21f418bdded994321b54ca184c718521c2de0698b939adf75961670"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchSessionStopParams.json",
+      "bytes": 233,
+      "sha256": "0447e2835d8c7b6bba9b5c407164f8cb98c8febc20a8eccf6dacb4c48bfa527e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchSessionStopResponse.json",
+      "bytes": 127,
+      "sha256": "808dd79e9bb5e0463abc18d34c4a3c4ee2341199ba5ee924dd96e602988b7130"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchSessionUpdatedNotification.json",
+      "bytes": 1474,
+      "sha256": "7d5028b648196ce8aac7690f6ffe94bda49339f490f3581d50172a412f99f43c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchSessionUpdateParams.json",
+      "bytes": 293,
+      "sha256": "a17a15966c6c1affe95deaa1328fb52fab9cca60e8960d7cc5d88f928e5c9aae"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/FuzzyFileSearchSessionUpdateResponse.json",
+      "bytes": 129,
+      "sha256": "c3032906065fd9d513926088a685da71a645d104c0157887297f1db2ff166d46"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/JSONRPCError.json",
+      "bytes": 893,
+      "sha256": "05277af4e68caeabae353d1e643d60501c7f2bf2dcc97348e4cde4d0eba83eb4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/JSONRPCErrorError.json",
+      "bytes": 314,
+      "sha256": "39da0e7d4fccd44c7e0acd83ad1433c48a9bf64a3ba8f4cee7ebed18ebbbf533"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/JSONRPCMessage.json",
+      "bytes": 2888,
+      "sha256": "7b819754ee909272f46d45dbd51bc9eb7bab9861905ac1195f1fb5afd7ff5e83"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/JSONRPCNotification.json",
+      "bytes": 303,
+      "sha256": "a8f8bfca7128b6ffbba13905cba6af966f8598c12237b5cb189b81861cb24e92"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/JSONRPCRequest.json",
+      "bytes": 1093,
+      "sha256": "a174dbc58be007346f5a10fe2f8c8f8c14ccb36191dc1ad0fdd8ce1828f8db1c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/JSONRPCResponse.json",
+      "bytes": 520,
+      "sha256": "94ecf5e81bdbc2af858afad0044b95c7fb4decf77d7fd7d6321324dad79eef57"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/McpServerElicitationRequestParams.json",
+      "bytes": 13251,
+      "sha256": "12e180a344101863b73a3ba101d12ae14fff1b6eff679b7ccd0769cc22827261"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/McpServerElicitationRequestResponse.json",
+      "bytes": 741,
+      "sha256": "b9658ba208bfc7ecb3139c4d9742608f260e1583bd6cd11666dce289c975d670"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/PermissionsRequestApprovalParams.json",
+      "bytes": 7719,
+      "sha256": "f40bc002f08d8a5ca6da7849778c6f262a0fc6fccafa00b30f9fac231312b29e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/PermissionsRequestApprovalResponse.json",
+      "bytes": 7068,
+      "sha256": "e8669e089a78581a2f6c702dff906038032a6055c103c07870aa42c06b7fe3fb"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/RequestId.json",
+      "bytes": 197,
+      "sha256": "a33325d0eca49631bf935e9a30d02ba542b42d563f8c58955d3e8f14ad6d3ab1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ServerNotification.json",
+      "bytes": 174936,
+      "sha256": "89608a4d65d713a85940f8eefb9bf2e87a94cbf2abac3ed069fad7cb6f078872"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ServerRequest.json",
+      "bytes": 50496,
+      "sha256": "5abe765ff9bd94b88f2f2fb417025ec011eac172925ffdfc74d7ccf2542bc114"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ToolRequestUserInputParams.json",
+      "bytes": 1977,
+      "sha256": "21e569e32c05d51c1ee5e587730c182b911ede97a4df267f6e4ef24e1717f34e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/ToolRequestUserInputResponse.json",
+      "bytes": 793,
+      "sha256": "14ede53c2e51b289fb3c80903292d4b0f0b387eae217dbb257c201b2b7c65bf1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v1/InitializeParams.json",
+      "bytes": 1864,
+      "sha256": "4f576f99e285beb28f71f48a72b887c1f517dada86fee348fe2af0a35511de23"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v1/InitializeResponse.json",
+      "bytes": 1286,
+      "sha256": "86dcd236d0576a82c85b933586dc45731260eab1b6edb3447b03f790277322b1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AccountLoginCompletedNotification.json",
+      "bytes": 391,
+      "sha256": "c8de16ae68ab990cc93bea4a75b08079fff3b49978f5bf3ddafe84d578d1c635"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AccountRateLimitsUpdatedNotification.json",
+      "bytes": 4417,
+      "sha256": "0a0c7119b314862ad76a90e151c8fd9cfacc25b6a0df3ff8849d878187476b83"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AccountUpdatedNotification.json",
+      "bytes": 2440,
+      "sha256": "1ede9095191d53da628e38b93e7fb572692e603db9b7ee7cf8a72d29855d8ba0"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AgentMessageDeltaNotification.json",
+      "bytes": 406,
+      "sha256": "6446e05718f69c5bbbdb7da92997ffddbc307c13c1222581708f7e5ce1c9e924"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AppListUpdatedNotification.json",
+      "bytes": 5703,
+      "sha256": "e4ed4abf26aeaf5825579ce92091b867e7343ba5ab76f1250af8210640550e8c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AppsInstalledParams.json",
+      "bytes": 570,
+      "sha256": "544a45fbd2f64f4f87ff0f9d923815737266dc99e7b73d528899e140bcf68a09"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AppsInstalledResponse.json",
+      "bytes": 1343,
+      "sha256": "466ac83ea6e5a4d6176a1f2a4aa7b3ce9ab194cd147fb2f23cd057c91564716f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AppsListParams.json",
+      "bytes": 904,
+      "sha256": "8acf7e21e1e7bd61fbcab715c2ab53df45abb36c9f6b1f664b5c2910611b4ce8"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AppsListResponse.json",
+      "bytes": 5888,
+      "sha256": "f48e2b0ebc573d551c9a30d0983b324ecd25dfef62a2847c03aef368590d3238"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AppsReadParams.json",
+      "bytes": 645,
+      "sha256": "d264f6c7c038c4af99ef660fe34ffadd2ec9cbf2f65a4652047216f5a332aea4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/AppsReadResponse.json",
+      "bytes": 2443,
+      "sha256": "7975c40b36edc9a8502776f688eca178081403b82f58d17e2d1a07fced1bae90"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CancelLoginAccountParams.json",
+      "bytes": 221,
+      "sha256": "1e4c2930d9cdaf4a8b02facc54ca919629217ce6aa45bae65beab674861c60f4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CancelLoginAccountResponse.json",
+      "bytes": 404,
+      "sha256": "8691ac0cb3c82ec8df9f523ac8571cb99b00efa2d5531bcc13c6ef34bd7892d2"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CollaborationModeListParams.json",
+      "bytes": 188,
+      "sha256": "6ba00c6771e24e4afd1a2287ea0b68770bf262770139c9b8fa0f9ad7d414044b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CollaborationModeListResponse.json",
+      "bytes": 1682,
+      "sha256": "da6c41ee17ca27a6f4611ebe50a56278d7268041bc891d6abd675a2a8af560fc"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecOutputDeltaNotification.json",
+      "bytes": 1585,
+      "sha256": "ad1457966ba7e18f9a9cd6d0abcc0e2884685c6f369f13c35d90687e1e13cb37"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecParams.json",
+      "bytes": 7673,
+      "sha256": "d67efca42dd7671c3102b6bb67ca2cd28aad2767538e182a1d7014d1d4fdcc65"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecResizeParams.json",
+      "bytes": 1216,
+      "sha256": "08c3b6490caa9a76a39f3fbaab8255e13adfc228033b0a1ab01dbd60f3c7a54f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecResizeResponse.json",
+      "bytes": 188,
+      "sha256": "bc16449a418538843e3f8ec485ce19481ea066952c38764e34dd981eda0c776c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecResponse.json",
+      "bytes": 699,
+      "sha256": "0dbcacaa27d794d801e701513a8cfb9d247cf20624c9a05bb6231866ebeeecb8"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecTerminateParams.json",
+      "bytes": 404,
+      "sha256": "524a323fa2aece3c64325770d52fd18720adfa226bca93bedd59d827bdb7f74d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecTerminateResponse.json",
+      "bytes": 194,
+      "sha256": "7d59565735c556579512b9480aa8813de45d8bdfeaf9310a99ed59c13e04dab4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecutionOutputDeltaNotification.json",
+      "bytes": 416,
+      "sha256": "e9d233bc133d3fea6022fe7032cfeedad53d20d49da771a3fd3424603d6f0db1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecWriteParams.json",
+      "bytes": 716,
+      "sha256": "0e60400ac3332c1bd2aef10d49e2487b5a50c40d40ad9ebc2b2f59ccb18ca7b9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/CommandExecWriteResponse.json",
+      "bytes": 186,
+      "sha256": "0000c7901037e77c508002f290f693a09113cfcb4370ae6159a25a4c0be61815"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConfigBatchWriteParams.json",
+      "bytes": 1325,
+      "sha256": "2bd22c49e64b1dd0451e756c093f16bdc61cd533880bace5a33c62238fab38cd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConfigReadParams.json",
+      "bytes": 495,
+      "sha256": "9a51989dc089ac297037c6f1fdc65a73f9c8105837e93a998f173a80c7880172"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConfigReadResponse.json",
+      "bytes": 21726,
+      "sha256": "dc3402b3908b08eda6d09500b8425ca5168cf92d93842ad6fcda69d6d1fc634f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConfigRequirementsReadResponse.json",
+      "bytes": 16560,
+      "sha256": "69deab61a81ff8ed3c30909e1b8ba7f52085b665552c869dd6727ce42f01729b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConfigValueWriteParams.json",
+      "bytes": 763,
+      "sha256": "7e89f7018ff6c7cfb58b3bf16c133fc110bc0e0d9135b8e806ff64bb7ccefb1e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConfigWarningNotification.json",
+      "bytes": 1640,
+      "sha256": "19308411367d17251e97f213458216882bb44c3aa342662b6a545c0e1c836965"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConfigWriteResponse.json",
+      "bytes": 7913,
+      "sha256": "b21d63578d3ef4a0c11042c4387b139f281c0796299ec4639d78f27d46c8fc0d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConsumeAccountRateLimitResetCreditParams.json",
+      "bytes": 594,
+      "sha256": "873aabf31c21eb310e6a1447eff342d3d6d120388c5c51091768f6a8f7cdff70"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ConsumeAccountRateLimitResetCreditResponse.json",
+      "bytes": 1177,
+      "sha256": "1b4a2dba3ee75970a66195ce8355cccb99f3fe3489c726721463ae75c085ffe6"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ContextCompactedNotification.json",
+      "bytes": 362,
+      "sha256": "e0b92779009971631d385970cc0389d4f19e351466f84806df36c29f4b9d5ffd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/DeprecationNoticeNotification.json",
+      "bytes": 457,
+      "sha256": "f7a487fdbfdafb3b3a882a74aa41a99ff4f1d3a69389807b6f3318540f223684"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/EnvironmentAddParams.json",
+      "bytes": 546,
+      "sha256": "571900b9624efe3c7d34fc56078727690328efb28223fc3d194c30852e1494e1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/EnvironmentAddResponse.json",
+      "bytes": 115,
+      "sha256": "d3cc7b30fa2505d2e75322ce904574984c63bb0b809b691b6b075509b1c8c300"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/EnvironmentConnectionNotification.json",
+      "bytes": 306,
+      "sha256": "d403e6df7abff695e6308572c43f5add02448516d6cc12b33c406644b294d932"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/EnvironmentInfoParams.json",
+      "bytes": 230,
+      "sha256": "10bd3bc2ed4af753695e03913f22a99176b77a47ff8bc672815efd7bce2a2efb"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/EnvironmentInfoResponse.json",
+      "bytes": 1018,
+      "sha256": "2aeef2ed1f96dd89e27de54e9644d6a1674f9e4f21531848bedad96cab0b84a3"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/EnvironmentStatusParams.json",
+      "bytes": 376,
+      "sha256": "832ad6fdf202a6e177d1245b6ffb742c50d7462e76c861ca2525486e7db302da"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/EnvironmentStatusResponse.json",
+      "bytes": 2178,
+      "sha256": "054224b5698fcbd12b6370acd3560fc7f432534de4a2ff314bfc0ba7223e1b2f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ErrorNotification.json",
+      "bytes": 5424,
+      "sha256": "1ec871b02771300a26a34e41a7cfaf7484330a8c37c197d1ac133e753b083a09"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExperimentalFeatureEnablementSetParams.json",
+      "bytes": 509,
+      "sha256": "84d7424cdd02f857c6c8c699a9b2ce6b107163235ea076805e5e68c12e7d8283"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExperimentalFeatureEnablementSetResponse.json",
+      "bytes": 386,
+      "sha256": "806b13a0e11bb7840cc04b1b806eee98e9f7f1b3463cec320d075fade7e07b90"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExperimentalFeatureListParams.json",
+      "bytes": 827,
+      "sha256": "001f41456e219e483de64f8620ab05f2822cf44cf7d3e1ac39adb2f0ec039490"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExperimentalFeatureListResponse.json",
+      "bytes": 3066,
+      "sha256": "6b894c2a092dac26f4108f14152569277e1401e44b946c94f43cb55901f01cec"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigDetectParams.json",
+      "bytes": 1414,
+      "sha256": "b9f54243a979413ab2a5675fc1b02c2a4f35cb3c9fd8a18021cdacab668e20f1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigDetectResponse.json",
+      "bytes": 4438,
+      "sha256": "694736917b707c167c9f156bc20ad1c906af23048a794f6a2424000c94bbffb9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigImportCompletedNotification.json",
+      "bytes": 2800,
+      "sha256": "36257e083b265b0a84bd12d0beec077c30fcfa32b5c41505cb641c6f8d2aeca6"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigImportHistoriesReadResponse.json",
+      "bytes": 3665,
+      "sha256": "545f54da02ea992d2063d9518ddea977b90937ea9ab985680d76b07f232f9468"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigImportHistoryRecordParams.json",
+      "bytes": 2963,
+      "sha256": "dfa3afeb9a68f6bee834dc9b8288792f4fe4baa5e1396edbb4adab570696cea9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigImportHistoryRecordResponse.json",
+      "bytes": 245,
+      "sha256": "d1c3956b1f5384b71cf605134ddb6bf9e2eaf68ab4f685fc8edd5516e3e8c2e9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigImportParams.json",
+      "bytes": 5152,
+      "sha256": "ab36c7fc61b6b74fc524018ed67917de149de8376be1f39a9d23e82394431881"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigImportProgressNotification.json",
+      "bytes": 2799,
+      "sha256": "74e2967b77b3e9ca16737028b08ddb0e3a5d953955cc913c6668c7f3751d7179"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ExternalAgentConfigImportResponse.json",
+      "bytes": 232,
+      "sha256": "668d9cabd7ada5e0135e15df5d029d5ba642ccc6aae974c86dbfce11d3cfee04"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FeedbackUploadParams.json",
+      "bytes": 726,
+      "sha256": "e46898acf3bb3326c74ce2c6442b6ebcf052447db96c8f3d740edf901b7c265e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FeedbackUploadResponse.json",
+      "bytes": 221,
+      "sha256": "b643e47a774302f708ba6629f7571e9b9ace68abeb7516ab0123da9a497b7c4a"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FileChangeOutputDeltaNotification.json",
+      "bytes": 544,
+      "sha256": "c99f43238e156716f4982fc4393faeb7a9b5342ca63374fe215b9d99f2219e49"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FileChangePatchUpdatedNotification.json",
+      "bytes": 2159,
+      "sha256": "cdfef70e910f028b9afe11538e93c7f744142c819dded0028a4da4695a7f39c7"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsChangedNotification.json",
+      "bytes": 1061,
+      "sha256": "6b3bd3d000f41513d4d252fb792e5450b8f1ee60db14bb1385dd696d81273492"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsCopyParams.json",
+      "bytes": 1198,
+      "sha256": "3d5ad669c4a149a20033626432a915b885f5bc0c2dfdbb962be0960da073e9ff"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsCopyResponse.json",
+      "bytes": 162,
+      "sha256": "df42cb70d864ccae345cec48e7454234d7e904fdaee35c5dbba523d3251b159b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsCreateDirectoryParams.json",
+      "bytes": 1047,
+      "sha256": "a4d5f69f2536b74c9204fe3caf6b17731f380ed4b26c83cd245b74c453a0a6b4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsCreateDirectoryResponse.json",
+      "bytes": 184,
+      "sha256": "8ca90dc2b3f1e3923bbee1a1a582f3d6126a86562a5bf4506c403d11bfdea5dc"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsGetMetadataParams.json",
+      "bytes": 851,
+      "sha256": "27e0e3ad13a718a928de453c0dbb97928dd667c11be7858adcffafaa95ae7f45"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsGetMetadataResponse.json",
+      "bytes": 1005,
+      "sha256": "0b6c65e501e1572d4d6193a658d27c55f0f25475193286d5e673149dbd57ee73"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsReadDirectoryParams.json",
+      "bytes": 862,
+      "sha256": "1c80ce39ca0bc2b300ed3dcccf2a51493aa1d8d27f2d30dbb0b6ef99a4a0f904"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsReadDirectoryResponse.json",
+      "bytes": 1139,
+      "sha256": "9b7009479142b1ead2031b2df4c3effa50469efc30708db0aa3bdaba4d574137"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsReadFileParams.json",
+      "bytes": 844,
+      "sha256": "7378f2bb4ad8fe2e12fe63a4972299eb70ca258dd2c8f553aa0baf540f96f21b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsReadFileResponse.json",
+      "bytes": 354,
+      "sha256": "4e89ccdca494a9acce354225c21faab4e78a8e8685e198b4a9779ca0ab9aebb5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsRemoveParams.json",
+      "bytes": 1199,
+      "sha256": "0714e695dbaf7d5cb89622c49119023f702b52e87d0e4f8d81c089ff051b3714"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsRemoveResponse.json",
+      "bytes": 166,
+      "sha256": "df87770e3ae6d4816cfd6e291a892d87f64f599a9ba43167b162a4fa83e42a94"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsUnwatchParams.json",
+      "bytes": 368,
+      "sha256": "77c0d06e92deb217e94db5bc3fb49649c42a50e27d22c81cbf7bb7a80ea8c8ec"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsUnwatchResponse.json",
+      "bytes": 168,
+      "sha256": "d2243dffb042d67ccd8f96792d5740bc1339003f57e943445ef22b1e22f3692b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsWatchParams.json",
+      "bytes": 1042,
+      "sha256": "49a9690c22e1eaa996f7bbbeefa6a1778196ebc625afbfd7e451331f1975e79c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsWatchResponse.json",
+      "bytes": 864,
+      "sha256": "19b4f715108d7e5953200aa0c887138c20498e113a64c9b38863cee2e31c5e04"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsWriteFileParams.json",
+      "bytes": 970,
+      "sha256": "e85ab203c25b29e14ee210108326851433ea35817fc438475aeed40cf81e77f4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/FsWriteFileResponse.json",
+      "bytes": 172,
+      "sha256": "3a946ef3ac33632489f9df1826c9cca670b2dc70184225684372911d2a34a9bd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/GetAccountParams.json",
+      "bytes": 485,
+      "sha256": "d0dc3c0d428d37b1ec7887fa6b044244e6474578e1ff397c0872b2a6292073db"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/GetAccountRateLimitsResponse.json",
+      "bytes": 7144,
+      "sha256": "bf15356700a8533b6ca0e4688c7b70d0c8c35a37be8731d17ed6f1659fe6ad27"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/GetAccountResponse.json",
+      "bytes": 2284,
+      "sha256": "a8b27a203541460d6593723f646900e1df4417e0de43dfc36c485643810e1f1a"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/GetAccountTokenUsageResponse.json",
+      "bytes": 1589,
+      "sha256": "b4cb098e35c43a7e3b8c9211c3c1b12a79e5d89afdcf40304e6b777e25a8c74b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/GetWorkspaceMessagesResponse.json",
+      "bytes": 1565,
+      "sha256": "158650c7c3e8909cfb5a02a0bcc0ee765455fd33c212817b3ae64225c7873991"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/GuardianWarningNotification.json",
+      "bytes": 423,
+      "sha256": "6ef51562302dbe0878d3c31ce773675b061952518072b93b17a4637e7930579b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/HookCompletedNotification.json",
+      "bytes": 4247,
+      "sha256": "0808905096256aa064421dc699900f5c86539cbaf1a3133fdce799fa72b672bd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/HooksListParams.json",
+      "bytes": 311,
+      "sha256": "653408f1430a8b7844835d676c7be8e15e601fcb859818268af87306c6b822cb"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/HooksListResponse.json",
+      "bytes": 4533,
+      "sha256": "3d644de8179c9b7b26d0b70a57476f4cf2fc255e140db5e8173d7e41548434af"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/HookStartedNotification.json",
+      "bytes": 4245,
+      "sha256": "0e720d90c5550ef1ff328523f1cae47f79cdd728d861b1aa6dadf13a51b3f29a"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ItemCompletedNotification.json",
+      "bytes": 39802,
+      "sha256": "49ef255afe401aaeff455f99175532cbc5ff948f2055e5bde68792953a010252"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ItemGuardianApprovalReviewCompletedNotification.json",
+      "bytes": 15879,
+      "sha256": "6d3b6e3a86e77ecf11fa7e15bf3b446d22026def0c590ffc59d5791e16839131"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ItemGuardianApprovalReviewStartedNotification.json",
+      "bytes": 15381,
+      "sha256": "87445178c11927c8ecb98e6a38a5a4acd1ee5e0b6b4b3ff247636bd2fe34fabb"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ItemStartedNotification.json",
+      "bytes": 39794,
+      "sha256": "22cdd41e4120c507f7ef938636e66d1ded82f2488a7ec5a097a16fde896d18ab"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ListMcpServerStatusParams.json",
+      "bytes": 1030,
+      "sha256": "701916a7d444afbbc68aef9e72ab4e5c3111a8fd97560072e9b84713adf9ddc0"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ListMcpServerStatusResponse.json",
+      "bytes": 4876,
+      "sha256": "9f57363d187ee9581e88cc2fe8ed85e4b692353ae96b616689e934702442af4a"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/LoginAccountParams.json",
+      "bytes": 3518,
+      "sha256": "2fa026dc2c9109b5e6b75c51d80809573be7de3986f3486389429dd6694350d9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/LoginAccountResponse.json",
+      "bytes": 2521,
+      "sha256": "cc5cee5be0badb73e655e3e91e5353501546d17b7e7bfe0fbff9aefe73466ad9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/LogoutAccountResponse.json",
+      "bytes": 114,
+      "sha256": "ac14ddfca2ec6092b0039be8720262d5a9930484d23e62544d2ef0b7e1db7926"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MarketplaceAddParams.json",
+      "bytes": 431,
+      "sha256": "0010e544bcaf05835264d30d9c51f8753ff6d0600078923bc7895d375b56de09"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MarketplaceAddResponse.json",
+      "bytes": 865,
+      "sha256": "016e57c26a6f4cb6eeb853c877dd613921f8affe05cc49ff6ac80563f3d37665"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MarketplaceRemoveParams.json",
+      "bytes": 236,
+      "sha256": "62683dd94b7f04cb0ff9139f0fd65a4054c550e1365276fc4cba689fca53d0a2"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MarketplaceRemoveResponse.json",
+      "bytes": 869,
+      "sha256": "dd80fbf34262773465cf667a1b29ee147dafcf717ad0b4056c4f65f45baae223"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MarketplaceUpgradeParams.json",
+      "bytes": 228,
+      "sha256": "8b422d89afa78a06648a3f6e755b6d1205aa389adebe074c7a1ce9f7dac772a9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MarketplaceUpgradeResponse.json",
+      "bytes": 1348,
+      "sha256": "f1cadefec92a2538c7fa8fe15d3fb60b5d76d1bdd39da1119d899f3933d1654f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpResourceReadParams.json",
+      "bytes": 352,
+      "sha256": "1b08de843ea1d95b58c5823d7f74d17d6434c7cbc29cba32b605ea3cd67d60dd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpResourceReadResponse.json",
+      "bytes": 1482,
+      "sha256": "afc28bec6078e86f4c3abd08bb4b07faeda47a6b95d0271f32af8d293c28f648"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpServerOauthLoginCompletedNotification.json",
+      "bytes": 455,
+      "sha256": "917f416509d0a48d67ccc014cd30a6c7d21a5656ded1011af11206266171cba6"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpServerOauthLoginParams.json",
+      "bytes": 539,
+      "sha256": "d811d68d681d0310d71697d58ca8c65b0f2e36e856aacd510ce7f88bd2781998"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpServerOauthLoginResponse.json",
+      "bytes": 242,
+      "sha256": "7a8369f66ca874851a82752b4d6579763cc1ffb44bdf1a37268ee15ab4eadc6b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpServerRefreshResponse.json",
+      "bytes": 117,
+      "sha256": "54a77812db02175dc69053870e582d3b314af6f161f0c76846f3563b0f9487c4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpServerStatusUpdatedNotification.json",
+      "bytes": 973,
+      "sha256": "bfd84af7be62e5f4093a904e2e290f924eb8639119557c01a34b98a1c4680be2"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpServerToolCallParams.json",
+      "bytes": 380,
+      "sha256": "35fa0fddcdee23ceb24a39b1e6de62d1594b804b453dda66cc522005393f6477"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpServerToolCallResponse.json",
+      "bytes": 374,
+      "sha256": "83d100ccf933b4a1ce657bc7532a79c783dcde8b4d059a2f2cc985d51538ad88"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/McpToolCallProgressNotification.json",
+      "bytes": 412,
+      "sha256": "53db836cfa93fecef8968d3b750b936a679d5befed987c72ad6f0bc6e327f60f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MemoryResetResponse.json",
+      "bytes": 112,
+      "sha256": "e73baacf6ef4858e859079d060e405c3ee5a58881db6e4e9cb46a7ea439404b3"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MockExperimentalMethodParams.json",
+      "bytes": 271,
+      "sha256": "897f7a0c417321541612bf0426797395454c3819b2919443545a83c0e1512a39"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/MockExperimentalMethodResponse.json",
+      "bytes": 275,
+      "sha256": "45dbeb73eccf8bf9d7620554238c39a5026163e9728e437bba485cc4c2f66c95"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ModelListParams.json",
+      "bytes": 688,
+      "sha256": "10ac5c0cb8ddbe840527c8eb8053dc4ced32ea3efdfb200283cadc43447f9073"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ModelListResponse.json",
+      "bytes": 5115,
+      "sha256": "6e5e52922a2cd66123b074ac0ef197557a151120db815b3a6ca8402da5aec7a0"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ModelProviderCapabilitiesReadParams.json",
+      "bytes": 128,
+      "sha256": "9db732188a15476cabb42cf05e495ae0803a1ada993fca7348c21c30a998388d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ModelProviderCapabilitiesReadResponse.json",
+      "bytes": 395,
+      "sha256": "e5e93e7d50e0f7c2c640ffe4d53107b97e36943680504184932fcfab4c132e71"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ModelReroutedNotification.json",
+      "bytes": 636,
+      "sha256": "56fafba427da6c01ac5b27be97386edcede595ae2ee83273ade01ef9931c6ff4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ModelSafetyBufferingUpdatedNotification.json",
+      "bytes": 746,
+      "sha256": "b4e77abcee6de1c88b3e2408240f0376ba34da81d1ee2183499b8bd13e785c65"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ModelVerificationNotification.json",
+      "bytes": 574,
+      "sha256": "6f099d71955d14b8b48083c7dea35f55da3f09a6a5290acbe9374d74a3fa80fd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/NullableRemoteControlDisableParams.json",
+      "bytes": 410,
+      "sha256": "f14d17869816391212ae1352b100f4d2ba44a9c36b94dae5f4d0ef0067ff6d43"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/NullableRemoteControlEnableParams.json",
+      "bytes": 407,
+      "sha256": "aab4f8528f0abadb2fa384f9377c5f749ebe93b455c14511c86a738889cc72f9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PermissionProfileListParams.json",
+      "bytes": 667,
+      "sha256": "10d5550ceb091060105e0615ad10462917044bceda09f4c0816fe0eec12c5aa1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PermissionProfileListResponse.json",
+      "bytes": 1174,
+      "sha256": "c4ccf5f00f326e13a0886ccde89bad06dc961e118e26229289a6ced166018808"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PlanDeltaNotification.json",
+      "bytes": 565,
+      "sha256": "200327ed4d6f14c0f39dee5b57b7275559bea7a5db3815c4151c0e35dfac8a4c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginInstalledParams.json",
+      "bytes": 1174,
+      "sha256": "9cef9342214956f0df8a5087e2bb2aec0fdea72f841b56ad96dc2bfa51160c51"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginInstalledResponse.json",
+      "bytes": 14565,
+      "sha256": "c925d06682cd472e766e0bb569db31ed17cebead45402d14a8115422969fda21"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginInstallParams.json",
+      "bytes": 950,
+      "sha256": "25cb92881ca3cb8ac26c4604357c11365cbdeb00767dd3227b15a109bf904a30"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginInstallResponse.json",
+      "bytes": 1190,
+      "sha256": "92aed7fa5993040d7d2430c7c3b38795ddde5de0626e468d7a0801bb7d7426ed"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginListParams.json",
+      "bytes": 1629,
+      "sha256": "4dc2f486c40d2e65183b49d58b3fbe6e83e096d37acf2ec65b5ace70ca74e75f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginListResponse.json",
+      "bytes": 14688,
+      "sha256": "4c8053e27c331722d460a91335addc4acec5de5a9b3e1a2aaf800d58595ccc97"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginReadParams.json",
+      "bytes": 947,
+      "sha256": "df191e956fb0905d4133ec1436962d786b6d3a02ac98d7f856827d4ed6018af6"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginReadResponse.json",
+      "bytes": 22501,
+      "sha256": "daaf5615ed6f53a1f2cf565daff5faeea843b3f3f4053963377315408efaaf45"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareCheckoutParams.json",
+      "bytes": 236,
+      "sha256": "6dcf85fefecee8ccfa9349115c3cb63f27b110c30f76e2afe5b6c59819f16c94"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareCheckoutResponse.json",
+      "bytes": 1187,
+      "sha256": "4ae360ca0bf382cfe88e8baca70a7b5e700a3d9414cb3925c44812de1430997c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareDeleteParams.json",
+      "bytes": 234,
+      "sha256": "a106ba3c2731c9733e83d2afa16bfeff29bde9c9b6c7589a9126aa61d34f291c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareDeleteResponse.json",
+      "bytes": 118,
+      "sha256": "ae881a7f898f5287354de5adf6f42094cef9029a9b9376bfd12aa1b0fe0b3106"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareListParams.json",
+      "bytes": 114,
+      "sha256": "0d71280d2a655ffc26375044ec1693203848614f99fdb4563e0cb5a4ee40122b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareListResponse.json",
+      "bytes": 13363,
+      "sha256": "f09df27da985766097dd9b9d307124e6185b56b3ee026e9f21dfa2e757aaa998"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareSaveParams.json",
+      "bytes": 1974,
+      "sha256": "e7f71b6333a5067a143305fb0acd0ba6babc3ed5578bde5a6bed896aefb801f9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareSaveResponse.json",
+      "bytes": 417,
+      "sha256": "b38b6ebd7a4c954ab1ee251ad3154db27d1e56d3d78c861e21471184c9cce80e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareUpdateTargetsParams.json",
+      "bytes": 1369,
+      "sha256": "8c837cdf68d77d5a1131b6319d76c3bf1d637e3c3d28fcbb708ea3db272d853d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginShareUpdateTargetsResponse.json",
+      "bytes": 1380,
+      "sha256": "233b8d8f34eef31d0ee5dc86110028651e9e74e899332204c0871c8f8820cbe5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginSkillReadParams.json",
+      "bytes": 388,
+      "sha256": "7496330dfdf494d658f5dc6998fef1fc30d312616f036b08cf11d61fce23a20b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginSkillReadResponse.json",
+      "bytes": 220,
+      "sha256": "ec7edbbcc67ee6d4d5fcc707d152b9ebb3b1e8fe3e27bee035094a2b806bc600"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginUninstallParams.json",
+      "bytes": 220,
+      "sha256": "15de77dd5ab132305fa57299c41ea911a0ca22c4ca960be5bb5506378ae5d291"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/PluginUninstallResponse.json",
+      "bytes": 116,
+      "sha256": "f6a0c9c8dfd9e3fc4a535ecfa606f12922c09e469a37d6b1c6e189f45cacb89e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessExitedNotification.json",
+      "bytes": 1419,
+      "sha256": "32bc785470cf22ed93f50d508b96061b557feaf824ca3fd9f27ddd40b13581ef"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessKillParams.json",
+      "bytes": 388,
+      "sha256": "650ae3d14a2ff1959c5552f0eb73d2f6a1dadc8b3531b909c8e60feabb0a33ea"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessKillResponse.json",
+      "bytes": 175,
+      "sha256": "aee2b38f18d889760d3f38ffa267ad279d1d9e0f02b9d4cd0aa3a56bc6dee8fe"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessOutputDeltaNotification.json",
+      "bytes": 1436,
+      "sha256": "71d9279da816715d741e1b315cde8737ca7016d0827b552e796a481d2eb70cb8"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessResizePtyParams.json",
+      "bytes": 1201,
+      "sha256": "636505d955e58692fbc2fec56977d96bc4e5b179c916ce1d290589db74cf9024"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessResizePtyResponse.json",
+      "bytes": 185,
+      "sha256": "2d9206595f67a474426cab80c23ded757f5511ecbe3172af135652f8a92e3dd5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessSpawnParams.json",
+      "bytes": 3904,
+      "sha256": "727b5b8bc5e21cee0d0b54bd28d55e421b4104dfee0dfdc86b4ed697f02f35d4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessSpawnResponse.json",
+      "bytes": 174,
+      "sha256": "70f15eba9eb6c1602e9bfd633c3983e5cdc88ede33137200585b98224781076d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessWriteStdinParams.json",
+      "bytes": 710,
+      "sha256": "f96a3155d26fbbf3350b781d20f069918b9f2ad6d3e995bea1bec7e057f2b2c9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ProcessWriteStdinResponse.json",
+      "bytes": 187,
+      "sha256": "19b947113ed4388fd26c04d464b25fc27ee840768d8b02f10be76941efbb8fea"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RawResponseCompletedNotification.json",
+      "bytes": 1525,
+      "sha256": "d330286f1d9abc273837091a9a4e7b4b2454721f4f3bc3a01386c2145105b4e7"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RawResponseItemCompletedNotification.json",
+      "bytes": 30848,
+      "sha256": "7516d207801fa58619274e2fd16d0c575b10c260fdf1f105a00b4ff82fa0e33f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ReasoningSummaryPartAddedNotification.json",
+      "bytes": 454,
+      "sha256": "5cc137e90e8d51d703a671578245d2d983f6fe063d113e8f6c6af0279011253c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ReasoningSummaryTextDeltaNotification.json",
+      "bytes": 512,
+      "sha256": "7bd24d5d1cad5b09f6d3fe7a40de6a2d0c3218678bad6199e704c4696597325b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ReasoningTextDeltaNotification.json",
+      "bytes": 505,
+      "sha256": "e2e7aea35c4d95b4ad8eeafe15629113f69ebfc2be085cd4316ae02871b5b110"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlClientsListParams.json",
+      "bytes": 771,
+      "sha256": "8412ac190ee2d522f903181befa712e9beeebda18b9fe1005144443314191f97"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlClientsListResponse.json",
+      "bytes": 1389,
+      "sha256": "e66766d2acd5f2938b19ebbe197b586c424f98a9e65cfb4f972a349522b3c760"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlClientsRevokeParams.json",
+      "bytes": 305,
+      "sha256": "5afe31ce5c39b72295a871d66c3931a2df3efbc25b3c65a1721ff1d4485f40f6"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlClientsRevokeResponse.json",
+      "bytes": 127,
+      "sha256": "66968cc1d1a9e2ec01168b459bac90ebe8e58f14755d3b14fb2dc5ab02e3ed65"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlDisableResponse.json",
+      "bytes": 689,
+      "sha256": "1ed6e273f6ba492ce43c7c28e78e942ed7de4d500d0bf5de4a04ed0cda5d4a08"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlEnableResponse.json",
+      "bytes": 688,
+      "sha256": "e2d62f0924ea72eb8995ad89f3d81b2c12e90260ef9e31c3a994ab2ad0dd337e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlPairingStartParams.json",
+      "bytes": 197,
+      "sha256": "792e75fa44ed16715386e03315bed0c672ebd2b3213cf68c977043ec104494c5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlPairingStartResponse.json",
+      "bytes": 495,
+      "sha256": "506a80739435c78ffb94d747a03a4e2a6fb7fb696ad2323b65137343066710f4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlPairingStatusParams.json",
+      "bytes": 323,
+      "sha256": "1169aa2e5e6ae5074aedd82503bbc1f3cf4fb53532ffca2386c8df955cc72589"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlPairingStatusResponse.json",
+      "bytes": 232,
+      "sha256": "c4e52335e0fb2e5eceb600d09f6490d9963a1be23fb7bc495a8b028b0cd47dce"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlStatusChangedNotification.json",
+      "bytes": 800,
+      "sha256": "a091c7b37eca746e09e9dc714883807f58c6ce48a13e5c7badd67c103a880ca2"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/RemoteControlStatusReadResponse.json",
+      "bytes": 692,
+      "sha256": "3ab19779d0707db82811f6758391f7b5c15d9cb398aea28fd8ea06eb4aa2ca46"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ReviewStartParams.json",
+      "bytes": 3200,
+      "sha256": "2b0e0ec6d41e91e155339a646a1f1124146e879d40ada6a02e374736129c1497"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ReviewStartResponse.json",
+      "bytes": 47345,
+      "sha256": "20a87ac408e75f6d57f4ef96a0d2b73b972cfdd125cea06d00b02f12799d96b4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SendAddCreditsNudgeEmailParams.json",
+      "bytes": 420,
+      "sha256": "e69a23583e5decc5e9688413c1db8efac775d067e6714fc9211cffdea7c6be8b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SendAddCreditsNudgeEmailResponse.json",
+      "bytes": 417,
+      "sha256": "7c5fcdd7a08408b41f1d2d04761bc3e60ec1d8010e63a612cc42efaff968c26d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ServerRequestResolvedNotification.json",
+      "bytes": 514,
+      "sha256": "7cc32a834be009c7a45dda01b80ae01bb522c642eb0e886c6d4bd7ee89fde643"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SkillsChangedNotification.json",
+      "bytes": 341,
+      "sha256": "d9d3bda6c7fa1ed2bafc2a6145676760972c0220dee6b1d7229f82a25297a1f3"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SkillsConfigWriteParams.json",
+      "bytes": 1011,
+      "sha256": "24c9645b4f09b3d4d6ed8a18dda989717959e200eb3a70cd455a97e0c3754ca1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SkillsConfigWriteResponse.json",
+      "bytes": 241,
+      "sha256": "fe29c58a71cb9ab1048602970bcbe8059facab90879fdf7607d3c3158f21ee34"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SkillsExtraRootsSetParams.json",
+      "bytes": 761,
+      "sha256": "4e5f1864e142df3db1c607b60279b3214e41a4c5bd13c81211cb8a580107ca65"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SkillsExtraRootsSetResponse.json",
+      "bytes": 120,
+      "sha256": "b659ec17a196eaa3a23273a3e2d5596460ea329bc3ade249971576bc723d9e96"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SkillsListParams.json",
+      "bytes": 453,
+      "sha256": "a942aa92e6da4cf8a76d6b99cbdaf6672864e6ff955f44a6d469f0363afd3bf2"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/SkillsListResponse.json",
+      "bytes": 5102,
+      "sha256": "add42df02ac991fc8f0fa4bd61915ff6f6783ecaec55db130e480e844f60c9f1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TerminalInteractionNotification.json",
+      "bytes": 474,
+      "sha256": "fc4d4d076e3fe220108ce2f606a29148ab2e87ca7300de00a469656e424c234b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadApproveGuardianDeniedActionParams.json",
+      "bytes": 360,
+      "sha256": "d544a1253790a2b29d6de8cbce3065d6a238518e3af8d964cfd8a2b18eecd99e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadApproveGuardianDeniedActionResponse.json",
+      "bytes": 134,
+      "sha256": "628336c7cdabd508d5202695502bb0f9ce42fdde380f5efdd4b033cf215d93e5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadArchivedNotification.json",
+      "bytes": 225,
+      "sha256": "3a166dd21245bf260f16d2fd55da81ba57d9143c629881fba32638b53351c18d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadArchiveParams.json",
+      "bytes": 218,
+      "sha256": "c02dd30ee0f272ec74c36f1e5cd44a5d9a4f0ceb5ba089b26a758e1375a320ca"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadArchiveResponse.json",
+      "bytes": 114,
+      "sha256": "2e021dabd0930ae3e2beb68cd0ddbafc40fc20cfbf8dbcb5e2f9c0493d06a08c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadBackgroundTerminalsCleanParams.json",
+      "bytes": 235,
+      "sha256": "5475f5cbe6dd3876cb723617f2524a0036bb4d8f372ed69c304b83d45c3d26ed"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadBackgroundTerminalsCleanResponse.json",
+      "bytes": 131,
+      "sha256": "a594a65b4eb1ddf4613e868e382d7cda24daaa09b86de919fbece99e75b55478"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadBackgroundTerminalsListParams.json",
+      "bytes": 564,
+      "sha256": "6fd23ab6bd5993db0034bfd685828725fbf6d71a3913d016c3cd70917a989e9d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadBackgroundTerminalsListResponse.json",
+      "bytes": 1903,
+      "sha256": "c25f13286c1a59c3e96dcef04934816062b39549d1e4cd1b5b44bf88a41a5f6d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadBackgroundTerminalsTerminateParams.json",
+      "bytes": 305,
+      "sha256": "e6b8f77f552ce3d5c8a1650a304517fe1ab5c7900e0a439a0bf1b07713bba020"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadBackgroundTerminalsTerminateResponse.json",
+      "bytes": 246,
+      "sha256": "ade19a3b1715e3da9c88043e454556c7d998562fac7e30685b0c5a8e39954950"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadClosedNotification.json",
+      "bytes": 223,
+      "sha256": "d9978b8a5450dc6ba01cac5ae6641493aa60c558340a718722a78eda990048c8"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadCompactStartParams.json",
+      "bytes": 223,
+      "sha256": "a7c4395f60bddd38c953cb9508a05d2082790da7b3eb4ef7e4fb66cf15b92227"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadCompactStartResponse.json",
+      "bytes": 119,
+      "sha256": "74674e47f33e37d7d97d144eac1789ef0580a1fc12d45a5675bb97caa08d803a"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadDecrementElicitationParams.json",
+      "bytes": 390,
+      "sha256": "b5febb9fcfa35ad84e34ac03c14eba93686c66ff11ccc9deeb6a481fea83af26"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadDecrementElicitationResponse.json",
+      "bytes": 558,
+      "sha256": "d3f90a3ac7a4200913f9e5b27193fb2b6868ec56fb2e54e84c2813765f8047d7"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadDeletedNotification.json",
+      "bytes": 224,
+      "sha256": "f9706a810ea40567dbcf59b1d926059fa9b13b7f2d85a97e1dcb388ee0a2edc5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadDeleteParams.json",
+      "bytes": 217,
+      "sha256": "b0c68afa98bf529010fe643da11db29a8a0a2f2963c8e7a25831f8612f98297d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadDeleteResponse.json",
+      "bytes": 113,
+      "sha256": "333c0c5df96d78d1bcbdb19b57ddfa941de9a02bdae1c29d13c5311c2cdf6527"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadForkParams.json",
+      "bytes": 6457,
+      "sha256": "80e4e29857a23617cbb59b30ef4ed3c4c51eadda3787d3c5de8b136a866a5b37"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadForkResponse.json",
+      "bytes": 66092,
+      "sha256": "960afd711e40bc47292cc424141d71675f2567464e30a86c2bf534711dfc2a81"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadGoalClearedNotification.json",
+      "bytes": 228,
+      "sha256": "58b6a04cae193932eb9e02858dfed26469d8d7b0a648cf3ee1a8ad0adc1ff515"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadGoalClearParams.json",
+      "bytes": 220,
+      "sha256": "3283dabc2860c3abdb59a73061aaf290b486bff3afdf9c46cdeccceeb0f0fa3c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadGoalClearResponse.json",
+      "bytes": 221,
+      "sha256": "2f8ca66feaaaec3d3d0144ce23c65702c764ba92c4820dd3a6b84f7635c1655f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadGoalGetParams.json",
+      "bytes": 218,
+      "sha256": "619172ae68da00476e628c515f44c212af2d913af77066266e5347809eb19023"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadGoalGetResponse.json",
+      "bytes": 1491,
+      "sha256": "8bf8015d45a3dbf02ffd02a90c524aabe2916334bea435e59fad0498d64c4845"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadGoalSetParams.json",
+      "bytes": 804,
+      "sha256": "6216508b6a7ba9640be7861b2fb14e8719100468ea906fc65dd882701cb86423"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadGoalSetResponse.json",
+      "bytes": 1428,
+      "sha256": "be5a571f10afdae3ad5a61db0891fa8a66001c1d5ab618163a131efa461061ac"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadGoalUpdatedNotification.json",
+      "bytes": 1580,
+      "sha256": "bbecea6da1be75429c5c1dffd1a8307223ae97d861a96cb66af6ae34d901140d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadIncrementElicitationParams.json",
+      "bytes": 390,
+      "sha256": "1a9a8e2767e05d173be9c65789256401670138f952e9a58c09afd4eedb31ee69"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadIncrementElicitationResponse.json",
+      "bytes": 553,
+      "sha256": "68cc77bb61390099b32393ba92fce1c8cef943927004d951d7afb46c233e40ee"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadInjectItemsParams.json",
+      "bytes": 397,
+      "sha256": "c2a14a9d3d66e54e1672b440824676a8292200a39ea765615cbfa98b07862fb0"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadInjectItemsResponse.json",
+      "bytes": 118,
+      "sha256": "93d909e5b49b44da02072d340f8ad0ecd417d448ccf27fe50be7e369c7864159"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadItemsListParams.json",
+      "bytes": 1138,
+      "sha256": "d4e66547987050b568356b9dee560a7febcf34162adfae9e1c2d8b760eb04ea7"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadItemsListResponse.json",
+      "bytes": 40340,
+      "sha256": "560e570076c1cae4c3865283dad86fe69c6bdd4ae5f912b6ff5c4c97ce69c77c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadListParams.json",
+      "bytes": 4003,
+      "sha256": "ccc09fa6d5d89fa76afd474f6d7ef8cf14edbe0e037d8a52aebf5bd14f435c5b"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadListResponse.json",
+      "bytes": 58841,
+      "sha256": "0c12f87cf3ab2c5fed95152a1e36873e6e56dadae39f46096267371ad65d1321"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadLoadedListParams.json",
+      "bytes": 489,
+      "sha256": "f1c2e4944f64ea6361dc4681f948d0c6fe2e79304ae2eb36ddac06a3258d3885"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadLoadedListResponse.json",
+      "bytes": 565,
+      "sha256": "681bacf8a22e64427f2de8b67a2d3dba925e68f35ca5556a96a4c9fbc8eca85c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadMemoryModeSetParams.json",
+      "bytes": 446,
+      "sha256": "6f111a7162403edcfe7dcef55ccd8f27a07eb546d5cef9a8b240d43c640b2ff9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadMemoryModeSetResponse.json",
+      "bytes": 120,
+      "sha256": "908b6eadcd2909936ff1a44152721baee9400f8bebd4ea99dc613551824236d9"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadMetadataUpdateParams.json",
+      "bytes": 1651,
+      "sha256": "2d59584e7a08a7e66635a1d72913afffa67346e4cfa2715b8a649466e8aefa92"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadMetadataUpdateResponse.json",
+      "bytes": 58187,
+      "sha256": "502b09e53b28b4f9d1bd60625ab2f487cdc7c9953de3461bf37c06b0c45ef7a2"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadNameUpdatedNotification.json",
+      "bytes": 312,
+      "sha256": "7cd55307c0343508b226b9fe87cb7af09711fb438cdeb5eb440cf37a5d2f5000"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadReadParams.json",
+      "bytes": 355,
+      "sha256": "db97080f82facc3259dbb9404e9f0df81e360619f4cd73983a9d99d25f5089ee"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadReadResponse.json",
+      "bytes": 58177,
+      "sha256": "605e850635bd834685f5f22910ed344f30a674cd8ed88e03b979afcf42404263"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeAppendAudioParams.json",
+      "bytes": 1239,
+      "sha256": "8ccd8d35542f7e2f072858218a32bc778d1508e908ef39d95db4e57a98d7a6c4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeAppendAudioResponse.json",
+      "bytes": 206,
+      "sha256": "86434d068b2ea826e5a33752c2e8f34f8c67a6bb47789853b9559bc9387bcb0e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeAppendSpeechParams.json",
+      "bytes": 364,
+      "sha256": "db59f50091650886c1f4c5163a50246d6c32e8670137406326a9932dd00fabbc"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeAppendSpeechResponse.json",
+      "bytes": 202,
+      "sha256": "0272c5aa260c89e98a4f9087b90767fb51a8d0289ebe465e42f7c292ad5f073d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeAppendTextParams.json",
+      "bytes": 669,
+      "sha256": "936a8d258f94f5453ad7c2f6df5a12d92d94722506a90600729a5486ce2ad385"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeAppendTextResponse.json",
+      "bytes": 204,
+      "sha256": "bd66a378a3d71e981cdd7df114693858a6f7443598232017759d4fd5c2e8a659"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeClosedNotification.json",
+      "bytes": 393,
+      "sha256": "d02cde1cf11584913474e80576175d448be81553b445769540728879c147be43"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeErrorNotification.json",
+      "bytes": 377,
+      "sha256": "56a748c0a4b092a4ca065ffb48ff94e5d7bf07a73ef5b0494e61750f718a68ec"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeItemAddedNotification.json",
+      "bytes": 358,
+      "sha256": "58b1962daa93465e0ceb6a901b94fecabd4345e59329ebd830367b9293d150f6"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeListVoicesParams.json",
+      "bytes": 200,
+      "sha256": "7e5983596df05fd4b88b87ac3374c4159f249fe60d30e7369709de79d905c945"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeListVoicesResponse.json",
+      "bytes": 1382,
+      "sha256": "3dbf0f7a54101d7a90b719bcbfca5cd61d575d7d1ecfa436ceeb67815f4e6c1f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeOutputAudioDeltaNotification.json",
+      "bytes": 1261,
+      "sha256": "688b323b533e78befa8b61a24e5ce9363c722048ea8e2903d0115e289f27417d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeSdpNotification.json",
+      "bytes": 376,
+      "sha256": "c6650c43b28006844897466905ea24e58fa4021a76cdb0dcd46b88547507b049"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeStartedNotification.json",
+      "bytes": 661,
+      "sha256": "b06208b7ec821b3daf1d26ebccec14ad1f91558c94325d74de836bf45d6ff852"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeStartParams.json",
+      "bytes": 6513,
+      "sha256": "5d40cd48db5d6d8b0bdf29c43460974816a39ce03f96517c82b7eadd7b480734"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeStartResponse.json",
+      "bytes": 194,
+      "sha256": "efc1c1753655aee0e853b40412365a2c98169cefeecc47473125d5e02f33cbc1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeStopParams.json",
+      "bytes": 280,
+      "sha256": "9b911cf688b83a991d1fa5d874ce952e8643b1c9f494fb804444fd614525b880"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeStopResponse.json",
+      "bytes": 193,
+      "sha256": "301a3836f34ee8852aed5b6d4c844e4631b9fa131ee5894ec811d1c3b9c0c77d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeTranscriptDeltaNotification.json",
+      "bytes": 533,
+      "sha256": "c117b16578c2712397a37f2604e2ea393de2e31af135f4c4ab639ff275217ed5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRealtimeTranscriptDoneNotification.json",
+      "bytes": 528,
+      "sha256": "a242b3528f8fae45830c9b1ff65037bd240a327c5f7b2212fd42b3819c02d4ca"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadResumeParams.json",
+      "bytes": 38832,
+      "sha256": "2e1d4b62bc09b46ebc54ef9f84fcdd6ca8d37cabb98dedc34b49761ee764c84d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadResumeResponse.json",
+      "bytes": 67513,
+      "sha256": "a45d7f2456df5e173bb54e762ac8efe475ff69a77b5a6f9035fb6a20bc8d2363"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRollbackParams.json",
+      "bytes": 667,
+      "sha256": "27a2e5c31d48fa682a40b17a5abfef82428ed3a08cb265daff4b214956f63ba6"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadRollbackResponse.json",
+      "bytes": 58508,
+      "sha256": "c5fab406d366e74ed17bbe4806835099c7c51b65c17934e0f1ef3a27cd18eba5"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSearchOccurrencesParams.json",
+      "bytes": 886,
+      "sha256": "a031ec85963bdcbd2bbbcaafb2803b61edb62e5d8dd028a6a00899ce177fb94d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSearchOccurrencesResponse.json",
+      "bytes": 2040,
+      "sha256": "01d01e601f81cb6b667fadcc3c633f463f34b91127fa0ee59cbe157a9ae5a0b7"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSearchParams.json",
+      "bytes": 2302,
+      "sha256": "174f43388557b171d2d7a8fdb83a94d99e1261b9950d943bd60ef1af5290d79d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSearchResponse.json",
+      "bytes": 59139,
+      "sha256": "6de16955b723b6c289dee496207d47f5d4a9890b9eb5655e053c927a00ef9ac4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSetNameParams.json",
+      "bytes": 274,
+      "sha256": "ff608965de4fcfb7241dd0afead85af3b71a5d116cb7900a0839239c1fa7ed9f"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSetNameResponse.json",
+      "bytes": 114,
+      "sha256": "f8763716433feea94f7c1ebd59b6cea4c261432e83240c13a8d49ba8185aa567"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSettingsUpdatedNotification.json",
+      "bytes": 10618,
+      "sha256": "b39575d00522f1974969a6056380e54261fcf6eabd8f398df63ebee595e4254e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSettingsUpdateParams.json",
+      "bytes": 10691,
+      "sha256": "4cd2d740ab9251fcc9590b8aa639ec475f79a98c59fd45cfbcd70dbc7a4476ac"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadSettingsUpdateResponse.json",
+      "bytes": 121,
+      "sha256": "adb6c5232ff2474b61ac1811c9fe0faf8beae7f629c9bb2182190679d82bf0b1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadShellCommandParams.json",
+      "bytes": 567,
+      "sha256": "f6eab1894a695d5415727ca68477d0bf3e428fc96a8cb6e80482fe5ba0fd2124"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadShellCommandResponse.json",
+      "bytes": 119,
+      "sha256": "fd4911613f6a6da2ca13b75342501d4d61f64e00a1083c6d60038369b8caeefe"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadStartedNotification.json",
+      "bytes": 58184,
+      "sha256": "1f0ae4f8617012bdd16683c89b5b95296a1fa148a86ba0a13251a693fd7604c4"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadStartParams.json",
+      "bytes": 12725,
+      "sha256": "b3685411ceb8ad264a1920e8facd66301e5280948ef9c2a6871b95d4c19da639"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadStartResponse.json",
+      "bytes": 66093,
+      "sha256": "c2899f35029734ed42c3d3b02b6077f0bebaf7724cbc655aead83bb1aa2adadf"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadStatusChangedNotification.json",
+      "bytes": 2207,
+      "sha256": "146af6d3702c4f3c844bd10b6b6b3e2b872e958a8d7d822157c19aaa6dc085f6"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadTokenUsageUpdatedNotification.json",
+      "bytes": 1727,
+      "sha256": "a30830510723d95793880f2a629472f0142c3df936799e24c8c92afde8e24402"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadTurnsListParams.json",
+      "bytes": 1889,
+      "sha256": "37df0285a84103220306e5750173d1dcf846d5475684752c0a1252501dd9784e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadTurnsListResponse.json",
+      "bytes": 47710,
+      "sha256": "340b27d87631f383677f65f7c3ef2aac4fdcee9ce16c9de500d67a9efa7c4e59"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadUnarchivedNotification.json",
+      "bytes": 227,
+      "sha256": "ef4344864ff316d1749ae947368c1e617cf8825e5c8af8a828167ef991299b88"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadUnarchiveParams.json",
+      "bytes": 220,
+      "sha256": "43505599fbc58d4b410da2da0f1bae08ad1ef0d4d7d310cb0d82c07517dd5a89"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadUnarchiveResponse.json",
+      "bytes": 58182,
+      "sha256": "ebe7c14da2146548257d8778c304145a32db0104bd473b79840b9ce5b9f32b65"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadUnsubscribeParams.json",
+      "bytes": 222,
+      "sha256": "a03dc3d6c5a2f77f164b6bf4250d29f0c81c10c6b5f484fac0b05392dc9c936a"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/ThreadUnsubscribeResponse.json",
+      "bytes": 431,
+      "sha256": "14cd8baac4521c8101698de3df2d7a8e509ece6bf9b8b5d11162d9391064b4ae"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnCompletedNotification.json",
+      "bytes": 47152,
+      "sha256": "5b5f2ca515658ea6fcce7e961d1c3feddb3f48c0dcc813260c7ccf77a2d016af"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnDiffUpdatedNotification.json",
+      "bytes": 494,
+      "sha256": "100de58cee497cbf2382497d0c0215761e6c5baa872009a0a55ff7d23364635c"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnInterruptParams.json",
+      "bytes": 278,
+      "sha256": "49132b57b09f09dc545ed1cd373c12eede6e880e9afb54ae50add78bb42490cd"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnInterruptResponse.json",
+      "bytes": 114,
+      "sha256": "531de6be06fe979b5963f249bab82498a175e614bf65ac12fb2e849dfe60bcf1"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnModerationMetadataNotification.json",
+      "bytes": 331,
+      "sha256": "3e2aa78ccd487d22d2c6a12b275d9c6fbc8be707e24d59d44aad05a75107dbd3"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnPlanUpdatedNotification.json",
+      "bytes": 948,
+      "sha256": "1198bbc36eebf79716b97ab7a36c09e77bec76efccefa1f188fe2e22db26d196"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnStartedNotification.json",
+      "bytes": 47150,
+      "sha256": "e268134e79cae246e39f110e67bd2efbb49ce9a572520a85a96a7325eaf31e03"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnStartParams.json",
+      "bytes": 19160,
+      "sha256": "f23021c02d28b60fccb6dcaaace9ff676127065f8254537265d6622656860dca"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnStartResponse.json",
+      "bytes": 47080,
+      "sha256": "099184dc9d6195cd965b8a90ee5d1cb05c87d9b329acecdfbd63f358e660d568"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnSteerParams.json",
+      "bytes": 7248,
+      "sha256": "802b236f03d4a691c3bfc6d2e8b76a3592dab1f7593ac6e520aed762fb397898"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/TurnSteerResponse.json",
+      "bytes": 212,
+      "sha256": "a669b85e3b75b86468e39e6a2f760966bffe83f378b514c6898fb04b838cd78d"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/WarningNotification.json",
+      "bytes": 454,
+      "sha256": "8f8f87048f846a24ce06937cbcc11098e188ff262b71a986c0bcde1a24e57a81"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/WindowsSandboxReadinessResponse.json",
+      "bytes": 435,
+      "sha256": "002d645f1c0967ac8a4b1a0954e2c7561f8e299bd62dfe494026ae377d64c79e"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/WindowsSandboxSetupCompletedNotification.json",
+      "bytes": 556,
+      "sha256": "158145a7dda28e654796a06e1b627e6315283c3c0f2389b9502cf1c658ce8188"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/WindowsSandboxSetupStartParams.json",
+      "bytes": 1002,
+      "sha256": "35b4aa0a40a160ce84b44e821d78096e37712c2f8824ec374ad5be564f35fbe2"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/WindowsSandboxSetupStartResponse.json",
+      "bytes": 230,
+      "sha256": "29a24d86a75d5c76d5ae82fc8a3136fe2f0bc5785f5bfd033a0abc05834090d3"
+    },
+    {
+      "path": "companion-app/generated/codex-app-server-0.146.0-alpha.9.2/v2/WindowsWorldWritableWarningNotification.json",
+      "bytes": 478,
+      "sha256": "17181244dfd86ece4375ad483ec6bcc6795443d85a2bf23b6f7e42fbcf1fa7e1"
+    },
+    {
+      "path": "companion-app/global.json",
+      "bytes": 79,
+      "sha256": "007cf5087a7210236afae56498dcafc79a9c8a29361790155493891cc1aaf366"
+    },
+    {
+      "path": "companion-app/iRacingCoach.sln",
+      "bytes": 11898,
+      "sha256": "dbc3481c9b3b372cf30ab494cdf4b1cace6e6acf6fe621b443f6994e1968a07c"
+    },
+    {
+      "path": "companion-app/LIVE_MONITOR_ACCEPTANCE_0.4.0.md",
+      "bytes": 2198,
+      "sha256": "7cd29c368075e7ebf522baa5e60f606b015cef63c4860e57c4fe829e5fda8837"
+    },
+    {
+      "path": "companion-app/LIVE_MONITOR_DEVELOPMENT_REPORT.md",
+      "bytes": 6094,
+      "sha256": "dec7974a4dc2b32686f28b31fee54f8430af003fbe4f85bc9c7cbab72ff36743"
+    },
+    {
+      "path": "companion-app/LIVE_TELEMETRY_ACCEPTANCE_0.12.0.md",
+      "bytes": 5794,
+      "sha256": "0a706a85759d2821fdfb1f71b950b9b49903764be8ad35be51fee8268febce11"
+    },
+    {
+      "path": "companion-app/PORTABLE_ARCHIVE_ACCEPTANCE_0.6.0.md",
+      "bytes": 5615,
+      "sha256": "bf3546d5f118f5c17a8f4a93481a912baaac640eebd37ccaacbc308557a1abed"
+    },
+    {
+      "path": "companion-app/RELEASE_0.10.0.md",
+      "bytes": 5974,
+      "sha256": "3a6019cb17800e82da4e8b0e12a4724078ecff009d1adc5b6d98cdc75bbb3194"
+    },
+    {
+      "path": "companion-app/RELEASE_0.11.0.md",
+      "bytes": 6848,
+      "sha256": "25c9efded85a1e2d647f4910ee8d07e48d6734e93552db180ef354cdcba2c149"
+    },
+    {
+      "path": "companion-app/RELEASE_0.11.1.md",
+      "bytes": 1838,
+      "sha256": "54b29a77c251fd544be347000fce0f7a8de00211c610aeda0f2f57ee5c2794c2"
+    },
+    {
+      "path": "companion-app/RELEASE_0.12.0.md",
+      "bytes": 4228,
+      "sha256": "f3a6f7ccd112da5a87759b2d2f651f9db45d22e3de203b11e281aabbef1b8762"
+    },
+    {
+      "path": "companion-app/RELEASE_0.14.0.md",
+      "bytes": 6953,
+      "sha256": "ef1882fe87ff55175638b51c23f06e0ce54caa1a2bff8a489a0c58b57e991104"
+    },
+    {
+      "path": "companion-app/RELEASE_0.14.1.md",
+      "bytes": 4312,
+      "sha256": "34e6bd3972c308319b476f3208452b55e75497e05d57102c7a9631c8acea3170"
+    },
+    {
+      "path": "companion-app/RELEASE_0.14.2.md",
+      "bytes": 4694,
+      "sha256": "1ad2a8d6a6c7a0f22789fe8ddc2be36c0d08d0c30451353972537e5acbf6278b"
+    },
+    {
+      "path": "companion-app/RELEASE_0.8.0.md",
+      "bytes": 3239,
+      "sha256": "aa1e0d636323bc5b861caa8b8ac8962bebb6f5abffcb63cbd01de5c7f4f57c55"
+    },
+    {
+      "path": "companion-app/RELEASE_0.9.0.md",
+      "bytes": 1444,
+      "sha256": "2b7319c28c4fa9d7196543a67c1acc635769f459f8fdb482b863c8504f7169f9"
+    },
+    {
+      "path": "companion-app/RELEASE_0.9.1.md",
+      "bytes": 4242,
+      "sha256": "3791889aebe4662ee9d9261994fac86f9393f65255e71f1a6ce45db4b82075f5"
+    },
+    {
+      "path": "companion-app/RELEASE_0.9.3.md",
+      "bytes": 4427,
+      "sha256": "0b0697dda63710cf50dc29d1cabdf79a75f5608ad196a8e94b6943dc542b9cac"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/app.manifest",
+      "bytes": 642,
+      "sha256": "8ee3938326cc1bd0a79d7c45b04c020ee90af59fbbc8996c0ac1827fd49ba8d1"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/App.xaml",
+      "bytes": 544,
+      "sha256": "d3bc7250baf79d52e1c9baa5ac53b91197986a25f079741e5e7ddf98998a55f6"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/App.xaml.cs",
+      "bytes": 5041,
+      "sha256": "a0cce3cc631a4506665e1a500e30e06c61d9fefa03e6ca974d6c535898a1027a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/AssemblyInfo.cs",
+      "bytes": 633,
+      "sha256": "d41e48d2bce7f9eda84eef27c4008920a5639dd3f56baeff39273d58381575fe"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/Assets/iRacingCoach.ico",
+      "bytes": 13442,
+      "sha256": "5f959edc215db4a2297f5944dfab81ccf3350733a6b2c1bf88ee8c1c41ccce62"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/Assets/iRacingCoach.svg",
+      "bytes": 368,
+      "sha256": "3ea878cad200de64881e17a692701574b65870701ef6756c513465ace0b77d9c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/iRacingCoach.App.csproj",
+      "bytes": 1387,
+      "sha256": "f677757987d45c18aac5d5aecfb79328891bf2441fbccd22cf9afeb331a705af"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/LiveMonitorWindow.xaml",
+      "bytes": 16638,
+      "sha256": "77c168b0513e8088838ce44397f58f505957e2abdf61574ec21165b752b8534d"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/LiveMonitorWindow.xaml.cs",
+      "bytes": 54519,
+      "sha256": "2ae7e8f9bcca2b6a2e44878f426f901eb8e59e144dafd6e6544ea16249eeec05"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/MainWindow.xaml",
+      "bytes": 948,
+      "sha256": "fe57259d80c6b5af3f989b950240973bd22fd55662d9788b8c15a358bb859e0e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/MainWindow.xaml.cs",
+      "bytes": 15178,
+      "sha256": "d1b039b0919f927d9932cc97c80cbb9947be4602cc48e0a311ce54dabde4efa7"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/StartupErrorWindow.cs",
+      "bytes": 4251,
+      "sha256": "a37c23289c1e065821378c475297338e2db15ff514a017b0ec44cb1eff30e67e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/StartupRegistration.cs",
+      "bytes": 1121,
+      "sha256": "2716c62e87edb80ac7da99f937e87e89fb05404380ca502f9a8616473c45db4d"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/Theme.Generated.xaml",
+      "bytes": 4489,
+      "sha256": "f362bcad2c44fb4b1bcfc91c2a39b77a08c511fd6a17ef52effbd302f7bad83c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.App/wwwroot/index.html",
+      "bytes": 4060,
+      "sha256": "7a5727644f38a730b313d5346723037dd22ba2952da5b66970f52ad95f7e580c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.BackendClient/IBackendClient.cs",
+      "bytes": 416,
+      "sha256": "be86594a70e025bec3e42518dbe758aad9a186fa92f2ca92954484824280475c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.BackendClient/iRacingCoach.BackendClient.csproj",
+      "bytes": 249,
+      "sha256": "7478fba9a879bf9e6eb77212af808b1098961a14a7b7c3f191144732f35c1ef5"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.BackendClient/McpBackendClient.cs",
+      "bytes": 9025,
+      "sha256": "f917664f5ff39fbd46bd6b6b3016645cd029366cd0c85268ec7153c72546aafc"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Contracts/AnalysisTraceLayoutModels.cs",
+      "bytes": 1085,
+      "sha256": "163835d03fd3d60ae17da8f5b546a9eaa81985693ab7663c2db96b62b422f94d"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Contracts/iRacingCoach.Contracts.csproj",
+      "bytes": 210,
+      "sha256": "11c0c110e19c9eaeaef66a0382f7a3e4ff6ab395d99ca6664e1ba378371cc47c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Contracts/Models.cs",
+      "bytes": 36671,
+      "sha256": "0afb43dea1f62e66267ecfb7c8524cf1aa770c3e146c2b89797732473cf5d35b"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Contracts/ProgressiveTuningModels.cs",
+      "bytes": 9332,
+      "sha256": "22d93bb1d4c13df19d4ca5e282a99ac80f0a9f7761e372e4d4ff23c33c4c4e19"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/AnalysisTraceLayouts.cs",
+      "bytes": 17124,
+      "sha256": "e9356a83127bd9544dd484c4800f4555772dd1a23ceeb9d12a8dc5376702a0df"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/AnalysisTraceLayoutSets.cs",
+      "bytes": 9615,
+      "sha256": "e2fe37bb357746ba38036ea45eec066927bf50d5ac5695029f569d37613bf4cd"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/CalculatedTireWear.cs",
+      "bytes": 4194,
+      "sha256": "50b34b2322f8e55ba02d1fce124e9f7ff165f5b441abff1322f5b285869facf9"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/CapabilityRegistry.cs",
+      "bytes": 19168,
+      "sha256": "a8a256ab8738f9ff038d7ddcfed513d0a05dfa69209c254efdcce3f9c0dbc7ba"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/CoachEngine.cs",
+      "bytes": 35066,
+      "sha256": "21cbbcfcb023f8945978fda2b226946979b879960f56ac3488635913fda13d7e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/CompanionState.cs",
+      "bytes": 181803,
+      "sha256": "39abc784d6bafec750ff2509827cde764a94cade4a08fdf6637d8d6afe1b758e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/DashboardMapper.cs",
+      "bytes": 11446,
+      "sha256": "a389c42769332e96e3335a63490c9e92a8d3c7038fcf2605fcfa6ccf0b01a4ec"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/DurableArchive.cs",
+      "bytes": 24303,
+      "sha256": "0fb0a552ee76af4b30dd539206a73ac522b334bd2a51282800a261dae9cc05bb"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/Garage61CredentialStore.cs",
+      "bytes": 3714,
+      "sha256": "a785c145aeef97d68261bf01fcd2536c7e97492bafed0e9fc3ee7b46c2fc5413"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/iRacingCoach.Coordinator.csproj",
+      "bytes": 348,
+      "sha256": "1a9e59b25446620fe3eeadd4815d84ba2ed76d8773dafd0dc46b816dd0bdec9a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/IRacingSdkTelemetrySource.cs",
+      "bytes": 25070,
+      "sha256": "cf552ab11642ad55916f7681e55bdafb88a0cbf4bfcf1ec031839c126a8b65dc"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/LiveMonitorLayouts.cs",
+      "bytes": 21494,
+      "sha256": "d06149e5f63e5fcbc49631da51759e4fe6684ab1a91e0b26897dc7875d87c1e6"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/LiveReplayCaptureStore.cs",
+      "bytes": 26931,
+      "sha256": "7e490d7a56f42bb192f64bbbf06802e3a55dcb0a038732353c07f9ccc804ecec"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/LiveReplayChunkCodec.cs",
+      "bytes": 29298,
+      "sha256": "7902b98e51693e6cde9bc847e3b9303422bd0a8f0f52204e31a00afe53fb941f"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/LiveTelemetry.cs",
+      "bytes": 48762,
+      "sha256": "f2dfe528ebf0bf7b5bd540dc14177e3c589251d0dd785404b6190d6a9dd9cc2c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/LiveTelemetryCatalog.cs",
+      "bytes": 35114,
+      "sha256": "5cdc3606f5e1fbdfa3a2faf4d90c3249d332154bf89a5b1a85e27df5149fb75a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/LiveTelemetryFrameCompaction.cs",
+      "bytes": 3161,
+      "sha256": "de3e91016ffe551d7f1a1774f7854bdbb9964ea8e9c71d58fdd0351fdecf6ea6"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/ProgressiveTuningCoordinator.cs",
+      "bytes": 29583,
+      "sha256": "1709ac09e22d09085d086909b0b4ed2711b57136eabf76c5e43d323c078ec94c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/RaceReviewMetrics.cs",
+      "bytes": 3134,
+      "sha256": "362f40a7e2b027ff6d544c38771847f944c1143b686b2537966ef271804e2a5e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/RuntimeMapper.cs",
+      "bytes": 103427,
+      "sha256": "39c0978633704369ad9de6ffb106e2dc461c82bd568a23ee7e7e191e642f9886"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/SettingsStore.cs",
+      "bytes": 15220,
+      "sha256": "1482ef0da82503b8443f2691fed2e388fc92bf3bc9b12764ae1e8254002c8f44"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/StructuredAppLog.cs",
+      "bytes": 2371,
+      "sha256": "23155aafe30c4dc0f73e3f04fa59015ae449937e001b591d9d66a2c9cf0e40d9"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Coordinator/ThemeColors.cs",
+      "bytes": 5244,
+      "sha256": "6549b0734419ccce35a899d35ea02cd30fb9049d09152063b55f97404c1f9d95"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Installer/iRacingCoach.Installer.csproj",
+      "bytes": 995,
+      "sha256": "d17c866defc976f50f37b11a518c11bb3000536fbf9e8e174d3a83528ae1cf24"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Installer/Program.cs",
+      "bytes": 21204,
+      "sha256": "a570cd3cecc955ebde20fa9f5de9565342b92a6cc012deedd8cafc079e985ca5"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/appsettings.Development.json",
+      "bytes": 119,
+      "sha256": "817db0bf2ecca78364c41dbaf7949bf2504cf47a1c3d0d54f3be8178fefc030b"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/appsettings.json",
+      "bytes": 142,
+      "sha256": "2d8bb40059df22089b94c025be8baad5a869b72d4d755d199c872f03bfe6f225"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/_Imports.razor",
+      "bytes": 448,
+      "sha256": "c591491bf700c3f4cfca9ea793ecbc473f5b8487cc7f496af845dbf7c8c4a8d6"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/App.razor",
+      "bytes": 4432,
+      "sha256": "e5c66c7d22016507535e2fe93198194fb4112977209b990a708d7b601b303c4c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Layout/EmptyLayout.razor",
+      "bytes": 37,
+      "sha256": "e55cda32a4987d231d3869ab6c3c9a092eb775be9e9647536cdc697164be2675"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Layout/MainLayout.razor",
+      "bytes": 524,
+      "sha256": "d86c863bf9698cbbc6b5bc144d9ce025bf31cffc2c7320b8f6aa3d3d74678e51"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Layout/MainLayout.razor.css",
+      "bytes": 1842,
+      "sha256": "212b70f685a4fd2639fbd7a5d1151c4feb1e61f86987635b83affaca12bd45af"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Layout/NavMenu.razor",
+      "bytes": 1069,
+      "sha256": "b56a3105c7fd27e00c70339748c303576b38d4a12c7b994996e563e0805a0db2"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Layout/NavMenu.razor.css",
+      "bytes": 3313,
+      "sha256": "efc5d4330245bade87901de30202741ea7220c5b4721f190dba084a898765a16"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Layout/ReconnectModal.razor",
+      "bytes": 1331,
+      "sha256": "06987994d4625c5c48cdd15373c05e3a2d81a3f92af790fcaabc7bbf80dbca5a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Layout/ReconnectModal.razor.css",
+      "bytes": 3716,
+      "sha256": "3f672eea19a76f24518b6a02d2014d5c5f6fd4e4bd2f97eac9e431b4dd0973fd"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Layout/ReconnectModal.razor.js",
+      "bytes": 2385,
+      "sha256": "bc924313acad6186b22e5331a52fe18a4e3186a5082185e40f2e89620932814e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Pages/Counter.razor",
+      "bytes": 314,
+      "sha256": "bf904dc0d537f5d11e82a51f1ac6d9a5024926e8568f0f76e29cb4a5bf778ca7"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Pages/Error.razor",
+      "bytes": 1179,
+      "sha256": "5fc97b404692b11255d0c2b53e61304f2a7670dc9ff5fdcc2edae513b3ea283d"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Pages/Home.razor",
+      "bytes": 53,
+      "sha256": "aa0ab89c2ff3f1439da9a6fc345aa718911e72faca055efe864e4f649b15ee64"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Pages/NotFound.razor",
+      "bytes": 122,
+      "sha256": "9190005a944ca590bb17f58563d0e524ae419b448ee81a555f376195e4856071"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Pages/Weather.razor",
+      "bytes": 1829,
+      "sha256": "73486a0431704c5f37c5ec4266fd1f08b99d65b42bf20da49e96134f30bb57a4"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Components/Routes.razor",
+      "bytes": 231,
+      "sha256": "2ff99635cc023b7c67d4cd6a4acd651ea6e614ad863a8fd0a2348bde71384d58"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/iRacingCoach.Preview.csproj",
+      "bytes": 521,
+      "sha256": "ab7fca554851c9ce06913f397e00e578f0167b3ca23dc36845725d9bca6f808f"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Program.cs",
+      "bytes": 1148,
+      "sha256": "bbc5ca1cc243e2921ee67b3b532031f18b80e4e062917217859b9ffe020e5fbb"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/Properties/launchSettings.json",
+      "bytes": 658,
+      "sha256": "23818d3f355dfb159c113274df67124d4548470dddef967e64ce929bd5057bc0"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/app.css",
+      "bytes": 2841,
+      "sha256": "3cdbc4c8048bf7ad2aa569952793eeaf36ebd05e21a1d427bbebbf5e4287b84d"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/favicon.png",
+      "bytes": 1148,
+      "sha256": "e265ac0f2dda1e5dfa65b1adf330722bb3ef7789115283604d8cd19f098f1f08"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.css",
+      "bytes": 70329,
+      "sha256": "632e7f841a919a6536309d532b03f6697a133baf8e8f3acb98922c0b65b2e07f"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.css.map",
+      "bytes": 203221,
+      "sha256": "c404fe9f6e4513986f3a38f67c6e1874ec2bd5b97822500904d83a3db84b4f61"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.min.css",
+      "bytes": 51795,
+      "sha256": "e670c73068b27d91e5dd45de3ee84b0d047d9dc3df051d4725e64b5f224d576e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.min.css.map",
+      "bytes": 115986,
+      "sha256": "9202fec7056633c20eb35e659e81edf5d691d8b44c8811bf7188143dc290398e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.rtl.css",
+      "bytes": 70403,
+      "sha256": "099c6817cce368b97256472f5420e573c09e411d70d5132bbe0631df472cf243"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.rtl.css.map",
+      "bytes": 203225,
+      "sha256": "fec890500f325fcdf48fe70be1a98a1d8df206d9f79fccf7120f95675e5ff749"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.rtl.min.css",
+      "bytes": 51870,
+      "sha256": "bccc5372f902e0bcbb2e2013dc6f32132f44a53afb1607b849ccd6a74effa779"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.rtl.min.css.map",
+      "bytes": 116063,
+      "sha256": "ec674e970ed4ff083269e52d166c4fcf9fcca6176f5523ed54e3a54e7f5cdf74"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.css",
+      "bytes": 12065,
+      "sha256": "968f5823cd8e174defa2376ef97391dfe0d1acb229321a7364d9876cce420cc0"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.css.map",
+      "bytes": 129371,
+      "sha256": "45727f4198817c75e83ed5d1d84802f9b168da97b71ad6d93bbdb646d88b1b34"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.min.css",
+      "bytes": 10126,
+      "sha256": "97cbede68a33bfde7c78c77d4c5b0f016825f4924af5829f6d54acf2672143ce"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.min.css.map",
+      "bytes": 51369,
+      "sha256": "d1ea954fada4a912c987da13a8b7881f852742c92a56389bf219767d7c65e258"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.rtl.css",
+      "bytes": 12058,
+      "sha256": "57ca6c9c7a094bf30f9425d6c1cfc9ded1ada7d7378061519aab08420a67f868"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.rtl.css.map",
+      "bytes": 129386,
+      "sha256": "3a8415c21ec0ae9edb5682b66624f1d92fff2ab9cfad23f33d9f770aa08c85ef"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.rtl.min.css",
+      "bytes": 10198,
+      "sha256": "ffc8e1f217043052b24ba8285aa9cdbbbb7713364f0867506603bab02908f2d2"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.rtl.min.css.map",
+      "bytes": 63943,
+      "sha256": "f75d33c3eacc75c8342ece3c013a7ae6f127f2b7791ef3f138a9b6c77fc20482"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.css",
+      "bytes": 107823,
+      "sha256": "d81b9b80d50f950485ff4c0b15c45743f623ce4f6fb146c301e2b640cfa1fb2a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.css.map",
+      "bytes": 267535,
+      "sha256": "35f8eb73852bf45bf6a0112cc10588c819cd0cff7dabe2e12fecfde79dced1c6"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.min.css",
+      "bytes": 85352,
+      "sha256": "2b213dc5b28ef42b98c741d7a482a0b1622f5e401f213b62435ef68f6eb0991b"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.min.css.map",
+      "bytes": 180381,
+      "sha256": "ac70e68a9e09673b9a18e71243541242b21b1b411bdd98daf7086a485d736085"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.rtl.css",
+      "bytes": 107691,
+      "sha256": "1fac2405b4b08ee6b6bde2684e1268e2ecb5eb58e9f833a2653968525719eaa4"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.rtl.css.map",
+      "bytes": 267476,
+      "sha256": "a74055ab955efdda2104875f6eb66ca1036ed36252b0a875834c1bca242251a5"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.rtl.min.css",
+      "bytes": 85281,
+      "sha256": "18052e9ba163c10f07ad719aa054671d3a9040ba658d719abd3ee6057f04f6a5"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.rtl.min.css.map",
+      "bytes": 180217,
+      "sha256": "a3c5cadf699c63f15f70e4350f61c9bd5b99d184d74944590cb5c22b47e741e0"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap.css",
+      "bytes": 281046,
+      "sha256": "18a105d7cb38e01e5ed0ca255c092992a2e211b39594a7fa57262bfc6fc4ea9c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap.css.map",
+      "bytes": 679755,
+      "sha256": "2b3355477a7b51919b6bde1d9c2b6573a8d78cae6ead23e267f78d9ca4e60e4c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap.min.css",
+      "bytes": 232803,
+      "sha256": "3c8f27e6009ccfd710a905e6dcf12d0ee3c6f2ac7da05b0572d3e0d12e736fc8"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap.min.css.map",
+      "bytes": 589892,
+      "sha256": "f12338536350a422c64d02d6e43ff1dea493c3156ad823fe19761cdd5d56c05b"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap.rtl.css",
+      "bytes": 280259,
+      "sha256": "8f91385c88f5a7590d9c38b4c75b5e5fd457a21d7f14d94fbc230bf589918764"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap.rtl.css.map",
+      "bytes": 679615,
+      "sha256": "ddb61652289560c65fbf6c2ae499d722c1e540a8122acfd57118af823819d61a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap.rtl.min.css",
+      "bytes": 232911,
+      "sha256": "879944ecd9bc4a4788a411c763137df6ca4fdd5b8614a97935982ca1c8a5ef39"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/css/bootstrap.rtl.min.css.map",
+      "bytes": 589087,
+      "sha256": "ad3cd79677a971bfef80502207e53b3834007ce9492df337818e8853b78800d9"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.bundle.js",
+      "bytes": 207819,
+      "sha256": "9a4a11a15db88d5fab08f59c1c34796b03f1f15bb3cc928dd226e1c59f7f59a3"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.bundle.js.map",
+      "bytes": 444579,
+      "sha256": "5aae1a596d6b41d27eea8020cb525073d2018c72fd4f730a7d74c136a3afd367"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.bundle.min.js",
+      "bytes": 80721,
+      "sha256": "0833b2e9c3a26c258476c46266e6877fc75218625162e0460be9a3a098a61c6c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.bundle.min.js.map",
+      "bytes": 332090,
+      "sha256": "5e3e0763164143baaa1ca0706b6100ba0452f911d6ce9713b48e3dbe07b35125"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.esm.js",
+      "bytes": 135829,
+      "sha256": "7b189764d243c2e7177ee8dedc26d73dbb92ebe12bcb7cfdb0ffa9826be1f270"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.esm.js.map",
+      "bytes": 305438,
+      "sha256": "10f44b829a9691a84bc449fa0948dd33be91218230d71747c136de1ecb2e8ffe"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.esm.min.js",
+      "bytes": 73935,
+      "sha256": "4197454f564d765cb8ae681406d5e65c54bd054d454dafac3deea1efde2c1514"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.esm.min.js.map",
+      "bytes": 222455,
+      "sha256": "4ec6eff33e9594d815113f31bf3ff22e8fefe622474c08f62788648633f5ac73"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.js",
+      "bytes": 145401,
+      "sha256": "f945bcd36c2055f9e36926ddc321cb954ec056995bd164e83a5bcdd429f321a7"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.js.map",
+      "bytes": 306606,
+      "sha256": "f56afb1f17bc802243a081e1e713f6f65757bc2de43761a489f423f5cf2f631e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.min.js",
+      "bytes": 60635,
+      "sha256": "de040986d9a3ed89d5d5f9ad6d5727015e9e238c2cd13af8f1b55909386d0864"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Preview/wwwroot/lib/bootstrap/dist/js/bootstrap.min.js.map",
+      "bytes": 220561,
+      "sha256": "648d357bf9ece3bdc62af0021b831c82025dc6f15f148c38c6ca704221bc61ee"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/_Imports.razor",
+      "bytes": 144,
+      "sha256": "599de17101d684919defb986e494c461503914e87c853a6d868266205e88e710"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/AnalysisPage.razor",
+      "bytes": 9617,
+      "sha256": "2a0c77efc0e2b9ebe99614ae893fb50d7c5007f4188777a6d7022940356f515f"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/AnalysisTrackMapGeometry.cs",
+      "bytes": 6912,
+      "sha256": "227ceedaa5c2200f0ff55f5f8630303bd8781b9e1666db0c37f037281ead51ad"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/AnalysisWorkspacePage.razor",
+      "bytes": 16351,
+      "sha256": "2a971963e3d1fcb6e1402d964ca66c76b4872521b2a70d9f0a3c350a886aa0ce"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/CoachErrorBoundary.cs",
+      "bytes": 445,
+      "sha256": "5b44ee42e1417a51a8823c63c488c3a9dd907331d1743ffb8cfdb2da9a525ddb"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/CompanionShell.razor",
+      "bytes": 5861,
+      "sha256": "f94197af53d7b6e38fed5d47b0a04020442a9254313fb76196909eaf3affd9e9"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/ConnectionsPage.razor",
+      "bytes": 3683,
+      "sha256": "65d86882261dbe7080cd99aabcfe3c6c0819dabe010431b7e12ebbc80d6f2253"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/Data/turn-map-catalog.v1.json",
+      "bytes": 4375,
+      "sha256": "03a34da4bf440e91e58562ae6e9e11475a5968e1344de7291b5f34d721f7e219"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/DiagnosticsPage.razor",
+      "bytes": 1627,
+      "sha256": "0d035e3b28fee35e879fec75eb0188c98f0f5ec662e2e48c4e7655037e52b535"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/EvidenceBadge.razor",
+      "bytes": 714,
+      "sha256": "cdf55219e9cb2c39b3d985ade47506d458e5bcbb6d18d4d5ffc8004692d75c0f"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/FirstRunPage.razor",
+      "bytes": 7004,
+      "sha256": "8b55b5cd99a77777ea634416e5fb851fb9f48461170a827b2d4b524e569f6db1"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/GapCell.razor",
+      "bytes": 710,
+      "sha256": "3b2ad6ef64fc892518013b15af8071abafdd6922696dcd46eafef9837e7a6a59"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/HomePage.razor",
+      "bytes": 9428,
+      "sha256": "16e4035c16c272d2b66d9a70dea1235e6837099464e95fc19e69b5ef904d87d5"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/IncidentPresentation.cs",
+      "bytes": 3158,
+      "sha256": "6aa7bd5d9ab27b780b306575380d1004cc253897a69ec907dc106eb020e98137"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/iRacingCoach.UI.csproj",
+      "bytes": 605,
+      "sha256": "625e2d02c3bb78312c8f8dac8eb835a880e4dcfd0715c11d348f42522f663e62"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/JobTray.razor",
+      "bytes": 2892,
+      "sha256": "884da27bd43a99d3524a331ac4402debcc5f506f35ca9438eefc4bb15cc45368"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/LiveTelemetryLayoutGrid.razor",
+      "bytes": 54028,
+      "sha256": "5cf06f23ce8c2f29e9c7058959f3e186d71aae7133376e8ec1b606a0d24afdf3"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/LiveTelemetryPage.razor",
+      "bytes": 2275,
+      "sha256": "cd8222df9bcebad78c6f176a71f43f95a28a8dc403c737c3d94b9a1aa3e7f154"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/LiveTelemetryVisuals.razor",
+      "bytes": 14580,
+      "sha256": "28ba77bfa539a0309ba320d86826d571c75ca2e5b8192b6d7e797d72732559d4"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/MetricTile.razor",
+      "bytes": 388,
+      "sha256": "132f6d2d5d317cd0fc11906bc80ce7bfada6ad2aac1700de76825bda75ee22a0"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/NavRail.razor",
+      "bytes": 4100,
+      "sha256": "c2f51ba0064a89374ce0de8743ced7e225eae2919043b01eae3493ab2ecb6125"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/PlanningPage.razor",
+      "bytes": 19665,
+      "sha256": "cc1b29fe8127dfcb93ad8de02385ea11fe8f10e0817b06ae422d3a0cd6c26f94"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/ProductIcon.razor",
+      "bytes": 8273,
+      "sha256": "f9df81416774ba5750e3b146facd0dbcb2ab86e925f28cd372c7fa1c229588ca"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/ProgressiveTrackProjection.cs",
+      "bytes": 10363,
+      "sha256": "f15c825e7560a4e001c54d03be961c8c325051c08196587ca464fe835ea02b6a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/ProgressiveTuningFeedbackEditor.razor",
+      "bytes": 17074,
+      "sha256": "d01810fde5ba5f9c11a302cdac0bb43c28d8d9f9975c5a2bdfb927d12712f446"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/ProgressiveTurnCatalog.cs",
+      "bytes": 9922,
+      "sha256": "f0ae7122dbf9daeaf9267526d786f1c5f121020b9cf7287ddae51c651165f048"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/RaceCardPanel.razor",
+      "bytes": 2179,
+      "sha256": "e36f56251c82f211a481cb61b7847cd1512548868e5991dfb359fde1b82bd07a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/RaceReplayWorkspace.razor",
+      "bytes": 73060,
+      "sha256": "965ad683da8c131ff3e035c483168b6bd913e0ce8f2b96df98d4b6ce6c7e7593"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/RaceTechnicalData.razor",
+      "bytes": 56190,
+      "sha256": "c91e03e8ffa820c72a4a35907814e218fc3f600887ffa70c3dc01d9632d2f58b"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/SettingsPage.razor",
+      "bytes": 12837,
+      "sha256": "99af22789bcce623e3c66278ab085e730021178c9934723929af3ed05f40197a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/SetupPage.razor",
+      "bytes": 10271,
+      "sha256": "833e4883c19974e40e9a10408e17b1025728ce09fb190a706bc8337539df01bc"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/StatusChip.razor",
+      "bytes": 328,
+      "sha256": "b4ec1876f5ac1b1a0072476124466b9edf4802f68f8b584f5bd209f45591a78b"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/TechnicalUnavailable.razor",
+      "bytes": 519,
+      "sha256": "defa3e181bda8c13a91a43296a56d2d358f388aba657fd2df1d45a128785df36"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/TelemetryWorkspace.razor",
+      "bytes": 153348,
+      "sha256": "f773e940e4bc5dfb64efc9a8eb3817282ecd9972700bcc6ce2ce4a44b5d1d5ba"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/TimelineLane.razor",
+      "bytes": 557,
+      "sha256": "f6e2e148d1a7b3e21c80d15b762904309d696934242d6ee7c0fd72ac8b05395c"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/TuningPage.razor",
+      "bytes": 37709,
+      "sha256": "24270eee821783ef8ca1de360b007e8e58871304189a2521a848cc560ba8122b"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/TuningTrackSelector.razor",
+      "bytes": 21119,
+      "sha256": "6d4a7c2812055ed5d9e78074393f2bc12980927438bd0f45f4f50436bd3b6edb"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/analysis-context-splitter.js",
+      "bytes": 3644,
+      "sha256": "67a6887b5dd995a11ba2669a7b63a6d65f91d51473e65f7dcf1729428e931efd"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/analysis-performance.css",
+      "bytes": 3965,
+      "sha256": "e87fb16e8597a6ed8488b6c646600433feebd1eb219bee03dcb4499d628f23d5"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/analysis-telemetry-cursor.js",
+      "bytes": 28341,
+      "sha256": "319eb2ae3ccf8487079f567c5e172d06dde8257093d84593dc53437f35c154ea"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/analysis-trace-layout.js",
+      "bytes": 20131,
+      "sha256": "4984f914c2e6a86aa1a297bc40713c069b61421627edbd3d12c40a52663a5dc7"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/analysis-track-map.js",
+      "bytes": 6183,
+      "sha256": "f591ef1c64e338cfdf288fcfbb9619156ecde7fdd302048fbff13ffa25f523ce"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/background.png",
+      "bytes": 378,
+      "sha256": "59e38a0a423b21d247b36902aac2a02df8965f8fec34f6da454b2938b79f9026"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/coach.css",
+      "bytes": 323234,
+      "sha256": "002aa9098167c9060196937fb4e34f6b7324a5b408630f89ebeb318153e3881a"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/interaction-policy.js",
+      "bytes": 3389,
+      "sha256": "bf458156769193082a799b4c4a680fab3568f43c4e40c8a58a6fadbc81b7034b"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/iteration-ux.css",
+      "bytes": 38006,
+      "sha256": "7fac305e4a647910798298ec860cd86012fe82b055ca21ee32e71b1a647c5a7e"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/live-telemetry-chart.js",
+      "bytes": 19031,
+      "sha256": "9d48e74a544bb8b4e89b5109cf7046851b05273823a23186de5c835e33938847"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/live-telemetry-layout.js",
+      "bytes": 29222,
+      "sha256": "9222ab48ecec2ef893ab9edade64c66985bfebbe311c4b9b5f229db3d3557451"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/live-telemetry-tile-charts.js",
+      "bytes": 29613,
+      "sha256": "880ab4ec40ba155759ef7898213371a97ab32e876d9ff2caabe252aa29083f6f"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/live-telemetry.css",
+      "bytes": 3480,
+      "sha256": "b6272b4fba84367cb5c588fcba3362bb8ce709682c5e8e83737551d74be23451"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/replay-overhaul.css",
+      "bytes": 4773,
+      "sha256": "e2b1e18d89778430b39fa0045cc64378fc4d0d0a6f6774877b8498eeecdf42aa"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.UI/wwwroot/theme.generated.css",
+      "bytes": 1621,
+      "sha256": "f383aa724f06012e0e31552c4ae7f7927a625301f2b64edbe3f0263703491cb4"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Uninstaller/iRacingCoach.Uninstaller.csproj",
+      "bytes": 463,
+      "sha256": "71493d9c5383fa05be105fea3100ffdff1d4036bef6bae636f77ef628a46775f"
+    },
+    {
+      "path": "companion-app/src/iRacingCoach.Uninstaller/Program.cs",
+      "bytes": 19500,
+      "sha256": "e4043f707a57a69ccff4cd92c4fb7216c488e146ae890b7574ac99aca1a9c2bb"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/BackendClientTests.cs",
+      "bytes": 2036,
+      "sha256": "87d195fd6a6ea968b53bf5f1ccbae6677ddc8355da50f4a1a4c8fa2469df7021"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/CalculatedTireWearTests.cs",
+      "bytes": 3223,
+      "sha256": "5b8476db3969d7d706ec49d0cf106f3143e11e4cfb079749832eeabf58226e92"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/CapabilityRegistryTests.cs",
+      "bytes": 52967,
+      "sha256": "7324c56726e024502aa73fbc97ce373036dbb18e8afc1bc9733a2969adc156ff"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/ContractTests.cs",
+      "bytes": 2498,
+      "sha256": "7018ee13fa724e5e01519045d8820d7b15f5f06f3a564ac6328336a07f807d7b"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/CoordinatorTests.cs",
+      "bytes": 130266,
+      "sha256": "d1419e1cc7a24220dc4df711099f31ec3863e9e541a4711bbd61d4f758304786"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/fixtures/analysis-nullable-kentucky-shape.json",
+      "bytes": 4635,
+      "sha256": "f5171b3745d1ac67ed598b7abf3db5b4fe935b08fb9a4e0e37b17e65cec6cf03"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/Garage61ReferenceSyncTests.cs",
+      "bytes": 9281,
+      "sha256": "8d52839cb8d3b9766a5ff8215dff99248c3ec8f5214d0f692f76ba7a052ebc69"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/IncidentPresentationTests.cs",
+      "bytes": 2540,
+      "sha256": "00decd3914408b20828fceca936ee44a1d49dbe30acc7706664a1138621fa6dc"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/iRacingCoach.Tests.csproj",
+      "bytes": 2117,
+      "sha256": "8b4a0226a9691b7ec870cb3b04ea2bcc12a2dc36c9425b1c2b113d6393e0425c"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/IterationUxTests.cs",
+      "bytes": 9319,
+      "sha256": "138857c2b1fdb26dcb41d82fa64adce411f4578b1d4951fce470b54a5744defd"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/LiveMonitorTests.cs",
+      "bytes": 67380,
+      "sha256": "d13fccac8b25c573400d6417bd5842d30154e52e78967e17e9ed0b9b9355cd3b"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/LiveReplayCaptureOverhaulTests.cs",
+      "bytes": 23051,
+      "sha256": "9cfde1ae5ce259faf5da4020545f5acee6372c64d98cf2f13c5c70b888eb674e"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/MSTestSettings.cs",
+      "bytes": 63,
+      "sha256": "062423515d603fff3f4057cbcf84ba2e03105d94093365036d0456b21b7abe1f"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/PlanningAndStartingTuneUiTests.cs",
+      "bytes": 5166,
+      "sha256": "56ce501556faea61dab568b6737aa35d17b8a590ef4b9ad8e809e2fa1f816fc1"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/PreviewStaticAssetTests.cs",
+      "bytes": 1239,
+      "sha256": "d8883758e055ec365772855fc2570f1a41f7722b23b8e9e55fa11f826e1af559"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/ProductTruthTests.cs",
+      "bytes": 2729,
+      "sha256": "2c5a54b2a73b8cfb7e1bd903e1a4bcad3867acd3a322025194939aa307e12bd4"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/ProgressiveTuningCoordinatorTests.cs",
+      "bytes": 56007,
+      "sha256": "84292165fcfe1a2f5e583df92cb548362e2c91ed0b75903b5a0090497ffe5355"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/ProgressiveTuningUiTests.cs",
+      "bytes": 10830,
+      "sha256": "74fb52039505e50c4ad4aeafd637aabc951e8a235ef530cba12fb87c972169aa"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/RaceAnalysisBehaviorTests.cs",
+      "bytes": 105297,
+      "sha256": "2bcb3ead3cd14ccc0818c3974355ec33b65db36f8742ba1c0a2d939b577b6229"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/RaceFoundationMapperTests.cs",
+      "bytes": 19565,
+      "sha256": "7e65bebbd796313f1605ca3606d1aefbafe4115d1a352e97e0422ba436205945"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/RacePlanningRecommendationTests.cs",
+      "bytes": 4992,
+      "sha256": "c97af18ce676ed0d752eeec290deb61cd050d5f735ad91dee2bb5b9e8ae22977"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/RaceReviewMetricsTests.cs",
+      "bytes": 2967,
+      "sha256": "37293c3176cf02be5ffb740d1942d8ab8ac15e45366d9351707788d0adbc1a58"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/SlipAngleMappingTests.cs",
+      "bytes": 1141,
+      "sha256": "69e2f38d3095b929e014dc0c3712b6aca1d645e6fc5c516f7e505c5aac4e66a9"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/ThemeColorTests.cs",
+      "bytes": 5259,
+      "sha256": "a20e9d217992eafb451e1eef8c5021908faf2e29abb53af49fc1f22c1e316566"
+    },
+    {
+      "path": "companion-app/tests/iRacingCoach.Tests/ThemeParityTests.cs",
+      "bytes": 3858,
+      "sha256": "c73703ba55e6f5c8fc8ea32c06b9e8974930de04221e290dffbd377c408cc49e"
+    },
+    {
+      "path": "companion-app/tools/BuildRelease.ps1",
+      "bytes": 11019,
+      "sha256": "f84c6dc0299777a0cd669c9c4094330fca8a14346493310ec40847863b997a1b"
+    },
+    {
+      "path": "companion-app/tools/BuildSourceArchive.ps1",
+      "bytes": 2348,
+      "sha256": "c1c903a9fb8cd28c1c27cbe4679d9a774cfc775bb6a86027ca0fb87ed6c6c3ae"
+    },
+    {
+      "path": "companion-app/tools/GenerateIcon.ps1",
+      "bytes": 2831,
+      "sha256": "13d294c9a9971f556a279c9ae0442654371f69819efe685a497694307ea697cd"
+    },
+    {
+      "path": "companion-app/tools/iRacingCoach.CoachEngineProbe/iRacingCoach.CoachEngineProbe.csproj",
+      "bytes": 391,
+      "sha256": "d7c102bf62f19d939c8efedf68f0dad70a6ecbec6970d1198cba859a97ace509"
+    },
+    {
+      "path": "companion-app/tools/iRacingCoach.CoachEngineProbe/Program.cs",
+      "bytes": 5213,
+      "sha256": "a873e07371416ba4d70a1fbc76a847a6a5781b7ff2e550d54e0d287713a4ff7f"
+    },
+    {
+      "path": "companion-app/tools/iRacingCoach.PerformanceProbe/iRacingCoach.PerformanceProbe.csproj",
+      "bytes": 369,
+      "sha256": "852d1e774e6d072563f1c249af09e0d37c076430c65c4eea05ab6e406cd31b69"
+    },
+    {
+      "path": "companion-app/tools/iRacingCoach.PerformanceProbe/Program.cs",
+      "bytes": 1368,
+      "sha256": "20512b76396c3deda98e2bf1a86c5a59373a827768454c94f98477c9d1bdb846"
+    },
+    {
+      "path": "companion-app/tools/PublishDevelopment.ps1",
+      "bytes": 4659,
+      "sha256": "66e3bb9b2cdd356368002f2e3010b12fb32bf9adbc0796c37be99cf3ba1db5ab"
+    },
+    {
+      "path": "companion-app/tools/TestInstallerUpgrade.ps1",
+      "bytes": 13265,
+      "sha256": "d327b35ff323f0f8531c0256d5b8c657b1039982bdc83b6f646ed1aca12c9fa3"
+    },
+    {
+      "path": "companion-app/tools/VerifyVisualBaselines.ps1",
+      "bytes": 1567,
+      "sha256": "effa0c435401f09209fbae8b77e927ad7b00013cdbb14e04293e5476e31e3261"
+    },
+    {
+      "path": "companion-app/tools/VisualQa.cjs",
+      "bytes": 93543,
+      "sha256": "30546a06d0c249067db8d63d0b1ca38e5ee9e82dd7b511bff9496a4975b0f284"
+    },
+    {
+      "path": "companion-app/UI_UX_AUDIT_0.8.0.md",
+      "bytes": 10034,
+      "sha256": "035e2737396ba27a6390c02ceaa77cfd62cfe00c355473cea6809659a581927e"
+    },
+    {
+      "path": "iracing-coach/.codex-plugin/plugin.json",
+      "bytes": 1405,
+      "sha256": "b5525870847768300b1a8412bf0abf035f64cfd0f1416a5796e1b69c46cc1759"
+    },
+    {
+      "path": "iracing-coach/.mcp.json",
+      "bytes": 331,
+      "sha256": "310c9bca5db3578db766f16ea6be8b0760c15ec99e1a5c3696bd8b62aa55d1e0"
+    },
+    {
+      "path": "iracing-coach/config/defaults.json",
+      "bytes": 1120,
+      "sha256": "a320ed830a126c2b72f88ea66b84ca88ac8b02a40f43e594549b18ed4a6e295d"
+    },
+    {
+      "path": "iracing-coach/config/tuning-rules/nascar-oreilly-xfinity-2026s3-v1.json",
+      "bytes": 6012,
+      "sha256": "ca2e850b58255e75fdd231770db78bcdee1385338e6bfb17d701d8a0914a3dc0"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/agents/openai.yaml",
+      "bytes": 315,
+      "sha256": "6002472a00626ba7cf0bd9ec154c2ff0c03553c275c82df18dd8091e6c0b399e"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/references/companion-app.md",
+      "bytes": 15986,
+      "sha256": "9a7ff31ddb501e8b2a29875f7f693528181f4f9244c54adf60d87fa6c534cb3e"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/references/data-and-analysis.md",
+      "bytes": 20554,
+      "sha256": "f1e79cb5e7c7671829ec8a4c9bcfc48671d83eb323490b04eb6a2681d9238543"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/references/garage61-and-web.md",
+      "bytes": 6950,
+      "sha256": "ecfe7ba2b9af56a0804615352bc25a352b4c23e11d9c1f3d042b5dcc247eb6f0"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/references/report-contract.md",
+      "bytes": 9241,
+      "sha256": "31c9e542abeca928adc9df8d88255fd757feec45ea872c19c0f55d55fa7804ce"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/references/setup-tuning.md",
+      "bytes": 8701,
+      "sha256": "a8ed962eefe56e4d4e0c05afce0381fd94c3e24e92f20218dfc36e7472179da4"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/analysis_engine.py",
+      "bytes": 326735,
+      "sha256": "b6c59632bc8607e57bdb03aaaa51d415b85cdf61d503434da3a63e5d04cc7625"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/coach_cli.py",
+      "bytes": 30531,
+      "sha256": "a16ddf41b10820a63fb04afd74a9ec878c0ac399a7659f566767d36eae72472e"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/configure-garage61.ps1",
+      "bytes": 5178,
+      "sha256": "63ceea26064d35dc87e427f178ad83938f8158d788374454952677447d2ac523"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/garage61_client.py",
+      "bytes": 32120,
+      "sha256": "d26a36b3662b612b022fac731304926b3794ecdc5075823fb0a6fb4479b0a538"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/groove_analysis.py",
+      "bytes": 39718,
+      "sha256": "2e9e81c2540d060a3e19d683ed0a0e8c24e31d28d05fd545aa0b1047c179235e"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/ibt_reader.py",
+      "bytes": 64502,
+      "sha256": "eb43f93d53cb953445b40bf09dfd5c529fdf489aa359a76c6ec9f907a96403c4"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/live_replay_v2.py",
+      "bytes": 14126,
+      "sha256": "6fc9cf22e29e20d209c1c9aba5d2f9d73ccdb7e33c064bc9672e9766d41e8955"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py",
+      "bytes": 48137,
+      "sha256": "ca77b5cc3e01df336b567c7f1bed8fbc6921f79fa6a142a20f35d28b91aa884c"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/native_events.py",
+      "bytes": 49153,
+      "sha256": "960a807e8bed399c59146c94036ba91cee902a3bd3aab0954727137ad3fbcf4b"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/path_security.py",
+      "bytes": 781,
+      "sha256": "70c3202fb2c17c72491407b835fbdb83018b961203159c98c60ff389063ff1df"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/race_card.py",
+      "bytes": 57292,
+      "sha256": "c2d4094e2b80d2dbb27e1612102b22740735f8ffaddabe39e8195931a3eba8aa"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/race_foundations.py",
+      "bytes": 56657,
+      "sha256": "ba7ea80fbeae332ff7accfb0e50b657a79886e06c8820c55f7e1663ff3ba7b26"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/reporting.py",
+      "bytes": 88358,
+      "sha256": "9d5c25ff629554d085da08bc9c230619c81e0e4a616faf3022ac69dd9edf779f"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/secure_store.py",
+      "bytes": 7539,
+      "sha256": "43414e67a3a1f0c46368051208d25a656fa1bee4e9e21713e3351ce465f463dc"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/setup_catalog.py",
+      "bytes": 39233,
+      "sha256": "66cd09b3135e8ec035769aa4b6a66476eddb76f774e53524bf253b3ac00f0201"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/start-mcp.ps1",
+      "bytes": 2378,
+      "sha256": "105b6beaecf04b18fe408b2b1c4a341638eaa9c59b7665fc53a69728d6a13027"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/storage.py",
+      "bytes": 129128,
+      "sha256": "c630be56ac2108c5393a7706e86c356ddd902a25079f0527feade465fb533a4b"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/tuning_engine.py",
+      "bytes": 93571,
+      "sha256": "5e55125bc7639edb75db87d6cf590166740a18049201f8e86ba237481fde9c8e"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/tuning_workflow.py",
+      "bytes": 65214,
+      "sha256": "0cededa691554e6af81861e515b8c42ab21141f54a1e1033676a3d79efd7d08e"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/scripts/workflow.py",
+      "bytes": 155025,
+      "sha256": "9f4069a099f3fe96753d74ea1d9720f3e8b5416a5dce9048a49a85d1729bf941"
+    },
+    {
+      "path": "iracing-coach/skills/analyze-iracing-race/SKILL.md",
+      "bytes": 22073,
+      "sha256": "58abeb39511ce013233d2b18f4c242271da05fcd3f5991fcdfc47866d73e5b82"
+    },
+    {
+      "path": "iracing-coach/tests/test_analysis_engine.py",
+      "bytes": 47520,
+      "sha256": "94da399c160eb9dce69d5e31bb7e9014d2ca641dee051b53ad0837fbd76af498"
+    },
+    {
+      "path": "iracing-coach/tests/test_coach_cli.py",
+      "bytes": 13952,
+      "sha256": "e462e3889f047adadc3e0fd541bd7fa5fb2d7cef55cad2ccd989bb5daafc579d"
+    },
+    {
+      "path": "iracing-coach/tests/test_damage_repair_analysis.py",
+      "bytes": 13734,
+      "sha256": "f4f19c55dce95894d95ccc197cae1584638fa1a1c5a928657782e4a7853a1193"
+    },
+    {
+      "path": "iracing-coach/tests/test_full_telemetry_contract.py",
+      "bytes": 9637,
+      "sha256": "7e19aefb547aee3fe2519ec7bbfedd0b4fe0da73fdf38daecad6ed01502a3e7e"
+    },
+    {
+      "path": "iracing-coach/tests/test_garage61_adapter.py",
+      "bytes": 14511,
+      "sha256": "1f3ddbc6c45d8f1e0fe6b25a44d1950e12c2a315745c7b8041e5556eff9575b4"
+    },
+    {
+      "path": "iracing-coach/tests/test_groove_analysis.py",
+      "bytes": 8857,
+      "sha256": "48f786de8992214ead54588e745257d38215c772616d37f54226126144a53e65"
+    },
+    {
+      "path": "iracing-coach/tests/test_groove_analysis_integration.py",
+      "bytes": 1577,
+      "sha256": "46c0cc3a0bc15f95d0d81eee12033abed8242251857bdc2ea6d84df9e2d1ab2f"
+    },
+    {
+      "path": "iracing-coach/tests/test_ibt_reader.py",
+      "bytes": 12279,
+      "sha256": "b5c23a79a32f49ca1df60315d70c37e689975f039c516f6122dfc11326644f74"
+    },
+    {
+      "path": "iracing-coach/tests/test_live_replay_v2.py",
+      "bytes": 17360,
+      "sha256": "6f0556f3dd934670ff2ea5c1cc922f2a7515c218686c1e8d1c852c83ce324bfe"
+    },
+    {
+      "path": "iracing-coach/tests/test_mcp_full_telemetry.py",
+      "bytes": 5883,
+      "sha256": "ffe01ad92515b869b8f61e7209661b77c1e305201cd6f8a55439a42eab34eb1c"
+    },
+    {
+      "path": "iracing-coach/tests/test_mcp_server.py",
+      "bytes": 8244,
+      "sha256": "9ca51cb855b0364416bf33bd16f7137ecc5fe68af88287acb9d836cacfbec9ac"
+    },
+    {
+      "path": "iracing-coach/tests/test_native_events.py",
+      "bytes": 16848,
+      "sha256": "7f6dea98ae09b542eccf4ac16ed9ac6b91f9a7fb38f98bfce3872b59dacf4854"
+    },
+    {
+      "path": "iracing-coach/tests/test_path_security.py",
+      "bytes": 3166,
+      "sha256": "7161dcdb4766739ff499bad7c4580a1e0607141c2a47794ccc4b7c1331b8d227"
+    },
+    {
+      "path": "iracing-coach/tests/test_race_card.py",
+      "bytes": 12609,
+      "sha256": "613918020dbe8406e5079c4df1ca9dccdaac4e9689a87f927667935398bf35e9"
+    },
+    {
+      "path": "iracing-coach/tests/test_race_foundations.py",
+      "bytes": 55969,
+      "sha256": "74bfc2dd11f19a2ca72b5c2938216ec13ee4bc43c50b01ba1f212dd317107536"
+    },
+    {
+      "path": "iracing-coach/tests/test_reporting.py",
+      "bytes": 4976,
+      "sha256": "2ccfdcbe36b200c24774b990d2da6aabe2f8f33f5be4da07faa4a6bc97c9cc58"
+    },
+    {
+      "path": "iracing-coach/tests/test_reporting_full_telemetry.py",
+      "bytes": 7423,
+      "sha256": "a967445ccf829ed606a70c6dc5f44157f42ebcfff61c495cf360867fb557f012"
+    },
+    {
+      "path": "iracing-coach/tests/test_setup_catalog.py",
+      "bytes": 7942,
+      "sha256": "d254014824c06f8468d299e79be5d852bd8e3f7f1ee8452c8c182f604a0cfe52"
+    },
+    {
+      "path": "iracing-coach/tests/test_storage.py",
+      "bytes": 23429,
+      "sha256": "c1d439b7df28532aea5689939489ded80cafce9ca643d88b268d25661320f0b5"
+    },
+    {
+      "path": "iracing-coach/tests/test_structured_tuning.py",
+      "bytes": 24726,
+      "sha256": "d51b402ae84c7f91306ab923be0e2a91b5fe2d76d9187d5b77fc0c102ec7aff3"
+    },
+    {
+      "path": "iracing-coach/tests/test_technical_strategy_depth.py",
+      "bytes": 10913,
+      "sha256": "6e1733b28c21662e7bf35484a09c032cf7c6d804252cb7c0bd0e5a1431e5dbf9"
+    },
+    {
+      "path": "iracing-coach/tests/test_telemetry_profile.py",
+      "bytes": 11395,
+      "sha256": "5958e6ac19f5fe4584a217b6f7fc203beef937b9f300540f056e3d7bc33032b1"
+    },
+    {
+      "path": "iracing-coach/tests/test_tuning_engine.py",
+      "bytes": 8493,
+      "sha256": "d9220623cce5c567edb3a4841aaba668d48670d8224d267a5da046dbadd9b39c"
+    },
+    {
+      "path": "iracing-coach/tests/test_tuning_workflow.py",
+      "bytes": 19844,
+      "sha256": "8c68bd9b586a71028c22ed46881439844bc07908e1cbde78e075429aeaa5acaa"
+    },
+    {
+      "path": "iracing-coach/tests/test_workflow.py",
+      "bytes": 35077,
+      "sha256": "3fd1b8fab5f7afe9e83205a75ed2283a2f50c3ee399fc35f87bd60d3332eb8b7"
+    },
+    {
+      "path": "companion-app-contract/ACCEPTANCE_CHECKLIST.md",
+      "bytes": 10488,
+      "sha256": "cd0f062e73bd7ef71dfe3dfc0b9dd91bbbe3287b7ae73d9f0cc562d49518dddb"
+    },
+    {
+      "path": "companion-app-contract/AI_ORCHESTRATION.md",
+      "bytes": 4433,
+      "sha256": "12aaae10df2ca4a11247793232a52fe6c7b581a035f80cfb26244bf5d48ab049"
+    },
+    {
+      "path": "companion-app-contract/backend/requirements-runtime.txt",
+      "bytes": 174,
+      "sha256": "e47131ead82d301a12c7900e7e9a1819979e1a3d51bf2fbaa97764719fd43119"
+    },
+    {
+      "path": "companion-app-contract/backend/RUNTIME_AND_PACKAGING.md",
+      "bytes": 1404,
+      "sha256": "6c496d5d039920a93b9e25c75371c12c9478b2b44b0325da34ce2bb1dc730cd1"
+    },
+    {
+      "path": "companion-app-contract/BACKEND_INTEGRATION.md",
+      "bytes": 6938,
+      "sha256": "13c2b2c1acb007c1a0ed3d82389c7f80f16d75d8bb540ec669a1baf5cac0fe02"
+    },
+    {
+      "path": "companion-app-contract/BUILD_SPEC.md",
+      "bytes": 12828,
+      "sha256": "85941b672cfe29e52ecab40379f54b6019f4939d0f539e00f0cf6c29f4c2f7a6"
+    },
+    {
+      "path": "companion-app-contract/config/appsettings.example.json",
+      "bytes": 534,
+      "sha256": "81162ae1e24fe78179034c0f0e12b71f3d88a586c6c1be721b2dacc81735d7a7"
+    },
+    {
+      "path": "companion-app-contract/config/theme.dark.json",
+      "bytes": 2633,
+      "sha256": "86741663d38cc956ff70a5afc6eceb572d5ca23c5a600bb406c999500e4ff733"
+    },
+    {
+      "path": "companion-app-contract/contracts/ai-coaching-output.schema.json",
+      "bytes": 2379,
+      "sha256": "74f26a1060cfb645d8e4b144d4d7203e068387de9ac2cd332c6786d4272daaa8"
+    },
+    {
+      "path": "companion-app-contract/contracts/ai-tuning-output.schema.json",
+      "bytes": 1192,
+      "sha256": "d370090dfc181f6751f2e3dd8d3259844bf6fbc32bab96e59351f8daeba062af"
+    },
+    {
+      "path": "companion-app-contract/contracts/analyze-result-v1.schema.json",
+      "bytes": 1988,
+      "sha256": "20f82d40e2160d597839daac1acf3f6e0a9667e216488bf5ab131cc73872ddde"
+    },
+    {
+      "path": "companion-app-contract/contracts/app-settings.schema.json",
+      "bytes": 1460,
+      "sha256": "e45a3c7c31af507bbccdc8601b85578b0cbeaccf5045b2de5da1c8038892770d"
+    },
+    {
+      "path": "companion-app-contract/contracts/compatibility.json",
+      "bytes": 1771,
+      "sha256": "b3dc15ff21530152945f7b97da26b453ac709de8c9d4167f863f82c6ffeb60d7"
+    },
+    {
+      "path": "companion-app-contract/contracts/damage-repair-v1.schema.json",
+      "bytes": 16165,
+      "sha256": "4a55977bf51393be40a47b927bbd6a5036d02071f502963d3296201f00a9a6d0"
+    },
+    {
+      "path": "companion-app-contract/contracts/dashboard-v1.schema.json",
+      "bytes": 6347,
+      "sha256": "e01adacc986654ade24c624c797903cc09de3df9cb2617a57b23ab024f525cc0"
+    },
+    {
+      "path": "companion-app-contract/contracts/discovery-v1.schema.json",
+      "bytes": 1431,
+      "sha256": "fcdca7e6d207f986803c7e8304df38a2dbd615fe19513f7bce1040c4ffb385d0"
+    },
+    {
+      "path": "companion-app-contract/contracts/error-v1.schema.json",
+      "bytes": 499,
+      "sha256": "b012e549583753d80d59a206edac46ab1d7108f96391f3d933fedc4edd51ace8"
+    },
+    {
+      "path": "companion-app-contract/contracts/garage61-auth-status-v1.schema.json",
+      "bytes": 789,
+      "sha256": "f82499b005fe3bee79945ea7098efdd7fe1dd38bce7c4ffb15a764f3acb08b68"
+    },
+    {
+      "path": "companion-app-contract/contracts/job-state.schema.json",
+      "bytes": 948,
+      "sha256": "e8fda92dfdfb3d8d55d56997ae5d7458f10f8165252eca3b9208b5e4dc28cc5a"
+    },
+    {
+      "path": "companion-app-contract/contracts/mcp-tools.v1.json",
+      "bytes": 25548,
+      "sha256": "e0c9f631a1a1b9eb073fce5c54eab10b5dc937372b677f3c0039ee1c1ec518a6"
+    },
+    {
+      "path": "companion-app-contract/contracts/race-card-v1.schema.json",
+      "bytes": 2060,
+      "sha256": "226d6ed276884b6ed42e7e78c8e0e0b3d27325478899c9980ff1c3669b9c9ce2"
+    },
+    {
+      "path": "companion-app-contract/contracts/setup-package-v1.schema.json",
+      "bytes": 2862,
+      "sha256": "3016255a6dae24104af6266c866949378946b63cd70f5e3a24e58a0b1303ab4d"
+    },
+    {
+      "path": "companion-app-contract/contracts/telemetry-events-v1.schema.json",
+      "bytes": 3616,
+      "sha256": "dfa066563849e23ceeb4be9fc6be722faf61991f05ac2556987cd5c5401f9925"
+    },
+    {
+      "path": "companion-app-contract/contracts/theme-v1.schema.json",
+      "bytes": 2700,
+      "sha256": "6375c22de6656fb19ead98df31af8e86168a96ebec4a84d2f739407c2deb4dd4"
+    },
+    {
+      "path": "companion-app-contract/contracts/track-phase-visualization-v1.schema.json",
+      "bytes": 15228,
+      "sha256": "353b61d36652231e89e6c52b85d2c7b188bb2578ccb6147cb45db459db9653a9"
+    },
+    {
+      "path": "companion-app-contract/contracts/tuning-recommendation-v1.schema.json",
+      "bytes": 3891,
+      "sha256": "6675e75d8014dff380e957e16ec2d2d00488b2a0a7a58dd8a25e71f1d7f9c879"
+    },
+    {
+      "path": "companion-app-contract/FIXTURES.md",
+      "bytes": 3782,
+      "sha256": "97455578d755ae9e26920dfa18e81ccd73fb930b465401cbb18c7f200799d628"
+    },
+    {
+      "path": "companion-app-contract/fixtures/analyze-repair-heavy.json",
+      "bytes": 23193,
+      "sha256": "e656de217c43237d1659a8aa8a6be63b9a2c2c2757272cb65fe9bdb51d5bb956"
+    },
+    {
+      "path": "companion-app-contract/fixtures/dashboard-empty.json",
+      "bytes": 679,
+      "sha256": "ef19964639a327b88a9f24ec4f32a8e871168b82d99b8e81251f91b64606a9f3"
+    },
+    {
+      "path": "companion-app-contract/fixtures/dashboard-populated.json",
+      "bytes": 8514,
+      "sha256": "6ff6898a944a77ab97bd94cbd20921c88c4ee604377a761f05571a19a66115ce"
+    },
+    {
+      "path": "companion-app-contract/fixtures/discovery.json",
+      "bytes": 2328,
+      "sha256": "54530af4ea5983201ee3c4e33c752e22291a3a2e8acd9067d4dc773e245adf8d"
+    },
+    {
+      "path": "companion-app-contract/fixtures/garage61-auth-status-states.json",
+      "bytes": 2037,
+      "sha256": "4a3a71ec2608f8e1006cd1867176318fa8afeab29651b40d5426e0a479480678"
+    },
+    {
+      "path": "companion-app-contract/fixtures/ibt/synthetic-race.ibt",
+      "bytes": 7616,
+      "sha256": "540f7208f1bdc25fe36ac0830d041e655826b89e910feadf2097bdf99eb92a81"
+    },
+    {
+      "path": "companion-app-contract/fixtures/ibt/truncated-race.ibt",
+      "bytes": 7615,
+      "sha256": "cd7f4eb5c396ccc6f1179a43c5ade57f06ea830e1d44b60964f0f94c939be756"
+    },
+    {
+      "path": "companion-app-contract/fixtures/mcp-tool-error.json",
+      "bytes": 321,
+      "sha256": "6a0cb9b11026ea991ebd41d24f8a84d115d08e443d547fb83bfaf92a61423ffa"
+    },
+    {
+      "path": "companion-app-contract/fixtures/race-card.json",
+      "bytes": 6125,
+      "sha256": "9b06d8d909d313ef4bda43c038f0875a65cf77aa881b85db4536fa4da3b6f022"
+    },
+    {
+      "path": "companion-app-contract/fixtures/setup-package.json",
+      "bytes": 2060,
+      "sha256": "506fd5bddb24cb87cdb9441e518b1722eef31f6f793b4ee92c07c5fdf1391879"
+    },
+    {
+      "path": "companion-app-contract/fixtures/setup-recommendation-damage-blocked.json",
+      "bytes": 3897,
+      "sha256": "64559866d38411fbdde2e054255326d400a8e040df54086c00ce115dcce9cc1b"
+    },
+    {
+      "path": "companion-app-contract/fixtures/setup-recommendation.json",
+      "bytes": 4236,
+      "sha256": "e2710e63663166b1d1321bae52d1e8cbf4a750d908da4a1ca8e6b28e59716b00"
+    },
+    {
+      "path": "companion-app-contract/fixtures/telemetry-events.json",
+      "bytes": 8495,
+      "sha256": "ca1cd3c131472b0b8de625ce0fba93f80a4b535b172392774190f8caee9d1adc"
+    },
+    {
+      "path": "companion-app-contract/fixtures/track-phase-visualization-unavailable.json",
+      "bytes": 54589,
+      "sha256": "803ee5f5a16a1be30dc1e9e95989f1d913b949d3aabb71a45ad97291497718ed"
+    },
+    {
+      "path": "companion-app-contract/fixtures/track-phase-visualization.json",
+      "bytes": 189942,
+      "sha256": "731ea11a78b3cc88555078a0930d8c8093ce3a9518ff4f7805b380b58b5d1019"
+    },
+    {
+      "path": "companion-app-contract/fixtures/ui-job-states.json",
+      "bytes": 624,
+      "sha256": "889d4ba2c92b0c66572a0826bd21730a7a1a28cd4e7ff03aa502023ba9b50c9f"
+    },
+    {
+      "path": "companion-app-contract/IMPLEMENTATION_PLAN.md",
+      "bytes": 6086,
+      "sha256": "6d08b5aa1a401055c3d157c5898a10588532748163e78f9ba2ea17a531b12bcf"
+    },
+    {
+      "path": "companion-app-contract/NEXT_DEVELOPMENT_PROMPT.md",
+      "bytes": 47509,
+      "sha256": "ab180a72347776b90f02740a41524693942031c27cbc95a2a6bf45c7484b531c"
+    },
+    {
+      "path": "companion-app-contract/scripts/build_manifest.py",
+      "bytes": 6579,
+      "sha256": "763a850052e744732100193d6ce7cc73962461da2e2d868b550bb69243e8850f"
+    },
+    {
+      "path": "companion-app-contract/scripts/check-build-machine.ps1",
+      "bytes": 3783,
+      "sha256": "52bfbbc00dff88d14686f242aaef7838192b7970b321f27fbcd714af7c7b7264"
+    },
+    {
+      "path": "companion-app-contract/scripts/export_contracts.py",
+      "bytes": 5153,
+      "sha256": "77ccab08b42740fee44a508a32cb8477e6d6ff71db2bdf6daf9c8d75b83baae9"
+    },
+    {
+      "path": "companion-app-contract/scripts/generate-fixtures.ps1",
+      "bytes": 462,
+      "sha256": "1fd43445ba771f17f6195a86e7760042922adbd204f323ad113a5888b799713b"
+    },
+    {
+      "path": "companion-app-contract/scripts/generate_fixtures.py",
+      "bytes": 66178,
+      "sha256": "04ccbec6b491bd7781915d21e18de110d622b89269ff4a622f276a4ef553b1d7"
+    },
+    {
+      "path": "companion-app-contract/scripts/mcp_e2e_smoke.py",
+      "bytes": 5430,
+      "sha256": "caf092b26d92f8efd7fd909371dab697dcc2fae0d2c4751280f24bd1f6a1e726"
+    },
+    {
+      "path": "companion-app-contract/scripts/prepare-transfer.ps1",
+      "bytes": 3628,
+      "sha256": "4f5367d9d2aa8a402d18358adf0a90ec50d2f1f8113fe6960fdf7522522b38bd"
+    },
+    {
+      "path": "companion-app-contract/scripts/run-backend-dev.ps1",
+      "bytes": 1528,
+      "sha256": "b9069a310c10e4b4ba84a668d59232e48a2546adb1e675e52a3d53ad2b232f1f"
+    },
+    {
+      "path": "companion-app-contract/scripts/run-tests.ps1",
+      "bytes": 572,
+      "sha256": "2747b404456f2d0c3610a8ad9f035a74fe7aea945f30b61104042f30557aa0b4"
+    },
+    {
+      "path": "companion-app-contract/scripts/verify-contract.ps1",
+      "bytes": 1691,
+      "sha256": "2f315603563d8a0045dcb4dd88064f8e8019ba7c324a8d4667c50e08c55ec8d2"
+    },
+    {
+      "path": "companion-app-contract/scripts/verify_contract.py",
+      "bytes": 32286,
+      "sha256": "08b66b038274a05d6e55fe0d2821f780a386b479dba25cc131b92d234f4fb46a"
+    },
+    {
+      "path": "companion-app-contract/SECURITY_AND_TRANSFER.md",
+      "bytes": 4388,
+      "sha256": "a374de1fb0e8bab7f92ec23106de8c172f0dfa3b50f84512ceef77426db523f4"
+    },
+    {
+      "path": "companion-app-contract/START_HERE.md",
+      "bytes": 7555,
+      "sha256": "f389de2269f6da5b3b0ab70a01c68be9d1f41d8e35cda25e9f8e0b72193991f2"
+    },
+    {
+      "path": "companion-app-contract/UI_DESIGN_SYSTEM.md",
+      "bytes": 9714,
+      "sha256": "f75848b1fe1849ec78a4a69121e91245bfbba3e6faf12807d9c354e6ad33dbac"
+    }
+  ],
+  "totals": {
+    "file_count": 694,
+    "bytes": 17279051
+  }
+}

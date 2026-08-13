@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: companion-app/global.json
+
+      - name: Verify contracts, fixtures, and backend
+        shell: pwsh
+        run: .\companion-app-contract\scripts\verify-contract.ps1
+
+      - name: Check first-party JavaScript syntax
+        shell: pwsh
+        run: |
+          $scripts = @(
+            Get-ChildItem -LiteralPath .\companion-app\src\iRacingCoach.UI\wwwroot -Filter *.js -File
+            Get-Item -LiteralPath .\companion-app\src\iRacingCoach.Preview\Components\Layout\ReconnectModal.razor.js
+          )
+          foreach ($script in $scripts) {
+            node --check $script.FullName
+            if ($LASTEXITCODE -ne 0) { throw "JavaScript syntax check failed: $($script.FullName)" }
+          }
+          if ($scripts.Count -ne 9) { throw "Expected 9 first-party JavaScript files; found $($scripts.Count)." }
+
+      - name: Test application
+        shell: pwsh
+        run: dotnet test .\companion-app\iRacingCoach.sln --configuration Release
+
+      - name: Build application
+        shell: pwsh
+        run: dotnet build .\companion-app\iRacingCoach.sln --configuration Release --no-restore

@@ -4,8 +4,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$handoffRoot = Split-Path -Parent $PSScriptRoot
-$workspaceRoot = Split-Path -Parent $handoffRoot
+$contractRoot = Split-Path -Parent $PSScriptRoot
+$workspaceRoot = Split-Path -Parent $contractRoot
 
 $userProfilePath = if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
     [System.IO.Path]::GetFullPath($env:USERPROFILE)
@@ -38,7 +38,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $python -X utf8 (Join-Path $PSScriptRoot 'build_manifest.py') --check
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$arguments = @('-X', 'utf8', (Join-Path $PSScriptRoot 'verify_handoff.py'))
+$arguments = @('-X', 'utf8', (Join-Path $PSScriptRoot 'verify_contract.py'))
 if (-not $SkipTests) { $arguments += '--full' }
 & $python @arguments
 exit $LASTEXITCODE

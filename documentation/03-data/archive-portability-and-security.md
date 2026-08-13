@@ -32,7 +32,7 @@ The durable-data home is `%USERPROFILE%\Documents\iRacing Coach`. It is intended
 
 ## Repository boundary
 
-The source repository contains application source, deterministic engine source, contracts, sanitized fixtures, test code, development handoffs, and this documentation. It excludes installed binaries, generated release payloads, local settings, credentials, logs, user archives, raw personal telemetry, and user setups. The two committed `.ibt` fixtures are synthetic/truncated test artifacts and are not personal race recordings.
+The source repository contains application source, deterministic engine source, contracts, sanitized fixtures, test code, and this documentation. It excludes installed binaries, generated release payloads, local settings, credentials, logs, user archives, raw personal telemetry, and user setups. The two committed `.ibt` fixtures are synthetic/truncated test artifacts and are not personal race recordings.
 
 Implementation references: `SettingsStore.cs`, `Garage61CredentialStore.cs`, `DurableArchive.cs`, `secure_store.py`, `path_security.py`, and `.gitignore`.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the copied companion-app handoff without third-party packages."""
+"""Verify the companion-app contract package without third-party packages."""
 
 from __future__ import annotations
 
@@ -13,26 +13,26 @@ from pathlib import Path
 from typing import Any
 
 
-HANDOFF_ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_ROOT = HANDOFF_ROOT.parent
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = PACKAGE_ROOT.parent
 PLUGIN_ROOT = WORKSPACE_ROOT / "iracing-coach"
 SCRIPT_ROOT = PLUGIN_ROOT / "skills" / "analyze-iracing-race" / "scripts"
-CONTRACT_ROOT = HANDOFF_ROOT / "contracts"
-FIXTURE_ROOT = HANDOFF_ROOT / "fixtures"
+CONTRACT_ROOT = PACKAGE_ROOT / "contracts"
+FIXTURE_ROOT = PACKAGE_ROOT / "fixtures"
 
 REQUIRED_FILES = (
     WORKSPACE_ROOT / "README.md",
     WORKSPACE_ROOT / "AGENTS.md",
-    HANDOFF_ROOT / "START_HERE.md",
-    HANDOFF_ROOT / "BUILD_SPEC.md",
-    HANDOFF_ROOT / "BACKEND_INTEGRATION.md",
-    HANDOFF_ROOT / "AI_ORCHESTRATION.md",
-    HANDOFF_ROOT / "SECURITY_AND_TRANSFER.md",
-    HANDOFF_ROOT / "ACCEPTANCE_CHECKLIST.md",
-    HANDOFF_ROOT / "IMPLEMENTATION_PLAN.md",
-    HANDOFF_ROOT / "UI_DESIGN_SYSTEM.md",
-    HANDOFF_ROOT / "manifest.json",
-    HANDOFF_ROOT / "SHA256SUMS.txt",
+    PACKAGE_ROOT / "START_HERE.md",
+    PACKAGE_ROOT / "BUILD_SPEC.md",
+    PACKAGE_ROOT / "BACKEND_INTEGRATION.md",
+    PACKAGE_ROOT / "AI_ORCHESTRATION.md",
+    PACKAGE_ROOT / "SECURITY_AND_TRANSFER.md",
+    PACKAGE_ROOT / "ACCEPTANCE_CHECKLIST.md",
+    PACKAGE_ROOT / "IMPLEMENTATION_PLAN.md",
+    PACKAGE_ROOT / "UI_DESIGN_SYSTEM.md",
+    PACKAGE_ROOT / "manifest.json",
+    PACKAGE_ROOT / "SHA256SUMS.txt",
     CONTRACT_ROOT / "compatibility.json",
     CONTRACT_ROOT / "mcp-tools.v1.json",
     CONTRACT_ROOT / "dashboard-v1.schema.json",
@@ -48,11 +48,11 @@ REQUIRED_FILES = (
     CONTRACT_ROOT / "tuning-recommendation-v1.schema.json",
     CONTRACT_ROOT / "garage61-auth-status-v1.schema.json",
     CONTRACT_ROOT / "theme-v1.schema.json",
-    HANDOFF_ROOT / "config" / "theme.dark.json",
+    PACKAGE_ROOT / "config" / "theme.dark.json",
     PLUGIN_ROOT / ".codex-plugin" / "plugin.json",
     SCRIPT_ROOT / "mcp_server.py",
     SCRIPT_ROOT / "coach_cli.py",
-    HANDOFF_ROOT / "scripts" / "mcp_e2e_smoke.py",
+    PACKAGE_ROOT / "scripts" / "mcp_e2e_smoke.py",
 )
 
 
@@ -113,7 +113,7 @@ def _theme_contrast(foreground: str, background: str) -> float:
 
 
 def _validate_theme_contract() -> None:
-    theme = _load_json(HANDOFF_ROOT / "config" / "theme.dark.json")
+    theme = _load_json(PACKAGE_ROOT / "config" / "theme.dark.json")
     _require(theme.get("schemaVersion") == 1, "theme schemaVersion must be 1")
     _require(theme.get("name") == "mineral-glass-dark", "unexpected theme name")
     _require(theme.get("mode") == "dark", "default theme must be dark")
@@ -395,7 +395,7 @@ def _validate_backend_fixture_shapes() -> None:
     _require(jobs.get("fixture_kind") == "companion-ui-projection" and isinstance(jobs.get("states"), dict), "job-state projection must be explicitly marked as UI-only")
 
 
-def _scan_handoff_for_secret_values() -> list[str]:
+def _scan_contract_for_secret_values() -> list[str]:
     findings: list[str] = []
     patterns = (
         re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
@@ -407,7 +407,7 @@ def _scan_handoff_for_secret_values() -> list[str]:
             re.IGNORECASE,
         ),
     )
-    manifest = _load_json(HANDOFF_ROOT / "manifest.json")
+    manifest = _load_json(PACKAGE_ROOT / "manifest.json")
     files = manifest.get("files") if isinstance(manifest, dict) else None
     if not isinstance(files, list):
         raise ValueError("manifest.json files must be an array before secret scanning")
@@ -436,7 +436,7 @@ def _run_mcp_e2e_smoke() -> dict[str, Any]:
             sys.executable,
             "-X",
             "utf8",
-            str(HANDOFF_ROOT / "scripts" / "mcp_e2e_smoke.py"),
+            str(PACKAGE_ROOT / "scripts" / "mcp_e2e_smoke.py"),
         ],
         cwd=WORKSPACE_ROOT,
         text=True,
@@ -461,14 +461,14 @@ def _run_mcp_e2e_smoke() -> dict[str, Any]:
 
 
 def _verify_manifest() -> dict[str, Any]:
-    path = HANDOFF_ROOT / "manifest.json"
+    path = PACKAGE_ROOT / "manifest.json"
     if not path.is_file():
         return {"present": False, "verified_files": 0}
     manifest = _load_json(path)
     files = manifest.get("files") if isinstance(manifest, dict) else None
     if not isinstance(files, list):
         raise ValueError("manifest.json files must be an array")
-    checksum_path = HANDOFF_ROOT / "SHA256SUMS.txt"
+    checksum_path = PACKAGE_ROOT / "SHA256SUMS.txt"
     checksum_lines = checksum_path.read_text(encoding="utf-8").splitlines()
     checksums: dict[str, str] = {}
     for line in checksum_lines:
@@ -512,7 +512,7 @@ def main() -> int:
 
     missing = [str(path.relative_to(WORKSPACE_ROOT)) for path in REQUIRED_FILES if not path.is_file()]
     if missing:
-        raise FileNotFoundError("Missing required handoff files: " + ", ".join(missing))
+        raise FileNotFoundError("Missing required contract files: " + ", ".join(missing))
 
     for path in CONTRACT_ROOT.glob("*.json"):
         _load_json(path)
@@ -577,9 +577,9 @@ def main() -> int:
     manifest_result = _verify_manifest()
     mcp_e2e = _run_mcp_e2e_smoke()
 
-    secrets = _scan_handoff_for_secret_values()
+    secrets = _scan_contract_for_secret_values()
     if secrets:
-        raise RuntimeError("Potential secret values in handoff: " + ", ".join(secrets))
+        raise RuntimeError("Potential secret values in contract package: " + ", ".join(secrets))
 
     tests: dict[str, Any] = {"run": False}
     if args.full:

@@ -2,13 +2,13 @@
 
 ## Copying this folder
 
-Copy the whole `iRacing Coach` folder if the development machine is private and trusted. The clean build inputs are `iracing-coach/` and `companion-app-handoff/`.
+Copy the whole `iRacing Coach` folder if the development machine is private and trusted. The clean build inputs are `companion-app/`, `iracing-coach/`, and `companion-app-contract/`.
 
 Preferred clean-transfer command:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\companion-app-handoff\scripts\prepare-transfer.ps1
+  -File .\companion-app-contract\scripts\prepare-transfer.ps1
 ```
 
 This runs the complete verifier and creates a new timestamped ZIP next to the workspace plus a sibling `.sha256` file. It refuses to overwrite existing output or write the archive inside its own workspace, includes `manifest.json` and `SHA256SUMS.txt`, removes a partial ZIP after a failed build, and excludes the private `data/` corpus.
@@ -20,7 +20,7 @@ These are not required and may be excluded from a clean transfer:
 - every `__pycache__/` and `*.pyc`
 - `data/test-artifacts/`
 
-The `data/` directory is optional private regression material, roughly 80 MB at handoff time. It includes Joshua's derived telemetry, account/driver identifiers, setup values, purchased-setup provenance, and absolute local paths. Do not commit or redistribute it. Sanitized fixtures under this handoff are the normal UI-development corpus.
+The `data/` directory is optional private regression material, roughly 80 MB at the recorded baseline. It includes Joshua's derived telemetry, account/driver identifiers, setup values, purchased-setup provenance, and absolute local paths. Do not commit or redistribute it. Sanitized fixtures under this contract package are the normal UI-development corpus.
 
 No raw IBTs, replays, simulator-loadable STOs, purchased HTML exports, or Garage61 telemetry CSVs are bundled here.
 

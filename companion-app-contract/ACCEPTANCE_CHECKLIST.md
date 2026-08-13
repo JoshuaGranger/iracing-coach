@@ -131,10 +131,10 @@ From the copied workspace root:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\companion-app-handoff\scripts\check-build-machine.ps1
+  -File .\companion-app-contract\scripts\check-build-machine.ps1
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\companion-app-handoff\scripts\verify-handoff.ps1
+  -File .\companion-app-contract\scripts\verify-contract.ps1
 
 python -m unittest discover -s .\iracing-coach\tests -p "test_*.py"
 

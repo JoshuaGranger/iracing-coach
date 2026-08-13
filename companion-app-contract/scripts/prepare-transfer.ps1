@@ -4,15 +4,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$handoffRoot = Split-Path -Parent $PSScriptRoot
-$workspaceRoot = Split-Path -Parent $handoffRoot
+$contractRoot = Split-Path -Parent $PSScriptRoot
+$workspaceRoot = Split-Path -Parent $contractRoot
 
-& (Join-Path $PSScriptRoot 'verify-handoff.ps1') -PythonPath $PythonPath
+& (Join-Path $PSScriptRoot 'verify-contract.ps1') -PythonPath $PythonPath
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
-    $OutputPath = Join-Path (Split-Path -Parent $workspaceRoot) ("iRacing-Coach-build-handoff-$stamp.zip")
+    $OutputPath = Join-Path (Split-Path -Parent $workspaceRoot) ("iRacing-Coach-build-inputs-$stamp.zip")
 }
 $resolvedOutput = [System.IO.Path]::GetFullPath($OutputPath)
 $workspacePrefix = $workspaceRoot.TrimEnd(
@@ -30,11 +30,11 @@ if ([System.IO.File]::Exists($checksumOutput)) {
     throw "Refusing to overwrite existing checksum: $checksumOutput"
 }
 
-$manifestPath = Join-Path $handoffRoot 'manifest.json'
+$manifestPath = Join-Path $contractRoot 'manifest.json'
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
 $relativeFiles = @($manifest.files | ForEach-Object { [string]$_.path })
-$relativeFiles += 'companion-app-handoff/manifest.json'
-$relativeFiles += 'companion-app-handoff/SHA256SUMS.txt'
+$relativeFiles += 'companion-app-contract/manifest.json'
+$relativeFiles += 'companion-app-contract/SHA256SUMS.txt'
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem

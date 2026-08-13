@@ -22,6 +22,6 @@ Recommended first-release packaging:
 3. Place an official embeddable/full Python runtime under `runtime/python`.
 4. Place the complete validated `iracing-coach` folder under `backend/iracing-coach`.
 5. Launch `start-mcp.ps1` with process-local trusted-root variables.
-6. Run `verify-handoff.ps1` and a packaged end-to-end smoke test before signing/checksums.
+6. Run `verify-contract.ps1` and a packaged end-to-end smoke test before signing/checksums.
 
 PyInstaller/Nuitka are optional later optimizations, not requirements. If used, verify memory-mapped IBT reads, dynamic module imports, `config/defaults.json`, PowerShell scripts, reports, and every MCP/CLI command. A bundled Python tree is simpler and more transparent for release one.

@@ -716,7 +716,7 @@ public sealed class CapabilityRegistryTests
     [TestMethod]
     public void AiSchema_AllowsContextualSectionsAndForbidsMissingEvidenceClass()
     {
-        using var schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepositoryRoot(), "companion-app-handoff", "contracts", "ai-coaching-output.schema.json")));
+        using var schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepositoryRoot(), "companion-app-contract", "contracts", "ai-coaching-output.schema.json")));
         var required = schema.RootElement.GetProperty("required").EnumerateArray().Select(item => item.GetString()).ToArray();
         CollectionAssert.AreEquivalent(new[] { "summary", "actions", "followUpNeeded" }, required);
         var classes = schema.RootElement.GetProperty("$defs").GetProperty("evidenceClass").GetProperty("enum").EnumerateArray().Select(item => item.GetString()).ToArray();

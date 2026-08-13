@@ -1,4 +1,4 @@
-# Companion app handoff
+# Companion app integration contract
 
 Use this reference when building a Windows companion UI over the iRacing Coach backend. Keep deterministic telemetry math, archive writes, and credentials behind the existing MCP/CLI boundary; use the AI layer for synthesis, research, coaching language, and workflow guidance.
 
@@ -98,7 +98,7 @@ On the development PC:
 4. Test missing repair channels, all-zero repair channels, incident-only sessions, mandatory and optional repair overlap, leaving with optional repair remaining, towing, fast-repair request without use, and confirmed fast-repair use.
 5. Build a self-contained Windows package with pinned dependencies and a versioned backend/contract compatibility declaration.
 
-The workspace-level `companion-app-handoff/` packet is the build-system handoff. Its checked-in MCP tool snapshot, partial forward-compatible output schemas, sanitized fixtures, compatibility manifest, and verifier accompany this reference; do not substitute the older installed-plugin cache.
+The workspace-level `companion-app-contract/` package is the permanent product/build contract. Its checked-in MCP tool snapshot, partial forward-compatible output schemas, sanitized fixtures, compatibility manifest, and verifier accompany this reference; do not substitute the older installed-plugin cache.
 
 For portable development and deployment, set `IRACING_COACH_PYTHON`, `IRACING_COACH_IRACING_ROOT`, optional `IRACING_COACH_INSTALL_ROOT`, `IRACING_COACH_DATA`, and `PYTHONUTF8=1` only in the backend child-process environment. The Documents and archive roots freeze the trusted source/archive boundaries for that process; the install root is independently read-only. UNC/device paths and descendants outside the configured boundaries remain rejected. Package a Python 3.10+ runtime and preserve the plugin directory structure.
 
