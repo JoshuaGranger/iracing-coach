@@ -11,6 +11,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from analysis_engine import build_technical_insights  # noqa: E402
 from race_card import build_race_card  # noqa: E402
+from reporting import _next_race_baseline, render_report  # noqa: E402
 
 
 def _controls() -> dict:
@@ -82,6 +83,82 @@ class TechnicalStrategyDepthTests(unittest.TestCase):
         metrics = {item["label"]: item for item in pit["metrics"]}
         self.assertEqual(metrics["Stops completed"]["numeric_value"], 0)
         self.assertEqual(metrics["No-stop headroom"]["numeric_value"], 19.7)
+
+    def test_hybrid_limit_never_becomes_an_exact_no_stop_claim(self) -> None:
+        runs = [_run(1, 1, 15)]
+        strategy = {
+            "measured_green_fuel_gal_per_lap": 0.2,
+            "forecast": {
+                "status": "hybrid_finish_constraint_unresolved",
+                "scheduled_laps": None,
+                "all_green_range_laps": 34.7,
+                "minimum_stops_all_green": None,
+            },
+        }
+        race = {
+            "scheduled_laps": 500,
+            "scheduled_minutes": 30,
+            "recorded_laps": 15,
+        }
+
+        pit = build_technical_insights(
+            [_lap(index, 82.0 + index / 10) for index in range(1, 16)],
+            runs,
+            race,
+            strategy,
+            {},
+            {},
+        )[0]
+        metrics = {item["label"]: item for item in pit["metrics"]}
+        self.assertNotIn("No-stop headroom", metrics)
+        self.assertNotIn("500", pit["takeaway"])
+
+        baseline = _next_race_baseline(
+            {"strategy": strategy, "race_summary": race, "runs": runs},
+            {},
+        )
+        self.assertIn("all-green laps as the fuel ceiling", baseline)
+        self.assertNotIn("500", baseline)
+        self.assertNotIn("fuel stop", baseline)
+
+        card = build_race_card(
+            {
+                "identity": {
+                    "track_name": "Hybrid Speedway",
+                    "car_name": "Test Car",
+                    "is_fixed_setup": True,
+                },
+                "race_summary": race,
+                "runs": runs,
+                "strategy": strategy,
+                "technical_insights": [],
+                "coaching_signals": [],
+            }
+        )
+        self.assertIn("500-lap / 30-minute limits", card["title"])
+        self.assertFalse(
+            any("500 laps" in item["text"] for item in card["actions"])
+        )
+        self.assertIn("Observed burn", next(
+            item for item in card["actions"] if item["label"] == "Strategy"
+        )["text"])
+        self.assertIn("resolved finish constraint", card["bottom_line"]["text"])
+
+        report = render_report(
+            {
+                "identity": {
+                    "track_name": "Hybrid Speedway",
+                    "car_name": "Test Car",
+                },
+                "race_summary": race,
+                "runs": runs,
+                "strategy": strategy,
+                "technical_insights": [],
+                "coaching_signals": [],
+            }
+        )
+        self.assertIn("500-lap / 30-minute limits", report)
+        self.assertNotIn("500 scheduled", report)
 
     def test_zero_clean_reference_laps_still_surfaces_recorded_dynamics(self) -> None:
         run = _run(1, 1, 50)

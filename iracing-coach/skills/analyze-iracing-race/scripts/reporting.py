@@ -673,7 +673,12 @@ def _next_race_baseline(
     parts = [f"budget {planning_burn:.3f} gal per green lap (observed rate plus 3% reserve)"]
     if tank_range is not None:
         parts.append(f"treat about {max(0.0, tank_range):.1f} all-green laps as the fuel ceiling")
-        scheduled = _number(race.get("scheduled_laps"))
+        forecast = _mapping(strategy.get("forecast"))
+        scheduled = (
+            _number(forecast.get("scheduled_laps"))
+            if _number(race.get("scheduled_minutes")) is None
+            else None
+        )
         if scheduled is not None and tank_range > 0:
             minimum_stops = max(0, math.ceil(scheduled / tank_range - 1e-9) - 1)
             if minimum_stops == 0:
@@ -949,9 +954,16 @@ def render_report(
     summary_rows: list[list[str]] = []
     recorded = _lap_count(race.get("recorded_laps"))
     scheduled = _lap_count(race.get("scheduled_laps"))
+    scheduled_minutes = _number(race.get("scheduled_minutes"))
     distance = f"{recorded} recorded laps"
-    if scheduled != "—":
+    if scheduled != "—" and scheduled_minutes is not None:
+        distance += (
+            f" / {scheduled}-lap / {_fmt(scheduled_minutes, 1)}-minute limits"
+        )
+    elif scheduled != "—":
         distance += f" / {scheduled} scheduled"
+    elif scheduled_minutes is not None:
+        distance += f" / {_fmt(scheduled_minutes, 1)}-minute limit"
     summary_rows.append(["Distance", distance])
     official_cautions = _number(race.get("official_cautions"))
     official_caution_laps = _number(race.get("official_caution_laps"))

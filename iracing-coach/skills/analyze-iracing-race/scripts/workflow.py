@@ -93,6 +93,7 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLUGIN_ROOT = SCRIPT_DIR.parents[2]
 DEFAULTS_PATH = PLUGIN_ROOT / "config" / "defaults.json"
+_GARAGE61_TARGET_DERIVATION_VERSION = "explicit-analysis-paths-v1"
 
 
 class WorkflowError(RuntimeError):
@@ -1532,9 +1533,18 @@ def _knowledge_for_report(
     if cache_status.get("state") not in {"fresh", "incomplete"}:
         return None
     components = _bundle_components(store, context)
+    garage61 = components["garage61"]
+    if (
+        garage61.get("target_derivation_version")
+        != _GARAGE61_TARGET_DERIVATION_VERSION
+    ):
+        # Older bundles may contain targets selected by the former recursive
+        # metadata scan. Preserve independent facts/track research, but never
+        # republish those Garage61 comparisons as current evidence.
+        garage61 = {}
     result: dict[str, Any] = {
         "facts": components["facts"],
-        "garage61": components["garage61"],
+        "garage61": garage61,
         "track_shape": components["track_shape"],
     }
     if components["notes_markdown"]:
@@ -1899,6 +1909,7 @@ def analyze_race_workflow(
     )
     garage61_representatives = {
         "schema_version": 1,
+        "target_derivation_version": _GARAGE61_TARGET_DERIVATION_VERSION,
         "status": "available" if garage61_index.get("representative_laps") else "unavailable",
         "reason": None if garage61_index.get("representative_laps") else "No cached Garage61 representative laps are available for this exact car/track/setup context.",
         "comparison_scope": garage61_index.get("comparison_scope"),
@@ -1938,6 +1949,7 @@ def analyze_race_workflow(
     inline_race_card["timing"] = timing
     analysis_view = {
         "schema_version": 1,
+        "analysis_profile_version": analysis.get("analysis_profile_version"),
         "identity": analysis.get("identity") or {},
         "race_summary": analysis.get("race_summary") or {},
         "race_grades": analysis.get("race_grades") or {},
@@ -2809,47 +2821,64 @@ def _representative_local_lap(analysis: Mapping[str, Any]) -> float | None:
     return statistics.median(values) if values else None
 
 
-def _deep_metadata_value(value: Any, aliases: Iterable[str]) -> tuple[Any, str] | None:
-    wanted = {_normalized_label(alias).replace(" ", "") for alias in aliases}
-    queue: list[tuple[Any, str]] = [(value, "analysis")]
-    seen: set[int] = set()
-    while queue:
-        current, path = queue.pop(0)
-        if isinstance(current, Mapping):
-            identity = id(current)
-            if identity in seen:
-                continue
-            seen.add(identity)
-            for key, child in current.items():
-                key_text = str(key)
-                normalized = _normalized_label(key_text).replace(" ", "")
-                child_path = f"{path}.{key_text}"
-                if normalized in wanted and child not in (None, ""):
-                    return child, child_path
-                if isinstance(child, (Mapping, list, tuple)):
-                    queue.append((child, child_path))
-        elif isinstance(current, (list, tuple)):
-            identity = id(current)
-            if identity in seen:
-                continue
-            seen.add(identity)
-            for index, child in enumerate(current):
-                if isinstance(child, (Mapping, list, tuple)):
-                    queue.append((child, f"{path}[{index}]"))
-    return None
-
-
-def _condition_value(
-    analysis: Mapping[str, Any], aliases: Iterable[str], *, numeric: bool = True
+def _metadata_value(
+    analysis: Mapping[str, Any],
+    aliases: Sequence[str],
+    *,
+    canonical_path: tuple[str, ...] | None = None,
+    legacy_container: str | None = None,
+    canonical_before_legacy: bool = False,
+    numeric: bool = True,
 ) -> tuple[Any, str] | None:
-    found = _deep_metadata_value(analysis, aliases)
-    if found is None:
+    """Read Garage61 metadata from allowlisted shallow and canonical paths."""
+
+    def accepted(raw: Any, source: str) -> tuple[Any, str] | None:
+        if raw is None or raw == "":
+            return None
+        if not numeric:
+            if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
+                return None
+            if isinstance(raw, float) and not math.isfinite(raw):
+                return None
+            return raw, source
+        value = _finite_number(raw)
+        return (value, source) if value is not None else None
+
+    def shallow(
+        container: Mapping[str, Any], container_path: str
+    ) -> tuple[Any, str] | None:
+        for alias in aliases:
+            wanted = _normalized_label(alias).replace(" ", "")
+            for key, raw in container.items():
+                if _normalized_label(key).replace(" ", "") != wanted:
+                    continue
+                found = accepted(raw, f"{container_path}.{key}")
+                if found is not None:
+                    return found
         return None
-    raw, source = found
-    if not numeric:
-        return raw, source
-    value = _finite_number(raw)
-    return (value, source) if value is not None else None
+
+    found = shallow(analysis, "analysis")
+    if found is not None:
+        return found
+
+    def canonical() -> tuple[Any, str] | None:
+        if canonical_path is None:
+            return None
+        return accepted(
+            _path_value(analysis, *canonical_path),
+            f"analysis.{'.'.join(canonical_path)}",
+        )
+
+    if canonical_before_legacy and (found := canonical()) is not None:
+        return found
+
+    legacy = analysis.get(legacy_container) if legacy_container else None
+    if legacy_container and isinstance(legacy, Mapping):
+        found = shallow(legacy, f"analysis.{legacy_container}")
+        if found is not None:
+            return found
+
+    return None if canonical_before_legacy else canonical()
 
 
 def _garage_target(
@@ -2871,53 +2900,127 @@ def _garage_target(
         ),
     }
     metadata_sources: dict[str, str] = {}
-    enriched_fields: tuple[tuple[str, tuple[str, ...], bool], ...] = (
-        ("trackTemp", ("trackTemp", "track_temp", "track_temp_c", "TrackTempCrew"), True),
-        ("airTemp", ("airTemp", "air_temp", "air_temp_c", "AirTemp"), True),
-        ("trackUsage", ("trackUsage", "track_usage", "TrackUsage"), True),
-        ("trackWetness", ("trackWetness", "track_wetness", "TrackWetness"), True),
-        ("tireCompound", ("tireCompound", "tire_compound", "TireCompound"), False),
+    enriched_fields: tuple[
+        tuple[str, tuple[str, ...], tuple[str, ...], str | None, bool, bool], ...
+    ] = (
+        (
+            "trackTemp",
+            ("trackTemp", "track_temp", "track_temp_c", "TrackTempCrew"),
+            ("identity", "conditions", "track_temp_c"),
+            "conditions",
+            True,
+            False,
+        ),
+        (
+            "airTemp",
+            ("airTemp", "air_temp", "air_temp_c", "AirTemp"),
+            ("identity", "conditions", "air_temp_c"),
+            "conditions",
+            True,
+            False,
+        ),
+        (
+            "trackUsage",
+            ("trackUsage", "track_usage", "TrackUsage"),
+            ("identity", "conditions", "track_usage"),
+            "conditions",
+            True,
+            False,
+        ),
+        (
+            "trackWetness",
+            ("trackWetness", "track_wetness", "TrackWetness"),
+            ("identity", "conditions", "track_wetness"),
+            "conditions",
+            True,
+            False,
+        ),
+        (
+            "tireCompound",
+            ("tireCompound", "tire_compound", "TireCompound"),
+            ("identity", "tire_compound"),
+            "conditions",
+            False,
+            True,
+        ),
         (
             "weightPenalty",
             ("weightPenalty", "weight_penalty", "weight_penalty_kg", "WeightPenalty"),
+            ("identity", "weight_penalty_kg"),
+            None,
             True,
+            False,
         ),
         (
             "powerAdjust",
             ("powerAdjust", "power_adjust", "power_adjust_percent", "PowerAdjust"),
+            ("identity", "power_adjust_percent"),
+            None,
             True,
+            False,
         ),
         (
             "driverRating",
             ("driverRating", "driver_rating", "driver_irating", "iRating", "IRating"),
+            ("identity", "driver_irating"),
+            None,
             True,
+            False,
         ),
         (
             "maxFuelPercent",
             ("maxFuelPercent", "max_fuel_percent", "MaxFuelPercent"),
+            ("identity", "max_fuel_percent"),
+            None,
             True,
+            False,
         ),
     )
-    for target_name, aliases, numeric in enriched_fields:
-        found = _condition_value(analysis, aliases, numeric=numeric)
+    for (
+        target_name,
+        aliases,
+        canonical_path,
+        legacy_container,
+        numeric,
+        canonical_before_legacy,
+    ) in enriched_fields:
+        found = _metadata_value(
+            analysis,
+            aliases,
+            canonical_path=canonical_path,
+            legacy_container=legacy_container,
+            canonical_before_legacy=canonical_before_legacy,
+            numeric=numeric,
+        )
         if found is not None:
             target[target_name], metadata_sources[target_name] = found
 
-    explicit_fuel = _condition_value(
-        analysis, ("fuelLevel", "fuel_level", "starting_fuel_l"), numeric=True
+    explicit_fuel = _metadata_value(
+        analysis,
+        ("fuelLevel", "fuel_level", "starting_fuel_l"),
+        numeric=True,
     )
-    if explicit_fuel is None:
-        first_run = next(
-            (item for item in analysis.get("runs", ()) or () if isinstance(item, Mapping)),
-            None,
-        )
+    first_run = next(
+        (
+            (index, item)
+            for index, item in enumerate(analysis.get("runs", ()) or ())
+            if isinstance(item, Mapping)
+        ),
+        None,
+    )
+    if explicit_fuel is None and first_run is not None:
+        run_index, run = first_run
+        fuel = run.get("fuel")
         start_fuel = (
-            _finite_number((first_run.get("fuel") or {}).get("start_l"))
-            if first_run is not None
+            _finite_number(fuel.get("start_l"))
+            if isinstance(fuel, Mapping)
             else None
         )
         if start_fuel is not None:
-            explicit_fuel = (start_fuel, "analysis.runs[0].fuel.start_l")
+            explicit_fuel = (
+                start_fuel,
+                f"analysis.runs[{run_index}].fuel.start_l",
+            )
     if explicit_fuel is not None:
         target["fuelLevel"], metadata_sources["fuelLevel"] = explicit_fuel
 
@@ -3879,6 +3982,7 @@ def garage61_sync_workflow(
     scope = "approved-global-visible" if global_available else "own/team"
     index = {
         "schema_version": 1,
+        "target_derivation_version": _GARAGE61_TARGET_DERIVATION_VERSION,
         "synced_at": utc_now(),
         "authentication": {
             "method": "bearer-pat-from-windows-user-dpapi",
@@ -3921,6 +4025,7 @@ def garage61_sync_workflow(
     }
     representative_contract = {
         "schema_version": 1,
+        "target_derivation_version": _GARAGE61_TARGET_DERIVATION_VERSION,
         "status": "available" if representatives else "unavailable",
         "reason": None if representatives else "No comparable Garage61 laps were returned for this exact context.",
         "comparison_scope": scope,

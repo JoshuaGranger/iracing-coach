@@ -274,6 +274,42 @@ class StorageTuningHistoryTests(unittest.TestCase):
 
 
 class StorageRecentAnalysesTests(unittest.TestCase):
+    def test_hybrid_limits_use_distinct_history_keys(self) -> None:
+        base = {
+            "identity": {
+                "season_year": 2026,
+                "season_quarter": 3,
+                "car_name": "Test Car",
+                "track_name": "Test Track",
+                "is_fixed_setup": True,
+            },
+            "race_summary": {"scheduled_laps": 500, "scheduled_minutes": 30},
+        }
+
+        thirty = ArchiveStore.context_from_analysis(base)
+        sixty = ArchiveStore.context_from_analysis(
+            {
+                **base,
+                "race_summary": {"scheduled_laps": 500, "scheduled_minutes": 60},
+            }
+        )
+
+        self.assertEqual(thirty["race_length_key"], "declared-v1-500-laps-or-30-minutes")
+        self.assertEqual(sixty["race_length_key"], "declared-v1-500-laps-or-60-minutes")
+        self.assertNotEqual(thirty["race_length_key"], sixty["race_length_key"])
+        self.assertEqual(
+            ArchiveStore.context_from_analysis(
+                {**base, "race_summary": {"scheduled_laps": 80}}
+            )["race_length_key"],
+            "declared-v1-80-laps",
+        )
+        self.assertEqual(
+            ArchiveStore.context_from_analysis(
+                {**base, "race_summary": {"scheduled_minutes": 30.5}}
+            )["race_length_key"],
+            "declared-v1-30.5-minutes",
+        )
+
     def test_reanalysis_supersedes_same_recorded_session_in_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = ArchiveStore(directory)

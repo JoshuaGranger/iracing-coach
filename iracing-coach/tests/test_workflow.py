@@ -16,6 +16,8 @@ sys.path.insert(0, str(SCRIPTS))
 import garage61_client  # noqa: E402
 import reporting  # noqa: E402
 import workflow  # noqa: E402
+from analysis_engine import analyze_telemetry  # noqa: E402
+from test_analysis_engine import synthetic_telemetry  # noqa: E402
 
 
 def _analysis() -> dict:
@@ -35,6 +37,7 @@ def _analysis() -> dict:
         )
     return {
         "schema_version": 1,
+        "analysis_profile_version": "post-race-foundations-v13",
         "analysis_id": "workflow-test-analysis",
         "analyzed_at": "2026-08-01T12:00:00+00:00",
         "source": {
@@ -116,6 +119,34 @@ def _analysis() -> dict:
 
 
 class WorkflowLocalTests(unittest.TestCase):
+    def test_knowledge_omits_legacy_garage61_targets_but_preserves_other_facts(self) -> None:
+        components = {
+            "facts": {"track": "verified"},
+            "sources": [],
+            "garage61": {"representative_laps": [{"lap_id": "legacy"}]},
+            "track_shape": {"corners": 4},
+            "notes_markdown": "notes",
+        }
+        with mock.patch.object(workflow, "_bundle_components", return_value=components):
+            knowledge = workflow._knowledge_for_report(
+                mock.Mock(), {}, {"state": "fresh"}
+            )
+
+        self.assertEqual(knowledge["facts"], {"track": "verified"})
+        self.assertEqual(knowledge["track_shape"], {"corners": 4})
+        self.assertEqual(knowledge["garage61"], {})
+
+        components["garage61"]["target_derivation_version"] = (
+            workflow._GARAGE61_TARGET_DERIVATION_VERSION
+        )
+        with mock.patch.object(workflow, "_bundle_components", return_value=components):
+            knowledge = workflow._knowledge_for_report(
+                mock.Mock(), {}, {"state": "incomplete"}
+            )
+        self.assertEqual(
+            knowledge["garage61"]["representative_laps"], [{"lap_id": "legacy"}]
+        )
+
     def test_iracing_root_environment_override_supports_portable_hosts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.dict(
@@ -358,9 +389,19 @@ class WorkflowLocalTests(unittest.TestCase):
             self.assertGreaterEqual(result["timing"]["total_ms"], 0.0)
             self.assertEqual(result["damage_repair"], analysis["damage_repair"])
             self.assertEqual(result["analysis_view"]["schema_version"], 1)
+            self.assertEqual(
+                result["analysis_view"]["analysis_profile_version"],
+                "post-race-foundations-v13",
+            )
             self.assertEqual(result["analysis_view"]["track_profile"], analysis["track_profile"])
             self.assertEqual(result["analysis_view"]["laps"], analysis["laps"])
             self.assertIn("lap_traces", result["analysis_view"])
+            self.assertEqual(
+                result["analysis_view"]["garage61_representative_laps"][
+                    "target_derivation_version"
+                ],
+                workflow._GARAGE61_TARGET_DERIVATION_VERSION,
+            )
             self.assertTrue((root / "archive" / "history.sqlite3").is_file())
 
     def test_explicit_file_does_not_require_iracing_root_discovery(self) -> None:
@@ -667,6 +708,116 @@ class _FakeGarage61Client:
 
 
 class WorkflowGarage61Tests(unittest.TestCase):
+    def test_garage_target_uses_canonical_fields_from_real_analyzer_output(self) -> None:
+        analysis = analyze_telemetry(synthetic_telemetry())
+
+        target = workflow._garage_target(
+            analysis,
+            {"id": 10, "name": "NASCAR Truck"},
+            {"id": 20, "name": "Iowa", "variant": "Oval"},
+            {"id": 263, "name": "2026 Season 3", "platform": "iracing"},
+        )
+
+        self.assertEqual(target["fuelLevel"], analysis["runs"][0]["fuel"]["start_l"])
+        self.assertEqual(
+            target["_metadataSources"]["fuelLevel"],
+            "analysis.runs[0].fuel.start_l",
+        )
+        self.assertEqual(target["trackTemp"], analysis["identity"]["conditions"]["track_temp_c"])
+        self.assertEqual(
+            target["_metadataSources"]["trackTemp"],
+            "analysis.identity.conditions.track_temp_c",
+        )
+
+    def test_garage_target_ignores_lap_trace_fuel_when_selecting_starting_fuel(self) -> None:
+        analysis = _analysis()
+        analysis["lap_traces"] = {
+            "traces": [
+                {
+                    "points": [
+                        {
+                            "additional_signals": {
+                                "fuel-level": 15.848,
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        target = workflow._garage_target(
+            analysis,
+            {"id": 10, "name": "NASCAR Truck"},
+            {"id": 20, "name": "Iowa", "variant": "Oval"},
+            {"id": 263, "name": "2026 Season 3", "platform": "iracing"},
+        )
+
+        self.assertEqual(target["fuelLevel"], 55.0)
+        self.assertEqual(
+            target["_metadataSources"]["fuelLevel"],
+            "analysis.runs[0].fuel.start_l",
+        )
+
+    def test_garage_target_ignores_arbitrary_nested_metadata_aliases(self) -> None:
+        analysis = _analysis()
+        analysis["runs"] = []
+        del analysis["conditions"]["track_temp"]
+        analysis["unrelated"] = {
+            "fuelLevel": 12.5,
+            "driverRating": 9999,
+            "trackTemp": 99.0,
+        }
+
+        target = workflow._garage_target(
+            analysis,
+            {"id": 10, "name": "NASCAR Truck"},
+            {"id": 20, "name": "Iowa", "variant": "Oval"},
+            {"id": 263, "name": "2026 Season 3", "platform": "iracing"},
+        )
+
+        self.assertNotIn("fuelLevel", target)
+        self.assertNotIn("trackTemp", target)
+        self.assertEqual(target["driverRating"], 2450.0)
+        self.assertEqual(
+            target["_metadataSources"]["driverRating"],
+            "analysis.identity.driver_irating",
+        )
+
+    def test_garage_target_preserves_explicit_legacy_root_precedence(self) -> None:
+        analysis = _analysis()
+        analysis["trackTemp"] = 31.5
+        analysis["fuelLevel"] = 42.0
+
+        target = workflow._garage_target(
+            analysis,
+            {"id": 10, "name": "NASCAR Truck"},
+            {"id": 20, "name": "Iowa", "variant": "Oval"},
+            {"id": 263, "name": "2026 Season 3", "platform": "iracing"},
+        )
+
+        self.assertEqual(target["trackTemp"], 31.5)
+        self.assertEqual(target["fuelLevel"], 42.0)
+        self.assertEqual(target["_metadataSources"]["trackTemp"], "analysis.trackTemp")
+        self.assertEqual(target["_metadataSources"]["fuelLevel"], "analysis.fuelLevel")
+
+    def test_garage_target_preserves_identity_tire_compound_precedence(self) -> None:
+        analysis = _analysis()
+        analysis["identity"]["tire_compound"] = 2
+        analysis["conditions"]["tire_compound"] = 1
+
+        target = workflow._garage_target(
+            analysis,
+            {"id": 10, "name": "NASCAR Truck"},
+            {"id": 20, "name": "Iowa", "variant": "Oval"},
+            {"id": 263, "name": "2026 Season 3", "platform": "iracing"},
+        )
+
+        self.assertEqual(target["tireCompound"], 2)
+        self.assertEqual(
+            target["_metadataSources"]["tireCompound"],
+            "analysis.identity.tire_compound",
+        )
+
     def test_sync_separates_cohorts_and_reuses_exact_csv_cache(self) -> None:
         fake = _FakeGarage61Client()
         with tempfile.TemporaryDirectory() as directory:
@@ -741,6 +892,23 @@ class WorkflowGarage61Tests(unittest.TestCase):
             )
             index_path = Path(first["cache"]["garage61_index"])
             index = json.loads(index_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                index["target_derivation_version"],
+                workflow._GARAGE61_TARGET_DERIVATION_VERSION,
+            )
+            self.assertEqual(
+                first["garage61_representative_laps"]["target_derivation_version"],
+                workflow._GARAGE61_TARGET_DERIVATION_VERSION,
+            )
+            target_lap_cache = json.loads(
+                Path(first["cache"]["portable_target_laps"]["path"]).read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                target_lap_cache["target_derivation_version"],
+                workflow._GARAGE61_TARGET_DERIVATION_VERSION,
+            )
             self.assertEqual(set(index["cohorts"]), {"fixed", "open"})
             self.assertTrue(
                 all(

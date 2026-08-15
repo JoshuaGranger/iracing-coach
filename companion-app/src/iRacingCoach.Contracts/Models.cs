@@ -110,7 +110,11 @@ public sealed record RaceOverview(
     string LowestTireName = "",
     double? ControlLoadChangePercent = null,
     double? FuelUsedGallons = null,
-    double? BestCleanLapSeconds = null);
+    double? BestCleanLapSeconds = null,
+    int ScheduledLaps = 0,
+    double ScheduledMinutes = 0,
+    int DeclaredLapLimit = 0,
+    double DeclaredTimeLimitMinutes = 0);
 
 public sealed record RaceEventGroup(
     string Id,
@@ -716,7 +720,10 @@ public sealed record AnalysisWorkspace(
     AnalysisGarage61References? Garage61References = null,
     IReadOnlyList<AnalysisTechnicalInsight>? TechnicalInsights = null,
     TuningSessionIdentity? TuningIdentity = null,
-    TuningMapView? TuningMap = null);
+    TuningMapView? TuningMap = null,
+    double ScheduledMinutes = 0,
+    int DeclaredLapLimit = 0,
+    double DeclaredTimeLimitMinutes = 0);
 
 public sealed class JobItem
 {
@@ -1048,7 +1055,9 @@ public sealed record RacePlanBriefing(
     IReadOnlyList<CornerCoachingRow> Corners,
     IReadOnlyList<RaceTrigger> Triggers,
     IReadOnlyList<string> Assumptions,
-    string Confidence);
+    string Confidence,
+    string DistanceLabel = "Finish constraint unresolved",
+    bool DistanceIsEstimated = false);
 
 public sealed record SetupPackageView(
     string PackageId,

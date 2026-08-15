@@ -15,6 +15,7 @@ import re
 import statistics
 from collections import defaultdict
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
@@ -50,7 +51,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v12"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v13"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "groove_analysis.py",
@@ -289,6 +290,41 @@ def _numeric_text(value: Any) -> float | None:
         return None
 
 
+_IRSDK_UNLIMITED_LAPS = 32767
+
+
+def _lap_limit(value: Any) -> int | None:
+    """Return a declared finite lap limit, excluding SDK sentinel values."""
+
+    if isinstance(value, bool):
+        return None
+    number = _numeric_text(value)
+    if number is None or not math.isfinite(number) or not number.is_integer():
+        return None
+    laps = int(number)
+    return laps if 0 < laps < _IRSDK_UNLIMITED_LAPS else None
+
+
+def _scheduled_race_laps(
+    table: "TelemetryTable", race_session: Mapping[str, Any]
+) -> int | None:
+    """Resolve the configured race distance without mistaking progress for it."""
+
+    configured = race_session.get("SessionLaps")
+    if (
+        isinstance(configured, str)
+        and configured.strip()
+        and configured.strip().split()[0].casefold() == "unlimited"
+    ):
+        return None
+    totals = table.get("SessionLapsTotal", default=None) if table.has("SessionLapsTotal") else ()
+    telemetry_total = next(
+        (laps for raw in reversed(totals) if (laps := _lap_limit(raw)) is not None),
+        None,
+    )
+    return telemetry_total if telemetry_total is not None else _lap_limit(configured)
+
+
 def _duration_minutes(value: Any) -> float | None:
     """Normalize iRacing session-duration values to minutes.
 
@@ -298,7 +334,7 @@ def _duration_minutes(value: Any) -> float | None:
     """
 
     number = _numeric_text(value)
-    if number is None:
+    if number is None or not math.isfinite(number) or number <= 0.0:
         return None
     unit = str(value).strip().lower() if isinstance(value, str) else ""
     if "hour" in unit or re.search(r"\bhrs?\b", unit):
@@ -317,6 +353,7 @@ class TelemetryTable:
 
     def __init__(self, telemetry: Mapping[str, Any]) -> None:
         raw_channels = telemetry.get("channels") or telemetry.get("data") or telemetry.get("samples") or {}
+        row_count = 0
         if isinstance(raw_channels, Mapping):
             self.channels = {
                 str(name): list(values) if isinstance(values, Sequence) and not isinstance(values, (str, bytes, bytearray)) else [values]
@@ -326,9 +363,16 @@ class TelemetryTable:
             rows = telemetry.get("samples") or raw_channels
             columns: MutableMapping[str, list[Any]] = defaultdict(list)
             for row in rows or []:
+                for values in columns.values():
+                    values.append(None)
                 if isinstance(row, Mapping):
-                    for name, value in row.items():
-                        columns[str(name)].append(value)
+                    normalized_row = {str(name): value for name, value in row.items()}
+                    for name, value in normalized_row.items():
+                        if name in columns:
+                            columns[name][-1] = value
+                        else:
+                            columns[name] = [None] * row_count + [value]
+                row_count += 1
             self.channels = dict(columns)
         self.accessed_channels: set[str] = set()
         self.variables = telemetry.get("variables", {})
@@ -358,7 +402,10 @@ class TelemetryTable:
         if telemetry.get("native_tick_rate_hz") is not None:
             self.metadata["tick_rate"] = telemetry.get("native_tick_rate_hz")
         lengths = [len(values) for values in self.channels.values()]
-        self.length = max(lengths, default=0)
+        self.length = max([row_count, *lengths], default=0)
+        for values in self.channels.values():
+            if len(values) < self.length:
+                values.extend([None] * (self.length - len(values)))
 
     def available_catalog(self) -> list[dict[str, Any]]:
         """Return the complete available-channel catalogue when supplied."""
@@ -390,7 +437,7 @@ class TelemetryTable:
                 self.accessed_channels.add(alias)
                 values = self.channels[alias]
                 if len(values) < self.length:
-                    values = values + [values[-1] if values else default] * (self.length - len(values))
+                    values = values + [None] * (self.length - len(values))
                 return values
         return [default] * self.length
 
@@ -412,6 +459,7 @@ class TelemetryTable:
         return self.channel_units.get(channel) if channel else None
 
 
+@lru_cache(maxsize=128)
 def _normalized_unit(value: str | None) -> str:
     return str(value or "").strip().lower().replace("°", "").replace(" ", "")
 
@@ -786,7 +834,9 @@ def _identity(table: TelemetryTable) -> dict[str, Any]:
     }
 
 
-def _find_race_session(info: Mapping[str, Any]) -> Mapping[str, Any]:
+def _find_race_session(
+    info: Mapping[str, Any], sim_session_num: Any = None
+) -> Mapping[str, Any]:
     sessions = _path_get(info, "SessionInfo", "Sessions") or []
     if isinstance(sessions, Sequence):
         race_sessions = [
@@ -794,6 +844,24 @@ def _find_race_session(info: Mapping[str, Any]) -> Mapping[str, Any]:
             if isinstance(item, Mapping) and str(item.get("SessionType", "")).lower() == "race"
         ]
         if race_sessions:
+            requested_session_num = (
+                None
+                if isinstance(sim_session_num, bool)
+                else _numeric_text(sim_session_num)
+            )
+            if (
+                requested_session_num is not None
+                and math.isfinite(requested_session_num)
+                and requested_session_num.is_integer()
+            ):
+                for item in race_sessions:
+                    item_session_num = _numeric_text(item.get("SessionNum"))
+                    if (
+                        item_session_num is not None
+                        and math.isfinite(item_session_num)
+                        and item_session_num == requested_session_num
+                    ):
+                        return item
             return race_sessions[-1]
     return {}
 
@@ -882,7 +950,16 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     n = table.length
     times = table.get("SessionTime", "SessionTimeOfDay", default=None)
     laps = table.get("Lap", default=None)
-    completed_laps = table.get("LapCompleted", default=None)
+    has_completed_laps = table.has("LapCompleted")
+    completed_laps = table.get("LapCompleted", default=None) if has_completed_laps else ()
+    max_completed_lap = max(
+        (
+            number
+            for value in completed_laps
+            if (number := _finite(value)) is not None
+        ),
+        default=None,
+    )
     lap_pct = table.get("LapDistPct", default=None)
     speed = table.get("Speed", default=None)
     throttle = table.get("Throttle", "ThrottleRaw", default=None)
@@ -976,15 +1053,11 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
         distance_complete = bool(
             pct_values and min(pct_values) <= 0.15 and max(pct_values) >= 0.85
         )
-        completed_values = [
-            _finite(value) for value in completed_laps
-            if _finite(value) is not None
-        ]
-        if table.has("LapCompleted") and lap_number > 0:
+        if has_completed_laps and lap_number > 0:
             complete = bool(
                 distance_complete
-                and completed_values
-                and max(completed_values) >= lap_number
+                and max_completed_lap is not None
+                and max_completed_lap >= lap_number
             )
         else:
             complete = distance_complete
@@ -5015,6 +5088,18 @@ def _driver_adjustments_summary(table: TelemetryTable) -> dict[str, Any]:
     return result
 
 
+def _exact_scheduled_laps(race: Mapping[str, Any]) -> float | None:
+    """Return a race distance only when the configured lap cap governs alone."""
+
+    scheduled_laps = _finite(race.get("scheduled_laps"))
+    scheduled_minutes = _finite(race.get("scheduled_minutes"))
+    if scheduled_laps is None or scheduled_laps <= 0.0:
+        return None
+    if scheduled_minutes is not None:
+        return None
+    return scheduled_laps
+
+
 def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, Any]:
     green_burns = [
         run["fuel"]["green_l_per_lap"] for run in runs
@@ -5038,7 +5123,14 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
         if _finite(run.get("pace", {}).get("green_lap_time_slope_s_per_lap")) is not None
     ]
     pit_assessments = []
-    scheduled_laps = _finite(race.get("scheduled_laps"))
+    configured_laps = _finite(race.get("scheduled_laps"))
+    configured_minutes = _finite(race.get("scheduled_minutes"))
+    hybrid_limits = (
+        configured_laps is not None
+        and configured_laps > 0.0
+        and configured_minutes is not None
+    )
+    scheduled_laps = _exact_scheduled_laps(race)
     for run_index, run in enumerate(runs):
         fuel_end = _finite(run.get("fuel", {}).get("end_l"))
         reserve_laps = fuel_end / green_burn if fuel_end is not None and green_burn not in (None, 0.0) else None
@@ -5124,6 +5216,10 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
         limitations.append(
             "Final-run tire wear is unknown unless the car returned for a tire-reading update."
         )
+    if hybrid_limits:
+        limitations.append(
+            "Lap-and-time limits are both configured; exact distance-dependent fuel and stop forecasts are withheld until the governing finish constraint can be established."
+        )
     green_equivalents = _finite(race.get("green_lap_equivalents"))
     caution_equivalents = _finite(race.get("caution_lap_equivalents"))
     exposure_total = (green_equivalents or 0.0) + (caution_equivalents or 0.0)
@@ -5178,9 +5274,13 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
         ]
     forecast = {
         "status": (
-            "usable"
-            if scheduled_laps is not None and all_green_range is not None
-            else "insufficient_fuel_or_distance_evidence"
+            "hybrid_finish_constraint_unresolved"
+            if hybrid_limits
+            else (
+                "usable"
+                if scheduled_laps is not None and all_green_range is not None
+                else "insufficient_fuel_or_distance_evidence"
+            )
         ),
         "scheduled_laps": _round(scheduled_laps, 0),
         "maximum_recorded_run_start_fuel_l": _round(maximum_start_fuel),
@@ -5360,7 +5460,7 @@ def build_technical_insights(
     four_tire_profiles = [item for item in pit_profiles if item["tire_call"] == "four"]
     pit_metrics: list[dict[str, Any]] = []
     strategy_forecast = strategy.get("forecast") or {}
-    scheduled_distance = _finite(race.get("scheduled_laps"))
+    scheduled_distance = _exact_scheduled_laps(race)
     recorded_distance = _finite(race.get("recorded_laps"))
     all_green_range = _finite(strategy_forecast.get("all_green_range_laps"))
     completed_distance = recorded_distance or (
@@ -6077,7 +6177,7 @@ def build_technical_insights(
             )
         )
     final_run = runs[-1] if runs else None
-    scheduled_laps = _finite(race.get("scheduled_laps"))
+    scheduled_laps = _exact_scheduled_laps(race)
     final_run_end_lap = _finite(final_run.get("end_lap")) if final_run else None
     final_fuel_l = _finite((final_run.get("fuel") or {}).get("end_l")) if final_run else None
     green_burn_l = _finite(strategy.get("measured_green_fuel_l_per_lap"))
@@ -7153,7 +7253,9 @@ def analyze_telemetry(
     if table.length < 2:
         raise ValueError("Telemetry contains fewer than two samples.")
     identity = _identity(table)
-    race_session = _find_race_session(table.session_info)
+    race_session = _find_race_session(
+        table.session_info, table.metadata.get("sim_session_num")
+    )
     laps = _lap_summaries(table)
     runs = _runs(table, laps)
     _annotate_tire_set_lifecycle(runs)
@@ -7190,10 +7292,7 @@ def analyze_telemetry(
         track_type=identity.get("track_type"),
     )
     corner_tire_age = _corner_tire_age_summary(table, laps, runs, track_profile)
-    race_laps = table.get("RaceLaps", default=None)
-    scheduled_laps = next((value for value in reversed(race_laps) if _finite(value)), None)
-    if scheduled_laps is None:
-        scheduled_laps = _numeric_text(race_session.get("SessionLaps"))
+    scheduled_laps = _scheduled_race_laps(table, race_session)
     scheduled_minutes = _duration_minutes(race_session.get("SessionTime"))
     completed_race_laps = [
         lap for lap in laps

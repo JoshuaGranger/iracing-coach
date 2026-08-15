@@ -194,16 +194,38 @@ def _fmt_number(value: Any, digits: int = 1) -> str | None:
 def _distance_label(
     race: Mapping[str, Any], planned_laps: float | None = None
 ) -> str:
-    scheduled = _fmt_number(
-        planned_laps if planned_laps is not None else race.get("scheduled_laps"),
-        0,
-    )
+    if planned_laps is not None:
+        return f"{_fmt_number(planned_laps, 0)} laps"
+    scheduled = _fmt_number(race.get("scheduled_laps"), 0)
+    minutes = _fmt_number(race.get("scheduled_minutes"), 1)
     recorded = _fmt_number(race.get("recorded_laps"), 0)
+    if scheduled and minutes:
+        return f"{scheduled}-lap / {minutes}-minute limits"
     if scheduled:
         return f"{scheduled} laps"
+    if minutes:
+        return f"{minutes} minutes"
     if recorded:
         return f"{recorded} recorded laps"
     return "distance unavailable"
+
+
+def _exact_scheduled_distance(analysis: Mapping[str, Any]) -> float | None:
+    race = _mapping(analysis.get("race_summary"))
+    forecast = _mapping(_mapping(analysis.get("strategy")).get("forecast"))
+    if _number(race.get("scheduled_minutes")) is not None:
+        # A time limit can end the race before the configured lap cap.  Older
+        # archives may still carry a usable-looking lap forecast, so fail
+        # closed before consulting any forecast distance.
+        return None
+    if forecast.get("status") != "usable":
+        return None
+    scheduled = _number(forecast.get("scheduled_laps"))
+    if scheduled is None and _number(race.get("scheduled_minutes")) is None:
+        # Retain compatibility with older lap-only analysis responses whose
+        # usable forecast predates its explicit scheduled_laps field.
+        scheduled = _number(race.get("scheduled_laps"))
+    return scheduled if scheduled is not None and scheduled > 0.0 else None
 
 
 def _comparison_components(knowledge: Mapping[str, Any]) -> tuple[bool, list[Mapping[str, Any]], Mapping[str, Any]]:
@@ -852,10 +874,9 @@ def _strategy_claim(
     strategy = _mapping(analysis.get("strategy"))
     forecast = _mapping(strategy.get("forecast"))
     if forecast.get("status") == "usable":
-        race = _mapping(analysis.get("race_summary"))
         distance = planned_laps
         if distance is None:
-            distance = _number(race.get("scheduled_laps"))
+            distance = _exact_scheduled_distance(analysis)
         range_number = _number(forecast.get("all_green_range_laps"))
         stop_count = _number(forecast.get("minimum_stops_all_green"))
         target_numbers = [
@@ -918,10 +939,9 @@ def _fuel_response_claim(
     """Turn fuel feasibility into an explicit in-race decision rule."""
 
     forecast = _mapping(_mapping(analysis.get("strategy")).get("forecast"))
-    race = _mapping(analysis.get("race_summary"))
     distance = planned_laps
     if distance is None:
-        distance = _number(race.get("scheduled_laps"))
+        distance = _exact_scheduled_distance(analysis)
     range_laps = _number(forecast.get("all_green_range_laps"))
     if forecast.get("status") != "usable" or distance is None or range_laps in (None, 0.0):
         return _claim(
@@ -1147,9 +1167,11 @@ def build_race_card(
         history_rows,
         planned_laps=planned_laps,
     )
-    effective_distance = planned_laps
-    if effective_distance is None:
-        effective_distance = _number(race.get("scheduled_laps"))
+    effective_distance = (
+        planned_laps
+        if planned_laps is not None
+        else _exact_scheduled_distance(analysis)
+    )
     short_race = effective_distance is not None and effective_distance <= 25.0
     long_run_label = "Race pace" if short_race else "Long run"
     long_run_text = (
@@ -1214,7 +1236,11 @@ def build_race_card(
             else _claim(
                 f"{tire} was the lowest measured tire; use the phase plan and fuel window"
                 if tire
-                else "Use the strongest race phase as the execution baseline and follow the distance-specific fuel plan",
+                else (
+                    "Use the strongest race phase as the execution baseline and follow the distance-specific fuel plan"
+                    if _exact_scheduled_distance(analysis) is not None
+                    else "Use the strongest race phase as the execution baseline; wait for a resolved finish constraint before making a distance-specific fuel call"
+                ),
                 "inferred",
                 words=18,
                 chars=126,

@@ -7,6 +7,9 @@ namespace iRacingCoach.Coordinator;
 
 public static class RuntimeMapper
 {
+    private const string Garage61TargetDerivationVersion = "explicit-analysis-paths-v1";
+    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v13";
+
     public static RecentRace ArchivedRace(JsonElement report, string analysisPath)
     {
         var identity = Object(report, "identity");
@@ -20,11 +23,19 @@ public static class RuntimeMapper
         var date = DateTimeOffset.TryParse(start, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
             ? parsed.ToLocalTime().ToString("MMM d · h:mm tt", CultureInfo.CurrentCulture) : "Archived race";
         var recorded = Integer(summary, "recorded_laps");
-        var scheduled = Integer(summary, "scheduled_laps");
+        var scheduled = HasCurrentAnalysisProfile(report) ? Integer(summary, "scheduled_laps") : 0;
+        var scheduledMinutes = Number(summary, "scheduled_minutes");
+        var distanceSummary = scheduled > 0 && scheduledMinutes is > 0
+            ? $"{recorded} recorded laps / {scheduled}-lap / {scheduledMinutes:0.#}-minute limits"
+            : scheduled > 0
+                ? $"{recorded} of {scheduled} laps"
+                : scheduledMinutes is > 0
+                    ? $"{recorded} recorded laps / {scheduledMinutes:0.#}-minute limit"
+                    : $"{recorded} recorded laps";
         return new RecentRace(id, DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")) ?? "Recorded track", DisplayLayout(Text(identity, "track_config")),
             DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car", date,
             Boolean(identity, "is_fixed_setup") == true ? "Fixed" : "Open", "Analyzed",
-            scheduled > 0 ? $"{recorded} of {scheduled} laps" : $"{recorded} recorded laps", false, true,
+            distanceSummary, false, true,
             Integer(summary, "starting_position"), Integer(summary, "final_recorded_position"), Text(identity, "car_path") ?? string.Empty,
             analysisPath, string.Empty, start, eventKey, sessionType, "Archived", 1,
             Text(identity, "series_name") ?? string.Empty, Text(identity, "season_name") ?? string.Empty, groupId ?? analysisPath,
@@ -37,6 +48,18 @@ public static class RuntimeMapper
         var analysis = view.ValueKind == JsonValueKind.Object ? view : report;
         var summary = Object(analysis, "race_summary");
         if (summary.ValueKind != JsonValueKind.Object) summary = Object(report, "race_summary");
+        var forecast = Object(Object(analysis, "strategy"), "forecast");
+        var currentDistanceProfile = HasCurrentAnalysisProfile(analysis);
+        var declaredLapLimit = currentDistanceProfile ? Integer(summary, "scheduled_laps") : 0;
+        var declaredTimeLimitMinutes = currentDistanceProfile
+            && Number(summary, "scheduled_minutes") is > 0 and var declaredMinutes
+                ? declaredMinutes
+                : 0;
+        var exactScheduledLaps = currentDistanceProfile
+            && declaredTimeLimitMinutes <= 0
+                ? Integer(forecast, "scheduled_laps")
+                : 0;
+        var exactScheduledMinutes = declaredLapLimit <= 0 ? declaredTimeLimitMinutes : 0;
         var runs = Array(analysis, "runs");
         var laps = Array(analysis, "laps");
 
@@ -91,7 +114,11 @@ public static class RuntimeMapper
             Integer(summary, "recorded_laps"), Integer(summary, "green_laps_estimated"), Integer(summary, "caution_laps_estimated"),
             Integer(summary, "pit_stops_detected"), runs.Count(), runDetails.Select(run => run.Green).DefaultIfEmpty().Max(),
             longestComparable?.Slope, consistency, tireReading?.Tire, tireReading?.TireName ?? string.Empty,
-            controlChange, Number(summary, "fuel_used_gal"), cleanTimes.Length > 0 ? cleanTimes.Min() : null);
+            controlChange, Number(summary, "fuel_used_gal"), cleanTimes.Length > 0 ? cleanTimes.Min() : null,
+            ScheduledLaps: exactScheduledLaps,
+            ScheduledMinutes: exactScheduledMinutes,
+            DeclaredLapLimit: declaredLapLimit,
+            DeclaredTimeLimitMinutes: declaredTimeLimitMinutes);
     }
 
     public static AnalysisWorkspace ArchivedAnalysis(JsonElement report)
@@ -102,6 +129,16 @@ public static class RuntimeMapper
             ["analysis_view"] = report.Clone()
         }));
         return Analysis(wrapped.RootElement);
+    }
+
+    public static bool HasCurrentAnalysisProfile(JsonElement report)
+    {
+        var view = Object(report, "analysis_view");
+        var analysis = view.ValueKind == JsonValueKind.Object ? view : report;
+        return string.Equals(
+            Text(analysis, "analysis_profile_version"),
+            CurrentAnalysisProfileVersion,
+            StringComparison.Ordinal);
     }
 
     public static RaceCard ArchivedRaceCard(JsonElement report)
@@ -245,6 +282,18 @@ public static class RuntimeMapper
         var track = Object(view, "track_profile");
         var strategy = Object(view, "strategy");
         var forecast = Object(strategy, "forecast");
+        var currentDistanceProfile = HasCurrentAnalysisProfile(view);
+        var distanceProfileTrusted = currentDistanceProfile;
+        var declaredLapLimit = currentDistanceProfile ? Integer(summary, "scheduled_laps") : 0;
+        var declaredTimeLimitMinutes = currentDistanceProfile
+            && Number(summary, "scheduled_minutes") is > 0 and var declaredMinutes
+                ? declaredMinutes
+                : 0;
+        var hasScheduledTimeLimit = declaredTimeLimitMinutes > 0;
+        var resolvedScheduledMinutes = declaredLapLimit <= 0 ? declaredTimeLimitMinutes : 0;
+        var resolvedScheduledLaps = distanceProfileTrusted && !hasScheduledTimeLimit
+            ? Integer(forecast, "scheduled_laps")
+            : 0;
         var damage = Object(view, "damage_repair");
         var setup = Object(view, "setup_telemetry");
         var quality = Object(view, "data_quality");
@@ -254,7 +303,9 @@ public static class RuntimeMapper
         var replay = MapRaceReplay(Object(view, "race_replay"));
         var tirePrediction = MapTirePrediction(Object(view, "tire_learning"));
         var garage61References = MapGarage61References(Object(view, "garage61_representative_laps"), view);
-        var technicalInsights = MapTechnicalInsights(view);
+        var technicalInsights = MapTechnicalInsights(
+            view,
+            suppressDistanceDependent: !currentDistanceProfile);
         var tuningIdentity = MapTuningIdentity(response, view, selection, identity, vectorGeometry);
 
         string? previousMappedLapFlag = null;
@@ -352,7 +403,9 @@ public static class RuntimeMapper
                     Number(pitService, "penalty_served_s"),
                     tireConditions,
                     Number(pitAssessment, "pit_cycle_position_change"),
-                    Number(pitAssessment, "scheduled_race_laps_remaining_after_stop"))
+                    resolvedScheduledLaps > 0
+                        ? Number(pitAssessment, "scheduled_race_laps_remaining_after_stop")
+                        : null)
                 : null;
             return new AnalysisRun(
                 runNumber, Array(run, "lap_numbers").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray(),
@@ -445,8 +498,10 @@ public static class RuntimeMapper
             .ToArray();
         var strategyDetails = new AnalysisStrategy(
             Number(strategy, "measured_green_fuel_gal_per_lap"), Number(strategy, "measured_caution_fuel_gal_per_lap"),
-            NumberOrFirst(forecast, "all_green_range_laps"), NullableInteger(forecast, "minimum_stops_all_green"),
-            Array(forecast, "equal_stint_pit_targets_all_green").Select(NullableIntegerValue).Where(value => value is > 0).Select(value => value!.Value).ToArray(),
+            NumberOrFirst(forecast, "all_green_range_laps"), resolvedScheduledLaps > 0 ? NullableInteger(forecast, "minimum_stops_all_green") : null,
+            resolvedScheduledLaps > 0
+                ? Array(forecast, "equal_stint_pit_targets_all_green").Select(NullableIntegerValue).Where(value => value is > 0).Select(value => value!.Value).ToArray()
+                : [],
             Number(forecast, "operational_reserve_fuel_l") is { } reserveLiters ? reserveLiters / 3.785411784 : null,
             Number(forecast, "operational_reserve_green_laps"), Humanize(Text(forecast, "classification")) ?? "Recorded fuel feasibility",
             Array(forecast, "assumptions").Select(Value).Where(value => value.Length > 0).ToArray(),
@@ -463,10 +518,12 @@ public static class RuntimeMapper
             DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")) ?? "Recorded track", DisplayLayout(Text(identity, "track_config")),
             DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
             Boolean(identity, "is_fixed_setup") == true ? "Fixed" : "Open", Text(selection, "sim_session_type") ?? Text(identity, "event_type") ?? "Race",
-            Integer(summary, "recorded_laps"), Integer(summary, "scheduled_laps"), Integer(summary, "pit_stops_detected"),
+            Integer(summary, "recorded_laps"), resolvedScheduledLaps, Integer(summary, "pit_stops_detected"),
             runs, laps, traces, shape, segments, shape.Length >= 3 ? "track_shape" : "normalized_distance_strip",
             Text(traceRoot, "tire_stress_definition") ?? "A relative controls-and-load proxy; not measured tire wear.",
-            Humanize(Text(forecast, "status")) ?? Humanize(Text(strategy, "confidence")) ?? "Insufficient recorded strategy evidence",
+            !currentDistanceProfile
+                ? "Legacy scheduled distance unavailable"
+                : Humanize(Text(forecast, "status")) ?? Humanize(Text(strategy, "confidence")) ?? "Insufficient recorded strategy evidence",
             Humanize(Text(damage, "status")) ?? "Unavailable", strategyDetails, damageDetails, Text(identity, "setup_fingerprint") ?? string.Empty,
             Humanize(Text(quality, "confidence")) ?? "Unknown", Number(timing, "total_ms") ?? 0,
             Text(gradesRoot, "overall_grade") ?? "Not graded", grades,
@@ -478,7 +535,10 @@ public static class RuntimeMapper
             garage61References,
             technicalInsights,
             tuningIdentity,
-            tuningMap);
+            tuningMap,
+            resolvedScheduledMinutes,
+            declaredLapLimit,
+            declaredTimeLimitMinutes);
     }
 
     public static SetupPackageView SetupPackage(JsonElement response, string requestedCar, string requestedTrack, string requestedSeason, string purpose)
@@ -668,7 +728,7 @@ public static class RuntimeMapper
         }).ToArray();
     }
 
-    public static RacePlanBriefing Plan(JsonElement response, int requestedDistanceValue = 0, string? requestedDistanceMode = null)
+    public static RacePlanBriefing Plan(JsonElement response, double requestedDistanceValue = 0, string? requestedDistanceMode = null)
     {
         var view = Object(response, "analysis_view");
         var identity = Object(view, "identity");
@@ -684,34 +744,61 @@ public static class RuntimeMapper
             1 => $"About {range[0]:0.0} green laps",
             _ => "Build two clean fuel samples to calculate range"
         };
-        var scheduledLaps = Integer(summary, "scheduled_laps");
+        var currentDistanceProfile = HasCurrentAnalysisProfile(view);
+        var hasScheduledTimeLimit = Number(summary, "scheduled_minutes") is > 0;
+        var scheduledLaps = HasCurrentAnalysisProfile(view) && !hasScheduledTimeLimit
+            ? Integer(forecast, "scheduled_laps")
+            : 0;
         var plannedLaps = scheduledLaps;
-        var distanceLabel = string.Empty;
+        var distanceLabel = scheduledLaps > 0
+            ? $"{scheduledLaps} laps"
+            : currentDistanceProfile
+                ? DeclaredDistanceLabel(summary)
+                : "Finish constraint unresolved";
+        var distanceIsEstimated = false;
+        var assumptions = Array(forecast, "assumptions")
+            .Select(Value)
+            .Where(value => value.Length > 0)
+            .ToList();
         if (requestedDistanceValue > 0 && requestedDistanceMode?.Equals("Laps", StringComparison.OrdinalIgnoreCase) == true)
         {
-            plannedLaps = requestedDistanceValue;
-            distanceLabel = $" for {plannedLaps} all-green laps";
+            plannedLaps = (int)Math.Ceiling(requestedDistanceValue);
+            distanceLabel = $"{plannedLaps} laps";
         }
         else if (requestedDistanceValue > 0 && requestedDistanceMode?.Equals("Minutes", StringComparison.OrdinalIgnoreCase) == true)
         {
             var representativeLapSeconds = RepresentativeLapSeconds(view);
             plannedLaps = representativeLapSeconds.HasValue ? (int)Math.Ceiling(requestedDistanceValue * 60d / representativeLapSeconds.Value) : 0;
-            distanceLabel = plannedLaps > 0 ? $" in a {requestedDistanceValue}-minute all-green race (about {plannedLaps} laps)" : string.Empty;
+            distanceIsEstimated = plannedLaps > 0;
+            distanceLabel = plannedLaps > 0
+                ? $"{requestedDistanceValue:0.#} minutes (~{plannedLaps} laps at recorded pace)"
+                : $"{requestedDistanceValue:0.#} minutes (lap estimate unavailable)";
+            if (representativeLapSeconds.HasValue)
+            {
+                assumptions.Add(
+                    $"Converted {requestedDistanceValue:0.#} minutes to approximately {plannedLaps} all-green laps using a {representativeLapSeconds.Value:0.0}-second representative clean recorded lap; actual timed-race distance can vary.");
+            }
         }
 
         int? calculatedStops = null;
         if (requestedDistanceValue > 0 && plannedLaps > 0 && range.Length > 0 && range.Min() > 0)
             calculatedStops = Math.Max(0, (int)Math.Ceiling(plannedLaps / range.Min()) - 1);
-        else
+        else if (requestedDistanceValue <= 0 && plannedLaps > 0)
             calculatedStops = NullableInteger(forecast, "minimum_stops_all_green");
         var stopCount = calculatedStops is { } stops
-            ? $"{stops} stop{(stops == 1 ? string.Empty : "s")}{distanceLabel}"
-            : "Stop count needs recorded fuel range and race distance";
+            ? $"{(distanceIsEstimated ? "Estimated " : string.Empty)}{stops} stop{(stops == 1 ? string.Empty : "s")} for {distanceLabel}"
+            : requestedDistanceValue > 0 && requestedDistanceMode?.Equals("Minutes", StringComparison.OrdinalIgnoreCase) == true && plannedLaps <= 0
+                ? "Stop count needs a comparable clean lap to estimate the timed-race distance"
+                : plannedLaps > 0
+                    ? "Stop count needs a recorded fuel range"
+                    : "Stop count needs a resolved race distance";
 
         var sourcePitTargets = Array(forecast, "equal_stint_pit_targets_all_green").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray();
         var pitTargets = requestedDistanceValue > 0 && plannedLaps > 0 && calculatedStops is > 0
             ? Enumerable.Range(1, calculatedStops.Value).Select(stop => (int)Math.Round(plannedLaps * stop / (calculatedStops.Value + 1d), MidpointRounding.AwayFromZero)).ToArray()
-            : requestedDistanceValue > 0 ? [] : sourcePitTargets;
+            : requestedDistanceValue <= 0 && plannedLaps > 0 && calculatedStops is > 0
+                ? sourcePitTargets
+                : [];
         var sourceActions = Array(card, "actions").Select(item => new RaceAction(Text(item, "label") ?? "Priority", Claim(item))).ToArray();
         var sourceStart = sourceActions.FirstOrDefault(item => item.Label.Equals("Start", StringComparison.OrdinalIgnoreCase));
         var sourcePace = sourceActions.FirstOrDefault(item =>
@@ -721,13 +808,15 @@ public static class RuntimeMapper
         var tire = PlanningTire(sourcePace?.Claim.Text);
         var shortRace = plannedLaps is > 0 and <= 25;
         var startClaim = PlanningStartClaim(sourceStart?.Claim, tire);
-        var paceClaim = PlanningPaceClaim(sourcePace?.Claim, tire, plannedLaps, shortRace);
+        var paceClaim = PlanningPaceClaim(sourcePace?.Claim, tire, plannedLaps, shortRace, distanceIsEstimated);
         var strategyClaim = PlanningStrategyClaim(
             sourceActions.FirstOrDefault(item => item.Label.Equals("Strategy", StringComparison.OrdinalIgnoreCase))?.Claim,
             plannedLaps,
             range,
             calculatedStops,
-            pitTargets);
+            pitTargets,
+            distanceLabel,
+            distanceIsEstimated);
         var actions = new[]
         {
             new RaceAction("Start", startClaim),
@@ -739,7 +828,8 @@ public static class RuntimeMapper
             plannedLaps,
             range,
             calculatedStops,
-            pitTargets);
+            pitTargets,
+            distanceIsEstimated);
         return new RacePlanBriefing(
             DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")) ?? "Recorded track", DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
             Boolean(identity, "is_fixed_setup") == true ? "Fixed" : "Open", plannedLaps > 0 ? plannedLaps : scheduledLaps,
@@ -750,8 +840,10 @@ public static class RuntimeMapper
                 Text(row, "corner_phase") ?? Text(row, "zone_id") ?? "Recorded load zone",
                 Claim(Object(row, "phase_1")), Claim(Object(row, "phase_2")), Claim(Object(row, "phase_3")), Claim(Object(row, "groove")))).ToArray(),
             triggers,
-            Array(forecast, "assumptions").Select(Value).Where(value => value.Length > 0).ToArray(),
-            Humanize(Text(strategy, "confidence")) ?? "Low");
+            assumptions,
+            Humanize(Text(strategy, "confidence")) ?? "Low",
+            distanceLabel,
+            distanceIsEstimated);
     }
 
     private static string? PlanningTire(string? text)
@@ -771,7 +863,7 @@ public static class RuntimeMapper
                 : "Open conservatively: finish brake release before adding steering, then build throttle.");
     }
 
-    private static EvidenceText PlanningPaceClaim(EvidenceText? source, string? tire, int plannedLaps, bool shortRace)
+    private static EvidenceText PlanningPaceClaim(EvidenceText? source, string? tire, int plannedLaps, bool shortRace, bool distanceIsEstimated)
     {
         if (source?.Text.Contains("repair", StringComparison.OrdinalIgnoreCase) == true)
         {
@@ -783,7 +875,11 @@ public static class RuntimeMapper
         {
             return new EvidenceText(
                 EvidenceKind.Inferred,
-                tire is not null
+                distanceIsEstimated && tire is not null
+                    ? $"For the timed-race estimate, protect the {tire} with repeatable entries and progressive brake release."
+                    : distanceIsEstimated
+                        ? "For the timed-race estimate, keep brake release, throttle pickup, and steering corrections repeatable."
+                : tire is not null
                     ? $"For all {plannedLaps} laps, protect the {tire} with repeatable entries and progressive brake release."
                     : $"For all {plannedLaps} laps, keep brake release, throttle pickup, and steering corrections repeatable.");
         }
@@ -800,15 +896,29 @@ public static class RuntimeMapper
         int plannedLaps,
         IReadOnlyList<double> range,
         int? stops,
-        IReadOnlyList<int> pitTargets)
+        IReadOnlyList<int> pitTargets,
+        string distanceLabel,
+        bool distanceIsEstimated)
     {
         var conservativeRange = range.Count > 0 ? range.Min() : (double?)null;
+        if (plannedLaps <= 0)
+        {
+            return conservativeRange is > 0
+                ? new EvidenceText(
+                    EvidenceKind.Derived,
+                    $"Measured all-green range is {conservativeRange:0.0} laps; resolve the governing finish constraint before choosing a stop count.")
+                : new EvidenceText(
+                    EvidenceKind.Unavailable,
+                    "A finish-range decision needs a resolved race distance and another clean fuel sample.");
+        }
         if (plannedLaps > 0 && conservativeRange is > 0 && stops == 0)
         {
             var margin = Math.Max(0, conservativeRange.Value - plannedLaps);
             return new EvidenceText(
                 EvidenceKind.Derived,
-                $"No fuel stop for {plannedLaps} laps; protect the {margin:0.0}-lap conservative finish margin.");
+                distanceIsEstimated
+                    ? $"Estimated no fuel stop for {distanceLabel}; protect the projected {margin:0.0}-lap finish margin."
+                    : $"No fuel stop for {plannedLaps} laps; protect the {margin:0.0}-lap conservative finish margin.");
         }
         if (plannedLaps > 0 && stops is > 0)
         {
@@ -817,9 +927,10 @@ public static class RuntimeMapper
                 : string.Empty;
             return new EvidenceText(
                 EvidenceKind.Derived,
-                $"Plan {stops} fuel stop{(stops == 1 ? string.Empty : "s")} for {plannedLaps} laps{target}.");
+                distanceIsEstimated
+                    ? $"Estimate {stops} fuel stop{(stops == 1 ? string.Empty : "s")} for {distanceLabel}{target}."
+                    : $"Plan {stops} fuel stop{(stops == 1 ? string.Empty : "s")} for {plannedLaps} laps{target}.");
         }
-        if (source is { Kind: not EvidenceKind.Unavailable } && !string.IsNullOrWhiteSpace(source.Text)) return source;
         return new EvidenceText(EvidenceKind.Unavailable, "A finish-range decision needs another clean fuel sample.");
     }
 
@@ -828,7 +939,8 @@ public static class RuntimeMapper
         int plannedLaps,
         IReadOnlyList<double> range,
         int? stops,
-        IReadOnlyList<int> pitTargets)
+        IReadOnlyList<int> pitTargets,
+        bool distanceIsEstimated)
     {
         var result = new List<RaceTrigger>();
         var phase = source.FirstOrDefault(item =>
@@ -847,7 +959,9 @@ public static class RuntimeMapper
             result.Add(new RaceTrigger(
                 "Fuel margin",
                 new EvidenceText(EvidenceKind.Derived,
-                    $"Stay out while projected range clears the {plannedLaps}-lap finish; reconsider only if the margin disappears.")));
+                    distanceIsEstimated
+                        ? "Stay out while projected range clears the timed-race estimate; reconsider only if the margin disappears."
+                        : $"Stay out while projected range clears the {plannedLaps}-lap finish; reconsider only if the margin disappears.")));
         }
         else if (plannedLaps > 0 && stops is > 0)
         {
@@ -857,7 +971,7 @@ public static class RuntimeMapper
             result.Add(new RaceTrigger(
                 "Pit window",
                 new EvidenceText(EvidenceKind.Derived,
-                    $"Target {window}; move the stop only when live burn no longer supports the next stint.")));
+                    $"Target {(distanceIsEstimated ? "the estimated " : string.Empty)}{window}; move the stop only when live burn no longer supports the next stint.")));
         }
         else
         {
@@ -891,17 +1005,42 @@ public static class RuntimeMapper
 
     private static double? RepresentativeLapSeconds(JsonElement view)
     {
-        var traceTimes = Array(Object(view, "lap_traces"), "traces").Select(trace => Number(trace, "lap_time_s"));
-        var lapTimes = Array(Object(view, "lap_table"), "laps").Select(lap => Number(lap, "lap_time_s"));
-        var runTimes = Array(view, "runs").SelectMany(run =>
+        var runTimes = Array(view, "runs")
+            .Where(run => ComparisonContextEligible(Object(run, "damage_repair_context")))
+            .SelectMany(run =>
         {
             var pace = Object(run, "pace");
             return new[] { Number(pace, "early_average_lap_s"), Number(pace, "late_average_lap_s") };
         });
-        var values = traceTimes.Concat(lapTimes).Concat(runTimes).Where(value => value is > 0).Select(value => value!.Value).Order().ToArray();
+        var values = runTimes.Where(value => value is > 0).Select(value => value!.Value).Order().ToArray();
+        if (values.Length == 0)
+        {
+            var lapTimes = new List<double>();
+            string? previousFlag = null;
+            foreach (var lap in Array(view, "laps").OrderBy(lap => Integer(lap, "lap")))
+            {
+                var reasons = LapComparisonExclusionReasons(lap, previousFlag);
+                previousFlag = Text(lap, "flag_state")?.Trim().ToLowerInvariant();
+                var lapTime = Number(lap, "lap_time_s");
+                if (reasons.Length == 0 && lapTime is > 0)
+                    lapTimes.Add(lapTime.Value);
+            }
+            values = lapTimes.Order().ToArray();
+        }
         if (values.Length == 0) return null;
         var middle = values.Length / 2;
         return values.Length % 2 == 0 ? (values[middle - 1] + values[middle]) / 2d : values[middle];
+    }
+
+    private static string DeclaredDistanceLabel(JsonElement summary)
+    {
+        var laps = Integer(summary, "scheduled_laps");
+        var minutes = Number(summary, "scheduled_minutes");
+        if (laps > 0 && minutes is > 0)
+            return $"{laps} laps or {minutes.Value:0.#} minutes (finish constraint unresolved)";
+        if (minutes is > 0)
+            return $"{minutes.Value:0.#} minutes (lap estimate unavailable)";
+        return "Finish constraint unresolved";
     }
 
     private static TuningSessionIdentity MapTuningIdentity(
@@ -1373,6 +1512,10 @@ public static class RuntimeMapper
     private static AnalysisGarage61References? MapGarage61References(JsonElement references, JsonElement envelope)
     {
         if (references.ValueKind != JsonValueKind.Object) return null;
+        if (!string.Equals(
+                Text(references, "target_derivation_version"),
+                Garage61TargetDerivationVersion,
+                StringComparison.Ordinal)) return null;
         var comparisons = Array(references, "reference_comparisons")
             .Concat(Array(envelope, "reference_comparisons"))
             .Where(item => item.ValueKind == JsonValueKind.Object)
@@ -1436,7 +1579,9 @@ public static class RuntimeMapper
             ? parsed.ToUniversalTime()
             : null;
 
-    private static IReadOnlyList<AnalysisTechnicalInsight> MapTechnicalInsights(JsonElement view) =>
+    private static IReadOnlyList<AnalysisTechnicalInsight> MapTechnicalInsights(
+        JsonElement view,
+        bool suppressDistanceDependent = false) =>
         Array(view, "technical_insights").Select(item => new AnalysisTechnicalInsight(
             Text(item, "key") ?? string.Empty,
             Text(item, "label") ?? Humanize(Text(item, "key")) ?? "Technical insight",
@@ -1454,6 +1599,7 @@ public static class RuntimeMapper
             Array(item, "evidence").Select(Value).Where(value => value.Length > 0).ToArray(),
             Array(item, "unavailable_reasons").Select(Value).Where(value => value.Length > 0).ToArray()))
         .Where(item => item.Key.Length > 0)
+        .Where(item => !suppressDistanceDependent || item.Key is not ("pit" or "fuel"))
         .ToArray();
 
     private static double? TireWearPercent(JsonElement tires, string corner)

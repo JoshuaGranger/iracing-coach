@@ -829,12 +829,17 @@ class ArchiveStore:
         )
         scheduled_laps = race.get("scheduled_laps")
         scheduled_minutes = race.get("scheduled_minutes")
-        if scheduled_laps:
-            race_length_key = f"{int(float(scheduled_laps))}-laps"
+        if scheduled_laps and scheduled_minutes:
+            race_length_key = (
+                f"declared-v1-{int(float(scheduled_laps))}-laps-or-"
+                f"{float(scheduled_minutes):g}-minutes"
+            )
+        elif scheduled_laps:
+            race_length_key = f"declared-v1-{int(float(scheduled_laps))}-laps"
         elif scheduled_minutes:
-            race_length_key = f"{int(float(scheduled_minutes))}-minutes"
+            race_length_key = f"declared-v1-{float(scheduled_minutes):g}-minutes"
         else:
-            race_length_key = "length-unknown"
+            race_length_key = "declared-v1-length-unknown"
         return {
             "season_key": safe_slug(season_key, "season-unknown"),
             "car_key": car_key,
@@ -2369,6 +2374,7 @@ class ArchiveStore:
         path = self.target_laps_dir.joinpath(*self.cache_key(context).split("/")) / "garage61.json"
         payload = {
             "schema_version": 1,
+            "target_derivation_version": index.get("target_derivation_version"),
             "cached_at": utc_now(),
             "cache_key": self.cache_key(context),
             "comparison_scope": index.get("comparison_scope"),

@@ -406,6 +406,11 @@ public sealed class RaceAnalysisBehaviorTests
         Assert.AreEqual(3, technical.Split("aria-pressed=\"@(_selectedRunNumber == run.Number ? \"true\" : \"false\")\"", StringSplitOptions.None).Length - 1,
             "Every Technical data record selector must expose its selected state.");
         StringAssert.Contains(technical, "Workspace.TechnicalInsights");
+        StringAssert.Contains(technical, "Workspace.DeclaredLapLimit");
+        StringAssert.Contains(technical, "Workspace.DeclaredTimeLimitMinutes");
+        StringAssert.Contains(technical, "minutes configured");
+        StringAssert.Contains(technical, "{ } when Workspace.ScheduledLaps > 0 => \"Stop required\"");
+        StringAssert.Contains(technical, "{ } => \"Consumption available\"");
         StringAssert.Contains(technical, "Workspace.TirePrediction");
         StringAssert.Contains(technical, "Workspace.Garage61References");
         StringAssert.Contains(technical, "Comparable reference laps");

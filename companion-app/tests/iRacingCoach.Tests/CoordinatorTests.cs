@@ -248,6 +248,95 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public void AnalysisMapper_UsesOnlyResolvedForecastDistanceForFuelUi()
+    {
+        using var response = JsonDocument.Parse("""
+        {"analysis_view":{
+          "analysis_profile_version":"post-race-foundations-v13",
+          "identity":{"event_type":"Race"},
+          "race_summary":{"recorded_laps":8,"scheduled_laps":500,"scheduled_minutes":30.5},
+          "runs":[],"laps":[],"lap_traces":{"traces":[]},
+          "track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{"forecast":{"status":"hybrid_finish_constraint_unresolved","scheduled_laps":null,"all_green_range_laps":34.7,"minimum_stops_all_green":14,"equal_stint_pit_targets_all_green":[33,67]}},
+          "damage_repair":{},"setup_telemetry":{},"data_quality":{}}}
+        """);
+
+        var workspace = RuntimeMapper.Analysis(response.RootElement);
+
+        Assert.AreEqual(0, workspace.ScheduledLaps);
+        Assert.AreEqual(0d, workspace.ScheduledMinutes);
+        Assert.AreEqual(500, workspace.DeclaredLapLimit);
+        Assert.AreEqual(30.5d, workspace.DeclaredTimeLimitMinutes);
+        Assert.AreEqual(34.7d, workspace.Strategy.AllGreenRangeLaps);
+        Assert.IsNull(workspace.Strategy.MinimumStopsAllGreen);
+        Assert.IsEmpty(workspace.Strategy.EqualStintPitTargets);
+    }
+
+    [TestMethod]
+    public void AnalysisMapper_UnmarkedResponseCannotRestoreLegacyDistanceClaims()
+    {
+        using var response = JsonDocument.Parse("""
+        {"analysis_view":{"identity":{},"race_summary":{"recorded_laps":7,"scheduled_laps":80},
+          "runs":[],"laps":[],"lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{"forecast":{"status":"usable","scheduled_laps":7,"all_green_range_laps":34.7,"minimum_stops_all_green":1,"equal_stint_pit_targets_all_green":[4]}},
+          "technical_insights":[{"key":"pit","label":"Pit","takeaway":"Plan for 7 laps"}],
+          "damage_repair":{},"data_quality":{}}}
+        """);
+
+        var workspace = RuntimeMapper.Analysis(response.RootElement);
+
+        Assert.AreEqual(0, workspace.ScheduledLaps);
+        Assert.IsNull(workspace.Strategy.MinimumStopsAllGreen);
+        Assert.IsEmpty(workspace.Strategy.EqualStintPitTargets);
+        Assert.IsFalse((workspace.TechnicalInsights ?? []).Any(item => item.Key == "pit"));
+        StringAssert.Contains(workspace.StrategyStatus, "Legacy scheduled distance unavailable");
+    }
+
+    [TestMethod]
+    public void Overview_ExposesOnlyCurrentExactLapDistanceForPlanningPrefill()
+    {
+        static RaceOverview Map(string profile, string summary, string forecast)
+        {
+            using var response = JsonDocument.Parse(
+                "{\"analysis_view\":{\"analysis_profile_version\":" +
+                JsonSerializer.Serialize(profile) +
+                ",\"identity\":{},\"race_summary\":" + summary +
+                ",\"runs\":[],\"laps\":[],\"strategy\":{\"forecast\":" + forecast + "}}}");
+            return RuntimeMapper.Overview(response.RootElement);
+        }
+
+        var exact = Map(
+            "post-race-foundations-v13",
+            "{\"recorded_laps\":7,\"scheduled_laps\":80}",
+            "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":80}");
+        var hybrid = Map(
+            "post-race-foundations-v13",
+            "{\"recorded_laps\":7,\"scheduled_laps\":500,\"scheduled_minutes\":30.5}",
+            "{\"status\":\"usable\",\"scheduled_laps\":7}");
+        var legacy = Map(
+            "post-race-foundations-v12",
+            "{\"recorded_laps\":7,\"scheduled_laps\":80}",
+            "{\"status\":\"usable\",\"scheduled_laps\":7}");
+        var timed = Map(
+            "post-race-foundations-v13",
+            "{\"recorded_laps\":7,\"scheduled_laps\":null,\"scheduled_minutes\":30.5}",
+            "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":null}");
+
+        Assert.AreEqual(80, exact.ScheduledLaps);
+        Assert.AreEqual(0, hybrid.ScheduledLaps);
+        Assert.AreEqual(0, legacy.ScheduledLaps);
+        Assert.AreEqual(30.5d, timed.ScheduledMinutes);
+        Assert.AreEqual(0d, hybrid.ScheduledMinutes);
+        Assert.AreEqual(80, exact.DeclaredLapLimit);
+        Assert.AreEqual(500, hybrid.DeclaredLapLimit);
+        Assert.AreEqual(30.5d, hybrid.DeclaredTimeLimitMinutes);
+        Assert.AreEqual(30.5d, timed.DeclaredTimeLimitMinutes);
+        Assert.AreEqual(0, legacy.DeclaredLapLimit);
+        Assert.AreEqual(0d, legacy.DeclaredTimeLimitMinutes);
+        Assert.AreEqual(7, exact.RecordedLaps);
+    }
+
+    [TestMethod]
     public void AnalysisMapper_PrefersCanonicalTraceCoordinatesAndSteeringPeakWithLegacyFallback()
     {
         using var response = JsonDocument.Parse("""
@@ -389,7 +478,7 @@ public sealed class CoordinatorTests
         Assert.AreEqual("Kentucky Race Card", card.Title);
         Assert.IsNull(plan.GreenFuelGallonsPerLap);
         StringAssert.Contains(plan.FuelRange, "58.0");
-        CollectionAssert.AreEqual(new[] { 38 }, plan.PitTargets.ToArray());
+        Assert.IsEmpty(plan.PitTargets, "A pit target without a resolved distance must not become a plan.");
     }
 
     [TestMethod]
@@ -480,6 +569,59 @@ public sealed class CoordinatorTests
         Assert.AreEqual("subsession:55:0", race.Id);
         Assert.AreEqual("subsession:55:0", race.EffectiveSelector);
         Assert.AreEqual("55", race.EventKey);
+    }
+
+    [TestMethod]
+    public void ArchivedAnalysis_WithholdsLegacyDistanceDependentClaims()
+    {
+        using var report = JsonDocument.Parse("""
+        {
+          "analysis_profile_version":"post-race-foundations-v12",
+          "identity":{"event_type":"Race","track_name":"Hybrid Track","car_name":"Test Car"},
+          "race_summary":{"recorded_laps":8,"scheduled_laps":500,"scheduled_minutes":30},
+          "laps":[],
+          "runs":[{"run_number":1,"ended_with_pit_stop":true,"fuel":{"used_gal":3.2},"pit_service":{"start_time":10,"end_time":20}}],
+          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{"measured_green_fuel_gal_per_lap":0.2,"pit_assessments":[{"run_number":1,"scheduled_race_laps_remaining_after_stop":493}],
+            "forecast":{"status":"usable","scheduled_laps":7,"all_green_range_laps":34.7,"minimum_stops_all_green":14,"equal_stint_pit_targets_all_green":[33,67]}},
+          "technical_insights":[
+            {"key":"pit","label":"Pit strategy","status":"available","takeaway":"No-stop headroom for 500 laps"},
+            {"key":"fuel","label":"Fuel","status":"available","takeaway":"Finish reserve for 500 laps"},
+            {"key":"tires","label":"Tires","status":"available","takeaway":"Measured wear"}],
+          "damage_repair":{},"data_quality":{}
+        }
+        """);
+
+        var workspace = RuntimeMapper.ArchivedAnalysis(report.RootElement);
+
+        Assert.AreEqual(0, workspace.ScheduledLaps);
+        Assert.AreEqual(.2d, workspace.Strategy.GreenFuelGallonsPerLap);
+        Assert.AreEqual(34.7d, workspace.Strategy.AllGreenRangeLaps);
+        Assert.IsNull(workspace.Strategy.MinimumStopsAllGreen);
+        Assert.IsEmpty(workspace.Strategy.EqualStintPitTargets);
+        Assert.IsNull(workspace.Runs.Single().PitStop!.RaceLapsRemainingAfterStop);
+        CollectionAssert.AreEqual(new[] { "tires" }, (workspace.TechnicalInsights ?? []).Select(item => item.Key).ToArray());
+        StringAssert.Contains(workspace.StrategyStatus, "Legacy scheduled distance unavailable");
+    }
+
+    [TestMethod]
+    public void ArchivedAnalysis_CurrentLapProfileKeepsResolvedDistance()
+    {
+        using var report = JsonDocument.Parse("""
+        {"analysis_profile_version":"post-race-foundations-v13","identity":{},
+         "race_summary":{"recorded_laps":80,"scheduled_laps":100},"laps":[],"runs":[],
+         "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
+         "strategy":{"forecast":{"status":"usable","scheduled_laps":100,"minimum_stops_all_green":2,"equal_stint_pit_targets_all_green":[33,67]}},
+         "technical_insights":[{"key":"pit","label":"Pit strategy","status":"available","takeaway":"Current result"}],
+         "damage_repair":{},"data_quality":{}}
+        """);
+
+        var workspace = RuntimeMapper.ArchivedAnalysis(report.RootElement);
+
+        Assert.AreEqual(100, workspace.ScheduledLaps);
+        Assert.AreEqual(2, workspace.Strategy.MinimumStopsAllGreen);
+        CollectionAssert.AreEqual(new[] { 33, 67 }, workspace.Strategy.EqualStintPitTargets.ToArray());
+        Assert.IsTrue((workspace.TechnicalInsights ?? []).Any(item => item.Key == "pit"));
     }
 
     [TestMethod]
@@ -690,6 +832,62 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task AnalysisCache_DoesNotUseArchiveAsLiveCacheWhenSourceExists()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-archive-live-cache", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        const string selector = "subsession:8001:1";
+        var sourcePath = Path.Combine(root, "race.ibt");
+        var analysisPath = Path.Combine(root, "analysis.json");
+        File.WriteAllBytes(sourcePath, [0]);
+        WriteArchivedAnalysis(analysisPath, selector);
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            selector, "Test Track", "Oval", "Test Car", "Today",
+            "Open", "Analyzed", "Recorded", false, true, 0, 0,
+            AnalysisPath: analysisPath, SourcePath: sourcePath, EventKey: "8001",
+            SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(race);
+
+        Assert.AreEqual(1, backend.AnalyzeCalls,
+            "A versionless historical analysis must not bypass current analysis while its recording is available.");
+        Assert.IsTrue(File.Exists(UiAnalysisCachePath(root, selector)));
+    }
+
+    [TestMethod]
+    public async Task AnalysisCache_KeepsArchiveOnlyRaceViewableWithoutSource()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-archive-only", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        const string selector = "subsession:8001:1";
+        var analysisPath = Path.Combine(root, "analysis.json");
+        WriteArchivedAnalysis(analysisPath, selector);
+        WriteUiAnalysisCache(
+            root,
+            selector,
+            HomeAnalysisResponse(selector: selector),
+            schemaVersion: 11);
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            selector, "Test Track", "Oval", "Test Car", "Today",
+            "Open", "Analyzed", "Recorded", false, true, 0, 0,
+            AnalysisPath: analysisPath, SourcePath: Path.Combine(root, "missing.ibt"),
+            EventKey: "8001", SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(race);
+
+        Assert.AreEqual(0, backend.AnalyzeCalls);
+        Assert.IsNotNull(state.CurrentAnalysis);
+        Assert.AreEqual(7, state.CurrentAnalysis.RecordedLaps);
+        Assert.IsNull(state.CurrentRaceCard, "Unversioned historical coaching cards must not be republished as current guidance.");
+    }
+
+    [TestMethod]
     public async Task DashboardRefresh_ReplacesRowsWithoutCreatingAUserJob()
     {
         using var dashboard = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "dashboard-empty.json")));
@@ -797,12 +995,12 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
-    public async Task HomeRefresh_RegeneratesLegacyCacheToSchemaEleven()
+    public async Task HomeRefresh_RegeneratesLegacyCacheToSchemaTwelve()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache-upgrade", Guid.NewGuid().ToString("N"));
         var analysis = HomeAnalysisResponse();
         const string selector = "subsession:9001:1";
-        WriteUiAnalysisCache(root, selector, analysis, schemaVersion: 9);
+        WriteUiAnalysisCache(root, selector, analysis, schemaVersion: 11);
         var backend = new FakeBackend(
             dashboard: DashboardWithFinalizedRaces(1),
             analysis: analysis);
@@ -816,8 +1014,8 @@ public sealed class CoordinatorTests
 
         var cachePath = UiAnalysisCachePath(root, selector);
         using var regenerated = JsonDocument.Parse(File.ReadAllText(cachePath));
-        Assert.AreEqual(11, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-9 cache predates the current UI projection contract and must be regenerated exactly once.");
+        Assert.AreEqual(12, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-11 cache predates the corrected scheduled-distance and Garage61 projections and must be regenerated exactly once.");
         Assert.IsEmpty(state.Jobs, "Cache migration remains quiet background maintenance.");
     }
 
@@ -868,8 +1066,10 @@ public sealed class CoordinatorTests
         state.SetPrimaryUiVisible(true);
         state.SetPrimaryUiVisible(true);
 
-        await WaitUntilAsync(() => backend.AnalyzeCalls == 8, TimeSpan.FromSeconds(3));
-        await Task.Delay(100);
+        await WaitUntilAsync(
+            () => backend.AnalyzeCalls == 8
+                && state.Races.All(race => race.Overview?.BestCleanLapSeconds is > 0),
+            TimeSpan.FromSeconds(5));
 
         Assert.AreEqual(8, backend.AnalyzeCalls, "Repeated window-open notifications must not duplicate analysis work.");
         Assert.IsTrue(state.Races.All(race => race.Overview?.BestCleanLapSeconds is > 0));
@@ -2040,6 +2240,7 @@ public sealed class CoordinatorTests
         analysis_view = new
         {
             schema_version = 1,
+            analysis_profile_version = "post-race-foundations-v13",
             identity = new { event_type = sessionType, track_name = "Recorded Track", car_name = "Recorded Car" },
             race_summary = new
             {
@@ -2066,6 +2267,44 @@ public sealed class CoordinatorTests
             }
         }
     });
+
+    private static void WriteArchivedAnalysis(string path, string selector)
+    {
+        File.WriteAllText(path, JsonSerializer.Serialize(new
+        {
+            schema_version = 2,
+            analysis_id = "archived-analysis",
+            identity = new
+            {
+                event_type = "Race",
+                subsession_id = 8001,
+                track_name = "Test Track",
+                car_name = "Test Car"
+            },
+            source = new
+            {
+                selection = new
+                {
+                    group_id = selector,
+                    subsession_id = 8001,
+                    sim_session_num = 1,
+                    sim_session_type = "Race"
+                }
+            },
+            race_summary = new { recorded_laps = 7, pit_stops_detected = 0 },
+            laps = Array.Empty<object>(),
+            runs = Array.Empty<object>(),
+            lap_traces = new { traces = Array.Empty<object>() },
+            track_profile = new
+            {
+                shape = Array.Empty<object>(),
+                detected_corner_segments = Array.Empty<object>()
+            },
+            strategy = new { },
+            damage_repair = new { },
+            data_quality = new { }
+        }));
+    }
 
     private static JsonElement DashboardWithFinalizedRaces(int count, bool isFixedSetup = true) => JsonSerializer.SerializeToElement(new
     {
@@ -2114,7 +2353,7 @@ public sealed class CoordinatorTests
         }).ToArray()
     });
 
-    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 11, string sessionType = "Race", string? storedSelector = null)
+    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 12, string sessionType = "Race", string? storedSelector = null)
     {
         var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
         Directory.CreateDirectory(directory);

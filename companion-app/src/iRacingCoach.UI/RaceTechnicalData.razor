@@ -439,7 +439,15 @@
     private string FuelPerGreenLap => Gallons(Workspace.Strategy.GreenFuelGallonsPerLap);
     private string FuelRange => Laps(Workspace.Strategy.AllGreenRangeLaps);
     private string FuelReserve => Gallons(Workspace.Strategy.ReserveFuelGallons);
-    private string ScheduledDistance => Workspace.ScheduledLaps > 0 ? $"{Workspace.ScheduledLaps} laps" : "Distance unavailable";
+    private int DisplayLapLimit => Workspace.DeclaredLapLimit > 0 ? Workspace.DeclaredLapLimit : Workspace.ScheduledLaps;
+    private double DisplayTimeLimitMinutes => Workspace.DeclaredTimeLimitMinutes > 0 ? Workspace.DeclaredTimeLimitMinutes : Workspace.ScheduledMinutes;
+    private string ScheduledDistance => (DisplayLapLimit, DisplayTimeLimitMinutes) switch
+    {
+        (> 0, > 0) => $"{DisplayLapLimit} laps / {DisplayTimeLimitMinutes:0.#} minutes configured",
+        (> 0, _) => $"{DisplayLapLimit} laps",
+        (_, > 0) => $"{DisplayTimeLimitMinutes:0.#} minutes",
+        _ => "Distance unavailable"
+    };
     private string NoStopHeadline => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps
         ? "The race fit inside the fuel window"
         : "No service decision was exercised";
@@ -493,7 +501,7 @@
     private string TireTakeaway => InsightTakeaway(TireInsight) ?? (LowestRemainingTireRun is { } run
         ? $"{run.TireName} was lowest at {run.TireRemainingPercent:0.0}% remaining."
         : TireStops.Count > 0 ? "Use the stop snapshots to compare inner, middle, and outer condition." : "No tire-condition outcome can be evaluated.");
-    private string FuelState => InsightRating(FuelInsight) ?? (Workspace.Strategy.AllGreenRangeLaps switch { { } range when Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps => "Full-race range", { } => "Stop required", _ => FuelRuns.Count > 0 ? "Consumption available" : "Unavailable" });
+    private string FuelState => InsightRating(FuelInsight) ?? (Workspace.Strategy.AllGreenRangeLaps switch { { } range when Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps => "Full-race range", { } when Workspace.ScheduledLaps > 0 => "Stop required", { } => "Consumption available", _ => FuelRuns.Count > 0 ? "Consumption available" : "Unavailable" });
     private string FuelStateClass => InsightStateClass(FuelInsight) ?? (FuelState switch { "Full-race range" => "positive", "Stop required" => "attention", "Consumption available" => "neutral", _ => "unavailable" });
     private string FuelTakeaway => InsightTakeaway(FuelInsight) ?? (Workspace.Strategy.MinimumStopsAllGreen is { } minimum
         ? $"All-green target: {minimum} stop{(minimum == 1 ? string.Empty : "s")} plus {FuelReserve} reserve."

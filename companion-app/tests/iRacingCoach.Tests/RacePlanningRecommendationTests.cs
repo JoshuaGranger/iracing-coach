@@ -55,6 +55,136 @@ public sealed class RacePlanningRecommendationTests
         Assert.IsFalse(plan.Priorities.Any(item => item.Claim.Text.Contains("100 laps", StringComparison.OrdinalIgnoreCase)));
     }
 
+    [TestMethod]
+    public void HybridLimits_WithholdStopPlanUntilFinishConstraintIsResolved()
+    {
+        using var response = JsonDocument.Parse("""
+        {
+          "analysis_view": {
+            "analysis_profile_version":"post-race-foundations-v13",
+            "identity": {"track_name":"Hybrid Speedway","car_name":"Test Car","is_fixed_setup":true},
+            "race_summary": {"scheduled_laps":500,"scheduled_minutes":30.5,"recorded_laps":8},
+            "runs":[],"lap_traces":{"traces":[]},
+            "strategy": {
+              "confidence":"medium",
+              "forecast": {
+                "status":"hybrid_finish_constraint_unresolved",
+                "scheduled_laps":null,
+                "all_green_range_laps":34.7,
+                "minimum_stops_all_green":14,
+                "equal_stint_pit_targets_all_green":[33,67]
+              }
+            }
+          },
+          "race_card": {
+            "actions":[{"label":"Strategy","evidence_type":"derived","text":"Plan 14 fuel stops for 500 laps"}],
+            "corner_playbook":{"rows":[]},"race_triggers":[]
+          }
+        }
+        """);
+
+        var plan = RuntimeMapper.Plan(response.RootElement);
+        var strategy = plan.Priorities.Single(item => item.Label == "Strategy").Claim.Text;
+
+        Assert.AreEqual(0, plan.ScheduledLaps);
+        StringAssert.Contains(plan.DistanceLabel, "500 laps");
+        StringAssert.Contains(plan.DistanceLabel, "30.5 minutes");
+        Assert.AreEqual("Stop count needs a resolved race distance", plan.StopCount);
+        Assert.IsEmpty(plan.PitTargets);
+        StringAssert.Contains(strategy, "resolve the governing finish constraint");
+        Assert.DoesNotContain("500", strategy);
+        Assert.IsFalse(plan.Priorities.Concat(plan.Triggers.Select(item => new RaceAction(item.Label, item.Claim)))
+            .Any(item => item.Claim.Text.Contains("14", StringComparison.Ordinal) ||
+                         item.Claim.Text.Contains("33", StringComparison.Ordinal) ||
+                         item.Claim.Text.Contains("500", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void TimedPlan_LabelsLapConversionAsAnEstimate()
+    {
+        using var response = JsonDocument.Parse("""
+        {
+          "analysis_view": {
+            "analysis_profile_version":"post-race-foundations-v13",
+            "identity":{"track_name":"Timed Speedway","car_name":"Test Car"},
+            "race_summary":{"scheduled_minutes":30.5},
+            "runs":[{"pace":{"early_average_lap_s":75.0,"late_average_lap_s":75.0}}],
+            "lap_traces":{"traces":[]},
+            "strategy":{"confidence":"medium","forecast":{"all_green_range_laps":10.0,"assumptions":[]}}
+          },
+          "race_card":{"actions":[],"corner_playbook":{"rows":[]},"race_triggers":[]}
+        }
+        """);
+
+        var plan = RuntimeMapper.Plan(response.RootElement, 30.5, "Minutes");
+        var text = string.Join(" ", plan.Priorities.Select(item => item.Claim.Text)
+            .Concat(plan.Triggers.Select(item => item.Claim.Text)));
+
+        Assert.AreEqual(25, plan.ScheduledLaps);
+        Assert.IsTrue(plan.DistanceIsEstimated);
+        StringAssert.Contains(plan.DistanceLabel, "30.5 minutes");
+        StringAssert.Contains(plan.DistanceLabel, "~25 laps");
+        Assert.IsTrue(plan.Assumptions.Any(item => item.Contains("75.0-second", StringComparison.Ordinal) && item.Contains("can vary", StringComparison.Ordinal)));
+        Assert.DoesNotContain("all 25 laps", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("25-lap finish", text, StringComparison.OrdinalIgnoreCase);
+        StringAssert.Contains(plan.StopCount, "Estimated");
+    }
+
+    [TestMethod]
+    public void TimedPlan_WithoutCleanPaceLeavesLapEstimateUnavailable()
+    {
+        using var response = JsonDocument.Parse("""
+        {"analysis_view":{"identity":{},"race_summary":{"scheduled_minutes":30},"runs":[],"laps":[],
+          "lap_traces":{"traces":[]},"strategy":{"forecast":{"all_green_range_laps":10.0}}},
+         "race_card":{"actions":[],"corner_playbook":{"rows":[]},"race_triggers":[]}}
+        """);
+
+        var plan = RuntimeMapper.Plan(response.RootElement, 30, "Minutes");
+
+        Assert.AreEqual(0, plan.ScheduledLaps);
+        Assert.IsFalse(plan.DistanceIsEstimated);
+        StringAssert.Contains(plan.DistanceLabel, "lap estimate unavailable");
+        Assert.IsEmpty(plan.PitTargets);
+        StringAssert.Contains(plan.StopCount, "needs a comparable clean lap");
+    }
+
+    [TestMethod]
+    public void TimedPlan_ExcludesRepairConfoundedPaceFromLapEstimate()
+    {
+        using var response = JsonDocument.Parse("""
+        {"analysis_view":{"identity":{},"race_summary":{"scheduled_minutes":30},
+          "runs":[
+            {"pace":{"early_average_lap_s":60,"late_average_lap_s":60},"damage_repair_context":{"automatic_coaching_reference_eligible":false,"reason_codes":["recorded_repair_evidence"]}},
+            {"pace":{"early_average_lap_s":75,"late_average_lap_s":75},"damage_repair_context":{"automatic_coaching_reference_eligible":true,"reason_codes":[]}}],
+          "lap_traces":{"traces":[]},"strategy":{"forecast":{"all_green_range_laps":10.0}}},
+         "race_card":{"actions":[],"corner_playbook":{"rows":[]},"race_triggers":[]}}
+        """);
+
+        var plan = RuntimeMapper.Plan(response.RootElement, 30, "Minutes");
+
+        Assert.AreEqual(24, plan.ScheduledLaps);
+        StringAssert.Contains(plan.DistanceLabel, "~24 laps");
+        Assert.IsFalse(plan.DistanceLabel.Contains("~30 laps", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ExactLapDistance_RemainsKnownWhenFuelForecastIsUnavailable()
+    {
+        using var response = JsonDocument.Parse("""
+        {"analysis_view":{"analysis_profile_version":"post-race-foundations-v13","identity":{},
+          "race_summary":{"scheduled_laps":80},"runs":[],"lap_traces":{"traces":[]},
+          "strategy":{"forecast":{"status":"insufficient_evidence","scheduled_laps":80}}},
+         "race_card":{"actions":[],"corner_playbook":{"rows":[]},"race_triggers":[]}}
+        """);
+
+        var plan = RuntimeMapper.Plan(response.RootElement);
+
+        Assert.AreEqual(80, plan.ScheduledLaps);
+        Assert.AreEqual("80 laps", plan.DistanceLabel);
+        StringAssert.Contains(plan.StopCount, "needs a recorded fuel range");
+        Assert.IsEmpty(plan.PitTargets);
+    }
+
     private static string Response(string track, int scheduledLaps, double rangeLaps, string paceLabel, string paceText) => $$"""
     {
       "analysis_view": {

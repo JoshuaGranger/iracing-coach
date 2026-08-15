@@ -15,9 +15,15 @@ from analysis_engine import (  # noqa: E402
     TelemetryTable,
     _corner_phase_coaching,
     _corner_tire_age_summary,
+    _convert_setup_value,
+    _duration_minutes,
+    _find_race_session,
+    _lap_limit,
+    _lap_summaries,
     _phase_comparison,
     _race_grades,
     _runs,
+    _scheduled_race_laps,
     _vehicle_sideslip_degrees,
     analyze_telemetry,
     analyzer_bundle_sha256,
@@ -53,6 +59,7 @@ def synthetic_telemetry(lap_count: int = 8) -> dict:
         "PitstopActive": [],
         "PitSvFlags": [],
         "RaceLaps": [],
+        "SessionLapsTotal": [],
         "LFwearL": [], "LFwearM": [], "LFwearR": [],
         "RFwearL": [], "RFwearM": [], "RFwearR": [],
         "LRwearL": [], "LRwearM": [], "LRwearR": [],
@@ -111,7 +118,10 @@ def synthetic_telemetry(lap_count: int = 8) -> dict:
         channels["PlayerCarInPitStall"].append(in_service)
         channels["PitstopActive"].append(in_service)
         channels["PitSvFlags"].append(0x1F if in_service else 0)
-        channels["RaceLaps"].append(lap_count)
+        # RaceLaps is race progress (completed laps), not the scheduled
+        # distance.  SessionLapsTotal carries the declared lap total.
+        channels["RaceLaps"].append(max(0, lap - 1))
+        channels["SessionLapsTotal"].append(lap_count)
         post_stop = index > stop_end
         wear = {
             "LF": 0.90 if post_stop else 1.0,
@@ -206,11 +216,232 @@ def math_cos(value: float) -> float:
 
 
 class AnalysisEngineTests(unittest.TestCase):
+    def test_telemetry_table_preserves_ragged_column_gaps(self) -> None:
+        table = TelemetryTable(
+            {
+                "channels": {
+                    "SessionTime": [0.0, 1.0, 2.0],
+                    "Speed": [10.0],
+                    "OnPitRoad": [True, False],
+                }
+            }
+        )
+
+        self.assertEqual(table.length, 3)
+        self.assertEqual(table.get("Speed", default=None), [10.0, None, None])
+        self.assertEqual(table.get("OnPitRoad", default=False), [True, False, None])
+        self.assertEqual(table.channels["Speed"], [10.0, None, None])
+        self.assertEqual(table.get("Missing", default=False), [False, False, False])
+
+    def test_telemetry_table_preserves_missing_row_positions(self) -> None:
+        table = TelemetryTable(
+            {
+                "samples": [
+                    {"SessionTime": 0.0, "Speed": 10.0},
+                    {"SessionTime": 1.0},
+                    None,
+                    {"SessionTime": 3.0, "Speed": 30.0, "LateChannel": 5.0},
+                ]
+            }
+        )
+
+        self.assertEqual(table.length, 4)
+        self.assertEqual(table.get("SessionTime"), [0.0, 1.0, None, 3.0])
+        self.assertEqual(table.get("Speed"), [10.0, None, None, 30.0])
+        self.assertEqual(table.get("LateChannel"), [None, None, None, 5.0])
+
+    def test_setup_unit_conversion_stays_exact_with_cached_normalization(self) -> None:
+        cases = (
+            (1.0, "distance", "m", 39.37007874015748),
+            (25.4, "distance", "mm", 1.0),
+            (2.54, "distance", "cm", 1.0),
+            (1.0, "distance", "ft", 12.0),
+            (1.0, "distance", "in", 1.0),
+            (1.0, "velocity", "m/s", 39.37007874015748),
+            (25.4, "velocity", "mm/s", 1.0),
+            (100.0, "pressure", "kPa", 14.503773773020923),
+            (100000.0, "pressure", "Pa", 14.503773773020923),
+            (1.0, "pressure", "bar", 14.503773773020923),
+            (14.5, "pressure", "psi", 14.5),
+            (0.0, "temperature", "C", 32.0),
+            (32.0, "temperature", "F", 32.0),
+            (273.15, "temperature", "K", 32.0),
+        )
+        for value, quantity, unit, expected in cases:
+            with self.subTest(quantity=quantity, unit=unit):
+                self.assertAlmostEqual(
+                    _convert_setup_value(value, quantity, unit), expected, places=9
+                )
+
+    def test_lap_completion_channel_is_scanned_once_without_changing_semantics(self) -> None:
+        columns = {
+            "SessionTime": list(range(8)),
+            "Lap": [1, 1, 1, 1, 2, 2, 2, 2],
+            "LapDistPct": [0.0, 0.3, 0.9, 1.0, 0.0, 0.3, 0.9, 1.0],
+        }
+
+        present = _lap_summaries(
+            TelemetryTable({"columns": {**columns, "LapCompleted": [0, 0, 1, 1, 1, 1, 2, 2]}})
+        )
+        absent = _lap_summaries(TelemetryTable({"columns": columns}))
+        invalid = _lap_summaries(
+            TelemetryTable({"columns": {**columns, "LapCompleted": [None] * 8}})
+        )
+
+        self.assertTrue(all(lap["complete"] for lap in present))
+        self.assertTrue(all(lap["complete"] for lap in absent))
+        self.assertTrue(all(not lap["complete"] for lap in invalid))
+
     def test_analyzer_bundle_fingerprint_is_deterministic_sha256(self) -> None:
         first = analyzer_bundle_sha256()
         self.assertEqual(first, analyzer_bundle_sha256())
         self.assertEqual(len(first), 64)
         int(first, 16)
+
+    def test_scheduled_laps_uses_declared_total_not_race_progress(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=8)
+        sample_count = len(telemetry["channels"]["SessionTime"])
+        telemetry["channels"]["SessionLapsTotal"] = [100] * sample_count
+        telemetry["session_info"]["SessionInfo"]["Sessions"][0]["SessionLaps"] = "100"
+
+        analysis = analyze_telemetry(telemetry)
+
+        self.assertEqual(analysis["race_summary"]["scheduled_laps"], 100)
+        self.assertEqual(analysis["strategy"]["forecast"]["scheduled_laps"], 100)
+
+    def test_lap_limit_rejects_non_distances_and_sdk_unlimited_marker(self) -> None:
+        for raw in (80, 80.0, "80", "80 laps"):
+            with self.subTest(raw=raw):
+                self.assertEqual(_lap_limit(raw), 80)
+        for raw in (
+            None,
+            "",
+            True,
+            False,
+            0,
+            -1,
+            80.5,
+            "nan",
+            float("inf"),
+            32767,
+            32768,
+        ):
+            with self.subTest(raw=raw):
+                self.assertIsNone(_lap_limit(raw))
+
+    def test_scheduled_laps_falls_back_to_race_session_metadata(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=8)
+        del telemetry["channels"]["SessionLapsTotal"]
+        telemetry["session_info"]["SessionInfo"]["Sessions"][0]["SessionLaps"] = "80 laps"
+
+        analysis = analyze_telemetry(telemetry)
+
+        self.assertEqual(analysis["race_summary"]["scheduled_laps"], 80)
+
+    def test_scheduled_laps_skips_transient_totals_and_respects_unlimited(self) -> None:
+        table = TelemetryTable(
+            {
+                "channels": {
+                    "SessionTime": [0.0, 1.0, 2.0, 3.0, 4.0],
+                    "SessionLapsTotal": [0, None, 100, 100, 0],
+                    "RaceLaps": [0, 1, 2, 3, 4],
+                }
+            }
+        )
+
+        self.assertEqual(_scheduled_race_laps(table, {"SessionLaps": "90"}), 100)
+        self.assertIsNone(
+            _scheduled_race_laps(table, {"SessionLaps": "unlimited"})
+        )
+
+        sentinel = TelemetryTable(
+            {
+                "channels": {
+                    "SessionTime": [0.0, 1.0],
+                    "SessionLapsTotal": [32767, 32767],
+                    "RaceLaps": [0, 1],
+                }
+            }
+        )
+        self.assertEqual(_scheduled_race_laps(sentinel, {"SessionLaps": "80"}), 80)
+
+        progress_only = TelemetryTable(
+            {
+                "channels": {
+                    "SessionTime": [0.0, 1.0],
+                    "RaceLaps": [0, 1],
+                }
+            }
+        )
+        self.assertIsNone(_scheduled_race_laps(progress_only, {}))
+
+    def test_time_limited_race_does_not_promote_progress_to_scheduled_laps(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=8)
+        sample_count = len(telemetry["channels"]["SessionTime"])
+        telemetry["channels"]["SessionLapsTotal"] = [0] * sample_count
+        race_session = telemetry["session_info"]["SessionInfo"]["Sessions"][0]
+        race_session["SessionLaps"] = "unlimited"
+        race_session["SessionTime"] = "1800.0000 sec"
+
+        analysis = analyze_telemetry(telemetry)
+
+        self.assertIsNone(analysis["race_summary"]["scheduled_laps"])
+        self.assertEqual(analysis["race_summary"]["scheduled_minutes"], 30.0)
+
+    def test_hybrid_limits_withhold_exact_distance_strategy_claims(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=8)
+        sample_count = len(telemetry["channels"]["SessionTime"])
+        telemetry["channels"]["SessionLapsTotal"] = [500] * sample_count
+        race_session = telemetry["session_info"]["SessionInfo"]["Sessions"][0]
+        race_session["SessionLaps"] = "500"
+        race_session["SessionTime"] = "1800.0000 sec"
+
+        analysis = analyze_telemetry(telemetry)
+
+        self.assertEqual(analysis["race_summary"]["scheduled_laps"], 500)
+        self.assertEqual(analysis["race_summary"]["scheduled_minutes"], 30.0)
+        forecast = analysis["strategy"]["forecast"]
+        self.assertEqual(forecast["status"], "hybrid_finish_constraint_unresolved")
+        self.assertIsNone(forecast["scheduled_laps"])
+        self.assertIsNone(forecast["minimum_stops_all_green"])
+        self.assertIsNone(forecast["minimum_stops_at_observed_mix"])
+        self.assertEqual(forecast["equal_stint_pit_targets_all_green"], [])
+        self.assertTrue(
+            all(
+                item["scheduled_race_laps_remaining"] is None
+                and item["all_green_fuel_surplus_laps"] is None
+                and item["scheduled_race_laps_remaining_after_stop"] is None
+                and item["post_stop_all_green_surplus_laps"] is None
+                for item in analysis["strategy"]["pit_assessments"]
+            )
+        )
+
+    def test_duration_minutes_accepts_only_positive_finite_limits(self) -> None:
+        self.assertEqual(_duration_minutes("1800.0000 sec"), 30.0)
+        self.assertEqual(_duration_minutes("1.5 hours"), 90.0)
+        self.assertEqual(_duration_minutes("45 min"), 45.0)
+        for raw in (None, "unlimited", 0, "0 sec", -60, "-1 min", "nan", float("inf")):
+            with self.subTest(raw=raw):
+                self.assertIsNone(_duration_minutes(raw))
+
+    def test_race_session_metadata_matches_recorded_sim_session_number(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=8)
+        del telemetry["channels"]["SessionLapsTotal"]
+        telemetry["metadata"]["sim_session_num"] = 1
+        sessions = [
+            {"SessionNum": 0, "SessionType": "Practice", "SessionLaps": "unlimited"},
+            {"SessionNum": 1, "SessionType": "Race", "SessionLaps": "20"},
+            {"SessionNum": 2, "SessionType": "Race", "SessionLaps": "80"},
+        ]
+        telemetry["session_info"]["SessionInfo"]["Sessions"] = sessions
+
+        self.assertIs(_find_race_session(telemetry["session_info"], 1), sessions[1])
+        analysis = analyze_telemetry(telemetry)
+        self.assertEqual(analysis["race_summary"]["scheduled_laps"], 20)
+
+        sessions[0] = {"SessionNum": 0, "SessionType": "Race", "SessionLaps": "unlimited"}
+        self.assertIs(_find_race_session(telemetry["session_info"], "0"), sessions[0])
+        self.assertIs(_find_race_session(telemetry["session_info"], 99), sessions[-1])
 
     def test_corner_tire_age_uses_confirmed_age_and_complete_clean_laps(self) -> None:
         telemetry = synthetic_telemetry(lap_count=20)
@@ -745,7 +976,7 @@ class AnalysisEngineTests(unittest.TestCase):
 
         self.assertEqual(
             analysis["analysis_profile_version"],
-            "post-race-foundations-v12",
+            "post-race-foundations-v13",
         )
         observed = analysis["runs"][0]["tire_observation"]["tires"]["LF"]
         self.assertEqual(observed["carcass_temperature_f"]["CL"], 212.0)

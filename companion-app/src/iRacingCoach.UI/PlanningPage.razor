@@ -31,7 +31,7 @@
                         <select value="@State.PlanSetupType" @onchange="ChangeSetupType"><option>Fixed</option><option>Open</option></select>
                     </label>
                     <div class="planning-distance-fields">
-                        <label>Distance<input type="number" min="1" max="1000" @bind="State.PlanDistanceValue" /></label>
+                        <label>Distance<input type="number" min="1" max="1000" step="@DistanceInputStep" placeholder="Required when unresolved" value="@DistanceInputValue" @onchange="ChangeDistance" /></label>
                         <label><span class="sr-only">Distance unit</span><select aria-label="Distance unit" @bind="State.PlanDistanceMode"><option>Laps</option><option>Minutes</option></select></label>
                     </div>
                     <label class="planning-reference-field">Based on
@@ -71,7 +71,7 @@
                                     <p>@OpeningPlanExplanation(plan)</p>
                                 </div>
                                 <div class="planning-decision-distance">
-                                    <span><small>Race</small><b>@plan.ScheduledLaps laps</b></span>
+                                    <span><small>@(plan.DistanceIsEstimated ? "Race estimate" : "Race")</small><b>@plan.DistanceLabel</b></span>
                                     <i style="--distance-marker:@DistanceMarker(plan)"><b></b><em></em></i>
                                     <span><small>Conservative range</small><b>@ConservativeRangeLabel(plan)</b></span>
                                 </div>
@@ -82,7 +82,8 @@
                                 @if (plan.GreenFuelGallonsPerLap.HasValue) { <div><span>Green fuel use</span><strong>@plan.GreenFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                                 @if (plan.CautionFuelGallonsPerLap.HasValue) { <div><span>Caution fuel use</span><strong>@plan.CautionFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                             </div>
-                            @if (plan.PitTargets.Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>Equal-stint windows</span><strong>@string.Join(" · ", plan.PitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
+                            @if (plan.PitTargets.Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>@(plan.DistanceIsEstimated ? "Estimated equal-stint windows" : "Equal-stint windows")</span><strong>@string.Join(" · ", plan.PitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
+                            @if (plan.Assumptions.Count > 0) { <details class="planning-assumptions"><summary>Planning assumptions</summary><ul>@foreach (var assumption in plan.Assumptions) { <li>@assumption</li> }</ul></details> }
                             @if (plan.Priorities.Any(UsefulPriority) || UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => UsefulTrigger(plan, item)))
                             {
                                 <div class="briefing-columns">
@@ -141,6 +142,12 @@
     private void ChangeCar(ChangeEventArgs args) { State.SelectPlanCar(args.Value?.ToString()); UseReferenceDistance(); }
     private void ChangeTrack(ChangeEventArgs args) { State.SelectPlanTrack(args.Value?.ToString()); UseReferenceDistance(); }
     private void ChangeSetupType(ChangeEventArgs args) { State.SelectPlanSetupType(args.Value?.ToString()); UseReferenceDistance(); }
+    private string DistanceInputValue => State.PlanDistanceValue > 0
+        ? State.PlanDistanceValue.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)
+        : string.Empty;
+    private string DistanceInputStep => State.PlanDistanceMode.Equals("Minutes", StringComparison.OrdinalIgnoreCase) ? "0.1" : "1";
+    private void ChangeDistance(ChangeEventArgs args) => State.PlanDistanceValue =
+        double.TryParse(args.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && value > 0 ? value : 0;
     private void ChangeReference(ChangeEventArgs args)
     {
         State.SelectedPlanRaceId = args.Value?.ToString()?.Trim() ?? string.Empty;
@@ -148,10 +155,22 @@
     }
     private void UseReferenceDistance(bool onlyWhenUnchangedDefault = false)
     {
-        var laps = State.SelectedPlanRace?.Overview?.RecordedLaps;
-        if (laps is > 0 && (!onlyWhenUnchangedDefault || State.PlanDistanceValue is <= 0 or 50))
+        var overview = State.SelectedPlanRace?.Overview;
+        var laps = overview?.ScheduledLaps;
+        var minutes = overview?.ScheduledMinutes;
+        if (laps is > 0 && (!onlyWhenUnchangedDefault || State.PlanDistanceValue <= 0))
         {
             State.PlanDistanceValue = laps.Value;
+            State.PlanDistanceMode = "Laps";
+        }
+        else if (minutes is > 0 && (!onlyWhenUnchangedDefault || State.PlanDistanceValue <= 0))
+        {
+            State.PlanDistanceValue = minutes.Value;
+            State.PlanDistanceMode = "Minutes";
+        }
+        else if (!onlyWhenUnchangedDefault || State.PlanDistanceValue <= 0)
+        {
+            State.PlanDistanceValue = 0;
             State.PlanDistanceMode = "Laps";
         }
     }
@@ -160,10 +179,18 @@
     private static string ReferenceFacts(RecentRace race)
     {
         var facts = new List<string> { $"{race.SetupType} setup", race.Date };
+        if (DeclaredDistance(race.Overview) is { } declaredDistance) facts.Insert(0, declaredDistance);
         if (race.Overview?.RecordedLaps is > 0) facts.Insert(0, $"{race.Overview.RecordedLaps} laps");
         if (race.StartPosition > 0 && race.FinishPosition > 0) facts.Add($"P{race.StartPosition} → P{race.FinishPosition}");
         return string.Join(" · ", facts);
     }
+    private static string? DeclaredDistance(RaceOverview? overview) => overview switch
+    {
+        { DeclaredLapLimit: > 0, DeclaredTimeLimitMinutes: > 0 } => $"{overview.DeclaredLapLimit} laps / {overview.DeclaredTimeLimitMinutes:0.#} minutes configured",
+        { DeclaredLapLimit: > 0 } => $"{overview.DeclaredLapLimit} laps scheduled",
+        { DeclaredTimeLimitMinutes: > 0 } => $"{overview.DeclaredTimeLimitMinutes:0.#} minutes scheduled",
+        _ => null
+    };
     private static string FriendlyWindow(string value) => DateTimeOffset.TryParse(value, out var date) ? date.ToLocalTime().ToString("MMM d · h:mm tt") : value;
     private string ScenarioCountMessage => State.StrategyScenarios.Count switch
     {
@@ -202,20 +229,28 @@
             ? value
             : null;
     }
-    private static int CalculatedStops(RacePlanBriefing plan)
+    private static int? CalculatedStops(RacePlanBriefing plan)
     {
+        if (plan.ScheduledLaps <= 0) return null;
         var range = ConservativeRange(plan);
-        return range is > 0 && plan.ScheduledLaps > 0 ? Math.Max(0, (int)Math.Ceiling(plan.ScheduledLaps / range.Value) - 1) : plan.PitTargets.Count;
+        if (range is > 0) return Math.Max(0, (int)Math.Ceiling(plan.ScheduledLaps / range.Value) - 1);
+        return plan.PitTargets.Count > 0 ? plan.PitTargets.Count : null;
     }
-    private static string OpeningPlan(RacePlanBriefing plan) => plan.ScheduledLaps <= 0
-        ? "Use the recorded run as the planning baseline"
-        : CalculatedStops(plan) == 0
-            ? $"Start with a no-stop plan for {plan.ScheduledLaps} laps"
-            : $"Start with a {CalculatedStops(plan)}-stop all-green plan";
+    private static string OpeningPlan(RacePlanBriefing plan) => CalculatedStops(plan) switch
+    {
+        null => "Resolve the finish constraint before choosing a stop plan",
+        0 when plan.DistanceIsEstimated => $"Start with an estimated no-stop plan for {plan.DistanceLabel}",
+        0 => $"Start with a no-stop plan for {plan.DistanceLabel}",
+        { } stops when plan.DistanceIsEstimated => $"Start with an estimated {stops}-stop plan for {plan.DistanceLabel}",
+        { } stops => $"Start with a {stops}-stop all-green plan"
+    };
     private static string OpeningPlanExplanation(RacePlanBriefing plan)
     {
         var range = ConservativeRange(plan);
-        if (range is null || plan.ScheduledLaps <= 0) return "Use the recorded fuel burn as the baseline and update the call if live consumption moves outside it.";
+        if (plan.ScheduledLaps <= 0) return range is > 0
+            ? "The measured range is available, but the governing finish constraint is unresolved."
+            : "Use the recorded fuel burn as the baseline and resolve the governing finish constraint.";
+        if (range is null) return "Use the recorded fuel burn as the baseline and update the call if live consumption moves outside it.";
         if (range >= plan.ScheduledLaps) return $"The conservative recorded range clears this race by {range.Value - plan.ScheduledLaps:0.0} laps. There is no useful fuel pit window unless conditions change.";
         return plan.PitTargets.Count > 0
             ? $"The measured range cannot cover the full distance. The first balanced window opens around lap {plan.PitTargets[0]}."
@@ -229,23 +264,37 @@
         var percent = scale <= 0 ? 0 : Math.Clamp(plan.ScheduledLaps / scale * 100, 0, 100);
         return percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
     }
-    private static string FuelDecision(RacePlanBriefing plan) => CalculatedStops(plan) == 0 ? "Stay out" : $"{CalculatedStops(plan)} stop{(CalculatedStops(plan) == 1 ? string.Empty : "s")}";
+    private static string FuelDecision(RacePlanBriefing plan) => CalculatedStops(plan) switch
+    {
+        null => "Finish unresolved",
+        0 => "Stay out",
+        1 => "1 stop",
+        { } stops => $"{stops} stops"
+    };
     private static string FuelMargin(RacePlanBriefing plan)
     {
         var range = ConservativeRange(plan);
-        if (range is null || plan.ScheduledLaps <= 0) return "Range needs another clean sample";
+        if (plan.ScheduledLaps <= 0) return range is > 0 ? "Finish constraint unresolved" : "Range needs another clean sample";
+        if (range is null) return "Range needs another clean sample";
         var margin = range.Value - plan.ScheduledLaps;
-        return margin >= 0 ? $"+{margin:0.0} laps beyond the finish" : $"{-margin:0.0} laps beyond one tank";
+        var prefix = plan.DistanceIsEstimated ? "Projected " : string.Empty;
+        return margin >= 0 ? $"{prefix}+{margin:0.0} laps beyond the finish" : $"{prefix}{-margin:0.0} laps beyond one tank";
     }
-    private static string PlannedStops(RacePlanBriefing plan) => CalculatedStops(plan).ToString(System.Globalization.CultureInfo.InvariantCulture);
-    private static string PitWindowSummary(RacePlanBriefing plan) => plan.PitTargets.Count > 0 ? string.Join(" · ", plan.PitTargets.Select(lap => $"lap {lap}")) : "No scheduled fuel stop";
+    private static string PlannedStops(RacePlanBriefing plan) => CalculatedStops(plan)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—";
+    private static string PitWindowSummary(RacePlanBriefing plan) => CalculatedStops(plan) switch
+    {
+        null => "Resolve race distance first",
+        0 => "No scheduled fuel stop",
+        _ when plan.PitTargets.Count > 0 => $"{(plan.DistanceIsEstimated ? "Estimated: " : string.Empty)}{string.Join(" · ", plan.PitTargets.Select(lap => $"lap {lap}"))}",
+        _ => "Window needs live fuel use"
+    };
     private static bool UsefulTrigger(RacePlanBriefing plan, RaceTrigger trigger) => CapabilityRegistry.IsSupported(trigger.Claim)
         && !trigger.Label.Contains("adjust", StringComparison.OrdinalIgnoreCase)
         && !trigger.Label.Contains("rollback", StringComparison.OrdinalIgnoreCase)
-        && !(CalculatedStops(plan) == 0 && trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase));
+        && !(CalculatedStops(plan) is 0 && trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase));
     private static string FriendlyTrigger(RacePlanBriefing plan, RaceTrigger trigger)
     {
-        if (trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase) && CalculatedStops(plan) == 0)
+        if (trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase) && CalculatedStops(plan) is 0)
             return "No planned stop. Reconsider only if live fuel use removes the finish margin.";
         return trigger.Claim.Text;
     }

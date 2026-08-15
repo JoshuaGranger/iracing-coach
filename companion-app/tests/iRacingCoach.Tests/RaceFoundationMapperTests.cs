@@ -13,6 +13,7 @@ public sealed class RaceFoundationMapperTests
         {
           "status":"complete",
           "garage61_representative_laps": {
+            "target_derivation_version":"explicit-analysis-paths-v1",
             "status":"available",
             "comparison_scope":"own/team",
             "representative_laps":[{
@@ -50,6 +51,21 @@ public sealed class RaceFoundationMapperTests
         Assert.AreEqual(0.94d, lap.AlignmentCoverageFraction);
         Assert.AreEqual(64, lap.SourceSha256?.Length);
         Assert.IsFalse(lap.GetType().GetProperties().Any(property => property.Name.Contains("Path", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void Garage61References_OmitsLegacyUnversionedTargetDerivation()
+    {
+        using var document = JsonDocument.Parse("""
+        {
+          "garage61_representative_laps": {
+            "status":"available",
+            "representative_laps":[{"lap":{"id":"legacy","lapTime":24.5}}]
+          }
+        }
+        """);
+
+        Assert.IsNull(RuntimeMapper.Garage61References(document.RootElement));
     }
 
     [TestMethod]
@@ -111,6 +127,7 @@ public sealed class RaceFoundationMapperTests
         {
           "analysis_id": "foundation-test",
           "analysis_view": {
+            "analysis_profile_version":"post-race-foundations-v13",
             "schema_version": 1,
             "identity": { "track_name": "Iowa Speedway", "track_config": "Oval", "car_name": "NASCAR Truck", "is_fixed_setup": true },
             "race_summary": { "recorded_laps": 2, "scheduled_laps": 10, "pit_stops_detected": 0 },
@@ -156,7 +173,7 @@ public sealed class RaceFoundationMapperTests
               "persistent_model": {"path":"tire-models/model.json","observation_count":4,"model_version":"nascar-tire-condition-load-match-v1","observation_set_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
             },
             "garage61_representative_laps": {
-              "status":"available","comparison_scope":"own/team","representative_laps":[{"comparison_role":"representative","lap":{"id":"42","lapTime":24.5,"canViewTelemetry":true,"driverName":"Driver"},"telemetry":{"status":"cached"}}]
+              "target_derivation_version":"explicit-analysis-paths-v1","status":"available","comparison_scope":"own/team","representative_laps":[{"comparison_role":"representative","lap":{"id":"42","lapTime":24.5,"canViewTelemetry":true,"driverName":"Driver"},"telemetry":{"status":"cached"}}]
             },
             "technical_insights": [{"key":"fuel","label":"Fuel","status":"available","rating":"safe","takeaway":"Range is supported.","metrics":[{"label":"Range","value":"30 laps","evidence_type":"derived","detail":"Green-lap range.","action":"Keep a reserve.","tone":"positive","group":"range"}],"evidence":["fuel level"],"unavailable_reasons":[]}]
           }

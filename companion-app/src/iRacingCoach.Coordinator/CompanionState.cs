@@ -25,7 +25,7 @@ public sealed class CompanionState : IDisposable
     // The cached backend response is part of the UI contract. Bump this when
     // mapped analysis fields change so an older response cannot silently hide
     // newly available maps, replay coverage, tire learning, or technical data.
-    private const int UiAnalysisCacheSchemaVersion = 11;
+    private const int UiAnalysisCacheSchemaVersion = 12;
     private const string AppVersion = "0.16.0";
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
@@ -140,7 +140,7 @@ public sealed class CompanionState : IDisposable
     public string SelectedPlanCarId { get; set; } = string.Empty;
     public string SelectedPlanTrack { get; set; } = string.Empty;
     public string PlanDistanceMode { get; set; } = "Laps";
-    public int PlanDistanceValue { get; set; } = 50;
+    public double PlanDistanceValue { get; set; }
     public string PlanSetupType { get; set; } = "Fixed";
     public string SelectedTuningRaceId { get; set; } = string.Empty;
     public string SelectedTuningTargetRaceId { get; private set; } = string.Empty;
@@ -562,7 +562,9 @@ public sealed class CompanionState : IDisposable
                 target_hz = 20
             }, token);
             EnsureResponseMatchesSession(race, result);
-            var mappedCard = RuntimeMapper.RaceCard(result);
+            var mappedCard = RuntimeMapper.HasCurrentAnalysisProfile(result)
+                ? RuntimeMapper.RaceCard(result)
+                : null;
             var mappedAnalysis = RuntimeMapper.Analysis(result);
             EnsureAnalysisMatchesSession(race, mappedAnalysis);
             CurrentRaceCard = mappedCard;
@@ -804,7 +806,9 @@ public sealed class CompanionState : IDisposable
                 target_hz = 20
             }, cancellationToken);
             EnsureResponseMatchesSession(race, result);
-            var raceCard = RuntimeMapper.RaceCard(result);
+            var raceCard = RuntimeMapper.HasCurrentAnalysisProfile(result)
+                ? RuntimeMapper.RaceCard(result)
+                : null;
             var analysis = RuntimeMapper.Analysis(result);
             EnsureAnalysisMatchesSession(race, analysis);
             SaveUiAnalysisCache(race, result);
@@ -2753,7 +2757,7 @@ public sealed class CompanionState : IDisposable
     private bool TryLoadUiAnalysisCache(RecentRace race)
     {
         var path = UiAnalysisCachePath(race);
-        if (!File.Exists(path)) return TryLoadArchivedAnalysis(race);
+        if (!File.Exists(path)) return TryLoadArchiveOnlyAnalysis(race);
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
@@ -2761,10 +2765,10 @@ public sealed class CompanionState : IDisposable
             if (!root.TryGetProperty("schemaVersion", out var schema)
                 || schema.ValueKind != JsonValueKind.Number
                 || !schema.TryGetInt32(out var cacheSchema)
-                || cacheSchema != UiAnalysisCacheSchemaVersion) return false;
-            if (!CacheMatchesSession(root, race)) return false;
-            if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.Object) return false;
-            if (!ResponseMatchesSession(response, race)) return false;
+                || cacheSchema != UiAnalysisCacheSchemaVersion) return TryLoadArchiveOnlyAnalysis(race);
+            if (!CacheMatchesSession(root, race)) return TryLoadArchiveOnlyAnalysis(race);
+            if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.Object) return TryLoadArchiveOnlyAnalysis(race);
+            if (!ResponseMatchesSession(response, race)) return TryLoadArchiveOnlyAnalysis(race);
             var cachedSourceWrite = root.TryGetProperty("sourceLastWriteUtc", out var stamp) && stamp.ValueKind == JsonValueKind.String
                 ? stamp.GetString() : null;
             if (!string.IsNullOrWhiteSpace(race.SourcePath) && File.Exists(race.SourcePath))
@@ -2774,7 +2778,9 @@ public sealed class CompanionState : IDisposable
             }
             var analysis = RuntimeMapper.Analysis(response);
             EnsureAnalysisMatchesSession(race, analysis);
-            CurrentRaceCard = RuntimeMapper.RaceCard(response);
+            CurrentRaceCard = RuntimeMapper.HasCurrentAnalysisProfile(response)
+                ? RuntimeMapper.RaceCard(response)
+                : null;
             CurrentAnalysis = analysis;
             ApplySuccessfulRaceAnalysis(race, analysis, AnalysisPathFromResponse(response));
             AnalysisLoading = false;
@@ -2785,8 +2791,19 @@ public sealed class CompanionState : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
         {
             ReportUnhandledException("saved analysis cache", ex);
-            return false;
+            return TryLoadArchiveOnlyAnalysis(race);
         }
+    }
+
+    private bool TryLoadArchiveOnlyAnalysis(RecentRace race)
+    {
+        // A finalized recording can be reanalyzed under current semantics.
+        // Preserve historical rows whose source no longer exists, but never
+        // let an unversioned analysis.json act as the live cache for an
+        // available source recording.
+        var sourceAvailable = !string.IsNullOrWhiteSpace(race.SourcePath)
+            && File.Exists(race.SourcePath);
+        return !sourceAvailable && TryLoadArchivedAnalysis(race);
     }
 
     private bool TryLoadArchivedAnalysis(RecentRace race)
@@ -2798,7 +2815,9 @@ public sealed class CompanionState : IDisposable
             var analysis = RuntimeMapper.ArchivedAnalysis(document.RootElement);
             if (!AnalysisMatchesSession(race, analysis)) return false;
             CurrentAnalysis = analysis;
-            CurrentRaceCard = RuntimeMapper.ArchivedRaceCard(document.RootElement);
+            CurrentRaceCard = RuntimeMapper.HasCurrentAnalysisProfile(document.RootElement)
+                ? RuntimeMapper.ArchivedRaceCard(document.RootElement)
+                : null;
             ApplySuccessfulRaceAnalysis(race, CurrentAnalysis, race.AnalysisPath);
             AnalysisLoading = false;
             AnalysisMessage = string.Empty;
@@ -2927,7 +2946,11 @@ public sealed class CompanionState : IDisposable
             analysis.RecordedLaps, analysis.Runs.Sum(run => run.GreenLaps), analysis.Runs.Sum(run => run.CautionLaps),
             analysis.PitStops, analysis.Runs.Count, analysis.Runs.Select(run => run.GreenLaps).DefaultIfEmpty().Max(), longest?.PaceSlopeSecondsPerLap,
             consistency, tire?.TireRemainingPercent, tire?.TireName ?? string.Empty, controlChange,
-            recordedFuel.Length > 0 ? recordedFuel.Sum() : null, cleanTimes.Length > 0 ? cleanTimes.Min() : null);
+            recordedFuel.Length > 0 ? recordedFuel.Sum() : null, cleanTimes.Length > 0 ? cleanTimes.Min() : null,
+            ScheduledLaps: analysis.ScheduledLaps,
+            ScheduledMinutes: analysis.ScheduledMinutes,
+            DeclaredLapLimit: analysis.DeclaredLapLimit,
+            DeclaredTimeLimitMinutes: analysis.DeclaredTimeLimitMinutes);
     }
 
     private bool ApplyRaceOverview(RecentRace race, RaceOverview overview)
@@ -3000,6 +3023,13 @@ public sealed class CompanionState : IDisposable
             if (TryReadUiAnalysisCache(race, out var overview, out var analysisPath))
             {
                 changed |= ApplySuccessfulRaceAnalysis(race, overview, analysisPath);
+                continue;
+            }
+            var sourceAvailable = !string.IsNullOrWhiteSpace(race.SourcePath)
+                && File.Exists(race.SourcePath);
+            if (!sourceAvailable && TryReadCachedRaceOverview(race, out overview))
+            {
+                changed |= ApplySuccessfulRaceAnalysis(race, overview, race.AnalysisPath);
                 continue;
             }
             missing.Add(race);
