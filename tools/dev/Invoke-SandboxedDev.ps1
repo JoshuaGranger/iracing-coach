@@ -71,10 +71,15 @@ if ($SandboxParentTrimmed -ne $TempRoot -and
     -not $SandboxParentTrimmed.StartsWith($TempRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw "Sandbox parent must be the OS temporary root or a strict descendant of it: $SandboxParent"
 }
+# Only a parent equal to or inside the worktree is rejected. A parent that is an
+# ANCESTOR of the worktree is safe and must be allowed: with a worktree beneath
+# %TEMP% and the default parent %TEMP%, the randomized sandbox root is a sibling
+# of the worktree, not an overlap. Rejecting the ancestor case broke every
+# documented default command in that layout. The real invariant is on the
+# computed sandbox root, enforced below and again at deletion.
 if ($SandboxParentTrimmed -eq $WorktreeTrimmed -or
-    $SandboxParentTrimmed.StartsWith($WorktreeTrimmed + '\', [StringComparison]::OrdinalIgnoreCase) -or
-    $WorktreeTrimmed.StartsWith($SandboxParentTrimmed + '\', [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Sandbox parent and worktree must be disjoint: $SandboxParent"
+    $SandboxParentTrimmed.StartsWith($WorktreeTrimmed + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Sandbox parent must not be inside the worktree: $SandboxParent"
 }
 
 if ($Script) {
@@ -93,6 +98,17 @@ if ($Script) {
 
 $sandboxName = 'iracing-coach-dev-' + [Guid]::NewGuid().ToString('N')
 $SandboxRoot = Join-Path $SandboxParent $sandboxName
+
+# Root-level disjointness, both directions, before any sandbox child is created.
+# This is the invariant that actually matters: the sandbox must neither contain
+# the worktree nor sit inside it. Checking the parent instead was too strict.
+$SandboxRootCandidate = [System.IO.Path]::GetFullPath($SandboxRoot).TrimEnd('\')
+if ($SandboxRootCandidate -eq $WorktreeTrimmed -or
+    $SandboxRootCandidate.StartsWith($WorktreeTrimmed + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    $WorktreeTrimmed.StartsWith($SandboxRootCandidate + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Sandbox root and worktree must be disjoint: $SandboxRoot"
+}
+
 # home\AppData\Local and home\AppData\Roaming must exist. Windows expands the
 # per-user shell folders from a USERPROFILE-relative registry value, and
 # Environment.GetFolderPath returns an empty string when the expanded directory

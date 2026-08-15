@@ -175,9 +175,6 @@ class SandboxedDevRunnerTests(unittest.TestCase):
                 self.environment,
             )
             self.assertNotEqual(completed.returncode, 0)
-            # Either sandbox-parent guard is a correct refusal. On this layout
-            # the temporary-root guard fires first because the worktree is not
-            # under %TEMP%; the disjointness guard covers the case where it is.
             self.assertIn("Sandbox parent", completed.stdout + completed.stderr)
             self.assertEqual(_sandboxes(inside), [], "no sandbox may be created inside the worktree")
             self.assertFalse(self.marker.is_file(), "the target must not run")
@@ -186,14 +183,74 @@ class SandboxedDevRunnerTests(unittest.TestCase):
             inside.rmdir()
 
     # Review finding 1 - a parent outside the OS temporary root is refused.
+    # The candidate must be genuinely outside %TEMP% and disjoint from the
+    # worktree. WORKTREE.parent is not a safe assumption: when the worktree is
+    # a disposable clone beneath %TEMP%, its parent IS the temporary root, and
+    # this test then asserted the wrong guard.
     def test_sandbox_parent_outside_the_temp_root_is_refused(self) -> None:
+        temp_root = os.path.realpath(tempfile.gettempdir()).rstrip("\\")
+        worktree = os.path.realpath(str(WORKTREE)).rstrip("\\")
+        candidate = None
+        for option in (os.environ.get("SystemRoot", r"C:\Windows"), r"C:\Windows", r"C:\\"):
+            resolved = os.path.realpath(option).rstrip("\\")
+            if not os.path.isdir(resolved):
+                continue
+            if resolved.lower() == temp_root.lower() or resolved.lower().startswith(temp_root.lower() + os.sep):
+                continue
+            if resolved.lower() == worktree.lower() or worktree.lower().startswith(resolved.lower() + os.sep):
+                continue
+            candidate = resolved
+            break
+        if candidate is None:
+            self.skipTest("no existing directory is both outside %TEMP% and disjoint from the worktree")
         completed = _invoke(
-            ["-Script", str(MARKER_TARGET), "-SandboxParent", str(WORKTREE.parent)],
+            ["-Script", str(MARKER_TARGET), "-SandboxParent", candidate],
             self.environment,
         )
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("temporary root", completed.stdout + completed.stderr)
         self.assertFalse(self.marker.is_file())
+        self.assertEqual(_sandboxes(Path(candidate)), [], "refusal must precede sandbox creation")
+
+    # Review finding, follow-up - the documented default command must work when
+    # the worktree itself lives beneath %TEMP%, which is the independent-review
+    # layout. The default sandbox parent is then an ANCESTOR of the worktree and
+    # the randomized sandbox root is its sibling, which is safe.
+    def test_default_parent_succeeds_when_worktree_is_under_temp(self) -> None:
+        fake = self.parent / "wt"
+        (fake / "tools").mkdir(parents=True)
+        shutil.copytree(TOOLS_DEV, fake / "tools" / "dev", ignore=shutil.ignore_patterns("__pycache__"))
+        scripts = WORKTREE / "iracing-coach" / "skills" / "analyze-iracing-race" / "scripts"
+        shutil.copytree(
+            scripts,
+            fake / "iracing-coach" / "skills" / "analyze-iracing-race" / "scripts",
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+        temp_root = os.path.realpath(tempfile.gettempdir()).rstrip("\\")
+        self.assertTrue(
+            os.path.realpath(str(fake)).lower().startswith(temp_root.lower() + os.sep),
+            "this test is only meaningful with the worktree beneath the OS temporary root",
+        )
+        marker = fake / "marker.txt"
+        environment = os.environ.copy()
+        environment["G0_DEV_MARKER"] = str(marker)
+        completed = subprocess.run(
+            [
+                POWERSHELL, "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-File", str(fake / "tools" / "dev" / "Invoke-SandboxedDev.ps1"),
+                "-PythonPath", PYTHON,
+                "-Script", str(fake / "tools" / "dev" / "_marker_target.py"),
+            ],
+            env=environment,
+            cwd=str(fake),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("G0 sandbox assertion passed", completed.stdout)
+        self.assertTrue(marker.is_file(), "the default command must dispatch from a temp-hosted worktree")
+        self.assertIn("sandbox       : removed", completed.stdout)
 
     # Review finding 2 - the runner refuses an out-of-worktree script.
     def test_script_outside_the_worktree_is_refused(self) -> None:
