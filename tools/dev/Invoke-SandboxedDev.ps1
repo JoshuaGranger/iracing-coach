@@ -57,6 +57,40 @@ if (-not (Test-Path -LiteralPath $SandboxParent -PathType Container)) {
 }
 $SandboxParent = (Resolve-Path -LiteralPath $SandboxParent).ProviderPath
 
+# The sandbox parent is constrained here, not only at deletion time. An earlier
+# revision accepted any existing directory, so a parent inside the worktree
+# produced exactly the repository pollution this runner exists to prevent.
+$WorktreeTrimmed = $WorktreeRoot.TrimEnd('\')
+$TempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
+$parentItem = Get-Item -LiteralPath $SandboxParent -Force
+if (($parentItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint) {
+    throw "Sandbox parent is a reparse point: $SandboxParent"
+}
+$SandboxParentTrimmed = $SandboxParent.TrimEnd('\')
+if ($SandboxParentTrimmed -ne $TempRoot -and
+    -not $SandboxParentTrimmed.StartsWith($TempRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Sandbox parent must be the OS temporary root or a strict descendant of it: $SandboxParent"
+}
+if ($SandboxParentTrimmed -eq $WorktreeTrimmed -or
+    $SandboxParentTrimmed.StartsWith($WorktreeTrimmed + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    $WorktreeTrimmed.StartsWith($SandboxParentTrimmed + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Sandbox parent and worktree must be disjoint: $SandboxParent"
+}
+
+if ($Script) {
+    # The plan and README both define -Script as an in-worktree script. Enforce
+    # that contract rather than only documenting it. The bootstrap re-checks.
+    if (-not (Test-Path -LiteralPath $Script -PathType Leaf)) { throw "Script not found: $Script" }
+    $Script = (Resolve-Path -LiteralPath $Script).ProviderPath
+    $scriptItem = Get-Item -LiteralPath $Script -Force
+    if (($scriptItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint) {
+        throw "Script is a reparse point: $Script"
+    }
+    if (-not $Script.StartsWith($WorktreeTrimmed + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Script must be inside the current worktree: $Script"
+    }
+}
+
 $sandboxName = 'iracing-coach-dev-' + [Guid]::NewGuid().ToString('N')
 $SandboxRoot = Join-Path $SandboxParent $sandboxName
 # home\AppData\Local and home\AppData\Roaming must exist. Windows expands the
@@ -224,13 +258,17 @@ finally {
         $parentPrefix = $SandboxParent.TrimEnd('\') + '\'
         $item = Get-Item -LiteralPath $resolved -Force
         $isReparse = ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint
-        $worktreePrefix = $WorktreeRoot.TrimEnd('\') + '\'
+        $resolvedTrimmed = $resolved.TrimEnd('\')
+        # Disjointness is revalidated in both directions: the sandbox must be
+        # neither an ancestor of the worktree nor inside it.
         $safe = $item.PSIsContainer `
             -and (-not $isReparse) `
             -and ($leaf -match '^iracing-coach-dev-[0-9a-f]{32}$') `
             -and $resolved.StartsWith($parentPrefix, [StringComparison]::OrdinalIgnoreCase) `
-            -and ($resolved.TrimEnd('\') -ne $SandboxParent.TrimEnd('\')) `
-            -and (-not $worktreePrefix.StartsWith($resolved.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase))
+            -and ($resolvedTrimmed -ne $SandboxParent.TrimEnd('\')) `
+            -and (-not ($WorktreeTrimmed + '\').StartsWith($resolvedTrimmed + '\', [StringComparison]::OrdinalIgnoreCase)) `
+            -and ($resolvedTrimmed -ne $WorktreeTrimmed) `
+            -and (-not $resolvedTrimmed.StartsWith($WorktreeTrimmed + '\', [StringComparison]::OrdinalIgnoreCase))
         if ($safe) {
             [System.IO.Directory]::Delete($resolved, $true)
             Write-Output 'sandbox       : removed'

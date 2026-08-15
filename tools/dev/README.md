@@ -46,6 +46,21 @@ WS-13a.
 `-KeepSandbox` retains the sandbox on success and prints its path. A failed run
 always retains it.
 
+## Path contracts, enforced not merely documented
+
+- `-Script` must be a regular, non-reparse file **inside the current worktree**.
+  Both the runner and the bootstrap check this, so the contract holds even when
+  the bootstrap is invoked directly.
+- `-SandboxParent` must be the OS temporary root or a strict descendant of it,
+  must not be a reparse point, and must be disjoint from the worktree in both
+  directions. Refusal happens before any sandbox directory is created.
+- Cleanup revalidates the same disjointness at deletion time, in addition to the
+  name pattern, reparse-point, and strict-descendant guards.
+
+An earlier revision only documented these two rules. A review reproduced both:
+a sandbox parent inside the worktree, and an out-of-worktree script that was
+executed. Documentation is not a boundary.
+
 ## What is confined
 
 `IRACING_COACH_DATA`, `IRACING_COACH_INSTALL_ROOT`, `USERPROFILE`, `HOMEDRIVE`,

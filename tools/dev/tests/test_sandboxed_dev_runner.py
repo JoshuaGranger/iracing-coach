@@ -10,6 +10,7 @@ directory, which is the worktree.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -56,6 +57,39 @@ def _invoke(arguments: list[str], environment: dict[str, str] | None = None):
 
 def _sandboxes(parent: Path) -> list[Path]:
     return sorted(parent.glob(SANDBOX_GLOB))
+
+
+def _worktree_status() -> str:
+    """Recursive worktree state, for before/after comparison.
+
+    Git status is preferred because it sees modifications as well as additions,
+    at any depth. The snapshot may legitimately be non-empty; only the
+    difference between two snapshots matters.
+    """
+
+    git = shutil.which("git")
+    if git:
+        completed = subprocess.run(
+            [git, "-C", str(WORKTREE), "status", "--porcelain=v1", "--untracked-files=all"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if completed.returncode == 0:
+            return completed.stdout
+    # Fallback when Git is unavailable: recursive path/size/mtime listing.
+    entries = []
+    for root, directories, files in os.walk(WORKTREE):
+        if ".git" in directories:
+            directories.remove(".git")
+        for name in files:
+            path = Path(root) / name
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            entries.append(f"{path.relative_to(WORKTREE)}|{stat.st_size}|{int(stat.st_mtime)}")
+    return "\n".join(sorted(entries))
 
 
 @unittest.skipUnless(os.name == "nt", "the runner is Windows-only development tooling")
@@ -129,21 +163,80 @@ class SandboxedDevRunnerTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("exactly one of -Target", completed.stdout + completed.stderr)
 
-    # Case 7 and case 8 - a real gate runs, and the worktree gains nothing.
+    # Review finding 1 - a sandbox parent inside the worktree must be refused
+    # before any sandbox is created or any target is entered.
+    def test_sandbox_parent_inside_the_worktree_is_refused(self) -> None:
+        inside = WORKTREE / "g0-dev-adversarial-parent"
+        inside.mkdir(exist_ok=True)
+        try:
+            before = _worktree_status()
+            completed = _invoke(
+                ["-Script", str(MARKER_TARGET), "-SandboxParent", str(inside)],
+                self.environment,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            # Either sandbox-parent guard is a correct refusal. On this layout
+            # the temporary-root guard fires first because the worktree is not
+            # under %TEMP%; the disjointness guard covers the case where it is.
+            self.assertIn("Sandbox parent", completed.stdout + completed.stderr)
+            self.assertEqual(_sandboxes(inside), [], "no sandbox may be created inside the worktree")
+            self.assertFalse(self.marker.is_file(), "the target must not run")
+            self.assertEqual(before, _worktree_status(), "worktree state must be unchanged")
+        finally:
+            inside.rmdir()
+
+    # Review finding 1 - a parent outside the OS temporary root is refused.
+    def test_sandbox_parent_outside_the_temp_root_is_refused(self) -> None:
+        completed = _invoke(
+            ["-Script", str(MARKER_TARGET), "-SandboxParent", str(WORKTREE.parent)],
+            self.environment,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("temporary root", completed.stdout + completed.stderr)
+        self.assertFalse(self.marker.is_file())
+
+    # Review finding 2 - the runner refuses an out-of-worktree script.
+    def test_script_outside_the_worktree_is_refused(self) -> None:
+        outside = self.parent / "outside_target.py"
+        outside.write_text("raise SystemExit(0)\n", encoding="utf-8")
+        completed = _invoke(
+            ["-Script", str(outside), "-SandboxParent", str(self.parent)],
+            self.environment,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("inside the current worktree", completed.stdout + completed.stderr)
+        self.assertEqual(_sandboxes(self.parent), [], "refusal must precede sandbox creation")
+
+    # Review finding 4a - an interpreter that is not Python must be refused.
+    def test_interpreter_mismatch_is_refused(self) -> None:
+        command = [
+            POWERSHELL, "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", str(RUNNER),
+            "-PythonPath", POWERSHELL,
+            "-Script", str(MARKER_TARGET),
+            "-SandboxParent", str(self.parent),
+        ]
+        completed = subprocess.run(
+            command, cwd=str(WORKTREE), capture_output=True, text=True, timeout=180
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("Interpreter did not execute", completed.stdout + completed.stderr)
+        self.assertEqual(_sandboxes(self.parent), [], "no sandbox before interpreter validation")
+        self.assertFalse(self.marker.is_file())
+
+    # Case 7 and case 8 - a real gate runs, and the worktree is untouched.
+    # Review finding 4b - compare recursive Git status, not top-level names: the
+    # old assertion could not see a modified file or a file nested below an
+    # existing directory.
     def test_mcp_smoke_runs_and_leaves_the_worktree_unchanged(self) -> None:
-        before = sorted(item.name for item in WORKTREE.iterdir())
+        before = _worktree_status()
         completed = _invoke(
             ["-Target", "mcp-smoke", "-FixtureIracingRoot", "-SandboxParent", str(self.parent)],
             self.environment,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn('"subsession_id": 8001', completed.stdout)
-        after = sorted(item.name for item in WORKTREE.iterdir())
-        self.assertEqual(
-            before,
-            after,
-            "the run must not create anything in the worktree root",
-        )
+        self.assertEqual(before, _worktree_status(), "the run must not change the worktree")
         self.assertEqual(_sandboxes(self.parent), [])
 
 

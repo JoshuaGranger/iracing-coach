@@ -177,6 +177,34 @@ class SandboxBootstrapTests(unittest.TestCase):
         self.assertEqual(completed.returncode, EXIT_ASSERTION_FAILED, completed.stderr)
         self.assertFalse(self.marker.exists())
 
+    # Review finding 2 - -Script is defined as an in-worktree script, so the
+    # bootstrap must refuse a path outside the worktree even when invoked
+    # directly.
+    def test_script_outside_the_worktree_is_refused(self) -> None:
+        outside = Path(self._temporary.name) / "outside_target.py"
+        outside.write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['G0_DEV_MARKER']).write_text('entered\\n', encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        command = [
+            PYTHON, "-X", "utf8", str(BOOTSTRAP),
+            "--expect-sandbox", str(self.sandbox),
+            "--script", str(outside),
+        ]
+        completed = subprocess.run(
+            command,
+            env=self.environment,
+            cwd=str(WORKTREE),
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        self.assertEqual(completed.returncode, EXIT_ASSERTION_FAILED, completed.stderr)
+        self.assertIn("outside-worktree", completed.stderr)
+        self.assertFalse(self.marker.exists(), "an outside script must never be executed")
+
     # Clarification 9 - failure output must never echo an ambient private root.
     def test_failure_message_omits_the_path_value(self) -> None:
         outside = Path(self._temporary.name) / "private-looking-root"

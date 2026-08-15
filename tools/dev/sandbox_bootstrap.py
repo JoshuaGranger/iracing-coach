@@ -161,7 +161,20 @@ def main(argv: list[str] | None = None) -> int:
 
     forwarded = [item for item in args.target_args if item != "--"]
     if args.script:
+        # The runner checks this too. It is repeated here so the contract holds
+        # even when the bootstrap is invoked directly, which the tests do.
         script = os.path.realpath(args.script)
+        worktree = os.path.realpath(str(WORKTREE_ROOT))
+        try:
+            inside = os.path.normcase(os.path.commonpath([script, worktree])) == os.path.normcase(worktree)
+        except ValueError:
+            inside = False  # different drives
+        if not os.path.isfile(script) or not inside:
+            print(
+                "G0 SANDBOX ASSERTION FAILED: --script (outside-worktree)",
+                file=sys.stderr,
+            )
+            return EXIT_ASSERTION_FAILED
         sys.argv = [script, *forwarded]
         runpy.run_path(script, run_name="__main__")
         return 0
