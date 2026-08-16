@@ -730,7 +730,7 @@
                          {"family":"backend","id":"test_race_foundations.RaceFoundationTests.test_live_replay_merge_requires_phase_and_deduplicates_reconnect_overlap","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_race_foundations.RaceFoundationTests.test_live_replay_mixed_manifest_coverage_is_never_promoted_to_recorded","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_race_foundations.RaceFoundationTests.test_live_replay_time_gap_and_participant_coverage_are_conservative","tier":"Behavioral","technique":"none"},
-                         {"family":"backend","id":"test_race_foundations.RaceFoundationTests.test_offline_workflow_durably_archives_before_cache_or_analysis_use","tier":"Behavioral","technique":"none"},
+                         {"family":"backend","id":"test_race_foundations.RaceFoundationTests.test_offline_workflow_durably_archives_before_cache_or_analysis_use","tier":"SourceContract","technique":"none"},
                          {"family":"backend","id":"test_race_foundations.RaceFoundationTests.test_old_recording_reports_full_field_replay_unavailable","tier":"Behavioral","technique":"fault"},
                          {"family":"backend","id":"test_race_foundations.RaceFoundationTests.test_raw_archive_is_verified_deduplicated_and_non_destructive","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_race_foundations.RaceFoundationTests.test_raw_archive_preserves_duplicate_content_discovery_history","tier":"Behavioral","technique":"none"},
