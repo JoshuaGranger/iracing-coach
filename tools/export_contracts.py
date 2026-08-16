@@ -449,19 +449,6 @@ def exported_values() -> dict[Path, Any]:
         CONTRACT_ROOT / "mcp-tools.v1.json": tools,
         CONTRACT_ROOT / "analysis-view-v1.schema.json": _analysis_view_schema(),
         CONTRACT_ROOT / "race-plan-decision-v1.schema.json": _race_plan_decision_schema(),
-        # A fixture rather than a schema: these are the cases a second decoder
-        # must reproduce, generated so they cannot drift from the policy.
-        WORKSPACE_ROOT
-        / "test-data"
-        / "live-truth-conformance-v1.json": live_truth.conformance_vectors(),
-        WORKSPACE_ROOT
-        / "test-data"
-        / "starting-tune-matrix-v1.json": {
-            "contract_version": starting_tune.STARTING_TUNE_CONTRACT_VERSION,
-            "purposes": list(starting_tune.PURPOSES),
-            "source_shapes": list(starting_tune.SOURCE_SHAPES),
-            "rows": starting_tune.capability_matrix(),
-        },
     }
 
 
