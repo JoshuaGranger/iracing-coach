@@ -1,0 +1,581 @@
+{
+    "schemaVersion":  1,
+    "declarations":  [
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_aborted_run_has_no_passing_count",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_behavioral_sample_is_reproducible",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_benchmark_line_poisoning_is_not_parsed",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_ci_activates_declared_families_without_hard_coded_counts",
+                             "tier":  "SourceContract",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_complete_report_has_all_tiers_and_no_aggregate",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_completed_failure_writes_truth_then_exits_nonzero",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_duplicate_declaration_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_dynamic_add_move_delete_changes_only_runner_count",
+                             "tier":  "Behavioral",
+                             "technique":  "mutation"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_filtered_run_requires_complete_same_family_catalog",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_fixture_paths_and_provider_sources_validate_at_sha",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_identical_structured_input_is_byte_deterministic",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_invalid_trx_summary_has_no_totals",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_malformed_raw_is_invalid",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_missing_and_stale_declarations_fail",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_missing_fixture_source_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_python_producer_records_file_only_structured_outcomes",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_python_producer_zero_discovery_fails_closed",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_report_is_utf8_newline_terminated_and_atomic",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_schema_declares_invalid_without_totals",
+                             "tier":  "SourceContract",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_skip_is_never_folded_into_passed",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_source_contract_name_mismatch_is_advisory",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_source_tree_divergence_fails_before_claiming_sha",
+                             "tier":  "Behavioral",
+                             "technique":  "mutation"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_trx_data_rows_inherit_one_parent_declaration",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_unknown_technique_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_unknown_tier_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_zero_discovery_is_invalid_without_totals",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_add_move_and_order_change_manifest_dynamically_and_deterministically",
+                             "tier":  "Behavioral",
+                             "technique":  "mutation"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_ci_uses_the_reusable_gate_without_a_magic_count",
+                             "tier":  "SourceContract",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_deleted_candidate_fails_without_node_execution",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_dependency_build_and_generated_paths_are_excluded",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_duplicate_and_case_collision_fail",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_explicit_node_is_recorded_and_missing_explicit_node_never_falls_back",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_locked_file_is_refused_as_unreadable",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_nested_first_party_is_discovered_and_nested_vendor_is_excluded",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_outside_synthetic_root_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_reparse_point_is_refused_when_host_can_create_one",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_syntax_error_fails_and_never_echoes_source",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_synthetic_result_has_no_sha_and_truthful_limitations",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_tracked_source_binds_working_bytes_to_exact_sha",
+                             "tier":  "Behavioral",
+                             "technique":  "mutation"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_javascript_syntax_gate.JavaScriptSyntaxGateTests.test_zero_first_party_files_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_agent_cache_is_never_implicitly_selected",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_agent_cache_is_usable_when_named_explicitly",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_bad_environment_override_is_rejected_without_falling_back",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_ci_declares_the_toolchain_contract",
+                             "tier":  "SourceContract",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_dotnet_in_pinned_band_is_accepted",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_dotnet_is_constrained_by_global_json",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_dotnet_malformed_version_is_rejected",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_dotnet_nonzero_exit_is_rejected",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_dotnet_outside_feature_band_is_rejected",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_dotnet_pin_mismatch_fails_when_required",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_dotnet_pin_mismatch_is_rejected",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_environment_override_tier",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_explicit_node_rejection_reports_its_path",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_explicit_node_selected_with_full_provenance",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_explicit_python_override_is_selected",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_invalid_explicit_node_does_not_fall_through_to_environment",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_invalid_node_environment_does_not_fall_through_to_path",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_malformed_global_json_is_not_satisfied",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_malformed_pin_version_is_not_satisfied",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_minimum_is_three_ten_not_ci_selection",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_missing_constraint_directory_is_not_satisfied",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_missing_explicit_dotnet_path_is_reported",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_missing_explicit_path_is_rejected_without_falling_back",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_missing_global_json_is_not_satisfied",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_non_python_executable_is_rejected_without_falling_back",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_optional_absence_passes_and_required_absence_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_path_only_node_selection",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_provenance_fields_without_leakage",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_tool_path_containing_spaces",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_unconstrained_dotnet_reports_null_pin_rather_than_satisfied",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_resolve_toolchain.ResolveToolchainTests.test_zero_length_execution_alias_is_not_rejected_for_size",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_ambient_temp_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_ambient_tmp_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_ambient_userprofile_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_device_namespace_root_is_rejected",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_failure_message_omits_the_path_value",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_incompatible_drive_is_rejected",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_missing_data_root_fails_closed",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_outside_data_root_fails_closed",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_script_outside_the_worktree_is_refused",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_tracked_fixture_root_is_accepted",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_traversal_escape_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_unc_root_is_rejected",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_unexpected_fixture_root_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandbox_bootstrap.SandboxBootstrapTests.test_valid_environment_dispatches_target",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_default_parent_succeeds_when_worktree_is_under_temp",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_exactly_one_target_selector_is_required",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_failure_retains_sandbox",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_interpreter_mismatch_is_refused",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_keep_sandbox_retains",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_mcp_smoke_runs_and_leaves_the_worktree_unchanged",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_missing_interpreter_fails_clearly",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_sandbox_parent_inside_the_worktree_is_refused",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_sandbox_parent_outside_the_temp_root_is_refused",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_script_outside_the_worktree_is_refused",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_sandboxed_dev_runner.SandboxedDevRunnerTests.test_success_removes_only_its_own_sandbox",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         }
+                     ]
+}
