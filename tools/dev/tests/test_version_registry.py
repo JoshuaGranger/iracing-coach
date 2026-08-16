@@ -388,6 +388,48 @@ class CSharpConstantParserTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("CurrentSchemaVersion", completed.stderr)
 
+    def test_a_commented_out_declaration_is_not_live_authority(self) -> None:
+        """Dead text must not carry authority.
+
+        An unanchored regex over raw C# matched a declaration inside a comment,
+        so generation would have bound compatibility values to code that does
+        not exist. Commenting the constant out is a *missing* constant.
+        """
+        for label, replacement in (
+            ("line comment", "// public const int CurrentSchemaVersion = 1;"),
+            ("block comment", "/*\npublic const int CurrentSchemaVersion = 1;\n*/"),
+            ("trailing line comment", "int Unused = 0; // public const int CurrentSchemaVersion = 1;"),
+        ):
+            with self.subTest(case=label):
+                completed = self._with_source(replacement)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("was not found as a live integer constant", completed.stderr)
+
+    def test_a_declaration_inside_a_string_literal_is_not_live_authority(self) -> None:
+        for label, replacement in (
+            ("regular string", 'const string Doc = "public const int CurrentSchemaVersion = 1;";'),
+            ("verbatim string", 'const string Doc = @"public const int CurrentSchemaVersion = 1;";'),
+        ):
+            with self.subTest(case=label):
+                completed = self._with_source(replacement)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("was not found as a live integer constant", completed.stderr)
+
+    def test_a_live_declaration_beside_commented_decoys_still_binds(self) -> None:
+        # The scanner must not become so strict that real source stops parsing:
+        # one live declaration among commented copies is unambiguous.
+        completed = self._with_source(
+            "// public const int CurrentSchemaVersion = 9;\n"
+            "    public const int CurrentSchemaVersion = 1;\n"
+            "    /* public const int CurrentSchemaVersion = 8; */"
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_an_unterminated_block_comment_is_refused(self) -> None:
+        completed = self._with_source("/* public const int CurrentSchemaVersion = 1;")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("Unterminated", completed.stderr)
+
 
 class GenerationTests(unittest.TestCase):
     def test_regeneration_is_byte_identical_and_current(self) -> None:

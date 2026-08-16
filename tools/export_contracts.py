@@ -76,23 +76,99 @@ _COMPANION_AUTHORITY_CONTRACT = {
 }
 
 
+def _strip_csharp_comments_and_strings(text: str) -> str:
+    """Blank out comments, strings, and char literals, preserving offsets.
+
+    A regular expression over raw C# happily matches a declaration inside a
+    comment, so generation would bind compatibility values to dead text. Only
+    executable source may carry authority, so non-code spans are replaced with
+    spaces of equal length before any matching. Newlines are preserved so line
+    numbers stay usable in errors.
+
+    Unterminated comments and strings raise rather than being tolerated: an
+    ambiguous parse must not resolve to a plausible number.
+    """
+    out: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        pair = text[index : index + 2]
+        if pair == "//":
+            end = text.find("\n", index)
+            end = length if end == -1 else end
+            out.append(" " * (end - index))
+            index = end
+        elif pair == "/*":
+            end = text.find("*/", index + 2)
+            if end == -1:
+                raise ValueError(
+                    f"Unterminated block comment in {DURABLE_ARCHIVE_SOURCE}; refusing to parse"
+                )
+            span = text[index : end + 2]
+            out.append("".join("\n" if c == "\n" else " " for c in span))
+            index = end + 2
+        elif pair == '@"':
+            cursor = index + 2
+            while True:
+                if cursor >= length:
+                    raise ValueError(
+                        f"Unterminated verbatim string in {DURABLE_ARCHIVE_SOURCE}; refusing to parse"
+                    )
+                if text[cursor] == '"':
+                    if text[cursor : cursor + 2] == '""':
+                        cursor += 2
+                        continue
+                    cursor += 1
+                    break
+                cursor += 1
+            span = text[index:cursor]
+            out.append("".join("\n" if c == "\n" else " " for c in span))
+            index = cursor
+        elif char in {'"', "'"}:
+            quote = char
+            cursor = index + 1
+            while True:
+                if cursor >= length or text[cursor] == "\n":
+                    raise ValueError(
+                        f"Unterminated {quote!r} literal in {DURABLE_ARCHIVE_SOURCE}; refusing to parse"
+                    )
+                if text[cursor] == "\\":
+                    cursor += 2
+                    continue
+                if text[cursor] == quote:
+                    cursor += 1
+                    break
+                cursor += 1
+            out.append(" " * (cursor - index))
+            index = cursor
+        else:
+            out.append(char)
+            index += 1
+    return "".join(out)
+
+
+_CURRENT_SCHEMA_VERSION_DECLARATION = re.compile(
+    r"(?:^|[;{}\s])public\s+const\s+int\s+CurrentSchemaVersion\s*=\s*(-?\d+)\s*;"
+)
+
+
 def _csharp_current_schema_version() -> int:
-    """Read `CurrentSchemaVersion` from C# source, refusing anything ambiguous.
+    """Read `CurrentSchemaVersion` from live C# source, refusing anything ambiguous.
 
     Generation binds the companion writer and maximum to this integer, so a
-    parser that guesses would defeat the binding. Missing, duplicated, or
-    non-integer declarations raise rather than resolve to a plausible number.
+    parser that guesses, or that reads commented-out text, would defeat the
+    binding. Missing, duplicated, commented-out, and non-integer declarations
+    all raise rather than resolving to a plausible number.
     """
     path = WORKSPACE_ROOT / DURABLE_ARCHIVE_SOURCE
     if not path.is_file():
         raise ValueError(f"Companion archive source is missing: {DURABLE_ARCHIVE_SOURCE}")
-    text = path.read_text(encoding="utf-8")
-    matches = re.findall(
-        r"public\s+const\s+int\s+CurrentSchemaVersion\s*=\s*(-?\d+)\s*;", text
-    )
+    code = _strip_csharp_comments_and_strings(path.read_text(encoding="utf-8"))
+    matches = _CURRENT_SCHEMA_VERSION_DECLARATION.findall(code)
     if not matches:
         raise ValueError(
-            f"{DURABLE_ARCHIVE_SYMBOL} was not found as an integer constant in "
+            f"{DURABLE_ARCHIVE_SYMBOL} was not found as a live integer constant in "
             f"{DURABLE_ARCHIVE_SOURCE}"
         )
     if len(matches) > 1:
