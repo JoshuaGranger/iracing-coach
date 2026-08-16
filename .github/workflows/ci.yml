@@ -49,15 +49,25 @@ jobs:
       - name: Check first-party JavaScript syntax
         shell: pwsh
         run: |
-          $scripts = @(
-            Get-ChildItem -LiteralPath .\companion-app\src\iRacingCoach.UI\wwwroot -Filter *.js -File
-            Get-Item -LiteralPath .\companion-app\src\iRacingCoach.Preview\Components\Layout\ReconnectModal.razor.js
-          )
-          foreach ($script in $scripts) {
-            node --check $script.FullName
-            if ($LASTEXITCODE -ne 0) { throw "JavaScript syntax check failed: $($script.FullName)" }
-          }
-          if ($scripts.Count -ne 9) { throw "Expected 9 first-party JavaScript files; found $($scripts.Count)." }
+          $sha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "Could not resolve the checked-out source SHA." }
+          $evidence = Join-Path $env:RUNNER_TEMP 'iracing-coach-javascript-syntax.json'
+          .\tools\Invoke-JavaScriptSyntaxGate.ps1 `
+            -RepositoryRoot $PWD.Path `
+            -SourceSha $sha `
+            -Authority ci-source-gate `
+            -EventName '${{ github.event_name }}' `
+            -OutputPath $evidence
+          if ($LASTEXITCODE -ne 0) { throw "First-party JavaScript syntax-only gate failed." }
+          Get-Content -LiteralPath $evidence -Raw
+
+      - name: Retain JavaScript syntax-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: javascript-syntax-only-${{ github.run_id }}
+          path: ${{ runner.temp }}\iracing-coach-javascript-syntax.json
+          if-no-files-found: error
 
       - name: Test application
         shell: pwsh
