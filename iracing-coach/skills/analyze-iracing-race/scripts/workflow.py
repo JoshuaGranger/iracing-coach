@@ -95,6 +95,62 @@ PLUGIN_ROOT = SCRIPT_DIR.parents[2]
 DEFAULTS_PATH = PLUGIN_ROOT / "config" / "defaults.json"
 _GARAGE61_TARGET_DERIVATION_VERSION = "explicit-analysis-paths-v1"
 
+# The `analysis_view` envelope is this module's product, and this is its only
+# version authority. It is deliberately separate from
+# `analysis_engine.ANALYSIS_SCHEMA_VERSION`, which versions the larger analysis
+# document; conflating the two would publish a version no producer emits.
+ANALYSIS_VIEW_SCHEMA_VERSION = 1
+
+# One declaration of the envelope's shape, consumed by three callers: the
+# producer below builds from it, `tools/export_contracts.py` generates the
+# contract from it, and the backend contract test asserts the emitted key set
+# equals it. Duplicating the field list would create exactly the drift surface
+# this workstream exists to remove.
+#
+# `default` is the factory used when the analysis document omits the key, which
+# is why every field is always present and why an empty container means "no
+# content", never "not emitted".
+ANALYSIS_VIEW_FIELDS: tuple[tuple[str, str, Any], ...] = (
+    ("analysis_profile_version", "string-or-null", None),
+    ("identity", "object", dict),
+    ("race_summary", "object", dict),
+    ("race_grades", "object", dict),
+    ("runs", "array", list),
+    ("laps", "array", list),
+    ("lap_traces", "object", dict),
+    ("track_profile", "object", dict),
+    ("track_geometry", "object", dict),
+    ("race_replay", "object", dict),
+    ("tire_learning", "object", dict),
+    ("garage61_representative_laps", "object", dict),
+    ("technical_insights", "array", list),
+    ("corner_tire_age", "object", dict),
+    ("groove_evolution", "object", dict),
+    ("strategy", "object", dict),
+    ("damage_repair", "object", dict),
+    ("setup_telemetry", "object", dict),
+    ("conditions", "object", dict),
+    ("data_quality", "object", dict),
+)
+
+
+def build_analysis_view(analysis: Mapping[str, Any]) -> dict[str, Any]:
+    """Build the `analysis_view` envelope from the single field declaration.
+
+    The falsy-substitution below reproduces the previous inline construction
+    exactly. It used `analysis.get(key) or {}`, which replaces any falsy value
+    and not merely `None`, so an `is None` check here would quietly change the
+    emitted bytes for an empty-but-present section. Only the version literal
+    changes, and it changes to an equal constant.
+    """
+    view: dict[str, Any] = {"schema_version": ANALYSIS_VIEW_SCHEMA_VERSION}
+    for name, _kind, default in ANALYSIS_VIEW_FIELDS:
+        value = analysis.get(name)
+        if default is not None and not value:
+            value = default()
+        view[name] = value
+    return view
+
 
 class WorkflowError(RuntimeError):
     """Base class for actionable workflow integration failures."""
@@ -1947,29 +2003,7 @@ def analyze_race_workflow(
     inline_race_card["markdown"] = race_card_markdown
     inline_race_card["path"] = artifacts["race-card.md"]
     inline_race_card["timing"] = timing
-    analysis_view = {
-        "schema_version": 1,
-        "analysis_profile_version": analysis.get("analysis_profile_version"),
-        "identity": analysis.get("identity") or {},
-        "race_summary": analysis.get("race_summary") or {},
-        "race_grades": analysis.get("race_grades") or {},
-        "runs": analysis.get("runs") or [],
-        "laps": analysis.get("laps") or [],
-        "lap_traces": analysis.get("lap_traces") or {},
-        "track_profile": analysis.get("track_profile") or {},
-        "track_geometry": analysis.get("track_geometry") or {},
-        "race_replay": analysis.get("race_replay") or {},
-        "tire_learning": analysis.get("tire_learning") or {},
-        "garage61_representative_laps": analysis.get("garage61_representative_laps") or {},
-        "technical_insights": analysis.get("technical_insights") or [],
-        "corner_tire_age": analysis.get("corner_tire_age") or {},
-        "groove_evolution": analysis.get("groove_evolution") or {},
-        "strategy": analysis.get("strategy") or {},
-        "damage_repair": analysis.get("damage_repair") or {},
-        "setup_telemetry": analysis.get("setup_telemetry") or {},
-        "conditions": analysis.get("conditions") or {},
-        "data_quality": analysis.get("data_quality") or {},
-    }
+    analysis_view = build_analysis_view(analysis)
     return {
         "ok": True,
         "analysis_id": analysis.get("analysis_id"),

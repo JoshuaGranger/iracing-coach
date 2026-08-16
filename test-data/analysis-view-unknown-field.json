@@ -1,0 +1,76 @@
+{
+  "a_field_from_a_newer_producer": {
+    "kept": true
+  },
+  "analysis_profile_version": "post-race-foundations-v13",
+  "conditions": {
+    "track_temp_c": 30.0
+  },
+  "corner_tire_age": {
+    "runs": []
+  },
+  "damage_repair": {
+    "episodes": []
+  },
+  "data_quality": {
+    "level": "high"
+  },
+  "garage61_representative_laps": {
+    "representative_laps": []
+  },
+  "groove_evolution": {
+    "schema_version": 2
+  },
+  "identity": {
+    "subsession_id": 8001,
+    "track": "Sanitized Oval"
+  },
+  "lap_traces": {
+    "traces": []
+  },
+  "laps": [
+    {
+      "complete": true,
+      "lap": 1,
+      "lap_time_s": 30.5
+    }
+  ],
+  "race_grades": {
+    "overall": "B"
+  },
+  "race_replay": {
+    "available": false
+  },
+  "race_summary": {
+    "recorded_laps": 12,
+    "scheduled_laps": 20
+  },
+  "runs": [
+    {
+      "laps": 12,
+      "run": 1
+    }
+  ],
+  "schema_version": 1,
+  "setup_telemetry": {
+    "summary": {}
+  },
+  "strategy": {
+    "minimum_stops": 0
+  },
+  "technical_insights": [
+    {
+      "area": "pace",
+      "finding": "sanitized"
+    }
+  ],
+  "tire_learning": {
+    "observations": 0
+  },
+  "track_geometry": {
+    "main_loop": []
+  },
+  "track_profile": {
+    "shape": []
+  }
+}

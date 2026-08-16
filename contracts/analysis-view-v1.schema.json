@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The analysis_view envelope emitted by workflow.py. Every field is always present; an empty object or array means the section has no content, not that it was omitted. Unknown optional fields are accepted so a newer producer remains readable.",
+  "properties": {
+    "analysis_profile_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "conditions": {
+      "type": "object"
+    },
+    "corner_tire_age": {
+      "type": "object"
+    },
+    "damage_repair": {
+      "type": "object"
+    },
+    "data_quality": {
+      "type": "object"
+    },
+    "garage61_representative_laps": {
+      "type": "object"
+    },
+    "groove_evolution": {
+      "type": "object"
+    },
+    "identity": {
+      "type": "object"
+    },
+    "lap_traces": {
+      "type": "object"
+    },
+    "laps": {
+      "type": "array"
+    },
+    "race_grades": {
+      "type": "object"
+    },
+    "race_replay": {
+      "type": "object"
+    },
+    "race_summary": {
+      "type": "object"
+    },
+    "runs": {
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "setup_telemetry": {
+      "type": "object"
+    },
+    "strategy": {
+      "type": "object"
+    },
+    "technical_insights": {
+      "type": "array"
+    },
+    "tire_learning": {
+      "type": "object"
+    },
+    "track_geometry": {
+      "type": "object"
+    },
+    "track_profile": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "analysis_profile_version",
+    "identity",
+    "race_summary",
+    "race_grades",
+    "runs",
+    "laps",
+    "lap_traces",
+    "track_profile",
+    "track_geometry",
+    "race_replay",
+    "tire_learning",
+    "garage61_representative_laps",
+    "technical_insights",
+    "corner_tire_age",
+    "groove_evolution",
+    "strategy",
+    "damage_repair",
+    "setup_telemetry",
+    "conditions",
+    "data_quality"
+  ],
+  "title": "analysis_view envelope",
+  "type": "object"
+}
