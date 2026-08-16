@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import probe_ws10a_atomic_containment as probe
 import ws10a_support as support
 
 
@@ -216,6 +217,140 @@ class StagedRendezvousTests(unittest.TestCase):
             reverse = support.run_staged_rmw(2, "reverse", root / "r.json")
         self.assertEqual(forward["predicted_survivor"], "obs-001")
         self.assertEqual(reverse["predicted_survivor"], "obs-000")
+
+
+class ContainmentClauseConformanceTests(unittest.TestCase):
+    """The probe's clauses must REJECT implementations that do not conform.
+
+    A clause that passes a primitive doing none of the work is fail-open. An
+    earlier revision had exactly that defect: a reference performing one
+    replace and zero sleeps, forging its own attempt bookkeeping, satisfied
+    every retry and exhaustion clause. These tests run the real clause logic
+    against deliberately broken references and require the specific clauses
+    to go unmet.
+    """
+
+    def _run(self, variant):
+        clauses = probe.Clauses()
+        write = support.make_reference_primitive(variant)
+        with support.sandbox(f"ws10a-conformance-{variant}") as root:
+            probe.containment_clauses(write, support.ReferenceTypes, root, clauses)
+        return clauses
+
+    @staticmethod
+    def _unmet_matching(clauses, needle):
+        return [r for r in clauses.unmet if needle in r["clause"]]
+
+    def test_the_conforming_reference_satisfies_every_clause(self):
+        clauses = self._run("conforming")
+        self.assertEqual(
+            [r["clause"] for r in clauses.unmet], [],
+            "the conforming reference must satisfy the contract it implements",
+        )
+        self.assertGreater(len(clauses.records), 0)
+
+    def test_a_primitive_that_never_consults_jitter_is_rejected(self):
+        clauses = self._run("ignores-jitter")
+        self.assertTrue(
+            self._unmet_matching(clauses, "invalid jitter"),
+            "omitting jitter validation must fail the jitter clauses",
+        )
+
+    def test_a_primitive_that_swallows_non_retryable_errors_is_rejected(self):
+        clauses = self._run("swallows-nonretry")
+        self.assertTrue(
+            self._unmet_matching(clauses, "escapes unwrapped"),
+            "swallowing a non-retryable error must fail the propagation clauses",
+        )
+
+    def test_a_primitive_that_forges_attempt_bookkeeping_is_rejected(self):
+        clauses = self._run("forges-fields")
+        for needle in ("replace attempts were OBSERVED",
+                       "OBSERVED sleep schedule",
+                       "reported attempts equal OBSERVED"):
+            with self.subTest(clause=needle):
+                self.assertTrue(
+                    self._unmet_matching(clauses, needle),
+                    f"forged bookkeeping must fail: {needle}",
+                )
+
+
+class CanaryChannelCompletenessTests(unittest.TestCase):
+    """Every required leak channel must have a distinct, detectable token."""
+
+    EXPECTED = "a" * 64
+    ACTUAL = "b" * 64
+
+    def tokens(self):
+        return support.canary_tokens(self.EXPECTED, self.ACTUAL)
+
+    def test_every_declared_channel_is_present(self):
+        self.assertEqual(sorted(self.tokens()), sorted(support.CANARY_CHANNELS))
+
+    def test_channel_tokens_are_distinct(self):
+        values = list(self.tokens().values())
+        self.assertEqual(len(values), len(set(values)))
+
+    def test_each_channel_token_is_detected_when_it_leaks(self):
+        tokens = self.tokens()
+        for channel, token in tokens.items():
+            with self.subTest(channel=channel):
+                error = OSError(f"failure mentioning {token}")
+                self.assertIn(token, support.find_canaries(error, tokens.values()))
+
+    def test_the_digest_channels_carry_full_length_hashes(self):
+        tokens = self.tokens()
+        for channel in ("expected_digest", "actual_digest"):
+            with self.subTest(channel=channel):
+                self.assertEqual(len(tokens[channel]), 64)
+
+    def test_a_clean_failure_leaks_no_channel(self):
+        tokens = self.tokens()
+        error = OSError("archive verification refused the copy")
+        self.assertEqual(support.find_canaries(error, tokens.values()), [])
+
+
+class StagedAcknowledgementTests(unittest.TestCase):
+    """The acknowledgement payload and the start method are enforced."""
+
+    def test_the_acknowledgement_carries_clean_status(self):
+        with support.sandbox("ws10a-harness-ack") as root:
+            outcome = support.run_staged_rmw(2, "forward", root / "ack.json")
+        self.assertTrue(outcome["acknowledged_in_order"])
+        self.assertTrue(outcome["acknowledged_clean"])
+
+    def _clean_outcome(self):
+        return {
+            "start_method": support.REQUIRED_START_METHOD,
+            "all_ready": True, "all_read_initial": True,
+            "acknowledged_in_order": True, "acknowledged_clean": True,
+            "hung": [], "bad_exits": [],
+        }
+
+    def test_a_fully_clean_outcome_is_accepted(self):
+        self.assertTrue(support.stages_clean(self._clean_outcome()))
+
+    def test_each_apparatus_condition_is_individually_enforced(self):
+        # Every condition is degraded one at a time against the SHARED
+        # predicate the probe uses, so dropping any of them from the probe
+        # fails here rather than silently widening what counts as clean.
+        degradations = {
+            "start_method": "fork",
+            "all_ready": False,
+            "all_read_initial": False,
+            "acknowledged_in_order": False,
+            "acknowledged_clean": False,
+            "hung": [3],
+            "bad_exits": [1],
+        }
+        for key, bad in degradations.items():
+            with self.subTest(condition=key):
+                outcome = self._clean_outcome()
+                outcome[key] = bad
+                self.assertFalse(
+                    support.stages_clean(outcome),
+                    f"{key} must be an enforced apparatus condition",
+                )
 
 
 if __name__ == "__main__":

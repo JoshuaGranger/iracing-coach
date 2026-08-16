@@ -43,13 +43,10 @@ def run() -> dict:
             for order in ORDERS:
                 outcome = support.run_staged_rmw(n, order, root / f"u-{n}-{order}.json")
 
-                stages_clean = (
-                    outcome["all_ready"]
-                    and outcome["all_read_initial"]
-                    and outcome["acknowledged_in_order"]
-                    and not outcome["hung"]
-                    and not outcome["bad_exits"]
-                )
+                # One shared predicate, also used by the discovered
+                # regression, so weakening it fails a test rather than
+                # silently widening what counts as clean.
+                stages_clean = support.stages_clean(outcome)
                 harness_ok = harness_ok and stages_clean
 
                 cells.append(
@@ -60,6 +57,7 @@ def run() -> dict:
                         "stages_clean": stages_clean,
                         "all_read_initial": outcome["all_read_initial"],
                         "acknowledged_in_order": outcome["acknowledged_in_order"],
+                        "acknowledged_clean": outcome["acknowledged_clean"],
                         "hung": outcome["hung"],
                         "bad_exits": outcome["bad_exits"],
                         "expected_union_size": len(outcome["expected_union"]),

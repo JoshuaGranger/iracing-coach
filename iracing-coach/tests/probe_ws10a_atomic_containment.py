@@ -4,6 +4,15 @@ Asserts the DESIRED post-repair containment contract against real production
 code. It is RED at the parent commit by design: the typed failure family and
 bounded retry do not exist yet.
 
+Every clause binds to OBSERVED behavior - actual replace calls recorded by the
+injector, actual sleep calls recorded by the sleeper, and the exact exception
+object that escaped - rather than to fields the implementation reports about
+itself. An earlier revision trusted reported fields and independent helpers,
+and an implementation performing one replace and zero sleeps while forging its
+own bookkeeping passed. The clause functions are parameterised by the
+primitive under test so `test_ws10a_atomic_harness` can run them against
+deliberately non-conforming references and prove each is rejected.
+
 After the Codex-owned production repair this probe turns green and is renamed
 UNCHANGED to test_ws10a_containment.py, at which point its identities gain
 evidence declarations. If any assertion here must change to make it pass, the
@@ -17,6 +26,7 @@ Run:
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -33,12 +43,8 @@ STORAGE_PATH = (
     REPO / "iracing-coach" / "skills" / "analyze-iracing-race" / "scripts" / "storage.py"
 )
 
-CANARY_PATH_PART = "CANARY-PATH-a1b2c3"
-CANARY_CONTENT = b"CANARY-CONTENT-d4e5f6"
-CANARY_INJECTED = "CANARY-INJECTED-97a8b9"
-CANARIES = [CANARY_PATH_PART, CANARY_CONTENT.decode("ascii"), CANARY_INJECTED]
-
-VALID_SHA = "0" * 64
+INVALID_DIGEST = support.CANARY_DECLARED_DIGEST
+VALID_BUT_WRONG_SHA = "0" * 64
 
 
 def load_storage():
@@ -66,28 +72,36 @@ class Clauses:
     def unmet(self) -> list[dict]:
         return [r for r in self.records if not r["met"]]
 
+    @property
+    def met(self) -> list[dict]:
+        return [r for r in self.records if r["met"]]
+
+
+def production_writer(storage):
+    def write(path, text, *, sleeper, jitter_ms):
+        return storage._atomic_write_text(path, text, sleeper=sleeper, jitter_ms=jitter_ms)
+    return write
+
+
+def _strays(root: Path, stem: str) -> list[str]:
+    return sorted(p.name for p in root.iterdir() if p.name.startswith(f".{stem}"))
+
 
 # --------------------------------------------------------------------------
 # typed family
 # --------------------------------------------------------------------------
 
 def family_clauses(storage, clauses: Clauses) -> None:
-    expected = {
-        "AtomicReplaceExhausted": "atomic-replace-exhausted",
-        "ArchiveVerificationFailed": None,
-        "ArchiveSourceUnstable": None,
-        "InvalidSourceDigest": "invalid-source-digest",
-    }
-
     clauses.check(
         "StorageCommitError exists and derives from OSError",
-        lambda: (
-            issubclass(storage.StorageCommitError, OSError),
-            storage.StorageCommitError.__mro__[1].__name__,
-        ),
+        lambda: (issubclass(storage.StorageCommitError, OSError), "present"),
     )
-
-    for name, code in expected.items():
+    for name, code in (
+        ("AtomicReplaceExhausted", "atomic-replace-exhausted"),
+        ("ArchiveVerificationFailed", None),
+        ("ArchiveSourceUnstable", None),
+        ("InvalidSourceDigest", "invalid-source-digest"),
+    ):
         def probe(name=name, code=code):
             klass = getattr(storage, name)
             ok = issubclass(klass, storage.StorageCommitError)
@@ -99,34 +113,20 @@ def family_clauses(storage, clauses: Clauses) -> None:
 
     clauses.check(
         "InvalidSourceDigest is also a ValueError for caller compatibility",
-        lambda: (
-            issubclass(storage.InvalidSourceDigest, ValueError),
-            "dual inheritance present",
-        ),
+        lambda: (issubclass(storage.InvalidSourceDigest, ValueError), "dual inheritance"),
     )
-
     clauses.check(
         "sibling failures are NOT ValueError",
-        lambda: (
-            not issubclass(storage.ArchiveSourceUnstable, ValueError),
-            "dual inheritance is confined to the one compatibility site",
-        ),
+        lambda: (not issubclass(storage.ArchiveSourceUnstable, ValueError),
+                 "dual inheritance confined to the one compatibility site"),
     )
 
 
 # --------------------------------------------------------------------------
-# retry and non-retry
+# retry - bound to observed replace and sleep calls
 # --------------------------------------------------------------------------
 
-def _write_with_seams(storage, path, text, faults, sleeper, jitter):
-    """Call the primitive with the bound injectable seams."""
-    with support.injected_replace(faults):
-        storage._atomic_write_text(
-            path, text, sleeper=sleeper, jitter_ms=jitter
-        )
-
-
-def retry_clauses(storage, root: Path, clauses: Clauses) -> None:
+def retry_clauses(write, types, root: Path, clauses: Clauses) -> None:
     for code in support.RETRYABLE_WINERRORS:
         def probe(code=code):
             target = root / f"retry-{code}.json"
@@ -134,143 +134,228 @@ def retry_clauses(storage, root: Path, clauses: Clauses) -> None:
                 [support.make_os_error(code), support.make_os_error(code)]
             )
             sleeper = support.RecordingSleeper()
-            _write_with_seams(
-                storage, target, "recovered\n", faults,
-                sleeper, support.proportional_jitter_ms(0.0),
-            )
+            with support.injected_replace(faults):
+                write(target, "recovered\n", sleeper=sleeper,
+                      jitter_ms=support.proportional_jitter_ms(0.0))
+            expected = [support.BASE_DELAYS_MS[0] / 1000.0,
+                        support.BASE_DELAYS_MS[1] / 1000.0]
             return (
                 faults.count == 3
                 and target.read_text(encoding="utf-8") == "recovered\n"
-                and len(sleeper) == 2,
-                f"attempts={faults.count} sleeps={len(sleeper)}",
+                and sleeper.calls == expected,
+                f"replaces={faults.count} sleeps={sleeper.calls} expected={expected}",
             )
 
-        clauses.check(f"winerror {code} retries and then succeeds", probe)
-
-    non_retryable = {
-        "winerror 13": support.make_os_error(13),
-        "winerror True": support.make_os_error(True),
-        "winerror '32'": support.make_os_error("32"),
-        "errno-only 5": support.make_errno_only_error(5),
-        "nested cause 32": support.make_nested_error(32, via="cause"),
-        "nested context 32": support.make_nested_error(32, via="context"),
-    }
-
-    for label, error in non_retryable.items():
-        def probe(error=error, label=label):
-            target = root / f"nonretry-{abs(hash(label)) % 10**8}.json"
-            faults = support.ReplaceFaults([error, error, error, error, error])
-            sleeper = support.RecordingSleeper()
-            try:
-                _write_with_seams(
-                    storage, target, "x\n", faults,
-                    sleeper, support.proportional_jitter_ms(0.0),
-                )
-            except OSError:
-                pass
-            return (
-                faults.count == 1 and len(sleeper) == 0,
-                f"attempts={faults.count} sleeps={len(sleeper)}",
-            )
-
-        clauses.check(f"{label} does not retry", probe)
-
-
-def exhaustion_clauses(storage, root: Path, clauses: Clauses) -> None:
-    target = root / "exhausted.json"
-    target.write_text("ORIGINAL\n", encoding="utf-8")
-    original = target.read_bytes()
-
-    faults = support.ReplaceFaults(
-        [support.make_os_error(5, f"denied {CANARY_INJECTED}") for _ in range(5)]
-    )
-    sleeper = support.RecordingSleeper()
-    raised: BaseException | None = None
-    try:
-        _write_with_seams(
-            storage, target, "REPLACEMENT\n", faults,
-            sleeper, support.proportional_jitter_ms(1.0),
+        clauses.check(
+            f"winerror {code} retries with the exact delay schedule and then succeeds",
+            probe,
         )
-    except BaseException as exc:
-        raised = exc
-
-    # Every invariant below is only meaningful if exhaustion actually
-    # occurred. Without this gate they pass vacuously whenever the call
-    # fails for an unrelated reason - today a TypeError, because the seam
-    # parameters do not exist yet - which would report a green invariant
-    # for an operation that never ran.
-    exhausted = isinstance(
-        raised, getattr(storage, "AtomicReplaceExhausted", ())
-    )
-    NOT_EXERCISED = "exhaustion did not occur; invariant not exercised"
-
-    def gated(fn):
-        def probe():
-            if not exhausted:
-                return False, f"{NOT_EXERCISED} (raised {type(raised).__name__})"
-            return fn()
-        return probe
-
-    clauses.check(
-        "exhaustion raises AtomicReplaceExhausted",
-        lambda: (exhausted, type(raised).__name__),
-    )
-    clauses.check(
-        "exhaustion reports exactly five attempts",
-        gated(lambda: (getattr(raised, "attempts", None) == 5,
-                       f"attempts={getattr(raised, 'attempts', None)}")),
-    )
-    clauses.check(
-        "total slept is within the bound 150..300 ms",
-        gated(lambda: (
-            150 <= getattr(raised, "total_slept_ms", -1) <= 300,
-            f"total_slept_ms={getattr(raised, 'total_slept_ms', None)}",
-        )),
-    )
-    clauses.check(
-        "final_winerror is the retryable code",
-        gated(lambda: (getattr(raised, "final_winerror", None) == 5,
-                       f"final_winerror={getattr(raised, 'final_winerror', None)}")),
-    )
-    clauses.check(
-        "destination bytes are unchanged after exhaustion",
-        gated(lambda: (target.read_bytes() == original, repr(target.read_bytes()))),
-    )
-    clauses.check(
-        "no temp file survives exhaustion",
-        gated(lambda: (
-            [p.name for p in root.iterdir() if p.name.startswith(".exhausted")] == [],
-            "temp swept",
-        )),
-    )
-    clauses.check(
-        "exhaustion suppresses __cause__ and __context__",
-        gated(lambda: (
-            getattr(raised, "__cause__", None) is None
-            and getattr(raised, "__context__", None) is None,
-            f"cause={getattr(raised, '__cause__', None)!r} "
-            f"context={getattr(raised, '__context__', None)!r}",
-        )),
-    )
-    clauses.check(
-        "exhaustion leaks no canary",
-        gated(lambda: (
-            support.find_canaries(raised, CANARIES) == [],
-            f"leaked={support.find_canaries(raised, CANARIES)}",
-        )),
-    )
 
 
 # --------------------------------------------------------------------------
-# the six archival redaction sites
+# invalid jitter must be attacked through the production seam
 # --------------------------------------------------------------------------
 
-def _fixture(root: Path):
-    """A synthetic source whose PATH and CONTENT both carry canaries."""
-    holder = root / CANARY_PATH_PART
+def jitter_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    for value in support.INVALID_JITTER_RESULTS:
+        def probe(value=value):
+            stem = f"jitter-{abs(hash(repr(value))) % 10**8}.json"
+            target = root / stem
+            target.write_text("ORIGINAL\n", encoding="utf-8")
+            original = target.read_bytes()
+            # one retryable failure forces the primitive to compute a delay,
+            # which is the only point at which jitter is consulted
+            faults = support.ReplaceFaults(
+                [support.make_os_error(support.RETRYABLE_WINERRORS[0])
+                 for _ in range(support.MAX_ATTEMPTS)]
+            )
+            sleeper = support.RecordingSleeper()
+            raised: BaseException | None = None
+            with support.injected_replace(faults):
+                try:
+                    write(target, "REPLACEMENT\n", sleeper=sleeper,
+                          jitter_ms=support.fixed_jitter_ms(value))
+                except BaseException as exc:
+                    raised = exc
+            return (
+                raised is not None
+                and not isinstance(raised, OSError)
+                and faults.count == 1
+                and sleeper.calls == []
+                and target.read_bytes() == original
+                and _strays(root, stem) == [],
+                f"raised={type(raised).__name__} replaces={faults.count} "
+                f"sleeps={len(sleeper)} dest_intact={target.read_bytes() == original}",
+            )
+
+        clauses.check(
+            f"invalid jitter {value!r} fails as a contract error before a second replace",
+            probe,
+        )
+
+
+# --------------------------------------------------------------------------
+# non-retry - the error must ESCAPE, not merely not-retry
+# --------------------------------------------------------------------------
+
+def nonretry_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    cases = {
+        "winerror 13": lambda: support.make_os_error(13),
+        "winerror True": lambda: support.make_os_error(True),
+        "winerror '32'": lambda: support.make_os_error("32"),
+        "errno-only 5": lambda: support.make_errno_only_error(5),
+        "nested cause 32": lambda: support.make_nested_error(32, via="cause"),
+        "nested context 32": lambda: support.make_nested_error(32, via="context"),
+    }
+    for label, factory in cases.items():
+        def probe(label=label, factory=factory):
+            error = factory()
+            stem = f"nonretry-{abs(hash(label)) % 10**8}.json"
+            target = root / stem
+            faults = support.ReplaceFaults([error] * support.MAX_ATTEMPTS)
+            sleeper = support.RecordingSleeper()
+            raised: BaseException | None = None
+            with support.injected_replace(faults):
+                try:
+                    write(target, "x\n", sleeper=sleeper,
+                          jitter_ms=support.proportional_jitter_ms(0.0))
+                except BaseException as exc:
+                    raised = exc
+            return (
+                raised is error          # the exact object escaped, unwrapped
+                and faults.count == 1
+                and sleeper.calls == []
+                and _strays(root, stem) == [],
+                f"escaped={raised is error} raised={type(raised).__name__} "
+                f"replaces={faults.count} sleeps={len(sleeper)}",
+            )
+
+        clauses.check(f"{label} escapes unwrapped after exactly one replace", probe)
+
+
+# --------------------------------------------------------------------------
+# exhaustion - bound to observed calls at both schedule endpoints
+# --------------------------------------------------------------------------
+
+def exhaustion_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    endpoints = (
+        ("minimum", support.proportional_jitter_ms(0.0),
+         [b / 1000.0 for b in support.BASE_DELAYS_MS], support.MIN_TOTAL_MS),
+        ("maximum", support.proportional_jitter_ms(1.0),
+         [2 * b / 1000.0 for b in support.BASE_DELAYS_MS], support.MAX_TOTAL_MS),
+    )
+
+    for label, jitter, expected_sleeps, expected_total in endpoints:
+        stem = f"exhausted-{label}.json"
+        target = root / stem
+        target.write_text("ORIGINAL\n", encoding="utf-8")
+        original = target.read_bytes()
+
+        faults = support.ReplaceFaults([
+            support.make_os_error(
+                support.RETRYABLE_WINERRORS[0], f"denied {support.CANARY_INJECTED}"
+            )
+            for _ in range(support.MAX_ATTEMPTS)
+        ])
+        sleeper = support.RecordingSleeper()
+        raised: BaseException | None = None
+        with support.injected_replace(faults):
+            try:
+                write(target, "REPLACEMENT\n", sleeper=sleeper, jitter_ms=jitter)
+            except BaseException as exc:
+                raised = exc
+
+        # getattr with a () default so an absent type yields False rather than
+        # raising: the probe must report every clause individually, including
+        # at a parent commit where the typed family does not exist yet.
+        exhausted = isinstance(raised, getattr(types, "AtomicReplaceExhausted", ()))
+        NOT_EXERCISED = "exhaustion did not occur; invariant not exercised"
+
+        def gated(fn, raised=raised, exhausted=exhausted):
+            def inner():
+                if not exhausted:
+                    return False, f"{NOT_EXERCISED} (raised {type(raised).__name__})"
+                return fn()
+            return inner
+
+        clauses.check(
+            f"exhaustion at the {label} schedule raises AtomicReplaceExhausted",
+            lambda exhausted=exhausted, raised=raised: (
+                exhausted, type(raised).__name__),
+        )
+        clauses.check(
+            f"{label}: exactly five replace attempts were OBSERVED",
+            gated(lambda faults=faults: (faults.count == support.MAX_ATTEMPTS,
+                                         f"observed replaces={faults.count}")),
+        )
+        clauses.check(
+            f"{label}: the OBSERVED sleep schedule is exact",
+            gated(lambda sleeper=sleeper, expected_sleeps=expected_sleeps: (
+                sleeper.calls == expected_sleeps,
+                f"observed={sleeper.calls} expected={expected_sleeps}")),
+        )
+        clauses.check(
+            f"{label}: reported attempts equal OBSERVED replace calls",
+            gated(lambda raised=raised, faults=faults: (
+                getattr(raised, "attempts", None) == faults.count,
+                f"reported={getattr(raised, 'attempts', None)} observed={faults.count}")),
+        )
+        clauses.check(
+            f"{label}: reported total_slept_ms equals the OBSERVED total and the bound",
+            gated(lambda raised=raised, sleeper=sleeper, expected_total=expected_total: (
+                getattr(raised, "total_slept_ms", None) == expected_total
+                and round(sum(sleeper.calls) * 1000) == expected_total,
+                f"reported={getattr(raised, 'total_slept_ms', None)} "
+                f"observed={round(sum(sleeper.calls) * 1000)} bound={expected_total}")),
+        )
+        clauses.check(
+            f"{label}: final_winerror is the retryable code",
+            gated(lambda raised=raised: (
+                getattr(raised, "final_winerror", None) == support.RETRYABLE_WINERRORS[0],
+                f"final_winerror={getattr(raised, 'final_winerror', None)}")),
+        )
+        clauses.check(
+            f"{label}: destination bytes are unchanged",
+            gated(lambda target=target, original=original: (
+                target.read_bytes() == original, repr(target.read_bytes()))),
+        )
+        clauses.check(
+            f"{label}: no temp file survives",
+            gated(lambda root=root, stem=stem: (_strays(root, stem) == [], "temp swept")),
+        )
+        clauses.check(
+            f"{label}: __cause__ and __context__ are suppressed",
+            gated(lambda raised=raised: (
+                getattr(raised, "__cause__", None) is None
+                and getattr(raised, "__context__", None) is None,
+                f"cause={getattr(raised, '__cause__', None)!r} "
+                f"context={getattr(raised, '__context__', None)!r}")),
+        )
+        clauses.check(
+            f"{label}: no canary survives into the failure",
+            gated(lambda raised=raised: (
+                support.find_canaries(raised, [support.CANARY_INJECTED]) == [],
+                f"leaked={support.find_canaries(raised, [support.CANARY_INJECTED])}")),
+        )
+
+
+def containment_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    """Everything that can be run against an arbitrary primitive."""
+    retry_clauses(write, types, root, clauses)
+    jitter_clauses(write, types, root, clauses)
+    nonretry_clauses(write, types, root, clauses)
+    exhaustion_clauses(write, types, root, clauses)
+
+
+# --------------------------------------------------------------------------
+# the six archival redaction sites, with distinct per-channel canaries
+# --------------------------------------------------------------------------
+
+def _fixture(root: Path) -> Path:
+    holder = root / support.CANARY_SOURCE_PATH
     holder.mkdir(parents=True, exist_ok=True)
     source = holder / "telemetry.ibt"
-    source.write_bytes(CANARY_CONTENT)
+    source.write_bytes(support.CANARY_SOURCE_BYTES.encode("ascii"))
     return source
 
 
@@ -284,121 +369,135 @@ def _record(storage, source: Path, *, sha=None, size=None, modified=None):
     }
 
 
-def _expect(clauses: Clauses, label: str, fn, klass_name: str, code: str, storage):
+def _actual_digest(source: Path) -> str:
+    return hashlib.sha256(source.read_bytes()).hexdigest()
+
+
+def _expect(clauses, label, fn, klass_name, code, storage, tokens):
     def probe():
         raised: BaseException | None = None
         try:
             fn()
         except BaseException as exc:
             raised = exc
+        if raised is None:
+            return False, "no exception was raised; the site was not exercised"
         klass = getattr(storage, klass_name)
         typed = isinstance(raised, klass)
         right_code = getattr(raised, "code", None) == code
-        leaked = support.find_canaries(raised, CANARIES) if raised else ["<no raise>"]
+        leaked = support.find_canaries(raised, tokens.values())
         chain_clear = (
             getattr(raised, "__cause__", None) is None
             and getattr(raised, "__context__", None) is None
         )
+        channels = {k for k, v in tokens.items() if v in support.exception_surface(raised)}
         return (
             typed and right_code and not leaked and chain_clear,
             f"type={type(raised).__name__} code={getattr(raised, 'code', None)!r} "
-            f"leaked={leaked} chain_clear={chain_clear}",
+            f"leaked_channels={sorted(channels)} chain_clear={chain_clear}",
         )
 
     clauses.check(label, probe)
 
 
 def archival_clauses(storage, root: Path, clauses: Clauses) -> None:
-    store_root = root / "archive"
+    # the destination root itself carries a distinct canary
+    store_root = root / support.CANARY_DESTINATION_PATH / "archive"
 
     def fresh_store():
         store = storage.ArchiveStore(root=store_root)
         store.initialize()
         return store
 
-    # 1915 - invalid declared digest, reachable through the public method
-    def invalid_digest():
-        source = _fixture(root / "c1915")
-        fresh_store().archive_raw_telemetry(
-            [_record(storage, source, sha="not-a-hash")]
-        )
+    def scenario(name):
+        source = _fixture(root / name)
+        return source, _actual_digest(source)
 
+    # 1915 - invalid declared digest (public route)
+    src, actual = scenario("c1915")
     _expect(clauses, "1915 invalid source digest is typed and redacted",
-            invalid_digest, "InvalidSourceDigest", "invalid-source-digest", storage)
+            lambda: fresh_store().archive_raw_telemetry(
+                [_record(storage, src, sha=INVALID_DIGEST)]),
+            "InvalidSourceDigest", "invalid-source-digest", storage,
+            support.canary_tokens(INVALID_DIGEST, actual))
 
-    # 1925 - record disagrees with the real stat, reachable publicly
-    def changed_before():
-        source = _fixture(root / "c1925")
-        fresh_store().archive_raw_telemetry(
-            [_record(storage, source, size=999999)]
-        )
-
+    # 1925 - record disagrees with the real stat (public route)
+    src, actual = scenario("c1925")
     _expect(clauses, "1925 source changed before archival is typed and redacted",
-            changed_before, "ArchiveSourceUnstable", "source-changed-before-archival",
-            storage)
+            lambda: fresh_store().archive_raw_telemetry(
+                [_record(storage, src, size=999999)]),
+            "ArchiveSourceUnstable", "source-changed-before-archival", storage,
+            support.canary_tokens(actual, actual))
 
-    # 495 - declared digest does not match the bytes, reachable publicly
-    def archived_mismatch():
-        source = _fixture(root / "c495")
-        fresh_store().archive_raw_telemetry(
-            [_record(storage, source, sha=VALID_SHA)]
-        )
-
+    # 495 - declared digest does not match the bytes (public route)
+    src, actual = scenario("c495")
     _expect(clauses, "495 archived digest mismatch is typed and redacted",
-            archived_mismatch, "ArchiveVerificationFailed", "archived-digest-mismatch",
-            storage)
+            lambda: fresh_store().archive_raw_telemetry(
+                [_record(storage, src, sha=VALID_BUT_WRONG_SHA)]),
+            "ArchiveVerificationFailed", "archived-digest-mismatch", storage,
+            support.canary_tokens(VALID_BUT_WRONG_SHA, actual))
 
     # 481 - archive once, mutate the source, re-archive with the old digest
+    src, _ = scenario("c481")
+    original_digest = _actual_digest(src)
+
     def digest_changed_before_copy():
-        source = _fixture(root / "c481")
         store = fresh_store()
-        original = _record(storage, source)
-        store.archive_raw_telemetry([original])
-        source.write_bytes(CANARY_CONTENT + b"-MUTATED")
-        stat = source.stat()
-        store.archive_raw_telemetry(
-            [_record(storage, source, sha=original["sha256"],
-                     size=stat.st_size, modified=stat.st_mtime_ns)]
-        )
+        store.archive_raw_telemetry([_record(storage, src, sha=original_digest)])
+        src.write_bytes((support.CANARY_SOURCE_BYTES + "-MUTATED").encode("ascii"))
+        stat = src.stat()
+        store.archive_raw_telemetry([_record(storage, src, sha=original_digest,
+                                             size=stat.st_size,
+                                             modified=stat.st_mtime_ns)])
 
     _expect(clauses, "481 source digest changed before copy is typed and redacted",
-            digest_changed_before_copy, "ArchiveVerificationFailed",
-            "source-digest-changed-before-copy", storage)
+            digest_changed_before_copy,
+            "ArchiveVerificationFailed", "source-digest-changed-before-copy", storage,
+            support.canary_tokens(original_digest,
+                                  hashlib.sha256(
+                                      (support.CANARY_SOURCE_BYTES + "-MUTATED")
+                                      .encode("ascii")).hexdigest()))
 
     # 1891 - named seam: mutate the file while source_fingerprints hashes it
+    src, actual = scenario("c1891")
+
     def changed_during_hashing():
-        source = _fixture(root / "c1891")
         real_hash = storage.file_sha256
 
         def mutating_hash(path, *args, **kwargs):
             digest = real_hash(path, *args, **kwargs)
-            Path(path).write_bytes(CANARY_CONTENT + b"-DURING-HASH")
+            Path(path).write_bytes(
+                (support.CANARY_SOURCE_BYTES + "-DURING-HASH").encode("ascii"))
             return digest
 
         with mock.patch.object(storage, "file_sha256", mutating_hash):
-            fresh_store().source_fingerprints([str(source)])
+            fresh_store().source_fingerprints([str(src)])
 
     _expect(clauses, "1891 source changed during hashing is typed and redacted",
-            changed_during_hashing, "ArchiveSourceUnstable",
-            "source-changed-during-hashing", storage)
+            changed_during_hashing,
+            "ArchiveSourceUnstable", "source-changed-during-hashing", storage,
+            support.canary_tokens(actual, actual))
 
     # 1953 - named seam: mutate the source inside the verified copy
+    src, actual = scenario("c1953")
+
     def changed_during_archival():
-        source = _fixture(root / "c1953")
         store = fresh_store()
-        record = _record(storage, source)
+        record = _record(storage, src)
         real_copy = storage._atomic_copy_verified
 
-        def mutating_copy(src, dst, expected):
-            real_copy(src, dst, expected)
-            Path(src).write_bytes(CANARY_CONTENT + b"-DURING-ARCHIVAL")
+        def mutating_copy(source, destination, expected):
+            real_copy(source, destination, expected)
+            Path(source).write_bytes(
+                (support.CANARY_SOURCE_BYTES + "-DURING-ARCHIVAL").encode("ascii"))
 
         with mock.patch.object(storage, "_atomic_copy_verified", mutating_copy):
             store.archive_raw_telemetry([record])
 
     _expect(clauses, "1953 source changed during archival is typed and redacted",
-            changed_during_archival, "ArchiveSourceUnstable",
-            "source-changed-during-archival", storage)
+            changed_during_archival,
+            "ArchiveSourceUnstable", "source-changed-during-archival", storage,
+            support.canary_tokens(actual, actual))
 
 
 # --------------------------------------------------------------------------
@@ -409,16 +508,15 @@ def main() -> int:
 
     with support.sandbox("ws10a-atomic-containment") as root:
         family_clauses(storage, clauses)
-        retry_clauses(storage, root, clauses)
-        exhaustion_clauses(storage, root, clauses)
+        containment_clauses(production_writer(storage), storage, root, clauses)
         archival_clauses(storage, root, clauses)
 
     report = {
-        "schema": "ws10a-atomic-containment-v1",
+        "schema": "ws10a-atomic-containment-v2",
         "probe": "atomic-containment",
         "storage": str(STORAGE_PATH),
         "total": len(clauses.records),
-        "met": len(clauses.records) - len(clauses.unmet),
+        "met": len(clauses.met),
         "unmet": len(clauses.unmet),
         "clauses": clauses.records,
     }
