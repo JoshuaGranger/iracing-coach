@@ -168,30 +168,45 @@ function Resolve-CoachNode {
     $tiers = New-Object System.Collections.Generic.List[object]
     if (-not [string]::IsNullOrWhiteSpace($NodePath)) { $tiers.Add(@{ Rule = 'parameter'; Path = $NodePath }) | Out-Null }
     if (-not [string]::IsNullOrWhiteSpace($env:IRACING_COACH_NODE)) { $tiers.Add(@{ Rule = 'environment'; Path = $env:IRACING_COACH_NODE }) | Out-Null }
-    $command = Get-Command 'node.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $command = Get-Command 'node' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($command) { $tiers.Add(@{ Rule = 'path'; Path = $command.Source }) | Out-Null }
 
     foreach ($tier in $tiers) {
         $path = $tier.Path
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            $rejected.Add([pscustomobject]@{ tool = 'node'; rule = $tier.Rule; reason = 'not-found'; path = $null }) | Out-Null
-            continue
+        # Explicit tiers report their path; ambient probes are reported by rule
+        # alone so evidence cannot accumulate machine layout.
+        $explicit = $tier.Rule -in @('parameter', 'environment')
+        $reason = $null
+
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $reason = 'not-found' }
+        else {
+            $probe = $null
+            try { $probe = & $path --version 2>$null } catch { $probe = $null }
+            if ($LASTEXITCODE -ne 0 -or $null -eq $probe) { $reason = 'did-not-execute' }
+            else {
+                $version = (@($probe)[0]).Trim()
+                if ($version -notmatch '^v?\d+\.\d+') { $reason = 'malformed-version' }
+                else {
+                    return [pscustomobject]@{
+                        Tool = 'node'
+                        Resolved = [pscustomobject]@{ Ok = $true; Rule = $tier.Rule; Path = $path; Version = $version; Sha256 = (Get-CoachToolHash -Path $path) }
+                        Rejected = $rejected.ToArray()
+                    }
+                }
+            }
         }
-        $probe = $null
-        try { $probe = & $path --version 2>$null } catch { $probe = $null }
-        if ($LASTEXITCODE -ne 0 -or $null -eq $probe) {
-            $rejected.Add([pscustomobject]@{ tool = 'node'; rule = $tier.Rule; reason = 'did-not-execute'; path = $null }) | Out-Null
-            continue
-        }
-        $version = (@($probe)[0]).Trim()
-        if ($version -notmatch '^v?\d+\.\d+') {
-            $rejected.Add([pscustomobject]@{ tool = 'node'; rule = $tier.Rule; reason = 'malformed-version'; path = $null }) | Out-Null
-            continue
-        }
-        return [pscustomobject]@{
-            Tool = 'node'
-            Resolved = [pscustomobject]@{ Ok = $true; Rule = $tier.Rule; Path = $path; Version = $version; Sha256 = (Get-CoachToolHash -Path $path) }
-            Rejected = $rejected.ToArray()
+
+        $rejected.Add([pscustomobject]@{
+            tool = 'node'; rule = $tier.Rule; reason = $reason
+            path = if ($explicit) { $path } else { $null }
+        }) | Out-Null
+
+        # Same rule as Python: a tool named explicitly must never fall through
+        # to a different one. Selecting a substitute the caller did not ask for
+        # is the failure this workstream exists to prevent.
+        if ($explicit) {
+            throw ("The {0} Node '{1}' was rejected ({2}). Resolution does not fall back to another tool when one is named explicitly." -f `
+                $tier.Rule, $path, $reason)
         }
     }
 
@@ -205,7 +220,7 @@ function Resolve-CoachDotnet {
     $rejected = New-Object System.Collections.Generic.List[object]
     $path = $DotnetPath
     if ([string]::IsNullOrWhiteSpace($path)) {
-        $command = Get-Command 'dotnet.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        $command = Get-Command 'dotnet' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($command) { $path = $command.Source }
     }
     $rule = if (-not [string]::IsNullOrWhiteSpace($DotnetPath)) { 'parameter' } else { 'path' }
@@ -233,17 +248,57 @@ function Resolve-CoachDotnet {
     # the pin actually selects, rather than the newest installed.
     $previous = Get-Location
     $sdkVersion = $null
+    $exitCode = $null
     try {
         if (-not [string]::IsNullOrWhiteSpace($GlobalJsonDirectory)) { Set-Location -LiteralPath $GlobalJsonDirectory }
-        $sdkVersion = (@(& $path --version 2>$null)[0])
-        if ($null -ne $sdkVersion) { $sdkVersion = $sdkVersion.Trim() }
+        $output = & $path --version 2>$null
+        $exitCode = $LASTEXITCODE
+        if ($null -ne $output) { $sdkVersion = (@($output)[0]); if ($null -ne $sdkVersion) { $sdkVersion = $sdkVersion.Trim() } }
     }
-    catch { $sdkVersion = $null }
+    catch { $sdkVersion = $null; $exitCode = -1 }
     finally { Set-Location -LiteralPath $previous }
 
-    if ([string]::IsNullOrWhiteSpace($sdkVersion)) {
-        $rejected.Add([pscustomobject]@{ tool = 'dotnet'; rule = $rule; reason = 'pin-unsatisfied'; path = $null }) | Out-Null
-        if ($Required) { throw "dotnet could not select an SDK satisfying global.json ($pinVersion)." }
+    $explicitDotnet = $rule -eq 'parameter'
+    $reject = {
+        param($Reason)
+        $rejected.Add([pscustomobject]@{
+            tool = 'dotnet'; rule = $rule; reason = $Reason
+            path = if ($explicitDotnet) { $path } else { $null }
+        }) | Out-Null
+    }
+
+    if ($exitCode -ne 0) {
+        & $reject 'did-not-execute'
+        if ($Required) { throw "dotnet did not execute successfully (exit $exitCode)." }
+        return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
+    }
+
+    $selected = $null
+    if ([string]::IsNullOrWhiteSpace($sdkVersion) -or -not [Version]::TryParse((($sdkVersion -split '-')[0]), [ref]$selected)) {
+        & $reject 'malformed-version'
+        if ($Required) { throw "dotnet reported an unparseable SDK version." }
+        return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
+    }
+
+    # Validate the selected SDK against the pin rather than asserting it.
+    # For rollForward=latestPatch the selection must stay in the pinned feature
+    # band (the hundreds digit of the patch component) and be no older than the
+    # pinned version.
+    $satisfies = $true
+    $pin = $null
+    if (-not [string]::IsNullOrWhiteSpace($pinVersion) -and [Version]::TryParse((($pinVersion -split '-')[0]), [ref]$pin)) {
+        $satisfies = ($selected.Major -eq $pin.Major) -and ($selected.Minor -eq $pin.Minor)
+        if ($satisfies -and $rollForward -eq 'latestPatch') {
+            $satisfies = ([math]::Floor($selected.Build / 100) -eq [math]::Floor($pin.Build / 100)) -and ($selected.Build -ge $pin.Build)
+        }
+        elseif ($satisfies) {
+            $satisfies = $selected -ge $pin
+        }
+    }
+
+    if (-not $satisfies) {
+        & $reject 'pin-unsatisfied'
+        if ($Required) { throw ("dotnet selected SDK {0}, which does not satisfy global.json {1} (rollForward {2})." -f $sdkVersion, $pinVersion, $rollForward) }
         return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
     }
 
@@ -252,7 +307,7 @@ function Resolve-CoachDotnet {
         Resolved = [pscustomobject]@{
             Ok = $true; Rule = $rule; Path = $path; Sha256 = (Get-CoachToolHash -Path $path)
             SdkVersion = $sdkVersion; GlobalJsonVersion = $pinVersion; RollForward = $rollForward
-            SatisfiesPin = $true
+            SatisfiesPin = $satisfies
         }
         Rejected = $rejected.ToArray()
     }

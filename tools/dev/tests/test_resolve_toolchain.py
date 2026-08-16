@@ -194,23 +194,180 @@ class ResolveToolchainTests(unittest.TestCase):
             {"python", "node", "dotnet", "required", "optional", "authority", "rejected"},
         )
 
+    # ---- Review P1a: explicit Node overrides must not fall through ----
+
+    def _shim(self, directory: Path, name: str, output: str, exit_code: int = 0) -> Path:
+        """A synthetic tool that prints a fixed line and exits with a fixed code."""
+        directory.mkdir(parents=True, exist_ok=True)
+        shim = directory / f"{name}.cmd"
+        shim.write_text(f"@echo off\r\necho {output}\r\nexit /b {exit_code}\r\n", encoding="ascii")
+        return shim
+
+    def test_invalid_explicit_node_does_not_fall_through_to_environment(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-node-") as raw:
+            good = self._shim(Path(raw), "node", "v20.0.0")
+            environment = os.environ.copy()
+            environment["IRACING_COACH_NODE"] = str(good)
+            completed = _run(
+                "$n = Resolve-CoachNode -NodePath 'C:\\no-such-node.exe'; "
+                "$p = Get-CoachToolchainProvenance -Node $n; Write-CoachToolchainProvenance -Provenance $p",
+                environment,
+            )
+            self.assertNotEqual(completed.returncode, 0, "an invalid explicit -NodePath must hard-stop")
+            self.assertIn("does not fall back", completed.stdout + completed.stderr)
+
+    def test_invalid_node_environment_does_not_fall_through_to_path(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-node-") as raw:
+            good = self._shim(Path(raw), "node", "v20.0.0")
+            environment = os.environ.copy()
+            environment["IRACING_COACH_NODE"] = str(Path(raw) / "missing-node.exe")
+            environment["PATH"] = str(good.parent) + os.pathsep + environment.get("PATH", "")
+            completed = _run(
+                "$n = Resolve-CoachNode; $p = Get-CoachToolchainProvenance -Node $n; Write-CoachToolchainProvenance -Provenance $p",
+                environment,
+            )
+            self.assertNotEqual(completed.returncode, 0, "an invalid IRACING_COACH_NODE must hard-stop")
+            self.assertIn("does not fall back", completed.stdout + completed.stderr)
+
+    # Case 4 - positive explicit Node selection with complete provenance.
+    def test_explicit_node_selected_with_full_provenance(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-node-") as raw:
+            good = self._shim(Path(raw), "node", "v20.11.1")
+            completed = _run(
+                f"$n = Resolve-CoachNode -NodePath '{good}'; "
+                "$p = Get-CoachToolchainProvenance -Node $n -Required @('node'); "
+                "Assert-CoachToolchain -Provenance $p -Required @('node'); Write-CoachToolchainProvenance -Provenance $p"
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            record = json.loads(completed.stdout)["toolchain"]["node"]
+            self.assertEqual(record["rule"], "parameter")
+            self.assertEqual(record["version"], "v20.11.1")
+            self.assertIsNotNone(record["sha256"])
+            self.assertEqual(Path(record["path"]).resolve(), good.resolve())
+
+    # Case 5 - controlled PATH-only selection.
+    def test_path_only_node_selection(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-node-") as raw:
+            good = self._shim(Path(raw), "node", "v18.20.0")
+            environment = os.environ.copy()
+            environment.pop("IRACING_COACH_NODE", None)
+            environment["PATH"] = str(good.parent) + os.pathsep + environment.get("PATH", "")
+            completed = _run(
+                "$n = Resolve-CoachNode; $p = Get-CoachToolchainProvenance -Node $n; Write-CoachToolchainProvenance -Provenance $p",
+                environment,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            record = json.loads(completed.stdout)["toolchain"]["node"]
+            self.assertEqual(record["rule"], "path")
+            self.assertEqual(record["version"], "v18.20.0")
+
+    def test_explicit_node_rejection_reports_its_path(self) -> None:
+        completed = _run(
+            "$n = Resolve-CoachNode -NodePath 'C:\\no-such-node-xyz.exe'; "
+            "$p = Get-CoachToolchainProvenance -Node $n; Write-CoachToolchainProvenance -Provenance $p"
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("no-such-node-xyz", completed.stdout + completed.stderr)
+
+    # ---- Review P1b: the .NET pin must be validated, not asserted ----
+
+    def test_dotnet_pin_mismatch_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-dotnet-") as raw:
+            fake = self._shim(Path(raw), "dotnet", "9.9.9")
+            completed = _run(
+                f"$d = Resolve-CoachDotnet -DotnetPath '{fake}' -GlobalJsonDirectory '{GLOBAL_JSON_DIR}'; "
+                "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            toolchain = json.loads(completed.stdout)["toolchain"]
+            self.assertIsNone(toolchain["dotnet"], "an SDK outside the pin must not be reported as resolved")
+            self.assertTrue(
+                any(item["tool"] == "dotnet" and item["reason"] == "pin-unsatisfied" for item in toolchain["rejected"]),
+                "the mismatch must be recorded as pin-unsatisfied",
+            )
+
+    def test_dotnet_pin_mismatch_fails_when_required(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-dotnet-") as raw:
+            fake = self._shim(Path(raw), "dotnet", "9.9.9")
+            completed = _run(
+                f"$d = Resolve-CoachDotnet -DotnetPath '{fake}' -GlobalJsonDirectory '{GLOBAL_JSON_DIR}' -Required"
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("does not satisfy global.json", completed.stdout + completed.stderr)
+
+    def test_dotnet_in_pinned_band_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-dotnet-") as raw:
+            fake = self._shim(Path(raw), "dotnet", "10.0.312")
+            completed = _run(
+                f"$d = Resolve-CoachDotnet -DotnetPath '{fake}' -GlobalJsonDirectory '{GLOBAL_JSON_DIR}'; "
+                "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            record = json.loads(completed.stdout)["toolchain"]["dotnet"]
+            self.assertIsNotNone(record, "10.0.312 is within the latestPatch band of 10.0.300")
+            self.assertTrue(record["satisfiesPin"])
+
+    def test_dotnet_outside_feature_band_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-dotnet-") as raw:
+            fake = self._shim(Path(raw), "dotnet", "10.0.412")
+            completed = _run(
+                f"$d = Resolve-CoachDotnet -DotnetPath '{fake}' -GlobalJsonDirectory '{GLOBAL_JSON_DIR}'; "
+                "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+            )
+            toolchain = json.loads(completed.stdout)["toolchain"]
+            self.assertIsNone(toolchain["dotnet"], "latestPatch must not cross the 10.0.3xx feature band")
+
+    # Case 7 - malformed output and non-zero execution are refused.
+    def test_dotnet_malformed_version_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-dotnet-") as raw:
+            fake = self._shim(Path(raw), "dotnet", "not-a-version")
+            completed = _run(
+                f"$d = Resolve-CoachDotnet -DotnetPath '{fake}' -GlobalJsonDirectory '{GLOBAL_JSON_DIR}'; "
+                "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+            )
+            toolchain = json.loads(completed.stdout)["toolchain"]
+            self.assertIsNone(toolchain["dotnet"])
+            self.assertTrue(any(item["reason"] == "malformed-version" for item in toolchain["rejected"]))
+
+    def test_dotnet_nonzero_exit_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-dotnet-") as raw:
+            fake = self._shim(Path(raw), "dotnet", "10.0.300", exit_code=1)
+            completed = _run(
+                f"$d = Resolve-CoachDotnet -DotnetPath '{fake}' -GlobalJsonDirectory '{GLOBAL_JSON_DIR}'; "
+                "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+            )
+            toolchain = json.loads(completed.stdout)["toolchain"]
+            self.assertIsNone(toolchain["dotnet"])
+            self.assertTrue(any(item["reason"] == "did-not-execute" for item in toolchain["rejected"]))
+
     # Case 11 - required versus optional is a property of the caller.
     def test_optional_absence_passes_and_required_absence_fails(self) -> None:
+        """Absence is not the same as an invalid override.
+
+        A genuinely absent optional tool is recorded as null and the caller
+        passes. An invalid *explicit* override is a hard stop and is covered
+        separately.
+        """
+        bare = os.environ.copy()
+        bare.pop("IRACING_COACH_NODE", None)
+        bare["PATH"] = os.path.join(os.environ.get("SystemRoot", r"C:\WINDOWS"), "System32")
+
         optional = _run(
-            "$n = Resolve-CoachNode -NodePath 'C:\\no-such-node.exe'; "
+            "$n = Resolve-CoachNode; "
             "$p = Get-CoachToolchainProvenance -Node $n -Optional @('node'); "
             "Assert-CoachToolchain -Provenance $p -Required @(); "
-            "Write-CoachToolchainProvenance -Provenance $p"
+            "Write-CoachToolchainProvenance -Provenance $p",
+            bare,
         )
         self.assertEqual(optional.returncode, 0, optional.stderr)
         toolchain = json.loads(optional.stdout)["toolchain"]
         self.assertIsNone(toolchain["node"], "an absent optional tool is recorded as null")
-        self.assertTrue(any(item["tool"] == "node" for item in toolchain["rejected"]))
 
         required = _run(
-            "$n = Resolve-CoachNode -NodePath 'C:\\no-such-node.exe'; "
+            "$n = Resolve-CoachNode; "
             "$p = Get-CoachToolchainProvenance -Node $n -Required @('node'); "
-            "Assert-CoachToolchain -Provenance $p -Required @('node')"
+            "Assert-CoachToolchain -Provenance $p -Required @('node')",
+            bare,
         )
         self.assertNotEqual(required.returncode, 0, "a required tool may never be null on a passing result")
 
