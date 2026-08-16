@@ -284,11 +284,14 @@ def run_staged_rmw(n: int, order: str, path: Path) -> dict[str, Any]:
     all_read_initial = all(fp == initial_fingerprint for _, fp in reads)
 
     sequence = list(range(n)) if order == "forward" else list(reversed(range(n)))
-    acknowledged_in_order = True
+    # Record the acknowledgements instead of tracking a boolean initialised to
+    # the passing value. If the wait is ever removed, this list stays empty and
+    # the comparison below fails - whereas a True flag would have survived
+    # untouched and reported a handshake that never happened.
+    acknowledged: list[int] = []
     for index in sequence:
         release[index].set()
-        if done_q.get(timeout=SIGNAL_TIMEOUT) != index:
-            acknowledged_in_order = False
+        acknowledged.append(done_q.get(timeout=SIGNAL_TIMEOUT))
 
     for process in processes:
         process.join(timeout=JOIN_TIMEOUT)
@@ -302,7 +305,7 @@ def run_staged_rmw(n: int, order: str, path: Path) -> dict[str, Any]:
         "start_method": mp.get_start_method(),
         "all_ready": ready == set(range(n)),
         "all_read_initial": all_read_initial,
-        "acknowledged_in_order": acknowledged_in_order,
+        "acknowledged_in_order": acknowledged == sequence,
         "hung": [i for i, p in enumerate(processes) if p.is_alive()],
         "bad_exits": [p.exitcode for p in processes if p.exitcode != 0],
         "survived": survived,
