@@ -86,11 +86,16 @@ public sealed class PlanningAndStartingTuneUiTests
     {
         var root = CompanionRoot();
         var models = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Contracts", "Models.cs"));
+        var paths = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Contracts", "CompanionPathProvider.cs"));
         var state = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "CompanionState.cs"));
 
-        foreach (var source in new[] { models, state })
+        StringAssert.Contains(paths, "DriveInfo.GetDrives()");
+        StringAssert.Contains(paths, ".Where(candidate => candidate.DriveType == DriveType.Fixed && candidate.IsReady)");
+        StringAssert.Contains(models, "foreach (var driveRoot in pathProvider.FixedDriveRoots)");
+        StringAssert.Contains(state, "foreach (var driveRoot in _pathProvider.FixedDriveRoots)");
+        Assert.DoesNotContain("DriveInfo.GetDrives()", state, StringComparison.Ordinal);
+        foreach (var source in new[] { paths, models, state })
         {
-            StringAssert.Contains(source, "DriveInfo.GetDrives().Where(candidate => candidate.DriveType == DriveType.Fixed && candidate.IsReady)");
             Assert.DoesNotContain("Directory.GetLogicalDrives()", source, StringComparison.Ordinal);
         }
 

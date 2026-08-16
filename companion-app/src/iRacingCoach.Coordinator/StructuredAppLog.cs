@@ -8,18 +8,21 @@ internal static partial class StructuredAppLog
 {
     private static readonly object Gate = new();
 
-    public static RecoverableAppError Record(string scope, Exception exception, string appVersion)
+    public static RecoverableAppError Record(
+        string scope,
+        Exception exception,
+        string appVersion,
+        string logRoot,
+        string profileRoot)
     {
         var id = Guid.NewGuid().ToString("N")[..10];
         var occurred = DateTimeOffset.UtcNow;
-        var safeScope = Clean(scope, 80);
-        var safeMessage = Clean(exception.Message, 500);
+        var safeScope = Clean(scope, 80, profileRoot);
+        var safeMessage = Clean(exception.Message, 500, profileRoot);
         var error = new RecoverableAppError(id, safeScope, safeMessage, occurred);
         try
         {
-            var root = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "iRacingCoach", "logs");
+            var root = Path.GetFullPath(logRoot);
             Directory.CreateDirectory(root);
             var line = JsonSerializer.Serialize(new
             {
@@ -43,11 +46,10 @@ internal static partial class StructuredAppLog
         return error;
     }
 
-    private static string Clean(string? value, int maximum)
+    private static string Clean(string? value, int maximum, string profileRoot)
     {
         var text = string.IsNullOrWhiteSpace(value) ? "Unexpected application error" : value.Trim();
-        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrWhiteSpace(profile)) text = text.Replace(profile, "%USERPROFILE%", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(profileRoot)) text = text.Replace(profileRoot, "%USERPROFILE%", StringComparison.OrdinalIgnoreCase);
         text = SecretPattern().Replace(text, "$1=[redacted]");
         text = text.Replace('\r', ' ').Replace('\n', ' ');
         return text[..Math.Min(text.Length, maximum)];

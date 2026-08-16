@@ -34,6 +34,8 @@ public sealed class CompanionState : IDisposable
     private readonly LiveTelemetryService _liveTelemetry;
     private readonly LiveReplayCaptureStore _liveReplayCapture;
     private readonly IDurableArchiveService _archive;
+    private readonly ICompanionPathProvider _pathProvider;
+    private readonly bool _allowExternalHostActions;
     private readonly Dictionary<string, CancellationTokenSource> _jobTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Lazy<Task<JsonElement>>> _inflightBackendCalls = new(StringComparer.Ordinal);
     private readonly object _homeAnalysisSync = new();
@@ -60,20 +62,30 @@ public sealed class CompanionState : IDisposable
     private readonly SemaphoreSlim _tuningDraftMutationGate = new(1, 1);
     private BackendHealthResult _lastBackendHealth = new(false, "unknown", "unknown", "unknown", 0, TimeSpan.Zero, "Not checked");
 
-    public CompanionState() : this(new McpBackendClient(), new JsonSettingsStore(), new IRacingSdkTelemetrySource(), new CodexAppServerSupervisor(), new PowerShellGarage61CredentialStore(), new DurableArchiveService()) { }
-    public CompanionState(ILiveTelemetrySource liveTelemetrySource) : this(new McpBackendClient(), new JsonSettingsStore(), liveTelemetrySource, new CodexAppServerSupervisor(), new PowerShellGarage61CredentialStore(), new DurableArchiveService()) { }
+    public CompanionState() : this(new McpBackendClient(), new JsonSettingsStore(), new IRacingSdkTelemetrySource(), new CodexAppServerSupervisor(), new PowerShellGarage61CredentialStore(), new DurableArchiveService(), WindowsCompanionPathProvider.Instance) { }
+    public CompanionState(ILiveTelemetrySource liveTelemetrySource) : this(new McpBackendClient(), new JsonSettingsStore(), liveTelemetrySource, new CodexAppServerSupervisor(), new PowerShellGarage61CredentialStore(), new DurableArchiveService(), WindowsCompanionPathProvider.Instance) { }
     public CompanionState(IBackendClient backend) : this(backend, null, new DisconnectedLiveTelemetrySource(), new DisabledCoachEngineSupervisor(), new PowerShellGarage61CredentialStore()) { }
 
     public CompanionState(IBackendClient backend, ISettingsStore? settingsStore) : this(backend, settingsStore, new DisconnectedLiveTelemetrySource(), new DisabledCoachEngineSupervisor(), new PowerShellGarage61CredentialStore()) { }
 
-    public CompanionState(IBackendClient backend, ISettingsStore? settingsStore, ILiveTelemetrySource liveTelemetrySource, ICoachEngineSupervisor? coachEngine = null, IGarage61CredentialStore? garage61Credentials = null, IDurableArchiveService? archive = null)
+    public CompanionState(
+        IBackendClient backend,
+        ISettingsStore? settingsStore,
+        ILiveTelemetrySource liveTelemetrySource,
+        ICoachEngineSupervisor? coachEngine = null,
+        IGarage61CredentialStore? garage61Credentials = null,
+        IDurableArchiveService? archive = null,
+        ICompanionPathProvider? pathProvider = null,
+        bool allowExternalHostActions = true)
     {
         _backend = backend;
         _settingsStore = settingsStore;
         _garage61Credentials = garage61Credentials ?? new PowerShellGarage61CredentialStore();
         _coachEngine = coachEngine ?? new DisabledCoachEngineSupervisor();
         _archive = archive ?? new DurableArchiveService();
-        Settings = settingsStore?.Load() ?? new CompanionSettings();
+        _pathProvider = pathProvider ?? WindowsCompanionPathProvider.Instance;
+        _allowExternalHostActions = allowExternalHostActions;
+        Settings = settingsStore?.Load() ?? new CompanionSettings(_pathProvider);
         Settings.LiveMonitor ??= new LiveMonitorLayout();
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
         _liveTelemetry = new LiveTelemetryService(liveTelemetrySource, Settings.LiveMonitor);
@@ -206,7 +218,7 @@ public sealed class CompanionState : IDisposable
 
     public void ReportUnhandledException(string scope, Exception exception)
     {
-        LastRecoverableError = StructuredAppLog.Record(scope, exception, AppVersion);
+        LastRecoverableError = StructuredAppLog.Record(scope, exception, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
         ServiceFailureCount++;
         Toast = "Something went wrong, but the app is still running.";
         RaiseChanged();
@@ -989,7 +1001,7 @@ public sealed class CompanionState : IDisposable
         var store = new PortableTuningTurnAnnotationStore(Settings.CoachHome);
         TuningTurnAnnotationSet? annotations = null;
         try { annotations = store.Load(identity.TrackConfigurationKey, map.MapIdentity); }
-        catch (InvalidDataException ex) { _ = StructuredAppLog.Record("tuning turn annotations", ex, AppVersion); }
+        catch (InvalidDataException ex) { _ = StructuredAppLog.Record("tuning turn annotations", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile); }
         var merged = PortableTuningTurnAnnotationStore.Merge(map, annotations);
         var updated = draft with
         {
@@ -1352,7 +1364,7 @@ public sealed class CompanionState : IDisposable
             }
             catch (InvalidDataException ex)
             {
-                _ = StructuredAppLog.Record("tuning turn annotations", ex, AppVersion);
+                _ = StructuredAppLog.Record("tuning turn annotations", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
             }
         }
         SelectedTuningMap = map is null ? null : PortableTuningTurnAnnotationStore.Merge(map, annotations);
@@ -1360,7 +1372,7 @@ public sealed class CompanionState : IDisposable
 
         ProgressiveTuningDraft? saved = null;
         try { saved = new PortableTuningDraftStore(Settings.CoachHome).Load(identity); }
-        catch (InvalidDataException ex) { _ = StructuredAppLog.Record("tuning draft", ex, AppVersion); }
+        catch (InvalidDataException ex) { _ = StructuredAppLog.Record("tuning draft", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile); }
         var selfTarget = ProgressiveTuningCoordinator.OpenTarget(candidate);
         var savedTarget = saved?.OpenSetupTarget;
         SelectedTuningTarget = selfTarget
@@ -1701,6 +1713,11 @@ public sealed class CompanionState : IDisposable
     {
         var setup = SelectedSetup;
         if (setup is null) return;
+        if (!_allowExternalHostActions)
+        {
+            Notify("Opening folders is disabled in the isolated host profile.");
+            return;
+        }
         _ = Process.Start(new ProcessStartInfo("explorer.exe")
         {
             UseShellExecute = true,
@@ -1826,6 +1843,11 @@ public sealed class CompanionState : IDisposable
 
     public async Task ConnectChatGptAsync(bool deviceCode = false, CancellationToken cancellationToken = default)
     {
+        if (!_allowExternalHostActions)
+        {
+            Notify("ChatGPT sign-in is disabled in the isolated host profile.");
+            return;
+        }
         try
         {
             await _coachEngine.StartAsync(Settings, cancellationToken);
@@ -1922,7 +1944,7 @@ public sealed class CompanionState : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException or JsonException or TimeoutException)
         {
-            LastRecoverableError = StructuredAppLog.Record("Garage61 reference search", ex, AppVersion);
+            LastRecoverableError = StructuredAppLog.Record("Garage61 reference search", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
             if (IsCurrentRace(race)) Garage61ReferenceMessage = Garage61ReferenceFailure(ex.Message);
         }
         finally
@@ -2032,8 +2054,14 @@ public sealed class CompanionState : IDisposable
 
     public void RepairInstallation()
     {
+        if (!_allowExternalHostActions)
+        {
+            Toast = "Repair launch is disabled in the isolated host profile.";
+            RaiseChanged();
+            return;
+        }
         var setup = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            _pathProvider.LocalApplicationData,
             "iRacingCoach",
             "Installer",
             $"iRacingCoach-{AppVersion}-Setup.exe");
@@ -2219,6 +2247,11 @@ public sealed class CompanionState : IDisposable
     {
         var logs = Settings.LogsRoot;
         Directory.CreateDirectory(logs);
+        if (!_allowExternalHostActions)
+        {
+            Notify("Opening folders is disabled in the isolated host profile.");
+            return;
+        }
         _ = Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = true, ArgumentList = { logs } });
     }
 
@@ -2257,7 +2290,7 @@ public sealed class CompanionState : IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            LastRecoverableError = StructuredAppLog.Record("prepare portable copy", ex, AppVersion);
+            LastRecoverableError = StructuredAppLog.Record("prepare portable copy", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
             SettingsMessage = $"The backup check could not finish: {Bound(ex.Message)}";
             Toast = "The Coach folder is not ready to copy.";
         }
@@ -2496,8 +2529,8 @@ public sealed class CompanionState : IDisposable
 
     private IEnumerable<string> InstalledCarRoots()
     {
-        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        var programFiles = _pathProvider.ProgramFiles;
+        var programFilesX86 = _pathProvider.ProgramFilesX86;
         var candidates = new List<string>
         {
             Path.Combine(Settings.IRacingInstallRoot, "cars"),
@@ -2506,11 +2539,11 @@ public sealed class CompanionState : IDisposable
             Path.Combine(programFilesX86, "Steam", "steamapps", "common", "iRacing", "cars"),
             Path.Combine(programFiles, "Steam", "steamapps", "common", "iRacing", "cars")
         };
-        foreach (var drive in DriveInfo.GetDrives().Where(candidate => candidate.DriveType == DriveType.Fixed && candidate.IsReady))
+        foreach (var driveRoot in _pathProvider.FixedDriveRoots)
         {
-            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "Games", "iRacing", "cars"));
-            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "iRacing", "cars"));
-            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "SteamLibrary", "steamapps", "common", "iRacing", "cars"));
+            candidates.Add(Path.Combine(driveRoot, "Games", "iRacing", "cars"));
+            candidates.Add(Path.Combine(driveRoot, "iRacing", "cars"));
+            candidates.Add(Path.Combine(driveRoot, "SteamLibrary", "steamapps", "common", "iRacing", "cars"));
         }
         return candidates.Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase);
     }
@@ -2601,7 +2634,20 @@ public sealed class CompanionState : IDisposable
     {
         var launcher = FindWorkspaceFile(Path.Combine("iracing-coach", "skills", "analyze-iracing-race", "scripts", "start-mcp.ps1"))
             ?? throw new BackendProtocolException("The packaged race analysis service was not found.");
-        return new BackendConfiguration("powershell.exe", launcher, Settings.PythonPath, Settings.IRacingRoot, Settings.ArchiveRoot, Settings.CoachHome, Settings.IRacingInstallRoot);
+        var temporaryRoot = Path.Combine(Settings.LocalStateRoot, "temp");
+        Directory.CreateDirectory(temporaryRoot);
+        return new BackendConfiguration(
+            "powershell.exe",
+            launcher,
+            Settings.PythonPath,
+            Settings.IRacingRoot,
+            Settings.ArchiveRoot,
+            Settings.CoachHome,
+            Settings.IRacingInstallRoot,
+            LocalStateRoot: Settings.LocalStateRoot,
+            UserProfileRoot: _pathProvider.UserProfile,
+            TemporaryRoot: temporaryRoot,
+            NetworkAllowed: _allowExternalHostActions);
     }
 
     private bool MatchesRaceBrowser(RaceEventGroup group)
@@ -2736,7 +2782,7 @@ public sealed class CompanionState : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _ = StructuredAppLog.Record("Garage61 UI cache refresh", ex, AppVersion);
+            _ = StructuredAppLog.Record("Garage61 UI cache refresh", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
         }
     }
 

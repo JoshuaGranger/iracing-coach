@@ -9,7 +9,10 @@
         WindowStartupLocation="CenterScreen"
         Icon="Assets\iRacingCoach.ico"
         Background="{StaticResource AppBrush}">
-    <blazor:BlazorWebView HostPage="wwwroot\index.html" Services="{DynamicResource services}">
+    <blazor:BlazorWebView HostPage="wwwroot\index.html"
+                          Services="{DynamicResource services}"
+                          BlazorWebViewInitializing="OnBlazorWebViewInitializing"
+                          UrlLoading="OnBlazorUrlLoading">
         <blazor:BlazorWebView.RootComponents>
             <blazor:RootComponent Selector="#app" ComponentType="{x:Type ui:CompanionShell}" />
         </blazor:BlazorWebView.RootComponents>

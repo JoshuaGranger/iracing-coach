@@ -21,31 +21,52 @@ public sealed class JsonSettingsStore : ISettingsStore
     private readonly string _machinePath;
     private readonly IGarage61CredentialStore _credentials;
     private readonly bool _allowDesktopImport;
+    private readonly ICompanionPathProvider _pathProvider;
+    private readonly bool _lockToProviderRoots;
 
     public JsonSettingsStore() : this(Path.Combine(
         CompanionSettings.DefaultCoachHome,
         "settings.json"), new PowerShellGarage61CredentialStore(), allowDesktopImport: true,
-        machinePath: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iRacingCoach", "machine-settings.json"))
+        machinePath: Path.Combine(WindowsCompanionPathProvider.Instance.LocalApplicationData, "iRacingCoach", "machine-settings.json"),
+        WindowsCompanionPathProvider.Instance, lockToProviderRoots: false)
     {
     }
 
     public JsonSettingsStore(string path, IGarage61CredentialStore? credentials = null)
         : this(path, credentials ?? new PowerShellGarage61CredentialStore(), allowDesktopImport: false,
-            machinePath: path + ".machine-local.json")
+            machinePath: path + ".machine-local.json", WindowsCompanionPathProvider.Instance, lockToProviderRoots: false)
     {
     }
 
     public JsonSettingsStore(string path, IGarage61CredentialStore credentials, string machinePath)
-        : this(path, credentials, allowDesktopImport: false, machinePath)
+        : this(path, credentials, allowDesktopImport: false, machinePath, WindowsCompanionPathProvider.Instance, lockToProviderRoots: false)
     {
     }
 
-    private JsonSettingsStore(string path, IGarage61CredentialStore credentials, bool allowDesktopImport, string machinePath)
+    public JsonSettingsStore(
+        string path,
+        IGarage61CredentialStore credentials,
+        string machinePath,
+        ICompanionPathProvider pathProvider,
+        bool lockToProviderRoots)
+        : this(path, credentials, allowDesktopImport: false, machinePath, pathProvider, lockToProviderRoots)
     {
-        _path = path;
-        _machinePath = machinePath;
-        _credentials = credentials;
+    }
+
+    private JsonSettingsStore(
+        string path,
+        IGarage61CredentialStore credentials,
+        bool allowDesktopImport,
+        string machinePath,
+        ICompanionPathProvider pathProvider,
+        bool lockToProviderRoots)
+    {
+        _path = Path.GetFullPath(path);
+        _machinePath = Path.GetFullPath(machinePath);
+        _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
         _allowDesktopImport = allowDesktopImport;
+        _pathProvider = pathProvider ?? throw new ArgumentNullException(nameof(pathProvider));
+        _lockToProviderRoots = lockToProviderRoots;
     }
 
     public CompanionSettings Load()
@@ -54,13 +75,15 @@ public sealed class JsonSettingsStore : ISettingsStore
         {
             var serialized = File.Exists(_path) ? File.ReadAllText(_path) : null;
             var settings = serialized is not null
-                ? JsonSerializer.Deserialize<CompanionSettings>(serialized, JsonOptions) ?? new CompanionSettings()
-                : new CompanionSettings();
+                ? JsonSerializer.Deserialize<CompanionSettings>(serialized, JsonOptions) ?? new CompanionSettings(_pathProvider)
+                : new CompanionSettings(_pathProvider);
             var legacyCredential = string.Empty;
-            var legacyCredentialPresent = serialized is not null && TryReadLegacyGarage61Credential(serialized, out legacyCredential);
+            var legacyCredentialPresent = !_lockToProviderRoots && serialized is not null && TryReadLegacyGarage61Credential(serialized, out legacyCredential);
             if (legacyCredentialPresent) settings.Garage61ApiKey = legacyCredential;
+            if (_lockToProviderRoots) settings.Garage61ApiKey = string.Empty;
 
-            settings.CoachHome = Path.GetDirectoryName(_path) ?? CompanionSettings.DefaultCoachHome;
+            settings.CoachHome = Path.GetDirectoryName(_path) ?? new CompanionSettings(_pathProvider).CoachHome;
+            ApplyPathPolicy(settings);
             settings.LiveMonitor ??= new LiveMonitorLayout();
             settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
             settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
@@ -89,7 +112,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new CompanionSettings();
+            return new CompanionSettings(_pathProvider);
         }
     }
 
@@ -97,7 +120,12 @@ public sealed class JsonSettingsStore : ISettingsStore
     {
         lock (_saveGate)
         {
-            if (!string.IsNullOrWhiteSpace(settings.Garage61ApiKey))
+            ApplyPathPolicy(settings);
+            if (_lockToProviderRoots)
+            {
+                settings.Garage61ApiKey = string.Empty;
+            }
+            else if (!string.IsNullOrWhiteSpace(settings.Garage61ApiKey))
             {
                 _credentials.Store(settings.Garage61ApiKey);
                 settings.Garage61ApiKey = string.Empty;
@@ -181,7 +209,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         if (_credentials.IsConfigured || !_allowDesktopImport) return false;
 
         var legacyPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            _pathProvider.Desktop,
             "garage61-key.txt");
         if (!File.Exists(legacyPath))
         {
@@ -197,6 +225,19 @@ public sealed class JsonSettingsStore : ISettingsStore
         _credentials.Store(key);
         settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 2);
         return true;
+    }
+
+    private void ApplyPathPolicy(CompanionSettings settings)
+    {
+        settings.LocalStateRootOverride ??= Path.Combine(_pathProvider.LocalApplicationData, "iRacingCoach");
+        if (!_lockToProviderRoots) return;
+
+        var defaults = new CompanionSettings(_pathProvider);
+        settings.CoachHome = defaults.CoachHome;
+        settings.IRacingRoot = defaults.IRacingRoot;
+        settings.IRacingInstallRoot = defaults.IRacingInstallRoot;
+        settings.LocalStateRootOverride = defaults.LocalStateRootOverride;
+        settings.LaunchAtSignIn = false;
     }
 
     private static bool TryReadLegacyGarage61Credential(string serialized, out string credential)
