@@ -27,6 +27,21 @@ jobs:
         with:
           global-json-file: companion-app/global.json
 
+      # Validates the runtimes the setup actions above actually provisioned,
+      # through the same resolver the local entry points use. Static agreement
+      # between this file and the toolchain contract is not runtime provenance.
+      - name: Record toolchain provenance
+        shell: pwsh
+        run: |
+          . .\tools\Resolve-Toolchain.ps1
+          $python = Resolve-CoachPython -Required
+          $node = Resolve-CoachNode -Required
+          $dotnet = Resolve-CoachDotnet -GlobalJsonDirectory (Join-Path $PWD 'companion-app') -Required
+          $provenance = Get-CoachToolchainProvenance -Python $python -Node $node -Dotnet $dotnet `
+            -Required @('python', 'node', 'dotnet') -Authority 'ci-source-gate'
+          Assert-CoachToolchain -Provenance $provenance -Required @('python', 'node', 'dotnet')
+          Write-CoachToolchainProvenance -Provenance $provenance
+
       - name: Verify repository, contracts, fixtures, and backend
         shell: pwsh
         run: .\tools\verify-repository.ps1

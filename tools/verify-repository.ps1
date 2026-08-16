@@ -1,34 +1,24 @@
 param(
     [string]$PythonPath,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$ShowToolchain
 )
 
 $ErrorActionPreference = 'Stop'
 $workspaceRoot = Split-Path -Parent $PSScriptRoot
 
-$userProfilePath = if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
-    [System.IO.Path]::GetFullPath($env:USERPROFILE)
-}
-else {
-    [Environment]::GetFolderPath('UserProfile')
-}
-
-$candidates = @(
-    $PythonPath,
-    $env:IRACING_COACH_PYTHON,
-    (Join-Path $userProfilePath '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'),
-    (Join-Path $userProfilePath 'AppData\Local\Programs\Python\Python313\python.exe'),
-    (Join-Path $userProfilePath 'AppData\Local\Programs\Python\Python312\python.exe'),
-    (Join-Path $userProfilePath 'AppData\Local\Programs\Python\Python311\python.exe'),
-    (Join-Path $userProfilePath 'AppData\Local\Programs\Python\Python310\python.exe')
-) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-
-$python = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $python) {
-    $command = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($command) { $python = $command.Source }
-}
-if (-not $python) { throw 'Python 3.10 or newer was not found.' }
+# Single shared resolution path. The previous candidate list privileged a
+# private agent-runtime cache ahead of every system interpreter and ordered
+# Python313 before Python312 for no stated reason; that was
+# TOOLCHAIN-COUPLING-001. Resolution now lives in tools/Resolve-Toolchain.ps1,
+# which selects by validated version rather than by vendor path, and selects
+# nothing by mere file existence. This entry point requires Python only.
+. (Join-Path $PSScriptRoot 'Resolve-Toolchain.ps1')
+$pythonResult = Resolve-CoachPython -PythonPath $PythonPath -Required
+$python = $pythonResult.Resolved.Path
+$provenance = Get-CoachToolchainProvenance -Python $pythonResult -Required @('python') -Authority 'local-diagnostic'
+Assert-CoachToolchain -Provenance $provenance -Required @('python')
+if ($ShowToolchain) { Write-CoachToolchainProvenance -Provenance $provenance }
 
 $env:PYTHONUTF8 = '1'
 & $python -X utf8 (Join-Path $PSScriptRoot 'export_contracts.py') --check
