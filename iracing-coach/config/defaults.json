@@ -1,7 +1,4 @@
 {
-  "archive_root": "C:\\Users\\joshu\\Documents\\iRacing Coach\\data",
-  "iracing_root": "C:\\Users\\joshu\\Documents\\iRacing",
-  "install_root": "C:\\Program Files (x86)\\iRacing",
   "telemetry_target_hz": 20,
   "units": "englishStandard",
   "latest_session_policy": "latest-race-by-session-metadata",

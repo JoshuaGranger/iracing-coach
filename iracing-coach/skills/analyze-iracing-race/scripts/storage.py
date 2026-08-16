@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 try:  # Package import and direct script execution are both supported.
+    from . import backend_roots
     from .live_replay_v2 import (
         LiveReplayV2Error,
         decode_live_replay_v2,
@@ -38,6 +39,7 @@ try:  # Package import and direct script execution are both supported.
         track_geometry_sha256,
     )
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+    import backend_roots
     from live_replay_v2 import (
         LiveReplayV2Error,
         decode_live_replay_v2,
@@ -418,13 +420,11 @@ def utc_now() -> str:
 
 
 def default_archive_root() -> Path:
-    override = os.environ.get("IRACING_COACH_DATA")
-    if override:
-        return local_path(override, "IRACING_COACH_DATA")
-    return local_path(
-        Path.home() / "Documents" / "iRacing Coach" / "data",
-        "archive_root",
-    )
+    # `backend_roots` owns the precedence chain; see IDENTITY-PATH-001. The
+    # archive root is deliberately not configurable through `defaults.json`
+    # here: `defaults.json` ships with the plugin, while the archive must stay
+    # outside it so reinstalling never removes race history.
+    return backend_roots.archive_root_path()
 
 
 def safe_slug(value: Any, fallback: str = "unknown") -> str:

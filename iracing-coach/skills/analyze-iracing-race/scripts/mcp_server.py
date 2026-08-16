@@ -23,6 +23,7 @@ for import_path in (str(SCRIPT_DIR), str(VENDOR_DIR)):
     if import_path not in sys.path:
         sys.path.insert(0, import_path)
 
+import backend_roots  # noqa: E402
 from storage import ArchiveStore, default_archive_root  # noqa: E402
 from path_security import local_path, path_is_within  # noqa: E402
 from native_events import (  # noqa: E402
@@ -46,14 +47,11 @@ def _load_defaults() -> dict[str, Any]:
 
 
 _DEFAULTS = _load_defaults()
-DEFAULT_IRACING_ROOT = local_path(
-    str(
-        os.environ.get("IRACING_COACH_IRACING_ROOT")
-        or _DEFAULTS.get("iracing_root")
-        or (Path.home() / "Documents" / "iRacing")
-    ),
-    "IRACING_COACH_IRACING_ROOT",
-)
+# Resolved through `backend_roots`, the single authority for this precedence
+# chain (IDENTITY-PATH-001). These remain module-level because the server
+# reports them in its capability surface; the environment is established by the
+# launcher before import.
+DEFAULT_IRACING_ROOT = backend_roots.iracing_root_path(defaults=_DEFAULTS)
 DEFAULT_ARCHIVE_ROOT = local_path(default_archive_root(), "IRACING_COACH_DATA")
 
 

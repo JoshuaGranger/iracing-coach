@@ -22,8 +22,10 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 try:  # Package import and direct script execution are both supported.
+    from . import backend_roots
     from .path_security import local_path
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+    import backend_roots
     from path_security import local_path
 
 try:  # Support package imports and direct execution from the scripts folder.
@@ -390,13 +392,9 @@ def _load_defaults() -> dict[str, Any]:
 
 
 def _default_iracing_root() -> Path:
-    override = os.environ.get("IRACING_COACH_IRACING_ROOT")
-    if override:
-        return local_path(override, "IRACING_COACH_IRACING_ROOT")
-    configured = _load_defaults().get("iracing_root")
-    if configured:
-        return local_path(str(configured), "configured iRacing root")
-    return local_path(Path.home() / "Documents" / "iRacing", "iRacing root")
+    # `backend_roots` is the single authority for this precedence chain; see
+    # IDENTITY-PATH-001. Three modules previously carried their own copy.
+    return backend_roots.iracing_root_path(defaults=_load_defaults())
 
 
 def _garage61_base_url() -> str:
@@ -827,24 +825,22 @@ def _known_iracing_roots(selected_root: Path) -> list[tuple[str, Path, bool]]:
     candidates: list[tuple[str, Path, bool]] = [
         ("documents", selected_root, False),
     ]
-    install_override = os.environ.get("IRACING_COACH_INSTALL_ROOT")
-    program_x86 = os.environ.get("PROGRAMFILES(X86)") or r"C:\Program Files (x86)"
-    program = os.environ.get("PROGRAMFILES") or r"C:\Program Files"
+    # The installation root resolves through `backend_roots`, which reports
+    # `None` rather than guessing `C:\Program Files (x86)` on a machine whose
+    # system drive differs (IDENTITY-PATH-001). An unknown location is omitted
+    # from the candidate list instead of being asserted. The explicitly
+    # configured root and the machine defaults are both still probed, exactly
+    # as before; only the invented literals are gone.
+    install = backend_roots.resolve_install_root(defaults=_load_defaults())
+    if install is not None and not install.is_default:
+        candidates.append(("install_configured", install.path, False))
+    program_x86 = os.environ.get("PROGRAMFILES(X86)")
+    if program_x86:
+        candidates.append(("install_x86", Path(program_x86) / "iRacing", False))
+    program = os.environ.get("PROGRAMFILES")
+    if program:
+        candidates.append(("install", Path(program) / "iRacing", False))
     local_app_data = os.environ.get("LOCALAPPDATA")
-    if install_override:
-        candidates.append(
-            (
-                "install_configured",
-                local_path(install_override, "IRACING_COACH_INSTALL_ROOT"),
-                False,
-            )
-        )
-    candidates.extend(
-        [
-            ("install_x86", Path(program_x86) / "iRacing", False),
-            ("install", Path(program) / "iRacing", False),
-        ]
-    )
     if local_app_data:
         candidates.append(
             ("local_app_data", Path(local_app_data) / "iRacing", True)

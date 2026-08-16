@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 try:  # Package import and direct script execution are both supported.
+    from . import backend_roots
     from .path_security import local_path
     from .setup_catalog import catalog_setups, compare_setups, normalize_embedded_setup
     from .storage import ArchiveStore, safe_slug, stable_hash, utc_now
@@ -24,6 +25,7 @@ try:  # Package import and direct script execution are both supported.
         recommend_tuning,
     )
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+    import backend_roots
     from path_security import local_path
     from setup_catalog import catalog_setups, compare_setups, normalize_embedded_setup
     from storage import ArchiveStore, safe_slug, stable_hash, utc_now
@@ -58,13 +60,8 @@ def _defaults() -> dict[str, Any]:
 
 
 def _default_iracing_root() -> Path:
-    override = os.environ.get("IRACING_COACH_IRACING_ROOT")
-    if override:
-        return local_path(override, "IRACING_COACH_IRACING_ROOT")
-    configured = _defaults().get("iracing_root")
-    if configured:
-        return local_path(str(configured), "configured iRacing root")
-    return local_path(Path.home() / "Documents" / "iRacing", "iRacing root")
+    # Shared authority; see `backend_roots` and IDENTITY-PATH-001.
+    return backend_roots.iracing_root_path(defaults=_defaults())
 
 
 def _setup_root(root: str | os.PathLike[str] | None) -> Path:
