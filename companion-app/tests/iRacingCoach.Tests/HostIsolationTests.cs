@@ -274,10 +274,12 @@ public sealed class HostIsolationTests
         StringAssert.Contains(window, "--disable-background-networking");
         StringAssert.Contains(window, "--proxy-server=http://127.0.0.1:9");
         StringAssert.Contains(window, "UrlLoadingStrategy.CancelLoad");
+        var browserServicesGuard = window.IndexOf("if (hostProfile.AllowEmbeddedBrowser) Resources.Add(\"services\", _services);", StringComparison.Ordinal);
         var initializeComponent = window.IndexOf("InitializeComponent();", StringComparison.Ordinal);
-        var suppressBrowser = window.IndexOf("if (!hostProfile.AllowEmbeddedBrowser) Content = BuildIsolatedEvidenceSurface();", StringComparison.Ordinal);
+        Assert.IsGreaterThan(-1, browserServicesGuard);
         Assert.IsGreaterThan(-1, initializeComponent);
-        Assert.IsGreaterThan(initializeComponent, suppressBrowser);
+        Assert.IsGreaterThan(browserServicesGuard, initializeComponent);
+        StringAssert.Contains(window, "if (!hostProfile.AllowEmbeddedBrowser) Content = BuildIsolatedEvidenceSurface();");
         StringAssert.Contains(window, "private static UIElement BuildIsolatedEvidenceSurface()");
         Assert.DoesNotContain("BlazorWebView", window[window.IndexOf("private static UIElement BuildIsolatedEvidenceSurface()", StringComparison.Ordinal)..]);
         StringAssert.Contains(window, "if (hostProfile.AllowMachineIntegration) _ = StartupRegistration.Apply");

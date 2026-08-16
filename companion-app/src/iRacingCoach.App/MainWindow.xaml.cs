@@ -51,7 +51,7 @@ public partial class MainWindow : Window
         services.AddBlazorWebViewDeveloperTools();
 #endif
         _services = services.BuildServiceProvider();
-        Resources.Add("services", _services);
+        if (hostProfile.AllowEmbeddedBrowser) Resources.Add("services", _services);
         InitializeComponent();
         if (!hostProfile.AllowEmbeddedBrowser) Content = BuildIsolatedEvidenceSurface();
         _liveMonitor = new LiveMonitorWindow(state);
