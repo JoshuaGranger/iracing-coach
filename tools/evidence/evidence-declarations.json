@@ -1083,7 +1083,7 @@
                          {"family":"dotnet","id":"iRacingCoach.Tests.RaceAnalysisBehaviorTests.RaceHeader_UsesOneCompactRowWithDataTabsIdentityAndSessionSwitch","tier":"Behavioral","technique":"none"},
                          {"family":"dotnet","id":"iRacingCoach.Tests.RaceAnalysisBehaviorTests.RaceReplay_DoesNotInventCrossClassLeadersOrPitEntriesAcrossCoverageGaps","tier":"SourceContract","technique":"fault"},
                          {"family":"dotnet","id":"iRacingCoach.Tests.RaceAnalysisBehaviorTests.RaceReplay_FastestCleanReferenceIsOptionalAndTruthfullyGated","tier":"Behavioral","technique":"none"},
-                         {"family":"dotnet","id":"iRacingCoach.Tests.RaceAnalysisBehaviorTests.RaceReplay_GatesIncompleteCoverageAndUsesOnlyCanonicalKnownFieldData","tier":"Behavioral","technique":"fault"},
+                         {"family":"dotnet","id":"iRacingCoach.Tests.RaceAnalysisBehaviorTests.RaceReplay_GatesIncompleteCoverageAndUsesOnlyCanonicalKnownFieldData","tier":"SourceContract","technique":"fault"},
                          {"family":"dotnet","id":"iRacingCoach.Tests.RaceAnalysisBehaviorTests.RaceReplay_MissingLapCountersNeverBecomeLapZeroOrLapBackEstimates","tier":"SourceContract","technique":"fault"},
                          {"family":"dotnet","id":"iRacingCoach.Tests.RaceAnalysisBehaviorTests.RaceReplay_RecordedTelemetryGapsBreakChartPaths","tier":"SourceContract","technique":"fault"},
                          {"family":"dotnet","id":"iRacingCoach.Tests.RaceAnalysisBehaviorTests.RaceTechnicalData_PreservesCompleteRacecraftFindingsWhenRunGraphIsUnavailable","tier":"Behavioral","technique":"fault"},
