@@ -18,6 +18,7 @@
     "companion_durable_archive_writer_version": 1,
     "dashboard_contract_version": 1,
     "groove_schema_version": 2,
+    "live_truth_policy_version": 1,
     "mcp_server_name": "iracing-coach-local",
     "mcp_server_version": "0.3.0",
     "race_card_contract_version": 1,

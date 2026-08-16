@@ -20,6 +20,7 @@ sys.path.insert(0, str(SCRIPT_ROOT))
 
 import analysis_engine  # noqa: E402
 import groove_analysis  # noqa: E402
+import live_truth  # noqa: E402
 import mcp_server  # noqa: E402
 import race_card  # noqa: E402
 import race_plan_decision  # noqa: E402
@@ -379,6 +380,7 @@ def exported_values() -> dict[Path, Any]:
             "analysis_profile_version": analysis_engine.ANALYSIS_PROFILE_VERSION,
             "analysis_view_envelope_version": workflow.ANALYSIS_VIEW_SCHEMA_VERSION,
             "race_plan_decision_version": race_plan_decision.RACE_PLAN_DECISION_VERSION,
+            "live_truth_policy_version": live_truth.LIVE_TRUTH_POLICY_VERSION,
             # Two independent stores previously shared the single ambiguous key
             # `archive_schema_version`. The backend range is derived here; the
             # companion range is declared in compatibility-sources.json because
@@ -441,6 +443,11 @@ def exported_values() -> dict[Path, Any]:
         CONTRACT_ROOT / "mcp-tools.v1.json": tools,
         CONTRACT_ROOT / "analysis-view-v1.schema.json": _analysis_view_schema(),
         CONTRACT_ROOT / "race-plan-decision-v1.schema.json": _race_plan_decision_schema(),
+        # A fixture rather than a schema: these are the cases a second decoder
+        # must reproduce, generated so they cannot drift from the policy.
+        WORKSPACE_ROOT
+        / "test-data"
+        / "live-truth-conformance-v1.json": live_truth.conformance_vectors(),
     }
 
 
