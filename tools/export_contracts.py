@@ -19,6 +19,8 @@ CONTRACT_ROOT = WORKSPACE_ROOT / "contracts"
 sys.path.insert(0, str(SCRIPT_ROOT))
 
 import analysis_engine  # noqa: E402
+import artifact_identity  # noqa: E402
+import evidence_records  # noqa: E402
 import groove_analysis  # noqa: E402
 import live_truth  # noqa: E402
 import mcp_server  # noqa: E402
@@ -383,6 +385,8 @@ def exported_values() -> dict[Path, Any]:
             "race_plan_decision_version": race_plan_decision.RACE_PLAN_DECISION_VERSION,
             "live_truth_policy_version": live_truth.LIVE_TRUTH_POLICY_VERSION,
             "starting_tune_contract_version": starting_tune.STARTING_TUNE_CONTRACT_VERSION,
+            "evidence_record_version": evidence_records.EVIDENCE_RECORD_VERSION,
+            "artifact_identity_version": artifact_identity.ARTIFACT_IDENTITY_VERSION,
             # Two independent stores previously shared the single ambiguous key
             # `archive_schema_version`. The backend range is derived here; the
             # companion range is declared in compatibility-sources.json because
