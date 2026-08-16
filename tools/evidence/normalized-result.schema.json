@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iracing-coach.local/schemas/normalized-result.schema.json",
+  "title": "iRacing Coach normalized evidence result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "family",
+    "exactSha",
+    "authority",
+    "discoveryComplete",
+    "runState",
+    "filter",
+    "toolchain",
+    "results",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "family": { "enum": ["dotnet", "backend", "devtools", "javascript"] },
+    "exactSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "authority": { "enum": ["local-diagnostic", "ci-source-gate"] },
+    "discoveryComplete": { "type": "boolean" },
+    "runState": { "enum": ["complete", "partial", "invalid"] },
+    "filter": { "type": ["string", "null"] },
+    "toolchain": {
+      "type": "object",
+      "description": "Unmodified toolchain object emitted by Get-CoachToolchainProvenance."
+    },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/result" }
+    },
+    "totals": { "$ref": "#/$defs/totals" },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "runState": { "const": "invalid" } }, "required": ["runState"] },
+      "then": {
+        "properties": {
+          "discoveryComplete": { "const": false },
+          "results": { "maxItems": 0 }
+        },
+        "not": { "required": ["totals"] }
+      },
+      "else": {
+        "required": ["totals"],
+        "properties": { "discoveryComplete": { "const": true } }
+      }
+    }
+  ],
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayId", "tier", "technique", "outcome", "durationMs", "nameMismatch"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "displayId": { "type": "string", "minLength": 1 },
+        "tier": { "enum": ["SourceContract", "Fixture", "Behavioral", "Rendered", "Package"] },
+        "technique": { "enum": ["none", "fault", "barrier", "mutation"] },
+        "outcome": { "enum": ["passed", "failed", "skipped", "notRun"] },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "nameMismatch": { "type": "boolean" }
+      }
+    },
+    "tierTotals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run", "passed", "failed", "skipped", "notRun"],
+      "properties": {
+        "run": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "notRun": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["SourceContract", "Fixture", "Behavioral", "Rendered", "Package"],
+      "properties": {
+        "SourceContract": { "$ref": "#/$defs/tierTotals" },
+        "Fixture": { "$ref": "#/$defs/tierTotals" },
+        "Behavioral": { "$ref": "#/$defs/tierTotals" },
+        "Rendered": { "$ref": "#/$defs/tierTotals" },
+        "Package": { "$ref": "#/$defs/tierTotals" }
+      }
+    }
+  }
+}
