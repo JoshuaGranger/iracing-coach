@@ -9,12 +9,6 @@
                          },
                          {
                              "family":  "devtools",
-                             "id":  "test_evidence_report.EvidenceReportTests.test_behavioral_sample_is_reproducible",
-                             "tier":  "Behavioral",
-                             "technique":  "none"
-                         },
-                         {
-                             "family":  "devtools",
                              "id":  "test_evidence_report.EvidenceReportTests.test_benchmark_line_poisoning_is_not_parsed",
                              "tier":  "Behavioral",
                              "technique":  "fault"

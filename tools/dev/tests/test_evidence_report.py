@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -207,11 +206,33 @@ class EvidenceReportTests(unittest.TestCase):
     def test_dynamic_add_move_delete_changes_only_runner_count(self) -> None:
         first = "sample.Case.test_first"
         second = "sample.Case.test_second"
-        sha = self._prepare([first, second])
-        completed, record = self._run(sha)
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(record["totals"]["Behavioral"]["run"], 2)
-        self.assertEqual([item["id"] for item in record["results"]], [first, second])
+        states = [
+            ([first], [_declaration(first)], [first], 1, 0),
+            ([first, second], [_declaration(first), _declaration(second)], [first, second], 2, 0),
+            (
+                [first, second],
+                [_declaration(first), _declaration(second, tier="SourceContract")],
+                [first, second],
+                1,
+                1,
+            ),
+            ([second], [_declaration(second, tier="SourceContract")], [second], 0, 1),
+        ]
+
+        for identities, declarations, expected_ids, behavioral_run, source_contract_run in states:
+            _write_json(self.raw, _raw("devtools", identities))
+            _write_json(self.registry, {"schemaVersion": 1, "declarations": declarations})
+            sha = self._commit()
+            if self.output.exists():
+                self.output.unlink()
+            completed, record = self._run(sha)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual([item["id"] for item in record["results"]], expected_ids)
+            self.assertEqual(record["totals"]["Behavioral"]["run"], behavioral_run)
+            self.assertEqual(record["totals"]["SourceContract"]["run"], source_contract_run)
+            self.assertEqual(record["totals"]["Fixture"]["run"], 0)
+            self.assertEqual(record["totals"]["Rendered"]["run"], 0)
+            self.assertEqual(record["totals"]["Package"]["run"], 0)
 
     def test_benchmark_line_poisoning_is_not_parsed(self) -> None:
         poison = "hour replay: 216,000 source -> 8,012 display frames, 512,768 car rows"
@@ -459,14 +480,6 @@ class EvidenceReportTests(unittest.TestCase):
         self.assertIn("emit_python_results.py", workflow)
         self.assertIn("evidence-declarations.json", workflow)
         self.assertNotRegex(workflow, r"expected\s*[-_=]?\s*(56|70|267|278|279)")
-
-    def test_behavioral_sample_is_reproducible(self) -> None:
-        identities = [f"sample.Case.test_{index:03d}" for index in range(40)]
-        count = min(len(identities), max(20, (len(identities) + 9) // 10))
-        ranked = sorted(identities, key=lambda identity: (hashlib.sha256(f"devtools\n{identity}".encode()).hexdigest(), identity))
-        self.assertEqual(count, 20)
-        self.assertEqual(ranked[:count], sorted(identities, key=lambda identity: (hashlib.sha256(f"devtools\n{identity}".encode()).hexdigest(), identity))[:20])
-
 
 if __name__ == "__main__":
     unittest.main()
