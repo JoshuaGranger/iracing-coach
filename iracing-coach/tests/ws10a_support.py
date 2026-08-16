@@ -4,10 +4,18 @@ Not discovered: no ``test_`` prefix and no ``TestCase`` subclass. Every
 primitive here is deliberately independent of the containment contract, so
 it stays valid whichever way the retry/typed-failure details settle.
 
+This module is also the STABLE clause API. The containment clause surface
+lives here rather than in ``probe_ws10a_atomic_containment.py`` because the
+accepted transition renames that probe to ``test_ws10a_containment.py``; a
+discovered test importing the old filename would break at the rename. This
+filename survives the transition, so both the probe and the discovered
+harness import the clause surface from here.
+
 Nothing here touches private data, the network, or production state.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import multiprocessing as mp
 import os
@@ -21,6 +29,44 @@ from unittest import mock
 RETRYABLE_WINERRORS = (5, 32)
 SIGNAL_TIMEOUT = 120
 JOIN_TIMEOUT = 60
+
+
+# --------------------------------------------------------------------------
+# deterministic naming
+#
+# Python randomises str/bytes hashing per process unless PYTHONHASHSEED is
+# pinned, so hash() must never name a fixture: the same clause would write to
+# a different path on every run and a cross-run comparison of exact evidence
+# would be meaningless. This is a stable content digest instead.
+# --------------------------------------------------------------------------
+
+def stable_token(value: Any, length: int = 12) -> str:
+    """A deterministic short token for ``value``, stable across processes."""
+    return hashlib.sha256(repr(value).encode("utf-8")).hexdigest()[:length]
+
+
+def sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+# --------------------------------------------------------------------------
+# observed directory binding
+#
+# A temp-sweep check must compare against what the directory ACTUALLY held
+# before the operation. Matching a guessed ".<stem>" prefix is fail-open: an
+# implementation whose temporary file is named anything else - mkstemp's
+# default "tmpXXXXXXXX", a sibling ".partial", an editor swap file - leaks a
+# real artifact while the check reports a clean sweep.
+# --------------------------------------------------------------------------
+
+def snapshot(root: Path) -> set[str]:
+    """Every entry name currently in ``root``."""
+    return {entry.name for entry in root.iterdir()}
+
+
+def new_entries(root: Path, before: set[str]) -> list[str]:
+    """Everything that appeared in ``root`` since ``before`` was taken."""
+    return sorted(snapshot(root) - before)
 
 
 # --------------------------------------------------------------------------
@@ -152,12 +198,24 @@ class JitterContractError(AssertionError):
     """
 
 
+LEAKED_TEMP_NAME = "unrelated-scratch.partial"
+
+
 def top_level_retryable(error: BaseException) -> bool:
     """The accepted extraction rule: top level only, strict integer."""
     code = getattr(error, "winerror", None)
     if isinstance(code, bool) or not isinstance(code, int):
         return False
     return code in RETRYABLE_WINERRORS
+
+
+REFERENCE_VARIANTS = (
+    "conforming",
+    "ignores-jitter",
+    "swallows-nonretry",
+    "forges-fields",
+    "leaks-temp",
+)
 
 
 def make_reference_primitive(variant: str = "conforming"):
@@ -168,7 +226,13 @@ def make_reference_primitive(variant: str = "conforming"):
       ignores-jitter    - never calls jitter_ms, so never validates it
       swallows-nonretry - catches a non-retryable error and returns
       forges-fields     - one replace, zero sleeps, forged exhaustion fields
+      leaks-temp        - fully conforming EXCEPT that it leaves behind a
+                          temporary artifact whose name shares no prefix with
+                          the destination. A prefix-guessing sweep check
+                          cannot see it; an observed-snapshot check must.
     """
+    if variant not in REFERENCE_VARIANTS:
+        raise ValueError(f"unknown reference variant: {variant!r}")
 
     def primitive(path: Path, text: str, *, sleeper, jitter_ms) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,6 +243,9 @@ def make_reference_primitive(variant: str = "conforming"):
                 handle.write(text)
                 handle.flush()
                 os.fsync(handle.fileno())
+
+            if variant == "leaks-temp":
+                (path.parent / LEAKED_TEMP_NAME).write_bytes(b"residue\n")
 
             if variant == "forges-fields":
                 try:
@@ -247,6 +314,34 @@ def make_reference_primitive(variant: str = "conforming"):
     return primitive
 
 
+def make_leaking_primitive(token: str):
+    """Conforming in every respect EXCEPT that it leaks ``token``.
+
+    Used to prove that every newly bound atomic canary channel actually
+    drives its clause unmet. The replacement failure is raised OUTSIDE the
+    except block so ``__context__`` stays clear: a leaking primitive must
+    fail the leak clause ALONE, otherwise the chain-suppression clause would
+    fail too and could not be told apart from it.
+    """
+    conforming = make_reference_primitive("conforming")
+
+    def primitive(path: Path, text: str, *, sleeper, jitter_ms) -> None:
+        captured: ReferenceAtomicReplaceExhausted | None = None
+        try:
+            conforming(path, text, sleeper=sleeper, jitter_ms=jitter_ms)
+        except ReferenceAtomicReplaceExhausted as exc:
+            captured = exc
+        if captured is None:
+            return
+        leaked = ReferenceAtomicReplaceExhausted(f"{captured} while committing {token}")
+        leaked.attempts = captured.attempts
+        leaked.total_slept_ms = captured.total_slept_ms
+        leaked.final_winerror = captured.final_winerror
+        raise leaked
+
+    return primitive
+
+
 class ReferenceTypes:
     """Namespace mirroring the production typed family, for fakes only."""
 
@@ -264,6 +359,11 @@ CANARY_SOURCE_BYTES = "CANARY-CONTENT-d4e5f6"
 CANARY_DECLARED_DIGEST = "CANARY-BADDIGEST-e5f6a7"
 CANARY_INJECTED = "CANARY-INJECTED-97a8b9"
 
+# atomic retry/exhaustion endpoints
+CANARY_DESTINATION_NAME = "CANARY-DSTNAME-c3d4e5"
+CANARY_ORIGINAL_CONTENT = "CANARY-ORIGINAL-f6a7b8"
+CANARY_REPLACEMENT_CONTENT = "CANARY-REPLACEMENT-a7b8c9"
+
 CANARY_CHANNELS = (
     "source_path",
     "destination_path",
@@ -271,6 +371,18 @@ CANARY_CHANNELS = (
     "declared_digest",
     "expected_digest",
     "actual_digest",
+    "injected",
+)
+
+ARCHIVAL_CANARY_CHANNELS = CANARY_CHANNELS + ("post_bytes",)
+
+ATOMIC_CANARY_CHANNELS = (
+    "destination_root",
+    "destination_name",
+    "original_content",
+    "replacement_content",
+    "original_digest",
+    "replacement_digest",
     "injected",
 )
 
@@ -291,6 +403,157 @@ def canary_tokens(expected_digest: str, actual_digest: str) -> dict[str, str]:
         "actual_digest": actual_digest,
         "injected": CANARY_INJECTED,
     }
+
+
+# --------------------------------------------------------------------------
+# archival scenarios as data
+#
+# The completeness regression asserts against THESE maps rather than an
+# unrelated synthetic pair, because a synthetic map cannot detect a scenario
+# whose expected and actual digests were both bound to the pre-mutation
+# bytes: the post-mutation digest would simply never appear in the map, and
+# leaking it would be invisible.
+# --------------------------------------------------------------------------
+
+VALID_BUT_WRONG_SHA = "0" * 64
+
+
+class ArchivalScenario:
+    """One archival redaction site and the exact bytes it moves through."""
+
+    def __init__(self, key: str, label: str, klass_name: str, code: str,
+                 pre_bytes: bytes, post_bytes: bytes, declared: str,
+                 shared: Sequence[tuple[Sequence[str], str]]) -> None:
+        self.key = key
+        self.label = label
+        self.klass_name = klass_name
+        self.code = code
+        self.pre_bytes = pre_bytes
+        self.post_bytes = post_bytes
+        self.declared = declared
+        # Groups of channels that legitimately carry the SAME token, with the
+        # reason. Recorded as unordered groups so the completeness regression
+        # compares sets rather than depending on declaration order. Claiming
+        # eight distinct tokens would be false for every scenario that does not
+        # mutate its bytes, and a false distinctness claim is the kind of
+        # assertion that passes while proving nothing.
+        self.shared: tuple[tuple[frozenset[str], str], ...] = tuple(
+            (frozenset(channels), reason) for channels, reason in shared
+        )
+
+    @property
+    def shared_groups(self) -> set[frozenset[str]]:
+        return {channels for channels, _ in self.shared}
+
+    def observed_shared_groups(self) -> set[frozenset[str]]:
+        """The channel groups that actually collide in this scenario's map."""
+        by_token: dict[str, set[str]] = {}
+        for channel, token in self.tokens().items():
+            by_token.setdefault(token, set()).add(channel)
+        return {frozenset(channels) for channels in by_token.values()
+                if len(channels) > 1}
+
+    @property
+    def expected_digest(self) -> str:
+        """The digest of the bytes as they were BEFORE the scenario's mutation."""
+        return sha256_bytes(self.pre_bytes)
+
+    @property
+    def actual_digest(self) -> str:
+        """The digest of the bytes as they are AFTER the scenario's mutation."""
+        return sha256_bytes(self.post_bytes)
+
+    def tokens(self) -> dict[str, str]:
+        return {
+            "source_path": CANARY_SOURCE_PATH,
+            "destination_path": CANARY_DESTINATION_PATH,
+            "source_bytes": CANARY_SOURCE_BYTES,
+            "post_bytes": self.post_bytes.decode("ascii"),
+            "declared_digest": self.declared,
+            "expected_digest": self.expected_digest,
+            "actual_digest": self.actual_digest,
+            "injected": CANARY_INJECTED,
+        }
+
+
+def _content(suffix: str = "") -> bytes:
+    return (CANARY_SOURCE_BYTES + suffix).encode("ascii")
+
+
+_UNCHANGED = "the scenario performs no mutation, so pre and post bytes are identical"
+_DECLARED_IS_REAL = "the scenario declares the real pre-mutation digest"
+
+_UNMUTATED_GROUPS = (
+    (("source_bytes", "post_bytes"), _UNCHANGED),
+    (("expected_digest", "actual_digest"), _UNCHANGED),
+)
+
+ARCHIVAL_SCENARIOS = (
+    ArchivalScenario(
+        "c1915", "1915 invalid source digest",
+        "InvalidSourceDigest", "invalid-source-digest",
+        _content(), _content(), CANARY_DECLARED_DIGEST,
+        _UNMUTATED_GROUPS,
+    ),
+    ArchivalScenario(
+        "c1925", "1925 source changed before archival",
+        "ArchiveSourceUnstable", "source-changed-before-archival",
+        _content(), _content(), sha256_bytes(_content()),
+        (
+            (("source_bytes", "post_bytes"), _UNCHANGED),
+            (("declared_digest", "expected_digest", "actual_digest"),
+             _DECLARED_IS_REAL + " and performs no mutation"),
+        ),
+    ),
+    ArchivalScenario(
+        "c495", "495 archived digest mismatch",
+        "ArchiveVerificationFailed", "archived-digest-mismatch",
+        _content(), _content(), VALID_BUT_WRONG_SHA,
+        _UNMUTATED_GROUPS,
+    ),
+    ArchivalScenario(
+        "c481", "481 source digest changed before copy",
+        "ArchiveVerificationFailed", "source-digest-changed-before-copy",
+        _content(), _content("-MUTATED"), sha256_bytes(_content()),
+        ((("declared_digest", "expected_digest"), _DECLARED_IS_REAL),),
+    ),
+    ArchivalScenario(
+        "c1891", "1891 source changed during hashing",
+        "ArchiveSourceUnstable", "source-changed-during-hashing",
+        _content(), _content("-DURING-HASH"), sha256_bytes(_content()),
+        ((("declared_digest", "expected_digest"), _DECLARED_IS_REAL),),
+    ),
+    ArchivalScenario(
+        "c1953", "1953 source changed during archival",
+        "ArchiveSourceUnstable", "source-changed-during-archival",
+        _content(), _content("-DURING-ARCHIVAL"), sha256_bytes(_content()),
+        ((("declared_digest", "expected_digest"), _DECLARED_IS_REAL),),
+    ),
+)
+
+MUTATING_SCENARIO_KEYS = ("c481", "c1891", "c1953")
+
+
+def atomic_canary_tokens(original: bytes, replacement: bytes) -> dict[str, str]:
+    """Every token reachable from an atomic retry/exhaustion failure.
+
+    Both endpoints of the schedule carry the same channel set, so exhaustion
+    at the minimum and the maximum are scanned identically.
+    """
+    return {
+        "destination_root": CANARY_DESTINATION_PATH,
+        "destination_name": CANARY_DESTINATION_NAME,
+        "original_content": CANARY_ORIGINAL_CONTENT,
+        "replacement_content": CANARY_REPLACEMENT_CONTENT,
+        "original_digest": sha256_bytes(original),
+        "replacement_digest": sha256_bytes(replacement),
+        "injected": CANARY_INJECTED,
+    }
+
+
+ATOMIC_ORIGINAL_BYTES = (CANARY_ORIGINAL_CONTENT + "\n").encode("utf-8")
+ATOMIC_REPLACEMENT_TEXT = CANARY_REPLACEMENT_CONTENT + "\n"
+ATOMIC_REPLACEMENT_BYTES = ATOMIC_REPLACEMENT_TEXT.encode("utf-8")
 
 
 # --------------------------------------------------------------------------
@@ -378,6 +641,398 @@ def sandbox(name: str):
     finally:
         if root.exists():
             shutil.rmtree(root)
+
+
+# --------------------------------------------------------------------------
+# clause recording
+# --------------------------------------------------------------------------
+
+class Clauses:
+    """Records one met/unmet verdict per contract clause.
+
+    ``check`` converts an exception from the clause body into an UNMET
+    record rather than propagating it. That is deliberate and load-bearing:
+    at a parent commit where the contract is absent, ``getattr`` on a missing
+    typed class raises, and the probe must still report every other clause
+    individually instead of aborting on the first one. It is also the single
+    most dangerous line in the harness - if it ever recorded ``met=True`` on
+    exception, an entirely absent contract would report as satisfied - so the
+    discovered harness mutation-tests this branch directly.
+    """
+
+    def __init__(self) -> None:
+        self.records: list[dict] = []
+
+    def check(self, name: str, fn) -> None:
+        try:
+            met, detail = fn()
+        except Exception as exc:  # an absent contract is an unmet clause
+            met, detail = False, f"{type(exc).__name__}: {exc}"
+        self.records.append({"clause": name, "met": bool(met), "detail": str(detail)})
+
+    @property
+    def unmet(self) -> list[dict]:
+        return [r for r in self.records if not r["met"]]
+
+    @property
+    def met(self) -> list[dict]:
+        return [r for r in self.records if r["met"]]
+
+
+RESIDUE_CLAUSE = "no unexpected filesystem residue"
+
+
+# --------------------------------------------------------------------------
+# retry - bound to observed replace and sleep calls
+# --------------------------------------------------------------------------
+
+def retry_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    for code in RETRYABLE_WINERRORS:
+        def probe(code=code):
+            holder = root / f"retry-{code}"
+            holder.mkdir(parents=True, exist_ok=True)
+            target = holder / f"{CANARY_DESTINATION_NAME}-retry-{code}.json"
+            before = snapshot(holder)
+            faults = ReplaceFaults([make_os_error(code), make_os_error(code)])
+            sleeper = RecordingSleeper()
+            with injected_replace(faults):
+                write(target, ATOMIC_REPLACEMENT_TEXT, sleeper=sleeper,
+                      jitter_ms=proportional_jitter_ms(0.0))
+            expected = [BASE_DELAYS_MS[0] / 1000.0, BASE_DELAYS_MS[1] / 1000.0]
+            appeared = new_entries(holder, before)
+            return (
+                faults.count == 3
+                and target.read_bytes() == ATOMIC_REPLACEMENT_BYTES
+                and sleeper.calls == expected
+                and appeared == [target.name],
+                f"replaces={faults.count} sleeps={sleeper.calls} "
+                f"expected={expected} appeared={appeared}",
+            )
+
+        clauses.check(
+            f"winerror {code} retries with the exact delay schedule and then succeeds",
+            probe,
+        )
+
+
+# --------------------------------------------------------------------------
+# invalid jitter must be attacked through the production seam
+# --------------------------------------------------------------------------
+
+def jitter_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    for value in INVALID_JITTER_RESULTS:
+        holder = root / f"jitter-{stable_token(value)}"
+        holder.mkdir(parents=True, exist_ok=True)
+        target = holder / f"{CANARY_DESTINATION_NAME}-jitter.json"
+        target.write_bytes(ATOMIC_ORIGINAL_BYTES)
+        before = snapshot(holder)
+        # one retryable failure forces the primitive to compute a delay,
+        # which is the only point at which jitter is consulted
+        faults = ReplaceFaults([
+            make_os_error(RETRYABLE_WINERRORS[0]) for _ in range(MAX_ATTEMPTS)
+        ])
+        sleeper = RecordingSleeper()
+        raised: BaseException | None = None
+        with injected_replace(faults):
+            try:
+                write(target, ATOMIC_REPLACEMENT_TEXT, sleeper=sleeper,
+                      jitter_ms=fixed_jitter_ms(value))
+            except BaseException as exc:
+                raised = exc
+
+        clauses.check(
+            f"invalid jitter {value!r} fails as a contract error before a second replace",
+            lambda raised=raised, faults=faults, sleeper=sleeper, target=target: (
+                raised is not None
+                and not isinstance(raised, OSError)
+                and faults.count == 1
+                and sleeper.calls == []
+                and target.read_bytes() == ATOMIC_ORIGINAL_BYTES,
+                f"raised={type(raised).__name__} replaces={faults.count} "
+                f"sleeps={len(sleeper)} "
+                f"dest_intact={target.read_bytes() == ATOMIC_ORIGINAL_BYTES}",
+            ),
+        )
+        clauses.check(
+            f"invalid jitter {value!r} leaves {RESIDUE_CLAUSE}",
+            lambda holder=holder, before=before: (
+                new_entries(holder, before) == [],
+                f"appeared={new_entries(holder, before)}",
+            ),
+        )
+
+
+# --------------------------------------------------------------------------
+# non-retry - the error must ESCAPE, not merely not-retry
+# --------------------------------------------------------------------------
+
+def nonretry_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    cases = {
+        "winerror 13": lambda: make_os_error(13),
+        "winerror True": lambda: make_os_error(True),
+        "winerror '32'": lambda: make_os_error("32"),
+        "errno-only 5": lambda: make_errno_only_error(5),
+        "nested cause 32": lambda: make_nested_error(32, via="cause"),
+        "nested context 32": lambda: make_nested_error(32, via="context"),
+    }
+    for label, factory in cases.items():
+        error = factory()
+        holder = root / f"nonretry-{stable_token(label)}"
+        holder.mkdir(parents=True, exist_ok=True)
+        target = holder / f"{CANARY_DESTINATION_NAME}-nonretry.json"
+        target.write_bytes(ATOMIC_ORIGINAL_BYTES)
+        before = snapshot(holder)
+        faults = ReplaceFaults([error] * MAX_ATTEMPTS)
+        sleeper = RecordingSleeper()
+        raised: BaseException | None = None
+        with injected_replace(faults):
+            try:
+                write(target, ATOMIC_REPLACEMENT_TEXT, sleeper=sleeper,
+                      jitter_ms=proportional_jitter_ms(0.0))
+            except BaseException as exc:
+                raised = exc
+
+        clauses.check(
+            f"{label} escapes unwrapped after exactly one replace",
+            lambda raised=raised, error=error, faults=faults, sleeper=sleeper: (
+                raised is error          # the exact object escaped, unwrapped
+                and faults.count == 1
+                and sleeper.calls == [],
+                f"escaped={raised is error} raised={type(raised).__name__} "
+                f"replaces={faults.count} sleeps={len(sleeper)}",
+            ),
+        )
+        clauses.check(
+            f"{label} leaves {RESIDUE_CLAUSE}",
+            lambda holder=holder, before=before, target=target: (
+                new_entries(holder, before) == []
+                and target.read_bytes() == ATOMIC_ORIGINAL_BYTES,
+                f"appeared={new_entries(holder, before)} "
+                f"dest_intact={target.read_bytes() == ATOMIC_ORIGINAL_BYTES}",
+            ),
+        )
+
+
+# --------------------------------------------------------------------------
+# exhaustion - bound to observed calls at both schedule endpoints
+# --------------------------------------------------------------------------
+
+def exhaustion_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    endpoints = (
+        ("minimum", proportional_jitter_ms(0.0),
+         [b / 1000.0 for b in BASE_DELAYS_MS], MIN_TOTAL_MS),
+        ("maximum", proportional_jitter_ms(1.0),
+         [2 * b / 1000.0 for b in BASE_DELAYS_MS], MAX_TOTAL_MS),
+    )
+    tokens = atomic_canary_tokens(ATOMIC_ORIGINAL_BYTES, ATOMIC_REPLACEMENT_BYTES)
+
+    for label, jitter, expected_sleeps, expected_total in endpoints:
+        # Both endpoints write through a canary-bearing destination directory
+        # and a canary-bearing destination filename. The production temp file
+        # is created in that directory with the destination name embedded in
+        # its prefix, so the temporary endpoint carries the same tokens: a
+        # leaked temp path is detectable by exactly this scan.
+        holder = root / CANARY_DESTINATION_PATH / f"exhausted-{label}"
+        holder.mkdir(parents=True, exist_ok=True)
+        target = holder / f"{CANARY_DESTINATION_NAME}-{label}.json"
+        target.write_bytes(ATOMIC_ORIGINAL_BYTES)
+        before = snapshot(holder)
+
+        faults = ReplaceFaults([
+            make_os_error(RETRYABLE_WINERRORS[0], f"denied {CANARY_INJECTED}")
+            for _ in range(MAX_ATTEMPTS)
+        ])
+        sleeper = RecordingSleeper()
+        raised: BaseException | None = None
+        with injected_replace(faults):
+            try:
+                write(target, ATOMIC_REPLACEMENT_TEXT, sleeper=sleeper,
+                      jitter_ms=jitter)
+            except BaseException as exc:
+                raised = exc
+
+        # getattr with a () default so an absent type yields False rather than
+        # raising: the probe must report every clause individually, including
+        # at a parent commit where the typed family does not exist yet.
+        exhausted = isinstance(raised, getattr(types, "AtomicReplaceExhausted", ()))
+        NOT_EXERCISED = "exhaustion did not occur; invariant not exercised"
+
+        def gated(fn, raised=raised, exhausted=exhausted):
+            def inner():
+                if not exhausted:
+                    return False, f"{NOT_EXERCISED} (raised {type(raised).__name__})"
+                return fn()
+            return inner
+
+        clauses.check(
+            f"exhaustion at the {label} schedule raises AtomicReplaceExhausted",
+            lambda exhausted=exhausted, raised=raised: (
+                exhausted, type(raised).__name__),
+        )
+        clauses.check(
+            f"{label}: exactly five replace attempts were OBSERVED",
+            gated(lambda faults=faults: (faults.count == MAX_ATTEMPTS,
+                                         f"observed replaces={faults.count}")),
+        )
+        clauses.check(
+            f"{label}: the OBSERVED sleep schedule is exact",
+            gated(lambda sleeper=sleeper, expected_sleeps=expected_sleeps: (
+                sleeper.calls == expected_sleeps,
+                f"observed={sleeper.calls} expected={expected_sleeps}")),
+        )
+        clauses.check(
+            f"{label}: reported attempts equal OBSERVED replace calls",
+            gated(lambda raised=raised, faults=faults: (
+                getattr(raised, "attempts", None) == faults.count,
+                f"reported={getattr(raised, 'attempts', None)} observed={faults.count}")),
+        )
+        clauses.check(
+            f"{label}: reported total_slept_ms equals the OBSERVED total and the bound",
+            gated(lambda raised=raised, sleeper=sleeper, expected_total=expected_total: (
+                getattr(raised, "total_slept_ms", None) == expected_total
+                and round(sum(sleeper.calls) * 1000) == expected_total,
+                f"reported={getattr(raised, 'total_slept_ms', None)} "
+                f"observed={round(sum(sleeper.calls) * 1000)} bound={expected_total}")),
+        )
+        clauses.check(
+            f"{label}: final_winerror is the retryable code",
+            gated(lambda raised=raised: (
+                getattr(raised, "final_winerror", None) == RETRYABLE_WINERRORS[0],
+                f"final_winerror={getattr(raised, 'final_winerror', None)}")),
+        )
+        clauses.check(
+            f"{label}: destination bytes are unchanged",
+            gated(lambda target=target: (
+                target.read_bytes() == ATOMIC_ORIGINAL_BYTES,
+                repr(target.read_bytes()))),
+        )
+        clauses.check(
+            f"{label} leaves {RESIDUE_CLAUSE}",
+            gated(lambda holder=holder, before=before: (
+                new_entries(holder, before) == [],
+                f"appeared={new_entries(holder, before)}")),
+        )
+        clauses.check(
+            f"{label}: __cause__ and __context__ are suppressed",
+            gated(lambda raised=raised: (
+                getattr(raised, "__cause__", None) is None
+                and getattr(raised, "__context__", None) is None,
+                f"cause={getattr(raised, '__cause__', None)!r} "
+                f"context={getattr(raised, '__context__', None)!r}")),
+        )
+        clauses.check(
+            f"{label}: no canary channel survives into the failure",
+            gated(lambda raised=raised, tokens=tokens: (
+                find_canaries(raised, tokens.values()) == [],
+                f"leaked={find_canaries(raised, tokens.values())}")),
+        )
+
+
+def containment_clauses(write, types, root: Path, clauses: Clauses) -> None:
+    """Everything that can be run against an arbitrary primitive."""
+    retry_clauses(write, types, root, clauses)
+    jitter_clauses(write, types, root, clauses)
+    nonretry_clauses(write, types, root, clauses)
+    exhaustion_clauses(write, types, root, clauses)
+
+
+# --------------------------------------------------------------------------
+# redaction verdicts, split so each is independently degradable
+#
+# V2 folded type, code, chain suppression, and leakage into ONE boolean. A
+# combined verdict cannot distinguish "wrong exception type" from "leaked a
+# digest", and a mutation that breaks one of them is masked whenever another
+# is already failing. Each is now its own clause with its own record.
+# --------------------------------------------------------------------------
+
+REDACTION_VERDICTS = ("raises", "type", "code", "chain", "redaction")
+
+
+def redaction_clauses(clauses: Clauses, label: str, invoke, klass,
+                      code: str, tokens: Mapping[str, str]) -> None:
+    raised: BaseException | None = None
+    try:
+        invoke()
+    except BaseException as exc:
+        raised = exc
+
+    clauses.check(
+        f"{label}: the site actually raises",
+        lambda: (raised is not None,
+                 "no exception was raised; the site was not exercised"
+                 if raised is None else type(raised).__name__),
+    )
+    clauses.check(
+        f"{label}: the failure is typed",
+        lambda: (raised is not None and isinstance(raised, klass),
+                 f"type={type(raised).__name__} expected={getattr(klass, '__name__', klass)}"),
+    )
+    clauses.check(
+        f"{label}: the public code is exact",
+        lambda: (raised is not None and getattr(raised, "code", None) == code,
+                 f"code={getattr(raised, 'code', None)!r} expected={code!r}"),
+    )
+    clauses.check(
+        f"{label}: __cause__ and __context__ are suppressed",
+        lambda: (raised is not None
+                 and getattr(raised, "__cause__", None) is None
+                 and getattr(raised, "__context__", None) is None,
+                 f"cause={getattr(raised, '__cause__', None)!r} "
+                 f"context={getattr(raised, '__context__', None)!r}"),
+    )
+    clauses.check(
+        f"{label}: no canary channel survives into the failure",
+        lambda: (raised is not None
+                 and find_canaries(raised, tokens.values()) == [],
+                 "not raised" if raised is None else
+                 f"leaked_channels="
+                 f"{sorted(k for k, v in tokens.items() if v in exception_surface(raised))}"),
+    )
+
+
+# --------------------------------------------------------------------------
+# deliberately degraded redaction sites, one verdict broken each
+# --------------------------------------------------------------------------
+
+class ReferenceRedactionError(OSError):
+    code = "reference-redaction"
+
+
+class ReferenceImposterError(OSError):
+    """Carries the right public code but is NOT in the expected family."""
+
+    code = "reference-redaction"
+
+
+REDACTION_VARIANTS = ("clean", "no-raise", "wrong-type", "wrong-code",
+                      "chained", "leaks")
+
+
+def make_reference_raiser(variant: str, token: str):
+    """A redaction site degrading exactly one verdict.
+
+    ``wrong-type`` deliberately keeps the correct public ``code`` so that the
+    type verdict fails ALONE; an imposter without the code would fail two
+    verdicts at once and the two mutations could not be told apart.
+    """
+    if variant not in REDACTION_VARIANTS:
+        raise ValueError(f"unknown redaction variant: {variant!r}")
+
+    def invoke() -> None:
+        if variant == "no-raise":
+            return
+        if variant == "wrong-type":
+            raise ReferenceImposterError("refused")
+        error = ReferenceRedactionError(
+            f"refused, carrying {token}" if variant == "leaks" else "refused"
+        )
+        if variant == "wrong-code":
+            error.code = "unexpected-code"
+        if variant == "chained":
+            error.__cause__ = OSError("the underlying cause was retained")
+        raise error
+
+    return invoke
 
 
 # --------------------------------------------------------------------------
