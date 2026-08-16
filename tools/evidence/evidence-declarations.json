@@ -93,6 +93,12 @@
                          },
                          {
                              "family":  "devtools",
+                             "id":  "test_evidence_report.EvidenceReportTests.test_ordered_dictionary_provenance_and_limitations_array",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
                              "id":  "test_evidence_report.EvidenceReportTests.test_python_producer_records_file_only_structured_outcomes",
                              "tier":  "Behavioral",
                              "technique":  "none"

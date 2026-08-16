@@ -26,6 +26,10 @@ $normalizedSha = $SourceSha.ToLowerInvariant()
 
 function Get-PropertyValue {
     param([Parameter(Mandatory = $true)][object]$Object, [Parameter(Mandatory = $true)][string]$Name)
+    if ($Object -is [Collections.IDictionary]) {
+        if (-not $Object.Contains($Name)) { throw "missing-property:$Name" }
+        return $Object[$Name]
+    }
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property) { throw "missing-property:$Name" }
     return $property.Value
@@ -105,9 +109,9 @@ function Test-NameMismatch {
 }
 
 function Get-Toolchain {
-    $outer = $ToolchainProvenance.PSObject.Properties['toolchain']
-    if ($null -eq $outer -or $null -eq $outer.Value) { throw 'missing-toolchain-provenance' }
-    return $outer.Value
+    $value = Get-PropertyValue -Object $ToolchainProvenance -Name 'toolchain'
+    if ($null -eq $value) { throw 'missing-toolchain-provenance' }
+    return $value
 }
 
 function Read-Registry {
@@ -268,7 +272,7 @@ function New-InvalidReport {
         schemaVersion = 1; family = $Family; exactSha = $normalizedSha; authority = $Authority
         discoveryComplete = $false; runState = 'invalid'; filter = $(if ([string]::IsNullOrWhiteSpace($Filter)) { $null } else { $Filter })
         toolchain = $Toolchain; results = @()
-        limitations = $(if ($Family -eq 'javascript') { $javascriptLimitations } else { @($classificationLimitation) })
+        limitations = [string[]]$(if ($Family -eq 'javascript') { $javascriptLimitations } else { @($classificationLimitation) })
     }
 }
 
@@ -327,7 +331,7 @@ try {
         schemaVersion = 1; family = $Family; exactSha = $normalizedSha; authority = $Authority
         discoveryComplete = $true; runState = [string]$rawRun.State; filter = $rawRun.Filter
         toolchain = $toolchain; results = $normalizedResults.ToArray(); totals = $totals
-        limitations = $(if ($Family -eq 'javascript') { $javascriptLimitations } else { @($classificationLimitation) })
+        limitations = [string[]]$(if ($Family -eq 'javascript') { $javascriptLimitations } else { @($classificationLimitation) })
     }
 }
 catch {

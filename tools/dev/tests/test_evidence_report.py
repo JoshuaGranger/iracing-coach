@@ -148,9 +148,16 @@ class EvidenceReportTests(unittest.TestCase):
         input_path: Path | None = None,
         filter_value: str | None = None,
         catalog: Path | None = None,
+        ordered_provenance: bool = False,
     ) -> tuple[subprocess.CompletedProcess[str], dict[str, object] | None]:
+        provenance_expression = (
+            "$parsed=Get-Content -LiteralPath '" + str(self.provenance).replace("'", "''") + "' -Raw | ConvertFrom-Json;"
+            "$prov=[ordered]@{toolchain=$parsed.toolchain};"
+            if ordered_provenance
+            else "$prov=Get-Content -LiteralPath '" + str(self.provenance).replace("'", "''") + "' -Raw | ConvertFrom-Json;"
+        )
         parts = [
-            "$prov=Get-Content -LiteralPath '" + str(self.provenance).replace("'", "''") + "' -Raw | ConvertFrom-Json;",
+            provenance_expression,
             "& '" + str(REPORT_SCRIPT).replace("'", "''") + "'",
             "-RepositoryRoot '" + str(self.repository).replace("'", "''") + "'",
             "-SourceSha '" + sha + "'",
@@ -188,6 +195,14 @@ class EvidenceReportTests(unittest.TestCase):
         self.assertEqual(list(record["totals"]), ["SourceContract", "Fixture", "Behavioral", "Rendered", "Package"])
         self.assertEqual(record["totals"]["Rendered"], {"run": 0, "passed": 0, "failed": 0, "skipped": 0, "notRun": 0})
         self.assertNotIn("passed", record)
+
+    def test_ordered_dictionary_provenance_and_limitations_array(self) -> None:
+        sha = self._prepare(["sample.Case.test_rule"])
+        completed, record = self._run(sha, ordered_provenance=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIsInstance(record["limitations"], list)
+        self.assertEqual(len(record["limitations"]), 1)
+        self.assertEqual(record["toolchain"]["authority"], "local-diagnostic")
 
     def test_dynamic_add_move_delete_changes_only_runner_count(self) -> None:
         first = "sample.Case.test_first"
