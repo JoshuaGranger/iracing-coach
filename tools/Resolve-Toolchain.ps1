@@ -225,22 +225,54 @@ function Resolve-CoachDotnet {
     }
     $rule = if (-not [string]::IsNullOrWhiteSpace($DotnetPath)) { 'parameter' } else { 'path' }
 
+    $explicitDotnet = $rule -eq 'parameter'
+    $reject = {
+        param($Reason)
+        $rejected.Add([pscustomobject]@{
+            tool = 'dotnet'; rule = $rule; reason = $Reason
+            # An explicitly supplied path is reported; ambient PATH candidates
+            # stay path-free.
+            path = if ($explicitDotnet) { $DotnetPath } else { $null }
+        }) | Out-Null
+    }
+
     if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        $rejected.Add([pscustomobject]@{ tool = 'dotnet'; rule = $rule; reason = 'not-found'; path = $null }) | Out-Null
+        & $reject 'not-found'
         if ($Required) { throw 'No dotnet executable was resolved.' }
         return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
     }
 
-    $pinVersion = $null; $rollForward = $null
-    if (-not [string]::IsNullOrWhiteSpace($GlobalJsonDirectory)) {
+    # A constraint that cannot be read cannot be satisfied. Nothing below may
+    # default to "satisfied": when a caller asks for a global.json constraint,
+    # every step of establishing it must succeed or the resolution fails.
+    $constraintRequested = -not [string]::IsNullOrWhiteSpace($GlobalJsonDirectory)
+    $pinVersion = $null; $rollForward = $null; $pin = $null
+    if ($constraintRequested) {
+        if (-not (Test-Path -LiteralPath $GlobalJsonDirectory -PathType Container)) {
+            & $reject 'constraint-directory-missing'
+            if ($Required) { throw "The global.json directory '$GlobalJsonDirectory' does not exist." }
+            return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
+        }
         $globalJson = Join-Path $GlobalJsonDirectory 'global.json'
-        if (Test-Path -LiteralPath $globalJson -PathType Leaf) {
-            try {
-                $document = Get-Content -LiteralPath $globalJson -Raw | ConvertFrom-Json
-                $pinVersion = $document.sdk.version
-                $rollForward = $document.sdk.rollForward
-            }
-            catch { $pinVersion = $null }
+        if (-not (Test-Path -LiteralPath $globalJson -PathType Leaf)) {
+            & $reject 'global-json-missing'
+            if ($Required) { throw "No global.json was found in '$GlobalJsonDirectory'." }
+            return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
+        }
+        $document = $null
+        try { $document = Get-Content -LiteralPath $globalJson -Raw | ConvertFrom-Json }
+        catch { $document = $null }
+        if ($null -eq $document) {
+            & $reject 'global-json-unreadable'
+            if ($Required) { throw "global.json in '$GlobalJsonDirectory' could not be parsed." }
+            return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
+        }
+        $pinVersion = $document.sdk.version
+        $rollForward = $document.sdk.rollForward
+        if ([string]::IsNullOrWhiteSpace($pinVersion) -or -not [Version]::TryParse((($pinVersion -split '-')[0]), [ref]$pin)) {
+            & $reject 'global-json-version-malformed'
+            if ($Required) { throw "global.json declares an unparseable sdk.version ('$pinVersion')." }
+            return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
         }
     }
 
@@ -258,15 +290,6 @@ function Resolve-CoachDotnet {
     catch { $sdkVersion = $null; $exitCode = -1 }
     finally { Set-Location -LiteralPath $previous }
 
-    $explicitDotnet = $rule -eq 'parameter'
-    $reject = {
-        param($Reason)
-        $rejected.Add([pscustomobject]@{
-            tool = 'dotnet'; rule = $rule; reason = $Reason
-            path = if ($explicitDotnet) { $path } else { $null }
-        }) | Out-Null
-    }
-
     if ($exitCode -ne 0) {
         & $reject 'did-not-execute'
         if ($Required) { throw "dotnet did not execute successfully (exit $exitCode)." }
@@ -280,26 +303,27 @@ function Resolve-CoachDotnet {
         return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
     }
 
-    # Validate the selected SDK against the pin rather than asserting it.
-    # For rollForward=latestPatch the selection must stay in the pinned feature
-    # band (the hundreds digit of the patch component) and be no older than the
-    # pinned version.
-    $satisfies = $true
-    $pin = $null
-    if (-not [string]::IsNullOrWhiteSpace($pinVersion) -and [Version]::TryParse((($pinVersion -split '-')[0]), [ref]$pin)) {
+    # Validate the selected SDK against the pin rather than asserting it. There
+    # is deliberately no "assume satisfied" default: when no constraint was
+    # requested, satisfaction is reported as null rather than true, because an
+    # unasked question has no affirmative answer.
+    $satisfies = $null
+    if ($constraintRequested) {
         $satisfies = ($selected.Major -eq $pin.Major) -and ($selected.Minor -eq $pin.Minor)
         if ($satisfies -and $rollForward -eq 'latestPatch') {
+            # latestPatch stays inside the pinned feature band (the hundreds
+            # component of the patch) and never moves backwards.
             $satisfies = ([math]::Floor($selected.Build / 100) -eq [math]::Floor($pin.Build / 100)) -and ($selected.Build -ge $pin.Build)
         }
         elseif ($satisfies) {
             $satisfies = $selected -ge $pin
         }
-    }
 
-    if (-not $satisfies) {
-        & $reject 'pin-unsatisfied'
-        if ($Required) { throw ("dotnet selected SDK {0}, which does not satisfy global.json {1} (rollForward {2})." -f $sdkVersion, $pinVersion, $rollForward) }
-        return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
+        if (-not $satisfies) {
+            & $reject 'pin-unsatisfied'
+            if ($Required) { throw ("dotnet selected SDK {0}, which does not satisfy global.json {1} (rollForward {2})." -f $sdkVersion, $pinVersion, $rollForward) }
+            return [pscustomobject]@{ Tool = 'dotnet'; Resolved = $null; Rejected = $rejected.ToArray() }
+        }
     }
 
     return [pscustomobject]@{

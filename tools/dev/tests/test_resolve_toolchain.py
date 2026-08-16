@@ -317,6 +317,86 @@ class ResolveToolchainTests(unittest.TestCase):
             toolchain = json.loads(completed.stdout)["toolchain"]
             self.assertIsNone(toolchain["dotnet"], "latestPatch must not cross the 10.0.3xx feature band")
 
+    # ---- Review v2 P1: a constraint that cannot be read is never satisfied ----
+
+    def _constraint_dir(self, raw: str, content: str | None) -> Path:
+        directory = Path(raw) / "constraint"
+        directory.mkdir(parents=True, exist_ok=True)
+        if content is not None:
+            (directory / "global.json").write_text(content, encoding="utf-8")
+        return directory
+
+    def _dotnet_with_constraint(self, raw: str, constraint: Path, version: str = "10.0.300"):
+        fake = self._shim(Path(raw) / "sdk", "dotnet", version)
+        return _run(
+            f"$d = Resolve-CoachDotnet -DotnetPath '{fake}' -GlobalJsonDirectory '{constraint}'; "
+            "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+        )
+
+    def test_missing_global_json_is_not_satisfied(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-pin-") as raw:
+            constraint = self._constraint_dir(raw, None)
+            completed = self._dotnet_with_constraint(raw, constraint)
+            toolchain = json.loads(completed.stdout)["toolchain"]
+            self.assertIsNone(toolchain["dotnet"], "a missing global.json cannot be satisfied")
+            self.assertTrue(any(item["reason"] == "global-json-missing" for item in toolchain["rejected"]))
+
+    def test_malformed_global_json_is_not_satisfied(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-pin-") as raw:
+            constraint = self._constraint_dir(raw, "{ this is not json")
+            completed = self._dotnet_with_constraint(raw, constraint)
+            toolchain = json.loads(completed.stdout)["toolchain"]
+            self.assertIsNone(toolchain["dotnet"])
+            self.assertTrue(any(item["reason"] == "global-json-unreadable" for item in toolchain["rejected"]))
+
+    def test_malformed_pin_version_is_not_satisfied(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-pin-") as raw:
+            constraint = self._constraint_dir(raw, '{"sdk":{"version":"not-a-version","rollForward":"latestPatch"}}')
+            completed = self._dotnet_with_constraint(raw, constraint)
+            toolchain = json.loads(completed.stdout)["toolchain"]
+            self.assertIsNone(toolchain["dotnet"], "an unparseable sdk.version cannot be satisfied")
+            self.assertTrue(any(item["reason"] == "global-json-version-malformed" for item in toolchain["rejected"]))
+
+    def test_missing_constraint_directory_is_not_satisfied(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g0-pin-") as raw:
+            missing = Path(raw) / "no-such-constraint-dir"
+            fake = self._shim(Path(raw) / "sdk", "dotnet", "10.0.300")
+            completed = _run(
+                f"$d = Resolve-CoachDotnet -DotnetPath '{fake}' -GlobalJsonDirectory '{missing}'; "
+                "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+            )
+            toolchain = json.loads(completed.stdout)["toolchain"]
+            self.assertIsNone(toolchain["dotnet"])
+            self.assertTrue(any(item["reason"] == "constraint-directory-missing" for item in toolchain["rejected"]))
+
+    def test_unconstrained_dotnet_reports_null_pin_rather_than_satisfied(self) -> None:
+        """An unasked question has no affirmative answer."""
+        with tempfile.TemporaryDirectory(prefix="g0-pin-") as raw:
+            fake = self._shim(Path(raw) / "sdk", "dotnet", "10.0.300")
+            completed = _run(
+                f"$d = Resolve-CoachDotnet -DotnetPath '{fake}'; "
+                "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            record = json.loads(completed.stdout)["toolchain"]["dotnet"]
+            self.assertIsNotNone(record, "an otherwise valid dotnet still resolves")
+            self.assertIsNone(record["globalJsonVersion"])
+            self.assertIsNone(record["rollForward"])
+            self.assertIsNone(record["satisfiesPin"], "no constraint means no claim of satisfaction")
+
+    def test_missing_explicit_dotnet_path_is_reported(self) -> None:
+        missing = Path(tempfile.gettempdir()) / "no-such-dotnet-xyz.exe"
+        completed = _run(
+            f"$d = Resolve-CoachDotnet -DotnetPath '{missing}'; "
+            "$p = Get-CoachToolchainProvenance -Dotnet $d; Write-CoachToolchainProvenance -Provenance $p"
+        )
+        toolchain = json.loads(completed.stdout)["toolchain"]
+        self.assertIsNone(toolchain["dotnet"])
+        entry = next(item for item in toolchain["rejected"] if item["tool"] == "dotnet")
+        self.assertEqual(entry["reason"], "not-found")
+        self.assertIsNotNone(entry["path"], "an explicitly supplied path must appear in its rejection")
+        self.assertIn("no-such-dotnet-xyz", entry["path"])
+
     # Case 7 - malformed output and non-zero execution are refused.
     def test_dotnet_malformed_version_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="g0-dotnet-") as raw:
