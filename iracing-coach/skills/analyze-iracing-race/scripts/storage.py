@@ -11,6 +11,7 @@ import heapq
 import json
 import math
 import os
+import random
 import re
 import shutil
 import sqlite3
@@ -53,6 +54,51 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
 
 
 SCHEMA_VERSION = 2
+
+
+class StorageCommitError(OSError):
+    """Redacted base class for durable storage commit failures."""
+
+    code = "storage-commit-error"
+
+
+class AtomicReplaceExhausted(StorageCommitError):
+    """A same-directory replace did not succeed within the bounded retry."""
+
+    code = "atomic-replace-exhausted"
+
+    def __init__(
+        self, *, attempts: int, total_slept_ms: int, final_winerror: int
+    ) -> None:
+        super().__init__("atomic replace exhausted after bounded retry")
+        self.attempts = attempts
+        self.total_slept_ms = total_slept_ms
+        self.final_winerror = final_winerror
+
+
+class ArchiveVerificationFailed(StorageCommitError):
+    """An immutable archival copy failed a digest invariant."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__("archive verification refused the copy")
+        self.code = code
+
+
+class ArchiveSourceUnstable(StorageCommitError):
+    """A source changed during the read-only archival workflow."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__("archive source is unstable")
+        self.code = code
+
+
+class InvalidSourceDigest(StorageCommitError, ValueError):
+    """A caller supplied a digest outside the accepted SHA-256 format."""
+
+    code = "invalid-source-digest"
+
+    def __init__(self) -> None:
+        super().__init__("source digest is invalid")
 
 _CACHE_CONTEXT_FIELDS = ("season_key", "car_key", "track_key", "setup_type")
 _REQUIRED_CONTEXT_FIELDS = _CACHE_CONTEXT_FIELDS + ("race_length_key",)
@@ -454,7 +500,69 @@ def file_sha256(path: Path, block_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def _atomic_write_text(path: Path, text: str) -> None:
+_ATOMIC_REPLACE_BASE_DELAYS_MS = (10, 20, 40, 80)
+_ATOMIC_REPLACE_MAX_ATTEMPTS = 5
+_ATOMIC_REPLACE_RETRYABLE_WINERRORS = (5, 32)
+
+
+def _atomic_jitter_ms(base_ms: int) -> int:
+    return random.randrange(base_ms + 1)
+
+
+def _atomic_replace_with_retry(
+    source: str | os.PathLike[str],
+    destination: str | os.PathLike[str],
+    *,
+    sleeper=time.sleep,
+    jitter_ms=_atomic_jitter_ms,
+) -> None:
+    """Replace one same-directory temporary with bounded Win32 contention retry."""
+
+    total_slept_ms = 0
+    final_winerror = 0
+    for attempt in range(1, _ATOMIC_REPLACE_MAX_ATTEMPTS + 1):
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as exc:
+            winerror = getattr(exc, "winerror", None)
+            if (
+                isinstance(winerror, bool)
+                or not isinstance(winerror, int)
+                or winerror not in _ATOMIC_REPLACE_RETRYABLE_WINERRORS
+            ):
+                raise
+            final_winerror = winerror
+
+        if attempt == _ATOMIC_REPLACE_MAX_ATTEMPTS:
+            break
+        base_ms = _ATOMIC_REPLACE_BASE_DELAYS_MS[attempt - 1]
+        jitter = jitter_ms(base_ms)
+        if (
+            isinstance(jitter, bool)
+            or not isinstance(jitter, int)
+            or not 0 <= jitter <= base_ms
+        ):
+            raise ValueError("atomic jitter must be an integer within its bound")
+        delay_ms = base_ms + jitter
+        total_slept_ms += delay_ms
+        sleeper(delay_ms / 1000.0)
+
+    error = AtomicReplaceExhausted(
+        attempts=_ATOMIC_REPLACE_MAX_ATTEMPTS,
+        total_slept_ms=total_slept_ms,
+        final_winerror=final_winerror,
+    )
+    raise error
+
+
+def _atomic_write_text(
+    path: Path,
+    text: str,
+    *,
+    sleeper=time.sleep,
+    jitter_ms=_atomic_jitter_ms,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -462,7 +570,9 @@ def _atomic_write_text(path: Path, text: str) -> None:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_name, path)
+        _atomic_replace_with_retry(
+            temp_name, path, sleeper=sleeper, jitter_ms=jitter_ms
+        )
     finally:
         try:
             os.unlink(temp_name)
@@ -470,17 +580,21 @@ def _atomic_write_text(path: Path, text: str) -> None:
             pass
 
 
-def _atomic_copy_verified(source: Path, destination: Path, expected_sha256: str) -> None:
+def _atomic_copy_verified(
+    source: Path,
+    destination: Path,
+    expected_sha256: str,
+    *,
+    sleeper=time.sleep,
+    jitter_ms=_atomic_jitter_ms,
+) -> None:
     """Copy one immutable source without ever moving or modifying the original."""
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.is_file() and file_sha256(destination) == expected_sha256:
         actual_source_sha256 = file_sha256(source)
         if actual_source_sha256 != expected_sha256:
-            raise OSError(
-                f"Source telemetry SHA-256 changed before archival for {source}: "
-                f"expected {expected_sha256}, got {actual_source_sha256}"
-            )
+            raise ArchiveVerificationFailed("source-digest-changed-before-copy")
         return
     fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
     try:
@@ -491,11 +605,10 @@ def _atomic_copy_verified(source: Path, destination: Path, expected_sha256: str)
         temporary = Path(temp_name)
         actual_sha256 = file_sha256(temporary)
         if actual_sha256 != expected_sha256:
-            raise OSError(
-                f"Archived telemetry SHA-256 mismatch for {source}: "
-                f"expected {expected_sha256}, got {actual_sha256}"
-            )
-        os.replace(temporary, destination)
+            raise ArchiveVerificationFailed("archived-digest-mismatch")
+        _atomic_replace_with_retry(
+            temporary, destination, sleeper=sleeper, jitter_ms=jitter_ms
+        )
     finally:
         try:
             os.unlink(temp_name)
@@ -1888,9 +2001,7 @@ class ArchiveStore:
                 getattr(after, "st_ino", None),
             )
             if after_signature != before_signature:
-                raise OSError(
-                    f"Source changed while SHA-256 was being computed: {path}"
-                )
+                raise ArchiveSourceUnstable("source-changed-during-hashing")
             result.append(
                 {
                     "path": str(path),
@@ -1912,7 +2023,7 @@ class ArchiveStore:
             source = Path(str(record.get("path") or "")).resolve(strict=True)
             sha256 = str(record.get("sha256") or "").strip().lower()
             if not _SOURCE_HASH_PATTERN.fullmatch(sha256):
-                raise ValueError(f"Invalid source SHA-256 for {source}")
+                raise InvalidSourceDigest()
             source_before = source.stat()
             expected_size = int(record.get("size") or source_before.st_size)
             expected_modified_ns = int(
@@ -1922,9 +2033,7 @@ class ArchiveStore:
                 source_before.st_size != expected_size
                 or source_before.st_mtime_ns != expected_modified_ns
             ):
-                raise OSError(
-                    f"Source changed after fingerprinting and before archival: {source}"
-                )
+                raise ArchiveSourceUnstable("source-changed-before-archival")
             archive_dir = self.telemetry_traces_dir / "raw" / sha256
             manifest_path = archive_dir / "manifest.json"
             prior: Mapping[str, Any] = {}
@@ -1950,7 +2059,7 @@ class ArchiveStore:
                 source_stat.st_size != source_before.st_size
                 or source_stat.st_mtime_ns != source_before.st_mtime_ns
             ):
-                raise OSError(f"Source changed while it was being archived: {source}")
+                raise ArchiveSourceUnstable("source-changed-during-archival")
             archived_size = destination.stat().st_size
             modified_ns = expected_modified_ns
             discovery_id = stable_hash(

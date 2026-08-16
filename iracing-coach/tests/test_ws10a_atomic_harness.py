@@ -30,8 +30,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ws10a_support as support
 
 TESTS_DIRECTORY = Path(__file__).resolve().parent
-PROBE_PATH = TESTS_DIRECTORY / "probe_ws10a_atomic_containment.py"
+PRE_RENAME_FILENAME = "probe_ws10a_atomic_containment.py"
 PROSPECTIVE_MODULE_NAME = "test_ws10a_containment"
+PROBE_PATH = next(
+    (
+        TESTS_DIRECTORY / name
+        for name in (f"{PROSPECTIVE_MODULE_NAME}.py", PRE_RENAME_FILENAME)
+        if (TESTS_DIRECTORY / name).is_file()
+    ),
+    TESTS_DIRECTORY / PRE_RENAME_FILENAME,
+)
 
 
 class InjectedErrorConstructionTests(unittest.TestCase):
@@ -733,7 +741,7 @@ class LoaderTransitionTests(unittest.TestCase):
         self.assertTrue(PROBE_PATH.is_file(), PROBE_PATH)
 
     def test_the_probe_is_not_discovered_under_its_current_filename(self):
-        self.assertFalse(fnmatch.fnmatch(PROBE_PATH.name, "test*.py"))
+        self.assertFalse(fnmatch.fnmatch(PRE_RENAME_FILENAME, "test*.py"))
 
     def test_the_prospective_filename_matches_default_discovery(self):
         self.assertTrue(
