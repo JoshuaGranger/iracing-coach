@@ -1,35 +1,6 @@
 using System.Text.Json.Serialization;
-using System.Runtime.InteropServices;
 
 namespace iRacingCoach.Contracts;
-
-public static class WindowsKnownFolders
-{
-    private static readonly Guid DocumentsFolderId = new("FDD39AD0-238F-46AF-ADB4-6C85480369C7");
-
-    public static string Documents
-    {
-        get
-        {
-            if (OperatingSystem.IsWindows() && SHGetKnownFolderPath(DocumentsFolderId, 0, IntPtr.Zero, out var pointer) == 0)
-            {
-                try
-                {
-                    var resolved = Marshal.PtrToStringUni(pointer);
-                    if (!string.IsNullOrWhiteSpace(resolved)) return resolved;
-                }
-                finally
-                {
-                    Marshal.FreeCoTaskMem(pointer);
-                }
-            }
-            return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        }
-    }
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid folderId, uint flags, IntPtr token, out IntPtr path);
-}
 
 public enum EvidenceKind
 {
@@ -741,12 +712,23 @@ public sealed class JobItem
 public sealed class CompanionSettings
 {
     public static string DefaultCoachHome => Path.Combine(
-        WindowsKnownFolders.Documents,
+        WindowsCompanionPathProvider.Instance.Documents,
         "iRacing Coach");
 
-    public string CoachHome { get; set; } = DefaultCoachHome;
-    public string IRacingRoot { get; set; } = Path.Combine(WindowsKnownFolders.Documents, "iRacing");
-    public string IRacingInstallRoot { get; set; } = ResolveDefaultIRacingInstallRoot();
+    public CompanionSettings() : this(WindowsCompanionPathProvider.Instance) { }
+
+    public CompanionSettings(ICompanionPathProvider pathProvider)
+    {
+        ArgumentNullException.ThrowIfNull(pathProvider);
+        CoachHome = Path.Combine(pathProvider.Documents, "iRacing Coach");
+        IRacingRoot = Path.Combine(pathProvider.Documents, "iRacing");
+        IRacingInstallRoot = ResolveDefaultIRacingInstallRoot(pathProvider);
+        LocalStateRootOverride = Path.Combine(pathProvider.LocalApplicationData, "iRacingCoach");
+    }
+
+    public string CoachHome { get; set; }
+    public string IRacingRoot { get; set; }
+    public string IRacingInstallRoot { get; set; }
     // In-memory migration bridge only. JsonSettingsStore reads the legacy
     // property explicitly; this model can never serialize it again.
     [JsonIgnore]
@@ -782,18 +764,18 @@ public sealed class CompanionSettings
         return string.IsNullOrWhiteSpace(configured) ? Path.GetFileNameWithoutExtension(executable) : configured;
     }
 
-    private static string ResolveDefaultIRacingInstallRoot()
+    private static string ResolveDefaultIRacingInstallRoot(ICompanionPathProvider pathProvider)
     {
         var candidates = new List<string>
         {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "iRacing"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "iRacing")
+            Path.Combine(pathProvider.ProgramFilesX86, "iRacing"),
+            Path.Combine(pathProvider.ProgramFiles, "iRacing")
         };
-        foreach (var drive in DriveInfo.GetDrives().Where(candidate => candidate.DriveType == DriveType.Fixed && candidate.IsReady))
+        foreach (var driveRoot in pathProvider.FixedDriveRoots)
         {
-            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "Games", "iRacing"));
-            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "iRacing"));
-            candidates.Add(Path.Combine(drive.RootDirectory.FullName, "SteamLibrary", "steamapps", "common", "iRacing"));
+            candidates.Add(Path.Combine(driveRoot, "Games", "iRacing"));
+            candidates.Add(Path.Combine(driveRoot, "iRacing"));
+            candidates.Add(Path.Combine(driveRoot, "SteamLibrary", "steamapps", "common", "iRacing"));
         }
         return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
     }
@@ -1110,7 +1092,11 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.16.0");
+    string ClientVersion = "0.16.0",
+    string LocalStateRoot = "",
+    string UserProfileRoot = "",
+    string TemporaryRoot = "",
+    bool NetworkAllowed = true);
 
 public sealed record BackendHealthResult(
     bool Ok,

@@ -144,6 +144,24 @@ public sealed class McpBackendClient : IBackendClient
             start.Environment["IRACING_COACH_DATA"] = configuration.ArchiveRoot;
             start.Environment["IRACING_COACH_HOME"] = configuration.CoachHomeRoot;
             start.Environment["PYTHONUTF8"] = "1";
+            if (!string.IsNullOrWhiteSpace(configuration.LocalStateRoot))
+                start.Environment["LOCALAPPDATA"] = configuration.LocalStateRoot;
+            if (!string.IsNullOrWhiteSpace(configuration.UserProfileRoot))
+            {
+                var profile = Path.GetFullPath(configuration.UserProfileRoot);
+                var drive = Path.GetPathRoot(profile) ?? string.Empty;
+                start.Environment["USERPROFILE"] = profile;
+                start.Environment["HOME"] = profile;
+                start.Environment["HOMEDRIVE"] = drive.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                start.Environment["HOMEPATH"] = profile[drive.Length..];
+            }
+            if (!string.IsNullOrWhiteSpace(configuration.TemporaryRoot))
+            {
+                start.Environment["TEMP"] = configuration.TemporaryRoot;
+                start.Environment["TMP"] = configuration.TemporaryRoot;
+            }
+            if (!configuration.NetworkAllowed)
+                start.Environment["IRACING_COACH_NETWORK_DISABLED"] = "1";
 
             var process = Process.Start(start)
                 ?? throw new BackendProtocolException("The backend worker could not be started.");

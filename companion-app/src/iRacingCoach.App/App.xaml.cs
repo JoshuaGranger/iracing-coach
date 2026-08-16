@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Diagnostics;
+using System.IO;
+using iRacingCoach.Coordinator;
 
 namespace iRacingCoach.App;
 
@@ -20,8 +22,20 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        _mutex = new Mutex(true, MutexName, out var firstInstance);
-        _activationEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivationEventName);
+        CompanionHostProfile profile;
+        try
+        {
+            profile = CompanionHostProfile.FromArguments(e.Args);
+        }
+        catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            ShowStartupError(error);
+            return;
+        }
+
+        var instanceSuffix = profile.IsIsolated ? "." + profile.ProcessIdentity : string.Empty;
+        _mutex = new Mutex(true, MutexName + instanceSuffix, out var firstInstance);
+        _activationEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivationEventName + instanceSuffix);
         if (!firstInstance)
         {
             _activationEvent.Set();
@@ -31,14 +45,11 @@ public partial class App : System.Windows.Application
 
         try
         {
-            _mainWindow = new MainWindow();
+            _mainWindow = new MainWindow(profile);
         }
         catch (Exception error)
         {
-            var startupError = new StartupErrorWindow(error);
-            MainWindow = startupError;
-            startupError.Closed += (_, _) => Shutdown(2);
-            startupError.Show();
+            ShowStartupError(error);
             return;
         }
         MainWindow = _mainWindow;
@@ -46,6 +57,14 @@ public partial class App : System.Windows.Application
         _activationWait = ThreadPool.RegisterWaitForSingleObject(_activationEvent, (_, _) =>
             Dispatcher.BeginInvoke(_mainWindow.ShowFromTray), null, Timeout.Infinite, false);
         _mainWindow.Show();
+    }
+
+    private void ShowStartupError(Exception error)
+    {
+        var startupError = new StartupErrorWindow(error);
+        MainWindow = startupError;
+        startupError.Closed += (_, _) => Shutdown(2);
+        startupError.Show();
     }
 
     private void ExitApplication()

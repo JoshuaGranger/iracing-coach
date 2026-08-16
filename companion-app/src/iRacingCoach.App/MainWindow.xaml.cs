@@ -11,6 +11,7 @@ using iRacingCoach.Coordinator;
 using iRacingCoach.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.AspNetCore.Components.WebView;
 using Forms = System.Windows.Forms;
 
 namespace iRacingCoach.App;
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     private const int WmHotkey = 0x0312;
     private const int LiveMonitorHotkeyId = 0x4937;
     private readonly CompanionState _state;
+    private readonly CompanionHostProfile _hostProfile;
     private readonly ServiceProvider _services;
     private readonly LiveMonitorWindow _liveMonitor;
     private readonly Forms.NotifyIcon _trayIcon;
@@ -33,12 +35,16 @@ public partial class MainWindow : Window
     private HwndSource? _windowSource;
     private DateTimeOffset _lastTrayLiveUpdate = DateTimeOffset.MinValue;
 
-    public MainWindow()
+    public MainWindow() : this(CompanionHostProfile.FromArguments(Array.Empty<string>())) { }
+
+    public MainWindow(CompanionHostProfile hostProfile)
     {
+        ArgumentNullException.ThrowIfNull(hostProfile);
+        _hostProfile = hostProfile;
         var services = new ServiceCollection();
         services.AddWpfBlazorWebView();
         var allArguments = Environment.GetCommandLineArgs();
-        _state = new CompanionState();
+        _state = hostProfile.CreateState();
         var state = _state;
         services.AddSingleton(state);
 #if DEBUG
@@ -71,8 +77,11 @@ public partial class MainWindow : Window
         {
             ApplyDarkTitleBar();
             _windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
-            _windowSource?.AddHook(WindowMessageHook);
-            _ = RegisterGlobalHotkey();
+            if (hostProfile.AllowMachineIntegration)
+            {
+                _windowSource?.AddHook(WindowMessageHook);
+                _ = RegisterGlobalHotkey();
+            }
         };
         StateChanged += (_, _) => { if (WindowState == WindowState.Minimized) HideToTray(false); };
         Closing += OnClosing;
@@ -82,12 +91,12 @@ public partial class MainWindow : Window
         _state.RawTelemetryLocateRequested += OnRawTelemetryLocateRequested;
         _state.SettingsSaved += settings =>
         {
-            if (!StartupRegistration.Apply(settings.LaunchAtSignIn))
+            if (hostProfile.AllowMachineIntegration && !StartupRegistration.Apply(settings.LaunchAtSignIn))
                 _state.Notify("Settings saved, but Windows sign-in startup could not be updated.");
-            if (!RegisterGlobalHotkey())
+            if (hostProfile.AllowMachineIntegration && !RegisterGlobalHotkey())
                 _state.Notify("Settings saved, but that telemetry-popout hotkey is invalid or already in use.");
         };
-        _ = StartupRegistration.Apply(_state.Settings.LaunchAtSignIn);
+        if (hostProfile.AllowMachineIntegration) _ = StartupRegistration.Apply(_state.Settings.LaunchAtSignIn);
 
         if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--minimized", StringComparison.OrdinalIgnoreCase)))
             Loaded += (_, _) => HideToTray(false);
@@ -128,16 +137,44 @@ public partial class MainWindow : Window
 
     private async void OnRawTelemetryLocateRequested()
     {
+        if (_hostProfile.IsIsolated)
+        {
+            _state.Notify("Locating external telemetry is disabled in the isolated host profile.");
+            return;
+        }
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = "Locate original iRacing telemetry",
             Filter = "iRacing telemetry (*.ibt)|*.ibt",
             Multiselect = false,
             CheckFileExists = true,
-            InitialDirectory = Directory.Exists(_state.Settings.IRacingRoot) ? _state.Settings.IRacingRoot : WindowsKnownFolders.Documents
+            InitialDirectory = Directory.Exists(_state.Settings.IRacingRoot) ? _state.Settings.IRacingRoot : _hostProfile.Paths.Documents
         };
         if (dialog.ShowDialog(this) == true)
             await _state.RegisterLocatedTelemetryAsync(dialog.FileName);
+    }
+
+    private void OnBlazorWebViewInitializing(object? sender, BlazorWebViewInitializingEventArgs e)
+    {
+        if (!_hostProfile.IsIsolated) return;
+        var userData = Path.Combine(_state.Settings.LocalStateRoot, "webview2");
+        Directory.CreateDirectory(userData);
+        e.UserDataFolder = userData;
+        e.EnvironmentOptions ??= new CoreWebView2EnvironmentOptions();
+        e.EnvironmentOptions.AdditionalBrowserArguments = string.Join(' ', new[]
+        {
+            e.EnvironmentOptions.AdditionalBrowserArguments,
+            "--disable-background-networking",
+            "--host-resolver-rules=MAP * 0.0.0.0",
+            "--proxy-server=http://127.0.0.1:9",
+            "--proxy-bypass-list=<-loopback>"
+        }.Where(value => !string.IsNullOrWhiteSpace(value)));
+    }
+
+    private void OnBlazorUrlLoading(object? sender, UrlLoadingEventArgs e)
+    {
+        if (_hostProfile.IsIsolated && e.UrlLoadingStrategy == UrlLoadingStrategy.OpenExternally)
+            e.UrlLoadingStrategy = UrlLoadingStrategy.CancelLoad;
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
