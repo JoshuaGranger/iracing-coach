@@ -17,6 +17,7 @@ public sealed class HostIsolationTests
 
         Assert.IsFalse(profile.IsIsolated);
         Assert.IsTrue(profile.AllowMachineIntegration);
+        Assert.IsTrue(profile.AllowEmbeddedBrowser);
         Assert.AreEqual("production", profile.ProcessIdentity);
         Assert.AreEqual(Path.GetFullPath(Path.Combine(profile.Paths.Documents, "iRacing Coach")), Path.GetFullPath(settings.CoachHome));
         Assert.AreEqual(Path.GetFullPath(Path.Combine(profile.Paths.Documents, "iRacing")), Path.GetFullPath(settings.IRacingRoot));
@@ -32,6 +33,7 @@ public sealed class HostIsolationTests
 
         Assert.IsTrue(profile.IsIsolated);
         Assert.IsFalse(profile.AllowMachineIntegration);
+        Assert.IsTrue(profile.AllowEmbeddedBrowser);
         Assert.AreNotEqual(profile.ProcessIdentity, second.Profile.ProcessIdentity);
         foreach (var path in new[]
         {
@@ -53,6 +55,19 @@ public sealed class HostIsolationTests
             Assert.IsTrue(Directory.Exists(path), path);
         }
         Assert.IsEmpty(profile.Paths.FixedDriveRoots);
+    }
+
+    [TestMethod]
+    public void IsolatedNoWebView_IsExplicitUniqueAndUnavailableInProduction()
+    {
+        using var isolated = IsolatedProfileRoot.Create(disableWebView: true);
+
+        Assert.IsTrue(isolated.Profile.IsIsolated);
+        Assert.IsFalse(isolated.Profile.AllowEmbeddedBrowser);
+        Assert.Throws<ArgumentException>(() => CompanionHostProfile.FromArguments(["--isolated-no-webview"]));
+        Assert.Throws<ArgumentException>(() => CompanionHostProfile.FromArguments([
+            "--isolated-profile", isolated.Root,
+            "--isolated-no-webview", "--isolated-no-webview"]));
     }
 
     [TestMethod]
@@ -259,6 +274,12 @@ public sealed class HostIsolationTests
         StringAssert.Contains(window, "--disable-background-networking");
         StringAssert.Contains(window, "--proxy-server=http://127.0.0.1:9");
         StringAssert.Contains(window, "UrlLoadingStrategy.CancelLoad");
+        var initializeComponent = window.IndexOf("InitializeComponent();", StringComparison.Ordinal);
+        var suppressBrowser = window.IndexOf("if (!hostProfile.AllowEmbeddedBrowser) Content = BuildIsolatedEvidenceSurface();", StringComparison.Ordinal);
+        Assert.IsGreaterThan(-1, initializeComponent);
+        Assert.IsGreaterThan(initializeComponent, suppressBrowser);
+        StringAssert.Contains(window, "private static UIElement BuildIsolatedEvidenceSurface()");
+        Assert.DoesNotContain("BlazorWebView", window[window.IndexOf("private static UIElement BuildIsolatedEvidenceSurface()", StringComparison.Ordinal)..]);
         StringAssert.Contains(window, "if (hostProfile.AllowMachineIntegration) _ = StartupRegistration.Apply");
         StringAssert.Contains(window, "if (hostProfile.AllowMachineIntegration)");
         StringAssert.Contains(app, "MutexName + instanceSuffix");
@@ -304,10 +325,13 @@ public sealed class HostIsolationTests
         public string Root { get; }
         public CompanionHostProfile Profile { get; }
 
-        public static IsolatedProfileRoot Create()
+        public static IsolatedProfileRoot Create(bool disableWebView = false)
         {
             var root = Path.Combine(Path.GetTempPath(), "iracing-coach-host-" + Guid.NewGuid().ToString("N"));
-            var profile = CompanionHostProfile.FromArguments(["--isolated-profile", root]);
+            var arguments = disableWebView
+                ? new[] { "--isolated-profile", root, "--isolated-no-webview" }
+                : new[] { "--isolated-profile", root };
+            var profile = CompanionHostProfile.FromArguments(arguments);
             return new IsolatedProfileRoot(root, profile);
         }
 

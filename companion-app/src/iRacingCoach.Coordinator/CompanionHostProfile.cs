@@ -10,12 +10,14 @@ namespace iRacingCoach.Coordinator;
 public sealed partial class CompanionHostProfile
 {
     private const string IsolatedProfileArgument = "--isolated-profile";
+    private const string IsolatedNoWebViewArgument = "--isolated-no-webview";
 
-    private CompanionHostProfile(bool isIsolated, ICompanionPathProvider paths, string? root)
+    private CompanionHostProfile(bool isIsolated, ICompanionPathProvider paths, string? root, bool allowEmbeddedBrowser)
     {
         IsIsolated = isIsolated;
         Paths = paths;
         Root = root;
+        AllowEmbeddedBrowser = allowEmbeddedBrowser;
         ProcessIdentity = isIsolated && root is not null
             ? "isolated-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(root))).ToLowerInvariant()[..16]
             : "production";
@@ -23,6 +25,7 @@ public sealed partial class CompanionHostProfile
 
     public bool IsIsolated { get; }
     public bool AllowMachineIntegration => !IsIsolated;
+    public bool AllowEmbeddedBrowser { get; }
     public ICompanionPathProvider Paths { get; }
     public string? Root { get; }
     public string ProcessIdentity { get; }
@@ -34,10 +37,18 @@ public sealed partial class CompanionHostProfile
             .Select((value, index) => (value, index))
             .Where(item => string.Equals(item.value, IsolatedProfileArgument, StringComparison.OrdinalIgnoreCase))
             .ToArray();
+        var noWebViewMatches = arguments.Count(value =>
+            string.Equals(value, IsolatedNoWebViewArgument, StringComparison.OrdinalIgnoreCase));
         if (matches.Length == 0)
-            return new CompanionHostProfile(false, WindowsCompanionPathProvider.Instance, null);
+        {
+            if (noWebViewMatches != 0)
+                throw new ArgumentException("The no-WebView option is available only with an isolated profile.");
+            return new CompanionHostProfile(false, WindowsCompanionPathProvider.Instance, null, allowEmbeddedBrowser: true);
+        }
         if (matches.Length != 1)
             throw new ArgumentException("The isolated profile option may be supplied only once.");
+        if (noWebViewMatches > 1)
+            throw new ArgumentException("The no-WebView option may be supplied only once.");
 
         var valueIndex = matches[0].index + 1;
         if (valueIndex >= arguments.Count || string.IsNullOrWhiteSpace(arguments[valueIndex]) || arguments[valueIndex].StartsWith("--", StringComparison.Ordinal))
@@ -46,7 +57,7 @@ public sealed partial class CompanionHostProfile
         var root = ValidateAndCreateRoot(arguments[valueIndex]);
         var paths = new IsolatedCompanionPathProvider(root);
         CreateConfinedTree(paths);
-        return new CompanionHostProfile(true, paths, root);
+        return new CompanionHostProfile(true, paths, root, allowEmbeddedBrowser: noWebViewMatches == 0);
     }
 
     public CompanionState CreateState()

@@ -53,6 +53,7 @@ public partial class MainWindow : Window
         _services = services.BuildServiceProvider();
         Resources.Add("services", _services);
         InitializeComponent();
+        if (!hostProfile.AllowEmbeddedBrowser) Content = BuildIsolatedEvidenceSurface();
         _liveMonitor = new LiveMonitorWindow(state);
 
         _monitorItem = new Forms.ToolStripMenuItem("Show telemetry popout", null, (_, _) => _state.ToggleLiveMonitor());
@@ -355,6 +356,19 @@ public partial class MainWindow : Window
         try { return !string.IsNullOrWhiteSpace(CoreWebView2Environment.GetAvailableBrowserVersionString()); }
         catch (WebView2RuntimeNotFoundException) { return false; }
     }
+
+    private static UIElement BuildIsolatedEvidenceSurface() => new Border
+    {
+        Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(23, 25, 28)),
+        Child = new TextBlock
+        {
+            Text = "Isolated host evidence",
+            Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(178, 184, 194)),
+            FontSize = 15,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center
+        }
+    };
 
     private static UIElement BuildRuntimeNotice() => new Border
     {
