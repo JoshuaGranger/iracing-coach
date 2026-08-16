@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -47,11 +48,59 @@ def _compatibility_sources() -> dict[str, Any]:
     return value
 
 
+DURABLE_ARCHIVE_SOURCE = "companion-app/src/iRacingCoach.Coordinator/DurableArchive.cs"
+DURABLE_ARCHIVE_SYMBOL = "DurableArchiveService.CurrentSchemaVersion"
+
+# Exact expectations, not shapes. Checking that a symbol string is non-empty
+# accepts `Bogus.CurrentVersion`; checking that a value is in range accepts a
+# policy floor of 1 where 0 is the accepted value. Each field is pinned to the
+# literal metadata and, where its authority is C# source, to the integer
+# actually read from that source.
 _COMPANION_AUTHORITY_CONTRACT = {
-    "writer_version": "csharp-symbol",
-    "max_readable_version": "csharp-symbol",
-    "min_readable_version": "declared-policy",
+    "writer_version": {
+        "authority": "csharp-symbol",
+        "symbol": DURABLE_ARCHIVE_SYMBOL,
+        "source": DURABLE_ARCHIVE_SOURCE,
+    },
+    "max_readable_version": {
+        "authority": "csharp-symbol",
+        "symbol": DURABLE_ARCHIVE_SYMBOL,
+        "source": DURABLE_ARCHIVE_SOURCE,
+    },
+    "min_readable_version": {
+        "authority": "declared-policy",
+        "symbol": None,
+        "source": None,
+        "value": 0,
+    },
 }
+
+
+def _csharp_current_schema_version() -> int:
+    """Read `CurrentSchemaVersion` from C# source, refusing anything ambiguous.
+
+    Generation binds the companion writer and maximum to this integer, so a
+    parser that guesses would defeat the binding. Missing, duplicated, or
+    non-integer declarations raise rather than resolve to a plausible number.
+    """
+    path = WORKSPACE_ROOT / DURABLE_ARCHIVE_SOURCE
+    if not path.is_file():
+        raise ValueError(f"Companion archive source is missing: {DURABLE_ARCHIVE_SOURCE}")
+    text = path.read_text(encoding="utf-8")
+    matches = re.findall(
+        r"public\s+const\s+int\s+CurrentSchemaVersion\s*=\s*(-?\d+)\s*;", text
+    )
+    if not matches:
+        raise ValueError(
+            f"{DURABLE_ARCHIVE_SYMBOL} was not found as an integer constant in "
+            f"{DURABLE_ARCHIVE_SOURCE}"
+        )
+    if len(matches) > 1:
+        raise ValueError(
+            f"{DURABLE_ARCHIVE_SYMBOL} is declared {len(matches)} times in "
+            f"{DURABLE_ARCHIVE_SOURCE}; refusing to guess which one binds"
+        )
+    return int(matches[0])
 
 
 def _companion_entry(record: dict[str, Any], field: str) -> int:
@@ -78,22 +127,37 @@ def _companion_entry(record: dict[str, Any], field: str) -> int:
     if value < 0:
         raise ValueError(f"companion_durable_archive.{field}.value must not be negative")
 
-    expected = _COMPANION_AUTHORITY_CONTRACT[field]
-    if entry["authority"] != expected:
-        raise ValueError(
-            f"companion_durable_archive.{field}.authority must be {expected!r}"
-        )
-    if expected == "csharp-symbol":
-        if not entry["symbol"] or not entry["source"]:
-            raise ValueError(f"companion_durable_archive.{field} must name its symbol and source")
-    else:
-        if entry["symbol"] is not None or entry["source"] is not None:
+    contract = _COMPANION_AUTHORITY_CONTRACT[field]
+    for key in ("authority", "symbol", "source"):
+        if entry[key] != contract[key]:
             raise ValueError(
-                f"companion_durable_archive.{field} is declared policy and must not claim a symbol"
+                f"companion_durable_archive.{field}.{key} must be exactly {contract[key]!r}, "
+                f"got {entry[key]!r}"
+            )
+
+    if contract["authority"] == "csharp-symbol":
+        # Bind the value to the constant actually in C# source, not merely to a
+        # field that names a symbol. A self-consistent but substituted number
+        # fails here even though it satisfies the range invariant.
+        current = _csharp_current_schema_version()
+        if value != current:
+            raise ValueError(
+                f"companion_durable_archive.{field}.value is {value}, but "
+                f"{DURABLE_ARCHIVE_SYMBOL} is {current}"
+            )
+    else:
+        if value != contract["value"]:
+            raise ValueError(
+                f"companion_durable_archive.{field}.value must be exactly "
+                f"{contract['value']}, got {value}"
             )
         for required in ("enforced_by", "current_behavior"):
             if not entry.get(required):
                 raise ValueError(f"companion_durable_archive.{field} lacks {required!r}")
+        if entry["enforced_by"] != "codex-consumer-phase":
+            raise ValueError(
+                f"companion_durable_archive.{field}.enforced_by must name the consumer phase"
+            )
     return value
 
 

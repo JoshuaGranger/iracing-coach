@@ -155,6 +155,8 @@ class CompanionRangeMutationTests(unittest.TestCase):
                             ignore=shutil.ignore_patterns("dev", "__pycache__"))
             shutil.copytree(ROOT / "iracing-coach", sandbox / "iracing-coach",
                             ignore=shutil.ignore_patterns("__pycache__", "tests"))
+            # Generation now reads the C# constant, so the source must be present.
+            shutil.copytree(ROOT / "companion-app" / "src", sandbox / "companion-app" / "src")
             target = sandbox / "contracts" / "compatibility-sources.json"
             document = json.loads(target.read_text(encoding="utf-8"))
             mutate(document)
@@ -170,12 +172,21 @@ class CompanionRangeMutationTests(unittest.TestCase):
         self.assertEqual(self._generate_with(lambda d: None).returncode, 0)
 
     def test_minimum_above_maximum_is_refused(self) -> None:
-        """Codex's exact attack: minimum 2 while maximum is 1."""
+        """The originally reported attack: minimum 2 while maximum is 1.
+
+        It is now caught by the exact policy-value binding rather than the range
+        invariant, because the exact check runs first and is strictly stronger.
+        Worth stating plainly: with all three fields pinned - minimum to exactly
+        0, writer and maximum to the C# constant - the range invariant is no
+        longer independently reachable. It stays as a defensive check against a
+        future field gaining a looser binding, not as live coverage, and this
+        test asserts refusal rather than a particular message.
+        """
         def mutate(document):
             document["companion_durable_archive"]["min_readable_version"]["value"] = 2
         completed = self._generate_with(mutate)
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("self-contradictory", completed.stderr)
+        self.assertIn("min_readable_version", completed.stderr)
 
     def test_each_companion_field_mutation_is_refused_or_reflected(self) -> None:
         for field, mutated in (
@@ -215,18 +226,14 @@ class CompanionRangeMutationTests(unittest.TestCase):
             with self.subTest(case=label):
                 self.assertNotEqual(self._generate_with(mutate).returncode, 0)
 
-    def test_a_backend_value_substituted_into_the_companion_range_is_caught(self) -> None:
-        """Two mechanisms, and it matters which one catches this.
+    def test_a_backend_value_substituted_into_the_companion_range_is_refused(self) -> None:
+        """Substitution must fail the invoked gate, not merely be described.
 
-        Writing the backend's 2 into the companion maximum yields 0 <= 1 <= 2,
-        which is internally consistent, so the range invariant cannot object and
-        generation legitimately succeeds. What catches it is the source binding:
-        the maximum must equal DurableArchiveService.CurrentSchemaVersion.
-
-        The invariant catches contradictions; the source binding catches values
-        that are wrong but self-consistent. Asserting the invariant would reject
-        this is what an earlier version of this test did, and it was testing the
-        wrong mechanism.
+        An earlier version of this test asserted the exporter *succeeds* for
+        max = 2 and then compared the unmutated repository's backend value to the
+        C# constant - a comparison independent of the mutated sandbox, so it did
+        not catch the substitution it was named for. Generation now binds the
+        value to the constant read from C# source, so the substitution fails here.
         """
         backend_writer = _registry()["backend"]["backend_archive_writer_version"]
 
@@ -234,16 +241,152 @@ class CompanionRangeMutationTests(unittest.TestCase):
             document["companion_durable_archive"]["max_readable_version"]["value"] = backend_writer
 
         completed = self._generate_with(mutate)
-        self.assertEqual(completed.returncode, 0, "an internally consistent range still generates")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("CurrentSchemaVersion", completed.stderr)
 
-        source = DURABLE_ARCHIVE_CS.read_text(encoding="utf-8")
-        current = int(
-            re.search(r"public\s+const\s+int\s+CurrentSchemaVersion\s*=\s*(\d+)\s*;", source).group(1)
+    def test_an_in_range_but_unauthorized_policy_floor_is_refused(self) -> None:
+        # 1 <= 1 <= 1 satisfies the invariant, so only the exact accepted policy
+        # value catches it.
+        def mutate(document):
+            document["companion_durable_archive"]["min_readable_version"]["value"] = 1
+        completed = self._generate_with(mutate)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("must be exactly 0", completed.stderr)
+
+    def test_wrong_but_non_empty_authority_metadata_is_refused(self) -> None:
+        # Checking a symbol string is non-empty accepts `Bogus.CurrentVersion`.
+        def mutate(document):
+            entry = document["companion_durable_archive"]["writer_version"]
+            entry["symbol"] = "Bogus.CurrentVersion"
+            entry["source"] = "README.md"
+        completed = self._generate_with(mutate)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("must be exactly", completed.stderr)
+
+    def test_the_declared_value_is_bound_to_the_csharp_constant(self) -> None:
+        for field in ("writer_version", "max_readable_version"):
+            with self.subTest(field=field):
+                def mutate(document, field=field):
+                    document["companion_durable_archive"][field]["value"] = 7
+                completed = self._generate_with(mutate)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("CurrentSchemaVersion", completed.stderr)
+
+
+class GeneratedRegistryMutationTests(unittest.TestCase):
+    """Each of the six published range keys must be independently detectable.
+
+    The source-record tests above cover three declared companion fields. These
+    mutate the six *generated* keys in the committed registry and require
+    `export_contracts.py --check` to refuse each stale artifact, which is what
+    the accepted plan promised and what my earlier matrix did not do.
+    """
+
+    SIX_KEYS = (
+        "backend_archive_writer_version",
+        "backend_archive_min_readable_version",
+        "backend_archive_max_readable_version",
+        "companion_durable_archive_writer_version",
+        "companion_durable_archive_min_readable_version",
+        "companion_durable_archive_max_readable_version",
+    )
+
+    def _check_with_registry(self, mutate) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory(prefix="registry-generated-") as raw:
+            sandbox = Path(raw)
+            shutil.copytree(ROOT / "contracts", sandbox / "contracts")
+            shutil.copytree(ROOT / "tools", sandbox / "tools",
+                            ignore=shutil.ignore_patterns("dev", "__pycache__"))
+            shutil.copytree(ROOT / "iracing-coach", sandbox / "iracing-coach",
+                            ignore=shutil.ignore_patterns("__pycache__", "tests"))
+            shutil.copytree(ROOT / "companion-app" / "src",
+                            sandbox / "companion-app" / "src")
+            target = sandbox / "contracts" / "compatibility.json"
+            document = json.loads(target.read_text(encoding="utf-8"))
+            mutate(document)
+            target.write_text(json.dumps(document, ensure_ascii=False, indent=2,
+                                         sort_keys=True) + "\n", encoding="utf-8")
+            return subprocess.run(
+                [sys.executable, "-X", "utf8",
+                 str(sandbox / "tools" / "export_contracts.py"), "--check"],
+                cwd=sandbox, capture_output=True, text=True, check=False, timeout=120,
+            )
+
+    def test_the_unmutated_registry_passes_check(self) -> None:
+        self.assertEqual(self._check_with_registry(lambda d: None).returncode, 0)
+
+    def test_each_of_the_six_generated_keys_is_independently_detected(self) -> None:
+        for key in self.SIX_KEYS:
+            with self.subTest(key=key):
+                def mutate(document, key=key):
+                    document["backend"][key] = document["backend"][key] + 41
+                self.assertNotEqual(self._check_with_registry(mutate).returncode, 0)
+
+    def test_cross_store_substitution_in_both_directions_is_detected(self) -> None:
+        cases = {
+            "backend value into companion key":
+                ("companion_durable_archive_writer_version", "backend_archive_writer_version"),
+            "companion value into backend key":
+                ("backend_archive_writer_version", "companion_durable_archive_writer_version"),
+        }
+        for label, (target, donor) in cases.items():
+            with self.subTest(case=label):
+                def mutate(document, target=target, donor=donor):
+                    document["backend"][target] = document["backend"][donor]
+                self.assertNotEqual(self._check_with_registry(mutate).returncode, 0)
+
+
+class CSharpConstantParserTests(unittest.TestCase):
+    """The parser must fail clearly rather than guess."""
+
+    def _with_source(self, replacement: str) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory(prefix="registry-csharp-") as raw:
+            sandbox = Path(raw)
+            shutil.copytree(ROOT / "contracts", sandbox / "contracts")
+            shutil.copytree(ROOT / "tools", sandbox / "tools",
+                            ignore=shutil.ignore_patterns("dev", "__pycache__"))
+            shutil.copytree(ROOT / "iracing-coach", sandbox / "iracing-coach",
+                            ignore=shutil.ignore_patterns("__pycache__", "tests"))
+            shutil.copytree(ROOT / "companion-app" / "src", sandbox / "companion-app" / "src")
+            target = (sandbox / "companion-app" / "src" / "iRacingCoach.Coordinator"
+                      / "DurableArchive.cs")
+            source = target.read_text(encoding="utf-8")
+            target.write_text(
+                source.replace("public const int CurrentSchemaVersion = 1;", replacement),
+                encoding="utf-8",
+            )
+            return subprocess.run(
+                [sys.executable, "-X", "utf8", str(sandbox / "tools" / "export_contracts.py")],
+                cwd=sandbox, capture_output=True, text=True, check=False, timeout=120,
+            )
+
+    def test_a_missing_constant_is_refused(self) -> None:
+        completed = self._with_source("// constant removed")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("was not found", completed.stderr)
+
+    def test_a_duplicate_constant_is_refused(self) -> None:
+        completed = self._with_source(
+            "public const int CurrentSchemaVersion = 1;\n"
+            "    public const int CurrentSchemaVersion = 2;"
         )
-        self.assertNotEqual(
-            backend_writer, current,
-            "the two stores must keep different numbers, or substitution becomes undetectable",
-        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("refusing to guess", completed.stderr)
+
+    def test_a_non_integer_constant_is_refused(self) -> None:
+        for replacement in ('public const string CurrentSchemaVersion = "1";',
+                            "public const bool CurrentSchemaVersion = true;"):
+            with self.subTest(declaration=replacement):
+                completed = self._with_source(replacement)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("was not found", completed.stderr)
+
+    def test_a_changed_constant_is_reflected_and_the_declaration_must_follow(self) -> None:
+        # Bumping the C# constant without updating the declaration must fail,
+        # which is the drift detection this binding exists to provide.
+        completed = self._with_source("public const int CurrentSchemaVersion = 2;")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("CurrentSchemaVersion", completed.stderr)
 
 
 class GenerationTests(unittest.TestCase):
