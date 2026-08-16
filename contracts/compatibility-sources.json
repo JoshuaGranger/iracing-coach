@@ -1,0 +1,38 @@
+{
+  "$comment": "Declared compatibility policy for stores whose authority is not a Python constant. Generation consumes this file; tests bind each field to its stated authority. A field declared as csharp-symbol must equal that symbol in C# source. A field declared as declared-policy is a target for a later phase and is NOT evidence that current code enforces it.",
+  "companion_durable_archive": {
+    "description": "The C# durable archive in the user's Documents Coach folder, written by DurableArchiveService. Distinct from the Python backend cache/archive manifest.",
+    "manifest_file_name": "archive-manifest.json",
+    "writer_version": {
+      "value": 1,
+      "authority": "csharp-symbol",
+      "symbol": "DurableArchiveService.CurrentSchemaVersion",
+      "source": "companion-app/src/iRacingCoach.Coordinator/DurableArchive.cs",
+      "derivation": "The manifest is written with schemaVersion = CurrentSchemaVersion."
+    },
+    "max_readable_version": {
+      "value": 1,
+      "authority": "csharp-symbol",
+      "symbol": "DurableArchiveService.CurrentSchemaVersion",
+      "source": "companion-app/src/iRacingCoach.Coordinator/DurableArchive.cs",
+      "derivation": "Initialize throws ArchiveCompatibilityException when manifest.SchemaVersion > CurrentSchemaVersion, so the maximum readable version equals that symbol."
+    },
+    "min_readable_version": {
+      "value": 0,
+      "authority": "declared-policy",
+      "symbol": null,
+      "source": null,
+      "derivation": "Target compatibility floor implied by the schema-0-to-1 adoption migration.",
+      "enforced_by": "codex-consumer-phase",
+      "current_behavior": "No MinimumReadableSchemaVersion symbol exists. The manifest.SchemaVersion < CurrentSchemaVersion branch passes every lower integer, including negatives, to Migrate. This floor is NOT enforced today and this record must not be read as evidence that it is."
+    }
+  },
+  "legacy_aliases": {
+    "archive_schema_version": {
+      "targets": "backend_archive_writer_version",
+      "means": "Python backend cache/archive manifest version, not the companion Documents durable archive",
+      "window": "one compatibility window",
+      "removal_boundary": "Removed in the reviewed commit that closes the WS-01A alias window; not before the Codex consumer freeze."
+    }
+  }
+}

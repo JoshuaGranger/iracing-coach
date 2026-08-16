@@ -24,10 +24,73 @@ import race_card  # noqa: E402
 import setup_catalog  # noqa: E402
 import storage  # noqa: E402
 import tuning_engine  # noqa: E402
+import workflow  # noqa: E402
+
+
+COMPATIBILITY_SOURCES_PATH = CONTRACT_ROOT / "compatibility-sources.json"
+
+_JSON_TYPE_BY_FIELD_KIND = {
+    "object": {"type": "object"},
+    "array": {"type": "array"},
+    "string-or-null": {"type": ["string", "null"]},
+}
 
 
 def _json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def _compatibility_sources() -> dict[str, Any]:
+    value = json.loads(COMPATIBILITY_SOURCES_PATH.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"Compatibility sources is not an object: {COMPATIBILITY_SOURCES_PATH}")
+    return value
+
+
+def _companion(field: str) -> int:
+    """Read one declared companion-archive value, refusing a malformed record.
+
+    The companion store's authority is C# source rather than a Python constant,
+    so the value is declared here and bound to that source by test. Failing
+    loudly beats generating a plausible number from an incomplete record.
+    """
+    record = _compatibility_sources().get("companion_durable_archive")
+    if not isinstance(record, dict) or field not in record:
+        raise ValueError(f"Compatibility sources lacks companion_durable_archive.{field}")
+    entry = record[field]
+    if not isinstance(entry, dict) or "value" not in entry or "authority" not in entry:
+        raise ValueError(f"companion_durable_archive.{field} lacks value/authority")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"companion_durable_archive.{field}.value must be an integer")
+    return value
+
+
+def _analysis_view_schema() -> dict[str, Any]:
+    """Generate the envelope contract from the producer's sole field authority."""
+    properties: dict[str, Any] = {
+        "schema_version": {"const": workflow.ANALYSIS_VIEW_SCHEMA_VERSION, "type": "integer"}
+    }
+    required = ["schema_version"]
+    for name, kind, _default in workflow.ANALYSIS_VIEW_FIELDS:
+        if kind not in _JSON_TYPE_BY_FIELD_KIND:
+            raise ValueError(f"Unknown analysis_view field kind for {name!r}: {kind!r}")
+        properties[name] = dict(_JSON_TYPE_BY_FIELD_KIND[kind])
+        required.append(name)
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "analysis_view envelope",
+        "description": (
+            "The analysis_view envelope emitted by workflow.py. Every field is always "
+            "present; an empty object or array means the section has no content, not "
+            "that it was omitted. Unknown optional fields are accepted so a newer "
+            "producer remains readable."
+        ),
+        "type": "object",
+        "additionalProperties": True,
+        "required": required,
+        "properties": properties,
+    }
 
 
 def _plugin_manifest() -> dict[str, Any]:
@@ -59,6 +122,17 @@ def exported_values() -> dict[Path, Any]:
             "race_card_contract_version": race_card.CONTRACT_VERSION,
             "analysis_schema_version": analysis_engine.ANALYSIS_SCHEMA_VERSION,
             "analysis_profile_version": analysis_engine.ANALYSIS_PROFILE_VERSION,
+            "analysis_view_envelope_version": workflow.ANALYSIS_VIEW_SCHEMA_VERSION,
+            # Two independent stores previously shared the single ambiguous key
+            # `archive_schema_version`. The backend range is derived here; the
+            # companion range is declared in compatibility-sources.json because
+            # its authority is C# source, and a test binds it there.
+            "backend_archive_writer_version": storage.SCHEMA_VERSION,
+            "backend_archive_min_readable_version": storage.SCHEMA_VERSION,
+            "backend_archive_max_readable_version": storage.SCHEMA_VERSION,
+            "companion_durable_archive_writer_version": _companion("writer_version"),
+            "companion_durable_archive_min_readable_version": _companion("min_readable_version"),
+            "companion_durable_archive_max_readable_version": _companion("max_readable_version"),
             "archive_schema_version": storage.SCHEMA_VERSION,
             "groove_schema_version": groove_analysis.SCHEMA_VERSION,
             "setup_catalog_schema_version": setup_catalog.SCHEMA_VERSION,
@@ -94,6 +168,9 @@ def exported_values() -> dict[Path, Any]:
             "view_layer": "Blazor Hybrid",
             "webview_runtime_policy_required": True,
         },
+        # JSON carries no comments, so the alias records which store the retained
+        # ambiguous key means, and when it goes away, in a form tests can check.
+        "legacy_aliases": _compatibility_sources()["legacy_aliases"],
     }
     tools = {
         "snapshot_version": 1,
@@ -106,6 +183,7 @@ def exported_values() -> dict[Path, Any]:
     return {
         CONTRACT_ROOT / "compatibility.json": compatibility,
         CONTRACT_ROOT / "mcp-tools.v1.json": tools,
+        CONTRACT_ROOT / "analysis-view-v1.schema.json": _analysis_view_schema(),
     }
 
 

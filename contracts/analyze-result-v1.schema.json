@@ -23,6 +23,7 @@
     "report_path",
     "race_card_path",
     "race_card",
+    "analysis_view",
     "timing",
     "artifacts"
   ],
@@ -46,6 +47,7 @@
     "report_path": { "type": "string" },
     "race_card_path": { "type": "string" },
     "race_card": { "$ref": "race-card-v1.schema.json" },
+    "analysis_view": { "$ref": "analysis-view-v1.schema.json" },
     "timing": {
       "type": "object",
       "required": ["contract_version", "total_ms", "analysis_cache_hit"],

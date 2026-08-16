@@ -30,6 +30,7 @@ REQUIRED_FILES = (
     CONTRACT_ROOT / "dashboard-v1.schema.json",
     CONTRACT_ROOT / "discovery-v1.schema.json",
     CONTRACT_ROOT / "analyze-result-v1.schema.json",
+    CONTRACT_ROOT / "analysis-view-v1.schema.json",
     CONTRACT_ROOT / "race-card-v1.schema.json",
     CONTRACT_ROOT / "damage-repair-v1.schema.json",
     CONTRACT_ROOT / "track-phase-visualization-v1.schema.json",

@@ -7,8 +7,15 @@
   "backend": {
     "analysis_profile_version": "post-race-foundations-v13",
     "analysis_schema_version": 2,
+    "analysis_view_envelope_version": 1,
     "analyze_result_contract_version": 1,
     "archive_schema_version": 2,
+    "backend_archive_max_readable_version": 2,
+    "backend_archive_min_readable_version": 2,
+    "backend_archive_writer_version": 2,
+    "companion_durable_archive_max_readable_version": 1,
+    "companion_durable_archive_min_readable_version": 0,
+    "companion_durable_archive_writer_version": 1,
     "dashboard_contract_version": 1,
     "groove_schema_version": 2,
     "mcp_server_name": "iracing-coach-local",
@@ -30,6 +37,14 @@
     "IRACING_COACH_IRACING_ROOT": "trusted local iRacing Documents root",
     "IRACING_COACH_PYTHON": "packaged Python executable",
     "PYTHONUTF8": "1"
+  },
+  "legacy_aliases": {
+    "archive_schema_version": {
+      "means": "Python backend cache/archive manifest version, not the companion Documents durable archive",
+      "removal_boundary": "Removed in the reviewed commit that closes the WS-01A alias window; not before the Codex consumer freeze.",
+      "targets": "backend_archive_writer_version",
+      "window": "one compatibility window"
+    }
   },
   "plugin": {
     "name": "iracing-coach",

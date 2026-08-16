@@ -1,0 +1,23 @@
+{
+  "analysis_profile_version": null,
+  "conditions": {},
+  "corner_tire_age": {},
+  "damage_repair": {},
+  "data_quality": {},
+  "garage61_representative_laps": {},
+  "groove_evolution": {},
+  "identity": {},
+  "lap_traces": {},
+  "laps": [],
+  "race_grades": {},
+  "race_replay": {},
+  "race_summary": {},
+  "runs": [],
+  "schema_version": 1,
+  "setup_telemetry": {},
+  "strategy": {},
+  "technical_insights": [],
+  "tire_learning": {},
+  "track_geometry": {},
+  "track_profile": {}
+}
