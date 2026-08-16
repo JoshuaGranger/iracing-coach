@@ -479,7 +479,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "analyze_iracing_race",
-        "description": "Analyze the latest Race session, or a specified IBT/session; return a concise deterministic Race Card plus damage, tow, repair, pit, tire, fuel, strategy, and coaching context with stage timings, then archive the complete evidence report.",
+        "description": "Analyze the latest Race session, or a specified IBT/session; return a concise deterministic Race Card plus damage, tow, repair, pit, tire, fuel, strategy, and coaching context, then archive the complete evidence report.",
         "inputSchema": {
             "type": "object",
             "properties": {
