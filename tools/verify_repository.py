@@ -8,8 +8,9 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
@@ -455,6 +456,122 @@ def _run_mcp_e2e_smoke() -> dict[str, Any]:
     return value
 
 
+BACKEND_PRODUCER = TOOL_ROOT / "evidence" / "emit_python_results.py"
+_ALLOWED_OUTCOMES = ("passed", "failed", "skipped")
+_REQUIRED_RESULT_FIELDS = ("id", "displayId", "outcome", "durationMs", "skipReason")
+
+
+def _read_backend_results(path: Path) -> list[dict[str, Any]]:
+    """Validate the producer's structured document and return its results.
+
+    Every check here is a refusal, not a repair. The verifier previously derived
+    its summary from the child's merged stdout, which let a test's trailing
+    benchmark line be reported as the suite result. Counts must come only from a
+    document that is complete, unfiltered, and for the family we asked for.
+    """
+    if not path.is_file():
+        raise RuntimeError("Backend evidence document was not produced")
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"Backend evidence document is unreadable: {error}") from error
+    if not isinstance(document, dict):
+        raise RuntimeError("Backend evidence document is not an object")
+
+    if document.get("schemaVersion") != 1:
+        raise RuntimeError("Backend evidence document has an unexpected schemaVersion")
+    if document.get("family") != "backend":
+        raise RuntimeError("Backend evidence document reports a different family")
+    if document.get("discoveryComplete") is not True:
+        raise RuntimeError("Backend evidence discovery was incomplete")
+    if document.get("runState") != "complete":
+        raise RuntimeError("Backend evidence run was not complete")
+    if document.get("filter") is not None:
+        raise RuntimeError("Backend evidence was produced from a filtered run")
+    if document.get("failure") is not None:
+        raise RuntimeError(f"Backend evidence reports a failure: {document['failure']}")
+
+    results = document.get("results")
+    if not isinstance(results, list) or not results:
+        raise RuntimeError("Backend evidence contains no results")
+
+    identities: set[str] = set()
+    for item in results:
+        if not isinstance(item, dict):
+            raise RuntimeError("Backend evidence contains a malformed result")
+        for field in _REQUIRED_RESULT_FIELDS:
+            if field not in item:
+                raise RuntimeError(f"Backend evidence result is missing '{field}'")
+        identity = item["id"]
+        if not isinstance(identity, str) or not identity.strip():
+            raise RuntimeError("Backend evidence result has an empty identity")
+        if identity in identities:
+            raise RuntimeError(f"Backend evidence repeats identity '{identity}'")
+        identities.add(identity)
+        if item["outcome"] not in _ALLOWED_OUTCOMES:
+            raise RuntimeError(f"Backend evidence result has outcome '{item['outcome']}'")
+    return results
+
+
+def _run_backend_suite(
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    """Run the backend suite and report structured counts, never scraped text.
+
+    `runner` exists as a seam so the failure paths can be exercised deterministically
+    without a real backend run.
+    """
+    with tempfile.TemporaryDirectory(prefix="verify-backend-evidence-") as directory:
+        output = Path(directory) / "backend-results.json"
+        completed = runner(
+            [
+                sys.executable,
+                "-X",
+                "utf8",
+                str(BACKEND_PRODUCER),
+                "--family",
+                "backend",
+                "--start-dir",
+                str(PLUGIN_ROOT / "tests"),
+                "--pattern",
+                "test_*.py",
+                "--out",
+                str(output),
+            ],
+            cwd=WORKSPACE_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=180,
+        )
+        # The exit code stays the authority. A plausible-looking document must
+        # never rescue a failed run, and a clean exit must never excuse an
+        # invalid document.
+        if completed.returncode != 0:
+            if completed.stderr:
+                print(completed.stderr, file=sys.stderr)
+            raise RuntimeError("Backend unit suite failed")
+        results = _read_backend_results(output)
+
+    counts = {outcome: 0 for outcome in _ALLOWED_OUTCOMES}
+    for item in results:
+        counts[item["outcome"]] += 1
+    total = len(results)
+    if total != counts["passed"] + counts["failed"] + counts["skipped"]:
+        raise RuntimeError("Backend evidence counts do not reconcile")
+    if counts["failed"]:
+        raise RuntimeError("Backend unit suite failed")
+    return {
+        "run": True,
+        "exit_code": completed.returncode,
+        "total": total,
+        "passed": counts["passed"],
+        "failed": counts["failed"],
+        "skipped": counts["skipped"],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--full", action="store_true", help="Run the complete backend test suite.")
@@ -534,32 +651,7 @@ def main() -> int:
 
     tests: dict[str, Any] = {"run": False}
     if args.full:
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "unittest",
-                "discover",
-                "-s",
-                str(PLUGIN_ROOT / "tests"),
-                "-p",
-                "test_*.py",
-            ],
-            cwd=WORKSPACE_ROOT,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-            timeout=180,
-        )
-        tests = {
-            "run": True,
-            "exit_code": completed.returncode,
-            "summary": completed.stdout.strip().splitlines()[-1] if completed.stdout.strip() else "",
-        }
-        if completed.returncode != 0:
-            print(completed.stdout, file=sys.stderr)
-            raise RuntimeError("Backend unit suite failed")
+        tests = _run_backend_suite()
 
     result = {
         "ok": True,

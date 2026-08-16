@@ -577,6 +577,78 @@
                              "tier":  "Behavioral",
                              "technique":  "none"
                          },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_a_failed_record_raises_rather_than_reporting_a_passing_record",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_invalid_documents_fail_without_totals",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_malformed_document_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_missing_document_fails",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_producer_failure_fails_even_when_the_document_looks_complete",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_producer_output_stays_under_the_os_temporary_root",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_temporary_output_is_removed_on_success_and_on_failure",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_the_accepted_producer_is_invoked_with_the_declared_contract",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_trailing_benchmark_output_cannot_reach_the_reported_counts",
+                             "tier":  "Behavioral",
+                             "technique":  "fault"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.BackendSuiteReportingTests.test_valid_records_produce_exact_counts",
+                             "tier":  "Behavioral",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.VerifierSourceContractTests.test_the_backend_producer_runs_only_under_full_verification",
+                             "tier":  "SourceContract",
+                             "technique":  "none"
+                         },
+                         {
+                             "family":  "devtools",
+                             "id":  "test_verify_repository.VerifierSourceContractTests.test_the_verifier_never_derives_a_reported_field_from_child_output",
+                             "tier":  "SourceContract",
+                             "technique":  "none"
+                         },
                          {"family":"backend","id":"test_analysis_engine.AnalysisEngineTests.test_abs_active_trace_does_not_infer_activation_from_cut_percentage","tier":"Behavioral","technique":"fault"},
                          {"family":"backend","id":"test_analysis_engine.AnalysisEngineTests.test_analyzer_bundle_fingerprint_is_deterministic_sha256","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_analysis_engine.AnalysisEngineTests.test_archive_is_season_scoped_and_records_history","tier":"Behavioral","technique":"none"},
