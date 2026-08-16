@@ -24,6 +24,7 @@
     "race_card_contract_version": 1,
     "race_plan_decision_version": 1,
     "setup_catalog_schema_version": 1,
+    "starting_tune_contract_version": 1,
     "supported_mcp_protocol_versions": [
       "2025-06-18",
       "2025-03-26",

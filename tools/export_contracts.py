@@ -25,6 +25,7 @@ import mcp_server  # noqa: E402
 import race_card  # noqa: E402
 import race_plan_decision  # noqa: E402
 import setup_catalog  # noqa: E402
+import starting_tune  # noqa: E402
 import storage  # noqa: E402
 import tuning_engine  # noqa: E402
 import workflow  # noqa: E402
@@ -381,6 +382,7 @@ def exported_values() -> dict[Path, Any]:
             "analysis_view_envelope_version": workflow.ANALYSIS_VIEW_SCHEMA_VERSION,
             "race_plan_decision_version": race_plan_decision.RACE_PLAN_DECISION_VERSION,
             "live_truth_policy_version": live_truth.LIVE_TRUTH_POLICY_VERSION,
+            "starting_tune_contract_version": starting_tune.STARTING_TUNE_CONTRACT_VERSION,
             # Two independent stores previously shared the single ambiguous key
             # `archive_schema_version`. The backend range is derived here; the
             # companion range is declared in compatibility-sources.json because
@@ -448,6 +450,14 @@ def exported_values() -> dict[Path, Any]:
         WORKSPACE_ROOT
         / "test-data"
         / "live-truth-conformance-v1.json": live_truth.conformance_vectors(),
+        WORKSPACE_ROOT
+        / "test-data"
+        / "starting-tune-matrix-v1.json": {
+            "contract_version": starting_tune.STARTING_TUNE_CONTRACT_VERSION,
+            "purposes": list(starting_tune.PURPOSES),
+            "source_shapes": list(starting_tune.SOURCE_SHAPES),
+            "rows": starting_tune.capability_matrix(),
+        },
     }
 
 
