@@ -14,6 +14,11 @@ import statistics
 import unicodedata
 from typing import Any
 
+try:  # Package import and direct script loading are both supported.
+    from . import race_plan_decision
+except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+    import race_plan_decision
+
 
 CONTRACT_VERSION = 1
 OVAL_WORD_LIMIT = 300
@@ -226,6 +231,50 @@ def _exact_scheduled_distance(analysis: Mapping[str, Any]) -> float | None:
         # usable forecast predates its explicit scheduled_laps field.
         scheduled = _number(race.get("scheduled_laps"))
     return scheduled if scheduled is not None and scheduled > 0.0 else None
+
+
+def _plan_decision(
+    analysis: Mapping[str, Any],
+    *,
+    planned_laps: float | None = None,
+) -> race_plan_decision.RacePlanDecision | None:
+    """Obtain the authoritative fuel plan for this card, or nothing at all.
+
+    The card renders decisions; it does not make them. Every path here either
+    returns a decision produced by the authority or returns None so the caller
+    falls through to a burn-rate or unavailable claim. There is deliberately no
+    branch that computes a stop count from `all_green_range_laps`, because that
+    rounded field is what `FUEL-CONSISTENCY-001` records as the source of the
+    "No fuel stop needed" contradiction.
+    """
+    forecast = _mapping(_mapping(analysis.get("strategy")).get("forecast"))
+    distance = planned_laps
+    if distance is None:
+        distance = _exact_scheduled_distance(analysis)
+    if distance is None or distance <= 0.0:
+        # A time-limited race has no decided lap distance. Any stored plan
+        # describes a distance that may never be run, so it is withheld rather
+        # than relabelled.
+        return None
+
+    payload = forecast.get("race_plan_decision")
+    if isinstance(payload, Mapping):
+        try:
+            decision = race_plan_decision.from_payload(payload)
+        except race_plan_decision.RacePlanDecisionError:
+            # A decision this reader cannot read is not a licence to invent
+            # one. Fall through to the legacy reader, which either finds an
+            # exact stored count or reports that it cannot decide.
+            decision = None
+        if decision is not None:
+            if not decision.usable:
+                return decision
+            if decision.scheduled_laps is not None and math.isclose(
+                decision.scheduled_laps, distance, rel_tol=1e-12, abs_tol=1e-9
+            ):
+                return decision
+            return decision.replan(distance)
+    return race_plan_decision.from_legacy_forecast(forecast, scheduled_laps=distance)
 
 
 def _comparison_components(knowledge: Mapping[str, Any]) -> tuple[bool, list[Mapping[str, Any]], Mapping[str, Any]]:
@@ -873,38 +922,26 @@ def _strategy_claim(
     ]
     strategy = _mapping(analysis.get("strategy"))
     forecast = _mapping(strategy.get("forecast"))
-    if forecast.get("status") == "usable":
-        distance = planned_laps
-        if distance is None:
-            distance = _exact_scheduled_distance(analysis)
-        range_number = _number(forecast.get("all_green_range_laps"))
-        stop_count = _number(forecast.get("minimum_stops_all_green"))
-        target_numbers = [
-            value
-            for raw in _sequence(forecast.get("equal_stint_pit_targets_all_green"))[:3]
-            if (value := _number(raw)) is not None
-        ]
-        if distance is not None and distance > 0.0 and range_number not in (None, 0.0):
-            stop_count = max(0, math.ceil(distance / float(range_number) - 1e-9) - 1)
-            stint_count = stop_count + 1
-            target_numbers = [
-                distance * index / stint_count
-                for index in range(1, stint_count)
-            ][:3]
+    decision = _plan_decision(analysis, planned_laps=planned_laps)
+    if decision is not None and decision.usable:
+        distance = decision.scheduled_laps
+        range_number = decision.all_green_range_laps
+        stop_count = decision.minimum_stops
+        target_numbers = list(decision.equal_stint_pit_targets)[:3]
         stops = _fmt_number(stop_count, 0)
         targets = [
             rendered
             for value in target_numbers
             if (rendered := _fmt_number(value, 0))
         ]
-        reserve = _fmt_number(forecast.get("operational_reserve_green_laps"), 0)
-        if stop_count == 0 and distance is not None and range_number is not None:
-            margin = range_number - distance
-            text = (
-                f"No fuel stop needed for {distance:.0f} laps; {margin:.1f}-lap range margin"
-                if margin >= 0.0
-                else f"Measured range is {abs(margin):.1f} laps short for {distance:.0f} laps"
-            )
+        reserve = _fmt_number(decision.reserve_green_laps, 0)
+        if decision.no_stop_language_permitted:
+            # Reachable only when the authority decided zero stops. The old
+            # "range is N laps short" branch existed because this text was
+            # chosen by comparing one stint's range against the whole race; a
+            # decided zero-stop plan can never be short.
+            margin = decision.final_stint_margin_laps or 0.0
+            text = f"No fuel stop needed for {distance:.0f} laps; {margin:.1f}-lap range margin"
         elif stops and targets:
             stop_word = "stop" if stops == "1" else "stops"
             distance_part = f" for {distance:.0f} laps" if distance is not None else ""
@@ -938,12 +975,8 @@ def _fuel_response_claim(
 ) -> dict[str, str]:
     """Turn fuel feasibility into an explicit in-race decision rule."""
 
-    forecast = _mapping(_mapping(analysis.get("strategy")).get("forecast"))
-    distance = planned_laps
-    if distance is None:
-        distance = _exact_scheduled_distance(analysis)
-    range_laps = _number(forecast.get("all_green_range_laps"))
-    if forecast.get("status") != "usable" or distance is None or range_laps in (None, 0.0):
+    decision = _plan_decision(analysis, planned_laps=planned_laps)
+    if decision is None or not decision.usable:
         return _claim(
             "Update the fuel call only after live burn establishes a finish margin",
             "inferred",
@@ -951,8 +984,8 @@ def _fuel_response_claim(
             chars=116,
         )
 
-    stops = max(0, math.ceil(distance / float(range_laps) - 1e-9) - 1)
-    if stops == 0:
+    distance = decision.scheduled_laps or 0.0
+    if decision.no_stop_language_permitted:
         return _claim(
             f"Stay out while projected range clears the {distance:.0f}-lap finish; reconsider only if the margin disappears",
             "derived",
@@ -960,10 +993,7 @@ def _fuel_response_claim(
             chars=126,
         )
 
-    targets = [
-        max(1, int(round(distance * index / (stops + 1))))
-        for index in range(1, stops + 1)
-    ]
+    targets = [max(1, int(round(value))) for value in decision.equal_stint_pit_targets]
     target_text = "/".join(str(value) for value in targets[:3])
     return _claim(
         f"Target Lap {target_text}; move the stop only when live burn no longer supports the next stint",

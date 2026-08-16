@@ -22,6 +22,7 @@ import analysis_engine  # noqa: E402
 import groove_analysis  # noqa: E402
 import mcp_server  # noqa: E402
 import race_card  # noqa: E402
+import race_plan_decision  # noqa: E402
 import setup_catalog  # noqa: E402
 import storage  # noqa: E402
 import tuning_engine  # noqa: E402
@@ -285,6 +286,68 @@ def _analysis_view_schema() -> dict[str, Any]:
     }
 
 
+def _race_plan_decision_schema() -> dict[str, Any]:
+    """Generate the fuel decision contract from the producer's own constants.
+
+    The status list and the version come from `race_plan_decision`, so a status
+    added there cannot be missing here, and a consumer generated from this file
+    cannot enumerate a set the producer no longer emits.
+    """
+    number_or_null = {"type": ["number", "null"]}
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "race plan decision",
+        "description": (
+            "The single authoritative fuel plan. `all_green_range_laps` is exact "
+            "and unrounded: a consumer displays it, and never re-derives "
+            "`minimum_stops` from it or from any rounded projection of it. "
+            "`no_stop_language_permitted` is the only permission to state that a "
+            "race needs no stop. When `status` is not `usable` the decided "
+            "fields are null and no plan may be stated."
+        ),
+        "type": "object",
+        "additionalProperties": True,
+        "required": [
+            "all_green_range_laps",
+            "caution_scenario",
+            "decision_version",
+            "equal_stint_pit_targets",
+            "final_stint_margin_laps",
+            "minimum_stops",
+            "no_stop_language_permitted",
+            "re_decidable",
+            "reserve_green_laps",
+            "scheduled_laps",
+            "status",
+            "stints",
+        ],
+        "properties": {
+            "all_green_range_laps": number_or_null,
+            "assumptions": {"type": "array", "items": {"type": "string"}},
+            "caution_scenario": {"type": ["object", "null"]},
+            "classification": {"type": "string"},
+            "decision_version": {
+                "const": race_plan_decision.RACE_PLAN_DECISION_VERSION,
+                "type": "integer",
+            },
+            "equal_stint_pit_targets": {"type": "array", "items": {"type": "number"}},
+            "final_stint_margin_laps": number_or_null,
+            "green_burn_l_per_lap": number_or_null,
+            "limitations": {"type": "array", "items": {"type": "string"}},
+            "maximum_start_fuel_l": number_or_null,
+            "minimum_stops": {"type": ["integer", "null"]},
+            "no_stop_language_permitted": {"type": "boolean"},
+            "re_decidable": {"type": "boolean"},
+            "reserve_fuel_l": number_or_null,
+            "reserve_green_laps": {"type": "number"},
+            "scheduled_laps": number_or_null,
+            "status": {"enum": list(race_plan_decision.PLAN_STATUSES), "type": "string"},
+            "stints": {"type": ["integer", "null"]},
+            "usable_fuel_l": number_or_null,
+        },
+    }
+
+
 def _plugin_manifest() -> dict[str, Any]:
     path = PLUGIN_ROOT / ".codex-plugin" / "plugin.json"
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -315,6 +378,7 @@ def exported_values() -> dict[Path, Any]:
             "analysis_schema_version": analysis_engine.ANALYSIS_SCHEMA_VERSION,
             "analysis_profile_version": analysis_engine.ANALYSIS_PROFILE_VERSION,
             "analysis_view_envelope_version": workflow.ANALYSIS_VIEW_SCHEMA_VERSION,
+            "race_plan_decision_version": race_plan_decision.RACE_PLAN_DECISION_VERSION,
             # Two independent stores previously shared the single ambiguous key
             # `archive_schema_version`. The backend range is derived here; the
             # companion range is declared in compatibility-sources.json because
@@ -376,6 +440,7 @@ def exported_values() -> dict[Path, Any]:
         CONTRACT_ROOT / "compatibility.json": compatibility,
         CONTRACT_ROOT / "mcp-tools.v1.json": tools,
         CONTRACT_ROOT / "analysis-view-v1.schema.json": _analysis_view_schema(),
+        CONTRACT_ROOT / "race-plan-decision-v1.schema.json": _race_plan_decision_schema(),
     }
 
 

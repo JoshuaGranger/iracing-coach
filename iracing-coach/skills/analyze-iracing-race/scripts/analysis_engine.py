@@ -26,9 +26,11 @@ try:  # Package import and direct script loading are both supported.
         build_tire_learning,
         build_track_geometry,
     )
+    from . import race_plan_decision
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from groove_analysis import analyze_groove_evolution
     from race_foundations import build_race_replay, build_tire_learning, build_track_geometry
+    import race_plan_decision
 
 
 CAUTION_FLAGS = 0x0008 | 0x0100 | 0x0200 | 0x4000 | 0x8000
@@ -5227,77 +5229,44 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
         (caution_equivalents or 0.0) / exposure_total if exposure_total > 0.0 else 0.0
     )
     maximum_start_fuel = max(start_fuel_values) if start_fuel_values else None
-    reserve_green_laps = 2.0
-    reserve_fuel = (
-        green_burn * reserve_green_laps if green_burn not in (None, 0.0) else None
-    )
-    usable_fuel = (
-        max(0.0, maximum_start_fuel - reserve_fuel)
-        if maximum_start_fuel is not None and reserve_fuel is not None
-        else None
-    )
-    all_green_range = (
-        usable_fuel / green_burn
-        if usable_fuel is not None and green_burn not in (None, 0.0)
-        else None
-    )
-    mixed_burn = None
-    if green_burn not in (None, 0.0):
-        effective_caution_burn = (
-            caution_burn
-            if caution_burn not in (None, 0.0)
-            else green_burn
-        )
-        mixed_burn = (
-            (1.0 - caution_fraction) * green_burn
-            + caution_fraction * effective_caution_burn
-        )
-    observed_mix_range = (
-        usable_fuel / mixed_burn
-        if usable_fuel is not None and mixed_burn not in (None, 0.0)
-        else None
-    )
 
-    def minimum_stops(range_laps: float | None) -> int | None:
-        if scheduled_laps is None or scheduled_laps <= 0 or range_laps in (None, 0.0):
-            return None
-        return max(0, math.ceil(scheduled_laps / float(range_laps) - 1e-9) - 1)
-
-    all_green_stops = minimum_stops(all_green_range)
-    observed_mix_stops = minimum_stops(observed_mix_range)
-    equal_stint_targets: list[float] = []
-    if scheduled_laps is not None and all_green_stops is not None:
-        stint_count = all_green_stops + 1
-        equal_stint_targets = [
-            round(scheduled_laps * index / stint_count, 1)
-            for index in range(1, stint_count)
-        ]
+    # One decision, made once, from exact quantities. The rounded fields below
+    # are projections of it for display and for readers written against the
+    # older shape; they are never re-derived from each other, which is the
+    # defect FUEL-CONSISTENCY-001 records.
+    decision = race_plan_decision.decide(
+        scheduled_laps=scheduled_laps,
+        green_burn_l_per_lap=green_burn,
+        maximum_start_fuel_l=maximum_start_fuel,
+        caution_burn_l_per_lap=caution_burn,
+        observed_caution_fraction=caution_fraction,
+        hybrid_limits=bool(hybrid_limits),
+    )
+    scenario = decision.caution_scenario
     forecast = {
-        "status": (
-            "hybrid_finish_constraint_unresolved"
-            if hybrid_limits
-            else (
-                "usable"
-                if scheduled_laps is not None and all_green_range is not None
-                else "insufficient_fuel_or_distance_evidence"
-            )
-        ),
-        "scheduled_laps": _round(scheduled_laps, 0),
+        "status": decision.status,
+        "scheduled_laps": _round(decision.scheduled_laps, 0),
         "maximum_recorded_run_start_fuel_l": _round(maximum_start_fuel),
-        "operational_reserve_green_laps": reserve_green_laps,
-        "operational_reserve_fuel_l": _round(reserve_fuel),
-        "all_green_range_laps": _round(all_green_range, 1),
+        "operational_reserve_green_laps": decision.reserve_green_laps,
+        "operational_reserve_fuel_l": _round(decision.reserve_fuel_l),
+        "all_green_range_laps": _round(decision.all_green_range_laps, 1),
         "observed_caution_fraction": _round(caution_fraction, 4),
-        "observed_mix_range_laps": _round(observed_mix_range, 1),
-        "minimum_stops_all_green": all_green_stops,
-        "minimum_stops_at_observed_mix": observed_mix_stops,
-        "equal_stint_pit_targets_all_green": equal_stint_targets,
+        "observed_mix_range_laps": _round(scenario.range_laps, 1) if scenario else None,
+        "minimum_stops_all_green": decision.minimum_stops,
+        "minimum_stops_at_observed_mix": scenario.minimum_stops if scenario else None,
+        "equal_stint_pit_targets_all_green": [
+            round(target, 1) for target in decision.equal_stint_pit_targets
+        ],
         "classification": "fuel-feasibility forecast, not an optimal-pit-call claim",
         "assumptions": [
             "Uses the maximum fuel observed at a run start as available capacity; it may be below the car's legal tank maximum.",
-            "Holds measured green/caution burn rates constant and reserves two green laps for operational uncertainty/overtime.",
+            "Holds measured green/caution burn rates constant and reserves exactly one green lap for operational uncertainty.",
             "Equal-stint targets ignore live track position, stage breaks, pit loss, tire rules, damage, and future cautions.",
         ],
+        # The authority itself, carried beside its projections so a consumer can
+        # stop reparsing the rounded ones. Codex maps this record; nothing
+        # downstream needs to recompute a stop count from a display scalar.
+        "race_plan_decision": decision.to_payload(),
     }
     return {
         "measured_green_fuel_l_per_lap": _round(green_burn),

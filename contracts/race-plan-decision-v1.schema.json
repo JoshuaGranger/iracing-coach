@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The single authoritative fuel plan. `all_green_range_laps` is exact and unrounded: a consumer displays it, and never re-derives `minimum_stops` from it or from any rounded projection of it. `no_stop_language_permitted` is the only permission to state that a race needs no stop. When `status` is not `usable` the decided fields are null and no plan may be stated.",
+  "properties": {
+    "all_green_range_laps": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "assumptions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "caution_scenario": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "classification": {
+      "type": "string"
+    },
+    "decision_version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "equal_stint_pit_targets": {
+      "items": {
+        "type": "number"
+      },
+      "type": "array"
+    },
+    "final_stint_margin_laps": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "green_burn_l_per_lap": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "maximum_start_fuel_l": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "minimum_stops": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "no_stop_language_permitted": {
+      "type": "boolean"
+    },
+    "re_decidable": {
+      "type": "boolean"
+    },
+    "reserve_fuel_l": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "reserve_green_laps": {
+      "type": "number"
+    },
+    "scheduled_laps": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "status": {
+      "enum": [
+        "usable",
+        "hybrid_finish_constraint_unresolved",
+        "insufficient_fuel_or_distance_evidence",
+        "rounded_range_cannot_decide"
+      ],
+      "type": "string"
+    },
+    "stints": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "usable_fuel_l": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "all_green_range_laps",
+    "caution_scenario",
+    "decision_version",
+    "equal_stint_pit_targets",
+    "final_stint_margin_laps",
+    "minimum_stops",
+    "no_stop_language_permitted",
+    "re_decidable",
+    "reserve_green_laps",
+    "scheduled_laps",
+    "status",
+    "stints"
+  ],
+  "title": "race plan decision",
+  "type": "object"
+}
