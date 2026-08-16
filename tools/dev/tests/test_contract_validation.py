@@ -81,6 +81,42 @@ class UnsupportedConstructTests(unittest.TestCase):
         with self.assertRaises(cv.UnsupportedSchema):
             cv.validate({}, {"$ref": "#/$defs/missing", "$defs": {}})
 
+    def test_a_constraint_beside_a_ref_is_refused_not_discarded(self) -> None:
+        """Under draft 2020-12 a sibling of `$ref` still applies.
+
+        This validator resolves the reference and does not merge siblings, so a
+        constraint placed beside `$ref` would be silently discarded and report
+        conformance for something it never checked. Refusing is the contract.
+        """
+        schema = {"$defs": {"leaf": {"type": "integer"}}, "$ref": "#/$defs/leaf", "const": 2}
+        with self.assertRaises(cv.UnsupportedSchema):
+            cv.validate(1, schema)
+
+    def test_every_constraint_sibling_of_a_ref_is_refused(self) -> None:
+        for sibling in ("const", "type", "enum", "required", "properties",
+                        "items", "additionalProperties"):
+            with self.subTest(sibling=sibling):
+                schema = {"$defs": {"leaf": {"type": "integer"}},
+                          "$ref": "#/$defs/leaf", sibling: 1}
+                with self.assertRaises(cv.UnsupportedSchema):
+                    cv.validate(1, schema)
+
+    def test_annotation_siblings_of_a_ref_remain_allowed(self) -> None:
+        # Annotations carry no constraint, so refusing them would be needless.
+        schema = {"$defs": {"leaf": {"type": "integer"}}, "$ref": "#/$defs/leaf",
+                  "title": "leaf", "description": "an integer", "$comment": "note"}
+        self.assertFalse(cv.validate(1, schema))
+        self.assertTrue(cv.validate("x", schema))
+
+    def test_a_nested_ref_sibling_is_refused(self) -> None:
+        schema = {
+            "$defs": {"leaf": {"type": "integer"}},
+            "type": "object",
+            "properties": {"a": {"$ref": "#/$defs/leaf", "const": 2}},
+        }
+        with self.assertRaises(cv.UnsupportedSchema):
+            cv.validate({"a": 1}, schema)
+
     def test_non_boolean_additional_properties_is_refused(self) -> None:
         with self.assertRaises(cv.UnsupportedSchema):
             cv.validate({"a": 1}, {"type": "object", "additionalProperties": {"type": "string"}})

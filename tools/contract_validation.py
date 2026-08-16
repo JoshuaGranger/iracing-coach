@@ -21,6 +21,7 @@ from typing import Any
 
 SUPPORTED_KEYWORDS = frozenset(
     {
+        "$comment",
         "$defs",
         "$ref",
         "$schema",
@@ -83,6 +84,14 @@ def _assert_supported(schema: Any, pointer: str) -> None:
         raise UnsupportedSchema(f"unsupported keyword(s) at {pointer}: {', '.join(unknown)}")
 
 
+# Keywords that constrain nothing about the instance, so they may accompany
+# `$ref` harmlessly. `$defs` is a definitions container, not a constraint, and a
+# root schema legitimately holds both it and a `$ref`.
+_ANNOTATION_KEYWORDS = frozenset(
+    {"$ref", "$comment", "$schema", "$defs", "title", "description"}
+)
+
+
 def _resolve(schema: dict[str, Any], root: dict[str, Any], pointer: str) -> dict[str, Any]:
     reference = schema.get("$ref")
     if reference is None:
@@ -90,6 +99,16 @@ def _resolve(schema: dict[str, Any], root: dict[str, Any], pointer: str) -> dict
     prefix = "#/$defs/"
     if not isinstance(reference, str) or not reference.startswith(prefix):
         raise UnsupportedSchema(f"unsupported $ref at {pointer}: {reference!r}")
+    # Under draft 2020-12 a sibling of `$ref` still applies. This validator
+    # resolves the reference and does not merge siblings, so a constraint placed
+    # beside `$ref` would be silently discarded and report false conformance.
+    # Refusing is the whole point of a bounded validator.
+    siblings = sorted(set(schema) - _ANNOTATION_KEYWORDS)
+    if siblings:
+        raise UnsupportedSchema(
+            f"$ref at {pointer} has sibling constraint(s) this validator does not merge: "
+            + ", ".join(siblings)
+        )
     name = reference[len(prefix) :]
     definitions = root.get("$defs")
     if not isinstance(definitions, dict) or name not in definitions:

@@ -47,23 +47,75 @@ def _compatibility_sources() -> dict[str, Any]:
     return value
 
 
-def _companion(field: str) -> int:
-    """Read one declared companion-archive value, refusing a malformed record.
+_COMPANION_AUTHORITY_CONTRACT = {
+    "writer_version": "csharp-symbol",
+    "max_readable_version": "csharp-symbol",
+    "min_readable_version": "declared-policy",
+}
 
-    The companion store's authority is C# source rather than a Python constant,
-    so the value is declared here and bound to that source by test. Failing
-    loudly beats generating a plausible number from an incomplete record.
+
+def _companion_entry(record: dict[str, Any], field: str) -> int:
+    """Validate one declared companion field and return its value.
+
+    Checking only that a value is an integer is not enough. A declaration whose
+    minimum exceeds its maximum is a self-contradictory compatibility range, and
+    generating it would publish a claim no reader could satisfy. Every part of
+    the accepted per-field authority contract is enforced here so a malformed
+    record cannot become a generated artifact.
     """
-    record = _compatibility_sources().get("companion_durable_archive")
-    if not isinstance(record, dict) or field not in record:
+    if field not in record:
         raise ValueError(f"Compatibility sources lacks companion_durable_archive.{field}")
     entry = record[field]
-    if not isinstance(entry, dict) or "value" not in entry or "authority" not in entry:
-        raise ValueError(f"companion_durable_archive.{field} lacks value/authority")
+    if not isinstance(entry, dict):
+        raise ValueError(f"companion_durable_archive.{field} is not an object")
+    for required in ("value", "authority", "symbol", "source", "derivation"):
+        if required not in entry:
+            raise ValueError(f"companion_durable_archive.{field} lacks {required!r}")
+
     value = entry["value"]
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"companion_durable_archive.{field}.value must be an integer")
+        raise ValueError(f"companion_durable_archive.{field}.value must be a JSON integer")
+    if value < 0:
+        raise ValueError(f"companion_durable_archive.{field}.value must not be negative")
+
+    expected = _COMPANION_AUTHORITY_CONTRACT[field]
+    if entry["authority"] != expected:
+        raise ValueError(
+            f"companion_durable_archive.{field}.authority must be {expected!r}"
+        )
+    if expected == "csharp-symbol":
+        if not entry["symbol"] or not entry["source"]:
+            raise ValueError(f"companion_durable_archive.{field} must name its symbol and source")
+    else:
+        if entry["symbol"] is not None or entry["source"] is not None:
+            raise ValueError(
+                f"companion_durable_archive.{field} is declared policy and must not claim a symbol"
+            )
+        for required in ("enforced_by", "current_behavior"):
+            if not entry.get(required):
+                raise ValueError(f"companion_durable_archive.{field} lacks {required!r}")
     return value
+
+
+def _companion_range() -> dict[str, int]:
+    """Return the companion range, refusing any self-contradictory declaration."""
+    record = _compatibility_sources().get("companion_durable_archive")
+    if not isinstance(record, dict):
+        raise ValueError("Compatibility sources lacks companion_durable_archive")
+    values = {field: _companion_entry(record, field) for field in _COMPANION_AUTHORITY_CONTRACT}
+    minimum = values["min_readable_version"]
+    writer = values["writer_version"]
+    maximum = values["max_readable_version"]
+    if not minimum <= writer <= maximum:
+        raise ValueError(
+            "companion_durable_archive range is self-contradictory: "
+            f"min {minimum} <= writer {writer} <= max {maximum} does not hold"
+        )
+    return values
+
+
+def _companion(field: str) -> int:
+    return _companion_range()[field]
 
 
 def _analysis_view_schema() -> dict[str, Any]:
