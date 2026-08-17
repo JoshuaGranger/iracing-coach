@@ -1,5 +1,7 @@
 @using System.Globalization
+@using Microsoft.JSInterop
 @implements IAsyncDisposable
+@inject IJSRuntime JS
 
 <section class="race-replay-workspace" data-analysis-section="replay" data-race-replay aria-label="Race replay">
     @if (!ReplayAvailable)
@@ -230,7 +232,9 @@
 @code {
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
 
-    private readonly CancellationTokenSource _playbackCancellation = new();
+    private readonly string _clockOwnerId = $"replay-{Guid.NewGuid():N}";
+    private DotNetObjectReference<RaceReplayWorkspace>? _clockReference;
+    private int _lastPlaybackFrame = -1;
     private bool Playing { get; set; }
     private bool ShowAbs { get; set; }
     private bool ShowFastestReference { get; set; } = true;
@@ -289,10 +293,13 @@
     protected override void OnParametersSet()
     {
         if (_analysisId == Workspace.AnalysisId && ReferenceEquals(_workspaceReference, Workspace)) return;
+        var priorGeneration = _playbackGeneration;
         _analysisId = Workspace.AnalysisId;
         _workspaceReference = Workspace;
         Playing = false;
         _playbackGeneration++;
+        _lastPlaybackFrame = -1;
+        _ = StopReplayClockAsync(priorGeneration);
         PlaybackFraction = 0;
         PlaybackSpeed = 1;
         ShowAbs = false;
@@ -940,33 +947,87 @@
 
     private async Task TogglePlayback()
     {
-        Playing = !Playing;
-        var generation = ++_playbackGeneration;
-        if (!Playing) return;
-        if (PlaybackFraction >= .999) PlaybackFraction = 0;
-        var previous = DateTimeOffset.UtcNow;
-        while (Playing && generation == _playbackGeneration && !_playbackCancellation.IsCancellationRequested)
+        if (Playing)
         {
-            var now = DateTimeOffset.UtcNow;
-            var elapsed = (now - previous).TotalSeconds;
-            previous = now;
-            PlaybackFraction = Math.Clamp(PlaybackFraction + elapsed * PlaybackSpeed / ReplayDurationSeconds, 0, 1);
-            if (PlaybackFraction >= 1) Playing = false;
-            await InvokeAsync(StateHasChanged);
-            try { await Task.Delay(16, _playbackCancellation.Token); } catch (OperationCanceledException) { break; }
+            PausePlayback();
+            return;
+        }
+        if (PlaybackFraction >= .999) PlaybackFraction = 0;
+        Playing = true;
+        var generation = ++_playbackGeneration;
+        _lastPlaybackFrame = -1;
+        _clockReference ??= DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync(
+                "iracingCoachReplayPhaseClock.start",
+                _clockOwnerId,
+                _clockReference,
+                generation,
+                PlaybackFraction,
+                PlaybackSpeed,
+                ReplayDurationSeconds);
+        }
+        catch (JSException)
+        {
+            Playing = false;
         }
     }
-    private void Seek(ChangeEventArgs args)
+
+    [JSInvokable]
+    public Task PublishReplayPhase(
+        int revision,
+        int frame,
+        double elapsedMilliseconds,
+        double fraction,
+        bool completed) => InvokeAsync(() =>
     {
+        if (!Playing || revision != _playbackGeneration) return;
+        if (frame < 0 || !double.IsFinite(elapsedMilliseconds) || elapsedMilliseconds < 0 || !double.IsFinite(fraction))
+        {
+            PausePlayback();
+            return;
+        }
+        if (frame <= _lastPlaybackFrame) return;
+        _lastPlaybackFrame = frame;
+        PlaybackFraction = Math.Clamp(fraction, 0, 1);
+        if (completed || PlaybackFraction >= 1) Playing = false;
+        StateHasChanged();
+    });
+
+    private void PausePlayback()
+    {
+        var revision = _playbackGeneration;
         Playing = false;
         _playbackGeneration++;
+        _ = StopReplayClockAsync(revision);
+    }
+
+    private async ValueTask StopReplayClockAsync(int revision)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("iracingCoachReplayPhaseClock.stop", _clockOwnerId, revision);
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException)
+        {
+        }
+    }
+
+    private void Seek(ChangeEventArgs args)
+    {
+        PausePlayback();
         if (double.TryParse(args.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)) PlaybackFraction = Math.Clamp(value / 1000, 0, 1);
     }
-    private void ChangePlaybackSpeed(ChangeEventArgs args)
+    private async Task ChangePlaybackSpeed(ChangeEventArgs args)
     {
-        if (double.TryParse(args.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && PlaybackSpeeds.Contains(value)) PlaybackSpeed = value;
+        if (!double.TryParse(args.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !PlaybackSpeeds.Contains(value)) return;
+        var resume = Playing;
+        if (resume) PausePlayback();
+        PlaybackSpeed = value;
+        if (resume) await TogglePlayback();
     }
-    private void SeekToTime(double seconds) { Playing = false; _playbackGeneration++; PlaybackFraction = Math.Clamp((seconds - ReplayStartSeconds) / ReplayDurationSeconds, 0, 1); }
+    private void SeekToTime(double seconds) { PausePlayback(); PlaybackFraction = Math.Clamp((seconds - ReplayStartSeconds) / ReplayDurationSeconds, 0, 1); }
     private void SeekToLap(int lap)
     {
         var player = PlayerCarIndex;
@@ -1161,12 +1222,14 @@
     private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private static string Aria(bool value) => value ? "true" : "false";
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        var revision = _playbackGeneration;
         Playing = false;
-        _playbackCancellation.Cancel();
-        _playbackCancellation.Dispose();
-        return ValueTask.CompletedTask;
+        _playbackGeneration++;
+        await StopReplayClockAsync(revision);
+        _clockReference?.Dispose();
+        _clockReference = null;
     }
 
     private sealed record ReplayChart(string Id, string Label, string Unit);

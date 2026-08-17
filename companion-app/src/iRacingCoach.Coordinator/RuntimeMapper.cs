@@ -245,15 +245,39 @@ public static class RuntimeMapper
         return result;
     }
 
-    public static Garage61Connection Garage61(JsonElement response)
+    public static Garage61Connection Garage61(JsonElement response, Garage61Connection? previous = null)
     {
         var configured = Boolean(response, "configured") == true;
-        var available = Boolean(response, "ok") == true && configured;
         var status = Text(response, "status") ?? (configured ? "configured" : "not_configured");
-        var message = available
-            ? "Connected and ready."
-            : configured ? "Your token is saved. Connection retries automatically." : "Add your Garage61 token here when you want to connect.";
-        return new Garage61Connection(configured, available, status, message);
+        if (!configured)
+            return Garage61StatusReducer.Unprobed(false) with { Status = status };
+
+        var prior = previous is { Configured: true }
+            ? previous
+            : Garage61StatusReducer.Unprobed(true);
+        if (Boolean(response, "ok") == true)
+        {
+            var drivingData = Boolean(Object(Object(response, "capabilities"), "driving_data"), "available");
+            return Garage61StatusReducer.ApplyProbe(
+                prior,
+                drivingData == true ? "ok" : drivingData == false ? "insufficient_scope" : "malformed",
+                drivingData.HasValue ? string.Empty : "The response did not state driving-data permission.");
+        }
+
+        var errorType = Text(response, "error_type") ?? string.Empty;
+        var message = Text(response, "message") ?? string.Empty;
+        var outcome = errorType switch
+        {
+            "Garage61AuthError" => "unauthorized",
+            "Garage61PermissionError" => "forbidden",
+            "Garage61CapabilityError" => "insufficient_scope",
+            "Garage61TransportError" => "connect_failure",
+            "Garage61ResponseError" => "malformed",
+            _ when message.Contains("timed out", StringComparison.OrdinalIgnoreCase) => "timeout",
+            _ when status == "unavailable" => "connect_failure",
+            _ => "malformed"
+        };
+        return Garage61StatusReducer.ApplyProbe(prior, outcome, message);
     }
 
     public static AnalysisGarage61References? Garage61References(JsonElement response) =>
@@ -1699,6 +1723,10 @@ public static class RuntimeMapper
     private static AnalysisRaceReplay? MapRaceReplay(JsonElement replay)
     {
         if (replay.ValueKind != JsonValueKind.Object) return null;
+        var manifestRoot = Object(replay, "manifest");
+        var manifest = manifestRoot.ValueKind == JsonValueKind.Object
+            ? ReplayManifestConsumer.Read(manifestRoot)
+            : null;
         var coverage = Array(replay, "coverage").Select(item => new AnalysisReplayCoverage(
             Text(item, "channel") ?? string.Empty,
             Text(item, "status") ?? "unavailable",
@@ -1798,6 +1826,8 @@ public static class RuntimeMapper
                 Boolean(representationRoot, "keyframes_preserved"),
                 NullableInteger(representationRoot, "dropped_keyframe_count"))
             : null;
+        if (manifest is { Format: "inline", IsReadable: true } && manifest.FrameCount != frames.Length)
+            throw new InvalidDataException("The replay inline manifest frame count does not match the delivered frames.");
         return new AnalysisRaceReplay(
             Text(replay, "status") ?? "unavailable",
             Array(replay, "unavailable_reasons").Select(Value).Where(value => value.Length > 0).ToArray(),
@@ -1810,7 +1840,8 @@ public static class RuntimeMapper
             Text(replay, "interpolation") ?? string.Empty,
             temporalCoverage,
             participantCoverage,
-            representation);
+            representation,
+            manifest);
     }
 
     private static AnalysisReplayCarState MapReplayCarObject(JsonElement car) => new(

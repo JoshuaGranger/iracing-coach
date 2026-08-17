@@ -38,7 +38,7 @@
                 <span class="eyebrow">Step 3 of 5</span><h2>Connect Garage61</h2><p>Add your Garage61 personal token once. Windows protects it for this user and keeps it out of copied Coach data.</p>
                 @if (State.Garage61.Configured)
                 {
-                    <div class="connection-summary"><span class="status-orb @(State.Garage61.Available ? "ready" : "neutral")"></span><strong>@(State.Garage61.Available ? "Connected" : "Saved on this PC")</strong><small>@State.Garage61.Message</small></div>
+                    <div class="connection-summary"><span class="status-orb @(State.Garage61.Available ? "ready" : "neutral")"></span><strong>@State.Garage61StatusLabel</strong><small>@State.Garage61.Message</small></div>
                     <button class="button primary" @onclick="State.ContinueSetupWithoutConnection">Continue</button>
                 }
                 else

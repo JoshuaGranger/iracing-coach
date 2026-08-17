@@ -63,6 +63,19 @@ public sealed record CoachEngineInstallation(
 public sealed class CoachEngineProvisioner
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    internal static readonly string[] EnabledCoachTools =
+    [
+        "analyze_iracing_race",
+        "catalog_iracing_setups",
+        "discover_iracing_sessions",
+        "find_iracing_telemetry_events",
+        "iracing_companion_dashboard",
+        "iracing_setup_history",
+        "iracing_strategy_history",
+        "query_iracing_telemetry",
+        "recommend_open_setup_tuning",
+        "recommend_structured_open_setup_tuning"
+    ];
     private readonly string? _componentRoot;
     private readonly string? _localRoot;
     private readonly string? _applicationRoot;
@@ -143,9 +156,9 @@ public sealed class CoachEngineProvisioner
         return new CoachEngineInstallation(true, "Coach Engine is ready.", runtimeVersion, executable, codexHome, schemaDirectory, configPath);
     }
 
-    private static string BuildConfig(CompanionSettings settings, string backendLauncher)
+    internal static string BuildConfig(CompanionSettings settings, string backendLauncher)
     {
-        const string instructions = "You are the private iRacing Coach Engine. Use the bounded iRacing Coach MCP tools as the source of truth. Never invent telemetry, tire wear, damage, pit loss, setup values, or targets. Use only the active capabilities supplied with the request and omit sections that do not apply or lack supported evidence. Preserve measured, derived, inferred, and proxy evidence labels. Never refer to hidden controls or features. Never recommend setup changes unless setupChangesAllowed is true, and reject damage-confounded tests. Keep responses concise, human, and driver-focused.";
+        const string instructions = "You are the private iRacing Coach Engine. Use the bounded iRacing Coach MCP tools as the source of truth. Never invent telemetry, tire wear, damage, pit loss, setup values, or targets. Use only the active capabilities supplied with the request and omit sections that do not apply or lack supported evidence. Preserve measured, derived, inferred, and proxy evidence labels. Never refer to hidden controls or features. Never recommend setup changes unless setup_changes_allowed is true, and reject damage-confounded tests. Keep responses concise, human, and driver-focused.";
         var values = new Dictionary<string, string>
         {
             ["IRACING_COACH_PYTHON"] = settings.PythonPath,
@@ -156,6 +169,7 @@ public sealed class CoachEngineProvisioner
             ["PYTHONUTF8"] = "1"
         };
         var environment = string.Join(", ", values.Select(pair => $"{Toml(pair.Key)} = {Toml(pair.Value)}"));
+        var enabledTools = string.Join(", ", EnabledCoachTools.Select(Toml));
         return $$"""
             approval_policy = "never"
             sandbox_mode = "read-only"
@@ -176,6 +190,7 @@ public sealed class CoachEngineProvisioner
             [mcp_servers.iracing_coach]
             enabled = true
             required = true
+            enabled_tools = [{{enabledTools}}]
             command = "powershell.exe"
             args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", {{Toml(backendLauncher)}}]
             env = { {{environment}} }

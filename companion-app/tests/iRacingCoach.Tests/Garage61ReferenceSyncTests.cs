@@ -103,7 +103,13 @@ public sealed class Garage61ReferenceSyncTests
                 "iracing_companion_dashboard" => JsonSerializer.SerializeToElement(new { ok = true, races = Array.Empty<object>() }),
                 "discover_iracing_sessions" => JsonSerializer.SerializeToElement(new { sessions = Array.Empty<object>() }),
                 "catalog_iracing_setups" => JsonSerializer.SerializeToElement(new { ok = true, entries = Array.Empty<object>() }),
-                "garage61_auth_status" => JsonSerializer.SerializeToElement(new { ok = true, configured = true, status = "ready" }),
+                "garage61_auth_status" => JsonSerializer.SerializeToElement(new
+                {
+                    ok = true,
+                    configured = true,
+                    status = "available",
+                    capabilities = new { driving_data = new { available = true } }
+                }),
                 "analyze_iracing_race" => AnalysisResponse(RequestedSelector(arguments)),
                 _ => JsonSerializer.SerializeToElement(new { ok = true })
             };

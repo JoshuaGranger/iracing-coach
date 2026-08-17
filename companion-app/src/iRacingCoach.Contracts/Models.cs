@@ -553,6 +553,24 @@ public sealed record AnalysisReplayFrame(
     IReadOnlyList<AnalysisReplayObservedEvent>? Events = null,
     bool GapBefore = false);
 
+public sealed record AnalysisReplayFrameGap(int StartFrame, int EndFrame);
+
+public sealed record AnalysisReplayManifest(
+    int ContractVersion,
+    int SchemaVersion,
+    string Format,
+    string Status,
+    string Revision,
+    int FrameCount,
+    int CarCount,
+    double CadenceHz,
+    IReadOnlyList<AnalysisReplayFrameGap> Gaps)
+{
+    public int TotalRows => checked(FrameCount * CarCount);
+    public int MissingFrames => Gaps.Sum(gap => checked(gap.EndFrame - gap.StartFrame + 1));
+    public bool IsReadable => Status is "complete" or "incomplete" && FrameCount > 0;
+}
+
 public sealed record AnalysisRaceReplay(
     string Status,
     IReadOnlyList<string> UnavailableReasons,
@@ -565,7 +583,8 @@ public sealed record AnalysisRaceReplay(
     string Interpolation,
     AnalysisReplayTemporalCoverage? TemporalCoverage = null,
     IReadOnlyList<AnalysisReplayParticipantCoverage>? ParticipantCoverage = null,
-    AnalysisReplayRepresentation? Representation = null);
+    AnalysisReplayRepresentation? Representation = null,
+    AnalysisReplayManifest? Manifest = null);
 
 public sealed record AnalysisTireBandPrediction(
     double? RemainingPercent,
@@ -1146,7 +1165,45 @@ public sealed record TuningExperimentView(
     IReadOnlyList<string> Verify,
     string Outcome);
 
-public sealed record Garage61Connection(bool Configured, bool Available, string Status, string Message);
+public sealed record Garage61Connection(
+    string Credential,
+    string Authentication,
+    string Permission,
+    string Availability,
+    string Status,
+    string Message)
+{
+    public Garage61Connection(bool configured, bool available, string status, string message)
+        : this(
+            configured ? "saved" : "absent",
+            available ? "valid" : "unverified",
+            available ? "granted" : "unverified",
+            available ? "available" : "unverified",
+            status,
+            message)
+    {
+    }
+
+    public bool Configured => Credential == "saved";
+
+    // "Connected" is deliberately a conjunction. A saved credential, a prior
+    // successful probe, or a reachable service alone cannot make this true.
+    public bool Connected =>
+        Credential == "saved" &&
+        Authentication == "valid" &&
+        Permission == "granted" &&
+        Availability == "available";
+
+    public bool Available => Connected;
+
+    public string Remedy =>
+        Credential == "absent" ? "save_credential" :
+        Authentication == "rejected" ? "replace_credential" :
+        Permission == "insufficient_scope" ? "grant_scope" :
+        Permission == "denied" ? "check_account_access" :
+        Availability is "unreachable" or "timed_out" or "throttled" or "malformed" ? "retry_later" :
+        string.Empty;
+}
 
 public sealed record CoachEngineConnection(
     bool Installed,

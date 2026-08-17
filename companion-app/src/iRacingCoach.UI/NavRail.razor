@@ -44,6 +44,6 @@
         ("tuning", "Progressive Tuning", "wrench", ProductCapability.ProgressiveTuning)
     ];
     private string LocalActivity => State.ServiceRequestInFlight ? "Working" : State.ServiceFailureCount > 0 ? "Needs attention" : "Ready";
-    private string GarageActivity => State.Garage61.Available ? "Connected" : State.Garage61.Configured ? "Reconnecting" : "Not connected";
+    private string GarageActivity => State.Garage61StatusLabel;
     private string AiActivity => State.IsCoaching ? "Working" : State.CoachEngine.ChatGptConnected ? "Connected" : "Not connected";
 }

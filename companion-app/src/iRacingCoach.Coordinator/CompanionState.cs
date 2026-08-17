@@ -235,7 +235,8 @@ public sealed class CompanionState : IDisposable
     public string AnalysisMessage { get; private set; } = string.Empty;
     public string Garage61ReferenceMessage { get; private set; } = string.Empty;
     public bool IsGarage61ReferenceSyncing => Volatile.Read(ref _garage61ReferenceSyncActive) != 0;
-    public Garage61Connection Garage61 { get; private set; } = new(false, false, "checking", "Checking connection…");
+    public Garage61Connection Garage61 { get; private set; } = Garage61StatusReducer.Unprobed(false);
+    public string Garage61StatusLabel => Garage61StatusReducer.Label(Garage61);
     public CoachEngineConnection CoachEngine { get; private set; }
     public IReadOnlyList<DiagnosticFact> Diagnostics { get; private set; } = [];
     public ArchiveStatus? Archive { get; private set; }
@@ -528,12 +529,13 @@ public sealed class CompanionState : IDisposable
                     if (setups.All(setup => !string.Equals(setup.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) setups.Add(archived);
                 return (IReadOnlyList<LocalSetup>)setups.ToArray();
             }, cancellationToken);
+            var garageBeforeProbe = Garage61;
             var garageTask = ReadRefreshSectionAsync("Garage61", async () =>
             {
                 var response = await CallBackendAsync("garage61_auth_status", new { archive_root = roots.ArchiveRoot }, cancellationToken);
                 if (response.ValueKind != JsonValueKind.Object)
                     throw new InvalidDataException("The Garage61 response was not an object.");
-                return RuntimeMapper.Garage61(response);
+                return RuntimeMapper.Garage61(response, garageBeforeProbe);
             }, cancellationToken);
 
             await Task.WhenAll(healthTask, dashboardTask, discoveryTask, setupTask);
@@ -715,9 +717,13 @@ public sealed class CompanionState : IDisposable
             if (_disposed) return;
             if (!RefreshRootsAreCurrent(roots)) return;
             if (garage.Success) Garage61 = garage.Value!;
-            else RecordSectionFailure(garage);
+            else
+            {
+                Garage61 = Garage61StatusReducer.ApplyFailure(Garage61, garage.Error!.Exception);
+                RecordSectionFailure(garage);
+            }
             UpdateHealth("garage61", "Garage61", Garage61.Available ? "ready" : Garage61.Configured ? "warning" : "neutral",
-                Garage61.Available ? "Connected" : Garage61.Configured ? "Key saved · offline" : "Not configured");
+                Garage61StatusReducer.Label(Garage61));
             Diagnostics = BuildDiagnostics(_lastBackendHealth);
             RaiseChanged();
         }
@@ -2355,21 +2361,39 @@ public sealed class CompanionState : IDisposable
 
     public async Task ConnectGarage61Async(CancellationToken cancellationToken = default)
     {
+        var prior = Garage61;
         try
         {
-            _garage61Credentials.Store(Garage61KeyInput);
+            using var replacement = _garage61Credentials.BeginReplacement(Garage61KeyInput);
             Garage61KeyInput = string.Empty;
             Settings.Garage61ApiKey = string.Empty;
+            var response = await CallBackendAsync("garage61_auth_status", new { archive_root = Settings.ArchiveRoot }, cancellationToken);
+            if (response.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("The Garage61 validation response was not an object.");
+            var candidate = RuntimeMapper.Garage61(response, Garage61StatusReducer.Unprobed(true));
+            if (!candidate.Connected)
+            {
+                replacement.Rollback();
+                Garage61 = prior.Configured ? prior : Garage61StatusReducer.Unprobed(false);
+                Toast = $"Garage61 connection was not replaced. {candidate.Message}";
+                return;
+            }
+
+            Garage61 = candidate;
             SaveSettingsToStore();
-            await RefreshDataAsync(false, cancellationToken);
+            replacement.Commit();
             SetupStep = Math.Max(SetupStep, 4);
             Toast = "Garage61 is connected for this Windows user.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException or ArgumentException or JsonException or TimeoutException)
         {
+            Garage61 = prior;
             Toast = $"Garage61 could not be connected: {Bound(ex.Message)}";
         }
-        RaiseChanged();
+        finally
+        {
+            RaiseChanged();
+        }
     }
 
     public async Task DisconnectGarage61Async(CancellationToken cancellationToken = default)
@@ -2465,6 +2489,20 @@ public sealed class CompanionState : IDisposable
             RaiseChanged();
             return;
         }
+        if (CurrentAnalysis is null)
+        {
+            Toast = "The Coach needs numeric deterministic analysis before it can answer.";
+            RaiseChanged();
+            return;
+        }
+
+        var packet = RaceCoachPacketBuilder.Build(CurrentAnalysis);
+        if (!packet.HasNumericEvidence)
+        {
+            Toast = "The Coach cannot answer from prose alone. This race has no supported numeric evidence.";
+            RaiseChanged();
+            return;
+        }
 
         _coachRequest?.Cancel();
         _coachRequest?.Dispose();
@@ -2479,7 +2517,7 @@ public sealed class CompanionState : IDisposable
         {
             var workflowKey = $"race:{(SelectedRaceSessionId.Length > 0 ? SelectedRaceSessionId : CurrentRaceCard.Title)}";
             Settings.CoachThreadIds.TryGetValue(workflowKey, out var threadId);
-            var evidence = BuildCoachEvidence();
+            var evidence = BuildCoachEvidence(packet);
             var reply = await _coachEngine.AskCoachAsync(threadId, CoachQuestion, evidence, _coachRequest.Token);
             Settings.CoachThreadIds[workflowKey] = reply.ThreadId;
             PersistSettingsQuietly();
@@ -3216,7 +3254,7 @@ public sealed class CompanionState : IDisposable
         _ => ProductCapability.RaceAnalysis
     };
 
-    private string BuildCoachEvidence()
+    private string BuildCoachEvidence(RaceCoachPacket packet)
     {
         var card = CurrentRaceCard!;
         var corners = card.Corners.Select(row => new
@@ -3231,9 +3269,10 @@ public sealed class CompanionState : IDisposable
         var selected = SelectedRaceSession;
         return JsonSerializer.Serialize(new
         {
-            activeCapabilities = CapabilityRegistry.ActiveForAi(CapabilityContext)
+            active_capabilities = CapabilityRegistry.ActiveForAi(CapabilityContext)
                 .Select(item => new { id = item.Definition.Id.ToString(), item.Definition.Name, item.Definition.UserValue }),
-            setupChangesAllowed = selected?.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase) == true,
+            setup_changes_allowed = selected?.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase) == true,
+            numeric_packet = packet,
             race = new
             {
                 card.Title,

@@ -28,9 +28,15 @@
     <section class="surface-card connection-card" aria-labelledby="garage61-connection">
         <div class="connection-heading">
             <div><span class="eyebrow">Personal data connection</span><h2 id="garage61-connection">Garage61</h2></div>
-            <span class="status-label @(State.Garage61.Available ? "success" : "neutral")">@(State.Garage61.Available ? "Connected" : State.Garage61.Configured ? "Saved · offline" : "Not connected")</span>
+            <span class="status-label @(State.Garage61.Available ? "success" : State.Garage61.Configured ? "warning" : "neutral")">@State.Garage61StatusLabel</span>
         </div>
         <p>@Garage61Message</p>
+        <dl class="connection-facts" aria-label="Garage61 connection checks">
+            <div><dt>Credential</dt><dd>@Axis(State.Garage61.Credential)</dd></div>
+            <div><dt>Authentication</dt><dd>@Axis(State.Garage61.Authentication)</dd></div>
+            <div><dt>Permission</dt><dd>@Axis(State.Garage61.Permission)</dd></div>
+            <div><dt>Availability</dt><dd>@Axis(State.Garage61.Availability)</dd></div>
+        </dl>
         <label class="connection-secret"><span>Personal access token<small>The value is hidden immediately and protected for this Windows user.</small></span><input type="password" autocomplete="off" spellcheck="false" placeholder="@(State.Garage61.Configured ? "Enter a new token to replace the saved connection" : "Paste your Garage61 token")" @bind="State.Garage61KeyInput" @bind:event="oninput" /></label>
         <div class="button-row">
             <button class="button primary" disabled="@string.IsNullOrWhiteSpace(State.Garage61KeyInput)" @onclick="() => State.ConnectGarage61Async()">Connect Garage61</button>
@@ -49,4 +55,19 @@
         ? "Coach Engine needs repair before ChatGPT can connect."
         : State.CoachEngine.Running ? State.CoachEngine.Message : "Coach Engine is restarting.";
     private string Garage61Message => State.Garage61.Message;
+    private static string Axis(string value) => value.Replace('_', ' ') switch
+    {
+        "saved" => "Saved",
+        "absent" => "Not saved",
+        "valid" => "Valid",
+        "rejected" => "Rejected",
+        "granted" => "Granted",
+        "denied" => "Denied",
+        "available" => "Available",
+        "unreachable" => "Unreachable",
+        "timed out" => "Timed out",
+        "insufficient scope" => "Scope needed",
+        "unverified" => "Not checked",
+        var label => label.Length == 0 ? "Not checked" : char.ToUpperInvariant(label[0]) + label[1..]
+    };
 }

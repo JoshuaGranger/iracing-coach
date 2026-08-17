@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 
 namespace iRacingCoach.Coordinator;
 
@@ -8,6 +9,102 @@ public interface IGarage61CredentialStore
     string CredentialPath { get; }
     void Store(string token);
     void Remove();
+
+    IGarage61CredentialReplacement BeginReplacement(string token) =>
+        FileGarage61CredentialReplacement.Begin(this, token);
+}
+
+public interface IGarage61CredentialReplacement : IDisposable
+{
+    bool HadPrevious { get; }
+    void Commit();
+    void Rollback();
+}
+
+internal sealed class FileGarage61CredentialReplacement : IGarage61CredentialReplacement
+{
+    private readonly IGarage61CredentialStore _store;
+    private byte[]? _previous;
+    private bool _finished;
+
+    private FileGarage61CredentialReplacement(IGarage61CredentialStore store, byte[]? previous)
+    {
+        _store = store;
+        _previous = previous;
+        HadPrevious = previous is not null;
+    }
+
+    public bool HadPrevious { get; }
+
+    public static FileGarage61CredentialReplacement Begin(IGarage61CredentialStore store, string token)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        byte[]? previous = null;
+        if (File.Exists(store.CredentialPath)) previous = File.ReadAllBytes(store.CredentialPath);
+        try
+        {
+            store.Store(token);
+            return new FileGarage61CredentialReplacement(store, previous);
+        }
+        catch
+        {
+            if (previous is not null) CryptographicOperations.ZeroMemory(previous);
+            throw;
+        }
+    }
+
+    public void Commit()
+    {
+        if (_finished) return;
+        _finished = true;
+        ClearSnapshot();
+    }
+
+    public void Rollback()
+    {
+        if (_finished) return;
+        try
+        {
+            if (_previous is null)
+            {
+                _store.Remove();
+                return;
+            }
+
+            var path = Path.GetFullPath(_store.CredentialPath);
+            var directory = Path.GetDirectoryName(path)
+                ?? throw new IOException("The Garage61 credential path has no parent directory.");
+            Directory.CreateDirectory(directory);
+            var temporary = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+            try
+            {
+                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    stream.Write(_previous);
+                    stream.Flush(flushToDisk: true);
+                }
+                File.Move(temporary, path, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(temporary)) File.Delete(temporary);
+            }
+        }
+        finally
+        {
+            _finished = true;
+            ClearSnapshot();
+        }
+    }
+
+    public void Dispose() => Rollback();
+
+    private void ClearSnapshot()
+    {
+        if (_previous is null) return;
+        CryptographicOperations.ZeroMemory(_previous);
+        _previous = null;
+    }
 }
 
 public sealed class PowerShellGarage61CredentialStore : IGarage61CredentialStore
