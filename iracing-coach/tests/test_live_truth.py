@@ -1,13 +1,12 @@
-"""The frozen racing-truth policy, and proof it disagrees with the shipped decoder.
+"""The frozen racing-truth policy and its .NET consumer boundary.
 
 `DOMAIN-DRIFT-001`, `LIVE-FLAG-001`, `LIVE-CLEAN-001`, `LIVE-REPAIR-001`,
 `LIVE-MISSING-001`.
 
-These are producer-side tests. They prove the policy is internally consistent,
-that its conformance vectors cover what they claim to cover, and - by decoding
-the same flag words with the shipped .NET rule expressed here as a reference -
-that the parity defect is real rather than asserted. They do not prove any C#
-consumer obeys the policy; that closure belongs to the consumer phase.
+The producer tests prove the policy is internally consistent and that its
+conformance vectors cover what they claim to cover. The source-contract test
+also guards the completed consumer handoff: the SDK decoder must delegate to
+the shared .NET policy rather than restoring an independent flag mask.
 """
 
 from __future__ import annotations
@@ -37,13 +36,8 @@ DOTNET_SOURCE = (
 )
 
 
-def _legacy_dotnet_label(flags: int) -> str:
-    """The shipped `FlagLabel` rule, transcribed so the gap can be measured.
-
-    Transcribed rather than parsed: the point is to compare decisions, and a
-    transcription that drifts from the source is caught by the test below that
-    reads the real masks out of the C# file.
-    """
+def _mutant_decoder_without_two_caution_bits(flags: int) -> str:
+    """Deliberately reproduce the retired mask for a conformance mutation."""
     if flags & 0x00020000:
         return "DISQUALIFIED"
     if flags & 0x00010000:
@@ -88,43 +82,27 @@ class ParityWithOfflineAnalysisTests(unittest.TestCase):
         self.assertEqual(lt.MAXIMUM_TRAFFIC_PROXIMITY_FRACTION, 0.10)
 
 
-class LiveFlagDefectTests(unittest.TestCase):
-    def test_the_dotnet_decoder_omits_two_caution_bits(self):
+class LiveFlagConsumerClosureTests(unittest.TestCase):
+    def test_the_policy_contains_the_two_previously_omitted_caution_bits(self):
         self.assertNotEqual(lt.CAUTION_BITS_MISSING_FROM_DOTNET, 0)
         self.assertEqual(lt.CAUTION_BITS_MISSING_FROM_DOTNET, 0x0100 | 0x0200)
 
-    def test_the_transcribed_legacy_masks_are_the_ones_in_live_csharp_source(self):
-        """Guard the transcription, so the gap is measured against real source."""
+    def test_the_live_csharp_source_delegates_flag_truth_to_the_shared_policy(self):
         text = DOTNET_SOURCE.read_text(encoding="utf-8")
-        self.assertIn(
-            "(flags & (0x00004000u | 0x00008000u | 0x00000008u)) != 0", text
-        )
-        self.assertNotIn("0x00000100u", text)
-        self.assertNotIn("0x00000200u", text)
+        self.assertIn("LiveTruthPolicy.IsUnderCaution(flags)", text)
+        self.assertIn("LiveTruthPolicy.DecodeRacingState(flags)", text)
+        self.assertIn("LiveTruthPolicy.DisplayFlag(flags)", text)
+        self.assertNotIn("(flags & (0x00004000u | 0x00008000u | 0x00000008u))", text)
 
-    def test_each_omitted_bit_labels_a_caution_session_as_racing(self):
+    def test_each_previously_omitted_bit_is_now_a_caution(self):
         for bit in (0x0100, 0x0200):
             with self.subTest(hex(bit)):
                 self.assertEqual(lt.racing_state(bit), lt.STATE_CAUTION)
-                self.assertEqual(_legacy_dotnet_label(bit), "RACING")
 
-    def test_the_policy_and_the_legacy_decoder_agree_everywhere_else(self):
-        equivalent = {
-            lt.STATE_DISQUALIFIED: "DISQUALIFIED",
-            lt.STATE_BLACK: "BLACK FLAG",
-            lt.STATE_RED: "RED",
-            lt.STATE_CAUTION: "CAUTION",
-            lt.STATE_CHECKERED: "CHECKERED",
-            lt.STATE_WHITE: "WHITE",
-            lt.STATE_GREEN: "GREEN",
-            lt.STATE_RACING: "RACING",
-        }
-        disagreements = []
+    def test_every_named_single_flag_has_a_decided_policy_state(self):
         for name, mask in lt.SESSION_FLAG_BITS:
-            state = lt.racing_state(mask)
-            if equivalent[state] != _legacy_dotnet_label(mask):
-                disagreements.append(name)
-        self.assertEqual(disagreements, ["yellow_waving", "one_lap_to_green"])
+            with self.subTest(name):
+                self.assertNotEqual(lt.racing_state(mask), lt.STATE_UNKNOWN)
 
 
 class RacingStateTests(unittest.TestCase):
@@ -369,7 +347,7 @@ class ConformanceVectorTests(unittest.TestCase):
                     "WHITE": "white",
                     "GREEN": "green",
                     "RACING": "racing",
-                }[_legacy_dotnet_label(flags)]
+                }[_mutant_decoder_without_two_caution_bits(flags)]
             )
             submitted.append(
                 {
