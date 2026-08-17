@@ -6,4 +6,7 @@
     <ProjectReference Include="..\iRacingCoach.BackendClient\iRacingCoach.BackendClient.csproj" />
     <ProjectReference Include="..\iRacingCoach.Contracts\iRacingCoach.Contracts.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="iRacingCoach.Tests" />
+  </ItemGroup>
 </Project>

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -37,7 +36,7 @@ public sealed class CompanionState : IDisposable
     private readonly ICompanionPathProvider _pathProvider;
     private readonly bool _allowExternalHostActions;
     private readonly Dictionary<string, CancellationTokenSource> _jobTokens = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, Lazy<Task<JsonElement>>> _inflightBackendCalls = new(StringComparer.Ordinal);
+    private readonly BackendOperationCoordinator _backendOperations = new();
     private readonly object _homeAnalysisSync = new();
     private readonly object _liveMonitorVisibilityGate = new();
     private readonly object _settingsPersistenceGate = new();
@@ -525,21 +524,18 @@ public sealed class CompanionState : IDisposable
         }
     }
 
-    private async Task<JsonElement> CallBackendAsync(string name, object arguments, CancellationToken cancellationToken)
+    private Task<JsonElement> CallBackendAsync(
+        string name,
+        object arguments,
+        CancellationToken cancellationToken,
+        DetachedBackendOperationPolicy detachedPolicy = DetachedBackendOperationPolicy.CancelWhenNoSubscribers)
     {
         var requestKey = $"{name}|{JsonSerializer.Serialize(arguments)}";
-        var pending = new Lazy<Task<JsonElement>>(
-            () => ExecuteBackendCallAsync(name, arguments, cancellationToken),
-            LazyThreadSafetyMode.ExecutionAndPublication);
-        var shared = _inflightBackendCalls.GetOrAdd(requestKey, pending);
-        try
-        {
-            return await shared.Value;
-        }
-        finally
-        {
-            _inflightBackendCalls.TryRemove(new KeyValuePair<string, Lazy<Task<JsonElement>>>(requestKey, shared));
-        }
+        return _backendOperations.SubscribeAsync(
+            requestKey,
+            operationCancellation => ExecuteBackendCallAsync(name, arguments, operationCancellation),
+            cancellationToken,
+            detachedPolicy);
     }
 
     private async Task<JsonElement> ExecuteBackendCallAsync(string name, object arguments, CancellationToken cancellationToken)
@@ -3340,7 +3336,7 @@ public sealed class CompanionState : IDisposable
                         iracing_root = Settings.IRacingRoot,
                         archive_root = Settings.ArchiveRoot,
                         target_hz = 20
-                    }, _homeAnalysisCancellation.Token);
+                    }, _homeAnalysisCancellation.Token, DetachedBackendOperationPolicy.CompleteForCache);
                     if (!result.TryGetProperty("analysis_view", out var view) || view.ValueKind != JsonValueKind.Object)
                         throw new InvalidDataException("Background race analysis did not return an analysis view.");
                     EnsureResponseMatchesSession(race, result);
@@ -3781,6 +3777,7 @@ public sealed class CompanionState : IDisposable
         if (_disposed) return;
         _disposed = true;
         _homeAnalysisCancellation.Cancel();
+        _backendOperations.Dispose();
         _fileRefresh?.Dispose();
         foreach (var watcher in _watchers) watcher.Dispose();
         foreach (var token in _jobTokens.Values) { token.Cancel(); token.Dispose(); }
