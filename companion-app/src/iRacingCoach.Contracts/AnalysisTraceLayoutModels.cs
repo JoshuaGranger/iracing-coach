@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace iRacingCoach.Contracts;
 
 /// <summary>
@@ -17,6 +20,8 @@ public sealed class AnalysisTraceLayoutSet
     /// deleted every custom layout, not that legacy import should run again.
     /// </summary>
     public bool LegacyLayoutImportCompleted { get; set; }
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class AnalysisTraceNamedLayout
@@ -24,4 +29,6 @@ public sealed class AnalysisTraceNamedLayout
     public string Id { get; set; } = $"analysis-layout-{Guid.NewGuid():N}";
     public string Name { get; set; } = "Custom";
     public AnalysisTraceLayout Layout { get; set; } = new();
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }

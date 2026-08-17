@@ -119,7 +119,7 @@
 
 <div class="settings-savebar compact-savebar">
     <div><strong>Settings</strong><span>@State.SettingsMessage</span></div>
-    <div class="settings-save-actions"><button class="button secondary" @onclick="State.ResetSettings">Restore defaults</button><button class="button primary" @onclick="State.SaveSettings">Save</button></div>
+    <div class="settings-save-actions"><button class="button secondary" disabled="@(!State.SettingsWritable)" @onclick="State.ResetSettings">Restore defaults</button><button class="button primary" disabled="@(!State.SettingsWritable)" @onclick="State.SaveSettings">Save</button></div>
 </div>
 
 <DiagnosticsPage State="State" />

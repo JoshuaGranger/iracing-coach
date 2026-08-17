@@ -2,10 +2,15 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace iRacingCoach.Coordinator;
 
-public sealed record ArchiveComponentSummary(string Path, int FileCount, long Bytes, string Sha256);
+public sealed record ArchiveComponentSummary(string Path, int FileCount, long Bytes, string Sha256)
+{
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 public sealed record ArchiveMigration(
     int FromVersion,
@@ -13,9 +18,17 @@ public sealed record ArchiveMigration(
     DateTimeOffset StartedUtc,
     DateTimeOffset CompletedUtc,
     string Status,
-    string Detail);
+    string Detail)
+{
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
-public sealed record UnresolvedSourceReference(string StableId, string FileName, string Reason);
+public sealed record UnresolvedSourceReference(string StableId, string FileName, string Reason)
+{
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 public sealed class ArchiveManifest
 {
@@ -31,6 +44,10 @@ public sealed class ArchiveManifest
     public List<ArchiveComponentSummary> Components { get; set; } = [];
     public List<ArchiveMigration> MigrationHistory { get; set; } = [];
     public List<UnresolvedSourceReference> UnresolvedSources { get; set; } = [];
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+    [JsonIgnore]
+    internal byte[] SourceBytes { get; set; } = [];
 }
 
 public sealed record ArchiveRestoreSummary(
@@ -207,11 +224,11 @@ public sealed class DurableArchiveService : IDurableArchiveService
         var manifest = ReadManifest(manifestPath) ?? throw new InvalidDataException("The archive manifest could not be read after initialization.");
         var components = BuildComponentSummaries(canonicalRoot);
         var integrity = AggregateHash(components);
-        manifest.Components = components;
+        manifest.Components = PreserveComponentExtensions(manifest.Components, components);
         manifest.IntegritySha256 = integrity;
         manifest.LastIntegrityCheckUtc = checkedUtc;
         manifest.UpdatedUtc = checkedUtc;
-        manifest.UnresolvedSources = FindUnresolvedSources(canonicalRoot);
+        manifest.UnresolvedSources = PreserveSourceExtensions(manifest.UnresolvedSources, FindUnresolvedSources(canonicalRoot));
         WriteAtomic(manifestPath, manifest);
         WritePortableState(canonicalRoot, manifest, true, $"All durable writes are complete. Copy the entire folder: {canonicalRoot}");
 
@@ -238,7 +255,7 @@ public sealed class DurableArchiveService : IDurableArchiveService
         Directory.CreateDirectory(migrationRoot);
         if (!File.Exists(journal))
             WriteAtomic(journal, new { schemaVersion = 1, fromVersion = manifest.SchemaVersion, toVersion = CurrentSchemaVersion, status = "started", startedUtc = started });
-        if (!File.Exists(backup)) WriteAtomic(backup, manifest);
+        if (!File.Exists(backup)) WriteAtomicBytes(backup, manifest.SourceBytes);
 
         // Schema 1 only adds the manifest and directory contract. Existing data
         // stays at its original path, so interruption is safe and retryable.
@@ -258,13 +275,53 @@ public sealed class DurableArchiveService : IDurableArchiveService
         if (!File.Exists(path)) return null;
         try
         {
-            return JsonSerializer.Deserialize<ArchiveManifest>(File.ReadAllText(path), JsonOptions)
-                ?? throw new InvalidDataException("The archive manifest is empty.");
+            var sourceBytes = File.ReadAllBytes(path);
+            using var document = JsonDocument.Parse(sourceBytes);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("The archive manifest must be a JSON object. No archive files were changed.");
+            if (!root.TryGetProperty("schemaVersion", out var versionValue)
+                || versionValue.ValueKind != JsonValueKind.Number
+                || !versionValue.TryGetInt32(out var version)
+                || version < 0)
+                throw new InvalidDataException("The archive manifest requires a non-negative integer schemaVersion. No archive files were changed.");
+            if (version > CurrentSchemaVersion)
+                throw new ArchiveCompatibilityException(
+                    $"This Coach folder uses archive schema {version}, but this app supports up to {CurrentSchemaVersion}. Install a newer iRacing Coach version. No archive files were changed.");
+            if (!root.TryGetProperty("archiveId", out var archiveIdValue)
+                || archiveIdValue.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(archiveIdValue.GetString()))
+                throw new InvalidDataException("The archive manifest requires a non-empty archiveId. No archive files were changed.");
+
+            var manifest = JsonSerializer.Deserialize<ArchiveManifest>(sourceBytes, JsonOptions)
+                ?? throw new InvalidDataException("The archive manifest is empty. No archive files were changed.");
+            manifest.SourceBytes = sourceBytes;
+            return manifest;
         }
         catch (JsonException ex)
         {
             throw new InvalidDataException("The archive manifest is not valid JSON. No archive files were changed.", ex);
         }
+    }
+
+    private static List<ArchiveComponentSummary> PreserveComponentExtensions(
+        IReadOnlyList<ArchiveComponentSummary> existing,
+        IReadOnlyList<ArchiveComponentSummary> updated)
+    {
+        var prior = existing.ToDictionary(item => item.Path, StringComparer.OrdinalIgnoreCase);
+        return updated.Select(item => prior.TryGetValue(item.Path, out var old)
+            ? item with { ExtensionData = old.ExtensionData }
+            : item).ToList();
+    }
+
+    private static List<UnresolvedSourceReference> PreserveSourceExtensions(
+        IReadOnlyList<UnresolvedSourceReference> existing,
+        IReadOnlyList<UnresolvedSourceReference> updated)
+    {
+        var prior = existing.ToDictionary(item => item.StableId, StringComparer.OrdinalIgnoreCase);
+        return updated.Select(item => prior.TryGetValue(item.StableId, out var old)
+            ? item with { ExtensionData = old.ExtensionData }
+            : item).ToList();
     }
 
     private static List<ArchiveComponentSummary> BuildComponentSummaries(string root)
@@ -455,6 +512,38 @@ public sealed class DurableArchiveService : IDurableArchiveService
                 temporary = destination + $".{Guid.NewGuid():N}.tmp";
                 File.WriteAllText(temporary, contents, new UTF8Encoding(false));
                 File.Move(temporary, destination, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                writeFailure = ex;
+                throw;
+            }
+            finally
+            {
+                if (temporary is not null)
+                {
+                    try { File.Delete(temporary); }
+                    catch when (writeFailure is not null) { }
+                }
+            }
+        }
+    }
+
+    private static void WriteAtomicBytes(string path, byte[] contents)
+    {
+        var destination = Path.GetFullPath(path);
+        var gate = AtomicWriteGates.GetOrAdd(destination, static _ => new object());
+        lock (gate)
+        {
+            if (File.Exists(destination)) return;
+            string? temporary = null;
+            Exception? writeFailure = null;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                temporary = destination + $".{Guid.NewGuid():N}.tmp";
+                File.WriteAllBytes(temporary, contents);
+                File.Move(temporary, destination, overwrite: false);
             }
             catch (Exception ex)
             {

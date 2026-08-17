@@ -9,8 +9,20 @@ public interface ISettingsStore
     void Save(CompanionSettings settings);
 }
 
+public sealed class SettingsCompatibilityException(string message, int? schemaVersion = null) : IOException(message)
+{
+    public int? SchemaVersion { get; } = schemaVersion;
+}
+
 public sealed class JsonSettingsStore : ISettingsStore
 {
+    public const int CurrentSchemaVersion = 5;
+    private static readonly HashSet<string> LegacySettingsFields = new(StringComparer.Ordinal)
+    {
+        "coachHome", "iRacingRoot", "iRacingInstallRoot", "garage61ApiKey", "firstRunComplete",
+        "coachThreadIds", "launchAtSignIn", "useReducedMotion", "themeColor", "customThemeColor",
+        "diagnosticIncludeConfounded", "liveMonitor", "raceAnalysisTraces", "raceAnalysisTraceLayouts"
+    };
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -23,6 +35,8 @@ public sealed class JsonSettingsStore : ISettingsStore
     private readonly bool _allowDesktopImport;
     private readonly ICompanionPathProvider _pathProvider;
     private readonly bool _lockToProviderRoots;
+    private MachineSettings? _machineSettingsSnapshot;
+    private bool _machineSettingsWritable = true;
 
     public JsonSettingsStore() : this(Path.Combine(
         CompanionSettings.DefaultCoachHome,
@@ -73,10 +87,13 @@ public sealed class JsonSettingsStore : ISettingsStore
     {
         try
         {
-            var serialized = File.Exists(_path) ? File.ReadAllText(_path) : null;
-            var settings = serialized is not null
-                ? JsonSerializer.Deserialize<CompanionSettings>(serialized, JsonOptions) ?? new CompanionSettings(_pathProvider)
+            var sourceBytes = File.Exists(_path) ? File.ReadAllBytes(_path) : null;
+            var serialized = sourceBytes is not null ? File.ReadAllText(_path) : null;
+            var sourceVersion = sourceBytes is not null ? RequireReadableSchemaVersion(sourceBytes) : CurrentSchemaVersion;
+            var settings = sourceBytes is not null
+                ? JsonSerializer.Deserialize<CompanionSettings>(sourceBytes, JsonOptions) ?? new CompanionSettings(_pathProvider)
                 : new CompanionSettings(_pathProvider);
+            settings.Compatibility = SettingsCompatibilityState.Current(sourceVersion);
             var legacyCredential = string.Empty;
             var legacyCredentialPresent = !_lockToProviderRoots && serialized is not null && TryReadLegacyGarage61Credential(serialized, out legacyCredential);
             if (legacyCredentialPresent) settings.Garage61ApiKey = legacyCredential;
@@ -103,16 +120,24 @@ public sealed class JsonSettingsStore : ISettingsStore
             try
             {
                 var migrated = TryMigrateGarage61Credential(settings);
-                var schemaMigrated = settings.SettingsSchemaVersion < 5;
-                settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 5);
+                var schemaMigrated = sourceVersion < CurrentSchemaVersion;
+                settings.SettingsSchemaVersion = CurrentSchemaVersion;
+                if (schemaMigrated && !legacyCredentialPresent && sourceBytes is not null)
+                    PreservePreMigrationSettings(sourceBytes);
                 if (migrated || legacyCredentialPresent || migratedMachineLayout || migratedMonitor || repairedMonitor || repairedAnalysisTraces || repairedAnalysisTraceLayouts || repairedThemeColor || repairedCustomThemeColor || schemaMigrated) Save(settings);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException or PlatformNotSupportedException) { }
             return settings;
         }
+        catch (SettingsCompatibilityException ex)
+        {
+            return ReadOnlySettings(ex.SchemaVersion, ex.Message);
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new CompanionSettings(_pathProvider);
+            return File.Exists(_path)
+                ? ReadOnlySettings(null, "The settings file is unreadable or incompatible. The app started without changing it; copy the Coach folder before repairing or replacing settings.json.")
+                : new CompanionSettings(_pathProvider) { Compatibility = SettingsCompatibilityState.Current(CurrentSchemaVersion) };
         }
     }
 
@@ -120,6 +145,8 @@ public sealed class JsonSettingsStore : ISettingsStore
     {
         lock (_saveGate)
         {
+            if (!settings.Compatibility.Writable)
+                throw new SettingsCompatibilityException(settings.Compatibility.Message, settings.Compatibility.SchemaVersion);
             ApplyPathPolicy(settings);
             if (_lockToProviderRoots)
             {
@@ -132,7 +159,7 @@ public sealed class JsonSettingsStore : ISettingsStore
             }
             settings.ThemeColor = ThemeColors.Normalize(settings.ThemeColor);
             settings.CustomThemeColor = ThemeColors.NormalizeCustomHex(settings.CustomThemeColor);
-            settings.SettingsSchemaVersion = Math.Max(settings.SettingsSchemaVersion, 5);
+            settings.SettingsSchemaVersion = CurrentSchemaVersion;
             _ = LiveMonitorLayouts.ValidateAndRepair(settings.LiveMonitor, out _);
             settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
             settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
@@ -141,43 +168,125 @@ public sealed class JsonSettingsStore : ISettingsStore
                 AnalysisTraceLayoutSets.Active(settings.RaceAnalysisTraceLayouts).Named.Layout);
             SaveMachineSettings(settings.LiveMonitor);
             WriteAtomically(_path, JsonSerializer.Serialize(settings, JsonOptions));
+            settings.Compatibility = SettingsCompatibilityState.Current(CurrentSchemaVersion);
+        }
+    }
+
+    private static int RequireReadableSchemaVersion(byte[] sourceBytes)
+    {
+        using var document = JsonDocument.Parse(sourceBytes);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new SettingsCompatibilityException("The settings file must be a JSON object. It was left unchanged.");
+        if (!root.TryGetProperty("settingsSchemaVersion", out var versionValue))
+        {
+            if (root.EnumerateObject().Any(property => LegacySettingsFields.Contains(property.Name))) return 1;
+            throw new SettingsCompatibilityException("The settings file requires a settingsSchemaVersion or a recognized legacy settings field. It was left unchanged.");
+        }
+        if (versionValue.ValueKind != JsonValueKind.Number
+            || !versionValue.TryGetInt32(out var version)
+            || version < 1)
+            throw new SettingsCompatibilityException("The settings file requires a positive integer settingsSchemaVersion. It was left unchanged.");
+        if (version > CurrentSchemaVersion)
+            throw new SettingsCompatibilityException(
+                $"This settings file uses schema {version}, but this app supports up to {CurrentSchemaVersion}. The app is available read-only and settings.json was left unchanged.",
+                version);
+        return version;
+    }
+
+    private CompanionSettings ReadOnlySettings(int? version, string message)
+    {
+        var settings = new CompanionSettings(_pathProvider)
+        {
+            CoachHome = Path.GetDirectoryName(_path) ?? new CompanionSettings(_pathProvider).CoachHome,
+            Compatibility = SettingsCompatibilityState.ReadOnly(version, message)
+        };
+        ApplyPathPolicy(settings);
+        return settings;
+    }
+
+    private void PreservePreMigrationSettings(byte[] sourceBytes)
+    {
+        var backup = _path + $".before-schema-{CurrentSchemaVersion}.backup.json";
+        if (File.Exists(backup)) return;
+        var directory = Path.GetDirectoryName(backup) ?? throw new InvalidOperationException("The settings backup path has no parent directory.");
+        Directory.CreateDirectory(directory);
+        var temporary = backup + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllBytes(temporary, sourceBytes);
+            File.Move(temporary, backup, overwrite: false);
+        }
+        catch (IOException) when (File.Exists(backup)) { }
+        finally
+        {
+            try { File.Delete(temporary); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
     }
 
     private void ApplyMachineSettings(LiveMonitorLayout layout)
     {
         if (!File.Exists(_machinePath)) return;
+        var local = ReadMachineSettings();
+        if (local is null) return;
+        layout.Left = local.LiveMonitor.Left;
+        layout.Top = local.LiveMonitor.Top;
+        layout.OverallScale = local.LiveMonitor.OverallScale is >= .7 and <= 2
+            ? local.LiveMonitor.OverallScale
+            : local.LiveMonitor.Width is > 0
+                ? Math.Clamp(local.LiveMonitor.Width.Value / 560d, .7, 2)
+                : 1;
+        layout.MonitorDeviceName = local.LiveMonitor.MonitorDeviceName;
+        layout.PlacementRecoveredAt = local.LiveMonitor.PlacementRecoveredAt;
+    }
+
+    private MachineSettings? ReadMachineSettings()
+    {
+        if (_machineSettingsSnapshot is not null) return _machineSettingsSnapshot;
         try
         {
-            var local = JsonSerializer.Deserialize<MachineSettings>(File.ReadAllText(_machinePath), JsonOptions);
-            if (local is null) return;
-            layout.Left = local.LiveMonitor.Left;
-            layout.Top = local.LiveMonitor.Top;
-            layout.OverallScale = local.LiveMonitor.OverallScale is >= .7 and <= 2
-                ? local.LiveMonitor.OverallScale
-                : local.LiveMonitor.Width is > 0
-                    ? Math.Clamp(local.LiveMonitor.Width.Value / 560d, .7, 2)
-                    : 1;
-            layout.MonitorDeviceName = local.LiveMonitor.MonitorDeviceName;
-            layout.PlacementRecoveredAt = local.LiveMonitor.PlacementRecoveredAt;
+            var sourceBytes = File.ReadAllBytes(_machinePath);
+            using var document = JsonDocument.Parse(sourceBytes);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("schemaVersion", out var versionValue)
+                || versionValue.ValueKind != JsonValueKind.Number
+                || !versionValue.TryGetInt32(out var version)
+                || version is < 1 or > MachineSettings.CurrentSchemaVersion)
+            {
+                _machineSettingsWritable = false;
+                return null;
+            }
+            var local = JsonSerializer.Deserialize<MachineSettings>(sourceBytes, JsonOptions);
+            if (local?.LiveMonitor is null)
+            {
+                _machineSettingsWritable = false;
+                return null;
+            }
+            _machineSettingsSnapshot = local;
+            return local;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            _machineSettingsWritable = false;
+            return null;
+        }
     }
 
     private void SaveMachineSettings(LiveMonitorLayout layout)
     {
-        var local = new MachineSettings
-        {
-            LiveMonitor = new MachineMonitorPlacement
-            {
-                Left = layout.Left,
-                Top = layout.Top,
-                OverallScale = Math.Clamp(layout.OverallScale, .7, 2),
-                MonitorDeviceName = layout.MonitorDeviceName,
-                PlacementRecoveredAt = layout.PlacementRecoveredAt
-            }
-        };
+        if (_machineSettingsSnapshot is null && File.Exists(_machinePath)) _ = ReadMachineSettings();
+        if (!_machineSettingsWritable) return;
+        var local = _machineSettingsSnapshot ?? new MachineSettings();
+        local.SchemaVersion = MachineSettings.CurrentSchemaVersion;
+        local.LiveMonitor.Left = layout.Left;
+        local.LiveMonitor.Top = layout.Top;
+        local.LiveMonitor.OverallScale = Math.Clamp(layout.OverallScale, .7, 2);
+        local.LiveMonitor.MonitorDeviceName = layout.MonitorDeviceName;
+        local.LiveMonitor.PlacementRecoveredAt = layout.PlacementRecoveredAt;
         WriteAtomically(_machinePath, JsonSerializer.Serialize(local, JsonOptions));
+        _machineSettingsSnapshot = local;
     }
 
     private static void WriteAtomically(string path, string contents)
@@ -346,8 +455,11 @@ public sealed class JsonSettingsStore : ISettingsStore
 
     private sealed class MachineSettings
     {
-        public int SchemaVersion { get; set; } = 2;
+        public const int CurrentSchemaVersion = 2;
+        public int SchemaVersion { get; set; } = CurrentSchemaVersion;
         public MachineMonitorPlacement LiveMonitor { get; set; } = new();
+        [System.Text.Json.Serialization.JsonExtensionData]
+        public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     }
 
     private sealed class MachineMonitorPlacement
@@ -358,5 +470,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         public double? Width { get; set; }
         public string MonitorDeviceName { get; set; } = string.Empty;
         public DateTimeOffset? PlacementRecoveredAt { get; set; }
+        [System.Text.Json.Serialization.JsonExtensionData]
+        public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     }
 }

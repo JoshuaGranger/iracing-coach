@@ -748,6 +748,10 @@ public sealed class CompanionSettings
     public LiveMonitorLayout LiveMonitor { get; set; } = new();
     public AnalysisTraceLayout RaceAnalysisTraces { get; set; } = new();
     public AnalysisTraceLayoutSet RaceAnalysisTraceLayouts { get; set; } = new();
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+    [JsonIgnore]
+    public SettingsCompatibilityState Compatibility { get; set; } = SettingsCompatibilityState.Current(5);
 
     [JsonIgnore] public string ArchiveRoot => Path.Combine(CoachHome, "data");
     [JsonIgnore] public string SetupsRoot => Path.Combine(CoachHome, "setups");
@@ -786,6 +790,8 @@ public sealed class CompanionSettings
 public sealed class AnalysisTraceLayout
 {
     public List<AnalysisTraceRow> Rows { get; set; } = [];
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class AnalysisTraceRow
@@ -793,6 +799,14 @@ public sealed class AnalysisTraceRow
     public string Id { get; set; } = $"trace-row-{Guid.NewGuid():N}";
     public string PrimarySignalId { get; set; } = "speed";
     public string SecondarySignalId { get; set; } = string.Empty;
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+public sealed record SettingsCompatibilityState(bool Readable, bool Writable, int? SchemaVersion, string Message)
+{
+    public static SettingsCompatibilityState Current(int version) => new(true, true, version, string.Empty);
+    public static SettingsCompatibilityState ReadOnly(int? version, string message) => new(false, false, version, message);
 }
 
 public enum LiveMonitorMetricSource { Recorded, Calculated, Coach }
@@ -825,6 +839,8 @@ public sealed class LiveMonitorLayout
     [JsonIgnore] public string MonitorDeviceName { get; set; } = string.Empty;
     [JsonIgnore] public DateTimeOffset? PlacementRecoveredAt { get; set; }
     public string GlobalHotkey { get; set; } = string.Empty;
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class LiveMonitorNamedLayout
@@ -834,6 +850,8 @@ public sealed class LiveMonitorNamedLayout
     public int Rows { get; set; } = 2;
     public int Columns { get; set; } = 3;
     public List<LiveMonitorTile> Tiles { get; set; } = [];
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class LiveMonitorTile
@@ -850,6 +868,8 @@ public sealed class LiveMonitorTile
     public LiveMonitorTrendDuration TrendDuration { get; set; } = LiveMonitorTrendDuration.Seconds30;
     public string Accent { get; set; } = "default";
     public bool HighlightAbsIntervention { get; set; }
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed record LiveGapState(

@@ -88,6 +88,7 @@ public sealed class CompanionState : IDisposable
         _allowExternalHostActions = allowExternalHostActions;
         Settings = settingsStore?.Load() ?? new CompanionSettings(_pathProvider);
         Settings.LiveMonitor ??= new LiveMonitorLayout();
+        if (!Settings.Compatibility.Writable) SettingsMessage = Settings.Compatibility.Message;
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
         _liveTelemetry = new LiveTelemetryService(liveTelemetrySource, Settings.LiveMonitor);
         _liveReplayCapture = new LiveReplayCaptureStore(() => Settings.ArchiveRoot);
@@ -124,6 +125,7 @@ public sealed class CompanionState : IDisposable
     public bool DiagnosticsExpanded { get; private set; }
     public string? Toast { get; private set; }
     public string SettingsMessage { get; private set; } = "Preferences and racing history live in the Coach folder. Account connections remain protected on this PC.";
+    public bool SettingsWritable => Settings.Compatibility.Writable;
     public string DataMessage { get; private set; } = "Looking for finalized iRacing recordings…";
     public string PlanMessage { get; private set; } = "Choose one of your recorded races to use its exact car, track, and setup context.";
     public string SetupMessage { get; private set; } = "Only setup files found on this PC are shown.";
@@ -1810,6 +1812,13 @@ public sealed class CompanionState : IDisposable
 
     public void SaveSettings()
     {
+        if (!SettingsWritable)
+        {
+            SettingsMessage = Settings.Compatibility.Message;
+            Toast = "Settings were not changed.";
+            RaiseChanged();
+            return;
+        }
         var sourceValid = TryValidateLocalRoot(Settings.IRacingRoot, out var sourceError);
         var installValid = TryValidateLocalRoot(Settings.IRacingInstallRoot, out var installError);
         var homeValid = TryValidateLocalRoot(Settings.CoachHome, out var homeError);
@@ -2415,7 +2424,9 @@ public sealed class CompanionState : IDisposable
         Archive = _archive.Initialize(Settings.CoachHome, AppVersion, "MCP v1");
         Directory.CreateDirectory(Settings.LogsRoot);
         LoadPortableCoachingHistory();
-        SettingsMessage = Archive.Message + " Account connections stay protected on this PC.";
+        SettingsMessage = SettingsWritable
+            ? Archive.Message + " Account connections stay protected on this PC."
+            : Settings.Compatibility.Message;
     }
 
     private void LoadPortableCoachingHistory()
