@@ -314,6 +314,100 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(result.provenance.content_identity, result.content.value)
 
 
+def mismatched(*, field: str, current: PublicationKey) -> StagedResult:
+    """A staged result whose provenance describes different work than it holds."""
+    op = operation()
+    other = operation(selection={"subsession_id": 9999, "sim_session_num": 1})
+    content = ContentIdentity(digest="content-a")
+    provenance = ResultProvenance(
+        operation_key=other.value if field == "operation" else op.value,
+        content_identity=(
+            ContentIdentity(digest="content-b").value
+            if field == "content"
+            else content.value
+        ),
+        producer_version="analysis-v14" if field == "producer" else PRODUCER,
+        completed_sequence=1,
+    )
+    return StagedResult(
+        operation=op, publication=current, content=content, provenance=provenance
+    )
+
+
+class ProvenanceBindingTests(unittest.TestCase):
+    """A provenance record is a claim about the result, so it is checked.
+
+    Without this, a `StagedResult` holding race A's content while its
+    provenance named race B published and cached without complaint: the surface
+    matched, the epoch matched, and nothing asked whether the four identities
+    described the same piece of work. Caching is refused alongside publication,
+    because a mismatch gives no reason to trust the content identity the cache
+    would be keyed on.
+    """
+
+    def test_a_mismatched_identity_refuses_both_publication_and_caching(self) -> None:
+        current = PublicationKey("race-analysis", 1)
+        for field in ("operation", "content", "producer"):
+            with self.subTest(field=field):
+                outcome = decide(mismatched(field=field, current=current), current)
+                self.assertFalse(outcome.may_publish)
+                self.assertFalse(outcome.may_cache)
+                self.assertEqual(outcome.refusal, identity.REFUSAL_PROVENANCE_MISMATCH)
+
+    def test_a_string_boolean_completeness_is_not_an_identity(self) -> None:
+        with self.assertRaises(IdentityContractError):
+            ContentIdentity(digest="content-a", complete="false")
+
+    def test_a_malformed_provenance_cannot_be_constructed(self) -> None:
+        for kwargs in (
+            {"operation_key": ""},
+            {"operation_key": None},
+            {"content_identity": 5},
+            {"producer_version": ""},
+            {"completed_sequence": "1"},
+            {"completed_sequence": True},
+            {"completed_sequence": -1},
+        ):
+            with self.subTest(kwargs=kwargs):
+                fields = {
+                    "operation_key": "op",
+                    "content_identity": "content",
+                    "producer_version": PRODUCER,
+                    "completed_sequence": 1,
+                    **kwargs,
+                }
+                with self.assertRaises(IdentityContractError):
+                    ResultProvenance(**fields)
+
+    def test_a_malformed_staged_result_is_refused_rather_than_decided(self) -> None:
+        current = PublicationKey("race-analysis", 1)
+        outcome = decide(
+            StagedResult(
+                operation=operation(),
+                publication=current,
+                content=ContentIdentity(digest="content-a"),
+                provenance=ResultProvenance(
+                    operation_key=operation().value,
+                    content_identity=ContentIdentity(digest="content-a").value,
+                    producer_version=PRODUCER,
+                    completed_sequence=1,
+                ),
+                canceled="yes",
+            ),
+            current,
+        )
+        self.assertFalse(outcome.may_publish)
+        self.assertFalse(outcome.may_cache)
+        self.assertEqual(outcome.refusal, identity.REFUSAL_MALFORMED_IDENTITY)
+
+    def test_a_well_formed_current_result_still_publishes(self) -> None:
+        """The binding must not refuse the case it exists to protect."""
+        current = PublicationKey("race-analysis", 1)
+        outcome = decide(staged(publication=current), current)
+        self.assertTrue(outcome.may_publish)
+        self.assertTrue(outcome.may_cache)
+
+
 class RefusalVocabularyTests(unittest.TestCase):
     def test_every_declared_refusal_is_reachable(self) -> None:
         current = PublicationKey("race-analysis", 1)
@@ -323,6 +417,22 @@ class RefusalVocabularyTests(unittest.TestCase):
             decide(staged(publication=current, complete=False), current).refusal,
             decide(staged(publication=PublicationKey("planning", 1)), current).refusal,
             decide(staged(publication=PublicationKey("race-analysis", 0)), current).refusal,
+            decide(mismatched(field="operation", current=current), current).refusal,
+            decide(
+                StagedResult(
+                    operation=operation(),
+                    publication=current,
+                    content=ContentIdentity(digest="content-a"),
+                    provenance=ResultProvenance(
+                        operation_key=operation().value,
+                        content_identity=ContentIdentity(digest="content-a").value,
+                        producer_version=PRODUCER,
+                        completed_sequence=1,
+                    ),
+                    faulted="yes",
+                ),
+                current,
+            ).refusal,
         }
         self.assertEqual(observed, set(identity.PUBLICATION_REFUSALS))
 

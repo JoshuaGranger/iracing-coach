@@ -71,6 +71,15 @@ REFUSAL_DIFFERENT_SURFACE = "different-surface"
 REFUSAL_CANCELED = "canceled"
 REFUSAL_FAULTED = "faulted"
 REFUSAL_INCOMPLETE_CONTENT = "incomplete-content-identity"
+#: The staged result and the provenance travelling with it describe different
+#: work, different content, or different producers. Neither publication nor
+#: caching is permitted, because there is no answer to "what is this a result
+#: of" - and a cache written under the wrong content identity is how one race's
+#: analysis is later served for another's.
+REFUSAL_PROVENANCE_MISMATCH = "provenance-does-not-match-staged-result"
+#: An identity input was not of the type the contract requires. Distinct from a
+#: mismatch: nothing was compared, because one side was not a valid identity.
+REFUSAL_MALFORMED_IDENTITY = "malformed-identity"
 
 PUBLICATION_REFUSALS = (
     REFUSAL_SUPERSEDED,
@@ -78,6 +87,8 @@ PUBLICATION_REFUSALS = (
     REFUSAL_CANCELED,
     REFUSAL_FAULTED,
     REFUSAL_INCOMPLETE_CONTENT,
+    REFUSAL_PROVENANCE_MISMATCH,
+    REFUSAL_MALFORMED_IDENTITY,
 )
 
 
@@ -190,6 +201,13 @@ class ContentIdentity:
     def __post_init__(self) -> None:
         if not isinstance(self.digest, str) or not self.digest:
             raise IdentityContractError("content identity requires a non-empty digest")
+        if not isinstance(self.complete, bool):
+            # Exact, not truthy. `complete="false"` is a non-empty string, so a
+            # truthiness test reads it as complete and publishes a result
+            # computed from inputs that were never verified.
+            raise IdentityContractError(
+                f"content completeness must be a JSON boolean, got {self.complete!r}"
+            )
 
     @property
     def value(self) -> str:
@@ -204,6 +222,18 @@ class ResultProvenance:
     content_identity: str
     producer_version: str
     completed_sequence: int
+
+    def __post_init__(self) -> None:
+        for name in ("operation_key", "content_identity", "producer_version"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise IdentityContractError(f"provenance {name} must be a non-empty string")
+        if isinstance(self.completed_sequence, bool) or not isinstance(
+            self.completed_sequence, int
+        ):
+            raise IdentityContractError("completed sequence must be a JSON integer")
+        if self.completed_sequence < 0:
+            raise IdentityContractError("completed sequence must not be negative")
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -241,6 +271,42 @@ class PublicationDecision:
     refusal: str | None = None
 
 
+def _structural_refusal(staged: StagedResult, current: PublicationKey) -> str | None:
+    """Refuse a staged result whose own identities do not agree, or are not identities.
+
+    The provenance is what a displayed value is traced back through, so it is
+    not decoration travelling beside the result - it is a claim about which
+    operation produced which content, and an unchecked claim is worth nothing.
+    Without this, a `StagedResult` for one race paired with provenance naming
+    another published and cached happily: the epoch matched, the surface
+    matched, and nothing ever asked whether the four identities described the
+    same piece of work.
+
+    Both answers are withheld together. A mismatch gives no reason to trust the
+    content identity either, and caching under an identity that may belong to
+    different content is the durable version of the same defect.
+    """
+    if not isinstance(staged, StagedResult) or not isinstance(current, PublicationKey):
+        return REFUSAL_MALFORMED_IDENTITY
+    if not isinstance(staged.faulted, bool) or not isinstance(staged.canceled, bool):
+        return REFUSAL_MALFORMED_IDENTITY
+    if not isinstance(staged.operation, OperationKey):
+        return REFUSAL_MALFORMED_IDENTITY
+    if not isinstance(staged.publication, PublicationKey):
+        return REFUSAL_MALFORMED_IDENTITY
+    if not isinstance(staged.content, ContentIdentity):
+        return REFUSAL_MALFORMED_IDENTITY
+    if not isinstance(staged.provenance, ResultProvenance):
+        return REFUSAL_MALFORMED_IDENTITY
+    if staged.provenance.operation_key != staged.operation.value:
+        return REFUSAL_PROVENANCE_MISMATCH
+    if staged.provenance.content_identity != staged.content.value:
+        return REFUSAL_PROVENANCE_MISMATCH
+    if staged.provenance.producer_version != staged.operation.producer_version:
+        return REFUSAL_PROVENANCE_MISMATCH
+    return None
+
+
 def decide(staged: StagedResult, current: PublicationKey) -> PublicationDecision:
     """Decide publication and caching for one staged result.
 
@@ -252,8 +318,14 @@ def decide(staged: StagedResult, current: PublicationKey) -> PublicationDecision
 
     Order matters here: cancellation and faults are checked before staleness so
     a canceled operation is never reported as merely superseded, which would
-    tell a consumer to retry work the user deliberately stopped.
+    tell a consumer to retry work the user deliberately stopped. Structural
+    validity is checked before all of it, because a decision about a result
+    whose own identities disagree is not a decision - it is a guess about which
+    half to believe.
     """
+    problem = _structural_refusal(staged, current)
+    if problem is not None:
+        return PublicationDecision(False, False, problem)
     if staged.faulted:
         return PublicationDecision(False, False, REFUSAL_FAULTED)
     if staged.canceled:
