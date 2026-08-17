@@ -9,28 +9,35 @@ public sealed class McpBackendClient : IBackendClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const string ProtocolVersion = "2025-06-18";
+    private readonly McpBackendDeadlines _deadlines;
+
+    public McpBackendClient(McpBackendDeadlines? deadlines = null)
+    {
+        _deadlines = deadlines ?? McpBackendDeadlines.Default;
+    }
 
     public async Task<BackendHealthResult> CheckHealthAsync(
         BackendConfiguration configuration,
         CancellationToken cancellationToken = default)
     {
         var timer = Stopwatch.StartNew();
+        using var operation = OperationDeadline(cancellationToken, _deadlines.Health);
         try
         {
-            await using var session = await McpSession.StartAsync(configuration, cancellationToken);
+            await using var session = await McpSession.StartAsync(configuration, operation.Token);
             using var initialize = await session.RequestAsync("initialize", new
             {
                 protocolVersion = ProtocolVersion,
                 clientInfo = new { name = "iracing_coach_companion", version = configuration.ClientVersion },
                 capabilities = new { }
-            }, cancellationToken);
+            }, operation.Token);
 
             var result = initialize.RootElement.GetProperty("result");
             var server = result.GetProperty("serverInfo");
             var negotiated = result.GetProperty("protocolVersion").GetString() ?? ProtocolVersion;
-            await session.NotifyAsync("notifications/initialized", new { }, cancellationToken);
-            using var ping = await session.RequestAsync("ping", new { }, cancellationToken);
-            using var tools = await session.RequestAsync("tools/list", new { }, cancellationToken);
+            await session.NotifyAsync("notifications/initialized", new { }, operation.Token);
+            using var ping = await session.RequestAsync("ping", new { }, operation.Token);
+            using var tools = await session.RequestAsync("tools/list", new { }, operation.Token);
             var count = tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength();
 
             return new BackendHealthResult(
@@ -45,6 +52,17 @@ public sealed class McpBackendClient : IBackendClient
         {
             throw;
         }
+        catch (OperationCanceledException) when (operation.IsCancellationRequested)
+        {
+            return new BackendHealthResult(
+                false,
+                "iracing-coach-local",
+                "unavailable",
+                ProtocolVersion,
+                0,
+                timer.Elapsed,
+                "The local race-analysis health check timed out.");
+        }
         catch (Exception ex)
         {
             return new BackendHealthResult(false, "iracing-coach-local", "unavailable", ProtocolVersion, 0, timer.Elapsed, ex.Message);
@@ -57,16 +75,36 @@ public sealed class McpBackendClient : IBackendClient
         object arguments,
         CancellationToken cancellationToken = default)
     {
-        await using var session = await McpSession.StartAsync(configuration, cancellationToken);
-        using var initialize = await session.RequestAsync("initialize", new
+        var deadline = _deadlines.ForTool(toolName);
+        using var operation = OperationDeadline(cancellationToken, deadline);
+        try
         {
-            protocolVersion = ProtocolVersion,
-            clientInfo = new { name = "iracing_coach_companion", version = configuration.ClientVersion },
-            capabilities = new { }
-        }, cancellationToken);
-        await session.NotifyAsync("notifications/initialized", new { }, cancellationToken);
-        using var response = await session.RequestAsync("tools/call", new { name = toolName, arguments }, cancellationToken);
-        return ParseToolResult(response.RootElement);
+            await using var session = await McpSession.StartAsync(configuration, operation.Token);
+            using var initialize = await session.RequestAsync("initialize", new
+            {
+                protocolVersion = ProtocolVersion,
+                clientInfo = new { name = "iracing_coach_companion", version = configuration.ClientVersion },
+                capabilities = new { }
+            }, operation.Token);
+            await session.NotifyAsync("notifications/initialized", new { }, operation.Token);
+            using var response = await session.RequestAsync("tools/call", new { name = toolName, arguments }, operation.Token);
+            return ParseToolResult(response.RootElement);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (operation.IsCancellationRequested)
+        {
+            throw new BackendOperationTimeoutException(toolName, deadline);
+        }
+    }
+
+    private static CancellationTokenSource OperationDeadline(CancellationToken cancellationToken, TimeSpan deadline)
+    {
+        var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        operation.CancelAfter(deadline);
+        return operation;
     }
 
     public static JsonElement ParseToolResult(JsonElement response)
@@ -209,10 +247,12 @@ public sealed class McpBackendClient : IBackendClient
                 if (!_process.HasExited)
                 {
                     _process.Kill(entireProcessTree: true);
-                    await _process.WaitForExitAsync();
+                    using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    try { await _process.WaitForExitAsync(cleanup.Token); }
+                    catch (OperationCanceledException) when (cleanup.IsCancellationRequested) { }
                 }
             }
-            catch (InvalidOperationException)
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
                 // Process has already exited.
             }
@@ -224,6 +264,33 @@ public sealed class McpBackendClient : IBackendClient
 
         private static string Bound(string value) => value.Length <= 4_000 ? value : value[..4_000];
     }
+}
+
+public sealed record McpBackendDeadlines(
+    TimeSpan Health,
+    TimeSpan LocalRead,
+    TimeSpan Analysis,
+    TimeSpan OptionalNetwork)
+{
+    public static McpBackendDeadlines Default { get; } = new(
+        TimeSpan.FromSeconds(30),
+        TimeSpan.FromMinutes(2),
+        TimeSpan.FromMinutes(10),
+        TimeSpan.FromMinutes(3));
+
+    public TimeSpan ForTool(string toolName) => toolName switch
+    {
+        "analyze_iracing_race" => Analysis,
+        "sync_garage61_references" => OptionalNetwork,
+        _ => LocalRead
+    };
+}
+
+public sealed class BackendOperationTimeoutException(string operation, TimeSpan deadline)
+    : TimeoutException($"The local backend operation '{operation}' exceeded its {deadline.TotalSeconds:0}-second deadline.")
+{
+    public string Operation { get; } = operation;
+    public TimeSpan Deadline { get; } = deadline;
 }
 
 public sealed class BackendProtocolException(string message) : Exception(message);
