@@ -59,6 +59,47 @@ public sealed class BackendOperationCoordinatorTests
     }
 
     [TestMethod]
+    public async Task SubscriberArrivingWhileCanceledWorkUnwinds_StartsFreshWork()
+    {
+        using var coordinator = new BackendOperationCoordinator();
+        using var firstCancellation = new CancellationTokenSource();
+        var firstOperationToken = NewSignal<CancellationToken>();
+        var firstCancelObserved = NewSignal();
+        var firstOperationResult = NewSignal<JsonElement>();
+        var secondOperationStarted = NewSignal();
+        var calls = 0;
+
+        Task<JsonElement> Operation(CancellationToken token)
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                firstOperationToken.TrySetResult(token);
+                token.Register(() => firstCancelObserved.TrySetResult());
+                return firstOperationResult.Task;
+            }
+
+            secondOperationStarted.TrySetResult();
+            return Task.FromResult(JsonSerializer.SerializeToElement(new { fresh = true }));
+        }
+
+        var first = coordinator.SubscribeAsync("retry-window", Operation, firstCancellation.Token);
+        var canceledOperationToken = await firstOperationToken.Task;
+
+        await firstCancellation.CancelAsync();
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(async () => await first);
+        await firstCancelObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var second = coordinator.SubscribeAsync("retry-window", Operation, CancellationToken.None);
+        var started = await Task.WhenAny(secondOperationStarted.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        firstOperationResult.TrySetCanceled(canceledOperationToken);
+
+        Assert.AreSame(secondOperationStarted.Task, started, "the replacement operation never started");
+        Assert.AreEqual(2, Volatile.Read(ref calls));
+        Assert.IsTrue((await second).GetProperty("fresh").GetBoolean());
+        await WaitUntilAsync(() => coordinator.ActiveCount == 0);
+    }
+
+    [TestMethod]
     public async Task DurableCacheLease_AllowsDetachedWorkToComplete()
     {
         using var coordinator = new BackendOperationCoordinator();

@@ -67,6 +67,7 @@ internal sealed class BackendOperationCoordinator : IDisposable
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _subscribers;
         private bool _retainWhenDetached;
+        private bool _acceptingSubscribers = true;
         private bool _started;
         private bool _completed;
         private bool _disposed;
@@ -75,7 +76,7 @@ internal sealed class BackendOperationCoordinator : IDisposable
         {
             lock (_gate)
             {
-                if (_disposed) return false;
+                if (_disposed || !_acceptingSubscribers) return false;
                 _subscribers++;
                 _retainWhenDetached |= retainWhenDetached;
                 return true;
@@ -107,6 +108,7 @@ internal sealed class BackendOperationCoordinator : IDisposable
             {
                 if (_subscribers > 0) _subscribers--;
                 cancel = _subscribers == 0 && !_completed && !_retainWhenDetached;
+                if (cancel) _acceptingSubscribers = false;
                 dispose = _subscribers == 0 && _completed && !_disposed;
                 if (dispose) _disposed = true;
             }
