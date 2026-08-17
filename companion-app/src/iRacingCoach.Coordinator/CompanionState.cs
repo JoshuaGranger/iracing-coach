@@ -54,6 +54,7 @@ public sealed class CompanionState : IDisposable
     private bool _liveMonitorAutoReopenSuppressed;
     private bool _liveMonitorWasConnected;
     private DateTimeOffset _lastPrimaryUiLiveUpdate = DateTimeOffset.MinValue;
+    private DateTimeOffset? _lastReplayFailureNotifiedAt;
     private int _serviceRequestsInFlight;
     private int _garage61ReferenceSyncActive;
     private long _tuningRaceSelectionEpoch;
@@ -114,6 +115,7 @@ public sealed class CompanionState : IDisposable
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
         _liveTelemetry = new LiveTelemetryService(liveTelemetrySource, Settings.LiveMonitor);
         _liveReplayCapture = new LiveReplayCaptureStore(() => Settings.ArchiveRoot);
+        _liveReplayCapture.StatusChanged += OnReplayCaptureStatusChanged;
         _liveTelemetry.Updated += OnLiveTelemetryUpdated;
         _liveTelemetry.FrameCaptured += OnLiveTelemetryFrameCaptured;
         _liveTelemetry.ReplayFrameCaptured += OnLiveReplayFrameCaptured;
@@ -236,6 +238,7 @@ public sealed class CompanionState : IDisposable
     public RecoverableAppError? LastRecoverableError { get; private set; }
     public bool ServiceRequestInFlight => Volatile.Read(ref _serviceRequestsInFlight) > 0;
     public LiveMonitorState LiveState => _liveTelemetry.Current;
+    public LiveReplayCaptureStatus ReplayCaptureStatus => _liveReplayCapture.Status;
     public bool LiveCoachingPaused => _liveTelemetry.CoachingPaused;
     public bool PrimaryUiVisible { get; private set; } = true;
     public bool IRacingDetected => Directory.Exists(Settings.IRacingRoot);
@@ -2795,6 +2798,7 @@ public sealed class CompanionState : IDisposable
         new("Garage61", Garage61.Available ? "Connected" : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
         new("Live telemetry", LiveState.Snapshot.Connected ? $"Connected · {LiveState.Snapshot.Flag} · {LiveState.Snapshot.DataAge.TotalMilliseconds:0} ms old" : "Waiting for iRacing", LiveState.Snapshot.Connected ? "ready" : "neutral"),
         new("Live update pipeline", $"{LiveState.FramesRead:N0} frames · {LiveState.DroppedFrames:N0} dropped · {LiveState.RenderLatencyMs:0.00} ms compute", LiveState.DroppedFrames == 0 ? "ready" : "warning"),
+        new("Replay capture", ReplayCaptureDiagnostic(), ReplayCaptureStatus.HasFailure ? "warning" : "ready"),
         new("Telemetry popout", Settings.LiveMonitor.Visible ? $"Visible · {LiveMonitorLayouts.Active(Settings.LiveMonitor).Layout.Name}" : "Hidden", "neutral"),
         new("Overlay compatibility", "Works above borderless-windowed iRacing and on another monitor; exclusive fullscreen may cover it", "neutral"),
         new("Race updates", "Watching for completed recordings", "ready"),
@@ -2805,6 +2809,14 @@ public sealed class CompanionState : IDisposable
 
     private static string BackendVersionLabel(string version) =>
         Version.TryParse(version.TrimStart('v', 'V'), out _) ? $"v{version.TrimStart('v', 'V')}" : version;
+
+    private string ReplayCaptureDiagnostic()
+    {
+        var status = ReplayCaptureStatus;
+        if (!status.HasFailure)
+            return status.State == "recording" ? "Recording locally" : "Ready";
+        return $"{status.Message} {status.DroppedAfterFailure:N0} frames were not committed; the capture remains incomplete and retryable.";
+    }
 
     private void UpdateHealth(string id, string label, string state, string detail, bool primary = false)
     {
@@ -3658,6 +3670,18 @@ public sealed class CompanionState : IDisposable
 
     private void OnLiveReplaySessionEnded(string reason) => _liveReplayCapture.EndSession(reason);
 
+    private void OnReplayCaptureStatusChanged()
+    {
+        var status = ReplayCaptureStatus;
+        if (status.HasFailure && status.FirstFailedAt != _lastReplayFailureNotifiedAt)
+        {
+            _lastReplayFailureNotifiedAt = status.FirstFailedAt;
+            Toast = "Replay capture is incomplete; live telemetry continues. Open Diagnostics for details.";
+        }
+        Diagnostics = BuildDiagnostics(_lastBackendHealth);
+        RaiseChanged();
+    }
+
     private async Task InitializeCoachEngineAsync()
     {
         try
@@ -3787,6 +3811,7 @@ public sealed class CompanionState : IDisposable
         _liveTelemetry.FrameCaptured -= OnLiveTelemetryFrameCaptured;
         _liveTelemetry.ReplayFrameCaptured -= OnLiveReplayFrameCaptured;
         _liveTelemetry.ReplaySessionEnded -= OnLiveReplaySessionEnded;
+        _liveReplayCapture.StatusChanged -= OnReplayCaptureStatusChanged;
         _liveTelemetry.Dispose();
         _liveReplayCapture.Dispose();
         _coachEngine.Changed -= OnCoachEngineChanged;

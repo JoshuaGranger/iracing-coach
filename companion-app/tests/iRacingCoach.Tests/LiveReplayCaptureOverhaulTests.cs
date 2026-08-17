@@ -316,6 +316,84 @@ public sealed class LiveReplayCaptureOverhaulTests
     }
 
     [TestMethod]
+    [DataRow((int)LiveReplayWriteStage.BeforeManifest)]
+    [DataRow((int)LiveReplayWriteStage.BeforeTemporaryCreate)]
+    [DataRow((int)LiveReplayWriteStage.BeforeWrite)]
+    [DataRow((int)LiveReplayWriteStage.BeforeFlush)]
+    [DataRow((int)LiveReplayWriteStage.BeforeMove)]
+    public async Task ReplayV2Capture_FirstPersistenceFailureIsBoundedVisibleAndRetryable(int faultStageValue)
+    {
+        var faultStage = (LiveReplayWriteStage)faultStageValue;
+        var root = TemporaryDirectory($"replay-write-fault-{faultStage}");
+        try
+        {
+            var failurePublished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var injected = 0;
+            var chunkAttempts = 0;
+            void Inject(LiveReplayWriteStage stage, string path)
+            {
+                var chunk = path.EndsWith(LiveReplayChunkCodec.FileExtension, StringComparison.OrdinalIgnoreCase);
+                if (stage == LiveReplayWriteStage.BeforeTemporaryCreate && chunk) Interlocked.Increment(ref chunkAttempts);
+                var target = faultStage == LiveReplayWriteStage.BeforeManifest
+                    ? stage == faultStage
+                    : stage == faultStage && chunk;
+                if (target && Interlocked.Exchange(ref injected, 1) == 0)
+                    throw new IOException($"synthetic private path must stay redacted: {root}");
+            }
+
+            using var store = new LiveReplayCaptureStore(
+                () => root,
+                queueCapacity: 4_096,
+                chunkDuration: TimeSpan.FromMilliseconds(1),
+                beforeWriteStage: Inject);
+            store.StatusChanged += () =>
+            {
+                if (store.Status.HasFailure) failurePublished.TrySetResult();
+            };
+
+            var frames = BuildFrames(60, seconds: 1, cars: 1, includeEvent: false);
+            store.Capture(frames[0]);
+            store.Capture(frames[1]);
+            await failurePublished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            var template = frames[1];
+            for (var index = 0; index < 1_000; index++)
+                store.Capture(template with
+                {
+                    CapturedAt = template.CapturedAt.AddSeconds((index + 1) / 60d),
+                    SessionTimeSeconds = template.SessionTimeSeconds + (index + 1) / 60d,
+                    SourceTick = template.SourceTick + index + 1
+                });
+
+            store.EndSession("fault_recovery_test");
+
+            var status = store.Status;
+            Assert.AreEqual("incomplete", status.State);
+            Assert.IsTrue(status.FinalizationIncomplete);
+            Assert.IsTrue(status.Retryable);
+            Assert.AreEqual("io_failure", status.FailureCode);
+            Assert.IsGreaterThanOrEqualTo(1_000, status.DroppedAfterFailure);
+            Assert.DoesNotContain(root, status.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(root, store.LastError ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            Assert.AreEqual(1, injected, "Only the first injected fault should become the capture cause.");
+            Assert.AreEqual(1, chunkAttempts, "Degraded capture must never retry encoding an ever-growing frame buffer.");
+            Assert.IsGreaterThanOrEqualTo(1_000, store.Metrics.PersistenceDroppedFrames);
+
+            var directory = Directory.GetDirectories(Path.Combine(root, "telemetry-traces", "live-replay")).Single();
+            using var manifest = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(directory, "manifest.json")));
+            Assert.AreEqual("incomplete", manifest.RootElement.GetProperty("status").GetString());
+            Assert.IsTrue(manifest.RootElement.GetProperty("retryable").GetBoolean());
+            Assert.AreEqual("io_failure", manifest.RootElement.GetProperty("persistenceFailure").GetProperty("code").GetString());
+            Assert.IsGreaterThanOrEqualTo(1_000,
+                manifest.RootElement.GetProperty("captureMetrics").GetProperty("persistenceDroppedFrameCount").GetInt64());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public void ReplayV2Capture_RecordsNativeTickGapsExplicitly()
     {
         var root = TemporaryDirectory("replay-gap");
