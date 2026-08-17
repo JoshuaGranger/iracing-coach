@@ -230,7 +230,7 @@ public sealed class CoordinatorTests
         "track_profile":{"shape":null,"detected_corner_segments":[]},"strategy":{"forecast":{"status":"insufficient_evidence"}},"damage_repair":{"status":"partial"},"setup_telemetry":{},"data_quality":{"confidence":"high"}}}
         """);
 
-        var workspace = RuntimeMapper.Analysis(response.RootElement);
+        var workspace = RuntimeMapper.Analysis(CurrentAnalysisEnvelope(response.RootElement, 42.5));
         Assert.AreEqual("Test Track", workspace.Track);
         Assert.AreEqual("normalized_distance_strip", workspace.GeometryMode);
         Assert.HasCount(1, workspace.Traces);
@@ -261,7 +261,7 @@ public sealed class CoordinatorTests
           "damage_repair":{},"setup_telemetry":{},"data_quality":{}}}
         """);
 
-        var workspace = RuntimeMapper.Analysis(response.RootElement);
+        var workspace = RuntimeMapper.Analysis(CurrentAnalysisEnvelope(response.RootElement));
 
         Assert.AreEqual(0, workspace.ScheduledLaps);
         Assert.AreEqual(0d, workspace.ScheduledMinutes);
@@ -461,7 +461,7 @@ public sealed class CoordinatorTests
     {
         using var response = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "analysis-nullable-kentucky-shape.json")));
 
-        var workspace = RuntimeMapper.Analysis(response.RootElement);
+        var workspace = RuntimeMapper.Analysis(CurrentAnalysisEnvelope(response.RootElement));
         var card = RuntimeMapper.RaceCard(response.RootElement);
         var plan = RuntimeMapper.Plan(response.RootElement);
 
@@ -2222,10 +2222,13 @@ public sealed class CoordinatorTests
             File.Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)), overwrite: true);
     }
 
-    private static JsonElement HomeAnalysisResponse(string analysisPath = "", string sessionType = "Race", string? selector = null) => JsonSerializer.SerializeToElement(new
+    private static JsonElement HomeAnalysisResponse(string analysisPath = "", string sessionType = "Race", string? selector = null)
     {
+        var partial = JsonSerializer.SerializeToElement(new
+        {
         ok = true,
         analysis_id = "home-summary-test",
+        selector = selector ?? "selector-test",
         analysis_path = analysisPath,
         selection = new { sim_session_type = sessionType, group_id = selector },
         race_card = new
@@ -2265,8 +2268,60 @@ public sealed class CoordinatorTests
                 new { complete = true, pit_time_s = 0d, flag_state = "green", lap_time_s = 30.125 },
                 new { complete = true, pit_time_s = 0d, flag_state = "green", lap_time_s = 30.250 }
             }
-        }
-    });
+            }
+        });
+        return CurrentAnalysisEnvelope(partial);
+    }
+
+    private static JsonElement CurrentAnalysisEnvelope(JsonElement partial, double totalMilliseconds = 0)
+    {
+        var root = JsonNode.Parse(partial.GetRawText())!.AsObject();
+        root["ok"] = true;
+        root["analysis_id"] ??= "analysis-test";
+        root["selector"] ??= "selector-test";
+        root["selection"] ??= new JsonObject();
+        root["context"] ??= new JsonObject();
+        root["analysis_cache"] ??= new JsonObject();
+        root["knowledge_cache"] ??= new JsonObject();
+        root["historical_runs_considered"] ??= 0;
+        root["race_summary"] ??= new JsonObject();
+        root["race_timeline"] ??= new JsonObject();
+        root["damage_repair"] ??= new JsonObject();
+        root["strategy_forecast"] ??= new JsonObject();
+        root["data_quality"] ??= new JsonObject();
+        root["source_files"] ??= new JsonArray();
+        root["source_channel_coverage"] ??= new JsonObject();
+        root["analysis_path"] ??= string.Empty;
+        root["report_path"] ??= string.Empty;
+        root["race_card_path"] ??= string.Empty;
+        root["race_card"] ??= new JsonObject();
+        root["timing"] = new JsonObject { ["contract_version"] = 1, ["total_ms"] = totalMilliseconds, ["analysis_cache_hit"] = false };
+        root["artifacts"] ??= new JsonObject();
+
+        var view = root["analysis_view"]!.AsObject();
+        view["schema_version"] = 1;
+        view["analysis_profile_version"] ??= null;
+        view["identity"] ??= new JsonObject();
+        view["race_summary"] ??= new JsonObject();
+        view["race_grades"] ??= new JsonObject();
+        view["runs"] ??= new JsonArray();
+        view["laps"] ??= new JsonArray();
+        view["lap_traces"] ??= new JsonObject();
+        view["track_profile"] ??= new JsonObject();
+        view["track_geometry"] ??= new JsonObject();
+        view["race_replay"] ??= new JsonObject();
+        view["tire_learning"] ??= new JsonObject();
+        view["garage61_representative_laps"] ??= new JsonObject();
+        view["technical_insights"] ??= new JsonArray();
+        view["corner_tire_age"] ??= new JsonObject();
+        view["groove_evolution"] ??= new JsonObject();
+        view["strategy"] ??= new JsonObject();
+        view["damage_repair"] ??= new JsonObject();
+        view["setup_telemetry"] ??= new JsonObject();
+        view["conditions"] ??= new JsonObject();
+        view["data_quality"] ??= new JsonObject();
+        return JsonSerializer.SerializeToElement(root);
+    }
 
     private static void WriteArchivedAnalysis(string path, string selector)
     {

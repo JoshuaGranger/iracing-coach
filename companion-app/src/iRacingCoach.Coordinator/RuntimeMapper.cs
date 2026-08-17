@@ -145,7 +145,7 @@ public static class RuntimeMapper
             ["analysis_id"] = Text(report, "analysis_id") ?? string.Empty,
             ["analysis_view"] = report.Clone()
         }));
-        return Analysis(wrapped.RootElement);
+        return MapAnalysis(wrapped.RootElement, Object(wrapped.RootElement, "analysis_view"));
     }
 
     public static bool HasCurrentAnalysisProfile(JsonElement report)
@@ -286,12 +286,12 @@ public static class RuntimeMapper
 
     public static AnalysisWorkspace Analysis(JsonElement response)
     {
-        var view = Object(response, "analysis_view");
-        if (view.ValueKind != JsonValueKind.Object)
-        {
-            throw new InvalidDataException("The analysis response did not include the telemetry workspace.");
-        }
+        var view = RuntimeEnvelopeValidator.RequireAnalyzeResultV1(response);
+        return MapAnalysis(response, view);
+    }
 
+    private static AnalysisWorkspace MapAnalysis(JsonElement response, JsonElement view)
+    {
         var selection = AnalysisSelection(response, view);
         var identity = Object(view, "identity");
         var summary = Object(view, "race_summary");
