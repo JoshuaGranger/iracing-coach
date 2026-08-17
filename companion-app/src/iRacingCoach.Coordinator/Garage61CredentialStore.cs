@@ -41,14 +41,26 @@ internal sealed class FileGarage61CredentialReplacement : IGarage61CredentialRep
         ArgumentNullException.ThrowIfNull(store);
         byte[]? previous = null;
         if (File.Exists(store.CredentialPath)) previous = File.ReadAllBytes(store.CredentialPath);
+        var replacement = new FileGarage61CredentialReplacement(store, previous);
         try
         {
             store.Store(token);
-            return new FileGarage61CredentialReplacement(store, previous);
+            return replacement;
         }
-        catch
+        catch (Exception storeFailure)
         {
-            if (previous is not null) CryptographicOperations.ZeroMemory(previous);
+            try
+            {
+                replacement.Rollback();
+            }
+            catch (Exception rollbackFailure)
+            {
+                throw new AggregateException(
+                    "Saving the replacement Garage61 credential failed and the prior credential could not be restored.",
+                    storeFailure,
+                    rollbackFailure);
+            }
+
             throw;
         }
     }

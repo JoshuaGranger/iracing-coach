@@ -114,6 +114,29 @@ public sealed class Garage61StatusConsumerTests
         }
     }
 
+    [TestMethod]
+    public void ProtectedReplacement_WhenStoreFailsAfterWriting_RestoresPreviousBlobByteForByte()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-g61-replacement", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "garage61.dpapi");
+            var previous = new byte[] { 0x00, 0xFF, 0x13, 0x37, 0x80, 0x0A };
+            File.WriteAllBytes(path, previous);
+            var store = new FileBackedStore(path) { FailAfterWrite = true };
+
+            Assert.ThrowsExactly<IOException>(() =>
+                ((IGarage61CredentialStore)store).BeginReplacement("candidate-protected-blob"));
+
+            CollectionAssert.AreEqual(previous, File.ReadAllBytes(path));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static Garage61Connection Status(
         string credential,
         string authentication,
@@ -125,7 +148,12 @@ public sealed class Garage61StatusConsumerTests
     {
         public bool IsConfigured => File.Exists(CredentialPath);
         public string CredentialPath { get; } = path;
-        public void Store(string token) => File.WriteAllText(CredentialPath, token);
+        public bool FailAfterWrite { get; init; }
+        public void Store(string token)
+        {
+            File.WriteAllText(CredentialPath, token);
+            if (FailAfterWrite) throw new IOException("Simulated post-write credential protection failure.");
+        }
         public void Remove()
         {
             if (File.Exists(CredentialPath)) File.Delete(CredentialPath);
