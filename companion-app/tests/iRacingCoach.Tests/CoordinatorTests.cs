@@ -1447,15 +1447,85 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
-    public async Task ConcurrentCatalogRefreshes_AreCoalescedByTheRefreshGate()
+    public async Task ConcurrentCatalogRefreshes_CoalesceIntoOneTrailingDirtyPass()
     {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-refresh-trailing", Guid.NewGuid().ToString("N"));
         var backend = new FakeBackend(callDelay: TimeSpan.FromMilliseconds(30));
-        using var state = new CompanionState(backend);
+        using var state = CreateIsolatedState(backend, root);
 
-        await Task.WhenAll(state.RefreshDashboardAsync(), state.RefreshDashboardAsync(), state.RefreshDashboardAsync());
+        var first = state.RefreshDashboardAsync();
+        await WaitUntilAsync(() => backend.ToolCalls >= 4, TimeSpan.FromSeconds(2));
+        await Task.WhenAll(first, state.RefreshDashboardAsync(), state.RefreshDashboardAsync());
 
-        Assert.AreEqual(4, backend.ToolCalls, "One dashboard, discovery, setup, and Garage61 call should serve concurrent refresh requests.");
-        Assert.AreEqual(1, backend.Garage61Calls);
+        Assert.AreEqual(8, backend.ToolCalls, "Requests arriving during the active pass must coalesce into exactly one trailing pass.");
+        Assert.AreEqual(2, backend.Garage61Calls);
+        Assert.AreEqual(2, state.LocalInventoryGeneration);
+    }
+
+    [TestMethod]
+    public async Task CatalogRefresh_RetainsLastKnownGoodSectionWhenOneProviderIsMalformed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-refresh-lkg", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(
+            dashboard: DashboardWithFinalizedRaces(1),
+            responseOverride: (tool, call, _) => tool == "iracing_companion_dashboard" && call == 2
+                ? JsonSerializer.SerializeToElement(new { ok = false, status = "unavailable" })
+                : null);
+        using var state = CreateIsolatedState(backend, root);
+
+        await state.RefreshDashboardAsync();
+        var firstRace = state.Races.Single();
+        await state.RefreshDashboardAsync();
+
+        Assert.AreEqual(firstRace, state.Races.Single());
+        Assert.AreEqual(2, state.LocalInventoryGeneration);
+        Assert.IsFalse(state.LocalInventorySections.Single(section => section.Name == "Race recordings").Current);
+        Assert.IsTrue(state.LocalInventorySections.Single(section => section.Name == "Local setups").Current);
+        StringAssert.Contains(state.DataMessage, "last complete inventory");
+    }
+
+    [TestMethod]
+    public async Task CatalogRefresh_RootChangeDiscardsTheOldPassAndPublishesTheTrailingPass()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-refresh-root", Guid.NewGuid().ToString("N"));
+        var oldRoot = Path.Combine(root, "old");
+        var newRoot = Path.Combine(root, "new");
+        Directory.CreateDirectory(oldRoot);
+        Directory.CreateDirectory(newRoot);
+        var backend = new FakeBackend(
+            callDelay: TimeSpan.FromMilliseconds(100),
+            responseOverride: (tool, _, arguments) => tool == "iracing_companion_dashboard"
+                ? DashboardNamed(Path.GetFileName(ArgumentText(arguments, "root")))
+                : null);
+        using var state = CreateIsolatedState(backend, root);
+        state.Settings.IRacingRoot = oldRoot;
+
+        var oldPass = state.RefreshDashboardAsync();
+        await WaitUntilAsync(() => backend.ToolCalls >= 4, TimeSpan.FromSeconds(2));
+        state.Settings.IRacingRoot = newRoot;
+        var newPass = state.RefreshDashboardAsync();
+        await Task.WhenAll(oldPass, newPass);
+
+        Assert.AreEqual("New", state.Races.Single().Track);
+        Assert.AreEqual(1, state.LocalInventoryGeneration, "A completed pass for an obsolete root must never be published.");
+        Assert.AreEqual(8, backend.ToolCalls);
+    }
+
+    [TestMethod]
+    public async Task CatalogRefresh_SubscriberCancellationDoesNotCancelTheSharedInventoryPass()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-refresh-cancel", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(dashboard: DashboardWithFinalizedRaces(1), callDelay: TimeSpan.FromMilliseconds(100));
+        using var state = CreateIsolatedState(backend, root);
+        using var cancellation = new CancellationTokenSource();
+
+        var subscriber = state.RefreshDashboardAsync(cancellation.Token);
+        cancellation.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => subscriber);
+        await WaitUntilAsync(() => state.LocalInventoryGeneration == 1, TimeSpan.FromSeconds(3));
+
+        Assert.HasCount(1, state.Races);
+        Assert.IsTrue(state.HomeDataReady);
     }
 
     [TestMethod]
@@ -2456,6 +2526,49 @@ public sealed class CoordinatorTests
         }).ToArray()
     });
 
+    private static JsonElement DashboardNamed(string track) => JsonSerializer.SerializeToElement(new
+    {
+        ok = true,
+        races = new[]
+        {
+            new
+            {
+                group_id = "subsession:9901:1",
+                subsession_id = 9901,
+                session_id = 8901,
+                sim_session_type = "Race",
+                event_type = "Race",
+                is_race = true,
+                valid = true,
+                is_fixed_setup = true,
+                track_name = track,
+                track_config_name = "Oval",
+                car_path = "recorded-car",
+                start_time_utc = "2026-08-01T01:00:00Z",
+                file_count = 1,
+                files = new[] { "recording.ibt" },
+                analysis_status = "not_analyzed",
+                analysis = (object?)null
+            }
+        }
+    });
+
+    private static string ArgumentText(object arguments, string property)
+    {
+        var serialized = JsonSerializer.SerializeToElement(arguments);
+        return serialized.GetProperty(property).GetString() ?? string.Empty;
+    }
+
+    private static CompanionState CreateIsolatedState(IBackendClient backend, string root) => new(
+        backend: backend,
+        settingsStore: null,
+        liveTelemetrySource: new DisconnectedLiveTelemetrySource(),
+        coachEngine: new DisabledCoachEngineSupervisor(),
+        garage61Credentials: new FakeGarage61CredentialStore(Path.Combine(root, "garage61.dpapi")),
+        archive: null,
+        pathProvider: new IsolatedCompanionPathProvider(root),
+        allowExternalHostActions: false);
+
     private static JsonElement DiscoveryWithFinalizedRaces(int count) => JsonSerializer.SerializeToElement(new
     {
         sessions = Enumerable.Range(1, count).Select(index => new
@@ -2528,11 +2641,21 @@ public sealed class CoordinatorTests
 
     private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
 
-    private sealed class FakeBackend(JsonElement? dashboard = null, JsonElement? tuning = null, Exception? failure = null, TimeSpan? callDelay = null, JsonElement? analysis = null, JsonElement? discovery = null, TimeSpan? analysisDelay = null, int analysisFailuresBeforeSuccess = 0) : IBackendClient
+    private sealed class FakeBackend(
+        JsonElement? dashboard = null,
+        JsonElement? tuning = null,
+        Exception? failure = null,
+        TimeSpan? callDelay = null,
+        JsonElement? analysis = null,
+        JsonElement? discovery = null,
+        TimeSpan? analysisDelay = null,
+        int analysisFailuresBeforeSuccess = 0,
+        Func<string, int, object, JsonElement?>? responseOverride = null) : IBackendClient
     {
         private int _toolCalls;
         private int _garage61Calls;
         private int _analyzeCalls;
+        private readonly ConcurrentDictionary<string, int> _callsByTool = new(StringComparer.Ordinal);
         public int ToolCalls => Volatile.Read(ref _toolCalls);
         public int Garage61Calls => Volatile.Read(ref _garage61Calls);
         public int AnalyzeCalls => Volatile.Read(ref _analyzeCalls);
@@ -2543,6 +2666,7 @@ public sealed class CoordinatorTests
         public async Task<JsonElement> CallToolAsync(BackendConfiguration configuration, string toolName, object arguments, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _toolCalls);
+            var toolCall = _callsByTool.AddOrUpdate(toolName, 1, static (_, count) => count + 1);
             if (toolName.Contains("garage61", StringComparison.OrdinalIgnoreCase)) Interlocked.Increment(ref _garage61Calls);
             var analysisCall = toolName == "analyze_iracing_race" ? Interlocked.Increment(ref _analyzeCalls) : 0;
             if (toolName == "analyze_iracing_race" && analysisDelay is { } analysisPause)
@@ -2552,6 +2676,7 @@ public sealed class CoordinatorTests
             if (failure is not null && toolName == "analyze_iracing_race") throw failure;
             if (toolName == "analyze_iracing_race" && analysisCall <= analysisFailuresBeforeSuccess)
                 throw new IOException("Transient analysis read failure.");
+            if (responseOverride?.Invoke(toolName, toolCall, arguments) is { } overridden) return overridden;
             var value = toolName switch
             {
                 "iracing_companion_dashboard" when dashboard.HasValue => dashboard.Value,

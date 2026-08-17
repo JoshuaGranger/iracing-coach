@@ -19,6 +19,8 @@ public sealed record TuningFeedbackDraft(
     string Note = "",
     string FeedbackId = "");
 
+public sealed record LocalInventorySectionStatus(string Name, bool Current, string Message);
+
 public sealed class CompanionState : IDisposable
 {
     // The cached backend response is part of the UI contract. Bump this when
@@ -40,6 +42,9 @@ public sealed class CompanionState : IDisposable
     private readonly object _homeAnalysisSync = new();
     private readonly object _liveMonitorVisibilityGate = new();
     private readonly object _settingsPersistenceGate = new();
+    private readonly object _inventoryGate = new();
+    private readonly object _refreshSync = new();
+    private readonly object _watcherSync = new();
     private readonly Queue<RecentRace> _homeAnalysisQueue = [];
     private readonly HashSet<string> _homeAnalysisActiveKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _homeAnalysisCancellation = new();
@@ -47,8 +52,16 @@ public sealed class CompanionState : IDisposable
     private static readonly TimeSpan HomeAnalysisRetryDelay = TimeSpan.FromMilliseconds(250);
     private CancellationTokenSource? _coachRequest;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly CancellationTokenSource _refreshLifetime = new();
+    private Task? _refreshTask;
+    private Task? _garageRefreshTask;
+    private bool _refreshDirty;
+    private bool _refreshShowToast;
+    private int _refreshLoopsActive;
     private Timer? _fileRefresh;
     private readonly List<FileSystemWatcher> _watchers = [];
+    private string _watcherRoot = string.Empty;
+    private LocalInventorySnapshot? _localInventory;
     private bool _initialized;
     private bool _disposed;
     private bool _liveMonitorAutoReopenSuppressed;
@@ -144,6 +157,8 @@ public sealed class CompanionState : IDisposable
     public bool JobTrayOpen { get; private set; }
     public bool IsRefreshing { get; private set; }
     public bool HomeDataReady { get; private set; }
+    public long LocalInventoryGeneration { get; private set; }
+    public IReadOnlyList<LocalInventorySectionStatus> LocalInventorySections { get; private set; } = [];
     public bool PlanGenerated { get; private set; }
     public bool ExperimentGenerated { get; private set; }
     public bool DiagnosticsExpanded { get; private set; }
@@ -382,7 +397,6 @@ public sealed class CompanionState : IDisposable
             return;
         }
         await RefreshDataAsync(showToast: false, cancellationToken);
-        ConfigureWatchers();
         _liveTelemetry.Start();
         _ = InitializeCoachEngineAsync();
         if (Settings.LiveMonitor.Visible) LiveMonitorVisibilityRequested?.Invoke(true, false);
@@ -390,129 +404,411 @@ public sealed class CompanionState : IDisposable
 
     public Task RefreshDashboardAsync(CancellationToken cancellationToken = default) => RefreshDataAsync(true, cancellationToken);
 
-    private async Task RefreshDataAsync(bool showToast, CancellationToken cancellationToken)
+    private Task RefreshDataAsync(bool showToast, CancellationToken cancellationToken)
     {
-        if (!_refreshGate.Wait(0)) return;
+        Task refresh;
+        lock (_refreshSync)
+        {
+            if (_disposed) return Task.CompletedTask;
+            _refreshShowToast |= showToast;
+            if (_refreshTask is { IsCompleted: false })
+            {
+                _refreshDirty = true;
+                refresh = _refreshTask;
+            }
+            else
+            {
+                _refreshDirty = false;
+                _refreshTask = Task.Run(RefreshLoopAsync);
+                refresh = _refreshTask;
+            }
+        }
+        return WaitForRefreshAsync(refresh, cancellationToken);
+    }
+
+    private static async Task WaitForRefreshAsync(Task refresh, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.CanBeCanceled) await refresh.WaitAsync(cancellationToken);
+        else await refresh;
+    }
+
+    private async Task RefreshLoopAsync()
+    {
+        Interlocked.Increment(ref _refreshLoopsActive);
         IsRefreshing = true;
         RaiseChanged();
         try
         {
-            var configuration = CreateBackendConfiguration();
-            var healthTask = _backend.CheckHealthAsync(configuration, cancellationToken);
-            var dashboardTask = SafeToolAsync("iracing_companion_dashboard", new
+            while (!_refreshLifetime.IsCancellationRequested)
             {
-                root = Settings.IRacingRoot,
-                archive_root = Settings.ArchiveRoot,
-                limit = 50
-            }, cancellationToken);
-            var discoveryTask = SafeToolAsync("discover_iracing_sessions", new
-            {
-                root = Settings.IRacingRoot,
-                races_only = false,
-                limit = 200
-            }, cancellationToken);
-            var setupTask = SafeToolAsync("catalog_iracing_setups", new
-            {
-                root = Settings.IRacingRoot,
-                archive_root = Settings.ArchiveRoot,
-                maximum_entries = 500
-            }, cancellationToken);
-            var garageTask = SafeToolAsync("garage61_auth_status", new
-            {
-                archive_root = Settings.ArchiveRoot
-            }, cancellationToken);
-
-            await Task.WhenAll(healthTask, dashboardTask, discoveryTask, setupTask, garageTask);
-            var health = await healthTask;
-            _lastBackendHealth = health;
-            UpdateHealth("backend", "Race analysis", health.Ok ? "ready" : "unavailable",
-                health.Ok ? "Ready" : "Needs attention", true);
-
-            var dashboard = await dashboardTask;
-            if (dashboard.ValueKind == JsonValueKind.Object)
-            {
-                var mapped = DashboardMapper.Map(dashboard);
-                var homeRaces = mapped.Select((race, index) => index < 6 ? EnrichRaceOverview(race) : race).ToArray();
-                Races.Clear();
-                Races.AddRange(homeRaces);
-                var discovery = await discoveryTask;
-                EventSessions.Clear();
-                EventSessions.AddRange(DashboardMapper.MapEvents(dashboard, discovery).Select(session =>
+                bool showToast;
+                lock (_refreshSync)
                 {
-                    var homeRace = homeRaces.FirstOrDefault(candidate => SameRace(candidate, session));
-                    return homeRace?.Overview is { } overview
-                        ? MergeRaceAnalysisState(session, overview, homeRace.Analyzed, homeRace.AnalysisPath)
-                        : session;
-                }));
-                foreach (var archived in LoadArchivedRaces())
-                {
-                    if (Races.All(race => !string.Equals(race.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) Races.Add(archived);
-                    if (EventSessions.All(race => !string.Equals(race.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) EventSessions.Add(archived);
+                    _refreshDirty = false;
+                    showToast = _refreshShowToast;
+                    _refreshShowToast = false;
                 }
-                EventGroups.Clear();
-                EventGroups.AddRange(DashboardMapper.GroupEvents(EventSessions));
-                if (!AvailableRaceFilters.Contains(RaceFilter)) RaceFilter = RaceBrowserFilter.All;
-                DataMessage = Races.Count == 0
-                    ? "No finalized race recordings were found. iRacing recordings will appear here automatically."
-                    : $"{Races.Count} race recording{(Races.Count == 1 ? string.Empty : "s")} found.";
-                ApplyRaceDefaults();
-                ApplyBrowserDefault();
-            }
 
-            var setupResponse = await setupTask;
-            if (setupResponse.ValueKind == JsonValueKind.Object)
-            {
-                Setups.Clear();
-                Setups.AddRange(RuntimeMapper.Setups(setupResponse));
-                foreach (var archived in LoadArchivedSetups())
-                    if (Setups.All(setup => !string.Equals(setup.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) Setups.Add(archived);
-                if (SelectedSetupId.Length == 0 || Setups.All(setup => setup.Id != SelectedSetupId))
+                await RefreshInventoryPassAsync(showToast, _refreshLifetime.Token);
+
+                lock (_refreshSync)
                 {
-                    SelectedSetupId = Setups.FirstOrDefault()?.Id ?? string.Empty;
-                }
-                if (CompareSetupId.Length == 0 || Setups.All(setup => setup.Id != CompareSetupId))
-                {
-                    CompareSetupId = Setups.FirstOrDefault(setup => setup.Id != SelectedSetupId)?.Id ?? string.Empty;
+                    if (_refreshDirty) continue;
+                    break;
                 }
             }
-
-            var garageResponse = await garageTask;
-            if (garageResponse.ValueKind == JsonValueKind.Object)
-            {
-                Garage61 = RuntimeMapper.Garage61(garageResponse);
-            }
-            UpdateHealth("garage61", "Garage61", Garage61.Available ? "ready" : Garage61.Configured ? "warning" : "neutral",
-                Garage61.Available ? "Connected" : Garage61.Configured ? "Key saved · offline" : "Not configured");
-            UpdateHealth("repository", "Coach data", "ready", "Coach folder ready");
-
-            DiscoverCars();
-            DiscoverTracks();
-            Diagnostics = BuildDiagnostics(health);
-            LastUpdated = DateTimeOffset.Now;
-            if (showToast) Toast = "Your local racing data is up to date.";
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            if (showToast) Toast = "Update cancelled.";
-        }
+        catch (OperationCanceledException) when (_refreshLifetime.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            ReportUnhandledException("catalog refresh", ex);
+            RecordRefreshFailure("catalog refresh", ex);
             UpdateHealth("backend", "Race analysis", "unavailable", "Could not read local racing data", true);
-            UpdateHealth("garage61", "Garage61", "neutral", "Not checked");
-            UpdateHealth("repository", "Coach data", "ready", "Coach folder ready");
-            DataMessage = $"The app could not update: {Bound(ex.Message)}";
-            if (showToast) Toast = "The update needs attention. Open Diagnostics for details.";
+            DataMessage = "The local inventory could not be updated. The last complete inventory is still shown.";
         }
         finally
         {
-            IsRefreshing = false;
+            IsRefreshing = Interlocked.Decrement(ref _refreshLoopsActive) > 0;
             HomeDataReady = true;
-            _refreshGate.Release();
             RaiseChanged();
         }
-        QueueMissingHomeRaceAnalysis();
     }
+
+    private async Task RefreshInventoryPassAsync(bool showToast, CancellationToken cancellationToken)
+    {
+        await _refreshGate.WaitAsync(cancellationToken);
+        try
+        {
+            var roots = new RefreshRoots(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
+            var configuration = CreateBackendConfiguration();
+            var previous = CaptureLocalInventory(roots);
+            var healthTask = ReadRefreshSectionAsync("Race analysis", () => _backend.CheckHealthAsync(configuration, cancellationToken), cancellationToken);
+            var dashboardTask = ReadRefreshSectionAsync("Race recordings", async () =>
+            {
+                var response = await CallBackendAsync("iracing_companion_dashboard", new
+                {
+                    root = roots.IRacingRoot,
+                    archive_root = roots.ArchiveRoot,
+                    limit = 50
+                }, cancellationToken);
+                var races = DashboardMapper.Map(response)
+                    .Select((race, index) => index < 6 ? EnrichRaceOverview(race) : race)
+                    .ToList();
+                foreach (var archived in LoadArchivedRaces())
+                    if (races.All(race => !string.Equals(race.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) races.Add(archived);
+                return new DashboardRefresh(response, races.ToArray());
+            }, cancellationToken);
+            var discoveryTask = ReadRefreshSectionAsync("Race sessions", async () =>
+            {
+                var response = await CallBackendAsync("discover_iracing_sessions", new
+                {
+                    root = roots.IRacingRoot,
+                    races_only = false,
+                    limit = 200
+                }, cancellationToken);
+                if (response.ValueKind != JsonValueKind.Object
+                    || !response.TryGetProperty("sessions", out var sessions)
+                    || sessions.ValueKind != JsonValueKind.Array)
+                    throw new InvalidDataException("The race-session response did not include a sessions array.");
+                return response;
+            }, cancellationToken);
+            var setupTask = ReadRefreshSectionAsync("Local setups", async () =>
+            {
+                var response = await CallBackendAsync("catalog_iracing_setups", new
+                {
+                    root = roots.IRacingRoot,
+                    archive_root = roots.ArchiveRoot,
+                    maximum_entries = 500
+                }, cancellationToken);
+                if (response.ValueKind != JsonValueKind.Object
+                    || !response.TryGetProperty("entries", out var entries)
+                    || entries.ValueKind != JsonValueKind.Array)
+                    throw new InvalidDataException("The setup response did not include an entries array.");
+                var setups = RuntimeMapper.Setups(response).ToList();
+                foreach (var archived in LoadArchivedSetups())
+                    if (setups.All(setup => !string.Equals(setup.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) setups.Add(archived);
+                return (IReadOnlyList<LocalSetup>)setups.ToArray();
+            }, cancellationToken);
+            var garageTask = ReadRefreshSectionAsync("Garage61", async () =>
+            {
+                var response = await CallBackendAsync("garage61_auth_status", new { archive_root = roots.ArchiveRoot }, cancellationToken);
+                if (response.ValueKind != JsonValueKind.Object)
+                    throw new InvalidDataException("The Garage61 response was not an object.");
+                return RuntimeMapper.Garage61(response);
+            }, cancellationToken);
+
+            await Task.WhenAll(healthTask, dashboardTask, discoveryTask, setupTask);
+            var health = await healthTask;
+            var dashboard = await dashboardTask;
+            var discovery = await discoveryTask;
+            var setups = await setupTask;
+            var events = BuildEventSection(dashboard, discovery);
+            var stagedRaces = dashboard.Success ? dashboard.Value!.Races : previous.Races;
+            var stagedSetups = setups.Success ? setups.Value! : previous.Setups;
+            var stagedEvents = events.Success ? events.Value! : previous.EventSessions;
+            var groups = events.Success ? DashboardMapper.GroupEvents(stagedEvents) : previous.EventGroups;
+            var cars = ReadRefreshSection("Installed cars", () => DiscoverCars(stagedRaces, stagedSetups));
+            var tracks = ReadRefreshSection("Installed tracks", () => DiscoverTracks(stagedRaces));
+            var next = new LocalInventorySnapshot(
+                previous.Generation + 1,
+                roots,
+                stagedRaces,
+                stagedEvents,
+                groups,
+                stagedSetups,
+                cars.Success ? cars.Value! : previous.Cars,
+                tracks.Success ? tracks.Value! : previous.Tracks,
+                [
+                    SectionStatus("Race recordings", dashboard),
+                    SectionStatus("Race sessions", events),
+                    SectionStatus("Local setups", setups),
+                    SectionStatus("Installed cars", cars),
+                    SectionStatus("Installed tracks", tracks)
+                ]);
+
+            RecordSectionFailure(dashboard);
+            RecordSectionFailure(discovery);
+            if (dashboard.Success && discovery.Success) RecordSectionFailure(events);
+            RecordSectionFailure(setups);
+            RecordSectionFailure(cars);
+            RecordSectionFailure(tracks);
+            if (!RefreshRootsAreCurrent(roots))
+            {
+                MarkRefreshDirty();
+                return;
+            }
+
+            PublishLocalInventory(next, dashboard.Success);
+            ConfigureWatchers(roots.IRacingRoot);
+            if (health.Success)
+            {
+                _lastBackendHealth = health.Value!;
+                UpdateHealth("backend", "Race analysis", health.Value!.Ok ? "ready" : "unavailable",
+                    health.Value.Ok ? "Ready" : "Needs attention", true);
+            }
+            else
+            {
+                RecordSectionFailure(health);
+                UpdateHealth("backend", "Race analysis", "unavailable", "Health check failed; local inventory retained", true);
+            }
+            UpdateHealth("repository", "Coach data", "ready", "Coach folder ready");
+            Diagnostics = BuildDiagnostics(_lastBackendHealth);
+            LastUpdated = DateTimeOffset.Now;
+            HomeDataReady = true;
+            if (showToast) Toast = next.Sections.All(section => section.Current)
+                ? "Your local racing data is up to date."
+                : "Some local data could not be updated. The last complete values are still shown.";
+            RaiseChanged();
+            QueueMissingHomeRaceAnalysis();
+
+            var observer = ObserveGarageRefreshAsync(garageTask, roots);
+            lock (_refreshSync) _garageRefreshTask = observer;
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    private LocalInventorySnapshot CaptureLocalInventory(RefreshRoots roots)
+    {
+        lock (_inventoryGate)
+        {
+            var retainCurrentRoots = _localInventory is null || Equals(_localInventory.Roots, roots);
+            return new LocalInventorySnapshot(
+                _localInventory?.Generation ?? LocalInventoryGeneration,
+                roots,
+                retainCurrentRoots ? Races.ToArray() : [],
+                retainCurrentRoots ? EventSessions.ToArray() : [],
+                retainCurrentRoots ? EventGroups.ToArray() : [],
+                retainCurrentRoots ? Setups.ToArray() : [],
+                retainCurrentRoots ? Cars.ToArray() : [],
+                retainCurrentRoots ? Tracks.ToArray() : [],
+                retainCurrentRoots ? LocalInventorySections.ToArray() : []);
+        }
+    }
+
+    private RefreshSection<IReadOnlyList<RecentRace>> BuildEventSection(
+        RefreshSection<DashboardRefresh> dashboard,
+        RefreshSection<JsonElement> discovery)
+    {
+        if (!dashboard.Success)
+            return RefreshSection<IReadOnlyList<RecentRace>>.Failed(dashboard.Error!);
+        if (!discovery.Success)
+            return RefreshSection<IReadOnlyList<RecentRace>>.Failed(discovery.Error!);
+        return ReadRefreshSection("Race sessions", () =>
+        {
+            var homeRaces = dashboard.Value!.Races;
+            var sessions = DashboardMapper.MapEvents(dashboard.Value.Response, discovery.Value).Select(session =>
+            {
+                var homeRace = homeRaces.FirstOrDefault(candidate => SameRace(candidate, session));
+                return homeRace?.Overview is { } overview
+                    ? MergeRaceAnalysisState(session, overview, homeRace.Analyzed, homeRace.AnalysisPath)
+                    : session;
+            }).ToList();
+            foreach (var archived in homeRaces)
+                if (sessions.All(race => !string.Equals(race.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) sessions.Add(archived);
+            return (IReadOnlyList<RecentRace>)sessions.ToArray();
+        });
+    }
+
+    private void PublishLocalInventory(LocalInventorySnapshot snapshot, bool dashboardCurrent)
+    {
+        lock (_inventoryGate)
+        {
+            if (_localInventory is null || Equals(_localInventory.Roots, snapshot.Roots))
+            {
+                var current = Races.Concat(EventSessions).OfType<RecentRace>()
+                    .Where(race => race.Overview is not null)
+                    .ToArray();
+                RecentRace PreserveAnalysis(RecentRace candidate)
+                {
+                    var existing = current.FirstOrDefault(race => SameRace(race, candidate));
+                    return existing?.Overview is { } overview
+                        ? MergeRaceAnalysisState(candidate, overview, existing.Analyzed, existing.AnalysisPath)
+                        : candidate;
+                }
+                var races = snapshot.Races.Select(PreserveAnalysis).ToArray();
+                var sessions = snapshot.EventSessions.Select(PreserveAnalysis).ToArray();
+                snapshot = snapshot with
+                {
+                    Races = races,
+                    EventSessions = sessions,
+                    EventGroups = DashboardMapper.GroupEvents(sessions)
+                };
+            }
+            Races.Clear();
+            Races.AddRange(snapshot.Races);
+            EventSessions.Clear();
+            EventSessions.AddRange(snapshot.EventSessions);
+            EventGroups.Clear();
+            EventGroups.AddRange(snapshot.EventGroups);
+            Setups.Clear();
+            Setups.AddRange(snapshot.Setups);
+            Cars.Clear();
+            Cars.AddRange(snapshot.Cars);
+            Tracks.Clear();
+            Tracks.AddRange(snapshot.Tracks);
+            _localInventory = snapshot;
+            LocalInventoryGeneration = snapshot.Generation;
+            LocalInventorySections = snapshot.Sections;
+
+            if (!AvailableRaceFilters.Contains(RaceFilter)) RaceFilter = RaceBrowserFilter.All;
+            DataMessage = dashboardCurrent
+                ? Races.Count == 0
+                    ? "No finalized race recordings were found. iRacing recordings will appear here automatically."
+                    : $"{Races.Count} race recording{(Races.Count == 1 ? string.Empty : "s")} found."
+                : "Some race recordings could not be updated. The last complete inventory is still shown.";
+            ApplyRaceDefaults();
+            ApplyBrowserDefault();
+            if (SelectedSetupId.Length == 0 || Setups.All(setup => setup.Id != SelectedSetupId))
+                SelectedSetupId = Setups.FirstOrDefault()?.Id ?? string.Empty;
+            if (CompareSetupId.Length == 0 || Setups.All(setup => setup.Id != CompareSetupId))
+                CompareSetupId = Setups.FirstOrDefault(setup => setup.Id != SelectedSetupId)?.Id ?? string.Empty;
+        }
+    }
+
+    private async Task ObserveGarageRefreshAsync(Task<RefreshSection<Garage61Connection>> garageTask, RefreshRoots roots)
+    {
+        try
+        {
+            var garage = await garageTask;
+            if (_disposed) return;
+            if (!RefreshRootsAreCurrent(roots)) return;
+            if (garage.Success) Garage61 = garage.Value!;
+            else RecordSectionFailure(garage);
+            UpdateHealth("garage61", "Garage61", Garage61.Available ? "ready" : Garage61.Configured ? "warning" : "neutral",
+                Garage61.Available ? "Connected" : Garage61.Configured ? "Key saved · offline" : "Not configured");
+            Diagnostics = BuildDiagnostics(_lastBackendHealth);
+            RaiseChanged();
+        }
+        catch (OperationCanceledException) when (_refreshLifetime.IsCancellationRequested) { }
+    }
+
+    private static async Task<RefreshSection<T>> ReadRefreshSectionAsync<T>(
+        string name,
+        Func<Task<T>> read,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return RefreshSection<T>.Succeeded(await read());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return RefreshSection<T>.Failed(new RefreshSectionError(name, ex));
+        }
+    }
+
+    private static RefreshSection<T> ReadRefreshSection<T>(string name, Func<T> read)
+    {
+        try
+        {
+            return RefreshSection<T>.Succeeded(read());
+        }
+        catch (Exception ex)
+        {
+            return RefreshSection<T>.Failed(new RefreshSectionError(name, ex));
+        }
+    }
+
+    private static LocalInventorySectionStatus SectionStatus<T>(string name, RefreshSection<T> section) =>
+        section.Success
+            ? new LocalInventorySectionStatus(name, true, "Ready")
+            : new LocalInventorySectionStatus(name, false, "Update failed; showing the last complete values.");
+
+    private void RecordSectionFailure<T>(RefreshSection<T> section)
+    {
+        if (section.Error is { } error) RecordRefreshFailure(error.Name, error.Exception);
+    }
+
+    private void RecordRefreshFailure(string scope, Exception exception)
+    {
+        LastRecoverableError = StructuredAppLog.Record(scope, exception, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
+        ServiceFailureCount++;
+    }
+
+    private bool RefreshRootsAreCurrent(RefreshRoots roots) =>
+        string.Equals(Settings.IRacingRoot, roots.IRacingRoot, StringComparison.Ordinal)
+        && string.Equals(Settings.ArchiveRoot, roots.ArchiveRoot, StringComparison.Ordinal)
+        && string.Equals(Settings.IRacingInstallRoot, roots.IRacingInstallRoot, StringComparison.Ordinal);
+
+    private void MarkRefreshDirty()
+    {
+        lock (_refreshSync)
+        {
+            if (_disposed) return;
+            if (_refreshTask is { IsCompleted: false })
+            {
+                _refreshDirty = true;
+                return;
+            }
+            _refreshDirty = false;
+            _refreshTask = Task.Run(RefreshLoopAsync);
+        }
+    }
+
+    private sealed record RefreshRoots(string IRacingRoot, string ArchiveRoot, string IRacingInstallRoot);
+    private sealed record DashboardRefresh(JsonElement Response, IReadOnlyList<RecentRace> Races);
+    private sealed record RefreshSectionError(string Name, Exception Exception);
+    private sealed record RefreshSection<T>(bool Success, T? Value, RefreshSectionError? Error)
+    {
+        public static RefreshSection<T> Succeeded(T value) => new(true, value, null);
+        public static RefreshSection<T> Failed(RefreshSectionError error) => new(false, default, error);
+    }
+    private sealed record LocalInventorySnapshot(
+        long Generation,
+        RefreshRoots Roots,
+        IReadOnlyList<RecentRace> Races,
+        IReadOnlyList<RecentRace> EventSessions,
+        IReadOnlyList<RaceEventGroup> EventGroups,
+        IReadOnlyList<LocalSetup> Setups,
+        IReadOnlyList<InstalledCar> Cars,
+        IReadOnlyList<InstalledTrack> Tracks,
+        IReadOnlyList<LocalInventorySectionStatus> Sections);
 
     private async Task<JsonElement> SafeToolAsync(string name, object arguments, CancellationToken cancellationToken)
     {
@@ -2656,15 +2952,17 @@ public sealed class CompanionState : IDisposable
             ?? string.Empty;
     }
 
-    private void DiscoverCars()
+    private IReadOnlyList<InstalledCar> DiscoverCars(
+        IReadOnlyList<RecentRace> races,
+        IReadOnlyList<LocalSetup> setups)
     {
         var found = new Dictionary<string, InstalledCar>(StringComparer.OrdinalIgnoreCase);
-        foreach (var race in Races)
+        foreach (var race in races)
         {
             var id = race.CarPath.Length > 0 ? race.CarPath : race.Car;
             found[id] = new InstalledCar(id, race.Car, race.CarPath, "Recorded race");
         }
-        foreach (var setup in Setups)
+        foreach (var setup in setups)
         {
             if (!found.ContainsKey(setup.Car)) found[setup.Car] = new InstalledCar(setup.Car, setup.Car, setup.StoPath, "Local setup");
         }
@@ -2682,14 +2980,13 @@ public sealed class CompanionState : IDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
-        Cars.Clear();
-        Cars.AddRange(found.Values.OrderBy(car => car.Name, StringComparer.CurrentCultureIgnoreCase));
+        return found.Values.OrderBy(car => car.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
-    private void DiscoverTracks()
+    private IReadOnlyList<InstalledTrack> DiscoverTracks(IReadOnlyList<RecentRace> races)
     {
         var found = new Dictionary<string, InstalledTrack>(StringComparer.OrdinalIgnoreCase);
-        foreach (var race in Races.OfType<RecentRace>())
+        foreach (var race in races.OfType<RecentRace>())
         {
             var id = string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track}/{race.Layout}";
             found[id] = new InstalledTrack(id, string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track} - {race.Layout}", race.SourcePath, "Recorded race");
@@ -2713,8 +3010,7 @@ public sealed class CompanionState : IDisposable
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
 
-        Tracks.Clear();
-        Tracks.AddRange(found.Values.OrderBy(track => track.Name, StringComparer.CurrentCultureIgnoreCase));
+        return found.Values.OrderBy(track => track.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
     private static IEnumerable<string> LeafInstalledContent(string root, int remainingDepth)
@@ -2780,11 +3076,16 @@ public sealed class CompanionState : IDisposable
         return $"{year}S{season}";
     }
 
-    private void ConfigureWatchers()
+    private void ConfigureWatchers(string root)
     {
-        foreach (var root in new[] { Settings.IRacingRoot }.Distinct(StringComparer.OrdinalIgnoreCase))
+        lock (_watcherSync)
         {
-            if (!Directory.Exists(root)) continue;
+            if (_disposed) return;
+            if (string.Equals(_watcherRoot, root, StringComparison.OrdinalIgnoreCase) && _watchers.Count > 0) return;
+            foreach (var watcher in _watchers) watcher.Dispose();
+            _watchers.Clear();
+            _watcherRoot = root;
+            if (!Directory.Exists(root)) return;
             try
             {
                 var watcher = new FileSystemWatcher(root)
@@ -2804,8 +3105,12 @@ public sealed class CompanionState : IDisposable
     {
         var extension = Path.GetExtension(args.FullPath);
         if (extension.Length > 0 && extension is not (".ibt" or ".sto" or ".htm" or ".html")) return;
-        _fileRefresh ??= new Timer(_ => _ = RefreshDataAsync(false, CancellationToken.None), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-        _fileRefresh.Change(TimeSpan.FromSeconds(2), Timeout.InfiniteTimeSpan);
+        lock (_watcherSync)
+        {
+            if (_disposed) return;
+            _fileRefresh ??= new Timer(_ => _ = RefreshDataAsync(false, CancellationToken.None), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            _fileRefresh.Change(TimeSpan.FromSeconds(2), Timeout.InfiniteTimeSpan);
+        }
     }
 
     private IReadOnlyList<DiagnosticFact> BuildDiagnostics(BackendHealthResult health) =>
@@ -2822,6 +3127,10 @@ public sealed class CompanionState : IDisposable
         new("Coach data", Archive is null ? "Unavailable" : $"{Archive.Restored.TotalItems:N0} saved items · {Archive.Restored.UnresolvedSources:N0} telemetry files need locating", Archive?.Restored.UnresolvedSources > 0 ? "neutral" : "ready"),
         new("Settings file", Settings.SettingsPath, File.Exists(Settings.SettingsPath) ? "ready" : "neutral"),
         new("Setup copies", Settings.SetupsRoot, "ready"),
+        .. LocalInventorySections.Select(section => new DiagnosticFact(
+            $"Local {section.Name.ToLowerInvariant()}",
+            section.Message,
+            section.Current ? "ready" : "warning")),
         new("Garage61", Garage61.Available ? "Connected" : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
         new("Live telemetry", LiveState.Snapshot.Connected ? $"Connected · {LiveState.Snapshot.Flag} · {LiveState.Snapshot.DataAge.TotalMilliseconds:0} ms old" : "Waiting for iRacing", LiveState.Snapshot.Connected ? "ready" : "neutral"),
         new("Live update pipeline", $"{LiveState.FramesRead:N0} frames · {LiveState.DroppedFrames:N0} dropped · {LiveState.RenderLatencyMs:0.00} ms compute", LiveState.DroppedFrames == 0 ? "ready" : "warning"),
@@ -3233,34 +3542,37 @@ public sealed class CompanionState : IDisposable
 
     private bool ApplyRaceAnalysisState(RecentRace race, RaceOverview overview, bool analyzed, string analysisPath)
     {
-        var changed = false;
-        var eventSessionsChanged = false;
-        for (var index = 0; index < Races.Count; index++)
+        lock (_inventoryGate)
         {
-            if (!SameRace(Races[index], race)) continue;
-            var updated = MergeRaceAnalysisState(Races[index], overview, analyzed, analysisPath);
-            if (Equals(Races[index], updated)) continue;
-            Races[index] = updated;
-            changed = true;
+            var changed = false;
+            var eventSessionsChanged = false;
+            for (var index = 0; index < Races.Count; index++)
+            {
+                if (!SameRace(Races[index], race)) continue;
+                var updated = MergeRaceAnalysisState(Races[index], overview, analyzed, analysisPath);
+                if (Equals(Races[index], updated)) continue;
+                Races[index] = updated;
+                changed = true;
+            }
+            for (var index = 0; index < EventSessions.Count; index++)
+            {
+                if (!SameRace(EventSessions[index], race)) continue;
+                var updated = MergeRaceAnalysisState(EventSessions[index], overview, analyzed, analysisPath);
+                if (Equals(EventSessions[index], updated)) continue;
+                EventSessions[index] = updated;
+                changed = true;
+                eventSessionsChanged = true;
+            }
+            if (eventSessionsChanged)
+            {
+                // RaceEventGroup is an immutable snapshot of its sessions. Rebuild it
+                // whenever a background summary replaces an EventSessions record so
+                // the Race Analysis catalog observes the new overview immediately.
+                EventGroups.Clear();
+                EventGroups.AddRange(DashboardMapper.GroupEvents(EventSessions));
+            }
+            return changed;
         }
-        for (var index = 0; index < EventSessions.Count; index++)
-        {
-            if (!SameRace(EventSessions[index], race)) continue;
-            var updated = MergeRaceAnalysisState(EventSessions[index], overview, analyzed, analysisPath);
-            if (Equals(EventSessions[index], updated)) continue;
-            EventSessions[index] = updated;
-            changed = true;
-            eventSessionsChanged = true;
-        }
-        if (eventSessionsChanged)
-        {
-            // RaceEventGroup is an immutable snapshot of its sessions. Rebuild it
-            // whenever a background summary replaces an EventSessions record so
-            // the Race Analysis catalog observes the new overview immediately.
-            EventGroups.Clear();
-            EventGroups.AddRange(DashboardMapper.GroupEvents(EventSessions));
-        }
-        return changed;
     }
 
     private static RecentRace MergeRaceAnalysisState(RecentRace race, RaceOverview overview, bool analyzed, string analysisPath)
@@ -3828,9 +4140,26 @@ public sealed class CompanionState : IDisposable
         if (_disposed) return;
         _disposed = true;
         _homeAnalysisCancellation.Cancel();
+        _refreshLifetime.Cancel();
         _backendOperations.Dispose();
-        _fileRefresh?.Dispose();
-        foreach (var watcher in _watchers) watcher.Dispose();
+        Task[] refreshTasks;
+        lock (_refreshSync)
+            refreshTasks = new[] { _refreshTask, _garageRefreshTask }.Where(task => task is not null).Cast<Task>().ToArray();
+        var refreshesStopped = refreshTasks.Length == 0;
+        if (!refreshesStopped)
+        {
+            try { refreshesStopped = Task.WhenAll(refreshTasks).Wait(TimeSpan.FromSeconds(5)); }
+            catch (AggregateException)
+            {
+                refreshesStopped = refreshTasks.All(task => task.IsCompleted);
+            }
+        }
+        lock (_watcherSync)
+        {
+            _fileRefresh?.Dispose();
+            foreach (var watcher in _watchers) watcher.Dispose();
+            _watchers.Clear();
+        }
         foreach (var token in _jobTokens.Values) { token.Cancel(); token.Dispose(); }
         _coachRequest?.Cancel();
         _coachRequest?.Dispose();
@@ -3856,6 +4185,12 @@ public sealed class CompanionState : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException) { }
         _homeAnalysisCancellation.Dispose();
-        _refreshGate.Dispose();
+        _refreshLifetime.Dispose();
+        if (refreshesStopped) _refreshGate.Dispose();
+        else _ = Task.WhenAll(refreshTasks).ContinueWith(completed =>
+        {
+            _ = completed.Exception;
+            _refreshGate.Dispose();
+        }, TaskScheduler.Default);
     }
 }
