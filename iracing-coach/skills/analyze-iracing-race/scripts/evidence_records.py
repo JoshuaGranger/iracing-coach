@@ -21,7 +21,10 @@ Two rules are enforced here rather than left to the surfaces.
   was not recorded, the count is unknown. Rendering "None" for it states a fact
   about a clean race that nobody observed. :func:`count_record` therefore
   distinguishes an observed zero from an unobserved count, and the two produce
-  different records rather than the same numeral.
+  different records rather than the same numeral. The separation is carried
+  through to the claim: an unavailable record can be linked only to a
+  :data:`CLAIM_UNAVAILABLE` claim, so "zero incidents occurred" cannot be
+  attached to evidence that never counted any.
 * **A cause needs support.** An unsupported causal claim is absent, not
   hedged. :func:`link` refuses to attach a claim to a record that does not
   support it, so the "dead evidence" case - a contract carrying provenance no
@@ -95,13 +98,30 @@ CLAIM_FACT = "fact"
 CLAIM_COMPARISON = "comparison"
 CLAIM_CAUSE = "cause"
 CLAIM_RECOMMENDATION = "recommendation"
+#: A statement that something was *not observed*. Its own kind, because it is a
+#: different assertion from a fact about the subject and needs different
+#: evidence - and because the alternative is policing prose.
+#:
+#: "Zero incidents occurred" and "the incident channel was not recorded" are
+#: both sentences a surface might render from an unavailable record. Only the
+#: second is true. Before this kind existed the two were indistinguishable to
+#: :func:`link`, which checked the claim kind and not what the claim asserts, so
+#: an unobserved count could be published as an observed zero.
+CLAIM_UNAVAILABLE = "unavailable"
 
 #: What a claim asserts. The kind decides what evidence it needs, which is why
 #: it is a declared value rather than a property of the sentence.
-CLAIM_KINDS = (CLAIM_FACT, CLAIM_COMPARISON, CLAIM_CAUSE, CLAIM_RECOMMENDATION)
+CLAIM_KINDS = (
+    CLAIM_FACT,
+    CLAIM_COMPARISON,
+    CLAIM_CAUSE,
+    CLAIM_RECOMMENDATION,
+    CLAIM_UNAVAILABLE,
+)
 
 __all__ = [
     "CLAIM_KINDS",
+    "CLAIM_UNAVAILABLE",
     "CLASSES_SUPPORTING_CAUSE",
     "CONFIDENCE_LEVELS",
     "COVERAGE_STATES",
@@ -312,9 +332,21 @@ def link(claim_kind: str, text: str, record: EvidenceRecord) -> ClaimLink:
         raise EvidenceError(f"unknown claim kind: {claim_kind!r}")
     if not text or not text.strip():
         raise EvidenceError("a claim needs text")
-    if record.evidence_class == CLASS_UNAVAILABLE and claim_kind != CLAIM_FACT:
+    # The binding is structural in both directions, and it has to be: the words
+    # of a claim are not inspectable here, so the only way to stop an
+    # unobserved count from being published as an observed zero is to make
+    # unavailable evidence incapable of carrying any claim except a statement of
+    # unavailability.
+    if record.evidence_class == CLASS_UNAVAILABLE and claim_kind != CLAIM_UNAVAILABLE:
         raise EvidenceError(
-            f"unavailable evidence cannot support a {claim_kind} claim"
+            f"unavailable evidence supports only an {CLAIM_UNAVAILABLE} claim, "
+            f"never a {claim_kind}: it observed nothing, so any value stated "
+            "from it would be invented"
+        )
+    if claim_kind == CLAIM_UNAVAILABLE and record.evidence_class != CLASS_UNAVAILABLE:
+        raise EvidenceError(
+            f"an {CLAIM_UNAVAILABLE} claim needs an {CLASS_UNAVAILABLE} record; "
+            f"{record.evidence_class} evidence observed the subject"
         )
     if claim_kind == CLAIM_CAUSE and not record.supports_cause:
         raise EvidenceError(

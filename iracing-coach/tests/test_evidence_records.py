@@ -226,12 +226,49 @@ class UnsupportedCauseTests(unittest.TestCase):
         self.assertEqual(claim.claim_kind, "fact")
 
     def test_unavailable_evidence_supports_only_a_statement_of_absence(self):
+        """The kind is the guarantee; the wording of the claim is not inspected.
+
+        This test used to permit a `fact` claim on unavailable evidence and
+        pass a sentence that happened to be honest. That proved nothing: `link`
+        cannot read prose, so the identical call with "Zero incidents occurred."
+        was equally accepted, and an unobserved count reached a surface as an
+        observed zero. Only a typed unavailability claim is permitted now.
+        """
         record = ev.unavailable_record("incidents", "telemetry", "channel not recorded")
-        self.assertEqual(ev.link("fact", "Incident count is unknown.", record).claim_kind, "fact")
-        for kind in ("comparison", "cause", "recommendation"):
+        self.assertEqual(
+            ev.link(
+                ev.CLAIM_UNAVAILABLE, "Incident count is unknown.", record
+            ).claim_kind,
+            ev.CLAIM_UNAVAILABLE,
+        )
+        for kind in ("fact", "comparison", "cause", "recommendation"):
             with self.subTest(kind):
                 with self.assertRaises(ev.EvidenceError):
                     ev.link(kind, "Something stronger.", record)
+
+    def test_an_unobserved_count_cannot_be_published_as_an_observed_zero(self):
+        """`INCIDENT-ABSENCE-001`, at the link rather than in the sentence."""
+        unobserved = ev.count_record(
+            subject="incidents", source="telemetry", count=None, channel_recorded=False
+        )
+        self.assertEqual(unobserved.evidence_class, ev.CLASS_UNAVAILABLE)
+        self.assertIsNone(unobserved.observations)
+        with self.assertRaises(ev.EvidenceError):
+            ev.link("fact", "Zero incidents occurred.", unobserved)
+
+    def test_an_observed_zero_is_still_a_fact(self):
+        """The rule must not cost the honest case its voice."""
+        observed = ev.count_record(
+            subject="incidents", source="telemetry", count=0, channel_recorded=True
+        )
+        claim = ev.link("fact", "Zero incidents occurred.", observed)
+        self.assertEqual(claim.claim_kind, "fact")
+        self.assertEqual(claim.evidence_class, ev.CLASS_MEASURED)
+
+    def test_an_unavailability_claim_needs_unavailable_evidence(self):
+        """Complete observation may not be reported as an absence of observation."""
+        with self.assertRaises(ev.EvidenceError):
+            ev.link(ev.CLAIM_UNAVAILABLE, "Nothing was recorded.", _measured())
 
     def test_a_comparison_needs_evidence_of_known_coverage(self):
         record = ev.EvidenceRecord(
