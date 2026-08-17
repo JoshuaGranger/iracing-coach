@@ -60,6 +60,29 @@ public sealed class CompanionState : IDisposable
     private long _tuningRaceSelectionEpoch;
     private long _tuningTargetSelectionEpoch;
     private long _startingTuneSelectionEpoch;
+    private long _analysisSelectionEpoch;
+    private long _planRequestEpoch;
+    private long _experimentRequestEpoch;
+    private string _selectedPlanRaceId = string.Empty;
+    private string _selectedPlanCarId = string.Empty;
+    private string _selectedPlanTrack = string.Empty;
+    private string _planDistanceMode = "Laps";
+    private double _planDistanceValue;
+    private string _planSetupType = "Fixed";
+    private string _symptomText = string.Empty;
+    private string _tuningRunPhase = "Late run";
+    private string _tuningCornerPhase = "Center";
+    private string _tuningBalance = string.Empty;
+    private string _tuningSeverity = "Moderate";
+    private string _tuningConfidence = "Medium";
+    private bool _tuningPriority;
+    private string _tuningCorner = "Whole lap";
+    private string _tuningNotes = string.Empty;
+    private string _startingTuneSeason = CurrentIRacingSeason();
+    private string _startingTuneCar = string.Empty;
+    private string _startingTuneTrack = string.Empty;
+    private string _startingTunePurpose = "Race";
+    private string _selectedTuningRaceId = string.Empty;
     private readonly SemaphoreSlim _tuningDraftMutationGate = new(1, 1);
     private BackendHealthResult _lastBackendHealth = new(false, "unknown", "unknown", "unknown", 0, TimeSpan.Zero, "Not checked");
 
@@ -134,15 +157,15 @@ public sealed class CompanionState : IDisposable
     // CompanionSettings, so every app launch starts on Early while navigation
     // within the running app preserves the driver's selected phase.
     public string TuningActiveRunPhase { get; set; } = "early";
-    public string SymptomText { get; set; } = string.Empty;
-    public string TuningRunPhase { get; set; } = "Late run";
-    public string TuningCornerPhase { get; set; } = "Center";
-    public string TuningBalance { get; set; } = string.Empty;
-    public string TuningSeverity { get; set; } = "Moderate";
-    public string TuningConfidence { get; set; } = "Medium";
-    public bool TuningPriority { get; set; }
-    public string TuningCorner { get; set; } = "Whole lap";
-    public string TuningNotes { get; set; } = string.Empty;
+    public string SymptomText { get => _symptomText; set => SetExperimentInput(ref _symptomText, value); }
+    public string TuningRunPhase { get => _tuningRunPhase; set => SetExperimentInput(ref _tuningRunPhase, value); }
+    public string TuningCornerPhase { get => _tuningCornerPhase; set => SetExperimentInput(ref _tuningCornerPhase, value); }
+    public string TuningBalance { get => _tuningBalance; set => SetExperimentInput(ref _tuningBalance, value); }
+    public string TuningSeverity { get => _tuningSeverity; set => SetExperimentInput(ref _tuningSeverity, value); }
+    public string TuningConfidence { get => _tuningConfidence; set => SetExperimentInput(ref _tuningConfidence, value); }
+    public bool TuningPriority { get => _tuningPriority; set => SetExperimentInput(ref _tuningPriority, value); }
+    public string TuningCorner { get => _tuningCorner; set => SetExperimentInput(ref _tuningCorner, value); }
+    public string TuningNotes { get => _tuningNotes; set => SetExperimentInput(ref _tuningNotes, value); }
     public string FeedbackNotes { get; set; } = string.Empty;
     public string Garage61KeyInput { get; set; } = string.Empty;
     public string CoachQuestion { get; set; } = "What should I work on first based on this race?";
@@ -151,23 +174,23 @@ public sealed class CompanionState : IDisposable
     public bool IsCoaching { get; private set; }
     public int SetupStep { get; private set; } = 1;
     public string? PendingChatGptLoginId { get; private set; }
-    public string SelectedPlanRaceId { get; set; } = string.Empty;
-    public string SelectedPlanCarId { get; set; } = string.Empty;
-    public string SelectedPlanTrack { get; set; } = string.Empty;
-    public string PlanDistanceMode { get; set; } = "Laps";
-    public double PlanDistanceValue { get; set; }
-    public string PlanSetupType { get; set; } = "Fixed";
-    public string SelectedTuningRaceId { get; set; } = string.Empty;
+    public string SelectedPlanRaceId { get => _selectedPlanRaceId; set => SetPlanInput(ref _selectedPlanRaceId, value); }
+    public string SelectedPlanCarId { get => _selectedPlanCarId; set => SetPlanInput(ref _selectedPlanCarId, value); }
+    public string SelectedPlanTrack { get => _selectedPlanTrack; set => SetPlanInput(ref _selectedPlanTrack, value); }
+    public string PlanDistanceMode { get => _planDistanceMode; set => SetPlanInput(ref _planDistanceMode, value); }
+    public double PlanDistanceValue { get => _planDistanceValue; set => SetPlanInput(ref _planDistanceValue, value); }
+    public string PlanSetupType { get => _planSetupType; set => SetPlanInput(ref _planSetupType, value); }
+    public string SelectedTuningRaceId { get => _selectedTuningRaceId; set => SetExperimentInput(ref _selectedTuningRaceId, value); }
     public string SelectedTuningTargetRaceId { get; private set; } = string.Empty;
     public string SelectedTuningResultRaceId { get; set; } = string.Empty;
     public string SelectedTuningTurnId { get; private set; } = string.Empty;
     public string SelectedSetupId { get; set; } = string.Empty;
     public string CompareSetupId { get; set; } = string.Empty;
     public int StartingTuneStep { get; private set; } = 1;
-    public string StartingTuneSeason { get; set; } = CurrentIRacingSeason();
-    public string StartingTuneCar { get; set; } = string.Empty;
-    public string StartingTuneTrack { get; set; } = string.Empty;
-    public string StartingTunePurpose { get; set; } = "Race";
+    public string StartingTuneSeason { get => _startingTuneSeason; set => SetStartingTuneInput(ref _startingTuneSeason, value); }
+    public string StartingTuneCar { get => _startingTuneCar; set => SetStartingTuneInput(ref _startingTuneCar, value); }
+    public string StartingTuneTrack { get => _startingTuneTrack; set => SetStartingTuneInput(ref _startingTuneTrack, value); }
+    public string StartingTunePurpose { get => _startingTunePurpose; set => SetStartingTuneInput(ref _startingTunePurpose, value); }
     public bool StartingTuneBusy { get; private set; }
     public string SelectedRaceSessionId { get; private set; } = string.Empty;
     public string RaceSearchText { get; set; } = string.Empty;
@@ -554,7 +577,18 @@ public sealed class CompanionState : IDisposable
 
     public async Task AnalyzeRaceAsync(RecentRace race, CancellationToken cancellationToken = default, bool force = false)
     {
+        if (AnalysisLoading && string.Equals(SelectedRaceSessionId, race.Id, StringComparison.Ordinal))
+        {
+            Notify("That race is already being analyzed.");
+            return;
+        }
         SelectRaceSession(race);
+        var request = new AnalysisPublicationRequest(
+            Volatile.Read(ref _analysisSelectionEpoch),
+            race.Id,
+            race.EffectiveSelector,
+            Settings.IRacingRoot,
+            Settings.ArchiveRoot);
         AnalysisWorkspaceOpen = true;
         AnalysisLoading = true;
         AnalysisMessage = race.Analyzed ? "Opening telemetry…" : "Reading telemetry…";
@@ -571,9 +605,9 @@ public sealed class CompanionState : IDisposable
         {
             var result = await CallBackendAsync("analyze_iracing_race", new
             {
-                selector = race.EffectiveSelector,
-                iracing_root = Settings.IRacingRoot,
-                archive_root = Settings.ArchiveRoot,
+                selector = request.Selector,
+                iracing_root = request.IRacingRoot,
+                archive_root = request.ArchiveRoot,
                 target_hz = 20
             }, token);
             EnsureResponseMatchesSession(race, result);
@@ -582,12 +616,20 @@ public sealed class CompanionState : IDisposable
                 : null;
             var mappedAnalysis = RuntimeMapper.Analysis(result);
             EnsureAnalysisMatchesSession(race, mappedAnalysis);
+            SaveUiAnalysisCache(race, result);
+            if (!AnalysisRequestStillCurrent(request)) return;
             CurrentRaceCard = mappedCard;
             CurrentAnalysis = mappedAnalysis;
             ApplySuccessfulRaceAnalysis(race, mappedAnalysis, AnalysisPathFromResponse(result));
-            SaveUiAnalysisCache(race, result);
         }, cancellationToken);
+        if (Volatile.Read(ref _analysisSelectionEpoch) != request.Epoch) return;
         AnalysisLoading = false;
+        if (!AnalysisRequestStillCurrent(request))
+        {
+            AnalysisMessage = "The race selection changed before this analysis finished. The older result was not shown.";
+            RaiseChanged();
+            return;
+        }
         AnalysisMessage = CurrentAnalysis is null ? "This recording could not be opened. Retry or copy the support details." : string.Empty;
         RaiseChanged();
     }
@@ -599,6 +641,7 @@ public sealed class CompanionState : IDisposable
 
     public void CloseAnalysisWorkspace()
     {
+        Interlocked.Increment(ref _analysisSelectionEpoch);
         AnalysisWorkspaceOpen = false;
         AnalysisLoading = false;
         AnalysisMessage = string.Empty;
@@ -620,8 +663,43 @@ public sealed class CompanionState : IDisposable
 
     public void SelectRaceSession(RecentRace session)
     {
+        Interlocked.Increment(ref _analysisSelectionEpoch);
         SelectedRaceSessionId = session.Id;
         RaiseChanged();
+    }
+
+    private bool AnalysisRequestStillCurrent(AnalysisPublicationRequest request) =>
+        Volatile.Read(ref _analysisSelectionEpoch) == request.Epoch
+        && string.Equals(SelectedRaceSessionId, request.RaceId, StringComparison.Ordinal)
+        && string.Equals(Settings.IRacingRoot, request.IRacingRoot, StringComparison.Ordinal)
+        && string.Equals(Settings.ArchiveRoot, request.ArchiveRoot, StringComparison.Ordinal);
+
+    private sealed record AnalysisPublicationRequest(
+        long Epoch,
+        string RaceId,
+        string Selector,
+        string IRacingRoot,
+        string ArchiveRoot);
+
+    private void SetPlanInput<T>(ref T field, T value)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        Interlocked.Increment(ref _planRequestEpoch);
+    }
+
+    private void SetExperimentInput<T>(ref T field, T value)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        Interlocked.Increment(ref _experimentRequestEpoch);
+    }
+
+    private void SetStartingTuneInput(ref string field, string value)
+    {
+        if (string.Equals(field, value, StringComparison.Ordinal)) return;
+        field = value;
+        Interlocked.Increment(ref _startingTuneSelectionEpoch);
     }
 
     public async Task GeneratePlanAsync(CancellationToken cancellationToken = default)
@@ -654,27 +732,43 @@ public sealed class CompanionState : IDisposable
             return;
         }
 
+        var request = new PlanPublicationRequest(
+            Interlocked.Increment(ref _planRequestEpoch),
+            race.Id,
+            race.EffectiveSelector,
+            race.AnalysisPath,
+            SelectedPlanCarId,
+            SelectedPlanTrack,
+            PlanSetupType,
+            PlanDistanceMode,
+            PlanDistanceValue,
+            Settings.IRacingRoot,
+            Settings.ArchiveRoot);
+
         try
         {
             var historyTask = CallBackendAsync("iracing_strategy_history", new
             {
-                analysis_path = race.AnalysisPath,
-                archive_root = Settings.ArchiveRoot,
+                analysis_path = request.AnalysisPath,
+                archive_root = request.ArchiveRoot,
                 include_other_seasons = false,
                 limit = 200
             }, cancellationToken);
             var analysisTask = CallBackendAsync("analyze_iracing_race", new
             {
-                selector = race.EffectiveSelector,
-                iracing_root = Settings.IRacingRoot,
-                archive_root = Settings.ArchiveRoot,
+                selector = request.Selector,
+                iracing_root = request.IRacingRoot,
+                archive_root = request.ArchiveRoot,
                 target_hz = 20
             }, cancellationToken);
             await Task.WhenAll(historyTask, analysisTask);
             var result = await historyTask;
+            var stagedScenarios = RuntimeMapper.Strategy(result).ToArray();
+            var stagedBriefing = RuntimeMapper.Plan(await analysisTask, request.DistanceValue, request.DistanceMode);
+            if (!PlanRequestStillCurrent(request)) return;
             StrategyScenarios.Clear();
-            StrategyScenarios.AddRange(RuntimeMapper.Strategy(result));
-            PlanBriefing = RuntimeMapper.Plan(await analysisTask, PlanDistanceValue, PlanDistanceMode);
+            StrategyScenarios.AddRange(stagedScenarios);
+            PlanBriefing = stagedBriefing;
             PersistPortableArtifact("strategy-history", $"strategy-{race.Id}", new
             {
                 schemaVersion = 1,
@@ -690,11 +784,39 @@ public sealed class CompanionState : IDisposable
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
         {
+            if (!PlanRequestStillCurrent(request)) return;
             PlanMessage = Bound(ex.Message);
             Notify("The plan could not be built from the available history.");
         }
         RaiseChanged();
     }
+
+    private bool PlanRequestStillCurrent(PlanPublicationRequest request) =>
+        Volatile.Read(ref _planRequestEpoch) == request.Epoch
+        && string.Equals(SelectedPlanRaceId, request.RaceId, StringComparison.Ordinal)
+        && SelectedPlanRace is { } currentRace
+        && string.Equals(currentRace.EffectiveSelector, request.Selector, StringComparison.Ordinal)
+        && string.Equals(currentRace.AnalysisPath, request.AnalysisPath, StringComparison.Ordinal)
+        && string.Equals(SelectedPlanCarId, request.CarId, StringComparison.Ordinal)
+        && string.Equals(SelectedPlanTrack, request.Track, StringComparison.Ordinal)
+        && string.Equals(PlanSetupType, request.SetupType, StringComparison.Ordinal)
+        && string.Equals(PlanDistanceMode, request.DistanceMode, StringComparison.Ordinal)
+        && PlanDistanceValue.Equals(request.DistanceValue)
+        && string.Equals(Settings.IRacingRoot, request.IRacingRoot, StringComparison.Ordinal)
+        && string.Equals(Settings.ArchiveRoot, request.ArchiveRoot, StringComparison.Ordinal);
+
+    private sealed record PlanPublicationRequest(
+        long Epoch,
+        string RaceId,
+        string Selector,
+        string AnalysisPath,
+        string CarId,
+        string Track,
+        string SetupType,
+        string DistanceMode,
+        double DistanceValue,
+        string IRacingRoot,
+        string ArchiveRoot);
 
     public async Task GenerateExperimentAsync(CancellationToken cancellationToken = default)
     {
@@ -711,28 +833,55 @@ public sealed class CompanionState : IDisposable
             return;
         }
         SymptomText = symptom;
+        var request = new ExperimentPublicationRequest(
+            Interlocked.Increment(ref _experimentRequestEpoch),
+            Volatile.Read(ref _tuningRaceSelectionEpoch),
+            race.Id,
+            race.AnalysisPath,
+            symptom,
+            Settings.ArchiveRoot);
 
         try
         {
             var result = await CallBackendAsync("recommend_open_setup_tuning", new
             {
-                analysis_path = race.AnalysisPath,
-                archive_root = Settings.ArchiveRoot,
-                symptoms = symptom,
+                analysis_path = request.AnalysisPath,
+                archive_root = request.ArchiveRoot,
+                symptoms = request.Symptom,
                 maximum_changes = 1
             }, cancellationToken);
-            TuningExperiment = RuntimeMapper.Tuning(result);
+            var staged = RuntimeMapper.Tuning(result);
+            if (!ExperimentRequestStillCurrent(request)) return;
+            TuningExperiment = staged;
             ExperimentGenerated = true;
             TuningMessage = "The recommendation is tied to this race's embedded setup and telemetry.";
             Notify("One controlled setup test is ready.");
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
         {
+            if (!ExperimentRequestStillCurrent(request)) return;
             TuningMessage = Bound(ex.Message);
             Notify("A safe tuning change could not be recommended from this race.");
         }
         RaiseChanged();
     }
+
+    private bool ExperimentRequestStillCurrent(ExperimentPublicationRequest request) =>
+        Volatile.Read(ref _experimentRequestEpoch) == request.Epoch
+        && Volatile.Read(ref _tuningRaceSelectionEpoch) == request.RaceSelectionEpoch
+        && SelectedTuningRace is { } currentRace
+        && string.Equals(currentRace.Id, request.RaceId, StringComparison.Ordinal)
+        && string.Equals(currentRace.AnalysisPath, request.AnalysisPath, StringComparison.Ordinal)
+        && string.Equals(BuildTuningSymptom(), request.Symptom, StringComparison.Ordinal)
+        && string.Equals(Settings.ArchiveRoot, request.ArchiveRoot, StringComparison.Ordinal);
+
+    private sealed record ExperimentPublicationRequest(
+        long Epoch,
+        long RaceSelectionEpoch,
+        string RaceId,
+        string AnalysisPath,
+        string Symptom,
+        string ArchiveRoot);
 
     public void AddTuningFeedback()
     {
@@ -747,13 +896,17 @@ public sealed class CompanionState : IDisposable
             TuningPriority,
             TuningNotes.Trim(),
             Guid.NewGuid().ToString("N"));
-        if (!TuningFeedback.Contains(draft)) TuningFeedback.Add(draft);
+        if (!TuningFeedback.Contains(draft))
+        {
+            TuningFeedback.Add(draft);
+            Interlocked.Increment(ref _experimentRequestEpoch);
+        }
         RaiseChanged();
     }
 
     public void RemoveTuningFeedback(TuningFeedbackDraft draft)
     {
-        TuningFeedback.Remove(draft);
+        if (TuningFeedback.Remove(draft)) Interlocked.Increment(ref _experimentRequestEpoch);
         RaiseChanged();
     }
 
