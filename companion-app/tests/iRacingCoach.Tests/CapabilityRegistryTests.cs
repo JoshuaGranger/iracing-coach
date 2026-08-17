@@ -665,6 +665,28 @@ public sealed class CapabilityRegistryTests
     }
 
     [TestMethod]
+    public void ReleasePayload_IsCompletelyManifestedAndValidatedBeforeSwap()
+    {
+        var root = CompanionRoot();
+        var build = File.ReadAllText(Path.Combine(root, "tools", "BuildRelease.ps1"));
+        var installer = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Installer", "Program.cs"));
+        var lifecycle = File.ReadAllText(Path.Combine(root, "tools", "TestInstallerUpgrade.ps1"));
+
+        StringAssert.Contains(build, "$pythonVersion = '3.12.13'");
+        StringAssert.Contains(build, "release-manifest.json");
+        StringAssert.Contains(build, "Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256");
+        StringAssert.Contains(build, "component = $component");
+        StringAssert.Contains(build, "sourceCommit = $releaseCommit");
+        StringAssert.Contains(installer, "ValidateReleaseManifest(staging)");
+        StringAssert.Contains(installer, "The release payload contains an unmanifested file.");
+        StringAssert.Contains(installer, "The release payload checksum does not match");
+        StringAssert.Contains(lifecycle, "--test-validate-payload");
+        StringAssert.Contains(lifecycle, "Complete payload validation accepted a modified manifested file.");
+        StringAssert.Contains(lifecycle, "Complete payload validation accepted a missing manifested file.");
+        StringAssert.Contains(lifecycle, "Complete payload validation accepted an unmanifested file.");
+    }
+
+    [TestMethod]
     public void ReleaseIdentity_IsSynchronizedAcrossPackagingAndRepairSurfaces()
     {
         const string version = "0.16.0";

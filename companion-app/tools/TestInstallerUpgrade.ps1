@@ -42,10 +42,37 @@ try {
         'coach-engine\schemas\codex_app_server_protocol.schemas.json',
         'coach-engine\schemas\ai-coaching-output.schema.json',
         'coach-engine\schemas\ai-tuning-output.schema.json',
-        'coach-engine\coach-engine-manifest.json'
+        'coach-engine\coach-engine-manifest.json',
+        'release-manifest.json'
     )
     $missing = @($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $resolvedTarget $_)) })
     if ($missing.Count -gt 0) { throw "First install is missing: $($missing -join ', ')." }
+
+    $validated = Start-Process -FilePath $installerPath -ArgumentList @('--test-validate-payload', $resolvedTarget) -WindowStyle Hidden -Wait -PassThru
+    if ($validated.ExitCode -ne 0) { throw 'The installed exact payload did not match its complete manifest.' }
+    $manifestCanary = Join-Path $resolvedTarget 'coach-engine\schemas\ai-coaching-output.schema.json'
+    $manifestCanaryBytes = [System.IO.File]::ReadAllBytes($manifestCanary)
+    try {
+        [System.IO.File]::WriteAllBytes($manifestCanary, $manifestCanaryBytes + [byte]0)
+        $modified = Start-Process -FilePath $installerPath -ArgumentList @('--test-validate-payload', $resolvedTarget) -WindowStyle Hidden -Wait -PassThru
+        if ($modified.ExitCode -eq 0) { throw 'Complete payload validation accepted a modified manifested file.' }
+        [System.IO.File]::WriteAllBytes($manifestCanary, $manifestCanaryBytes)
+
+        Remove-Item -LiteralPath $manifestCanary -Force
+        $missingManifested = Start-Process -FilePath $installerPath -ArgumentList @('--test-validate-payload', $resolvedTarget) -WindowStyle Hidden -Wait -PassThru
+        if ($missingManifested.ExitCode -eq 0) { throw 'Complete payload validation accepted a missing manifested file.' }
+        [System.IO.File]::WriteAllBytes($manifestCanary, $manifestCanaryBytes)
+
+        $extraPayloadFile = Join-Path $resolvedTarget 'unmanifested-payload-canary.bin'
+        [System.IO.File]::WriteAllBytes($extraPayloadFile, [byte[]](1, 2, 3))
+        $extra = Start-Process -FilePath $installerPath -ArgumentList @('--test-validate-payload', $resolvedTarget) -WindowStyle Hidden -Wait -PassThru
+        if ($extra.ExitCode -eq 0) { throw 'Complete payload validation accepted an unmanifested file.' }
+        Remove-Item -LiteralPath $extraPayloadFile -Force
+    }
+    finally {
+        if (-not (Test-Path -LiteralPath $manifestCanary)) { [System.IO.File]::WriteAllBytes($manifestCanary, $manifestCanaryBytes) }
+        if ($extraPayloadFile -and (Test-Path -LiteralPath $extraPayloadFile)) { Remove-Item -LiteralPath $extraPayloadFile -Force }
+    }
 
     $rollbackMarker = Join-Path $resolvedTarget 'rollback-preservation-marker.txt'
     Set-Content -LiteralPath $rollbackMarker -Value 'The original installed payload must return after simulated failure.' -Encoding ascii
@@ -138,6 +165,10 @@ try {
         PriorMarkerRemoved = $true
         UpgradePreservedDurableHash = $true
         RequiredFiles = $required.Count
+        CompletePayloadValidated = $true
+        ModifiedPayloadRefused = $modified.ExitCode -ne 0
+        MissingPayloadRefused = $missingManifested.ExitCode -ne 0
+        ExtraPayloadRefused = $extra.ExitCode -ne 0
         StagingClean = $true
         AppOwnedRootsRemoved = $ownedRoots.Count
         DurableArchiveHashPreserved = $true

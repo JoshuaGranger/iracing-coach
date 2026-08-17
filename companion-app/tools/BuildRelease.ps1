@@ -14,6 +14,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $version = '0.16.0'
+$pythonVersion = '3.12.13'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot '..'))
 $backendSource = Join-Path $workspaceRoot 'iracing-coach'
@@ -46,6 +47,10 @@ function Reset-ReleaseDirectory([string]$Path) {
 
 if (-not (Test-Path -LiteralPath (Join-Path $pythonSource 'python.exe'))) {
     throw "PythonRuntime must name a portable Python folder containing python.exe."
+}
+$pythonVersionOutput = (& (Join-Path $pythonSource 'python.exe') --version | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $pythonVersionOutput -ne "Python $pythonVersion") {
+    throw "The Python runtime version is incompatible: $pythonVersionOutput"
 }
 if (-not (Test-Path -LiteralPath (Join-Path $backendSource 'skills'))) {
     throw "The deterministic backend source was not found at $backendSource."
@@ -168,6 +173,62 @@ $coachEngineManifest = [ordered]@{
     mcpContractVersion = 1
 }
 $coachEngineManifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $coachEngineDestination 'coach-engine-manifest.json') -Encoding utf8
+
+# Freeze every payload byte before it is embedded. The release manifest is the
+# only excluded file because a file cannot truthfully contain its own hash.
+$releaseManifestPath = Join-Path $payload 'release-manifest.json'
+$payloadFiles = @(Get-ChildItem -LiteralPath $payload -Recurse -File | Where-Object {
+    -not [System.IO.Path]::GetFullPath($_.FullName).Equals(
+        [System.IO.Path]::GetFullPath($releaseManifestPath),
+        [System.StringComparison]::OrdinalIgnoreCase)
+})
+$manifestFiles = @($payloadFiles | ForEach-Object {
+    $relative = [System.IO.Path]::GetRelativePath($payload, $_.FullName).Replace('\', '/')
+    $component = 'application'
+    $componentVersion = $version
+    if ($relative.StartsWith('python/', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $component = 'python'
+        $componentVersion = $pythonVersion
+    }
+    elseif ($relative.StartsWith('iracing-coach/', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $component = 'backend'
+        $componentVersion = '0.3.0'
+    }
+    elseif ($relative.StartsWith('coach-engine/codex/', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $component = 'codex-runtime'
+        $componentVersion = '0.146.0-alpha.9.2'
+    }
+    elseif ($relative.StartsWith('coach-engine/schemas/', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $component = 'coach-contracts'
+        $componentVersion = '1'
+    }
+    elseif ($relative.Equals('coach-engine/coach-engine-manifest.json', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $component = 'coach-engine'
+        $componentVersion = '0.146.0-alpha.9.2'
+    }
+    elseif ($relative.Equals('Uninstall iRacing Coach.exe', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $component = 'uninstaller'
+    }
+    [ordered]@{
+        path = $relative
+        size = $_.Length
+        sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        component = $component
+        version = $componentVersion
+    }
+} | Sort-Object { $_.path })
+$releaseManifest = [ordered]@{
+    manifestVersion = 1
+    appVersion = $version
+    sourceCommit = $releaseCommit
+    pythonVersion = $pythonVersion
+    files = $manifestFiles
+}
+$releaseManifestJson = $releaseManifest | ConvertTo-Json -Depth 6
+[System.IO.File]::WriteAllText(
+    $releaseManifestPath,
+    $releaseManifestJson + [Environment]::NewLine,
+    [System.Text.UTF8Encoding]::new($false))
 
 if (Test-Path -LiteralPath $payloadArchive) {
     Remove-Item -LiteralPath $payloadArchive -Force

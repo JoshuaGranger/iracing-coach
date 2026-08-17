@@ -47,6 +47,18 @@ internal static class Program
                 return 0;
             }
         }
+        if (args.Length >= 2 && args[0] == "--test-validate-payload")
+        {
+            try
+            {
+                InstallerEngine.ValidatePayloadForTest(ValidateTestTarget(args[1]));
+                return 0;
+            }
+            catch
+            {
+                return 1;
+            }
+        }
         var silent = args.Any(argument => argument.Equals("/S", StringComparison.OrdinalIgnoreCase) || argument.Equals("--silent", StringComparison.OrdinalIgnoreCase));
         if (silent)
         {
@@ -336,13 +348,16 @@ internal static class InstallerEngine
             Path.Combine("iracing-coach", "skills", "analyze-iracing-race", "scripts", "start-mcp.ps1"),
             Path.Combine("coach-engine", "codex", "codex.exe"),
             Path.Combine("coach-engine", "schemas", "codex_app_server_protocol.schemas.json"),
-            Path.Combine("coach-engine", "coach-engine-manifest.json")
+            Path.Combine("coach-engine", "coach-engine-manifest.json"),
+            "release-manifest.json"
         };
         foreach (var relative in required)
         {
             if (!File.Exists(Path.Combine(staging, relative)))
                 throw new InvalidDataException($"The installer payload is incomplete: {relative}");
         }
+
+        ValidateReleaseManifest(staging);
 
         var manifestPath = Path.Combine(staging, "coach-engine", "coach-engine-manifest.json");
         using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
@@ -371,6 +386,68 @@ internal static class InstallerEngine
         var expectedVersion = manifest.RootElement.GetProperty("runtimeVersion").GetString();
         if (!string.Equals(output, $"codex-cli {expectedVersion}", StringComparison.Ordinal))
             throw new InvalidDataException("The Coach Engine runtime version does not match its protocol package.");
+    }
+
+    internal static void ValidatePayloadForTest(string staging) => ValidatePayload(staging);
+
+    private static void ValidateReleaseManifest(string staging)
+    {
+        var manifestPath = Path.Combine(staging, "release-manifest.json");
+        using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+        var root = manifest.RootElement;
+        if (!root.TryGetProperty("manifestVersion", out var manifestVersion) ||
+            manifestVersion.ValueKind != JsonValueKind.Number ||
+            !manifestVersion.TryGetInt32(out var version) || version != 1)
+            throw new InvalidDataException("The release manifest version is unsupported.");
+        if (!root.TryGetProperty("appVersion", out var appVersion) ||
+            appVersion.ValueKind != JsonValueKind.String ||
+            !string.Equals(appVersion.GetString(), Program.ProductVersion, StringComparison.Ordinal))
+            throw new InvalidDataException("The release manifest application version does not match the installer.");
+        if (!root.TryGetProperty("sourceCommit", out var sourceCommit) ||
+            sourceCommit.ValueKind != JsonValueKind.String ||
+            sourceCommit.GetString() is not { Length: 40 } commit ||
+            !commit.All(Uri.IsHexDigit))
+            throw new InvalidDataException("The release manifest has no valid source commit.");
+        if (!root.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("The release manifest has no file inventory.");
+
+        var canonicalRoot = Path.GetFullPath(staging).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in files.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object ||
+                !entry.TryGetProperty("path", out var pathElement) || pathElement.ValueKind != JsonValueKind.String ||
+                !entry.TryGetProperty("size", out var sizeElement) || sizeElement.ValueKind != JsonValueKind.Number ||
+                !entry.TryGetProperty("sha256", out var hashElement) || hashElement.ValueKind != JsonValueKind.String ||
+                !entry.TryGetProperty("component", out var componentElement) || componentElement.ValueKind != JsonValueKind.String ||
+                !entry.TryGetProperty("version", out var componentVersion) || componentVersion.ValueKind != JsonValueKind.String)
+                throw new InvalidDataException("A release manifest file entry is malformed.");
+            var relative = pathElement.GetString() ?? string.Empty;
+            var declaredHash = hashElement.GetString() ?? string.Empty;
+            if (relative.Length == 0 || relative.Contains('\\') || Path.IsPathRooted(relative) ||
+                string.Equals(relative, "release-manifest.json", StringComparison.OrdinalIgnoreCase) ||
+                !sizeElement.TryGetInt64(out var declaredSize) || declaredSize < 0 ||
+                declaredHash.Length != 64 || !declaredHash.All(Uri.IsHexDigit) ||
+                string.IsNullOrWhiteSpace(componentElement.GetString()) || string.IsNullOrWhiteSpace(componentVersion.GetString()))
+                throw new InvalidDataException("A release manifest file entry is invalid.");
+            var path = Path.GetFullPath(Path.Combine(staging, relative.Replace('/', Path.DirectorySeparatorChar)));
+            if (!path.StartsWith(canonicalRoot, StringComparison.OrdinalIgnoreCase) || !expected.Add(relative))
+                throw new InvalidDataException("A release manifest file path is unsafe or duplicated.");
+            if (!File.Exists(path)) throw new InvalidDataException($"The release payload is missing: {relative}");
+            var info = new FileInfo(path);
+            if (info.Length != declaredSize) throw new InvalidDataException($"The release payload size does not match: {relative}");
+            using var stream = info.OpenRead();
+            var actualHash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            if (!string.Equals(actualHash, declaredHash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"The release payload checksum does not match: {relative}");
+        }
+
+        var actual = Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(staging, path).Replace('\\', '/'))
+            .Where(path => !string.Equals(path, "release-manifest.json", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (actual.Length != expected.Count || actual.Any(path => !expected.Contains(path)))
+            throw new InvalidDataException("The release payload contains an unmanifested file.");
     }
 
     private static void IntegrateWithWindows(string target, bool desktopShortcut)
