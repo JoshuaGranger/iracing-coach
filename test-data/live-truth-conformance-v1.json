@@ -1,0 +1,1173 @@
+{
+  "caution_bits_missing_from_dotnet": 768,
+  "caution_mask": 49928,
+  "clean_lap_thresholds": {
+    "maximum_traffic_proximity_fraction": 0.1,
+    "minimum_on_track_fraction": 0.98,
+    "minimum_racing_state_fraction": 0.98,
+    "pit_time_exclusion_s": 1.0
+  },
+  "clean_lap_vectors": [
+    {
+      "case": "clean",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [],
+        "usable_as_reference": true,
+        "verdict": "clean"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "incomplete",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "incomplete_lap"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": false,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "under-caution",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "caution_or_mixed"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "caution",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "pit-lap",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "pit"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 1.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "pit-just-below-threshold",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [],
+        "usable_as_reference": true,
+        "verdict": "clean"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.99,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "not-racing-state",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "not_racing_state"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 0.97,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "racing-state-at-threshold",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [],
+        "usable_as_reference": true,
+        "verdict": "clean"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 0.98,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "off-track",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "off_track"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 0.97,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "close-traffic",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "close_traffic"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.1
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "traffic-just-below-threshold",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [],
+        "usable_as_reference": true,
+        "verdict": "clean"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.099
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "restart",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "restart"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": "caution"
+    },
+    {
+      "case": "repair-correlated",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "repair_correlated"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "repair_correlated": true,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "several-reasons-at-once",
+      "expected": {
+        "missing_channels": [],
+        "reasons": [
+          "incomplete_lap",
+          "caution_or_mixed",
+          "pit"
+        ],
+        "usable_as_reference": false,
+        "verdict": "excluded"
+      },
+      "lap": {
+        "complete": false,
+        "flag_state": "caution",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 30.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "missing-refining-channel-racing_state_fraction",
+      "expected": {
+        "missing_channels": [
+          "racing_state_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "missing-refining-channel-on_track_fraction",
+      "expected": {
+        "missing_channels": [
+          "on_track_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "missing-refining-channel-traffic_proximity_fraction",
+      "expected": {
+        "missing_channels": [
+          "traffic_proximity_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "missing-required-channel-flag_state",
+      "expected": {
+        "missing_channels": [
+          "flag_state"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": null,
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "missing-required-channel-complete",
+      "expected": {
+        "missing_channels": [
+          "complete"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": null,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "missing-required-channel-pit_time_s",
+      "expected": {
+        "missing_channels": [
+          "pit_time_s"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": null,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "null-refining-channel-racing_state_fraction",
+      "expected": {
+        "missing_channels": [
+          "racing_state_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": null,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "null-refining-channel-on_track_fraction",
+      "expected": {
+        "missing_channels": [
+          "on_track_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": null,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "null-refining-channel-traffic_proximity_fraction",
+      "expected": {
+        "missing_channels": [
+          "traffic_proximity_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": null
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-string-boolean-complete",
+      "expected": {
+        "missing_channels": [
+          "complete"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": "false",
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-string-boolean-complete-true",
+      "expected": {
+        "missing_channels": [
+          "complete"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": "true",
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-numeric-complete",
+      "expected": {
+        "missing_channels": [
+          "complete"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": 1,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-string-boolean-repair-correlated",
+      "expected": {
+        "missing_channels": [
+          "repair_correlated"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "repair_correlated": "true",
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-numeric-repair-correlated",
+      "expected": {
+        "missing_channels": [
+          "repair_correlated"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "repair_correlated": 1,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-boolean-flag-state",
+      "expected": {
+        "missing_channels": [
+          "flag_state"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": true,
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-undeclared-flag-state",
+      "expected": {
+        "missing_channels": [
+          "flag_state"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "GREEN",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-string-number-pit-time",
+      "expected": {
+        "missing_channels": [
+          "pit_time_s"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": "0.0",
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-boolean-pit-time",
+      "expected": {
+        "missing_channels": [
+          "pit_time_s"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": false,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-negative-pit-time",
+      "expected": {
+        "missing_channels": [
+          "pit_time_s"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": -1.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-string-number-refining-fraction",
+      "expected": {
+        "missing_channels": [
+          "on_track_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": "1.0",
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-boolean-refining-fraction",
+      "expected": {
+        "missing_channels": [
+          "on_track_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": true,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-above-domain-refining-fraction",
+      "expected": {
+        "missing_channels": [
+          "on_track_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.5,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-below-domain-refining-fraction",
+      "expected": {
+        "missing_channels": [
+          "traffic_proximity_fraction"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": -0.5
+      },
+      "previous_flag_state": null
+    },
+    {
+      "case": "refused-undeclared-previous-flag-state",
+      "expected": {
+        "missing_channels": [
+          "previous_flag_state"
+        ],
+        "reasons": [],
+        "usable_as_reference": false,
+        "verdict": "indeterminate"
+      },
+      "lap": {
+        "complete": true,
+        "flag_state": "green",
+        "on_track_fraction": 1.0,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0
+      },
+      "previous_flag_state": "CAUTION"
+    }
+  ],
+  "dotnet_legacy_caution_mask": 49160,
+  "flag_vectors": [
+    {
+      "case": "single-bit-checkered",
+      "expected_racing_state": "checkered",
+      "expected_repair_state": "not_required",
+      "session_flags": 1
+    },
+    {
+      "case": "single-bit-white",
+      "expected_racing_state": "white",
+      "expected_repair_state": "not_required",
+      "session_flags": 2
+    },
+    {
+      "case": "single-bit-green",
+      "expected_racing_state": "green",
+      "expected_repair_state": "not_required",
+      "session_flags": 4
+    },
+    {
+      "case": "single-bit-yellow",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 8
+    },
+    {
+      "case": "single-bit-red",
+      "expected_racing_state": "red",
+      "expected_repair_state": "not_required",
+      "session_flags": 16
+    },
+    {
+      "case": "single-bit-blue",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 32
+    },
+    {
+      "case": "single-bit-debris",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 64
+    },
+    {
+      "case": "single-bit-crossed",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 128
+    },
+    {
+      "case": "single-bit-yellow_waving",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 256
+    },
+    {
+      "case": "single-bit-one_lap_to_green",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 512
+    },
+    {
+      "case": "single-bit-green_held",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 1024
+    },
+    {
+      "case": "single-bit-ten_to_go",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 2048
+    },
+    {
+      "case": "single-bit-five_to_go",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 4096
+    },
+    {
+      "case": "single-bit-random_waving",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 8192
+    },
+    {
+      "case": "single-bit-caution",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 16384
+    },
+    {
+      "case": "single-bit-caution_waving",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 32768
+    },
+    {
+      "case": "single-bit-black",
+      "expected_racing_state": "black",
+      "expected_repair_state": "not_required",
+      "session_flags": 65536
+    },
+    {
+      "case": "single-bit-disqualify",
+      "expected_racing_state": "disqualified",
+      "expected_repair_state": "not_required",
+      "session_flags": 131072
+    },
+    {
+      "case": "single-bit-servicible",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 262144
+    },
+    {
+      "case": "single-bit-furled",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 524288
+    },
+    {
+      "case": "single-bit-repair",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "required",
+      "session_flags": 1048576
+    },
+    {
+      "case": "single-bit-start_hidden",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 268435456
+    },
+    {
+      "case": "single-bit-start_ready",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 536870912
+    },
+    {
+      "case": "single-bit-start_set",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 1073741824
+    },
+    {
+      "case": "single-bit-start_go",
+      "expected_racing_state": "green",
+      "expected_repair_state": "not_required",
+      "session_flags": 2147483648
+    },
+    {
+      "case": "caution-bit-omitted-by-dotnet-yellow_waving",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 256
+    },
+    {
+      "case": "caution-bit-omitted-by-dotnet-one_lap_to_green",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 512
+    },
+    {
+      "case": "caution-bits-omitted-by-dotnet-combined",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 768
+    },
+    {
+      "case": "precedence-disqualified-over-black",
+      "expected_racing_state": "disqualified",
+      "expected_repair_state": "not_required",
+      "session_flags": 196608
+    },
+    {
+      "case": "precedence-disqualified-over-red",
+      "expected_racing_state": "disqualified",
+      "expected_repair_state": "not_required",
+      "session_flags": 131088
+    },
+    {
+      "case": "precedence-disqualified-over-caution",
+      "expected_racing_state": "disqualified",
+      "expected_repair_state": "not_required",
+      "session_flags": 181000
+    },
+    {
+      "case": "precedence-disqualified-over-checkered",
+      "expected_racing_state": "disqualified",
+      "expected_repair_state": "not_required",
+      "session_flags": 131073
+    },
+    {
+      "case": "precedence-disqualified-over-white",
+      "expected_racing_state": "disqualified",
+      "expected_repair_state": "not_required",
+      "session_flags": 131074
+    },
+    {
+      "case": "precedence-disqualified-over-green",
+      "expected_racing_state": "disqualified",
+      "expected_repair_state": "not_required",
+      "session_flags": 2147614724
+    },
+    {
+      "case": "precedence-black-over-red",
+      "expected_racing_state": "black",
+      "expected_repair_state": "not_required",
+      "session_flags": 65552
+    },
+    {
+      "case": "precedence-black-over-caution",
+      "expected_racing_state": "black",
+      "expected_repair_state": "not_required",
+      "session_flags": 115464
+    },
+    {
+      "case": "precedence-black-over-checkered",
+      "expected_racing_state": "black",
+      "expected_repair_state": "not_required",
+      "session_flags": 65537
+    },
+    {
+      "case": "precedence-black-over-white",
+      "expected_racing_state": "black",
+      "expected_repair_state": "not_required",
+      "session_flags": 65538
+    },
+    {
+      "case": "precedence-black-over-green",
+      "expected_racing_state": "black",
+      "expected_repair_state": "not_required",
+      "session_flags": 2147549188
+    },
+    {
+      "case": "precedence-red-over-caution",
+      "expected_racing_state": "red",
+      "expected_repair_state": "not_required",
+      "session_flags": 49944
+    },
+    {
+      "case": "precedence-red-over-checkered",
+      "expected_racing_state": "red",
+      "expected_repair_state": "not_required",
+      "session_flags": 17
+    },
+    {
+      "case": "precedence-red-over-white",
+      "expected_racing_state": "red",
+      "expected_repair_state": "not_required",
+      "session_flags": 18
+    },
+    {
+      "case": "precedence-red-over-green",
+      "expected_racing_state": "red",
+      "expected_repair_state": "not_required",
+      "session_flags": 2147483668
+    },
+    {
+      "case": "precedence-caution-over-checkered",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 49929
+    },
+    {
+      "case": "precedence-caution-over-white",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 49930
+    },
+    {
+      "case": "precedence-caution-over-green",
+      "expected_racing_state": "caution",
+      "expected_repair_state": "not_required",
+      "session_flags": 2147533580
+    },
+    {
+      "case": "precedence-checkered-over-white",
+      "expected_racing_state": "checkered",
+      "expected_repair_state": "not_required",
+      "session_flags": 3
+    },
+    {
+      "case": "precedence-checkered-over-green",
+      "expected_racing_state": "checkered",
+      "expected_repair_state": "not_required",
+      "session_flags": 2147483653
+    },
+    {
+      "case": "precedence-white-over-green",
+      "expected_racing_state": "white",
+      "expected_repair_state": "not_required",
+      "session_flags": 2147483654
+    },
+    {
+      "case": "no-flag-bits-set-is-racing",
+      "expected_racing_state": "racing",
+      "expected_repair_state": "not_required",
+      "session_flags": 0
+    },
+    {
+      "case": "absent-channel-is-unknown-not-racing",
+      "expected_racing_state": "unknown",
+      "expected_repair_state": "unknown",
+      "session_flags": null
+    },
+    {
+      "case": "boolean-is-not-a-flag-word",
+      "expected_racing_state": "unknown",
+      "expected_repair_state": "unknown",
+      "session_flags": true
+    },
+    {
+      "case": "repair-required-under-green",
+      "expected_racing_state": "green",
+      "expected_repair_state": "required",
+      "session_flags": 1048580
+    }
+  ],
+  "input_domain": {
+    "boolean_channels": [
+      "complete",
+      "repair_correlated"
+    ],
+    "booleans_must_be_exact": "A boolean channel accepts true and false only. Strings and numbers are not coerced, and truthiness is never consulted.",
+    "fraction_domain": [
+      0.0,
+      1.0
+    ],
+    "non_finite_numbers_are_refused": "NaN, positive infinity and negative infinity are not observations. They are refused before any threshold is applied, so infinity can never satisfy a lower bound.",
+    "number_channels": [
+      "pit_time_s",
+      "racing_state_fraction",
+      "on_track_fraction",
+      "traffic_proximity_fraction"
+    ],
+    "numbers_must_be_exact": "A number channel accepts a JSON number that is not a boolean. Numeric strings are not parsed.",
+    "pit_time_must_not_be_negative": true,
+    "refused_input_outcome": "Any refused input makes the lap indeterminate and names the channel. An indeterminate lap is never usable as a clean reference.",
+    "state_channels": [
+      "flag_state",
+      "previous_flag_state"
+    ],
+    "states_must_be_declared": "A state channel accepts one of the declared racing states exactly. Case variants and undeclared labels are refused."
+  },
+  "lap_distance_percent_vectors": [
+    {
+      "case": "absent",
+      "expected": null,
+      "value": null
+    },
+    {
+      "case": "start-finish-line",
+      "expected": 0.0,
+      "value": 0.0
+    },
+    {
+      "case": "mid-lap",
+      "expected": 0.5,
+      "value": 0.5
+    },
+    {
+      "case": "lap-end",
+      "expected": 1.0,
+      "value": 1.0
+    },
+    {
+      "case": "below-range",
+      "expected": null,
+      "value": -0.01
+    },
+    {
+      "case": "above-range",
+      "expected": null,
+      "value": 1.01
+    },
+    {
+      "case": "boolean-false-is-not-the-line",
+      "expected": null,
+      "value": false
+    },
+    {
+      "case": "string",
+      "expected": null,
+      "value": "0.5"
+    }
+  ],
+  "policy_version": 1,
+  "racing_state_precedence": [
+    "disqualified",
+    "black",
+    "red",
+    "caution",
+    "checkered",
+    "white",
+    "green"
+  ],
+  "repair_time_is_not_derivable": "The repair-required bit states that repairs are required. It carries no duration, so repair-only time must not be displayed from it.",
+  "session_flag_bits": {
+    "black": 65536,
+    "blue": 32,
+    "caution": 16384,
+    "caution_waving": 32768,
+    "checkered": 1,
+    "crossed": 128,
+    "debris": 64,
+    "disqualify": 131072,
+    "five_to_go": 4096,
+    "furled": 524288,
+    "green": 4,
+    "green_held": 1024,
+    "one_lap_to_green": 512,
+    "random_waving": 8192,
+    "red": 16,
+    "repair": 1048576,
+    "servicible": 262144,
+    "start_go": 2147483648,
+    "start_hidden": 268435456,
+    "start_ready": 536870912,
+    "start_set": 1073741824,
+    "ten_to_go": 2048,
+    "white": 2,
+    "yellow": 8,
+    "yellow_waving": 256
+  }
+}

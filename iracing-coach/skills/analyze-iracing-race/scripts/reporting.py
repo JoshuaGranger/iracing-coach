@@ -16,6 +16,11 @@ import statistics
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+try:  # Package import and direct script loading are both supported.
+    from . import race_plan_decision
+except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+    import race_plan_decision
+
 
 TIRES = ("LF", "RF", "LR", "RR")
 TIRE_COLORS = {
@@ -673,19 +678,42 @@ def _next_race_baseline(
     parts = [f"budget {planning_burn:.3f} gal per green lap (observed rate plus 3% reserve)"]
     if tank_range is not None:
         parts.append(f"treat about {max(0.0, tank_range):.1f} all-green laps as the fuel ceiling")
+        # The stop count comes from the plan authority, not from this local
+        # gallon-per-lap budget. The budget above deliberately inflates the burn
+        # by 3%, so a count derived from it would disagree with the decided one
+        # and the two sentences would contradict each other in the same report.
         forecast = _mapping(strategy.get("forecast"))
-        scheduled = (
-            _number(forecast.get("scheduled_laps"))
-            if _number(race.get("scheduled_minutes")) is None
-            else None
-        )
-        if scheduled is not None and tank_range > 0:
-            minimum_stops = max(0, math.ceil(scheduled / tank_range - 1e-9) - 1)
-            if minimum_stops == 0:
+        decision = None
+        unreadable_plan = False
+        # A present authoritative record decides this sentence or silences it,
+        # and presence is key membership: an explicit null is present. Falling
+        # back to the rounded archive - because the record failed to parse or
+        # because it was null - lets a stale projection contradict the decision
+        # that replaced it.
+        if "race_plan_decision" in forecast:
+            try:
+                decision = race_plan_decision.from_payload(forecast["race_plan_decision"])
+            except race_plan_decision.RacePlanDecisionError:
+                unreadable_plan = True
+        else:
+            decision = race_plan_decision.from_legacy_forecast(forecast)
+        if unreadable_plan:
+            parts.append(
+                "the stored fuel plan could not be read under this contract "
+                "version, so no stop count is stated"
+            )
+        if (
+            decision is not None
+            and decision.usable
+            and _number(race.get("scheduled_minutes")) is None
+        ):
+            scheduled = decision.scheduled_laps or 0.0
+            if decision.no_stop_language_permitted:
                 parts.append(
                     f"fuel alone can cover the scheduled {scheduled:.0f} all-green laps without a stop"
                 )
             else:
+                minimum_stops = decision.minimum_stops
                 parts.append(f"that implies at least {minimum_stops} fuel stop{'s' if minimum_stops != 1 else ''} over {scheduled:.0f} all-green laps")
     if proven_stint is not None:
         parts.append(f"use {proven_stint:.1f} green laps as the proven stint reference")

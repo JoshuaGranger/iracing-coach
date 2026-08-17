@@ -9,6 +9,8 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = PLUGIN_ROOT / "skills" / "analyze-iracing-race" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+import race_card  # noqa: E402
+import race_plan_decision as rpd  # noqa: E402
 from analysis_engine import build_technical_insights  # noqa: E402
 from race_card import build_race_card  # noqa: E402
 from reporting import _next_race_baseline, render_report  # noqa: E402
@@ -356,6 +358,165 @@ class TechnicalStrategyDepthTests(unittest.TestCase):
             "positive value is",
             " ".join([*priorities.values(), *triggers.values()]).lower(),
         )
+
+
+class UnreadablePlanDecisionTests(unittest.TestCase):
+    """A present authoritative record is never replaced by a legacy projection.
+
+    The defect these close is specific and it kills a race: an archive whose
+    rounded 50.0-lap range implies zero stops, sitting beside an authoritative
+    record that decided one stop from an exact 49.96. When the record could not
+    be read, both consumers fell back to the archive and printed "No fuel stop
+    needed for 50 laps". The car runs dry on the last lap.
+
+    Legacy inference stays available for archives that genuinely predate the
+    decision - that capability is sound and is exercised elsewhere in this file.
+    What is refused is inferring *over* a record that exists.
+    """
+
+    def _analysis(self, decision_payload):
+        return {
+            "identity": {
+                "track_name": "Iowa Speedway",
+                "track_config": "Oval",
+                "car_name": "Toyota Supra Class B",
+                "is_fixed_setup": True,
+            },
+            "race_summary": {"scheduled_laps": 50, "recorded_laps": 50},
+            "runs": [{"run_number": 1, "fuel": {"start_l": 100.0}}],
+            "strategy": {
+                "measured_green_fuel_gal_per_lap": 0.5,
+                "forecast": {
+                    "status": "usable",
+                    "race_plan_decision": decision_payload,
+                    # The rounded archive beside it says zero stops.
+                    "all_green_range_laps": 50.0,
+                    "minimum_stops_all_green": 0,
+                    "equal_stint_pit_targets_all_green": [],
+                    "scheduled_laps": 50.0,
+                },
+            },
+            "technical_insights": [],
+            "coaching_signals": [],
+        }
+
+    def _authoritative_one_stop(self):
+        return rpd.decide_from_range(
+            scheduled_laps=50.0, all_green_range_laps=49.96
+        ).to_payload()
+
+    def test_the_authoritative_record_decides_one_stop_not_zero(self):
+        payload = self._authoritative_one_stop()
+        self.assertEqual(payload["minimum_stops"], 1)
+        self.assertFalse(payload["no_stop_language_permitted"])
+
+    def test_a_future_version_record_is_refused_rather_than_downgraded(self):
+        payload = self._authoritative_one_stop()
+        payload["decision_version"] = rpd.RACE_PLAN_DECISION_VERSION + 1
+        decision = race_card._plan_decision(self._analysis(payload), planned_laps=50.0)
+        self.assertEqual(decision.status, rpd.STATUS_DECISION_UNREADABLE)
+        self.assertFalse(decision.usable)
+        self.assertFalse(decision.no_stop_language_permitted)
+        self.assertIsNone(decision.minimum_stops)
+
+    def test_the_card_never_prints_no_stop_from_an_unreadable_record(self):
+        for mutation in (
+            {"decision_version": rpd.RACE_PLAN_DECISION_VERSION + 1},
+            {"minimum_stops": 0, "stints": 1, "equal_stint_pit_targets": []},
+            {"status": "not-a-status"},
+            {"all_green_range_laps": None},
+            {"scheduled_laps": "50.0"},
+        ):
+            with self.subTest(mutation=mutation):
+                payload = {**self._authoritative_one_stop(), **mutation}
+                card = build_race_card(self._analysis(payload), race_distance_laps=50)
+                text = " ".join(item["text"] for item in card["actions"])
+                self.assertNotIn("No fuel stop needed", text)
+                self.assertNotIn("without a stop", text)
+
+    def test_a_non_mapping_record_is_present_and_unreadable(self):
+        for payload in ("a decision", 5, [1, 2, 3]):
+            with self.subTest(payload=payload):
+                decision = race_card._plan_decision(
+                    self._analysis(payload), planned_laps=50.0
+                )
+                self.assertEqual(decision.status, rpd.STATUS_DECISION_UNREADABLE)
+
+    def test_the_report_states_the_refusal_instead_of_the_legacy_count(self):
+        payload = self._authoritative_one_stop()
+        payload["decision_version"] = rpd.RACE_PLAN_DECISION_VERSION + 1
+        analysis = self._analysis(payload)
+        baseline = _next_race_baseline(analysis, {})
+        self.assertIn("could not be read", baseline)
+        self.assertNotIn("without a stop", baseline)
+        self.assertNotIn("fuel stop", baseline.replace("no stop count", ""))
+
+    def test_a_readable_record_still_decides_the_report_sentence(self):
+        analysis = self._analysis(self._authoritative_one_stop())
+        baseline = _next_race_baseline(analysis, {})
+        self.assertIn("at least 1 fuel stop", baseline)
+        self.assertNotIn("could not be read", baseline)
+
+    def test_a_readable_record_still_decides_the_card(self):
+        card = build_race_card(
+            self._analysis(self._authoritative_one_stop()), race_distance_laps=50
+        )
+        strategy = next(item for item in card["actions"] if item["label"] == "Strategy")
+        self.assertIn("Plan 1 fuel stop for 50 laps", strategy["text"])
+
+    def _analysis_without_key(self):
+        analysis = self._analysis(None)
+        del analysis["strategy"]["forecast"]["race_plan_decision"]
+        return analysis
+
+    def test_an_explicitly_null_authority_is_present_and_unreadable(self):
+        """Presence is key membership, not a non-null value.
+
+        A null authority beside a rounded archive that says zero stops is the
+        same trap as an unreadable one: reading it as absent hands the stale
+        projection back to a forecast that had already superseded it, and the
+        card prints "No fuel stop needed for 50 laps" over a decided stop.
+        """
+        decision = race_card._plan_decision(self._analysis(None), planned_laps=50.0)
+        self.assertEqual(decision.status, rpd.STATUS_DECISION_UNREADABLE)
+        self.assertFalse(decision.usable)
+        self.assertFalse(decision.no_stop_language_permitted)
+        self.assertIsNone(decision.minimum_stops)
+
+    def test_the_card_prints_no_stop_language_for_no_null_authority(self):
+        card = build_race_card(self._analysis(None), race_distance_laps=50)
+        text = " ".join(item["text"] for item in card["actions"])
+        self.assertNotIn("No fuel stop needed", text)
+
+    def test_the_report_refuses_a_null_authority_instead_of_inferring(self):
+        baseline = _next_race_baseline(self._analysis(None), {})
+        self.assertIn("could not be read", baseline)
+        self.assertNotIn("without a stop", baseline)
+
+    def test_an_absent_key_still_permits_legacy_inference(self):
+        """The pre-decision capability must survive the presence rule."""
+        analysis = self._analysis_without_key()
+        self.assertNotIn("race_plan_decision", analysis["strategy"]["forecast"])
+        decision = race_card._plan_decision(analysis, planned_laps=50.0)
+        self.assertTrue(decision.usable)
+        self.assertEqual(decision.minimum_stops, 0)
+        baseline = _next_race_baseline(analysis, {})
+        self.assertNotIn("could not be read", baseline)
+
+    def test_a_legacy_decision_is_not_re_decided_at_another_distance(self):
+        """A rounded range cannot answer a distance it was never decided for."""
+        legacy = rpd.from_legacy_forecast(
+            {
+                "status": rpd.STATUS_USABLE,
+                "minimum_stops_all_green": 1,
+                "all_green_range_laps": 50.0,
+                "scheduled_laps": 50.0,
+                "equal_stint_pit_targets_all_green": [25.0],
+            }
+        ).to_payload()
+        decision = race_card._plan_decision(self._analysis(legacy), planned_laps=90.0)
+        self.assertFalse(decision.usable)
+        self.assertEqual(decision.status, rpd.STATUS_DECISION_UNREADABLE)
 
 
 if __name__ == "__main__":

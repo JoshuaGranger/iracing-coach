@@ -19,10 +19,15 @@ CONTRACT_ROOT = WORKSPACE_ROOT / "contracts"
 sys.path.insert(0, str(SCRIPT_ROOT))
 
 import analysis_engine  # noqa: E402
+import artifact_identity  # noqa: E402
+import evidence_records  # noqa: E402
 import groove_analysis  # noqa: E402
+import live_truth  # noqa: E402
 import mcp_server  # noqa: E402
 import race_card  # noqa: E402
+import race_plan_decision  # noqa: E402
 import setup_catalog  # noqa: E402
+import starting_tune  # noqa: E402
 import storage  # noqa: E402
 import tuning_engine  # noqa: E402
 import workflow  # noqa: E402
@@ -285,6 +290,90 @@ def _analysis_view_schema() -> dict[str, Any]:
     }
 
 
+def _race_plan_decision_schema() -> dict[str, Any]:
+    """Generate the fuel decision contract from the producer's own constants.
+
+    The status list and the version come from `race_plan_decision`, so a status
+    added there cannot be missing here, and a consumer generated from this file
+    cannot enumerate a set the producer no longer emits.
+    """
+    number_or_null = {"type": ["number", "null"]}
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "race plan decision",
+        "description": (
+            "The single authoritative fuel plan. `all_green_range_laps` is exact "
+            "and unrounded: a consumer displays it, and never re-derives "
+            "`minimum_stops` from it or from any rounded projection of it. "
+            "`no_stop_language_permitted` is the only permission to state that a "
+            "race needs no stop. When `status` is not `usable` the decided "
+            "fields are null and no plan may be stated. "
+            "Presence of this record is decided by key membership: a reader that "
+            "finds the key, including with a null value, must never fall back to "
+            "a legacy rounded projection. "
+            "Every fuel scalar has a domain a reader must enforce: "
+            "`green_burn_l_per_lap`, `maximum_start_fuel_l`, `usable_fuel_l`, "
+            "`scheduled_laps` and `all_green_range_laps` are positive when "
+            "present, and `reserve_fuel_l` is never negative. "
+            "Three identities also hold whenever their inputs are all present, "
+            "and a record that breaks one is refused rather than normalized: "
+            "`reserve_fuel_l` equals `green_burn_l_per_lap` times "
+            "`reserve_green_laps`; `usable_fuel_l` equals `maximum_start_fuel_l` "
+            "minus `reserve_fuel_l`; and `all_green_range_laps` equals "
+            "`usable_fuel_l` divided by `green_burn_l_per_lap`. "
+            "The domains and the identities are stated here rather than encoded "
+            "because this repository's bounded validator supports no numeric or "
+            "cross-field keywords; only `reserve_green_laps` is machine-pinned, "
+            "by `const`."
+        ),
+        "type": "object",
+        "additionalProperties": True,
+        "required": [
+            "all_green_range_laps",
+            "caution_scenario",
+            "decision_version",
+            "equal_stint_pit_targets",
+            "final_stint_margin_laps",
+            "minimum_stops",
+            "no_stop_language_permitted",
+            "re_decidable",
+            "reserve_green_laps",
+            "scheduled_laps",
+            "status",
+            "stints",
+        ],
+        "properties": {
+            "all_green_range_laps": number_or_null,
+            "assumptions": {"type": "array", "items": {"type": "string"}},
+            "caution_scenario": {"type": ["object", "null"]},
+            "classification": {"type": "string"},
+            "decision_version": {
+                "const": race_plan_decision.RACE_PLAN_DECISION_VERSION,
+                "type": "integer",
+            },
+            "equal_stint_pit_targets": {"type": "array", "items": {"type": "number"}},
+            "final_stint_margin_laps": number_or_null,
+            "green_burn_l_per_lap": number_or_null,
+            "limitations": {"type": "array", "items": {"type": "string"}},
+            "maximum_start_fuel_l": number_or_null,
+            "minimum_stops": {"type": ["integer", "null"]},
+            "no_stop_language_permitted": {"type": "boolean"},
+            "re_decidable": {"type": "boolean"},
+            "reserve_fuel_l": number_or_null,
+            # The operational reserve is a definitional floor, not a tunable, so
+            # the contract pins it rather than describing its type.
+            "reserve_green_laps": {
+                "const": race_plan_decision.RESERVE_GREEN_LAPS,
+                "type": "number",
+            },
+            "scheduled_laps": number_or_null,
+            "status": {"enum": list(race_plan_decision.PLAN_STATUSES), "type": "string"},
+            "stints": {"type": ["integer", "null"]},
+            "usable_fuel_l": number_or_null,
+        },
+    }
+
+
 def _plugin_manifest() -> dict[str, Any]:
     path = PLUGIN_ROOT / ".codex-plugin" / "plugin.json"
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -315,6 +404,11 @@ def exported_values() -> dict[Path, Any]:
             "analysis_schema_version": analysis_engine.ANALYSIS_SCHEMA_VERSION,
             "analysis_profile_version": analysis_engine.ANALYSIS_PROFILE_VERSION,
             "analysis_view_envelope_version": workflow.ANALYSIS_VIEW_SCHEMA_VERSION,
+            "race_plan_decision_version": race_plan_decision.RACE_PLAN_DECISION_VERSION,
+            "live_truth_policy_version": live_truth.LIVE_TRUTH_POLICY_VERSION,
+            "starting_tune_contract_version": starting_tune.STARTING_TUNE_CONTRACT_VERSION,
+            "evidence_record_version": evidence_records.EVIDENCE_RECORD_VERSION,
+            "artifact_identity_version": artifact_identity.ARTIFACT_IDENTITY_VERSION,
             # Two independent stores previously shared the single ambiguous key
             # `archive_schema_version`. The backend range is derived here; the
             # companion range is declared in compatibility-sources.json because
@@ -376,6 +470,7 @@ def exported_values() -> dict[Path, Any]:
         CONTRACT_ROOT / "compatibility.json": compatibility,
         CONTRACT_ROOT / "mcp-tools.v1.json": tools,
         CONTRACT_ROOT / "analysis-view-v1.schema.json": _analysis_view_schema(),
+        CONTRACT_ROOT / "race-plan-decision-v1.schema.json": _race_plan_decision_schema(),
     }
 
 

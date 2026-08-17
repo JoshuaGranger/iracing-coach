@@ -1,0 +1,5240 @@
+{
+  "contract_version": 1,
+  "purposes": [
+    "qualifying",
+    "race",
+    "endurance"
+  ],
+  "rows": [
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "qualifying",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "qualifying",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "race",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "race",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "qualifying",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "qualifying",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "race",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "race",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": true,
+        "purpose_match": "exact-purpose",
+        "reasons": [],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "exact-purpose",
+        "reasons": [
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": "endurance",
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": "endurance",
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "paired",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "paired",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "sto-present-but-not-validated"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "sto_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "sto_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "parameters-readable",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "html-present-but-not-parsed",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "html_only",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "html_only",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "identity-only",
+        "load_permitted": false,
+        "purpose_match": "other-purpose-only",
+        "reasons": [
+          "candidate-is-for-another-purpose",
+          "several-files-share-this-stem",
+          "no-loadable-sto-in-source"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "ambiguous",
+        "usable_as_evidence": true
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "ambiguous",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": true,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": false
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": true
+    },
+    {
+      "candidate_purpose": null,
+      "expected": {
+        "contract_version": 1,
+        "evidence_level": "none",
+        "load_permitted": false,
+        "purpose_match": "no-candidate",
+        "reasons": [
+          "no-candidate-for-any-purpose"
+        ],
+        "requested_purpose": "endurance",
+        "resolved_purpose": null,
+        "source_files_read_only": true,
+        "source_shape": "absent",
+        "usable_as_evidence": false
+      },
+      "html_parsed": false,
+      "requested_purpose": "endurance",
+      "source_shape": "absent",
+      "sto_validated": false
+    }
+  ],
+  "source_shapes": [
+    "paired",
+    "sto_only",
+    "html_only",
+    "ambiguous",
+    "absent"
+  ]
+}
