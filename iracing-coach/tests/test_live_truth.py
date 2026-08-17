@@ -404,5 +404,144 @@ class ConformanceVectorTests(unittest.TestCase):
         self.assertIn("invented: not a declared case", problems)
 
 
+class InputDomainTests(unittest.TestCase):
+    """Every representation the policy refuses, and proof it refuses it.
+
+    The verdict function once decided these laps on truthiness and on
+    `float()`, so a lap carrying `complete: "false"` was reported clean and
+    usable as a reference. Each case below is a transport fault; none of them is
+    evidence about a lap, and the only correct answer to all of them is that the
+    lap cannot be decided.
+    """
+
+    BASE = {
+        "flag_state": lt.STATE_GREEN,
+        "complete": True,
+        "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0,
+        "on_track_fraction": 1.0,
+        "traffic_proximity_fraction": 0.0,
+    }
+
+    def _refuses(self, channel, value):
+        lap = {**self.BASE, channel: value}
+        verdict = lt.clean_lap_verdict(lap)
+        self.assertEqual(
+            verdict.verdict,
+            lt.VERDICT_INDETERMINATE,
+            f"{channel}={value!r} produced {verdict.verdict}",
+        )
+        self.assertFalse(verdict.usable_as_reference)
+        self.assertIn(channel, verdict.missing_channels)
+
+    def test_a_string_boolean_is_not_a_boolean(self):
+        for value in ("false", "true", "False", "0", ""):
+            with self.subTest(value=value):
+                self._refuses("complete", value)
+
+    def test_a_number_is_not_a_boolean(self):
+        for value in (0, 1, 1.0):
+            with self.subTest(value=value):
+                self._refuses("complete", value)
+
+    def test_a_string_boolean_repair_flag_does_not_read_as_absent(self):
+        """A repair claim in an unreadable shape leaves the question open.
+
+        The earlier rule was `is True`, so `repair_correlated: "true"` failed the
+        test and the lap was reported clean - the exact inversion of the truth
+        the field was carrying.
+        """
+        for value in ("true", "false", 1, 0):
+            with self.subTest(value=value):
+                self._refuses("repair_correlated", value)
+
+    def test_an_absent_repair_flag_remains_absent(self):
+        """Silence about repairs is not a refusal; only a bad shape is."""
+        self.assertEqual(lt.clean_lap_verdict(dict(self.BASE)).verdict, lt.VERDICT_CLEAN)
+
+    def test_a_numeric_string_does_not_satisfy_a_threshold(self):
+        for channel in lt.CLEAN_LAP_REFINING_CHANNELS:
+            with self.subTest(channel=channel):
+                self._refuses(channel, "1.0")
+        self._refuses("pit_time_s", "0.0")
+
+    def test_infinity_cannot_satisfy_a_lower_bound(self):
+        for channel in ("racing_state_fraction", "on_track_fraction"):
+            with self.subTest(channel=channel):
+                self._refuses(channel, float("inf"))
+        self._refuses("traffic_proximity_fraction", float("-inf"))
+
+    def test_not_a_number_is_refused(self):
+        for channel in lt.CLEAN_LAP_REFINING_CHANNELS:
+            with self.subTest(channel=channel):
+                self._refuses(channel, float("nan"))
+
+    def test_a_boolean_is_not_a_number(self):
+        for channel in (*lt.CLEAN_LAP_REFINING_CHANNELS, "pit_time_s"):
+            with self.subTest(channel=channel):
+                self._refuses(channel, True)
+
+    def test_a_fraction_outside_its_domain_is_not_an_observation(self):
+        for channel in lt.CLEAN_LAP_REFINING_CHANNELS:
+            for value in (1.5, -0.5):
+                with self.subTest(channel=channel, value=value):
+                    self._refuses(channel, value)
+
+    def test_a_negative_pit_time_is_refused(self):
+        self._refuses("pit_time_s", -1.0)
+
+    def test_a_refining_channel_present_as_null_is_not_satisfied(self):
+        for channel in lt.CLEAN_LAP_REFINING_CHANNELS:
+            with self.subTest(channel=channel):
+                self._refuses(channel, None)
+
+    def test_an_undeclared_flag_state_is_refused(self):
+        for value in ("GREEN", "Green", "purple", True, 4):
+            with self.subTest(value=value):
+                self._refuses("flag_state", value)
+
+    def test_an_undeclared_previous_flag_state_leaves_the_restart_open(self):
+        verdict = lt.clean_lap_verdict(dict(self.BASE), previous_flag_state="CAUTION")
+        self.assertEqual(verdict.verdict, lt.VERDICT_INDETERMINATE)
+        self.assertIn("previous_flag_state", verdict.missing_channels)
+
+    def test_the_declared_domain_rules_match_the_channels_they_govern(self):
+        rules = lt.INPUT_DOMAIN_RULES
+        self.assertEqual(
+            set(rules["number_channels"]),
+            {"pit_time_s", *lt.CLEAN_LAP_REFINING_CHANNELS},
+        )
+        self.assertIn("complete", rules["boolean_channels"])
+        self.assertIn("flag_state", rules["state_channels"])
+        self.assertEqual(rules["fraction_domain"], [0.0, 1.0])
+
+    def test_the_vectors_carry_the_refused_representations(self):
+        cases = {row["case"] for row in lt.conformance_vectors()["clean_lap_vectors"]}
+        refused = {case for case in cases if case.startswith("refused-")}
+        self.assertGreaterEqual(len(refused), 15)
+        for case in refused:
+            row = next(
+                item
+                for item in lt.conformance_vectors()["clean_lap_vectors"]
+                if item["case"] == case
+            )
+            self.assertEqual(row["expected"]["verdict"], lt.VERDICT_INDETERMINATE)
+            self.assertFalse(row["expected"]["usable_as_reference"])
+
+    def test_the_emitted_vectors_are_strict_json(self):
+        """A vector a .NET decoder cannot parse proves nothing about parity.
+
+        JSON has no literal for NaN or infinity, and Python emits the bare
+        tokens `NaN` and `Infinity` for them unless told not to. `allow_nan=False`
+        raises instead, which is why the non-finite refusals are asserted in
+        this suite and declared in `INPUT_DOMAIN_RULES` rather than shipped as
+        vectors no strict parser could read.
+        """
+        json.dumps(lt.conformance_vectors(), allow_nan=False)
+        self.assertIn(
+            "non_finite_numbers_are_refused", lt.conformance_vectors()["input_domain"]
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

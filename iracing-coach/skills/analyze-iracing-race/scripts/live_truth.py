@@ -35,6 +35,7 @@ prose does not.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -203,6 +204,49 @@ REPAIR_TIME_IS_NOT_DERIVABLE = (
     "duration, so repair-only time must not be displayed from it."
 )
 
+# --------------------------------------------------------------------------
+# Input domain
+# --------------------------------------------------------------------------
+
+#: The exact type each clean-lap input must arrive in, and what happens when it
+#: does not. Declared as data because the conformance vectors cannot carry every
+#: refused representation: JSON has no literal for NaN or infinity, yet a
+#: telemetry float channel produces both. A second implementation asserts these
+#: rules directly and reproduces the representable cases from the vectors.
+INPUT_DOMAIN_RULES: dict[str, Any] = {
+    "boolean_channels": ["complete", "repair_correlated"],
+    "number_channels": [
+        "pit_time_s",
+        "racing_state_fraction",
+        "on_track_fraction",
+        "traffic_proximity_fraction",
+    ],
+    "state_channels": ["flag_state", "previous_flag_state"],
+    "booleans_must_be_exact": (
+        "A boolean channel accepts true and false only. Strings and numbers are "
+        "not coerced, and truthiness is never consulted."
+    ),
+    "numbers_must_be_exact": (
+        "A number channel accepts a JSON number that is not a boolean. Numeric "
+        "strings are not parsed."
+    ),
+    "non_finite_numbers_are_refused": (
+        "NaN, positive infinity and negative infinity are not observations. "
+        "They are refused before any threshold is applied, so infinity can "
+        "never satisfy a lower bound."
+    ),
+    "fraction_domain": [0.0, 1.0],
+    "pit_time_must_not_be_negative": True,
+    "states_must_be_declared": (
+        "A state channel accepts one of the declared racing states exactly. "
+        "Case variants and undeclared labels are refused."
+    ),
+    "refused_input_outcome": (
+        "Any refused input makes the lap indeterminate and names the channel. "
+        "An indeterminate lap is never usable as a clean reference."
+    ),
+}
+
 __all__ = [
     "CAUTION_BITS_MISSING_FROM_DOTNET",
     "CAUTION_MASK",
@@ -211,6 +255,7 @@ __all__ = [
     "CLEAN_LAP_REQUIRED_CHANNELS",
     "CLEAN_LAP_VERDICTS",
     "DOTNET_LEGACY_CAUTION_MASK",
+    "INPUT_DOMAIN_RULES",
     "LIVE_TRUTH_POLICY_VERSION",
     "MAXIMUM_TRAFFIC_PROXIMITY_FRACTION",
     "MINIMUM_ON_TRACK_FRACTION",
@@ -292,7 +337,7 @@ def lap_distance_percent(value: Any) -> float | None:
         # at a plausible place on the track.
         return None
     number = float(value)
-    if number != number or number in (float("inf"), -float("inf")):
+    if not math.isfinite(number):
         return None
     if not 0.0 <= number <= 1.0:
         return None
@@ -335,13 +380,29 @@ class CleanLapVerdict:
 
 
 def _number(value: Any) -> float | None:
-    if value is None or isinstance(value, bool):
+    """A JSON number, or None for every representation that is not one.
+
+    Strictly typed on purpose, and the strictness is the fix. The earlier form
+    called `float(value)`, which accepts the string `"1.0"` and both infinities.
+    A frame carrying `on_track_fraction: "1.0"` then satisfied a 0.98 threshold
+    on the strength of a transport fault, and `+inf` satisfied every lower bound
+    there is. Neither is an observation of anything.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number == number else None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _exact_bool(value: Any) -> bool | None:
+    """A JSON boolean, or None for anything merely truthy.
+
+    `bool("false")` is `True`. A lap arriving with `complete: "false"` was
+    therefore classified complete, and then clean, and then offered as a
+    reference lap - a usable-reference verdict resting entirely on a string
+    being non-empty.
+    """
+    return value if isinstance(value, bool) else None
 
 
 def clean_lap_verdict(
@@ -357,42 +418,79 @@ def clean_lap_verdict(
     in hand and an absent channel means the recording never had it. Live it is
     not, because a channel that has not arrived yet would license a clean
     reference that the same lap loses the moment the data appears.
+
+    "Missing" is decided by type, not by truthiness. Every input is required in
+    its exact JSON domain - booleans as booleans, numbers as finite numbers,
+    states as declared states - and a value outside that domain is treated as no
+    value at all. The looser form of this function classified a lap carrying
+    `complete: "false"` as clean, because a non-empty string is truthy; the same
+    laxity let `"1.0"` and `+inf` clear the refining thresholds. All three are
+    transport faults, and a transport fault is never evidence that a lap was
+    clean.
     """
     if not isinstance(lap, Mapping):
         raise LiveTruthError("lap must be a mapping")
 
-    missing = [name for name in CLEAN_LAP_REQUIRED_CHANNELS if lap.get(name) is None]
-    missing += [
-        name
-        for name in CLEAN_LAP_REFINING_CHANNELS
-        if name in lap and _number(lap.get(name)) is None and lap.get(name) is not None
-    ]
-    missing += [name for name in CLEAN_LAP_REFINING_CHANNELS if name not in lap]
+    # A channel counts as present only when it carries a value of the exact
+    # JSON type this policy decides on. Missing, null, wrong-typed, non-finite
+    # and out-of-domain all reduce to the same thing - no observation - and none
+    # of them may license a clean reference lap.
+    missing: list[str] = []
+
+    complete = _exact_bool(lap.get("complete"))
+    if complete is None:
+        missing.append("complete")
+    flag_state = lap.get("flag_state")
+    if not isinstance(flag_state, str) or flag_state not in RACING_STATES:
+        missing.append("flag_state")
+    pit_time = _number(lap.get("pit_time_s"))
+    if pit_time is None or pit_time < 0.0:
+        missing.append("pit_time_s")
+
+    fractions: dict[str, float] = {}
+    for name in CLEAN_LAP_REFINING_CHANNELS:
+        value = _number(lap.get(name))
+        if value is None or not 0.0 <= value <= 1.0:
+            missing.append(name)
+        else:
+            fractions[name] = value
+
+    repair_correlated = False
+    if "repair_correlated" in lap:
+        flag = _exact_bool(lap.get("repair_correlated"))
+        if flag is None:
+            # Present and unreadable is not the same as absent. A frame that
+            # says something about repairs in a shape this policy cannot read
+            # leaves the repair question open, and an open repair question
+            # cannot resolve to a clean lap.
+            missing.append("repair_correlated")
+        else:
+            repair_correlated = flag
+
+    if previous_flag_state is not None and previous_flag_state not in RACING_STATES:
+        missing.append("previous_flag_state")
+
     if missing:
         return CleanLapVerdict(
             VERDICT_INDETERMINATE, missing_channels=tuple(sorted(set(missing)))
         )
 
     reasons: list[str] = []
-    if not bool(lap.get("complete")):
+    if not complete:
         reasons.append(EXCLUSION_INCOMPLETE)
-    flag_state = str(lap.get("flag_state"))
     if flag_state != STATE_GREEN:
         reasons.append(EXCLUSION_CAUTION_OR_MIXED)
-    if (_number(lap.get("pit_time_s")) or 0.0) >= PIT_TIME_EXCLUSION_S:
+    if pit_time >= PIT_TIME_EXCLUSION_S:
         reasons.append(EXCLUSION_PIT)
-    racing_fraction = _number(lap.get("racing_state_fraction"))
-    if racing_fraction is not None and racing_fraction < MINIMUM_RACING_STATE_FRACTION:
+    if fractions["racing_state_fraction"] < MINIMUM_RACING_STATE_FRACTION:
         reasons.append(EXCLUSION_NOT_RACING_STATE)
-    on_track = _number(lap.get("on_track_fraction"))
-    if on_track is not None and on_track < MINIMUM_ON_TRACK_FRACTION:
+    if fractions["on_track_fraction"] < MINIMUM_ON_TRACK_FRACTION:
         reasons.append(EXCLUSION_OFF_TRACK)
-    traffic = _number(lap.get("traffic_proximity_fraction"))
-    if traffic is not None and traffic >= MAXIMUM_TRAFFIC_PROXIMITY_FRACTION:
+    if fractions["traffic_proximity_fraction"] >= MAXIMUM_TRAFFIC_PROXIMITY_FRACTION:
         reasons.append(EXCLUSION_CLOSE_TRAFFIC)
     if previous_flag_state == STATE_CAUTION and flag_state == STATE_GREEN:
         reasons.append(EXCLUSION_RESTART)
-    if lap.get("repair_correlated") is True:
+    if repair_correlated:
         reasons.append(EXCLUSION_REPAIR_EPISODE)
 
     if reasons:
@@ -614,6 +712,58 @@ def _clean_lap_vectors() -> list[dict[str, Any]]:
                 "previous_flag_state": None,
             }
         )
+    # A refining channel present as an explicit null is not the same as one that
+    # has not arrived, but it is just as unobserved, and the earlier policy let
+    # it pass straight through to a clean verdict.
+    for channel in CLEAN_LAP_REFINING_CHANNELS:
+        cases.append(
+            {
+                "case": f"null-refining-channel-{channel}",
+                "lap": {**_CLEAN_LAP_BASE, channel: None},
+                "previous_flag_state": None,
+            }
+        )
+    # Every representation this policy refuses to interpret, stated as a case so
+    # a second implementation must refuse it too. A .NET decoder that coerces
+    # any of these passes the prose and fails here.
+    for name, lap in (
+        ("string-boolean-complete", {**_CLEAN_LAP_BASE, "complete": "false"}),
+        ("string-boolean-complete-true", {**_CLEAN_LAP_BASE, "complete": "true"}),
+        ("numeric-complete", {**_CLEAN_LAP_BASE, "complete": 1}),
+        ("string-boolean-repair-correlated", {**_CLEAN_LAP_BASE, "repair_correlated": "true"}),
+        ("numeric-repair-correlated", {**_CLEAN_LAP_BASE, "repair_correlated": 1}),
+        ("boolean-flag-state", {**_CLEAN_LAP_BASE, "flag_state": True}),
+        ("undeclared-flag-state", {**_CLEAN_LAP_BASE, "flag_state": "GREEN"}),
+        ("string-number-pit-time", {**_CLEAN_LAP_BASE, "pit_time_s": "0.0"}),
+        ("boolean-pit-time", {**_CLEAN_LAP_BASE, "pit_time_s": False}),
+        ("negative-pit-time", {**_CLEAN_LAP_BASE, "pit_time_s": -1.0}),
+        (
+            "string-number-refining-fraction",
+            {**_CLEAN_LAP_BASE, "on_track_fraction": "1.0"},
+        ),
+        (
+            "boolean-refining-fraction",
+            {**_CLEAN_LAP_BASE, "on_track_fraction": True},
+        ),
+        (
+            "above-domain-refining-fraction",
+            {**_CLEAN_LAP_BASE, "on_track_fraction": 1.5},
+        ),
+        (
+            "below-domain-refining-fraction",
+            {**_CLEAN_LAP_BASE, "traffic_proximity_fraction": -0.5},
+        ),
+    ):
+        cases.append(
+            {"case": f"refused-{name}", "lap": lap, "previous_flag_state": None}
+        )
+    cases.append(
+        {
+            "case": "refused-undeclared-previous-flag-state",
+            "lap": dict(_CLEAN_LAP_BASE),
+            "previous_flag_state": "CAUTION",
+        }
+    )
     for case in cases:
         case["expected"] = clean_lap_verdict(
             case["lap"], previous_flag_state=case["previous_flag_state"]
@@ -642,6 +792,7 @@ def conformance_vectors() -> dict[str, Any]:
             "maximum_traffic_proximity_fraction": MAXIMUM_TRAFFIC_PROXIMITY_FRACTION,
         },
         "repair_time_is_not_derivable": REPAIR_TIME_IS_NOT_DERIVABLE,
+        "input_domain": INPUT_DOMAIN_RULES,
         "flag_vectors": _flag_vectors(),
         "lap_distance_percent_vectors": _missing_value_vectors(),
         "clean_lap_vectors": _clean_lap_vectors(),
