@@ -81,6 +81,15 @@ STATUS_INSUFFICIENT_EVIDENCE = "insufficient_fuel_or_distance_evidence"
 #: requested distance. Distinct from insufficient evidence because the remedy
 #: is specific: re-analyze the race and the question becomes answerable.
 STATUS_ROUNDED_RANGE_UNDECIDABLE = "rounded_range_cannot_decide"
+#: An authoritative decision was present and could not be read: an unsupported
+#: version, a missing required field, a wrong type, or a self-contradiction.
+#:
+#: This status exists so that "present but unreadable" has somewhere to go other
+#: than the legacy reader. Falling back to a rounded archive projection when the
+#: authority itself is unreadable is how a future producer's one-stop decision
+#: became "No fuel stop needed for 50 laps", and it is worse than silence
+#: because it is confident.
+STATUS_DECISION_UNREADABLE = "authoritative_decision_unreadable"
 
 #: Every status a decision can carry. Declared as data so the generated
 #: contract and the C# consumer enumerate one list.
@@ -89,6 +98,7 @@ PLAN_STATUSES = (
     STATUS_HYBRID_UNRESOLVED,
     STATUS_INSUFFICIENT_EVIDENCE,
     STATUS_ROUNDED_RANGE_UNDECIDABLE,
+    STATUS_DECISION_UNREADABLE,
 )
 
 #: Evidence class of the observed-caution record. It is never `measured` and
@@ -119,7 +129,9 @@ __all__ = [
     "LITRES_PER_GALLON",
     "PLAN_STATUSES",
     "RACE_PLAN_DECISION_VERSION",
+    "REQUIRED_PAYLOAD_KEYS",
     "RESERVE_GREEN_LAPS",
+    "STATUS_DECISION_UNREADABLE",
     "STATUS_HYBRID_UNRESOLVED",
     "STATUS_INSUFFICIENT_EVIDENCE",
     "STATUS_ROUNDED_RANGE_UNDECIDABLE",
@@ -132,6 +144,7 @@ __all__ = [
     "from_legacy_forecast",
     "from_payload",
     "stint_count",
+    "unreadable",
 ]
 
 
@@ -140,18 +153,22 @@ class RacePlanDecisionError(ValueError):
 
 
 def _finite(value: Any) -> float | None:
-    """Return a finite float, or None for anything that cannot be one.
+    """Return a finite float, or None for anything that is not already a number.
 
-    Booleans are refused explicitly. `isinstance(True, int)` holds in Python,
-    so a JSON `true` arriving where a burn rate belongs would otherwise become
-    1.0 litres per lap and produce a confident, wrong plan.
+    Booleans are refused explicitly. `isinstance(True, int)` holds in Python, so
+    a JSON `true` arriving where a burn rate belongs would otherwise become 1.0
+    litres per lap and produce a confident, wrong plan.
+
+    Strings are refused too, and for the same reason rather than a fussier one.
+    `float("50.0")` succeeds, so a distance transported as a string used to be
+    accepted silently; the value happened to be right, but nothing here
+    established that, and the next such string is a locale-formatted number or a
+    truncated field. A number that did not arrive as a number is a transport
+    fault, and a plan built on one is a guess wearing a decimal point.
     """
-    if value is None or isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
+    number = float(value)
     return number if math.isfinite(number) else None
 
 
@@ -586,19 +603,192 @@ def from_legacy_forecast(
     )
 
 
-def from_payload(payload: Mapping[str, Any]) -> RacePlanDecision:
-    """Read a transported decision, failing closed on an unreadable version.
+#: Keys a version-1 decision always transports. Absence of any one of them
+#: means the payload was not produced by this contract, so it is refused rather
+#: than completed from defaults.
+REQUIRED_PAYLOAD_KEYS: tuple[str, ...] = (
+    "all_green_range_laps",
+    "caution_scenario",
+    "decision_version",
+    "equal_stint_pit_targets",
+    "final_stint_margin_laps",
+    "minimum_stops",
+    "no_stop_language_permitted",
+    "re_decidable",
+    "reserve_green_laps",
+    "scheduled_laps",
+    "status",
+    "stints",
+)
 
-    A future decision is refused rather than partially read. The fields a newer
-    producer decides are not knowable here, and reconstructing a decision from
-    the subset this version recognises would silently drop whatever made the
-    newer one different.
+#: Fields a non-usable decision must leave empty. A status that decides nothing
+#: while carrying a stop count is contradictory, and reading either half of the
+#: contradiction is a choice this module refuses to make.
+_DECIDED_NUMERIC_KEYS: tuple[str, ...] = (
+    "all_green_range_laps",
+    "final_stint_margin_laps",
+    "minimum_stops",
+    "scheduled_laps",
+    "stints",
+)
+
+#: Relative tolerance for agreement between a transported margin and the margin
+#: its own range and distance imply. Loose enough for JSON float round-tripping,
+#: far tighter than any disagreement that would change a stop count.
+_MARGIN_RELATIVE_TOLERANCE = 1e-9
+
+
+def unreadable(reason: str) -> RacePlanDecision:
+    """The fail-closed decision for a present authoritative record we cannot read.
+
+    Returned instead of a legacy projection. A consumer holding this decides
+    nothing and says nothing: :attr:`RacePlanDecision.usable` is false, so
+    :attr:`no_stop_language_permitted` is false too, and there is no decided
+    number for a surface to render.
+    """
+    return RacePlanDecision(status=STATUS_DECISION_UNREADABLE, limitations=(reason,))
+
+
+def _payload_bool(payload: Mapping[str, Any], key: str) -> bool:
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise RacePlanDecisionError(f"{key} must be a JSON boolean, got {value!r}")
+    return value
+
+
+def _payload_int(payload: Mapping[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RacePlanDecisionError(f"{key} must be a JSON integer, got {value!r}")
+    return value
+
+
+def _payload_number(payload: Mapping[str, Any], key: str, *, positive: bool = False) -> float:
+    number = _positive(payload.get(key)) if positive else _finite(payload.get(key))
+    if number is None:
+        raise RacePlanDecisionError(
+            f"{key} must be a finite{' positive' if positive else ''} number, "
+            f"got {payload.get(key)!r}"
+        )
+    return number
+
+
+def _payload_optional_number(payload: Mapping[str, Any], key: str) -> float | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    number = _finite(value)
+    if number is None:
+        raise RacePlanDecisionError(f"{key} must be a finite number or null, got {value!r}")
+    return number
+
+
+def _payload_scenario(payload: Mapping[str, Any]) -> CautionScenario | None:
+    """Read the caution record, refusing a malformed one instead of dropping it.
+
+    Silently discarding an unreadable scenario would present a decision as
+    complete while part of the record it travelled with was thrown away.
+    """
+    raw = payload.get("caution_scenario")
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise RacePlanDecisionError("caution_scenario must be an object or null")
+    fraction = _payload_number(raw, "observed_caution_fraction")
+    if not 0.0 < fraction <= 1.0:
+        raise RacePlanDecisionError("observed_caution_fraction must lie in (0, 1]")
+    stops = _payload_int(raw, "minimum_stops")
+    if stops < 0:
+        raise RacePlanDecisionError("caution scenario stop count must not be negative")
+    return CautionScenario(
+        observed_caution_fraction=fraction,
+        mixed_burn_l_per_lap=_payload_number(raw, "mixed_burn_l_per_lap", positive=True),
+        range_laps=_payload_number(raw, "range_laps", positive=True),
+        minimum_stops=stops,
+    )
+
+
+def _payload_targets(payload: Mapping[str, Any], *, stops: int, distance: float) -> tuple[float, ...]:
+    raw = payload.get("equal_stint_pit_targets")
+    if not isinstance(raw, (list, tuple)):
+        raise RacePlanDecisionError("equal_stint_pit_targets must be an array")
+    targets = []
+    for item in raw:
+        number = _finite(item)
+        if number is None:
+            raise RacePlanDecisionError(
+                f"equal_stint_pit_targets contains a non-numeric entry: {item!r}"
+            )
+        targets.append(number)
+    if len(targets) != stops:
+        raise RacePlanDecisionError(
+            f"a decision with {stops} stop(s) must carry {stops} pit target(s), "
+            f"got {len(targets)}"
+        )
+    previous = 0.0
+    for target in targets:
+        if not previous < target < distance:
+            raise RacePlanDecisionError(
+                "pit targets must increase strictly within the scheduled distance"
+            )
+        previous = target
+    return tuple(targets)
+
+
+def _check_count_against_range(
+    *, stints: int, distance: float, range_laps: float, re_decidable: bool
+) -> None:
+    """Refuse a transported count its own range cannot produce.
+
+    An exact range decides the count outright. A rounded one - carried only by a
+    decision adopted from a pre-decision archive - decides it only to within the
+    interval the rounding could have come from, so the count is required to lie
+    inside that interval rather than to equal a single value.
+    """
+    if re_decidable:
+        implied = stint_count(distance, range_laps)
+        if implied != stints:
+            raise RacePlanDecisionError(
+                f"transported stint count {stints} contradicts its own range: "
+                f"{range_laps} laps over {distance} laps implies {implied}"
+            )
+        return
+    half_width = LEGACY_RANGE_DISPLAY_PRECISION_LAPS / 2.0
+    low = range_laps - half_width
+    if low <= 0.0:
+        raise RacePlanDecisionError("a rounded range this small cannot support a count")
+    fewest = stint_count(distance, range_laps + half_width)
+    most = stint_count(distance, low)
+    if not fewest <= stints <= most:
+        raise RacePlanDecisionError(
+            f"transported stint count {stints} lies outside the {fewest}-{most} "
+            "range its rounded display value could have produced"
+        )
+
+
+def from_payload(payload: Mapping[str, Any]) -> RacePlanDecision:
+    """Read a transported decision, refusing anything this contract cannot vouch for.
+
+    Every refusal here is a refusal to *re-decide*. The earlier form of this
+    function validated loosely and then rebuilt the plan from the transported
+    range, which meant a payload whose stop count disagreed with its own range
+    was silently replaced by a different, self-consistent decision rather than
+    rejected. That is the same failure as the rounded-range defect wearing the
+    opposite mask: instead of a consumer inventing a count, the reader quietly
+    overrides the count the producer decided.
+
+    So: a future version is refused; a missing required key is refused; a wrong
+    type is refused; and a decision that contradicts itself - a count its own
+    range cannot produce, a margin its own numbers do not yield, no-stop
+    language beside a stop - is refused. What survives is returned exactly as
+    transported, with nothing recomputed.
     """
     if not isinstance(payload, Mapping):
         raise RacePlanDecisionError("decision payload is not an object")
-    version = payload.get("decision_version")
-    if isinstance(version, bool) or not isinstance(version, int):
-        raise RacePlanDecisionError("decision payload has no integer decision_version")
+    missing = [key for key in REQUIRED_PAYLOAD_KEYS if key not in payload]
+    if missing:
+        raise RacePlanDecisionError(f"decision payload is missing {missing}")
+    version = _payload_int(payload, "decision_version")
     if version != RACE_PLAN_DECISION_VERSION:
         raise RacePlanDecisionError(
             f"decision version {version} is not readable by version "
@@ -607,41 +797,67 @@ def from_payload(payload: Mapping[str, Any]) -> RacePlanDecision:
     status = payload.get("status")
     if status not in PLAN_STATUSES:
         raise RacePlanDecisionError(f"unknown race plan status: {status!r}")
+    limitations = payload.get("limitations")
+    if limitations is not None and not isinstance(limitations, (list, tuple)):
+        raise RacePlanDecisionError("limitations must be an array")
+    limitations = tuple(str(item) for item in (limitations or ()))
+
     if status != STATUS_USABLE:
-        return _unusable(str(status), tuple(payload.get("limitations") or ()))
-
-    scenario_payload = payload.get("caution_scenario")
-    scenario = None
-    if isinstance(scenario_payload, Mapping):
-        fraction = _finite(scenario_payload.get("observed_caution_fraction"))
-        mixed = _positive(scenario_payload.get("mixed_burn_l_per_lap"))
-        scenario_range = _positive(scenario_payload.get("range_laps"))
-        stops = scenario_payload.get("minimum_stops")
-        if (
-            fraction is not None
-            and mixed is not None
-            and scenario_range is not None
-            and isinstance(stops, int)
-            and not isinstance(stops, bool)
-        ):
-            scenario = CautionScenario(
-                observed_caution_fraction=fraction,
-                mixed_burn_l_per_lap=mixed,
-                range_laps=scenario_range,
-                minimum_stops=stops,
+        for key in _DECIDED_NUMERIC_KEYS:
+            if payload.get(key) is not None:
+                raise RacePlanDecisionError(
+                    f"a {status} decision must not carry a decided {key}"
+                )
+        if payload.get("equal_stint_pit_targets"):
+            raise RacePlanDecisionError("a decision that is not usable has no pit targets")
+        if _payload_bool(payload, "no_stop_language_permitted"):
+            raise RacePlanDecisionError(
+                "a decision that is not usable cannot permit no-stop language"
             )
+        return _unusable(str(status), limitations)
 
-    # Re-decide from the transported exact range rather than trusting the
-    # transported stop count. A payload whose count disagrees with its own
-    # range is malformed, and adopting its count would carry the disagreement
-    # forward into every surface that reads it.
-    return decide_from_range(
-        scheduled_laps=_finite(payload.get("scheduled_laps")),
-        all_green_range_laps=_finite(payload.get("all_green_range_laps")),
-        green_burn_l_per_lap=_finite(payload.get("green_burn_l_per_lap")),
-        maximum_start_fuel_l=_finite(payload.get("maximum_start_fuel_l")),
-        reserve_fuel_l=_finite(payload.get("reserve_fuel_l")),
-        usable_fuel_l=_finite(payload.get("usable_fuel_l")),
-        caution_scenario=scenario,
-        limitations=tuple(str(item) for item in (payload.get("limitations") or ())),
+    distance = _payload_number(payload, "scheduled_laps", positive=True)
+    range_laps = _payload_number(payload, "all_green_range_laps", positive=True)
+    stops = _payload_int(payload, "minimum_stops")
+    stints = _payload_int(payload, "stints")
+    re_decidable = _payload_bool(payload, "re_decidable")
+    if stops < 0:
+        raise RacePlanDecisionError("a decided stop count must not be negative")
+    if stints != stops + 1:
+        raise RacePlanDecisionError("stint count must be exactly one more than stops")
+    if _payload_bool(payload, "no_stop_language_permitted") != (stops == 0):
+        raise RacePlanDecisionError(
+            "no_stop_language_permitted must agree with the decided stop count"
+        )
+    _check_count_against_range(
+        stints=stints, distance=distance, range_laps=range_laps, re_decidable=re_decidable
+    )
+
+    margin = _payload_number(payload, "final_stint_margin_laps")
+    exact_margin = stints * range_laps - distance
+    expected_margin = exact_margin if re_decidable else max(0.0, exact_margin)
+    if not math.isclose(
+        margin, expected_margin, rel_tol=_MARGIN_RELATIVE_TOLERANCE, abs_tol=1e-9
+    ):
+        raise RacePlanDecisionError(
+            f"transported final stint margin {margin} contradicts the "
+            f"{expected_margin} its own range and distance imply"
+        )
+
+    return RacePlanDecision(
+        status=STATUS_USABLE,
+        scheduled_laps=distance,
+        green_burn_l_per_lap=_payload_optional_number(payload, "green_burn_l_per_lap"),
+        maximum_start_fuel_l=_payload_optional_number(payload, "maximum_start_fuel_l"),
+        reserve_green_laps=_payload_number(payload, "reserve_green_laps"),
+        reserve_fuel_l=_payload_optional_number(payload, "reserve_fuel_l"),
+        usable_fuel_l=_payload_optional_number(payload, "usable_fuel_l"),
+        all_green_range_laps=range_laps,
+        minimum_stops=stops,
+        stints=stints,
+        final_stint_margin_laps=margin,
+        equal_stint_pit_targets=_payload_targets(payload, stops=stops, distance=distance),
+        caution_scenario=_payload_scenario(payload),
+        limitations=limitations,
+        re_decidable=re_decidable,
     )

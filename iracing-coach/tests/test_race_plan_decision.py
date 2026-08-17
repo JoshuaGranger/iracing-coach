@@ -350,16 +350,191 @@ class PayloadTests(unittest.TestCase):
                 with self.assertRaises(rpd.RacePlanDecisionError):
                     rpd.from_payload(broken)
 
-    def test_a_payload_whose_count_contradicts_its_range_is_re_decided(self):
-        """A tampered count must not be adopted just because it was stored."""
+    def test_a_payload_whose_count_contradicts_its_range_is_refused(self):
+        """A contradictory record is rejected, not quietly re-decided.
+
+        This test previously asserted that the reader silently replaced the
+        transported count with one derived from the transported range. That is
+        an improvement on adopting the tampered count and still wrong: it
+        overrides the producer's decision on the reader's own authority and
+        returns a decision no producer ever made. A record that disagrees with
+        itself has no readable content.
+        """
         payload = rpd.decide_from_range(
             scheduled_laps=50.0, all_green_range_laps=49.96
         ).to_payload()
         payload["minimum_stops"] = 0
+        payload["stints"] = 1
+        payload["equal_stint_pit_targets"] = []
         payload["no_stop_language_permitted"] = True
-        restored = rpd.from_payload(payload)
+        with self.assertRaises(rpd.RacePlanDecisionError):
+            rpd.from_payload(payload)
+
+    def test_a_stop_count_that_its_own_range_cannot_produce_is_refused(self):
+        payload = rpd.decide_from_range(
+            scheduled_laps=200.0, all_green_range_laps=66.66
+        ).to_payload()
+        self.assertEqual(payload["minimum_stops"], 3)
+        # 200 laps on a 66.66-lap range needs four stints. Claiming three while
+        # keeping every other field internally consistent is the understated
+        # stop count from the module docstring, transported instead of derived.
+        payload["minimum_stops"] = 2
+        payload["stints"] = 3
+        payload["equal_stint_pit_targets"] = [66.0, 133.0]
+        payload["final_stint_margin_laps"] = 3 * 66.66 - 200.0
+        with self.assertRaises(rpd.RacePlanDecisionError):
+            rpd.from_payload(payload)
+
+    def test_no_stop_language_must_agree_with_the_transported_count(self):
+        payload = rpd.decide_from_range(
+            scheduled_laps=40.0, all_green_range_laps=50.0
+        ).to_payload()
+        self.assertTrue(payload["no_stop_language_permitted"])
+        payload["no_stop_language_permitted"] = False
+        with self.assertRaises(rpd.RacePlanDecisionError):
+            rpd.from_payload(payload)
+
+    def test_every_required_key_must_be_present(self):
+        payload = rpd.decide_from_range(
+            scheduled_laps=50.0, all_green_range_laps=49.96
+        ).to_payload()
+        for key in rpd.REQUIRED_PAYLOAD_KEYS:
+            with self.subTest(key=key):
+                broken = {name: value for name, value in payload.items() if name != key}
+                with self.assertRaises(rpd.RacePlanDecisionError):
+                    rpd.from_payload(broken)
+
+    def test_wrong_types_in_decided_fields_are_refused(self):
+        base = rpd.decide_from_range(
+            scheduled_laps=50.0, all_green_range_laps=49.96
+        ).to_payload()
+        for key, value in (
+            ("scheduled_laps", "50.0"),
+            ("scheduled_laps", None),
+            ("scheduled_laps", float("inf")),
+            ("all_green_range_laps", True),
+            ("all_green_range_laps", -1.0),
+            ("minimum_stops", 1.0),
+            ("minimum_stops", True),
+            ("minimum_stops", "1"),
+            ("stints", None),
+            ("re_decidable", "true"),
+            ("no_stop_language_permitted", "false"),
+            ("final_stint_margin_laps", "0.04"),
+            ("reserve_green_laps", None),
+            ("equal_stint_pit_targets", {}),
+            ("equal_stint_pit_targets", ["25.0"]),
+            ("limitations", "not a list"),
+            ("caution_scenario", 5),
+            ("green_burn_l_per_lap", "2.0"),
+        ):
+            with self.subTest(key=key, value=value):
+                broken = dict(base)
+                broken[key] = value
+                with self.assertRaises(rpd.RacePlanDecisionError):
+                    rpd.from_payload(broken)
+
+    def test_a_transported_margin_that_its_own_numbers_deny_is_refused(self):
+        payload = rpd.decide_from_range(
+            scheduled_laps=50.0, all_green_range_laps=49.96
+        ).to_payload()
+        payload["final_stint_margin_laps"] = 25.0
+        with self.assertRaises(rpd.RacePlanDecisionError):
+            rpd.from_payload(payload)
+
+    def test_pit_targets_must_be_ordered_within_the_distance(self):
+        payload = rpd.decide_from_range(
+            scheduled_laps=200.0, all_green_range_laps=66.66
+        ).to_payload()
+        self.assertEqual(len(payload["equal_stint_pit_targets"]), 3)
+        for targets in (
+            [100.0, 50.0, 150.0],
+            [0.0, 100.0, 150.0],
+            [50.0, 100.0, 200.0],
+            [50.0, 100.0],
+        ):
+            with self.subTest(targets=targets):
+                broken = dict(payload)
+                broken["equal_stint_pit_targets"] = targets
+                with self.assertRaises(rpd.RacePlanDecisionError):
+                    rpd.from_payload(broken)
+
+    def test_a_non_usable_payload_carrying_decided_numbers_is_refused(self):
+        payload = rpd.decide(
+            scheduled_laps=None, green_burn_l_per_lap=2.0, maximum_start_fuel_l=100.0
+        ).to_payload()
+        self.assertNotEqual(payload["status"], rpd.STATUS_USABLE)
+        for key, value in (
+            ("minimum_stops", 0),
+            ("all_green_range_laps", 50.0),
+            ("stints", 1),
+            ("no_stop_language_permitted", True),
+            ("equal_stint_pit_targets", [25.0]),
+        ):
+            with self.subTest(key=key):
+                broken = dict(payload)
+                broken[key] = value
+                with self.assertRaises(rpd.RacePlanDecisionError):
+                    rpd.from_payload(broken)
+
+    def test_a_malformed_caution_scenario_is_refused_rather_than_dropped(self):
+        payload = rpd.decide(
+            scheduled_laps=200.0,
+            green_burn_l_per_lap=3.0,
+            maximum_start_fuel_l=203.0,
+            caution_burn_l_per_lap=1.5,
+            observed_caution_fraction=0.2,
+        ).to_payload()
+        self.assertIsNotNone(payload["caution_scenario"])
+        for key, value in (
+            ("observed_caution_fraction", 0.0),
+            ("observed_caution_fraction", 1.5),
+            ("observed_caution_fraction", "0.2"),
+            ("mixed_burn_l_per_lap", -1.0),
+            ("range_laps", None),
+            ("minimum_stops", 1.5),
+        ):
+            with self.subTest(key=key, value=value):
+                broken = dict(payload)
+                scenario = dict(broken["caution_scenario"])
+                scenario[key] = value
+                broken["caution_scenario"] = scenario
+                with self.assertRaises(rpd.RacePlanDecisionError):
+                    rpd.from_payload(broken)
+
+    def test_a_legacy_decision_keeps_a_count_its_rounded_range_could_produce(self):
+        """The rounded-range interval, not an exact equality, bounds a legacy count."""
+        decision = rpd.from_legacy_forecast(
+            {
+                "status": rpd.STATUS_USABLE,
+                "minimum_stops_all_green": 1,
+                "all_green_range_laps": 50.0,
+                "scheduled_laps": 50.0,
+                "equal_stint_pit_targets_all_green": [25.0],
+            }
+        )
+        self.assertFalse(decision.re_decidable)
+        restored = rpd.from_payload(decision.to_payload())
         self.assertEqual(restored.minimum_stops, 1)
-        self.assertFalse(restored.no_stop_language_permitted)
+        self.assertFalse(restored.re_decidable)
+
+    def test_a_legacy_count_outside_the_rounding_interval_is_refused(self):
+        payload = rpd.from_legacy_forecast(
+            {
+                "status": rpd.STATUS_USABLE,
+                "minimum_stops_all_green": 1,
+                "all_green_range_laps": 50.0,
+                "scheduled_laps": 50.0,
+                "equal_stint_pit_targets_all_green": [25.0],
+            }
+        ).to_payload()
+        # 50 laps on a range near 50 needs one or two stints, never five.
+        payload["minimum_stops"] = 4
+        payload["stints"] = 5
+        payload["equal_stint_pit_targets"] = [10.0, 20.0, 30.0, 40.0]
+        payload["final_stint_margin_laps"] = max(0.0, 5 * 50.0 - 50.0)
+        with self.assertRaises(rpd.RacePlanDecisionError):
+            rpd.from_payload(payload)
 
     def test_every_declared_key_is_present_in_the_payload(self):
         payload = rpd.decide_from_range(

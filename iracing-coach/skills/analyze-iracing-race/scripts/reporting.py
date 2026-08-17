@@ -684,14 +684,22 @@ def _next_race_baseline(
         # and the two sentences would contradict each other in the same report.
         forecast = _mapping(strategy.get("forecast"))
         decision = None
-        payload = forecast.get("race_plan_decision")
-        if isinstance(payload, Mapping):
+        unreadable_plan = False
+        # A present authoritative record decides this sentence or silences it.
+        # Falling back to the rounded archive because the record failed to parse
+        # would let a stale projection contradict the decision it replaced.
+        if forecast.get("race_plan_decision") is not None:
             try:
-                decision = race_plan_decision.from_payload(payload)
+                decision = race_plan_decision.from_payload(forecast["race_plan_decision"])
             except race_plan_decision.RacePlanDecisionError:
-                decision = None
-        if decision is None:
+                unreadable_plan = True
+        else:
             decision = race_plan_decision.from_legacy_forecast(forecast)
+        if unreadable_plan:
+            parts.append(
+                "the stored fuel plan could not be read under this contract "
+                "version, so no stop count is stated"
+            )
         if (
             decision is not None
             and decision.usable

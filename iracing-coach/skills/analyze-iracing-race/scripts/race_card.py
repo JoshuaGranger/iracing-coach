@@ -257,23 +257,31 @@ def _plan_decision(
         # than relabelled.
         return None
 
-    payload = forecast.get("race_plan_decision")
-    if isinstance(payload, Mapping):
+    # Presence of the authoritative key decides which reader applies. Legacy
+    # inference is for an archive that predates the decision, not for a
+    # decision this reader failed to read: replacing a present record with a
+    # rounded projection is how a future producer's one-stop plan came back as
+    # "No fuel stop needed for 50 laps".
+    if forecast.get("race_plan_decision") is not None:
         try:
-            decision = race_plan_decision.from_payload(payload)
-        except race_plan_decision.RacePlanDecisionError:
-            # A decision this reader cannot read is not a licence to invent
-            # one. Fall through to the legacy reader, which either finds an
-            # exact stored count or reports that it cannot decide.
-            decision = None
-        if decision is not None:
-            if not decision.usable:
-                return decision
-            if decision.scheduled_laps is not None and math.isclose(
-                decision.scheduled_laps, distance, rel_tol=1e-12, abs_tol=1e-9
-            ):
-                return decision
-            return decision.replan(distance)
+            decision = race_plan_decision.from_payload(forecast["race_plan_decision"])
+        except race_plan_decision.RacePlanDecisionError as error:
+            return race_plan_decision.unreadable(
+                f"The stored fuel plan could not be read under this contract "
+                f"version, so no stop count is stated: {error}"
+            )
+        if not decision.usable:
+            return decision
+        if decision.scheduled_laps is not None and math.isclose(
+            decision.scheduled_laps, distance, rel_tol=1e-12, abs_tol=1e-9
+        ):
+            return decision
+        if not decision.re_decidable:
+            return race_plan_decision.unreadable(
+                "The stored fuel plan was decided at another distance from a "
+                "rounded range, so it cannot be re-decided for this one."
+            )
+        return decision.replan(distance)
     return race_plan_decision.from_legacy_forecast(forecast, scheduled_laps=distance)
 
 

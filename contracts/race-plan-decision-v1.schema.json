@@ -90,7 +90,8 @@
         "usable",
         "hybrid_finish_constraint_unresolved",
         "insufficient_fuel_or_distance_evidence",
-        "rounded_range_cannot_decide"
+        "rounded_range_cannot_decide",
+        "authoritative_decision_unreadable"
       ],
       "type": "string"
     },
