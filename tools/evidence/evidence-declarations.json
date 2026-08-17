@@ -1703,6 +1703,17 @@
                          {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_the_report_states_the_refusal_instead_of_the_legacy_count","tier":"Behavioral","technique":"fault"},
                          {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_a_readable_record_still_decides_the_report_sentence","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_a_readable_record_still_decides_the_card","tier":"Behavioral","technique":"none"},
-                         {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_a_legacy_decision_is_not_re_decided_at_another_distance","tier":"Behavioral","technique":"fault"}
+                         {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_a_legacy_decision_is_not_re_decided_at_another_distance","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_race_plan_decision.PayloadTests.test_the_measured_decision_carries_every_fuel_scalar","tier":"Behavioral","technique":"none"},
+                         {"family":"backend","id":"test_race_plan_decision.PayloadTests.test_the_reserve_is_not_a_tunable","tier":"Behavioral","technique":"mutation"},
+                         {"family":"backend","id":"test_race_plan_decision.PayloadTests.test_a_fuel_scalar_outside_its_domain_is_refused","tier":"Behavioral","technique":"mutation"},
+                         {"family":"backend","id":"test_race_plan_decision.PayloadTests.test_fuel_facts_that_contradict_each_other_are_refused","tier":"Behavioral","technique":"mutation"},
+                         {"family":"backend","id":"test_race_plan_decision.PayloadTests.test_a_decision_without_burn_evidence_skips_the_identities","tier":"Behavioral","technique":"none"},
+                         {"family":"backend","id":"test_race_plan_decision.PayloadTests.test_a_legacy_decision_does_not_adopt_the_archives_reserve","tier":"Behavioral","technique":"none"},
+                         {"family":"backend","id":"test_race_plan_decision.PayloadTests.test_a_legacy_reserve_equal_to_the_contract_adds_no_limitation","tier":"Behavioral","technique":"none"},
+                         {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_an_explicitly_null_authority_is_present_and_unreadable","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_the_card_prints_no_stop_language_for_no_null_authority","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_the_report_refuses_a_null_authority_instead_of_inferring","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_an_absent_key_still_permits_legacy_inference","tier":"Behavioral","technique":"none"}
                      ]
 }

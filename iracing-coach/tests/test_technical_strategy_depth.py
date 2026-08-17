@@ -464,6 +464,45 @@ class UnreadablePlanDecisionTests(unittest.TestCase):
         strategy = next(item for item in card["actions"] if item["label"] == "Strategy")
         self.assertIn("Plan 1 fuel stop for 50 laps", strategy["text"])
 
+    def _analysis_without_key(self):
+        analysis = self._analysis(None)
+        del analysis["strategy"]["forecast"]["race_plan_decision"]
+        return analysis
+
+    def test_an_explicitly_null_authority_is_present_and_unreadable(self):
+        """Presence is key membership, not a non-null value.
+
+        A null authority beside a rounded archive that says zero stops is the
+        same trap as an unreadable one: reading it as absent hands the stale
+        projection back to a forecast that had already superseded it, and the
+        card prints "No fuel stop needed for 50 laps" over a decided stop.
+        """
+        decision = race_card._plan_decision(self._analysis(None), planned_laps=50.0)
+        self.assertEqual(decision.status, rpd.STATUS_DECISION_UNREADABLE)
+        self.assertFalse(decision.usable)
+        self.assertFalse(decision.no_stop_language_permitted)
+        self.assertIsNone(decision.minimum_stops)
+
+    def test_the_card_prints_no_stop_language_for_no_null_authority(self):
+        card = build_race_card(self._analysis(None), race_distance_laps=50)
+        text = " ".join(item["text"] for item in card["actions"])
+        self.assertNotIn("No fuel stop needed", text)
+
+    def test_the_report_refuses_a_null_authority_instead_of_inferring(self):
+        baseline = _next_race_baseline(self._analysis(None), {})
+        self.assertIn("could not be read", baseline)
+        self.assertNotIn("without a stop", baseline)
+
+    def test_an_absent_key_still_permits_legacy_inference(self):
+        """The pre-decision capability must survive the presence rule."""
+        analysis = self._analysis_without_key()
+        self.assertNotIn("race_plan_decision", analysis["strategy"]["forecast"])
+        decision = race_card._plan_decision(analysis, planned_laps=50.0)
+        self.assertTrue(decision.usable)
+        self.assertEqual(decision.minimum_stops, 0)
+        baseline = _next_race_baseline(analysis, {})
+        self.assertNotIn("could not be read", baseline)
+
     def test_a_legacy_decision_is_not_re_decided_at_another_distance(self):
         """A rounded range cannot answer a distance it was never decided for."""
         legacy = rpd.from_legacy_forecast(

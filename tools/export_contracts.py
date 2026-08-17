@@ -307,7 +307,24 @@ def _race_plan_decision_schema() -> dict[str, Any]:
             "`minimum_stops` from it or from any rounded projection of it. "
             "`no_stop_language_permitted` is the only permission to state that a "
             "race needs no stop. When `status` is not `usable` the decided "
-            "fields are null and no plan may be stated."
+            "fields are null and no plan may be stated. "
+            "Presence of this record is decided by key membership: a reader that "
+            "finds the key, including with a null value, must never fall back to "
+            "a legacy rounded projection. "
+            "Every fuel scalar has a domain a reader must enforce: "
+            "`green_burn_l_per_lap`, `maximum_start_fuel_l`, `usable_fuel_l`, "
+            "`scheduled_laps` and `all_green_range_laps` are positive when "
+            "present, and `reserve_fuel_l` is never negative. "
+            "Three identities also hold whenever their inputs are all present, "
+            "and a record that breaks one is refused rather than normalized: "
+            "`reserve_fuel_l` equals `green_burn_l_per_lap` times "
+            "`reserve_green_laps`; `usable_fuel_l` equals `maximum_start_fuel_l` "
+            "minus `reserve_fuel_l`; and `all_green_range_laps` equals "
+            "`usable_fuel_l` divided by `green_burn_l_per_lap`. "
+            "The domains and the identities are stated here rather than encoded "
+            "because this repository's bounded validator supports no numeric or "
+            "cross-field keywords; only `reserve_green_laps` is machine-pinned, "
+            "by `const`."
         ),
         "type": "object",
         "additionalProperties": True,
@@ -343,7 +360,12 @@ def _race_plan_decision_schema() -> dict[str, Any]:
             "no_stop_language_permitted": {"type": "boolean"},
             "re_decidable": {"type": "boolean"},
             "reserve_fuel_l": number_or_null,
-            "reserve_green_laps": {"type": "number"},
+            # The operational reserve is a definitional floor, not a tunable, so
+            # the contract pins it rather than describing its type.
+            "reserve_green_laps": {
+                "const": race_plan_decision.RESERVE_GREEN_LAPS,
+                "type": "number",
+            },
             "scheduled_laps": number_or_null,
             "status": {"enum": list(race_plan_decision.PLAN_STATUSES), "type": "string"},
             "stints": {"type": ["integer", "null"]},

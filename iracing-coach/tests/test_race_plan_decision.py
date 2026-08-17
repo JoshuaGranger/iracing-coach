@@ -518,6 +518,119 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(restored.minimum_stops, 1)
         self.assertFalse(restored.re_decidable)
 
+    def _measured(self):
+        """A decision whose every fuel scalar is present and self-consistent."""
+        return rpd.decide(
+            scheduled_laps=50.0, green_burn_l_per_lap=1.0, maximum_start_fuel_l=50.96
+        ).to_payload()
+
+    def test_the_measured_decision_carries_every_fuel_scalar(self):
+        payload = self._measured()
+        self.assertEqual(payload["reserve_green_laps"], rpd.RESERVE_GREEN_LAPS)
+        self.assertAlmostEqual(payload["reserve_fuel_l"], 1.0)
+        self.assertAlmostEqual(payload["usable_fuel_l"], 49.96)
+        self.assertAlmostEqual(payload["all_green_range_laps"], 49.96)
+        self.assertEqual(payload["minimum_stops"], 1)
+        # Positive control: untampered, it reads back.
+        self.assertEqual(rpd.from_payload(payload).minimum_stops, 1)
+
+    def test_the_reserve_is_not_a_tunable(self):
+        """A lowered reserve claims a range computed by withholding less fuel."""
+        for value in (0.0, 0.5, 2.0, -1.0):
+            with self.subTest(value=value):
+                payload = self._measured()
+                payload["reserve_green_laps"] = value
+                with self.assertRaises(rpd.RacePlanDecisionError):
+                    rpd.from_payload(payload)
+
+    def test_a_fuel_scalar_outside_its_domain_is_refused(self):
+        for key, value in (
+            ("green_burn_l_per_lap", -1.0),
+            ("green_burn_l_per_lap", 0.0),
+            ("maximum_start_fuel_l", -5.0),
+            ("maximum_start_fuel_l", 0.0),
+            ("usable_fuel_l", -1.0),
+            ("usable_fuel_l", 0.0),
+            ("reserve_fuel_l", -1.0),
+        ):
+            with self.subTest(key=key, value=value):
+                payload = self._measured()
+                payload[key] = value
+                with self.assertRaises(rpd.RacePlanDecisionError):
+                    rpd.from_payload(payload)
+
+    def test_fuel_facts_that_contradict_each_other_are_refused(self):
+        """Each scalar plausible alone; the plan they jointly describe impossible."""
+        for key, value in (
+            # 999 usable litres beside a 50.96-litre tank.
+            ("usable_fuel_l", 999.0),
+            # A reserve that is not one green lap of the stated burn.
+            ("reserve_fuel_l", 7.0),
+            # A capacity that cannot yield the stated usable fuel and reserve.
+            ("maximum_start_fuel_l", 200.0),
+            # A burn under which the stated usable fuel gives a different range.
+            ("green_burn_l_per_lap", 2.0),
+        ):
+            with self.subTest(key=key, value=value):
+                payload = self._measured()
+                payload[key] = value
+                with self.assertRaises(rpd.RacePlanDecisionError):
+                    rpd.from_payload(payload)
+
+    def test_a_decision_without_burn_evidence_skips_the_identities(self):
+        """A legacy decision carries a stored count and no burn, and stays readable."""
+        payload = rpd.decide_from_range(
+            scheduled_laps=50.0, all_green_range_laps=49.96
+        ).to_payload()
+        self.assertIsNone(payload["green_burn_l_per_lap"])
+        self.assertIsNone(payload["usable_fuel_l"])
+        self.assertEqual(rpd.from_payload(payload).minimum_stops, 1)
+
+    def test_a_legacy_decision_does_not_adopt_the_archives_reserve(self):
+        """`reserve_green_laps` describes the reserve this contract withheld.
+
+        A legacy decision withholds nothing - it adopts a stored count - so
+        writing the old producer's reserve into that field would describe work
+        this contract never did, and would make the field mean one thing for a
+        decided plan and another for an adopted one. The archived value is kept
+        as a limitation instead, where it cannot be read as applied policy.
+        """
+        decision = rpd.from_legacy_forecast(
+            {
+                "status": rpd.STATUS_USABLE,
+                "minimum_stops_all_green": 1,
+                "all_green_range_laps": 50.0,
+                "scheduled_laps": 50.0,
+                "equal_stint_pit_targets_all_green": [25.0],
+                "operational_reserve_green_laps": 2.0,
+                "operational_reserve_fuel_l": 4.0,
+            }
+        )
+        self.assertEqual(decision.reserve_green_laps, rpd.RESERVE_GREEN_LAPS)
+        self.assertIsNone(decision.reserve_fuel_l)
+        self.assertTrue(
+            any("2-green-lap operational reserve" in item for item in decision.limitations),
+            decision.limitations,
+        )
+        # And it round-trips, which it could not do if it carried the 2.0.
+        self.assertEqual(rpd.from_payload(decision.to_payload()).minimum_stops, 1)
+
+    def test_a_legacy_reserve_equal_to_the_contract_adds_no_limitation(self):
+        decision = rpd.from_legacy_forecast(
+            {
+                "status": rpd.STATUS_USABLE,
+                "minimum_stops_all_green": 1,
+                "all_green_range_laps": 50.0,
+                "scheduled_laps": 50.0,
+                "equal_stint_pit_targets_all_green": [25.0],
+                "operational_reserve_green_laps": 1.0,
+            }
+        )
+        self.assertFalse(
+            any("operational reserve" in item for item in decision.limitations),
+            decision.limitations,
+        )
+
     def test_a_legacy_count_outside_the_rounding_interval_is_refused(self):
         payload = rpd.from_legacy_forecast(
             {

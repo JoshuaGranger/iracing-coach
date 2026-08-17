@@ -685,10 +685,12 @@ def _next_race_baseline(
         forecast = _mapping(strategy.get("forecast"))
         decision = None
         unreadable_plan = False
-        # A present authoritative record decides this sentence or silences it.
-        # Falling back to the rounded archive because the record failed to parse
-        # would let a stale projection contradict the decision it replaced.
-        if forecast.get("race_plan_decision") is not None:
+        # A present authoritative record decides this sentence or silences it,
+        # and presence is key membership: an explicit null is present. Falling
+        # back to the rounded archive - because the record failed to parse or
+        # because it was null - lets a stale projection contradict the decision
+        # that replaced it.
+        if "race_plan_decision" in forecast:
             try:
                 decision = race_plan_decision.from_payload(forecast["race_plan_decision"])
             except race_plan_decision.RacePlanDecisionError:

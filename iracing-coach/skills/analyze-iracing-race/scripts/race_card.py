@@ -257,12 +257,14 @@ def _plan_decision(
         # than relabelled.
         return None
 
-    # Presence of the authoritative key decides which reader applies. Legacy
-    # inference is for an archive that predates the decision, not for a
-    # decision this reader failed to read: replacing a present record with a
-    # rounded projection is how a future producer's one-stop plan came back as
-    # "No fuel stop needed for 50 laps".
-    if forecast.get("race_plan_decision") is not None:
+    # Key membership decides which reader applies - not the value's truthiness
+    # and not whether it is null. Legacy inference is for an archive that
+    # predates the decision, so the only evidence that a payload predates it is
+    # the key being absent. An explicit null is a present authority that says
+    # nothing readable, and treating it as absent handed the rounded archive
+    # back to a forecast that had already superseded it: 50 scheduled laps,
+    # "No fuel stop needed for 50 laps", one stop actually required.
+    if "race_plan_decision" in forecast:
         try:
             decision = race_plan_decision.from_payload(forecast["race_plan_decision"])
         except race_plan_decision.RacePlanDecisionError as error:

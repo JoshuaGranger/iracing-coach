@@ -472,6 +472,29 @@ def _caution_scenario(
     )
 
 
+def _legacy_reserve_limitation(forecast: Mapping[str, Any]) -> tuple[str, ...]:
+    """Record an archived reserve that differs from this contract's, as prose.
+
+    `reserve_green_laps` documents the reserve *this* contract withheld before
+    computing a range. A legacy decision computes no range - it adopts a stored
+    count - so writing the old producer's reserve into that field describes work
+    this contract never did, and leaves the field meaning one thing for a
+    decided plan and another for an adopted one. The archived value is kept
+    here instead, where it cannot be mistaken for an applied policy.
+    """
+    archived = _finite(forecast.get("operational_reserve_green_laps"))
+    if archived is None or math.isclose(
+        archived, RESERVE_GREEN_LAPS, rel_tol=1e-12, abs_tol=1e-12
+    ):
+        return ()
+    return (
+        f"The archive recorded a {archived:g}-green-lap operational reserve. "
+        "That reserve produced the stored stop count; it is not the "
+        f"{RESERVE_GREEN_LAPS:g}-lap reserve this contract applies, and no "
+        "range was recomputed from either.",
+    )
+
+
 def _legacy_decision(
     *,
     distance: float,
@@ -486,10 +509,12 @@ def _legacy_decision(
         status=STATUS_USABLE,
         scheduled_laps=distance,
         green_burn_l_per_lap=None,
-        maximum_start_fuel_l=_finite(forecast.get("maximum_recorded_run_start_fuel_l")),
-        reserve_green_laps=_finite(forecast.get("operational_reserve_green_laps"))
-        or RESERVE_GREEN_LAPS,
-        reserve_fuel_l=_finite(forecast.get("operational_reserve_fuel_l")),
+        maximum_start_fuel_l=_positive(forecast.get("maximum_recorded_run_start_fuel_l")),
+        # Both reserve fields describe a policy this path did not apply. The
+        # measured capacity above is a measurement and means the same thing
+        # under either producer, so it is carried; these are not.
+        reserve_green_laps=RESERVE_GREEN_LAPS,
+        reserve_fuel_l=None,
         usable_fuel_l=None,
         all_green_range_laps=range_laps,
         minimum_stops=stops,
@@ -500,7 +525,7 @@ def _legacy_decision(
         final_stint_margin_laps=max(0.0, stints * range_laps - distance),
         equal_stint_pit_targets=targets,
         caution_scenario=None,
-        limitations=(limitation,),
+        limitations=(limitation, *_legacy_reserve_limitation(forecast)),
         re_decidable=False,
     )
 
@@ -673,6 +698,26 @@ def _payload_number(payload: Mapping[str, Any], key: str, *, positive: bool = Fa
     return number
 
 
+#: Domain of every optional fuel scalar a decision may transport. A quantity
+#: outside its domain is not a smaller or larger fuel fact - it is not a fuel
+#: fact at all, and normalizing it would publish a plan whose stated inputs
+#: never existed.
+_FUEL_SCALAR_DOMAINS: tuple[tuple[str, bool], ...] = (
+    # (key, must be strictly positive). A reserve of zero litres is
+    # representable only because a legacy decision may carry no reserve at all;
+    # a negative one never is.
+    ("green_burn_l_per_lap", True),
+    ("maximum_start_fuel_l", True),
+    ("usable_fuel_l", True),
+    ("reserve_fuel_l", False),
+)
+
+#: Tolerance for the transported fuel identities. The quantities are IEEE
+#: doubles that round-trip exactly through JSON, so the only slack needed is for
+#: the last bit of a division; anything looser would admit a tampered value.
+_FUEL_IDENTITY_RELATIVE_TOLERANCE = 1e-9
+
+
 def _payload_optional_number(payload: Mapping[str, Any], key: str) -> float | None:
     value = payload.get(key)
     if value is None:
@@ -681,6 +726,69 @@ def _payload_optional_number(payload: Mapping[str, Any], key: str) -> float | No
     if number is None:
         raise RacePlanDecisionError(f"{key} must be a finite number or null, got {value!r}")
     return number
+
+
+def _payload_fuel_scalars(payload: Mapping[str, Any]) -> dict[str, float | None]:
+    """Read the optional fuel scalars, refusing any that is outside its domain."""
+    scalars: dict[str, float | None] = {}
+    for key, strictly_positive in _FUEL_SCALAR_DOMAINS:
+        number = _payload_optional_number(payload, key)
+        if number is not None:
+            if strictly_positive and number <= 0.0:
+                raise RacePlanDecisionError(f"{key} must be positive, got {number}")
+            if not strictly_positive and number < 0.0:
+                raise RacePlanDecisionError(f"{key} must not be negative, got {number}")
+        scalars[key] = number
+    return scalars
+
+
+def _agree(left: float, right: float) -> bool:
+    return math.isclose(
+        left, right, rel_tol=_FUEL_IDENTITY_RELATIVE_TOLERANCE, abs_tol=1e-12
+    )
+
+
+def _check_fuel_identities(
+    *, scalars: Mapping[str, float | None], reserve_green_laps: float, range_laps: float
+) -> None:
+    """Require the transported fuel facts to be consistent with each other.
+
+    Each of these is how the producer computed the value in the first place, so
+    a payload that fails one of them is not a decision with an unusual number in
+    it - it is a decision whose range cannot have come from its own burn and
+    capacity. Checking only the domains would still admit `usable_fuel_l=999`
+    beside a 49.96-lap range at one litre per lap: every field individually
+    plausible, the plan they describe impossible.
+
+    Only identities whose inputs are all present are checked. A legacy decision
+    carries a stored count and no burn, and it must stay readable.
+    """
+    burn = scalars["green_burn_l_per_lap"]
+    capacity = scalars["maximum_start_fuel_l"]
+    usable = scalars["usable_fuel_l"]
+    reserve = scalars["reserve_fuel_l"]
+
+    if burn is not None and reserve is not None:
+        expected = burn * reserve_green_laps
+        if not _agree(reserve, expected):
+            raise RacePlanDecisionError(
+                f"reserve fuel {reserve} contradicts {reserve_green_laps} reserve "
+                f"lap(s) at {burn} l/lap, which is {expected}"
+            )
+    if capacity is not None and reserve is not None and usable is not None:
+        expected = capacity - reserve
+        if not _agree(usable, expected):
+            raise RacePlanDecisionError(
+                f"usable fuel {usable} contradicts a {capacity} capacity less a "
+                f"{reserve} reserve, which is {expected}"
+            )
+    if burn is not None and usable is not None:
+        expected = usable / burn
+        if not _agree(range_laps, expected):
+            raise RacePlanDecisionError(
+                f"range {range_laps} contradicts {usable} usable litres at "
+                f"{burn} l/lap, which is {expected}"
+            )
 
 
 def _payload_scenario(payload: Mapping[str, Any]) -> CautionScenario | None:
@@ -844,14 +952,28 @@ def from_payload(payload: Mapping[str, Any]) -> RacePlanDecision:
             f"{expected_margin} its own range and distance imply"
         )
 
+    reserve_green_laps = _payload_number(payload, "reserve_green_laps")
+    if not _agree(reserve_green_laps, RESERVE_GREEN_LAPS):
+        # The reserve is a definitional floor, not a tunable. A payload that
+        # lowers it is claiming a range that was computed by withholding less
+        # fuel than the contract withholds, and zero would claim the whole tank.
+        raise RacePlanDecisionError(
+            f"the operational reserve is exactly {RESERVE_GREEN_LAPS} green lap(s); "
+            f"this decision claims {reserve_green_laps}"
+        )
+    scalars = _payload_fuel_scalars(payload)
+    _check_fuel_identities(
+        scalars=scalars, reserve_green_laps=reserve_green_laps, range_laps=range_laps
+    )
+
     return RacePlanDecision(
         status=STATUS_USABLE,
         scheduled_laps=distance,
-        green_burn_l_per_lap=_payload_optional_number(payload, "green_burn_l_per_lap"),
-        maximum_start_fuel_l=_payload_optional_number(payload, "maximum_start_fuel_l"),
-        reserve_green_laps=_payload_number(payload, "reserve_green_laps"),
-        reserve_fuel_l=_payload_optional_number(payload, "reserve_fuel_l"),
-        usable_fuel_l=_payload_optional_number(payload, "usable_fuel_l"),
+        green_burn_l_per_lap=scalars["green_burn_l_per_lap"],
+        maximum_start_fuel_l=scalars["maximum_start_fuel_l"],
+        reserve_green_laps=reserve_green_laps,
+        reserve_fuel_l=scalars["reserve_fuel_l"],
+        usable_fuel_l=scalars["usable_fuel_l"],
         all_green_range_laps=range_laps,
         minimum_stops=stops,
         stints=stints,
