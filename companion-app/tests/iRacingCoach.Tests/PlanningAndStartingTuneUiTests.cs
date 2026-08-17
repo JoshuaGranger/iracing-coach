@@ -67,8 +67,11 @@ public sealed class PlanningAndStartingTuneUiTests
         StringAssert.Contains(page, "OpeningPlanExplanation");
         StringAssert.Contains(page, "@plan.DistanceLabel");
         Assert.DoesNotContain("@plan.ScheduledLaps laps", page);
-        StringAssert.Contains(page, "private static int? CalculatedStops");
-        StringAssert.Contains(page, "null => \"Finish unresolved\"");
+        StringAssert.Contains(page, "private static int? AuthoritativeStops");
+        StringAssert.Contains(page, "plan.FuelPlan is { IsUsable: true }");
+        Assert.DoesNotContain("Regex.Match(plan.FuelRange", page);
+        Assert.DoesNotContain("Math.Ceiling(plan.ScheduledLaps", page);
+        StringAssert.Contains(page, "Decision unavailable");
         StringAssert.Contains(page, "null => \"Resolve race distance first\"");
         StringAssert.Contains(page, "Planning assumptions");
         Assert.DoesNotContain(">Start over</button>", page);

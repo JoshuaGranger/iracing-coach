@@ -82,7 +82,7 @@
                                 @if (plan.GreenFuelGallonsPerLap.HasValue) { <div><span>Green fuel use</span><strong>@plan.GreenFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                                 @if (plan.CautionFuelGallonsPerLap.HasValue) { <div><span>Caution fuel use</span><strong>@plan.CautionFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                             </div>
-                            @if (plan.PitTargets.Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>@(plan.DistanceIsEstimated ? "Estimated equal-stint windows" : "Equal-stint windows")</span><strong>@string.Join(" · ", plan.PitTargets.Select(lap => $"Lap {lap}"))</strong></div> }
+                            @if (PlanPitTargets(plan).Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>Backend equal-stint windows</span><strong>@string.Join(" · ", PlanPitTargets(plan).Select(lap => $"Lap {lap:0.#}"))</strong></div> }
                             @if (plan.Assumptions.Count > 0) { <details class="planning-assumptions"><summary>Planning assumptions</summary><ul>@foreach (var assumption in plan.Assumptions) { <li>@assumption</li> }</ul></details> }
                             @if (plan.Priorities.Any(UsefulPriority) || UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => UsefulTrigger(plan, item)))
                             {
@@ -222,39 +222,30 @@
         double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var radians)
             ? $"{radians * 180d / Math.PI:0.0}° median steering"
             : match.Value);
-    private static double? ConservativeRange(RacePlanBriefing plan)
+    private static double? ConservativeRange(RacePlanBriefing plan) => plan.FuelPlan?.AllGreenRangeLaps;
+    private static int? AuthoritativeStops(RacePlanBriefing plan) =>
+        plan.FuelPlan is { IsUsable: true } decision ? decision.MinimumStops : null;
+    private static bool NoStopAuthorized(RacePlanBriefing plan) =>
+        plan.FuelPlan is { IsUsable: true, MinimumStops: 0, NoStopLanguagePermitted: true };
+    private static IReadOnlyList<double> PlanPitTargets(RacePlanBriefing plan) =>
+        plan.FuelPlan is { IsUsable: true } decision ? decision.EqualStintPitTargets : [];
+    private static string OpeningPlan(RacePlanBriefing plan)
     {
-        var match = System.Text.RegularExpressions.Regex.Match(plan.FuelRange, @"\d+(?:\.\d+)?");
-        return match.Success && double.TryParse(match.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
-            ? value
-            : null;
+        if (NoStopAuthorized(plan)) return $"Start with a no-stop plan for {plan.DistanceLabel}";
+        return AuthoritativeStops(plan) is > 0 and var stops
+            ? $"Start with a {stops}-stop all-green plan"
+            : "Resolve an authoritative fuel decision before choosing a stop plan";
     }
-    private static int? CalculatedStops(RacePlanBriefing plan)
-    {
-        if (plan.ScheduledLaps <= 0) return null;
-        var range = ConservativeRange(plan);
-        if (range is > 0) return Math.Max(0, (int)Math.Ceiling(plan.ScheduledLaps / range.Value) - 1);
-        return plan.PitTargets.Count > 0 ? plan.PitTargets.Count : null;
-    }
-    private static string OpeningPlan(RacePlanBriefing plan) => CalculatedStops(plan) switch
-    {
-        null => "Resolve the finish constraint before choosing a stop plan",
-        0 when plan.DistanceIsEstimated => $"Start with an estimated no-stop plan for {plan.DistanceLabel}",
-        0 => $"Start with a no-stop plan for {plan.DistanceLabel}",
-        { } stops when plan.DistanceIsEstimated => $"Start with an estimated {stops}-stop plan for {plan.DistanceLabel}",
-        { } stops => $"Start with a {stops}-stop all-green plan"
-    };
     private static string OpeningPlanExplanation(RacePlanBriefing plan)
     {
-        var range = ConservativeRange(plan);
-        if (plan.ScheduledLaps <= 0) return range is > 0
-            ? "The measured range is available, but the governing finish constraint is unresolved."
-            : "Use the recorded fuel burn as the baseline and resolve the governing finish constraint.";
-        if (range is null) return "Use the recorded fuel burn as the baseline and update the call if live consumption moves outside it.";
-        if (range >= plan.ScheduledLaps) return $"The conservative recorded range clears this race by {range.Value - plan.ScheduledLaps:0.0} laps. There is no useful fuel pit window unless conditions change.";
-        return plan.PitTargets.Count > 0
-            ? $"The measured range cannot cover the full distance. The first balanced window opens around lap {plan.PitTargets[0]}."
-            : "The measured range cannot cover the full distance; use live burn to establish the safest stop window.";
+        if (plan.FuelPlan is not { IsUsable: true } decision) return plan.FuelPlan?.UnavailableReason
+            ?? "Use the recorded fuel burn as the baseline and resolve the governing finish constraint.";
+        if (NoStopAuthorized(plan)) return decision.FinalStintMarginLaps is { } margin
+            ? $"The backend decision carries a {margin:0.0}-lap final-stint margin. There is no planned fuel stop unless live evidence changes."
+            : "The backend decision authorizes no-stop language, with no displayed margin available.";
+        return decision.EqualStintPitTargets.Count > 0
+            ? $"The backend decision requires {decision.MinimumStops} stop{(decision.MinimumStops == 1 ? string.Empty : "s")}; the first balanced window is lap {decision.EqualStintPitTargets[0]:0.#}."
+            : "The backend decision requires a stop, but no equal-stint target is available.";
     }
     private static string ConservativeRangeLabel(RacePlanBriefing plan) => ConservativeRange(plan) is { } range ? $"{range:0.0} laps" : "Not available";
     private static string DistanceMarker(RacePlanBriefing plan)
@@ -264,37 +255,38 @@
         var percent = scale <= 0 ? 0 : Math.Clamp(plan.ScheduledLaps / scale * 100, 0, 100);
         return percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
     }
-    private static string FuelDecision(RacePlanBriefing plan) => CalculatedStops(plan) switch
+    private static string FuelDecision(RacePlanBriefing plan)
     {
-        null => "Finish unresolved",
-        0 => "Stay out",
-        1 => "1 stop",
-        { } stops => $"{stops} stops"
-    };
+        if (NoStopAuthorized(plan)) return "Stay out";
+        return AuthoritativeStops(plan) switch
+        {
+            1 => "1 stop",
+            > 1 and var stops => $"{stops} stops",
+            _ => "Decision unavailable"
+        };
+    }
     private static string FuelMargin(RacePlanBriefing plan)
     {
-        var range = ConservativeRange(plan);
-        if (plan.ScheduledLaps <= 0) return range is > 0 ? "Finish constraint unresolved" : "Range needs another clean sample";
-        if (range is null) return "Range needs another clean sample";
-        var margin = range.Value - plan.ScheduledLaps;
-        var prefix = plan.DistanceIsEstimated ? "Projected " : string.Empty;
-        return margin >= 0 ? $"{prefix}+{margin:0.0} laps beyond the finish" : $"{prefix}{-margin:0.0} laps beyond one tank";
+        if (plan.FuelPlan is not { IsUsable: true } decision) return "Authoritative margin unavailable";
+        return decision.FinalStintMarginLaps is { } margin
+            ? $"+{margin:0.0} laps after the final stint"
+            : "Authoritative margin unavailable";
     }
-    private static string PlannedStops(RacePlanBriefing plan) => CalculatedStops(plan)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—";
-    private static string PitWindowSummary(RacePlanBriefing plan) => CalculatedStops(plan) switch
+    private static string PlannedStops(RacePlanBriefing plan) => AuthoritativeStops(plan)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—";
+    private static string PitWindowSummary(RacePlanBriefing plan) => AuthoritativeStops(plan) switch
     {
         null => "Resolve race distance first",
-        0 => "No scheduled fuel stop",
-        _ when plan.PitTargets.Count > 0 => $"{(plan.DistanceIsEstimated ? "Estimated: " : string.Empty)}{string.Join(" · ", plan.PitTargets.Select(lap => $"lap {lap}"))}",
+        0 when NoStopAuthorized(plan) => "No scheduled fuel stop",
+        _ when PlanPitTargets(plan).Count > 0 => string.Join(" · ", PlanPitTargets(plan).Select(lap => $"lap {lap:0.#}")),
         _ => "Window needs live fuel use"
     };
     private static bool UsefulTrigger(RacePlanBriefing plan, RaceTrigger trigger) => CapabilityRegistry.IsSupported(trigger.Claim)
         && !trigger.Label.Contains("adjust", StringComparison.OrdinalIgnoreCase)
         && !trigger.Label.Contains("rollback", StringComparison.OrdinalIgnoreCase)
-        && !(CalculatedStops(plan) is 0 && trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase));
+        && !(NoStopAuthorized(plan) && trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase));
     private static string FriendlyTrigger(RacePlanBriefing plan, RaceTrigger trigger)
     {
-        if (trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase) && CalculatedStops(plan) is 0)
+        if (trigger.Label.Contains("pit", StringComparison.OrdinalIgnoreCase) && NoStopAuthorized(plan))
             return "No planned stop. Reconsider only if live fuel use removes the finish margin.";
         return trigger.Claim.Text;
     }

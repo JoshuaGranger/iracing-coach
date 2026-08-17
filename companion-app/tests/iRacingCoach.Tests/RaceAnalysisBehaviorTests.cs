@@ -409,8 +409,11 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(technical, "Workspace.DeclaredLapLimit");
         StringAssert.Contains(technical, "Workspace.DeclaredTimeLimitMinutes");
         StringAssert.Contains(technical, "minutes configured");
-        StringAssert.Contains(technical, "{ } when Workspace.ScheduledLaps > 0 => \"Stop required\"");
-        StringAssert.Contains(technical, "{ } => \"Consumption available\"");
+        StringAssert.Contains(technical, "AuthoritativeFuelStops is > 0");
+        StringAssert.Contains(technical, "NoStopAuthorized");
+        StringAssert.Contains(technical, "FuelPlan?.AllGreenRangeLaps.HasValue == true");
+        Assert.DoesNotContain("range >= Workspace.ScheduledLaps", technical);
+        Assert.DoesNotContain("Workspace.ScheduledLaps - range", technical);
         StringAssert.Contains(technical, "Workspace.TirePrediction");
         StringAssert.Contains(technical, "Workspace.Garage61References");
         StringAssert.Contains(technical, "Comparable reference laps");

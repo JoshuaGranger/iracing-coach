@@ -294,7 +294,7 @@
                                 <article><span>Green-lap use</span><strong>@FuelPerGreenLap</strong></article>
                                 <article><span>Caution-lap use</span><strong>@Gallons(Workspace.Strategy.CautionFuelGallonsPerLap)</strong></article>
                                 <article><span>All-green range</span><strong>@FuelRange</strong></article>
-                                <article><span>Minimum stops</span><strong>@(Workspace.Strategy.MinimumStopsAllGreen?.ToString() ?? "—")</strong></article>
+                                <article><span>Minimum stops</span><strong>@(AuthoritativeFuelStops?.ToString() ?? "—")</strong></article>
                             </div>
                             <div class="technical-bar-list" aria-label="Fuel consumed by run">
                                 @foreach (var run in FuelRuns)
@@ -437,8 +437,14 @@
     private int TireChangeCount => PitRuns.Sum(run => run.PitStop?.TiresChanged?.Count ?? 0);
     private string FuelSummary => Workspace.Strategy.GreenFuelGallonsPerLap.HasValue ? "Fuel baseline available" : FuelRuns.Count > 0 ? "Consumption by run" : "Fuel use unavailable";
     private string FuelPerGreenLap => Gallons(Workspace.Strategy.GreenFuelGallonsPerLap);
-    private string FuelRange => Laps(Workspace.Strategy.AllGreenRangeLaps);
-    private string FuelReserve => Gallons(Workspace.Strategy.ReserveFuelGallons);
+    private RacePlanDecisionView? FuelPlan => Workspace.Strategy.FuelPlan;
+    private bool FuelPlanUsable => FuelPlan is { IsUsable: true };
+    private bool NoStopAuthorized => FuelPlan is { IsUsable: true, MinimumStops: 0, NoStopLanguagePermitted: true };
+    private int? AuthoritativeFuelStops => FuelPlanUsable ? FuelPlan?.MinimumStops : null;
+    private string FuelRange => Laps(FuelPlan?.AllGreenRangeLaps);
+    private string FuelReserve => FuelPlan?.ReserveFuelLiters is { } reserveLiters
+        ? Gallons(reserveLiters / 3.785411784)
+        : "—";
     private int DisplayLapLimit => Workspace.DeclaredLapLimit > 0 ? Workspace.DeclaredLapLimit : Workspace.ScheduledLaps;
     private double DisplayTimeLimitMinutes => Workspace.DeclaredTimeLimitMinutes > 0 ? Workspace.DeclaredTimeLimitMinutes : Workspace.ScheduledMinutes;
     private string ScheduledDistance => (DisplayLapLimit, DisplayTimeLimitMinutes) switch
@@ -448,27 +454,27 @@
         (_, > 0) => $"{DisplayTimeLimitMinutes:0.#} minutes",
         _ => "Distance unavailable"
     };
-    private string NoStopHeadline => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps
+    private string NoStopHeadline => NoStopAuthorized
         ? "The race fit inside the fuel window"
         : "No service decision was exercised";
-    private string NoStopExplanation => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps
-        ? $"The estimated all-green range covered the scheduled distance by {range - Workspace.ScheduledLaps:0.0} laps, so a fuel stop was not required. Tire-call performance cannot be compared because no service was recorded."
+    private string NoStopExplanation => NoStopAuthorized
+        ? $"The backend decision carried a {FuelPlan!.FinalStintMarginLaps:0.0}-lap final-stint margin and permitted no-stop language. Tire-call performance cannot be compared because no service was recorded."
         : "No pit service was recorded, so there is no measured two-tire, four-tire, fuel-only, or pit-cycle outcome to compare for this race.";
-    private string FuelDecisionHeadline => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0
-        ? range >= Workspace.ScheduledLaps
-            ? $"Stay out: estimated range clears the race by {range - Workspace.ScheduledLaps:0.0} laps"
-            : $"Plan at least {Workspace.Strategy.MinimumStopsAllGreen ?? 1} fuel stop{((Workspace.Strategy.MinimumStopsAllGreen ?? 1) == 1 ? string.Empty : "s")}"
-        : "Use the race burn as the next planning baseline";
-    private string FuelDecisionExplanation => Workspace.Strategy.AllGreenRangeLaps is { } range && Workspace.ScheduledLaps > 0
-        ? range >= Workspace.ScheduledLaps
-            ? $"For this {Workspace.ScheduledLaps}-lap distance, the useful result is the positive finish margin—not the raw {range:0.0}-lap tank range. Protect that margin under green and reassess only if consumption rises."
-            : $"The scheduled distance exceeds one all-green fuel window by {Workspace.ScheduledLaps - range:0.0} laps. Use caution consumption and the recorded run bars below to choose the safest stop window."
-        : "The race supplied a consumption baseline, but the scheduled distance or complete range calculation is unavailable.";
+    private string FuelDecisionHeadline => NoStopAuthorized
+        ? $"Stay out: backend margin {FuelPlan!.FinalStintMarginLaps:0.0} laps"
+        : AuthoritativeFuelStops is > 0 and var stops
+            ? $"Plan at least {stops} fuel stop{(stops == 1 ? string.Empty : "s")}"
+            : "Use the race burn as the next planning baseline";
+    private string FuelDecisionExplanation => NoStopAuthorized
+        ? $"For this backend-owned decision, protect the transported {FuelPlan!.FinalStintMarginLaps:0.0}-lap final-stint margin and reassess only if live consumption rises."
+        : AuthoritativeFuelStops is > 0
+            ? $"The backend decision requires {AuthoritativeFuelStops} stop{(AuthoritativeFuelStops == 1 ? string.Empty : "s")}. Use its equal-stint targets and the recorded run bars below; do not re-decide from the displayed range."
+            : FuelPlan?.UnavailableReason ?? "The race supplied a consumption baseline, but the authoritative fuel decision is unavailable.";
     private string FuelDistancePercent
     {
         get
         {
-            var range = Workspace.Strategy.AllGreenRangeLaps ?? 0;
+            var range = FuelPlan?.AllGreenRangeLaps ?? 0;
             var scheduled = Math.Max(Workspace.ScheduledLaps, 0);
             var scale = Math.Max(range, scheduled);
             var percent = scale <= 0 ? 0 : Math.Clamp(scheduled / scale * 100, 0, 100);
@@ -483,7 +489,7 @@
     private string IncidentSummary => (Workspace.Damage.Incidents ?? []).Count == 0 ? "None" : $"x{IncidentPoints}";
     private string InvestigationTitle => ActiveInvestigation switch { "pit" => "Pit strategy", "tires" => "Tire condition", "fuel" => "Fuel use", _ => "Racecraft & pace" };
     private string InvestigationSummary => ActiveInvestigation switch { "pit" => PitSummary, "tires" => TireSummary, "fuel" => FuelSummary, _ => PaceSummary };
-    private string PitState => InsightRating(PitInsight) ?? (Workspace.Strategy.MinimumStopsAllGreen switch
+    private string PitState => InsightRating(PitInsight) ?? (AuthoritativeFuelStops switch
     {
         { } minimum when Workspace.PitStops <= minimum => "On all-green target",
         { } minimum when Workspace.PitStops == minimum + 1 => "One extra stop",
@@ -491,7 +497,7 @@
         _ => PitRuns.Count > 0 ? "Available" : "Unavailable"
     });
     private string PitStateClass => InsightStateClass(PitInsight) ?? (PitState switch { "On all-green target" => "positive", "Available" => "neutral", "Unavailable" => "unavailable", _ => "attention" });
-    private string PitTakeaway => InsightTakeaway(PitInsight) ?? (Workspace.Strategy.MinimumStopsAllGreen is { } minimum
+    private string PitTakeaway => InsightTakeaway(PitInsight) ?? (AuthoritativeFuelStops is { } minimum
         ? Workspace.PitStops <= minimum
             ? $"{Workspace.PitStops} stop{(Workspace.PitStops == 1 ? string.Empty : "s")}; the all-green target was {minimum}."
             : $"Review the {Workspace.PitStops - minimum} stop difference from the all-green target."
@@ -501,9 +507,15 @@
     private string TireTakeaway => InsightTakeaway(TireInsight) ?? (LowestRemainingTireRun is { } run
         ? $"{run.TireName} was lowest at {run.TireRemainingPercent:0.0}% remaining."
         : TireStops.Count > 0 ? "Use the stop snapshots to compare inner, middle, and outer condition." : "No tire-condition outcome can be evaluated.");
-    private string FuelState => InsightRating(FuelInsight) ?? (Workspace.Strategy.AllGreenRangeLaps switch { { } range when Workspace.ScheduledLaps > 0 && range >= Workspace.ScheduledLaps => "Full-race range", { } when Workspace.ScheduledLaps > 0 => "Stop required", { } => "Consumption available", _ => FuelRuns.Count > 0 ? "Consumption available" : "Unavailable" });
+    private string FuelState => InsightRating(FuelInsight) ?? (NoStopAuthorized
+        ? "Full-race range"
+        : AuthoritativeFuelStops is > 0
+            ? "Stop required"
+            : FuelPlan?.AllGreenRangeLaps.HasValue == true
+                ? "Consumption available"
+                : FuelRuns.Count > 0 ? "Consumption available" : "Unavailable");
     private string FuelStateClass => InsightStateClass(FuelInsight) ?? (FuelState switch { "Full-race range" => "positive", "Stop required" => "attention", "Consumption available" => "neutral", _ => "unavailable" });
-    private string FuelTakeaway => InsightTakeaway(FuelInsight) ?? (Workspace.Strategy.MinimumStopsAllGreen is { } minimum
+    private string FuelTakeaway => InsightTakeaway(FuelInsight) ?? (AuthoritativeFuelStops is { } minimum
         ? $"All-green target: {minimum} stop{(minimum == 1 ? string.Empty : "s")} plus {FuelReserve} reserve."
         : FuelRuns.Count > 0 ? $"Run {FuelRuns.MaxBy(run => run.FuelUsedGallons)?.Number} used the most fuel." : "No fuel outcome can be evaluated.");
     private string PaceState => InsightRating(RacecraftInsight) ?? (RepresentativePaceRun?.PaceSlopeSecondsPerLap switch { > .02 => "Falling off", < -.01 => "Improving", not null => "Stable", _ => ComparableRuns.Count > 0 ? "Comparable" : "Unavailable" });

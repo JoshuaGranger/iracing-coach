@@ -26,14 +26,14 @@ public sealed class RacePlanningRecommendationTests
             priorities["Start"]);
         StringAssert.Contains(priorities["Long run"], "As the run ages");
         StringAssert.Contains(priorities["Strategy"], "55 laps");
-        StringAssert.Contains(priorities["Strategy"], "37.8-lap conservative finish margin");
-        StringAssert.Contains(triggers["Fuel margin"], "55-lap finish");
+        StringAssert.Contains(priorities["Strategy"], "37.8-lap finish margin");
+        StringAssert.Contains(triggers["Fuel margin"], "37.8-lap finish margin");
         StringAssert.Contains(triggers["Balance response"], "undo it if pace or stability worsens");
         Assert.IsFalse(plan.Priorities.Any(item => item.Claim.Text.Contains("positive value is", StringComparison.OrdinalIgnoreCase)));
     }
 
     [TestMethod]
-    public void ShortPortlandPlan_RewritesRecordedCardForRequestedDistance()
+    public void ShortPortlandPlan_WithholdsFuelAdviceForARequestedDistanceTheBackendDidNotDecide()
     {
         using var response = JsonDocument.Parse(Response(
             track: "Portland International Raceway",
@@ -48,10 +48,11 @@ public sealed class RacePlanningRecommendationTests
         Assert.AreEqual(15, plan.ScheduledLaps);
         Assert.IsTrue(priorities.ContainsKey("Race pace"));
         StringAssert.Contains(priorities["Race pace"], "For all 15 laps");
-        StringAssert.Contains(priorities["Strategy"], "No fuel stop for 15 laps");
-        StringAssert.Contains(priorities["Strategy"], "19.7-lap conservative finish margin");
+        StringAssert.Contains(priorities["Strategy"], "differs from the backend-owned decision");
+        Assert.IsFalse(plan.FuelPlan!.IsUsable);
+        Assert.IsFalse(plan.FuelPlan.NoStopLanguagePermitted && plan.FuelPlan.AppliesToRequestedDistance);
         Assert.IsTrue(plan.Triggers.Any(item =>
-            item.Label == "Fuel margin" && item.Claim.Text.Contains("15-lap finish", StringComparison.Ordinal)));
+            item.Label == "Fuel check" && item.Claim.Kind == EvidenceKind.Unavailable));
         Assert.IsFalse(plan.Priorities.Any(item => item.Claim.Text.Contains("100 laps", StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -127,7 +128,7 @@ public sealed class RacePlanningRecommendationTests
         Assert.IsTrue(plan.Assumptions.Any(item => item.Contains("75.0-second", StringComparison.Ordinal) && item.Contains("can vary", StringComparison.Ordinal)));
         Assert.DoesNotContain("all 25 laps", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("25-lap finish", text, StringComparison.OrdinalIgnoreCase);
-        StringAssert.Contains(plan.StopCount, "Estimated");
+        StringAssert.Contains(plan.StopCount, "needs a recorded fuel range");
     }
 
     [TestMethod]
@@ -185,7 +186,13 @@ public sealed class RacePlanningRecommendationTests
         Assert.IsEmpty(plan.PitTargets);
     }
 
-    private static string Response(string track, int scheduledLaps, double rangeLaps, string paceLabel, string paceText) => $$"""
+    private static string Response(string track, int scheduledLaps, double rangeLaps, string paceLabel, string paceText)
+    {
+        var stops = scheduledLaps == 55 ? 0 : 2;
+        var stints = stops + 1;
+        var margin = stints * rangeLaps - scheduledLaps;
+        var targets = stops == 0 ? "[]" : "[33.333333333333336,66.66666666666667]";
+        return $$"""
     {
       "analysis_view": {
         "identity": {
@@ -202,9 +209,31 @@ public sealed class RacePlanningRecommendationTests
           "measured_green_fuel_gal_per_lap": 0.196,
           "forecast": {
             "status": "usable",
+            "scheduled_laps": {{scheduledLaps}},
             "all_green_range_laps": {{rangeLaps.ToString(System.Globalization.CultureInfo.InvariantCulture)}},
-            "minimum_stops_all_green": 2,
-            "equal_stint_pit_targets_all_green": [33, 67],
+            "minimum_stops_all_green": {{stops}},
+            "equal_stint_pit_targets_all_green": {{targets}},
+            "race_plan_decision": {
+              "decision_version": 1,
+              "status": "usable",
+              "scheduled_laps": {{scheduledLaps}},
+              "green_burn_l_per_lap": null,
+              "maximum_start_fuel_l": null,
+              "reserve_green_laps": 1.0,
+              "reserve_fuel_l": null,
+              "usable_fuel_l": null,
+              "all_green_range_laps": {{rangeLaps.ToString(System.Globalization.CultureInfo.InvariantCulture)}},
+              "minimum_stops": {{stops}},
+              "stints": {{stints}},
+              "final_stint_margin_laps": {{margin.ToString(System.Globalization.CultureInfo.InvariantCulture)}},
+              "equal_stint_pit_targets": {{targets}},
+              "caution_scenario": null,
+              "no_stop_language_permitted": {{(stops == 0 ? "true" : "false")}},
+              "re_decidable": true,
+              "classification": "fuel-feasibility decision",
+              "assumptions": [],
+              "limitations": []
+            },
             "assumptions": []
           }
         }
@@ -248,4 +277,5 @@ public sealed class RacePlanningRecommendationTests
       }
     }
     """;
+    }
 }

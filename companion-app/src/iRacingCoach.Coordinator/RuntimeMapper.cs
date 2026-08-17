@@ -9,6 +9,23 @@ public static class RuntimeMapper
 {
     private const string Garage61TargetDerivationVersion = "explicit-analysis-paths-v1";
     private const string CurrentAnalysisProfileVersion = "post-race-foundations-v13";
+    private const double RacePlanRelativeTolerance = 1e-9;
+    private static readonly HashSet<string> RacePlanStatuses = new(StringComparer.Ordinal)
+    {
+        "usable",
+        "hybrid_finish_constraint_unresolved",
+        "insufficient_fuel_or_distance_evidence",
+        "rounded_range_cannot_decide",
+        "authoritative_decision_unreadable"
+    };
+    private static readonly HashSet<string> RacePlanKnownProperties = new(StringComparer.Ordinal)
+    {
+        "all_green_range_laps", "assumptions", "caution_scenario", "classification",
+        "decision_version", "equal_stint_pit_targets", "final_stint_margin_laps",
+        "green_burn_l_per_lap", "limitations", "maximum_start_fuel_l", "minimum_stops",
+        "no_stop_language_permitted", "re_decidable", "reserve_fuel_l", "reserve_green_laps",
+        "scheduled_laps", "status", "stints", "usable_fuel_l"
+    };
 
     public static RecentRace ArchivedRace(JsonElement report, string analysisPath)
     {
@@ -496,16 +513,21 @@ public static class RuntimeMapper
             .Where(item => item is not null)
             .Cast<AnalysisIncident>()
             .ToArray();
+        var analysisFuelPlan = ReadRacePlanDecision(forecast);
         var strategyDetails = new AnalysisStrategy(
             Number(strategy, "measured_green_fuel_gal_per_lap"), Number(strategy, "measured_caution_fuel_gal_per_lap"),
-            NumberOrFirst(forecast, "all_green_range_laps"), resolvedScheduledLaps > 0 ? NullableInteger(forecast, "minimum_stops_all_green") : null,
-            resolvedScheduledLaps > 0
-                ? Array(forecast, "equal_stint_pit_targets_all_green").Select(NullableIntegerValue).Where(value => value is > 0).Select(value => value!.Value).ToArray()
+            analysisFuelPlan.AllGreenRangeLaps
+                ?? (analysisFuelPlan.IsLegacy ? NumberOrFirst(forecast, "all_green_range_laps") : null),
+            resolvedScheduledLaps > 0 && analysisFuelPlan.IsUsable ? analysisFuelPlan.MinimumStops : null,
+            resolvedScheduledLaps > 0 && analysisFuelPlan.IsUsable
+                ? analysisFuelPlan.EqualStintPitTargets.Select(value => (int)Math.Round(value, MidpointRounding.AwayFromZero)).ToArray()
                 : [],
-            Number(forecast, "operational_reserve_fuel_l") is { } reserveLiters ? reserveLiters / 3.785411784 : null,
-            Number(forecast, "operational_reserve_green_laps"), Humanize(Text(forecast, "classification")) ?? "Recorded fuel feasibility",
-            Array(forecast, "assumptions").Select(Value).Where(value => value.Length > 0).ToArray(),
-            Array(strategy, "limitations").Select(Value).Where(value => value.Length > 0).ToArray());
+            analysisFuelPlan.ReserveFuelLiters is { } reserveLiters ? reserveLiters / 3.785411784 : null,
+            analysisFuelPlan.ReserveGreenLaps,
+            Humanize(analysisFuelPlan.Classification) ?? "Recorded fuel feasibility",
+            analysisFuelPlan.Assumptions,
+            analysisFuelPlan.Limitations,
+            analysisFuelPlan);
         var damageDetails = new AnalysisDamage(
             Integer(damageSummary, "pit_road_episodes"), Integer(damageSummary, "tow_episodes"),
             Integer(damageSummary, "recorded_repair_episodes"), Integer(damageSummary, "confirmed_fast_repair_uses"),
@@ -737,17 +759,18 @@ public static class RuntimeMapper
         var forecast = Object(strategy, "forecast");
         var card = Object(response, "race_card");
         var playbook = Object(card, "corner_playbook");
-        var range = Numbers(forecast, "all_green_range_laps").ToArray();
-        var rangeText = range.Length switch
-        {
-            >= 2 => $"{range.Min():0.0}–{range.Max():0.0} green laps",
-            1 => $"About {range[0]:0.0} green laps",
-            _ => "Build two clean fuel samples to calculate range"
-        };
+        var sourceFuelPlan = ReadRacePlanDecision(forecast);
+        var displayRange = sourceFuelPlan.AllGreenRangeLaps
+            ?? (sourceFuelPlan.IsLegacy ? NumberOrFirst(forecast, "all_green_range_laps") : null);
+        var rangeText = displayRange is { } exactRange
+            ? $"About {exactRange:0.0} green laps"
+            : "Build two clean fuel samples to calculate range";
         var currentDistanceProfile = HasCurrentAnalysisProfile(view);
         var hasScheduledTimeLimit = Number(summary, "scheduled_minutes") is > 0;
         var scheduledLaps = HasCurrentAnalysisProfile(view) && !hasScheduledTimeLimit
-            ? Integer(forecast, "scheduled_laps")
+            ? sourceFuelPlan.ScheduledLaps is > 0 and var decidedDistance
+                ? (int)Math.Ceiling(decidedDistance)
+                : Integer(forecast, "scheduled_laps")
             : 0;
         var plannedLaps = scheduledLaps;
         var distanceLabel = scheduledLaps > 0
@@ -760,6 +783,7 @@ public static class RuntimeMapper
             .Select(Value)
             .Where(value => value.Length > 0)
             .ToList();
+        assumptions.AddRange(sourceFuelPlan.Assumptions);
         if (requestedDistanceValue > 0 && requestedDistanceMode?.Equals("Laps", StringComparison.OrdinalIgnoreCase) == true)
         {
             plannedLaps = (int)Math.Ceiling(requestedDistanceValue);
@@ -780,11 +804,13 @@ public static class RuntimeMapper
             }
         }
 
-        int? calculatedStops = null;
-        if (requestedDistanceValue > 0 && plannedLaps > 0 && range.Length > 0 && range.Min() > 0)
-            calculatedStops = Math.Max(0, (int)Math.Ceiling(plannedLaps / range.Min()) - 1);
-        else if (requestedDistanceValue <= 0 && plannedLaps > 0)
-            calculatedStops = NullableInteger(forecast, "minimum_stops_all_green");
+        var fuelPlan = FuelPlanForRequest(
+            sourceFuelPlan,
+            requestedDistanceValue,
+            requestedDistanceMode,
+            plannedLaps,
+            distanceIsEstimated);
+        var calculatedStops = fuelPlan.IsUsable ? fuelPlan.MinimumStops : null;
         var stopCount = calculatedStops is { } stops
             ? $"{(distanceIsEstimated ? "Estimated " : string.Empty)}{stops} stop{(stops == 1 ? string.Empty : "s")} for {distanceLabel}"
             : requestedDistanceValue > 0 && requestedDistanceMode?.Equals("Minutes", StringComparison.OrdinalIgnoreCase) == true && plannedLaps <= 0
@@ -793,12 +819,11 @@ public static class RuntimeMapper
                     ? "Stop count needs a recorded fuel range"
                     : "Stop count needs a resolved race distance";
 
-        var sourcePitTargets = Array(forecast, "equal_stint_pit_targets_all_green").Select(NullableIntegerValue).Where(value => value.HasValue && value.Value > 0).Select(value => value!.Value).ToArray();
-        var pitTargets = requestedDistanceValue > 0 && plannedLaps > 0 && calculatedStops is > 0
-            ? Enumerable.Range(1, calculatedStops.Value).Select(stop => (int)Math.Round(plannedLaps * stop / (calculatedStops.Value + 1d), MidpointRounding.AwayFromZero)).ToArray()
-            : requestedDistanceValue <= 0 && plannedLaps > 0 && calculatedStops is > 0
-                ? sourcePitTargets
-                : [];
+        var pitTargets = fuelPlan.IsUsable
+            ? fuelPlan.EqualStintPitTargets
+                .Select(target => (int)Math.Round(target, MidpointRounding.AwayFromZero))
+                .ToArray()
+            : [];
         var sourceActions = Array(card, "actions").Select(item => new RaceAction(Text(item, "label") ?? "Priority", Claim(item))).ToArray();
         var sourceStart = sourceActions.FirstOrDefault(item => item.Label.Equals("Start", StringComparison.OrdinalIgnoreCase));
         var sourcePace = sourceActions.FirstOrDefault(item =>
@@ -809,14 +834,7 @@ public static class RuntimeMapper
         var shortRace = plannedLaps is > 0 and <= 25;
         var startClaim = PlanningStartClaim(sourceStart?.Claim, tire);
         var paceClaim = PlanningPaceClaim(sourcePace?.Claim, tire, plannedLaps, shortRace, distanceIsEstimated);
-        var strategyClaim = PlanningStrategyClaim(
-            sourceActions.FirstOrDefault(item => item.Label.Equals("Strategy", StringComparison.OrdinalIgnoreCase))?.Claim,
-            plannedLaps,
-            range,
-            calculatedStops,
-            pitTargets,
-            distanceLabel,
-            distanceIsEstimated);
+        var strategyClaim = PlanningStrategyClaim(fuelPlan, distanceLabel, distanceIsEstimated);
         var actions = new[]
         {
             new RaceAction("Start", startClaim),
@@ -826,10 +844,7 @@ public static class RuntimeMapper
         var triggers = PlanningTriggers(
             Array(card, "race_triggers").Select(item => new RaceTrigger(Text(item, "label") ?? "Race trigger", Claim(item))).ToArray(),
             plannedLaps,
-            range,
-            calculatedStops,
-            pitTargets,
-            distanceIsEstimated);
+            fuelPlan);
         return new RacePlanBriefing(
             DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")) ?? "Recorded track", DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
             Boolean(identity, "is_fixed_setup") == true ? "Fixed" : "Open", plannedLaps > 0 ? plannedLaps : scheduledLaps,
@@ -840,10 +855,325 @@ public static class RuntimeMapper
                 Text(row, "corner_phase") ?? Text(row, "zone_id") ?? "Recorded load zone",
                 Claim(Object(row, "phase_1")), Claim(Object(row, "phase_2")), Claim(Object(row, "phase_3")), Claim(Object(row, "groove")))).ToArray(),
             triggers,
-            assumptions,
+            assumptions.Distinct(StringComparer.Ordinal).ToArray(),
             Humanize(Text(strategy, "confidence")) ?? "Low",
             distanceLabel,
-            distanceIsEstimated);
+            distanceIsEstimated,
+            fuelPlan);
+    }
+
+    private static RacePlanDecisionView ReadRacePlanDecision(JsonElement forecast)
+    {
+        if (forecast.ValueKind == JsonValueKind.Object &&
+            forecast.TryGetProperty("race_plan_decision", out var authoritative))
+        {
+            if (authoritative.ValueKind != JsonValueKind.Object)
+                return UnreadableRacePlan("The authoritative fuel decision is present but is not an object.");
+            try
+            {
+                return ParseRacePlanDecision(authoritative);
+            }
+            catch (InvalidDataException error)
+            {
+                return UnreadableRacePlan($"The authoritative fuel decision was refused: {error.Message}");
+            }
+        }
+
+        return ReadLegacyRacePlanDecision(forecast);
+    }
+
+    private static RacePlanDecisionView ParseRacePlanDecision(JsonElement payload)
+    {
+        var required = new[]
+        {
+            "all_green_range_laps", "caution_scenario", "decision_version",
+            "equal_stint_pit_targets", "final_stint_margin_laps", "minimum_stops",
+            "no_stop_language_permitted", "re_decidable", "reserve_green_laps",
+            "scheduled_laps", "status", "stints"
+        };
+        var missing = required.Where(name => !payload.TryGetProperty(name, out _)).ToArray();
+        if (missing.Length > 0)
+            throw new InvalidDataException($"required field(s) missing: {string.Join(", ", missing)}");
+
+        var version = RequiredRacePlanInteger(payload, "decision_version");
+        if (version != 1) throw new InvalidDataException($"decision_version {version} is not readable");
+        var status = RequiredRacePlanText(payload, "status");
+        if (!RacePlanStatuses.Contains(status)) throw new InvalidDataException($"unknown status {status}");
+        var noStop = RequiredRacePlanBoolean(payload, "no_stop_language_permitted");
+        var reDecidable = RequiredRacePlanBoolean(payload, "re_decidable");
+        var reserveGreenLaps = RequiredRacePlanNumber(payload, "reserve_green_laps");
+        if (!RacePlanAgree(reserveGreenLaps, 1d))
+            throw new InvalidDataException("reserve_green_laps must be exactly 1");
+        var assumptions = RacePlanStringArray(payload, "assumptions");
+        var limitations = RacePlanStringArray(payload, "limitations");
+        var classification = OptionalRacePlanText(payload, "classification") ?? string.Empty;
+        var extensionData = payload.EnumerateObject()
+            .Where(property => !RacePlanKnownProperties.Contains(property.Name))
+            .ToDictionary(property => property.Name, property => property.Value.GetRawText(), StringComparer.Ordinal);
+
+        var scheduledLaps = RequiredNullableRacePlanNumber(payload, "scheduled_laps");
+        var rangeLaps = RequiredNullableRacePlanNumber(payload, "all_green_range_laps");
+        var margin = RequiredNullableRacePlanNumber(payload, "final_stint_margin_laps");
+        var stops = RequiredNullableRacePlanInteger(payload, "minimum_stops");
+        var stints = RequiredNullableRacePlanInteger(payload, "stints");
+        var targets = RequiredRacePlanNumberArray(payload, "equal_stint_pit_targets");
+
+        if (!status.Equals("usable", StringComparison.Ordinal))
+        {
+            if (scheduledLaps.HasValue || rangeLaps.HasValue || margin.HasValue || stops.HasValue || stints.HasValue || targets.Count > 0)
+                throw new InvalidDataException("a non-usable decision must not carry decided numbers");
+            if (noStop) throw new InvalidDataException("a non-usable decision cannot permit no-stop language");
+            return new RacePlanDecisionView(
+                version, status, null, null, null, reserveGreenLaps, null, null, null,
+                null, null, null, [], null, false, reDecidable, true, classification,
+                assumptions, limitations, extensionData);
+        }
+
+        if (scheduledLaps is not > 0 || rangeLaps is not > 0)
+            throw new InvalidDataException("a usable decision requires positive scheduled_laps and all_green_range_laps");
+        if (stops is null || stops < 0 || stints is null || stints != stops + 1)
+            throw new InvalidDataException("stints must be exactly one more than a non-negative minimum_stops");
+        if (noStop != (stops == 0))
+            throw new InvalidDataException("no_stop_language_permitted contradicts minimum_stops");
+        ValidateRacePlanCount(stints.Value, scheduledLaps.Value, rangeLaps.Value, reDecidable);
+        if (margin is null)
+            throw new InvalidDataException("a usable decision requires final_stint_margin_laps");
+        var expectedMargin = stints.Value * rangeLaps.Value - scheduledLaps.Value;
+        if (!reDecidable) expectedMargin = Math.Max(0, expectedMargin);
+        if (!RacePlanAgree(margin.Value, expectedMargin, 1e-9))
+            throw new InvalidDataException("final_stint_margin_laps contradicts the transported distance, range, and stints");
+        if (targets.Count != stops.Value)
+            throw new InvalidDataException("equal_stint_pit_targets must contain one target per stop");
+        var previousTarget = 0d;
+        foreach (var target in targets)
+        {
+            if (!(target > previousTarget && target < scheduledLaps.Value))
+                throw new InvalidDataException("pit targets must increase strictly within scheduled_laps");
+            previousTarget = target;
+        }
+
+        var greenBurn = OptionalRacePlanNumber(payload, "green_burn_l_per_lap", strictlyPositive: true);
+        var maximumFuel = OptionalRacePlanNumber(payload, "maximum_start_fuel_l", strictlyPositive: true);
+        var reserveFuel = OptionalRacePlanNumber(payload, "reserve_fuel_l", nonNegative: true);
+        var usableFuel = OptionalRacePlanNumber(payload, "usable_fuel_l", strictlyPositive: true);
+        if (greenBurn.HasValue && reserveFuel.HasValue && !RacePlanAgree(reserveFuel.Value, greenBurn.Value * reserveGreenLaps))
+            throw new InvalidDataException("reserve_fuel_l contradicts the one-green-lap reserve");
+        if (maximumFuel.HasValue && reserveFuel.HasValue && usableFuel.HasValue &&
+            !RacePlanAgree(usableFuel.Value, maximumFuel.Value - reserveFuel.Value))
+            throw new InvalidDataException("usable_fuel_l contradicts maximum_start_fuel_l less reserve_fuel_l");
+        if (greenBurn.HasValue && usableFuel.HasValue && !RacePlanAgree(rangeLaps.Value, usableFuel.Value / greenBurn.Value))
+            throw new InvalidDataException("all_green_range_laps contradicts usable_fuel_l and green_burn_l_per_lap");
+
+        var caution = ParseRacePlanCautionScenario(payload);
+        return new RacePlanDecisionView(
+            version, status, scheduledLaps, greenBurn, maximumFuel, reserveGreenLaps, reserveFuel,
+            usableFuel, rangeLaps, stops, stints, margin, targets, caution, noStop, reDecidable,
+            true, classification, assumptions, limitations, extensionData);
+    }
+
+    private static RacePlanDecisionView ReadLegacyRacePlanDecision(JsonElement forecast)
+    {
+        var status = Text(forecast, "status") ?? "insufficient_fuel_or_distance_evidence";
+        if (!status.Equals("usable", StringComparison.Ordinal))
+        {
+            if (!RacePlanStatuses.Contains(status)) status = "insufficient_fuel_or_distance_evidence";
+            var reason = status.Equals("hybrid_finish_constraint_unresolved", StringComparison.Ordinal)
+                ? "Please resolve the governing finish constraint before choosing a stop plan."
+                : "The archived forecast has no usable authoritative fuel decision.";
+            return new RacePlanDecisionView(
+                1, status, null, null, null, 1, null, null, null, null, null, null, [], null,
+                false, false, true, string.Empty, [],
+                [reason],
+                new Dictionary<string, string>(StringComparer.Ordinal), true);
+        }
+
+        var scheduled = Number(forecast, "scheduled_laps");
+        var range = NumberOrFirst(forecast, "all_green_range_laps");
+        var stops = NullableInteger(forecast, "minimum_stops_all_green");
+        var targets = Array(forecast, "equal_stint_pit_targets_all_green")
+            .Select(NumberValue)
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .ToArray();
+        if (range is <= 0 || scheduled is not > 0 || stops is null || stops < 0 ||
+            targets.Length != stops || targets.Where((target, index) =>
+                target <= 0 || target >= scheduled || index > 0 && target <= targets[index - 1]).Any())
+        {
+            return UnreadableRacePlan("The archived forecast has no readable stored stop decision.", isLegacy: true);
+        }
+
+        return new RacePlanDecisionView(
+            1, "usable", scheduled, null, Number(forecast, "maximum_recorded_run_start_fuel_l"),
+            1, null, null, range, stops, stops + 1, null, targets, null, stops == 0, false,
+            true, "legacy stored fuel decision", [],
+            ["This archived decision adopts its stored stop count and never re-decides from the rounded range."],
+            new Dictionary<string, string>(StringComparer.Ordinal), true);
+    }
+
+    private static RacePlanDecisionView FuelPlanForRequest(
+        RacePlanDecisionView plan,
+        double requestedDistanceValue,
+        string? requestedDistanceMode,
+        int plannedLaps,
+        bool distanceIsEstimated)
+    {
+        if (requestedDistanceValue <= 0) return plan;
+        if (!plan.Status.Equals("usable", StringComparison.Ordinal)) return plan;
+        var isExactSourceDistance =
+            !distanceIsEstimated &&
+            requestedDistanceMode?.Equals("Laps", StringComparison.OrdinalIgnoreCase) == true &&
+            plan.ScheduledLaps is { } sourceDistance &&
+            Math.Abs(sourceDistance - requestedDistanceValue) <= 1e-9;
+        if (isExactSourceDistance) return plan;
+        var reason = plannedLaps > 0
+            ? "The selected distance differs from the backend-owned decision. Re-analyze that exact distance before stating a fuel plan."
+            : "The selected distance cannot be matched to a backend-owned lap decision.";
+        return plan with
+        {
+            AppliesToRequestedDistance = false,
+            Limitations = new[] { reason }.Concat(plan.Limitations).Distinct(StringComparer.Ordinal).ToArray()
+        };
+    }
+
+    private static RacePlanDecisionView UnreadableRacePlan(string reason, bool isLegacy = false) => new(
+        1, "authoritative_decision_unreadable", null, null, null, 1, null, null, null,
+        null, null, null, [], null, false, false, true, string.Empty, [], [reason],
+        new Dictionary<string, string>(StringComparer.Ordinal), isLegacy);
+
+    private static RacePlanCautionScenario? ParseRacePlanCautionScenario(JsonElement payload)
+    {
+        var value = payload.GetProperty("caution_scenario");
+        if (value.ValueKind == JsonValueKind.Null) return null;
+        if (value.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("caution_scenario must be an object or null");
+        var fraction = RequiredRacePlanNumber(value, "observed_caution_fraction");
+        var mixedBurn = RequiredRacePlanNumber(value, "mixed_burn_l_per_lap");
+        var range = RequiredRacePlanNumber(value, "range_laps");
+        var stops = RequiredRacePlanInteger(value, "minimum_stops");
+        if (fraction <= 0 || fraction > 1 || mixedBurn <= 0 || range <= 0 || stops < 0)
+            throw new InvalidDataException("caution_scenario contains a value outside its contract domain");
+        return new RacePlanCautionScenario(
+            fraction, mixedBurn, range, stops,
+            OptionalRacePlanText(value, "evidence_class") ?? "scenario",
+            OptionalRacePlanText(value, "limitation") ?? string.Empty);
+    }
+
+    private static void ValidateRacePlanCount(int stints, double distance, double range, bool reDecidable)
+    {
+        if (reDecidable)
+        {
+            if (RacePlanStintCount(distance, range) != stints)
+                throw new InvalidDataException("minimum_stops contradicts the exact transported range");
+            return;
+        }
+        var low = range - .05;
+        if (low <= 0 || stints < RacePlanStintCount(distance, range + .05) || stints > RacePlanStintCount(distance, low))
+            throw new InvalidDataException("legacy stop count lies outside the rounded-range interval");
+    }
+
+    private static int RacePlanStintCount(double distance, double range)
+    {
+        var ratio = distance / range;
+        var nearest = Math.Round(ratio);
+        return nearest >= 1 && Math.Abs(ratio - nearest) <= RacePlanRelativeTolerance * nearest
+            ? (int)nearest
+            : (int)Math.Ceiling(ratio);
+    }
+
+    private static bool RacePlanAgree(double left, double right, double absoluteTolerance = 1e-12) =>
+        Math.Abs(left - right) <= Math.Max(absoluteTolerance, RacePlanRelativeTolerance * Math.Max(Math.Abs(left), Math.Abs(right)));
+
+    private static JsonElement RequiredRacePlanProperty(JsonElement payload, string name)
+    {
+        if (payload.ValueKind != JsonValueKind.Object || !payload.TryGetProperty(name, out var value))
+            throw new InvalidDataException($"{name} is required");
+        return value;
+    }
+
+    private static string RequiredRacePlanText(JsonElement payload, string name)
+    {
+        var value = RequiredRacePlanProperty(payload, name);
+        if (value.ValueKind != JsonValueKind.String)
+            throw new InvalidDataException($"{name} must be a string");
+        return value.GetString() ?? string.Empty;
+    }
+
+    private static string? OptionalRacePlanText(JsonElement payload, string name)
+    {
+        if (!payload.TryGetProperty(name, out var value)) return null;
+        if (value.ValueKind != JsonValueKind.String)
+            throw new InvalidDataException($"{name} must be a string");
+        return value.GetString();
+    }
+
+    private static bool RequiredRacePlanBoolean(JsonElement payload, string name)
+    {
+        var value = RequiredRacePlanProperty(payload, name);
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => throw new InvalidDataException($"{name} must be a boolean")
+        };
+    }
+
+    private static int RequiredRacePlanInteger(JsonElement payload, string name) =>
+        NullableIntegerValue(RequiredRacePlanProperty(payload, name))
+        ?? throw new InvalidDataException($"{name} must be an integer");
+
+    private static int? RequiredNullableRacePlanInteger(JsonElement payload, string name)
+    {
+        var value = RequiredRacePlanProperty(payload, name);
+        if (value.ValueKind == JsonValueKind.Null) return null;
+        return NullableIntegerValue(value) ?? throw new InvalidDataException($"{name} must be an integer or null");
+    }
+
+    private static double RequiredRacePlanNumber(JsonElement payload, string name) =>
+        NumberValue(RequiredRacePlanProperty(payload, name))
+        ?? throw new InvalidDataException($"{name} must be a finite number");
+
+    private static double? RequiredNullableRacePlanNumber(JsonElement payload, string name)
+    {
+        var value = RequiredRacePlanProperty(payload, name);
+        if (value.ValueKind == JsonValueKind.Null) return null;
+        return NumberValue(value) ?? throw new InvalidDataException($"{name} must be a finite number or null");
+    }
+
+    private static double? OptionalRacePlanNumber(
+        JsonElement payload,
+        string name,
+        bool strictlyPositive = false,
+        bool nonNegative = false)
+    {
+        if (!payload.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null) return null;
+        var number = NumberValue(value) ?? throw new InvalidDataException($"{name} must be a finite number or null");
+        if (strictlyPositive && number <= 0) throw new InvalidDataException($"{name} must be positive");
+        if (nonNegative && number < 0) throw new InvalidDataException($"{name} must not be negative");
+        return number;
+    }
+
+    private static IReadOnlyList<double> RequiredRacePlanNumberArray(JsonElement payload, string name)
+    {
+        var value = RequiredRacePlanProperty(payload, name);
+        if (value.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException($"{name} must be an array");
+        return value.EnumerateArray().Select(item =>
+            NumberValue(item) ?? throw new InvalidDataException($"{name} must contain only finite numbers")).ToArray();
+    }
+
+    private static IReadOnlyList<string> RacePlanStringArray(JsonElement payload, string name)
+    {
+        if (!payload.TryGetProperty(name, out var value)) return [];
+        if (value.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException($"{name} must be an array");
+        var result = new List<string>();
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String)
+                throw new InvalidDataException($"{name} must contain only strings");
+            result.Add(item.GetString() ?? string.Empty);
+        }
+        return result;
     }
 
     private static string? PlanningTire(string? text)
@@ -892,55 +1222,37 @@ public static class RuntimeMapper
     }
 
     private static EvidenceText PlanningStrategyClaim(
-        EvidenceText? source,
-        int plannedLaps,
-        IReadOnlyList<double> range,
-        int? stops,
-        IReadOnlyList<int> pitTargets,
+        RacePlanDecisionView plan,
         string distanceLabel,
         bool distanceIsEstimated)
     {
-        var conservativeRange = range.Count > 0 ? range.Min() : (double?)null;
-        if (plannedLaps <= 0)
+        if (!plan.IsUsable)
+            return new EvidenceText(EvidenceKind.Unavailable, plan.UnavailableReason);
+        if (plan.MinimumStops == 0 && plan.NoStopLanguagePermitted)
         {
-            return conservativeRange is > 0
-                ? new EvidenceText(
-                    EvidenceKind.Derived,
-                    $"Measured all-green range is {conservativeRange:0.0} laps; resolve the governing finish constraint before choosing a stop count.")
-                : new EvidenceText(
-                    EvidenceKind.Unavailable,
-                    "A finish-range decision needs a resolved race distance and another clean fuel sample.");
-        }
-        if (plannedLaps > 0 && conservativeRange is > 0 && stops == 0)
-        {
-            var margin = Math.Max(0, conservativeRange.Value - plannedLaps);
+            var margin = plan.FinalStintMarginLaps is { } value ? $"; protect the {value:0.0}-lap finish margin" : string.Empty;
             return new EvidenceText(
                 EvidenceKind.Derived,
                 distanceIsEstimated
-                    ? $"Estimated no fuel stop for {distanceLabel}; protect the projected {margin:0.0}-lap finish margin."
-                    : $"No fuel stop for {plannedLaps} laps; protect the {margin:0.0}-lap conservative finish margin.");
+                    ? $"The backend decision does not authorize a timed-distance estimate{margin}."
+                    : $"No fuel stop for {distanceLabel}{margin}.");
         }
-        if (plannedLaps > 0 && stops is > 0)
+        if (plan.MinimumStops is > 0 and var stops)
         {
-            var target = pitTargets.Count > 0
-                ? $"; target {string.Join(" and ", pitTargets.Select(lap => $"Lap {lap}"))}"
+            var target = plan.EqualStintPitTargets.Count > 0
+                ? $"; target {string.Join(" and ", plan.EqualStintPitTargets.Select(lap => $"Lap {lap:0.#}"))}"
                 : string.Empty;
             return new EvidenceText(
                 EvidenceKind.Derived,
-                distanceIsEstimated
-                    ? $"Estimate {stops} fuel stop{(stops == 1 ? string.Empty : "s")} for {distanceLabel}{target}."
-                    : $"Plan {stops} fuel stop{(stops == 1 ? string.Empty : "s")} for {plannedLaps} laps{target}.");
+                $"Plan {stops} fuel stop{(stops == 1 ? string.Empty : "s")} for {distanceLabel}{target}.");
         }
-        return new EvidenceText(EvidenceKind.Unavailable, "A finish-range decision needs another clean fuel sample.");
+        return new EvidenceText(EvidenceKind.Unavailable, "The authoritative decision did not provide a usable stop count.");
     }
 
     private static IReadOnlyList<RaceTrigger> PlanningTriggers(
         IReadOnlyList<RaceTrigger> source,
         int plannedLaps,
-        IReadOnlyList<double> range,
-        int? stops,
-        IReadOnlyList<int> pitTargets,
-        bool distanceIsEstimated)
+        RacePlanDecisionView plan)
     {
         var result = new List<RaceTrigger>();
         var phase = source.FirstOrDefault(item =>
@@ -953,32 +1265,28 @@ public static class RuntimeMapper
             result.Add(new RaceTrigger("Balance checkpoint", new EvidenceText(phase.Claim.Kind, text)));
         }
 
-        var conservativeRange = range.Count > 0 ? range.Min() : (double?)null;
-        if (plannedLaps > 0 && conservativeRange is > 0 && stops == 0)
+        if (plan.IsUsable && plan.MinimumStops == 0 && plan.NoStopLanguagePermitted)
         {
             result.Add(new RaceTrigger(
                 "Fuel margin",
                 new EvidenceText(EvidenceKind.Derived,
-                    distanceIsEstimated
-                        ? "Stay out while projected range clears the timed-race estimate; reconsider only if the margin disappears."
-                        : $"Stay out while projected range clears the {plannedLaps}-lap finish; reconsider only if the margin disappears.")));
+                    $"Stay out while live burn preserves the backend's {plan.FinalStintMarginLaps:0.0}-lap finish margin; reconsider if it disappears.")));
         }
-        else if (plannedLaps > 0 && stops is > 0)
+        else if (plan.IsUsable && plan.MinimumStops is > 0)
         {
-            var window = pitTargets.Count > 0
-                ? string.Join(" or ", pitTargets.Select(lap => $"Lap {lap}"))
+            var window = plan.EqualStintPitTargets.Count > 0
+                ? string.Join(" or ", plan.EqualStintPitTargets.Select(lap => $"Lap {lap:0.#}"))
                 : "the balanced stint window";
             result.Add(new RaceTrigger(
                 "Pit window",
                 new EvidenceText(EvidenceKind.Derived,
-                    $"Target {(distanceIsEstimated ? "the estimated " : string.Empty)}{window}; move the stop only when live burn no longer supports the next stint.")));
+                    $"Target {window}; move the stop only when live burn no longer supports the next stint.")));
         }
         else
         {
             result.Add(new RaceTrigger(
                 "Fuel check",
-                new EvidenceText(EvidenceKind.Inferred,
-                    "Update the fuel call only after live burn establishes a finish margin.")));
+                new EvidenceText(EvidenceKind.Unavailable, plan.UnavailableReason)));
         }
 
         var repair = source.FirstOrDefault(item => item.Claim.Text.Contains("repaired-car", StringComparison.OrdinalIgnoreCase));

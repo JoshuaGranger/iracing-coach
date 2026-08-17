@@ -324,7 +324,8 @@ public sealed record AnalysisStrategy(
     double? ReserveGreenLaps,
     string Classification,
     IReadOnlyList<string> Assumptions,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations,
+    RacePlanDecisionView? FuelPlan = null);
 
 public sealed record AnalysisIncident(
     int Lap,
@@ -1022,6 +1023,46 @@ public sealed record StrategyScenario(
     string Note,
     EvidenceKind Evidence);
 
+public sealed record RacePlanCautionScenario(
+    double ObservedCautionFraction,
+    double MixedBurnLitersPerLap,
+    double RangeLaps,
+    int MinimumStops,
+    string EvidenceClass,
+    string Limitation);
+
+public sealed record RacePlanDecisionView(
+    int DecisionVersion,
+    string Status,
+    double? ScheduledLaps,
+    double? GreenBurnLitersPerLap,
+    double? MaximumStartFuelLiters,
+    double ReserveGreenLaps,
+    double? ReserveFuelLiters,
+    double? UsableFuelLiters,
+    double? AllGreenRangeLaps,
+    int? MinimumStops,
+    int? Stints,
+    double? FinalStintMarginLaps,
+    IReadOnlyList<double> EqualStintPitTargets,
+    RacePlanCautionScenario? CautionScenario,
+    bool NoStopLanguagePermitted,
+    bool ReDecidable,
+    bool AppliesToRequestedDistance,
+    string Classification,
+    IReadOnlyList<string> Assumptions,
+    IReadOnlyList<string> Limitations,
+    IReadOnlyDictionary<string, string> ExtensionData,
+    bool IsLegacy = false)
+{
+    public bool IsUsable =>
+        Status.Equals("usable", StringComparison.Ordinal) &&
+        AppliesToRequestedDistance;
+
+    public string UnavailableReason => Limitations.FirstOrDefault()
+        ?? "The authoritative fuel decision is unavailable.";
+}
+
 public sealed record RacePlanBriefing(
     string Track,
     string Car,
@@ -1039,7 +1080,8 @@ public sealed record RacePlanBriefing(
     IReadOnlyList<string> Assumptions,
     string Confidence,
     string DistanceLabel = "Finish constraint unresolved",
-    bool DistanceIsEstimated = false);
+    bool DistanceIsEstimated = false,
+    RacePlanDecisionView? FuelPlan = null);
 
 public sealed record SetupPackageView(
     string PackageId,
