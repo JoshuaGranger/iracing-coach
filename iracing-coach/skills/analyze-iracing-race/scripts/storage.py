@@ -2252,7 +2252,18 @@ class ArchiveStore:
         )
 
     def cache_track_geometry(self, geometry: Mapping[str, Any]) -> dict[str, Any]:
-        self.initialize()
+        """Union one geometry observation under a cross-process transaction."""
+
+        with self.connect() as connection:
+            # The JSON artifact remains the backward-compatible reader surface,
+            # while BEGIN IMMEDIATE makes its read/union/replace one transaction
+            # across every backend process sharing this archive.
+            connection.execute("BEGIN IMMEDIATE")
+            return self._cache_track_geometry_locked(geometry)
+
+    def _cache_track_geometry_locked(
+        self, geometry: Mapping[str, Any]
+    ) -> dict[str, Any]:
         exact_key = str(geometry.get("track_configuration_key") or "track-unknown").strip()
         exact_identity = {
             "track_configuration_key": exact_key,
@@ -2426,7 +2437,16 @@ class ArchiveStore:
     def update_tire_learning(self, package: Mapping[str, Any]) -> dict[str, Any]:
         """Merge immutable observations and calculate an evidence-bounded model."""
 
-        self.initialize()
+        with self.connect() as connection:
+            # Atomic file replacement prevents torn writes; this database write
+            # lock prevents two individually atomic commits from replacing one
+            # another after both read the same prior model.
+            connection.execute("BEGIN IMMEDIATE")
+            return self._update_tire_learning_locked(package)
+
+    def _update_tire_learning_locked(
+        self, package: Mapping[str, Any]
+    ) -> dict[str, Any]:
         context_key = str(package.get("context_key") or "").strip()
         path = self.tire_models_dir / model_file_name(context_key or "unsupported")
         prior: Mapping[str, Any] = {}

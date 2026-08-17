@@ -1,10 +1,9 @@
 """The frozen durable-union contract, and proof that it can reject failure.
 
 `DURABLE-RMW-001`. These are the producer-side clauses Codex's production
-transaction and migration will be measured against. Nothing here implements
-durable storage; the specifications live in `durable_union_support` as values,
-so the same clauses can later be pointed at the real store without being
-restated - a restated clause is a clause that can drift.
+transaction and migration are measured against. The specifications live in
+`durable_union_support` as values, and the final class binds the production
+tire-observation transaction to the same N>=16 union pressure.
 
 The negative matrix is the load-bearing half. A conformance suite that only
 ever sees a conforming store cannot distinguish "the contract holds" from "the
@@ -17,10 +16,22 @@ reject the defect it exists to close rather than merely describing it.
 from __future__ import annotations
 
 import sys
+import json
+import multiprocessing
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(
+    0,
+    str(
+        Path(__file__).resolve().parents[1]
+        / "skills"
+        / "analyze-iracing-race"
+        / "scripts"
+    ),
+)
 
 import durable_union_support as union_support  # noqa: E402
 from durable_union_support import (  # noqa: E402
@@ -37,11 +48,51 @@ from durable_union_support import (  # noqa: E402
     union,
     union_fingerprint,
 )
+from storage import ArchiveStore  # noqa: E402
 
 #: The population every clause is stated at. The closure text requires at least
 #: sixteen; using exactly the floor keeps a failure cheap to read while still
 #: satisfying the clause.
 N = 16
+
+
+def _production_union_package(index: int) -> dict:
+    return {
+        "status": "observed",
+        "context_key": "2026S3|recorded-car|recorded-track|open",
+        "context": {
+            "season": "2026S3",
+            "car": "recorded-car",
+            "track": "recorded-track",
+            "setup_type": "open",
+        },
+        "family": "synthetic",
+        "supported_families": ["synthetic"],
+        "current_tire_age": {},
+        "prediction_context": {},
+        "observations": [
+            {
+                "observation_id": f"record-{index:02d}",
+                "analysis_id": f"analysis-{index:02d}",
+                "run_number": 1,
+                "tires": {"RF": {"remaining_percent_omi": [95, 95, 95]}},
+                "eligible_for_rate_model": False,
+                "future_field": {"producer": index},
+            }
+        ],
+    }
+
+
+def _production_union_writer(root: str, index: int, start, results) -> None:
+    try:
+        if not start.wait(timeout=20):
+            raise TimeoutError("writer start barrier timed out")
+        result = ArchiveStore(root).update_tire_learning(
+            _production_union_package(index)
+        )
+        results.put((index, result["model_path"], None))
+    except Exception as exc:  # pragma: no cover - returned to the parent assertion
+        results.put((index, None, f"{type(exc).__name__}: {exc}"))
 
 
 class RecordIdentityTests(unittest.TestCase):
@@ -326,6 +377,77 @@ class ContractVersionTests(unittest.TestCase):
         finally:
             union_support.UNION_CONTRACT_VERSION = original
         self.assertEqual(union_fingerprint(fixture), baseline)
+
+
+class ProductionUnionTransactionTests(unittest.TestCase):
+    """The production read/union/replace is one cross-process transaction."""
+
+    @staticmethod
+    def _package(index: int) -> dict:
+        return _production_union_package(index)
+
+    def test_sixteen_barrier_writers_commit_the_exact_record_union(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="iracing-coach-production-union-") as folder:
+            root = Path(folder) / "archive"
+            ArchiveStore(root).initialize()
+            context = multiprocessing.get_context("spawn")
+            start = context.Event()
+            results = context.Queue()
+            processes = [
+                context.Process(
+                    target=_production_union_writer,
+                    args=(str(root), index, start, results),
+                )
+                for index in range(N)
+            ]
+            for process in processes:
+                process.start()
+            start.set()
+            for process in processes:
+                process.join(timeout=30)
+            stalled = [process for process in processes if process.is_alive()]
+            for process in stalled:
+                process.terminate()
+                process.join(timeout=5)
+            self.assertEqual(stalled, [], "a union writer did not finish")
+            self.assertEqual(
+                [process.exitcode for process in processes],
+                [0] * N,
+            )
+            outcomes = [results.get(timeout=5) for _ in range(N)]
+            failures = [f"{index}: {error}" for index, _, error in outcomes if error]
+            self.assertEqual(failures, [])
+            paths = [str(path) for _, path, _ in outcomes]
+
+            self.assertEqual(len(set(paths)), 1)
+            model = json.loads(Path(paths[0]).read_text(encoding="utf-8"))
+            observations = model["observations"]
+            self.assertEqual(len(observations), N)
+            self.assertEqual(
+                [item["observation_id"] for item in observations],
+                [f"record-{index:02d}" for index in range(N)],
+            )
+            self.assertEqual(
+                {item["future_field"]["producer"] for item in observations},
+                set(range(N)),
+            )
+
+    def test_reapplying_an_acknowledged_batch_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="iracing-coach-production-resume-") as folder:
+            store = ArchiveStore(Path(folder) / "archive")
+            packages = [self._package(index) for index in range(N)]
+            for package in packages:
+                result = store.update_tire_learning(package)
+            first = json.loads(Path(result["model_path"]).read_text(encoding="utf-8"))
+            for package in reversed(packages):
+                result = store.update_tire_learning(package)
+            resumed = json.loads(Path(result["model_path"]).read_text(encoding="utf-8"))
+
+            self.assertEqual(len(resumed["observations"]), N)
+            self.assertEqual(
+                resumed["observation_set_fingerprint"],
+                first["observation_set_fingerprint"],
+            )
 
 
 if __name__ == "__main__":  # pragma: no cover - direct execution helper

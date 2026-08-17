@@ -825,6 +825,8 @@
                          {"family":"backend","id":"test_durable_union_semantics.NegativeMatrixTests.test_every_non_conforming_store_fails_its_named_specification","tier":"Behavioral","technique":"mutation"},
                          {"family":"backend","id":"test_durable_union_semantics.NegativeMatrixTests.test_the_matrix_covers_every_specification_that_can_be_broken","tier":"Behavioral","technique":"mutation"},
                          {"family":"backend","id":"test_durable_union_semantics.NegativeMatrixTests.test_todays_shape_fails_the_union_clause_specifically","tier":"Behavioral","technique":"mutation"},
+                         {"family":"backend","id":"test_durable_union_semantics.ProductionUnionTransactionTests.test_reapplying_an_acknowledged_batch_is_idempotent","tier":"Behavioral","technique":"none"},
+                         {"family":"backend","id":"test_durable_union_semantics.ProductionUnionTransactionTests.test_sixteen_barrier_writers_commit_the_exact_record_union","tier":"Behavioral","technique":"barrier"},
                          {"family":"backend","id":"test_durable_union_semantics.RecordIdentityTests.test_a_record_survives_a_payload_round_trip","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_durable_union_semantics.RecordIdentityTests.test_an_unknown_field_changes_the_record","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_durable_union_semantics.RecordIdentityTests.test_identical_content_and_provenance_is_one_record","tier":"Behavioral","technique":"none"},
