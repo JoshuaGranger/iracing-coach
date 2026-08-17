@@ -747,6 +747,77 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task FailedAnalysisJob_RetryRunsExactlyOnceAgainstTheCurrentRecording()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-analysis-retry", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(), analysisFailuresBeforeSuccess: 1);
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            "retry-race", "Kentucky Speedway", "Oval", "Toyota Tundra TRD Pro", "Today",
+            "Fixed", "Needs analysis", "15 laps", false, false, 8, 6, Selector: "87624987");
+        state.Races.Add(race);
+
+        await state.AnalyzeRaceAsync(race, force: true);
+        var failed = state.Jobs.Single();
+
+        await state.RetryJobAsync(failed);
+
+        Assert.AreEqual(2, backend.AnalyzeCalls);
+        Assert.HasCount(2, state.Jobs);
+        Assert.AreEqual("failed", failed.Status);
+        Assert.AreEqual("complete", state.Jobs[0].Status);
+        Assert.IsNotNull(state.CurrentAnalysis);
+    }
+
+    [TestMethod]
+    public async Task FailedAnalysisJob_RetryDoesNotRunWhenTheRecordingIsStale()
+    {
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse());
+        using var state = new CompanionState(backend);
+        var failed = new JobItem
+        {
+            Id = "job-stale",
+            Title = "Analyze missing recording",
+            CanonicalKey = "session:missing",
+            Status = "failed"
+        };
+
+        await state.RetryJobAsync(failed);
+
+        Assert.AreEqual(0, backend.AnalyzeCalls);
+        StringAssert.Contains(state.Toast, "no longer available");
+    }
+
+    [TestMethod]
+    public async Task FailedAnalysisJob_RetryDoesNotDuplicateActiveWork()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-analysis-retry-active", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(), analysisDelay: TimeSpan.FromMilliseconds(150));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            "active-race", "Kentucky Speedway", "Oval", "Toyota Tundra TRD Pro", "Today",
+            "Fixed", "Needs analysis", "15 laps", false, false, 8, 6, Selector: "87624987");
+        state.Races.Add(race);
+        var failed = new JobItem
+        {
+            Id = "job-old",
+            Title = "Analyze Kentucky Speedway",
+            CanonicalKey = "session:active-race",
+            Status = "failed"
+        };
+
+        var active = state.AnalyzeRaceAsync(race, force: true);
+        await WaitUntilAsync(() => state.Jobs.Any(candidate => candidate.Status == "running"), TimeSpan.FromSeconds(2));
+        await state.RetryJobAsync(failed);
+        await active;
+
+        Assert.AreEqual(1, backend.AnalyzeCalls);
+        Assert.HasCount(1, state.Jobs);
+    }
+
+    [TestMethod]
     public async Task AnalysisJob_RejectsTelemetryFromADifferentEventPhase()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-phase-response", Guid.NewGuid().ToString("N"));

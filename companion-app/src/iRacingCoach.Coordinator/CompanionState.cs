@@ -2489,7 +2489,34 @@ public sealed class CompanionState : IDisposable
     {
         foreach (var token in _jobTokens.Values.ToArray()) token.Cancel();
     }
-    public Task RetryJobAsync(JobItem job) { Notify("Choose the action again from its page."); return Task.CompletedTask; }
+    public async Task RetryJobAsync(JobItem job, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        if (job.Status is not ("cancelled" or "failed")) return;
+        if (!job.CanonicalKey.StartsWith("session:", StringComparison.Ordinal))
+        {
+            Notify("Open the original page to retry this work.");
+            return;
+        }
+
+        var raceId = job.CanonicalKey["session:".Length..];
+        var race = Races.Concat(EventSessions).FirstOrDefault(candidate =>
+            candidate is not null && string.Equals(candidate.Id, raceId, StringComparison.Ordinal));
+        if (race is null)
+        {
+            Notify("That recording is no longer available. Refresh your races and try again.");
+            return;
+        }
+        if (Jobs.Any(candidate =>
+                string.Equals(candidate.CanonicalKey, job.CanonicalKey, StringComparison.Ordinal)
+                && candidate.Status is "queued" or "running"))
+        {
+            Notify("That work is already in progress.");
+            return;
+        }
+
+        await AnalyzeRaceAsync(race, cancellationToken, force: true);
+    }
     public void ClearCompletedJobs() { Jobs.RemoveAll(job => job.Status is "complete" or "cancelled" or "failed"); RaiseChanged(); }
     public void OpenArtifact() { Navigate("analysis"); }
     public void RequestLocateRawTelemetry() => RawTelemetryLocateRequested?.Invoke();
