@@ -59,6 +59,7 @@ public sealed class CompanionState : IDisposable
     private int _garage61ReferenceSyncActive;
     private long _tuningRaceSelectionEpoch;
     private long _tuningTargetSelectionEpoch;
+    private long _startingTuneSelectionEpoch;
     private readonly SemaphoreSlim _tuningDraftMutationGate = new(1, 1);
     private BackendHealthResult _lastBackendHealth = new(false, "unknown", "unknown", "unknown", 0, TimeSpan.Zero, "Not checked");
 
@@ -1741,6 +1742,12 @@ public sealed class CompanionState : IDisposable
             RaiseChanged();
             return;
         }
+        var request = new StartingTuneRequest(
+            StartingTuneSeason.Trim(),
+            StartingTuneCar.Trim(),
+            StartingTuneTrack.Trim(),
+            StartingTunePurpose.Trim(),
+            Interlocked.Increment(ref _startingTuneSelectionEpoch));
         StartingTuneBusy = true;
         SetupMessage = "Reviewing your local setups and recorded context…";
         RaiseChanged();
@@ -1750,11 +1757,17 @@ public sealed class CompanionState : IDisposable
             {
                 iracing_root = Settings.IRacingRoot,
                 archive_root = Settings.ArchiveRoot,
-                season = StartingTuneSeason.Trim(),
-                car = StartingTuneCar.Trim(),
-                track = StartingTuneTrack.Trim()
+                season = request.Season,
+                car = request.Car,
+                track = request.Track
             }, cancellationToken);
-            StartingTunePackage = RuntimeMapper.SetupPackage(response, StartingTuneCar.Trim(), StartingTuneTrack.Trim(), StartingTuneSeason.Trim(), StartingTunePurpose);
+            var staged = RuntimeMapper.SetupPackage(response, request.Car, request.Track, request.Season, request.Purpose);
+            if (!StartingTuneRequestStillCurrent(request))
+            {
+                SetupMessage = "The event or session purpose changed while the source was being checked. The older result was not shown.";
+                return;
+            }
+            StartingTunePackage = staged;
             StartingTuneStep = 2;
             SetupMessage = "A read-only source and rollback record are ready for review.";
         }
@@ -1779,11 +1792,21 @@ public sealed class CompanionState : IDisposable
 
     public void ResetStartingTune()
     {
+        Interlocked.Increment(ref _startingTuneSelectionEpoch);
         StartingTunePackage = null;
         StartingTuneStep = 1;
         SetupMessage = "Enter an open-setup event context to build a new starting tune.";
         RaiseChanged();
     }
+
+    private bool StartingTuneRequestStillCurrent(StartingTuneRequest request) =>
+        Interlocked.Read(ref _startingTuneSelectionEpoch) == request.Epoch &&
+        string.Equals(StartingTuneSeason.Trim(), request.Season, StringComparison.Ordinal) &&
+        string.Equals(StartingTuneCar.Trim(), request.Car, StringComparison.Ordinal) &&
+        string.Equals(StartingTuneTrack.Trim(), request.Track, StringComparison.Ordinal) &&
+        string.Equals(StartingTunePurpose.Trim(), request.Purpose, StringComparison.OrdinalIgnoreCase);
+
+    private sealed record StartingTuneRequest(string Season, string Car, string Track, string Purpose, long Epoch);
 
     public void SaveSettings()
     {

@@ -70,6 +70,10 @@
             @if (State.StartingTuneStep == 2)
             {
                 <div class="source-details" data-setup-source="@package.Source" data-setup-fingerprint="@package.Fingerprint"><div><span>Starting setup</span><strong>@package.Donor</strong></div><div><span>Car</span><strong>@package.Car</strong></div><div><span>Track</span><strong>@package.Track</strong></div></div>
+                @if (package.Capability is { } capability)
+                {
+                    <div class="source-details starting-tune-capability" data-purpose-match="@capability.PurposeMatch" data-source-shape="@capability.SourceShape" data-load-permitted="@capability.LoadPermitted.ToString().ToLowerInvariant()"><div><span>Purpose</span><strong>@capability.PurposeMatch</strong></div><div><span>Evidence</span><strong>@capability.EvidenceLevel</strong></div><div><span>Load</span><strong>@(capability.LoadPermitted ? "Validated .sto" : "Unavailable")</strong></div></div>
+                }
                 <p class="section-copy">@package.Confirmation</p>
                 @if (package.Risks.Count > 0) { <details class="evidence-details"><summary>Cautions</summary><ul>@foreach (var risk in package.Risks) { <li>@risk</li> }</ul></details> }
                 <div class="workflow-actions"><button class="button secondary" @onclick="State.ResetStartingTune">Change event</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(3)">Review checks</button></div>

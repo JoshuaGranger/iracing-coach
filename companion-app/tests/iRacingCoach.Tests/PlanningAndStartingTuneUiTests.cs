@@ -30,6 +30,8 @@ public sealed class PlanningAndStartingTuneUiTests
         StringAssert.Contains(page, "new[] { \"Race\", \"Qualifying\" }");
         StringAssert.Contains(page, "aria-pressed=");
         StringAssert.Contains(page, "CanBuildStartingTune");
+        StringAssert.Contains(page, "data-load-permitted=");
+        StringAssert.Contains(page, "capability.LoadPermitted ? \"Validated .sto\" : \"Unavailable\"");
         StringAssert.Contains(page, "State.SelectedSetup?.Car ?? recent?.Car");
         StringAssert.Contains(css, ".starting-tune-event-grid");
         StringAssert.Contains(css, ".starting-tune-purpose button.selected");

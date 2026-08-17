@@ -566,10 +566,13 @@ public static class RuntimeMapper
     public static SetupPackageView SetupPackage(JsonElement response, string requestedCar, string requestedTrack, string requestedSeason, string purpose)
     {
         if (Boolean(response, "ok") != true) throw new InvalidDataException(Text(response, "message") ?? "A starting tune package could not be built from the selected context.");
+        var capability = ReadStartingTuneCapability(response, purpose);
         var raceBaseline = Object(response, "baseline");
         var qualifyingBaseline = Object(response, "qualifying");
-        var wantsQualifying = purpose.Equals("Qualifying", StringComparison.OrdinalIgnoreCase);
-        if (wantsQualifying && qualifyingBaseline.ValueKind != JsonValueKind.Object)
+        var wantsQualifying = capability?.ResolvedPurpose is { } resolved
+            ? resolved.Equals("qualifying", StringComparison.Ordinal)
+            : purpose.Equals("Qualifying", StringComparison.OrdinalIgnoreCase);
+        if (capability is null && wantsQualifying && qualifyingBaseline.ValueKind != JsonValueKind.Object)
             throw new InvalidDataException("No separate qualifying baseline was found for this exact context. A race setup will not be relabeled as qualifying.");
         var baseline = wantsQualifying ? qualifyingBaseline : raceBaseline;
         var confirmation = Object(response, "baseline_confirmation");
@@ -577,30 +580,147 @@ public static class RuntimeMapper
         var warnings = Array(baseline, "identity_warnings").Select(Value).Where(value => value.Length > 0).ToList();
         if (Text(donor, "warning") is { Length: > 0 } warning) warnings.Add(warning);
         if (warnings.Count == 0) warnings.Add("Confirm the selected setup passes iRacing tech for the target event before changing it.");
-        var exact = !wantsQualifying && Boolean(confirmation, "confirmed") == true;
-        var source = exact ? "Exact recorded baseline" : "Related baseline for validation";
+        var exact = capability is not null
+            ? capability.PurposeMatch == "exact-purpose"
+            : !wantsQualifying && Boolean(confirmation, "confirmed") == true;
+        var source = capability?.PurposeMatch switch
+        {
+            "exact-purpose" => "Exact-purpose local source",
+            "other-purpose-only" => "Other-purpose evidence only",
+            "no-candidate" => "No local source found",
+            _ => exact ? "Exact recorded baseline" : "Related baseline for validation"
+        };
         var donorName = Text(donor, "donor") ?? Text(baseline, "stem") ?? "Selected local baseline";
+        var baselineChecks = new List<string>();
+        if (capability?.LoadPermitted == true)
+            baselineChecks.Add("Load the validated source setup in iRacing without overwriting it.");
+        else
+            baselineChecks.Add("No simulator Load action is available for this source; use it only at the evidence level shown.");
+        baselineChecks.AddRange([
+            "Save any working copy under a new name.",
+            "Pass iRacing tech inspection for the exact car, track, and session.",
+            "Run a clean baseline before making one controlled change.",
+            "Keep this package fingerprint as the rollback reference."
+        ]);
         return new SetupPackageView(
             Text(response, "package_id") ?? "Saved starting tune",
             Humanize(Text(response, "status")) ?? "Package ready",
             source,
             Text(baseline, "fingerprint") ?? "Fingerprint unavailable",
             donorName,
-            exact ? "The source matches the requested recorded context." : wantsQualifying
+            exact ? "The source matches the requested session purpose." : capability?.PurposeMatch == "other-purpose-only"
+                ? "The source is evidence for another session purpose and cannot be loaded for this request."
+                : capability?.PurposeMatch == "no-candidate"
+                    ? "No candidate was found for any session purpose in this local context."
+                : wantsQualifying
                 ? "A separate qualifying candidate was found. Verify it in the exact qualifying session before use."
                 : (Text(confirmation, "reason") ?? "The source must be validated at the target track."),
             warnings,
-            [
-                "Load the source setup in iRacing without overwriting it.",
-                "Save a working copy under a new name.",
-                "Pass iRacing tech inspection for the exact car, track, and session.",
-                "Run a clean baseline before making one controlled change.",
-                "Keep this package fingerprint as the rollback reference."
-            ],
+            baselineChecks,
             Text(response, "package_path") ?? string.Empty, requestedCar, requestedTrack, requestedSeason, purpose,
             Text(donor, "reason") ?? string.Empty,
             Boolean(response, "simulator_loadable_setup_produced") == true,
-            Boolean(response, "source_setup_files_modified") == true);
+            Boolean(response, "source_setup_files_modified") == true,
+            capability);
+    }
+
+    private static StartingTuneCapabilityView? ReadStartingTuneCapability(JsonElement response, string requestedPurpose)
+    {
+        if (response.ValueKind != JsonValueKind.Object || !response.TryGetProperty("starting_tune_capability", out var payload))
+            return null;
+        if (payload.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("The starting tune capability is present but unreadable.");
+
+        var version = RequiredStartingTuneInteger(payload, "contract_version");
+        if (version != 1) throw new InvalidDataException($"Starting tune capability version {version} is not supported.");
+        var requested = RequiredStartingTuneText(payload, "requested_purpose");
+        var expectedPurpose = requestedPurpose.Trim().ToLowerInvariant();
+        if (!string.Equals(requested, expectedPurpose, StringComparison.Ordinal))
+            throw new InvalidDataException("The starting tune capability belongs to a different session purpose.");
+        var resolved = RequiredNullableStartingTuneText(payload, "resolved_purpose");
+        var match = RequiredStartingTuneEnum(payload, "purpose_match", "exact-purpose", "other-purpose-only", "no-candidate");
+        var shape = RequiredStartingTuneEnum(payload, "source_shape", "paired", "sto_only", "html_only", "ambiguous", "absent");
+        var evidence = RequiredStartingTuneEnum(payload, "evidence_level", "parameters-readable", "identity-only", "none");
+        var load = RequiredStartingTuneBoolean(payload, "load_permitted");
+        var readOnly = RequiredStartingTuneBoolean(payload, "source_files_read_only");
+        var usable = RequiredStartingTuneBoolean(payload, "usable_as_evidence");
+        if (!readOnly) throw new InvalidDataException("Starting tune source files must remain read-only.");
+        if (resolved is not null && resolved is not ("race" or "qualifying" or "endurance"))
+            throw new InvalidDataException("The starting tune capability has an unknown resolved purpose.");
+        if (match == "no-candidate" && resolved is not null || match == "exact-purpose" && resolved != requested)
+            throw new InvalidDataException("The starting tune purpose match contradicts its resolved purpose.");
+        if (load && shape is not ("paired" or "sto_only"))
+            throw new InvalidDataException("The starting tune capability permits Load without one identified .sto source.");
+        if (usable != (evidence != "none"))
+            throw new InvalidDataException("The starting tune evidence flag contradicts its evidence level.");
+        var reasons = RequiredStartingTuneTextArray(payload, "reasons");
+        var knownReasons = new HashSet<string>([
+            "no-candidate-for-any-purpose", "candidate-is-for-another-purpose", "no-loadable-sto-in-source",
+            "several-files-share-this-stem", "sto-present-but-not-validated", "html-present-but-not-parsed"
+        ], StringComparer.Ordinal);
+        if (reasons.Any(reason => !knownReasons.Contains(reason)))
+            throw new InvalidDataException("The starting tune capability has an unknown reason.");
+        if (load && reasons.Any(reason => reason is "no-candidate-for-any-purpose" or "candidate-is-for-another-purpose" or "no-loadable-sto-in-source" or "several-files-share-this-stem" or "sto-present-but-not-validated"))
+            throw new InvalidDataException("The starting tune capability permits Load alongside a blocking reason.");
+
+        var known = new HashSet<string>([
+            "contract_version", "requested_purpose", "resolved_purpose", "purpose_match", "source_shape",
+            "load_permitted", "evidence_level", "reasons", "source_files_read_only", "usable_as_evidence"
+        ], StringComparer.Ordinal);
+        var extensionData = payload.EnumerateObject().Where(property => !known.Contains(property.Name))
+            .ToDictionary(property => property.Name, property => property.Value.Clone(), StringComparer.Ordinal);
+        return new StartingTuneCapabilityView(version, requested, resolved, match, shape, load, evidence, reasons, readOnly, usable, extensionData);
+    }
+
+    private static JsonElement RequiredStartingTuneProperty(JsonElement payload, string name)
+    {
+        if (!payload.TryGetProperty(name, out var value))
+            throw new InvalidDataException($"The starting tune capability is missing required field '{name}'.");
+        return value;
+    }
+
+    private static string RequiredStartingTuneText(JsonElement payload, string name)
+    {
+        var value = RequiredStartingTuneProperty(payload, name);
+        if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+            throw new InvalidDataException($"The starting tune capability field '{name}' must be text.");
+        return value.GetString()!;
+    }
+
+    private static string? RequiredNullableStartingTuneText(JsonElement payload, string name)
+    {
+        var value = RequiredStartingTuneProperty(payload, name);
+        if (value.ValueKind == JsonValueKind.Null) return null;
+        if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+            throw new InvalidDataException($"The starting tune capability field '{name}' must be text or null.");
+        return value.GetString();
+    }
+
+    private static string RequiredStartingTuneEnum(JsonElement payload, string name, params string[] allowed)
+    {
+        var value = RequiredStartingTuneText(payload, name);
+        if (!allowed.Contains(value)) throw new InvalidDataException($"The starting tune capability field '{name}' has an unsupported value.");
+        return value;
+    }
+
+    private static int RequiredStartingTuneInteger(JsonElement payload, string name) =>
+        NullableIntegerValue(RequiredStartingTuneProperty(payload, name))
+        ?? throw new InvalidDataException($"The starting tune capability field '{name}' must be an integer.");
+
+    private static bool RequiredStartingTuneBoolean(JsonElement payload, string name) =>
+        RequiredStartingTuneProperty(payload, name).ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => throw new InvalidDataException($"The starting tune capability field '{name}' must be true or false.")
+        };
+
+    private static IReadOnlyList<string> RequiredStartingTuneTextArray(JsonElement payload, string name)
+    {
+        var value = RequiredStartingTuneProperty(payload, name);
+        if (value.ValueKind != JsonValueKind.Array || value.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString())))
+            throw new InvalidDataException($"The starting tune capability field '{name}' must be a text array.");
+        return value.EnumerateArray().Select(item => item.GetString()!).ToArray();
     }
 
     public static TuningExperimentView Tuning(JsonElement response)

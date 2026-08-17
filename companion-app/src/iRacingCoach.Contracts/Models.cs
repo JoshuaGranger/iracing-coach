@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace iRacingCoach.Contracts;
@@ -1099,7 +1100,21 @@ public sealed record SetupPackageView(
     string Purpose = "Race",
     string DonorReason = "",
     bool SimulatorSetupProduced = false,
-    bool SourceFilesModified = false);
+    bool SourceFilesModified = false,
+    StartingTuneCapabilityView? Capability = null);
+
+public sealed record StartingTuneCapabilityView(
+    int ContractVersion,
+    string RequestedPurpose,
+    string? ResolvedPurpose,
+    string PurposeMatch,
+    string SourceShape,
+    bool LoadPermitted,
+    string EvidenceLevel,
+    IReadOnlyList<string> Reasons,
+    bool SourceFilesReadOnly,
+    bool UsableAsEvidence,
+    IReadOnlyDictionary<string, JsonElement> ExtensionData);
 
 public sealed record TuningExperimentView(
     string ExperimentId,
