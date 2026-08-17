@@ -470,7 +470,9 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(liveVisuals, "data-source-rate");
         StringAssert.Contains(liveVisuals, "sourceRate = State.LiveState.SourceTickRate");
         Assert.DoesNotContain("Hz source", liveVisuals);
-        StringAssert.Contains(liveVisuals, "@(((Snapshot.LapDistancePercent ?? 0) * 100).ToString(\"0\"))%");
+        StringAssert.Contains(liveVisuals, "Snapshot.LapDistancePercent is { } lapDistance");
+        StringAssert.Contains(liveVisuals, "Lap position unavailable");
+        Assert.DoesNotContain("Snapshot.LapDistancePercent ?? 0", liveVisuals, StringComparison.Ordinal);
         Assert.DoesNotContain("* 100).ToString(\"0\")%", liveVisuals);
         Assert.DoesNotContain("<svg class=\"live-trend-chart\"", liveVisuals);
         var liveChart = File.ReadAllText(Path.Combine(ui, "wwwroot", "live-telemetry-chart.js"));

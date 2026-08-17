@@ -83,10 +83,10 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
             double? classLeaderGap = classPosition == 1 ? 0 : SameLapGap(f2Times, carLaps, playerIndexValue, classLeaderIndex, GapKind.ToTarget);
             var aheadGap = SameLapGap(f2Times, carLaps, playerIndexValue, aheadIndex, GapKind.ToTarget);
             var behindGap = SameLapGap(f2Times, carLaps, playerIndexValue, behindIndex, GapKind.FromTarget);
-            var flags = ReadUInt("SessionFlags", bestOffset) ?? 0;
-            var caution = (flags & (0x00000008u | 0x00004000u | 0x00008000u)) != 0;
-            var black = (flags & (0x00010000u | 0x00020000u)) != 0;
-            var repair = (flags & 0x00100000u) != 0;
+            var flags = ReadUInt("SessionFlags", bestOffset);
+            var caution = LiveTruthPolicy.IsUnderCaution(flags);
+            var black = LiveTruthPolicy.DecodeRacingState(flags) is "black" or "disqualified";
+            var repair = LiveTruthPolicy.DecodeRepairState(flags) == "required";
             var lapRaw = ReadInt("Lap", bestOffset);
             var lapsRemaining = ReadDouble("SessionLapsRemainEx", bestOffset) ?? ReadDouble("SessionLapsRemain", bestOffset);
             var replayCars = ReplayCars(
@@ -108,7 +108,8 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 Timestamp = DateTimeOffset.UtcNow,
                 Tick = bestTick,
                 TickRate = tickRate,
-                Flag = FlagLabel(flags),
+                Flag = LiveTruthPolicy.DisplayFlag(flags),
+                SessionFlagsKnown = flags.HasValue,
                 UnderCaution = caution,
                 BlackFlag = black,
                 RepairFlag = repair,
@@ -146,7 +147,7 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 LateralAccelerationG = ReadDouble("LatAccel", bestOffset) / 9.80665,
                 LongitudinalAccelerationG = ReadDouble("LongAccel", bestOffset) / 9.80665,
                 SpeedMetersPerSecond = ReadDouble("Speed", bestOffset),
-                LapDistancePercent = ReadDouble("LapDistPct", bestOffset),
+                LapDistancePercent = LiveTruthPolicy.NormalizeLapDistance(ReadDouble("LapDistPct", bestOffset)),
                 Latitude = ReadDouble("Lat", bestOffset),
                 Longitude = ReadDouble("Lon", bestOffset),
                 SessionTimeSeconds = ReadDouble("SessionTime", bestOffset),
@@ -433,18 +434,6 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
     private static double? NonNegative(double? value) => value is >= 0 && double.IsFinite(value.Value) ? value : null;
     private static double? Percentage(double? value) => value is >= 0 and <= 1 && double.IsFinite(value.Value) ? value : null;
     private static int TypeWidth(int type) => type switch { 0 or 1 => 1, 2 or 3 or 4 => 4, 5 => 8, _ => 0 };
-    private static string FlagLabel(uint flags)
-    {
-        if ((flags & 0x00020000u) != 0) return "DISQUALIFIED";
-        if ((flags & 0x00010000u) != 0) return "BLACK FLAG";
-        if ((flags & 0x00000010u) != 0) return "RED";
-        if ((flags & (0x00004000u | 0x00008000u | 0x00000008u)) != 0) return "CAUTION";
-        if ((flags & 0x00000001u) != 0) return "CHECKERED";
-        if ((flags & 0x00000002u) != 0) return "WHITE";
-        if ((flags & (0x00000004u | 0x80000000u)) != 0) return "GREEN";
-        return "RACING";
-    }
-
     private void Close()
     {
         _view?.Dispose();

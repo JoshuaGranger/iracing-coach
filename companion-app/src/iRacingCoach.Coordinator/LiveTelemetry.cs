@@ -86,6 +86,7 @@ public sealed record LiveTelemetrySample
     public int Tick { get; init; }
     public int TickRate { get; init; }
     public string Flag { get; init; } = "Waiting";
+    public bool SessionFlagsKnown { get; init; } = true;
     public bool UnderCaution { get; init; }
     public bool BlackFlag { get; init; }
     public bool RepairFlag { get; init; }
@@ -745,12 +746,12 @@ public sealed class LiveTelemetryEngine
             sample.TrackTemperatureC,
             sample.TrackTemperatureC.HasValue && _initialTrackTemperature.HasValue ? sample.TrackTemperatureC.Value - _initialTrackTemperature.Value : null,
             sample.AirTemperatureC, sample.BrakeBiasPercent, sample.OnPitRoad, sample.MandatoryRepairSeconds, sample.OptionalRepairSeconds,
-            sample.BlackFlag ? "Black flag" : "None recorded", candidate, null,
+            !sample.SessionFlagsKnown ? "Unavailable" : sample.BlackFlag ? "Black flag" : "None recorded", candidate, null,
             new SafeGlanceState(safeGlanceEnabled, glanceOpportunity, urgent, suppression, sample.Timestamp),
             sample.Timestamp, DateTimeOffset.UtcNow - sample.Timestamp, sample.Source, 0.9, string.Empty,
             sample.SpeedMetersPerSecond * 2.2369362920544, sample.Throttle, sample.Brake, sample.SteeringWheelAngleRadians,
             sample.Gear, sample.Rpm, sample.YawRateRadiansPerSecond * 57.29577951308232, sample.LateralAccelerationG,
-            sample.LongitudinalAccelerationG, sample.LapDistancePercent, sample.Latitude, sample.Longitude,
+            sample.LongitudinalAccelerationG, LiveTruthPolicy.NormalizeLapDistance(sample.LapDistancePercent), sample.Latitude, sample.Longitude,
             sample.FuelLiters, sample.FuelLevelPercent);
     }
 
@@ -766,9 +767,9 @@ public sealed class LiveTelemetryEngine
 
     private LiveGapState BuildGap(string key, string label, double? value, LiveTelemetrySample sample, string unavailableReason)
     {
-        if (!value.HasValue || value.Value < 0 || sample.UnderCaution || sample.OnPitRoad)
+        if (!value.HasValue || value.Value < 0 || !sample.SessionFlagsKnown || sample.UnderCaution || sample.OnPitRoad)
         {
-            var reason = sample.UnderCaution ? "Competitive gap trends are suppressed under caution." : sample.OnPitRoad ? "Competitive gap trends are suppressed during pit cycles." : unavailableReason;
+            var reason = !sample.SessionFlagsKnown ? "Competitive gap trends are unavailable while the race flag channel is missing." : sample.UnderCaution ? "Competitive gap trends are suppressed under caution." : sample.OnPitRoad ? "Competitive gap trends are suppressed during pit cycles." : unavailableReason;
             return new LiveGapState(label, value, value.HasValue ? LiveGapTrend.Stale : LiveGapTrend.Unavailable, sample.Timestamp, DateTimeOffset.UtcNow - sample.Timestamp, value.HasValue ? EvidenceKind.Measured : EvidenceKind.Unavailable, value.HasValue ? 0.7 : 0, sample.Source, reason);
         }
 
@@ -820,6 +821,7 @@ public sealed class LiveTelemetryEngine
         if (sample.MandatoryRepairSeconds is > 0) return Cue($"Mandatory repair: {Math.Ceiling(sample.MandatoryRepairSeconds.Value)} s remaining", LiveCuePriority.Critical, EvidenceKind.Measured, sample, "iRacing repair timer");
         if (pit.FuelHardLimitLaps is <= 1) return Cue("Fuel hard limit: pit now if rules permit", LiveCuePriority.Critical, EvidenceKind.Derived, sample, "Fuel-use history");
         if (pit.FuelHardLimitLaps is <= 3) return Cue($"Fuel hard limit: {pit.FuelHardLimitLaps} laps", LiveCuePriority.Strategy, EvidenceKind.Derived, sample, "Fuel-use history");
+        if (!sample.SessionFlagsKnown) return Cue("Race flag unavailable: flag-dependent coaching paused", LiveCuePriority.Information, EvidenceKind.Unavailable, sample, "SessionFlags");
         if (sample.UnderCaution) return Cue("Caution: competitive gap trends paused", LiveCuePriority.PitService, EvidenceKind.Measured, sample, "iRacing race status");
         if (sample.OnPitRoad) return Cue("Pit road: confirm service and speed", LiveCuePriority.PitService, EvidenceKind.Measured, sample, "OnPitRoad");
         if (ahead.Seconds is < 1.0 && ahead.Trend == LiveGapTrend.Closing) return Cue($"Gap ahead closing: {ahead.Seconds:0.00} s", LiveCuePriority.Traffic, EvidenceKind.Derived, sample, "8-second scoring trend");
@@ -849,7 +851,7 @@ public sealed class LiveTelemetryEngine
         }
         _wasOnPitRoad = sample.OnPitRoad;
 
-        var sessionConfounded = sample.UnderCaution || sample.OnPitRoad || sample.RepairFlag || sample.Towing || sample.BlackFlag;
+        var sessionConfounded = !sample.SessionFlagsKnown || sample.UnderCaution || sample.OnPitRoad || sample.RepairFlag || sample.Towing || sample.BlackFlag;
         _currentLapSessionConfounded |= sessionConfounded;
         _currentLapInputConfounded |= sessionConfounded || sample.GapToAheadSeconds is < 1.5 || sample.GapToBehindSeconds is < 0.75;
         _currentLapUnderCaution |= sample.UnderCaution;
@@ -864,7 +866,7 @@ public sealed class LiveTelemetryEngine
     private void CompleteObservedLap(LiveTelemetrySample sample, bool sequentialLap)
     {
         var fullyObserved = sequentialLap && _currentLapFullyObserved;
-        var boundarySessionConfounded = sample.UnderCaution || sample.OnPitRoad || sample.RepairFlag || sample.Towing || sample.BlackFlag;
+        var boundarySessionConfounded = !sample.SessionFlagsKnown || sample.UnderCaution || sample.OnPitRoad || sample.RepairFlag || sample.Towing || sample.BlackFlag;
         var cleanSessionLap = fullyObserved && !_currentLapSessionConfounded && !boundarySessionConfounded;
         var completedUnderCaution = _currentLapUnderCaution || sample.UnderCaution;
         var completedOnPitRoad = _currentLapWasOnPitRoad || sample.OnPitRoad;
