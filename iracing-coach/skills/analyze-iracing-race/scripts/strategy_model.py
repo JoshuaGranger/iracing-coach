@@ -163,6 +163,88 @@ class StrategyComparison:
         }
 
 
+@dataclass(frozen=True)
+class PositionContext:
+    """What a time margin was worth in places, against the observed field.
+
+    A margin in seconds is not a decision until it is priced in positions. Ten
+    seconds is enormous in a tight midfield and irrelevant when the nearest car
+    finished half a minute away, and only the recorded gaps can tell the two
+    apart. Cars are counted from their measured finishing gaps rather than from
+    any assumption about how a race would have unfolded, so this says what the
+    margin *would have spanned in this race*, not what position would result
+    from running the alternative plan - the rest of the field would have raced
+    differently, and nothing here pretends to model that.
+    """
+
+    margin_s: float
+    cars_within_margin_ahead: int
+    cars_within_margin_behind: int
+    nearest_ahead_s: float | None
+    nearest_behind_s: float | None
+    status: str
+
+    def to_payload(self) -> dict[str, Any]:
+        def rounded(value: float | None) -> float | None:
+            return round(value, 3) if value is not None else None
+
+        return {
+            "margin_s": round(self.margin_s, 3),
+            "cars_within_margin_ahead": self.cars_within_margin_ahead,
+            "cars_within_margin_behind": self.cars_within_margin_behind,
+            "nearest_ahead_s": rounded(self.nearest_ahead_s),
+            "nearest_behind_s": rounded(self.nearest_behind_s),
+            "status": self.status,
+            "interpretation": (
+                "how many cars this margin would have spanned at the recorded "
+                "finishing gaps; not a predicted finishing position, because the "
+                "rest of the field would also have raced the alternative plan "
+                "differently"
+            ),
+        }
+
+
+def positions_from_margin(
+    margin_s: Any, gaps_s: Iterable[Any]
+) -> PositionContext | None:
+    """Price a time margin in cars, using measured finishing gaps.
+
+    ``gaps_s`` are time gaps to each competitor, positive when that car is
+    ahead of the player.
+    """
+
+    margin = _finite(margin_s)
+    if margin is None or margin < 0.0:
+        return None
+    ahead: list[float] = []
+    behind: list[float] = []
+    for value in gaps_s:
+        gap = _finite(value)
+        if gap is None:
+            continue
+        if gap > 0.0:
+            ahead.append(gap)
+        elif gap < 0.0:
+            behind.append(-gap)
+    if not ahead and not behind:
+        return PositionContext(
+            margin_s=margin,
+            cars_within_margin_ahead=0,
+            cars_within_margin_behind=0,
+            nearest_ahead_s=None,
+            nearest_behind_s=None,
+            status=STATUS_UNAVAILABLE,
+        )
+    return PositionContext(
+        margin_s=margin,
+        cars_within_margin_ahead=sum(1 for gap in ahead if gap <= margin),
+        cars_within_margin_behind=sum(1 for gap in behind if gap <= margin),
+        nearest_ahead_s=min(ahead) if ahead else None,
+        nearest_behind_s=min(behind) if behind else None,
+        status=STATUS_USABLE,
+    )
+
+
 def _split_stints(race_laps: int, stop_count: int, maximum_stint: int) -> tuple[int, ...] | None:
     """Divide the race into as-equal stints that each fit the fuel limit."""
 

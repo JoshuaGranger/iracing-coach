@@ -7318,6 +7318,7 @@ def _strategy_planning(
     laps: Sequence[Mapping[str, Any]],
     race_summary: Mapping[str, Any],
     strategy: Mapping[str, Any],
+    field_pace: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What a stop costs this driver, and which plan is quickest.
 
@@ -7365,11 +7366,22 @@ def _strategy_planning(
         green_burn_l_per_lap=strategy.get("measured_green_fuel_l_per_lap"),
     )
 
+    position_context = None
+    if comparison.margin_s is not None:
+        gaps = [
+            item.get("final_gap_s")
+            for item in ((field_pace or {}).get("relative") or ())
+            if isinstance(item, Mapping)
+        ]
+        priced = strategy_model.positions_from_margin(comparison.margin_s, gaps)
+        position_context = priced.to_payload() if priced is not None else None
+
     return {
         "schema_version": 1,
         "status": comparison.status,
         "reason": comparison.reason,
         "reference_lap": reference.lap_number,
+        "position_context": position_context,
         "representative_green_lap_s": _round(base_lap_s, 3),
         "pit_loss": pit_report.to_payload(),
         "plan_comparison": comparison.to_payload(),
@@ -7731,8 +7743,10 @@ def analyze_telemetry(
     coaching_signals = _coaching_signals(runs)
     pace_attribution = _pace_attribution(table, laps, track_profile)
     strategy = _strategy(runs, race_summary)
-    strategy_planning = _strategy_planning(table, laps, race_summary, strategy)
     field_pace = _field_pace(table)
+    strategy_planning = _strategy_planning(
+        table, laps, race_summary, strategy, field_pace
+    )
     technical_insights = build_technical_insights(
         laps,
         runs,

@@ -292,3 +292,41 @@ class PayloadTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PositionContextTests(unittest.TestCase):
+    """A margin is not a decision until it is priced in cars."""
+
+    GAPS = (2.0, 8.5, -3.0, -14.0, 41.0)
+
+    def test_a_margin_counts_only_the_cars_it_spans(self) -> None:
+        priced = sm.positions_from_margin(9.0, self.GAPS)
+        self.assertEqual(priced.status, sm.STATUS_USABLE)
+        self.assertEqual(priced.cars_within_margin_ahead, 2)
+        self.assertEqual(priced.cars_within_margin_behind, 1)
+        self.assertAlmostEqual(priced.nearest_ahead_s, 2.0, places=6)
+        self.assertAlmostEqual(priced.nearest_behind_s, 3.0, places=6)
+
+    def test_the_same_margin_is_worth_nothing_in_a_spread_field(self) -> None:
+        priced = sm.positions_from_margin(9.0, (60.0, 90.0, -75.0))
+        self.assertEqual(priced.cars_within_margin_ahead, 0)
+        self.assertEqual(priced.cars_within_margin_behind, 0)
+        self.assertAlmostEqual(priced.nearest_ahead_s, 60.0, places=6)
+
+    def test_an_empty_field_is_unavailable_not_zero_positions(self) -> None:
+        priced = sm.positions_from_margin(9.0, ())
+        self.assertEqual(priced.status, sm.STATUS_UNAVAILABLE)
+
+    def test_gaps_that_are_not_numbers_are_ignored(self) -> None:
+        priced = sm.positions_from_margin(9.0, (2.0, None, "x", float("nan"), -3.0))
+        self.assertEqual(priced.cars_within_margin_ahead, 1)
+        self.assertEqual(priced.cars_within_margin_behind, 1)
+
+    def test_a_negative_margin_is_refused(self) -> None:
+        self.assertIsNone(sm.positions_from_margin(-1.0, self.GAPS))
+        self.assertIsNone(sm.positions_from_margin(None, self.GAPS))
+
+    def test_payload_refuses_to_call_itself_a_predicted_position(self) -> None:
+        payload = sm.positions_from_margin(9.0, self.GAPS).to_payload()
+        json.dumps(payload)
+        self.assertIn("not a predicted finishing position", payload["interpretation"])
