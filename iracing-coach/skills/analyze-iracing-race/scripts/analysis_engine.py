@@ -26,6 +26,7 @@ try:  # Package import and direct script loading are both supported.
         build_tire_learning,
         build_track_geometry,
     )
+    from . import competitor_pace
     from . import lap_reference
     from . import pit_loss
     from . import race_plan_decision
@@ -35,6 +36,7 @@ try:  # Package import and direct script loading are both supported.
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from groove_analysis import analyze_groove_evolution
     from race_foundations import build_race_replay, build_tire_learning, build_track_geometry
+    import competitor_pace
     import lap_reference
     import pit_loss
     import race_plan_decision
@@ -66,6 +68,7 @@ ANALYSIS_SCHEMA_VERSION = 2
 ANALYSIS_PROFILE_VERSION = "post-race-foundations-v13"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
+    "competitor_pace.py",
     "groove_analysis.py",
     "ibt_reader.py",
     "lap_reference.py",
@@ -7235,6 +7238,38 @@ PACE_ATTRIBUTION_SCHEMA_VERSION = 1
 FALLBACK_SEGMENT_COUNT = 12
 
 
+def _field_pace(table: TelemetryTable) -> dict[str, Any]:
+    """Observed pace and gaps for the rest of the field.
+
+    `COMPETITOR-PACE-001`. Every other number in this analysis describes a
+    driver racing alone; this is the only one that measures anybody else, and
+    it is what a finishing-position claim would have to rest on.
+    """
+
+    if not table.has("CarIdxLapDistPct"):
+        return {
+            "schema_version": 1,
+            "status": "unavailable",
+            "reason": "car_position_channel_not_recorded",
+            "cars": [],
+            "relative": [],
+        }
+    player_index = None
+    for value in table.get("PlayerCarIdx", default=None):
+        candidate = _finite(value)
+        if candidate is not None:
+            player_index = candidate
+            break
+    report = competitor_pace.analyze_field(
+        lap_dist_pct_by_car=table.get("CarIdxLapDistPct", default=None),
+        session_time_s=table.get("SessionTime", "SessionTimeOfDay", default=None),
+        player_car_index=player_index,
+    )
+    payload = report.to_payload()
+    payload["schema_version"] = 1
+    return payload
+
+
 def _clean_lap_traces(
     table: TelemetryTable, laps: Sequence[Mapping[str, Any]]
 ) -> tuple[list[Any], list[int]]:
@@ -7697,6 +7732,7 @@ def analyze_telemetry(
     pace_attribution = _pace_attribution(table, laps, track_profile)
     strategy = _strategy(runs, race_summary)
     strategy_planning = _strategy_planning(table, laps, race_summary, strategy)
+    field_pace = _field_pace(table)
     technical_insights = build_technical_insights(
         laps,
         runs,
@@ -7783,6 +7819,7 @@ def analyze_telemetry(
         "driver_adjustments": driver_adjustments,
         "strategy": strategy,
         "strategy_planning": strategy_planning,
+        "field_pace": field_pace,
         "technical_insights": technical_insights,
         "coaching_signals": coaching_signals,
         "pace_attribution": pace_attribution,
