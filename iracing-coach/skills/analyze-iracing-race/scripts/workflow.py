@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections import Counter
 import datetime as _datetime
 import hashlib
-import inspect
 import json
 import math
 import os
@@ -30,8 +29,9 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
 
 try:  # Support package imports and direct execution from the scripts folder.
     from .analysis_engine import (
+        ANALYSIS_PROFILE_VERSION,
+        ANALYSIS_SCHEMA_VERSION,
         analyze_telemetry,
-        analyzer_bundle_sha256,
         build_technical_insights,
     )
     from .garage61_client import (
@@ -61,8 +61,9 @@ try:  # Support package imports and direct execution from the scripts folder.
     from .storage import ArchiveStore, safe_slug, session_phase, stable_hash, utc_now
 except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading.
     from analysis_engine import (
+        ANALYSIS_PROFILE_VERSION,
+        ANALYSIS_SCHEMA_VERSION,
         analyze_telemetry,
-        analyzer_bundle_sha256,
         build_technical_insights,
     )
     from garage61_client import (
@@ -1530,23 +1531,43 @@ def _analysis_pipeline_sha256() -> str:
     not invalidate an otherwise identical multi-megabyte telemetry analysis.
     """
 
-    helpers = (
-        _file_signature,
-        _assert_finalized_ibt,
-        _available_channel_names,
-        _catalog_summary,
-        _source_catalog_record,
-        _load_analysis_telemetry,
-    )
+    # This used to hash SOURCE TEXT - the analyzer bundle's raw bytes plus
+    # inspect.getsource of six helpers - which meant a reformat, a renamed local, or
+    # a corrected comment rotated the fingerprint and orphaned every cached
+    # analysis. On a real archive that produced 19 live generations holding 2.42 GB,
+    # none of them reachable. The docstring above already stated the correct intent;
+    # the implementation contradicted it.
+    #
+    # Fingerprint the declared CONTRACT instead. A change to analysis math must be
+    # accompanied by a bump to ANALYSIS_SCHEMA_VERSION or ANALYSIS_PROFILE_VERSION,
+    # and test_analysis_pipeline_identity enforces that: it fails when the analyzer
+    # bundle changes without a deliberate decision, so the maintainer must either
+    # bump a version (math changed, caches must fall) or re-record the digest
+    # (formatting only, caches stay valid).
     return stable_hash(
         {
-            "schema": 1,
+            "schema": 2,
             "analysis_channels": ANALYSIS_CHANNELS,
-            "analyzer_decoder_bundle_sha256": analyzer_bundle_sha256(),
-            "workflow_helpers": [inspect.getsource(helper) for helper in helpers],
+            "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
+            "analysis_profile_version": ANALYSIS_PROFILE_VERSION,
         },
         64,
     )
+
+
+# Recorded digest of the analyzer bundle as of the last deliberate review of what
+# the pipeline fingerprint above covers. This module is not itself part of
+# ANALYZER_SOURCE_FILES, so updating this line cannot change the value it records.
+#
+# When the guard test fails, exactly one of these is true, and you must choose:
+#   - analysis math or output changed  -> bump ANALYSIS_SCHEMA_VERSION or
+#     ANALYSIS_PROFILE_VERSION in analysis_engine.py, then re-record below.
+#     Cached analyses become unreachable, which is correct: they are wrong.
+#   - only formatting, comments, typing or naming changed -> re-record below
+#     alone. Cached analyses stay valid, which is the whole point.
+ANALYZER_BUNDLE_REVIEWED_SHA256 = (
+    "85d2afa3e6ff09b25c3d8cfcc619e4e96f28edd13bf1a428885efaca21f98086"
+)
 
 
 def _read_json_file(path: Path, expected: type, default: Any) -> Any:
