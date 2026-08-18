@@ -37,16 +37,8 @@ if (-not $taskPython) {
     exit 1
 }
 
-$taskVersionText = & $taskPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($taskVersionText)) {
-    [Console]::Error.WriteLine('The selected iRacing Coach Python runtime could not be started.')
-    exit 1
-}
-$taskVersion = [Version]$taskVersionText.Trim()
-if ($taskVersion -lt [Version]'3.10') {
-    [Console]::Error.WriteLine("iRacing Coach requires Python 3.10 or newer; found $taskVersion.")
-    exit 1
-}
+# The interpreter version is asserted at import in mcp_server.py. Probing it here
+# started a second Python process on every backend call purely to print two numbers.
 
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'

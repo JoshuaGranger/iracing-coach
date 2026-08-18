@@ -16,6 +16,16 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 
+if sys.version_info < (3, 10):  # pragma: no cover - guarded before any feature use
+    # The launcher used to answer this by starting a second interpreter purely to
+    # print its version, which cost a process spawn on every backend call. The
+    # server is the thing that needs the floor, so it asserts it itself.
+    raise SystemExit(
+        "iRacing Coach requires Python 3.10 or newer; found "
+        f"{sys.version_info.major}.{sys.version_info.minor}."
+    )
+
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLUGIN_ROOT = SCRIPT_DIR.parents[2]
 VENDOR_DIR = PLUGIN_ROOT / "vendor"

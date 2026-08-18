@@ -903,6 +903,111 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task AnalyzeRace_ReopeningTheLoadedRaceCostsNoBackendCall()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-reopen-guard", Guid.NewGuid().ToString("N"));
+        const string selector = "subsession:8001:1";
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        // The race metadata must describe the same session the analysis does, as it
+        // always does in production - identity mismatch is what the guard screens for.
+        var race = new RecentRace(
+            selector, "Recorded Track", "", "Recorded Car", "Today",
+            "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(race);
+        Assert.AreEqual(1, backend.AnalyzeCalls);
+        var loaded = state.CurrentAnalysis;
+        Assert.IsNotNull(loaded);
+        Assert.IsTrue(
+            ProgressiveTuningCoordinator.Matches(race, loaded.TuningIdentity),
+            "The reopen guard can only fire when the loaded analysis carries matching session identity.");
+
+        // Navigating back into the race that is already open - the Progressive Tuning
+        // to Race Analysis path - must be a pointer check, not a re-read.
+        await state.AnalyzeRaceAsync(race);
+
+        Assert.AreEqual(1, backend.AnalyzeCalls, "Reopening the loaded race must not re-analyze it.");
+        Assert.AreSame(loaded, state.CurrentAnalysis, "The already-loaded evidence must be preserved, not rebuilt.");
+        Assert.IsTrue(state.AnalysisWorkspaceOpen);
+        Assert.IsFalse(state.AnalysisLoading);
+    }
+
+    [TestMethod]
+    public async Task AnalyzeRace_ReopenGuardStillAnalyzesADifferentRace()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-reopen-guard-other", Guid.NewGuid().ToString("N"));
+        const string first = "subsession:8001:1";
+        const string second = "subsession:8002:1";
+        var backend = new FakeBackend(responseOverride: (tool, _, arguments) =>
+        {
+            if (tool != "analyze_iracing_race") return null;
+            var requested = JsonSerializer.SerializeToElement(arguments).GetProperty("selector").GetString() ?? first;
+            return HomeAnalysisResponse(selector: requested);
+        });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        // Same track and car as the analysis fixture, so only the recording identity
+        // differs - the case a too-loose guard would wrongly short-circuit.
+        RecentRace Race(string selector, string eventKey) => new(
+            selector, "Recorded Track", "", "Recorded Car", "Today",
+            "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: eventKey, SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(Race(first, "8001"));
+        Assert.AreEqual(1, backend.AnalyzeCalls);
+
+        // The guard compares full session identity. A different recording must never be
+        // served the previous race's telemetry.
+        await state.AnalyzeRaceAsync(Race(second, "8002"));
+
+        Assert.AreEqual(2, backend.AnalyzeCalls, "A different race must still be analyzed.");
+    }
+
+    [TestMethod]
+    public async Task AnalysisCache_RejectsADeadSchemaWithoutReadingTheWholeEntry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-dead-schema", Guid.NewGuid().ToString("N"));
+        const string selector = "subsession:8001:1";
+        WriteUiAnalysisCache(root, selector, HomeAnalysisResponse(selector: selector), schemaVersion: 5);
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            selector, "Test Track", "Oval", "Test Car", "Today",
+            "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(race);
+
+        Assert.AreEqual(1, backend.AnalyzeCalls, "A cache entry from a retired schema must not be served.");
+        using var rewritten = JsonDocument.Parse(File.ReadAllText(UiAnalysisCachePath(root, selector)));
+        Assert.AreEqual(12, rewritten.RootElement.GetProperty("schemaVersion").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task AnalysisCache_IsWrittenCompactBecauseOnlyMachinesReadIt()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-compact-cache", Guid.NewGuid().ToString("N"));
+        const string selector = "subsession:8001:1";
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            selector, "Test Track", "Oval", "Test Car", "Today",
+            "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(race);
+
+        // Indenting this artifact inflated a real 25 MB entry to 615,614 lines.
+        var written = File.ReadAllText(UiAnalysisCachePath(root, selector));
+        Assert.DoesNotContain("\n", written, "The analysis cache must be written compact.");
+    }
+
+    [TestMethod]
     public async Task AnalysisCache_DoesNotUseArchiveAsLiveCacheWhenSourceExists()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-archive-live-cache", Guid.NewGuid().ToString("N"));

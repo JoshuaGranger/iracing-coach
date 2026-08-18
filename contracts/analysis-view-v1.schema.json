@@ -21,6 +21,9 @@
     "data_quality": {
       "type": "object"
     },
+    "field_pace": {
+      "type": "object"
+    },
     "garage61_representative_laps": {
       "type": "object"
     },
@@ -35,6 +38,9 @@
     },
     "laps": {
       "type": "array"
+    },
+    "pace_attribution": {
+      "type": "object"
     },
     "race_grades": {
       "type": "object"
@@ -56,6 +62,9 @@
       "type": "object"
     },
     "strategy": {
+      "type": "object"
+    },
+    "strategy_planning": {
       "type": "object"
     },
     "technical_insights": {
@@ -89,6 +98,9 @@
     "corner_tire_age",
     "groove_evolution",
     "strategy",
+    "strategy_planning",
+    "field_pace",
+    "pace_attribution",
     "damage_repair",
     "setup_telemetry",
     "conditions",

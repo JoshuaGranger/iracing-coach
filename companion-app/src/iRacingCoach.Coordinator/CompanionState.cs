@@ -28,6 +28,14 @@ public sealed class CompanionState : IDisposable
     // newly available maps, replay coverage, tire learning, or technical data.
     private const int UiAnalysisCacheSchemaVersion = 12;
     private const string AppVersion = "0.16.0";
+
+    // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
+    // roughly 1.8x - one 25 MB entry spanned 615,614 lines - and allocating fresh options
+    // per write defeats System.Text.Json's per-options metadata cache.
+    private static readonly JsonSerializerOptions PortableArtifactJson = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = false
+    };
     private readonly IBackendClient _backend;
     private readonly ISettingsStore? _settingsStore;
     private readonly IGarage61CredentialStore _garage61Credentials;
@@ -884,6 +892,21 @@ public sealed class CompanionState : IDisposable
             return;
         }
         SelectRaceSession(race);
+
+        // Progressive Tuning and Race Analysis share one analysis workspace. When the
+        // requested race is already the loaded one, opening it is a pointer check - not a
+        // reason to discard the evidence and re-read the recording. SelectTuningRaceAsync
+        // has always short-circuited this way; the analysis path did not, which is why
+        // Progressive Tuning -> Race Analysis paid a full re-analysis.
+        if (!force && CurrentAnalysis is not null && ProgressiveTuningCoordinator.Matches(race, CurrentAnalysis.TuningIdentity))
+        {
+            AnalysisWorkspaceOpen = true;
+            AnalysisLoading = false;
+            AnalysisMessage = string.Empty;
+            RaiseChanged();
+            return;
+        }
+
         var request = new AnalysisPublicationRequest(
             Volatile.Read(ref _analysisSelectionEpoch),
             race.Id,
@@ -2673,11 +2696,26 @@ public sealed class CompanionState : IDisposable
     public void SetPrimaryUiVisible(bool visible)
     {
         PrimaryUiVisible = visible;
-        if (visible)
+        if (!visible) return;
+
+        // Paint first. MainWindow.ShowFromTray calls this on the WPF dispatcher before
+        // Show(), and the sweep below reads and parses every cached race - seconds of
+        // blocking I/O during which the restored window cannot draw at all.
+        // ProcessHomeAnalysisRaceAsync already applies the same state from the background
+        // worker, so running the sweep off-thread keeps the existing thread contract.
+        RaiseChanged();
+        _ = Task.Run(() =>
         {
-            QueueMissingHomeRaceAnalysis();
-            RaiseChanged();
-        }
+            try
+            {
+                QueueMissingHomeRaceAnalysis();
+            }
+            catch (Exception ex) when (ex is ObjectDisposedException or IOException or UnauthorizedAccessException)
+            {
+                // The app closed, or the archive became unreadable, while the sweep ran.
+                // The next visibility change repeats it.
+            }
+        });
     }
     public bool LiveMonitorVisible
     {
@@ -3374,6 +3412,7 @@ public sealed class CompanionState : IDisposable
     {
         var path = UiAnalysisCachePath(race);
         if (!File.Exists(path)) return TryLoadArchiveOnlyAnalysis(race);
+        if (!CachedSchemaMayBeCurrent(path)) return TryLoadArchiveOnlyAnalysis(race);
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
@@ -3477,6 +3516,14 @@ public sealed class CompanionState : IDisposable
     private bool TryReadCachedRaceOverview(RecentRace race, out RaceOverview overview)
     {
         if (TryReadUiAnalysisCache(race, out overview)) return true;
+        return TryReadArchivedRaceOverview(race, out overview);
+    }
+
+    // Split out so callers that have already tried - and failed - the UI cache do not pay
+    // for a second full read and parse of the same file. On a real archive that duplicate
+    // cost hundreds of megabytes per tray restore.
+    private bool TryReadArchivedRaceOverview(RecentRace race, out RaceOverview overview)
+    {
         overview = race.Overview ?? new RaceOverview();
         if (string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return false;
         try
@@ -3498,6 +3545,38 @@ public sealed class CompanionState : IDisposable
         return TryReadUiAnalysisCache(race, out overview, out _);
     }
 
+    // SaveUiAnalysisCache writes schemaVersion first, so a dead cache generation can be
+    // rejected from a small prefix instead of parsing the whole entry to reach the same
+    // conclusion. Entries left behind by an older schema are otherwise read in full and
+    // discarded on every catalog sweep and every tray restore.
+    // Unknown is deliberately optimistic: if the stamp is not in the prefix, the caller's
+    // full parse decides, so an unexpected property order can never reject a valid entry.
+    private static bool CachedSchemaMayBeCurrent(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            Span<byte> prefix = stackalloc byte[512];
+            var read = stream.ReadAtLeast(prefix, prefix.Length, throwOnEndOfStream: false);
+            if (read <= 0) return true;
+            var reader = new Utf8JsonReader(prefix[..read], isFinalBlock: false, state: default);
+            while (reader.Read())
+            {
+                if (reader.TokenType != JsonTokenType.PropertyName) continue;
+                if (!reader.ValueTextEquals("schemaVersion"u8)) continue;
+                if (!reader.Read()) return true;
+                return reader.TokenType == JsonTokenType.Number
+                    && reader.TryGetInt32(out var cacheSchema)
+                    && cacheSchema == UiAnalysisCacheSchemaVersion;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // Let the full read report the failure in one place.
+        }
+        return true;
+    }
+
     private bool TryReadUiAnalysisCache(RecentRace race, out RaceOverview overview, out string analysisPath)
     {
         overview = race.Overview ?? new RaceOverview();
@@ -3505,6 +3584,7 @@ public sealed class CompanionState : IDisposable
         if (string.IsNullOrWhiteSpace(race.EffectiveSelector)) return false;
         var cachePath = UiAnalysisCachePath(race);
         if (!File.Exists(cachePath)) return false;
+        if (!CachedSchemaMayBeCurrent(cachePath)) return false;
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(cachePath));
@@ -3646,7 +3726,7 @@ public sealed class CompanionState : IDisposable
             }
             var sourceAvailable = !string.IsNullOrWhiteSpace(race.SourcePath)
                 && File.Exists(race.SourcePath);
-            if (!sourceAvailable && TryReadCachedRaceOverview(race, out overview))
+            if (!sourceAvailable && TryReadArchivedRaceOverview(race, out overview))
             {
                 changed |= ApplySuccessfulRaceAnalysis(race, overview, race.AnalysisPath);
                 continue;
@@ -3981,7 +4061,7 @@ public sealed class CompanionState : IDisposable
             var safeName = string.Concat(name.Select(character => Path.GetInvalidFileNameChars().Contains(character) || character is ':' or '/' or '\\' ? '-' : character));
             var path = Path.Combine(directory, safeName + ".json");
             var temporary = path + $".{Guid.NewGuid():N}.tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(value, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+            File.WriteAllText(temporary, JsonSerializer.Serialize(value, PortableArtifactJson));
             File.Move(temporary, path, overwrite: true);
 
             var activityDirectory = Path.Combine(Settings.ArchiveRoot, "activity-history");
@@ -3994,7 +4074,7 @@ public sealed class CompanionState : IDisposable
                 createdUtc = DateTimeOffset.UtcNow,
                 action = component,
                 artifactId = safeName
-            }, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+            }, PortableArtifactJson));
             File.Move(activityTemporary, activityPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or JsonException)
