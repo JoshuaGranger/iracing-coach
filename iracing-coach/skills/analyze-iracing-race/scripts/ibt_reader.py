@@ -432,7 +432,18 @@ def _parse_iracing_yaml_subset(text: str, path: Path) -> dict[str, Any]:
                 ):
                     container[key], index = parse_block(index, tokens[index][0])
                 else:
-                    container[key] = {}
+                    # A key with no inline value and no indented block is a blank
+                    # scalar, which YAML defines as null - not an empty mapping.
+                    # Treating it as {} made _as_text render the literal "{}",
+                    # which is how a config-less track such as Richmond reached
+                    # the UI as "Richmond {}" and, worse, made the discovery and
+                    # analysis paths disagree about its layout: {} is falsy, so
+                    # `x or fallback` recovered the track name while _as_text did
+                    # not. Race matching compares layout equality, so that
+                    # disagreement silently emptied Progressive Tuning's results.
+                    # yaml.safe_load returns None here, so this also stops the
+                    # bundled parser from disagreeing with the optional module.
+                    container[key] = None
         return container, index
 
     root_indent = tokens[0][0]

@@ -195,6 +195,28 @@ class IbtReaderTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_a_blank_scalar_is_null_and_not_an_empty_mapping(self) -> None:
+        # Ovals with no configuration emit `TrackConfigName: ` with nothing after
+        # it. Reading that as {} made _as_text render the literal "{}" - the
+        # stray glyph after Richmond - while `value or fallback` recovered the
+        # track name, because {} is falsy. Race matching compares layout
+        # equality, so the two paths disagreeing silently emptied Progressive
+        # Tuning. yaml.safe_load returns None here; the bundled parser must too.
+        parsed = ibt_reader._parse_iracing_yaml_subset(
+            "WeekendInfo:\n"
+            "  TrackDisplayName: Richmond Raceway\n"
+            "  TrackConfigName: \n"
+            "  TrackID: 561\n",
+            Path("richmond.ibt"),
+        )
+        weekend = parsed["WeekendInfo"]
+
+        self.assertIsNone(weekend["TrackConfigName"])
+        self.assertIsNone(ibt_reader._as_text(weekend["TrackConfigName"]))
+        self.assertNotIn("{}", str(ibt_reader._as_text(weekend["TrackConfigName"])))
+        # A blank value must not swallow the keys that follow it.
+        self.assertEqual(561, weekend["TrackID"])
+
     def test_scan_parses_metadata_catalogue_and_array_variable(self) -> None:
         source = self.root / "race.ibt"
         build_ibt(source)
