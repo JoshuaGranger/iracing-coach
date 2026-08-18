@@ -984,7 +984,52 @@ public sealed class CoordinatorTests
 
         Assert.AreEqual(1, backend.AnalyzeCalls, "A cache entry from a retired schema must not be served.");
         using var rewritten = JsonDocument.Parse(File.ReadAllText(UiAnalysisCachePath(root, selector)));
-        Assert.AreEqual(12, rewritten.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(13, rewritten.RootElement.GetProperty("schemaVersion").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task AnalysisCache_ServesAStoredResponseWrittenByAnOlderProjection()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-projection", Guid.NewGuid().ToString("N"));
+        const string selector = "subsession:8001:1";
+        WriteUiAnalysisCache(root, selector, HomeAnalysisResponse(selector: selector), projectionVersion: 0);
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            selector, "Recorded Track", "", "Recorded Car", "Today",
+            "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(race);
+
+        // A mapping change must cost a re-map, never a re-analysis. Conflating the
+        // two is what left 75% of a real cache orphaned.
+        Assert.AreEqual(0, backend.AnalyzeCalls, "A stale projection must be re-mapped, not re-analyzed.");
+        Assert.IsNotNull(state.CurrentAnalysis);
+    }
+
+    [TestMethod]
+    public async Task AnalysisCache_EvictsARetiredEnvelopeInsteadOfRereadingItForever()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-evict", Guid.NewGuid().ToString("N"));
+        const string selector = "subsession:8001:1";
+        WriteUiAnalysisCache(root, selector, HomeAnalysisResponse(selector: selector), schemaVersion: 5);
+        var cachePath = UiAnalysisCachePath(root, selector);
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            selector, "Recorded Track", "", "Recorded Car", "Today",
+            "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(race);
+
+        Assert.AreEqual(1, backend.AnalyzeCalls);
+        using var rebuilt = JsonDocument.Parse(File.ReadAllText(cachePath));
+        Assert.AreEqual(13, rebuilt.RootElement.GetProperty("schemaVersion").GetInt32(),
+            "The retired entry must be replaced by a current one, not left alongside it.");
     }
 
     [TestMethod]
@@ -1171,7 +1216,7 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
-    public async Task HomeRefresh_RegeneratesLegacyCacheToSchemaTwelve()
+    public async Task HomeRefresh_RegeneratesLegacyCacheToTheCurrentEnvelope()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-home-cache-upgrade", Guid.NewGuid().ToString("N"));
         var analysis = HomeAnalysisResponse();
@@ -1190,7 +1235,7 @@ public sealed class CoordinatorTests
 
         var cachePath = UiAnalysisCachePath(root, selector);
         using var regenerated = JsonDocument.Parse(File.ReadAllText(cachePath));
-        Assert.AreEqual(12, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(13, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-11 cache predates the corrected scheduled-distance and Garage61 projections and must be regenerated exactly once.");
         Assert.IsEmpty(state.Jobs, "Cache migration remains quiet background maintenance.");
     }
@@ -2697,7 +2742,7 @@ public sealed class CoordinatorTests
         }).ToArray()
     });
 
-    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 12, string sessionType = "Race", string? storedSelector = null)
+    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 13, string sessionType = "Race", string? storedSelector = null, int projectionVersion = 1)
     {
         var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
         Directory.CreateDirectory(directory);
@@ -2706,6 +2751,7 @@ public sealed class CoordinatorTests
         File.WriteAllText(UiAnalysisCachePath(coachHome, selector, sessionType), JsonSerializer.Serialize(new
         {
             schemaVersion,
+            projectionVersion,
             sessionPhase = SessionPhase(sessionType),
             selector = persistedSelector,
             sourceLastWriteUtc = (string?)null,

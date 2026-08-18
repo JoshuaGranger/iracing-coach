@@ -23,10 +23,24 @@ public sealed record LocalInventorySectionStatus(string Name, bool Current, stri
 
 public sealed class CompanionState : IDisposable
 {
-    // The cached backend response is part of the UI contract. Bump this when
-    // mapped analysis fields change so an older response cannot silently hide
-    // newly available maps, replay coverage, tire learning, or technical data.
-    private const int UiAnalysisCacheSchemaVersion = 12;
+    // The cache stores a backend response and a projection of it, and those two
+    // things go stale for different reasons. Conflating them is what orphaned 75%
+    // of a real cache: every bump to 12 was a mapping change, yet each one threw
+    // away perfectly good responses and forced the whole library to be re-analyzed.
+    //
+    // Envelope version: the shape of the stored wrapper itself. Bumping it discards
+    // entries, so it should almost never change.
+    private const int UiAnalysisCacheEnvelopeVersion = 13;
+
+    // Projection version: how RuntimeMapper turns a response into view models.
+    // Bump this freely - it is recorded, never a reason to reject. A stored
+    // response is simply re-mapped by the current mapper, which costs milliseconds
+    // instead of a 12-24 second re-analysis.
+    private const int UiAnalysisProjectionVersion = 1;
+
+    // Content completeness is a separate question again, and RuntimeMapper already
+    // answers it: HasCurrentAnalysisProfile rejects a response emitted by an
+    // analyzer older than the fields the UI now reads.
     private const string AppVersion = "0.16.0";
 
     // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
@@ -3412,7 +3426,11 @@ public sealed class CompanionState : IDisposable
     {
         var path = UiAnalysisCachePath(race);
         if (!File.Exists(path)) return TryLoadArchiveOnlyAnalysis(race);
-        if (!CachedSchemaMayBeCurrent(path)) return TryLoadArchiveOnlyAnalysis(race);
+        if (!CachedSchemaMayBeCurrent(path))
+        {
+            EvictDeadCacheEntry(path);
+            return TryLoadArchiveOnlyAnalysis(race);
+        }
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
@@ -3420,7 +3438,7 @@ public sealed class CompanionState : IDisposable
             if (!root.TryGetProperty("schemaVersion", out var schema)
                 || schema.ValueKind != JsonValueKind.Number
                 || !schema.TryGetInt32(out var cacheSchema)
-                || cacheSchema != UiAnalysisCacheSchemaVersion) return TryLoadArchiveOnlyAnalysis(race);
+                || cacheSchema != UiAnalysisCacheEnvelopeVersion) return TryLoadArchiveOnlyAnalysis(race);
             if (!CacheMatchesSession(root, race)) return TryLoadArchiveOnlyAnalysis(race);
             if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.Object) return TryLoadArchiveOnlyAnalysis(race);
             if (!ResponseMatchesSession(response, race)) return TryLoadArchiveOnlyAnalysis(race);
@@ -3551,6 +3569,27 @@ public sealed class CompanionState : IDisposable
     // discarded on every catalog sweep and every tray restore.
     // Unknown is deliberately optimistic: if the stamp is not in the prefix, the caller's
     // full parse decides, so an unexpected property order can never reject a valid entry.
+    // A retired envelope can never be read again, so leaving it on disk only costs
+    // space and another rejection next sweep. Evicting is confined to the cache
+    // directory under the Coach data folder; the recording and the archived
+    // analysis it was derived from are never touched, so the entry can always be
+    // rebuilt.
+    private void EvictDeadCacheEntry(string cachePath)
+    {
+        try
+        {
+            var full = Path.GetFullPath(cachePath);
+            var cacheRoot = Path.GetFullPath(Path.Combine(Settings.ArchiveRoot, "ui-analysis-cache"))
+                .TrimEnd(Path.DirectorySeparatorChar);
+            if (!full.StartsWith(cacheRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return;
+            File.Delete(full);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // Reclaiming space is best effort - the read already refused the entry.
+        }
+    }
+
     private static bool CachedSchemaMayBeCurrent(string path)
     {
         try
@@ -3567,7 +3606,7 @@ public sealed class CompanionState : IDisposable
                 if (!reader.Read()) return true;
                 return reader.TokenType == JsonTokenType.Number
                     && reader.TryGetInt32(out var cacheSchema)
-                    && cacheSchema == UiAnalysisCacheSchemaVersion;
+                    && cacheSchema == UiAnalysisCacheEnvelopeVersion;
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -3584,7 +3623,11 @@ public sealed class CompanionState : IDisposable
         if (string.IsNullOrWhiteSpace(race.EffectiveSelector)) return false;
         var cachePath = UiAnalysisCachePath(race);
         if (!File.Exists(cachePath)) return false;
-        if (!CachedSchemaMayBeCurrent(cachePath)) return false;
+        if (!CachedSchemaMayBeCurrent(cachePath))
+        {
+            EvictDeadCacheEntry(cachePath);
+            return false;
+        }
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(cachePath));
@@ -3592,7 +3635,7 @@ public sealed class CompanionState : IDisposable
             var validSchema = root.TryGetProperty("schemaVersion", out var schema)
                 && schema.ValueKind == JsonValueKind.Number
                 && schema.TryGetInt32(out var cacheSchema)
-                && cacheSchema == UiAnalysisCacheSchemaVersion;
+                && cacheSchema == UiAnalysisCacheEnvelopeVersion;
             var hasResponse = root.TryGetProperty("response", out var response)
                 && response.ValueKind == JsonValueKind.Object
                 && response.TryGetProperty("analysis_view", out var view)
@@ -4011,7 +4054,10 @@ public sealed class CompanionState : IDisposable
     {
         PersistPortableArtifact("ui-analysis-cache", UiAnalysisCacheKey(race), new
         {
-            schemaVersion = UiAnalysisCacheSchemaVersion,
+            schemaVersion = UiAnalysisCacheEnvelopeVersion,
+            // Recorded so a stale projection is diagnosable, never so it can be
+            // rejected: the mapper re-derives view models from the stored response.
+            projectionVersion = UiAnalysisProjectionVersion,
             sessionPhase = SessionPhase(race.SessionType),
             selector = race.EffectiveSelector,
             sourceLastWriteUtc = !string.IsNullOrWhiteSpace(race.SourcePath) && File.Exists(race.SourcePath)
