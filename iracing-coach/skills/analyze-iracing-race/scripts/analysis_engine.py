@@ -26,11 +26,17 @@ try:  # Package import and direct script loading are both supported.
         build_tire_learning,
         build_track_geometry,
     )
+    from . import lap_reference
     from . import race_plan_decision
+    from . import time_loss
+    from . import tire_energy
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from groove_analysis import analyze_groove_evolution
     from race_foundations import build_race_replay, build_tire_learning, build_track_geometry
+    import lap_reference
     import race_plan_decision
+    import time_loss
+    import tire_energy
 
 
 CAUTION_FLAGS = 0x0008 | 0x0100 | 0x0200 | 0x4000 | 0x8000
@@ -58,7 +64,10 @@ ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "groove_analysis.py",
     "ibt_reader.py",
+    "lap_reference.py",
     "race_foundations.py",
+    "time_loss.py",
+    "tire_energy.py",
 )
 RACE_GRADE_RUBRIC_VERSION = "race-execution-v2"
 RACE_GRADE_CATEGORY_WEIGHTS = {
@@ -7211,6 +7220,183 @@ def _analysis_fingerprint(
     ).hexdigest()[:24]
 
 
+PACE_ATTRIBUTION_SCHEMA_VERSION = 1
+
+#: Corners fall back to even distance slices when the track profile detected no
+#: load zones. Twelve is a compromise: fine enough to localize a loss to a part
+#: of the track a driver can recognize, coarse enough that each slice still
+#: holds enough samples to time reliably.
+FALLBACK_SEGMENT_COUNT = 12
+
+
+def _pace_attribution(
+    table: TelemetryTable,
+    laps: Sequence[Mapping[str, Any]],
+    track_profile: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Where time is being lost, and what each corner costs the tires.
+
+    `REFERENCE-DELTA-001`, `TIME-LOSS-RANK-001`, `TIRE-ENERGY-001`.
+
+    This is the join that makes the two producers a coaching answer rather than
+    two tables. A corner that costs half a second is interesting; a corner that
+    costs half a second *and* consumes a fifth of the lap's tire energy is a
+    decision, because spending more there has a price that shows up later in
+    the stint. Neither number implies the other and neither is derived from the
+    other, so both travel with every priority.
+
+    Lap eligibility reuses `_corner_lap_exclusion_reasons`, the same screen the
+    existing corner coaching uses: complete, green, racing, on track, out of
+    traffic and away from pit service. Comparing a lap spent behind a slower
+    car against a clean one would attribute the traffic to the driver.
+    """
+
+    unavailable = {
+        "schema_version": PACE_ATTRIBUTION_SCHEMA_VERSION,
+        "status": "unavailable",
+        "priorities": [],
+        "eligible_lap_numbers": [],
+    }
+    if not table.has("LapDistPct") or not table.has("SessionTime") or not table.has("Lap"):
+        return {**unavailable, "reason": "distance_time_or_lap_channel_missing"}
+
+    previous_flag: str | None = None
+    eligible_numbers: set[int] = set()
+    for lap in sorted(laps, key=lambda item: _finite(item.get("lap")) or -1.0):
+        number = _finite(lap.get("lap"))
+        reasons = _corner_lap_exclusion_reasons(lap, previous_flag)
+        previous_flag = str(lap.get("flag_state") or "")
+        if not reasons and number is not None and number >= 0:
+            eligible_numbers.add(int(number))
+    if not eligible_numbers:
+        return {**unavailable, "reason": "no_clean_green_racing_laps"}
+
+    lap_channel = table.get("Lap", default=None)
+    groups: MutableMapping[int, list[int]] = defaultdict(list)
+    for index, raw_lap in enumerate(lap_channel):
+        value = _finite(raw_lap)
+        if value is not None and int(value) in eligible_numbers:
+            groups[int(value)].append(index)
+
+    distance = table.get("LapDistPct", default=None)
+    times = table.get("SessionTime", "SessionTimeOfDay", default=None)
+    speed = table.get("Speed", default=None)
+    traces = [
+        lap_reference.build_lap_trace(
+            distance,
+            times,
+            indices,
+            speed_mps=speed,
+            lap_number=number,
+        )
+        for number, indices in sorted(groups.items())
+    ]
+
+    detected = [
+        segment
+        for segment in ((track_profile or {}).get("detected_corner_segments") or ())
+        if isinstance(segment, Mapping)
+    ]
+    if detected:
+        segments: list[Mapping[str, Any]] = detected
+        segment_source = "detected_corner_segments"
+    else:
+        segments = lap_reference.uniform_segments(FALLBACK_SEGMENT_COUNT)
+        segment_source = "uniform_fallback"
+
+    loss = time_loss.analyze_time_loss(traces, segments)
+
+    missing_energy_channels = [
+        name
+        for name, present in (
+            ("Speed", table.has("Speed")),
+            ("LatAccel", table.has("LatAccel")),
+            ("LongAccel", table.has("LongAccel")),
+        )
+        if not present
+    ]
+    energy_indices = [index for indices in groups.values() for index in indices]
+    energy = tire_energy.segment_energy(
+        lap_dist_pct=distance,
+        session_time_s=times,
+        speed_m_s=speed,
+        lat_accel_m_s2=table.get("LatAccel", default=None),
+        long_accel_m_s2=table.get("LongAccel", default=None),
+        segments=segments,
+        indices=sorted(energy_indices),
+        velocity_x_m_s=table.get("VelocityX", default=None) if table.has("VelocityX") else None,
+        velocity_y_m_s=table.get("VelocityY", default=None) if table.has("VelocityY") else None,
+        sample_rate_hz=_finite(table.metadata.get("sample_rate")) or 60.0,
+        missing_channels=missing_energy_channels,
+    )
+
+    energy_by_name = {segment.name: segment for segment in energy.segments}
+    priorities = []
+    for segment in loss.segments:
+        if segment.status != time_loss.STATUS_USABLE:
+            continue
+        matched = energy_by_name.get(segment.name)
+        priorities.append(
+            {
+                "name": segment.name,
+                "start_pct": round(segment.start_pct, 6),
+                "end_pct": round(segment.end_pct, 6),
+                "recoverable_s": _round(segment.recoverable_s, 3),
+                "best_s": _round(segment.best_s, 3),
+                "median_s": _round(segment.median_s, 3),
+                "best_lap": segment.best_lap,
+                "lap_count": segment.lap_count,
+                "near_best_lap_count": segment.near_best_lap_count,
+                "tire_energy_share": (
+                    _round(matched.share_of_lap, 4)
+                    if matched is not None and matched.status == tire_energy.STATUS_USABLE
+                    else None
+                ),
+                "tire_energy_grade": (
+                    matched.grade
+                    if matched is not None and matched.status == tire_energy.STATUS_USABLE
+                    else None
+                ),
+                "peak_lateral_g": (
+                    _round(matched.peak_lateral_g, 3) if matched is not None else None
+                ),
+            }
+        )
+
+    lap_count = len(traces)
+    limitations = [
+        "Recoverable time is this driver's own median minus his own best in each "
+        "segment. It is proven achievable in isolation; the total is a ceiling "
+        "composed from different laps, not a lap time.",
+        "Tire energy is a specific-energy proxy from vehicle acceleration and "
+        "speed, not a wear measurement.",
+    ]
+    if segment_source == "uniform_fallback":
+        limitations.append(
+            "No load zones were detected, so segments are even distance slices "
+            "and do not correspond to named corners."
+        )
+    if loss.excluded_segment_count:
+        limitations.append(
+            f"{loss.excluded_segment_count} segment(s) were excluded from ranking; "
+            "each carries its own reason."
+        )
+
+    return {
+        "schema_version": PACE_ATTRIBUTION_SCHEMA_VERSION,
+        "status": loss.status,
+        "reason": None,
+        "segment_source": segment_source,
+        "eligible_lap_numbers": sorted(eligible_numbers),
+        "eligible_lap_count": lap_count,
+        "priorities": priorities,
+        "total_recoverable_s": _round(loss.total_recoverable_s, 3),
+        "time_loss": loss.to_payload(),
+        "tire_energy": energy.to_payload(),
+        "limitations": limitations,
+    }
+
+
 def analyze_telemetry(
     telemetry: Mapping[str, Any],
     *,
@@ -7387,6 +7573,7 @@ def analyze_telemetry(
     conditions = _conditions_summary(table)
     driver_adjustments = _driver_adjustments_summary(table)
     coaching_signals = _coaching_signals(runs)
+    pace_attribution = _pace_attribution(table, laps, track_profile)
     strategy = _strategy(runs, race_summary)
     technical_insights = build_technical_insights(
         laps,
@@ -7475,6 +7662,7 @@ def analyze_telemetry(
         "strategy": strategy,
         "technical_insights": technical_insights,
         "coaching_signals": coaching_signals,
+        "pace_attribution": pace_attribution,
         "data_quality": {
             "channels": required,
             "missing": [name for name, available in required.items() if not available],
