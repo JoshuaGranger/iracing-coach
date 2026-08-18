@@ -27,14 +27,18 @@ try:  # Package import and direct script loading are both supported.
         build_track_geometry,
     )
     from . import lap_reference
+    from . import pit_loss
     from . import race_plan_decision
+    from . import strategy_model
     from . import time_loss
     from . import tire_energy
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from groove_analysis import analyze_groove_evolution
     from race_foundations import build_race_replay, build_tire_learning, build_track_geometry
     import lap_reference
+    import pit_loss
     import race_plan_decision
+    import strategy_model
     import time_loss
     import tire_energy
 
@@ -65,7 +69,9 @@ ANALYZER_SOURCE_FILES = (
     "groove_analysis.py",
     "ibt_reader.py",
     "lap_reference.py",
+    "pit_loss.py",
     "race_foundations.py",
+    "strategy_model.py",
     "time_loss.py",
     "tire_energy.py",
 )
@@ -7229,6 +7235,121 @@ PACE_ATTRIBUTION_SCHEMA_VERSION = 1
 FALLBACK_SEGMENT_COUNT = 12
 
 
+def _clean_lap_traces(
+    table: TelemetryTable, laps: Sequence[Mapping[str, Any]]
+) -> tuple[list[Any], list[int]]:
+    """Resample every clean green racing lap onto the shared distance grid.
+
+    Shared by pace attribution and strategy planning so both reason about the
+    same set of laps; a pit-loss reference drawn from a different lap pool than
+    the coaching would make the two quietly incomparable.
+    """
+
+    if not table.has("LapDistPct") or not table.has("SessionTime") or not table.has("Lap"):
+        return [], []
+
+    previous_flag: str | None = None
+    eligible_numbers: set[int] = set()
+    for lap in sorted(laps, key=lambda item: _finite(item.get("lap")) or -1.0):
+        number = _finite(lap.get("lap"))
+        reasons = _corner_lap_exclusion_reasons(lap, previous_flag)
+        previous_flag = str(lap.get("flag_state") or "")
+        if not reasons and number is not None and number >= 0:
+            eligible_numbers.add(int(number))
+    if not eligible_numbers:
+        return [], []
+
+    lap_channel = table.get("Lap", default=None)
+    groups: MutableMapping[int, list[int]] = defaultdict(list)
+    for index, raw_lap in enumerate(lap_channel):
+        value = _finite(raw_lap)
+        if value is not None and int(value) in eligible_numbers:
+            groups[int(value)].append(index)
+
+    distance = table.get("LapDistPct", default=None)
+    times = table.get("SessionTime", "SessionTimeOfDay", default=None)
+    speed = table.get("Speed", default=None)
+    traces = [
+        lap_reference.build_lap_trace(
+            distance, times, indices, speed_mps=speed, lap_number=number
+        )
+        for number, indices in sorted(groups.items())
+    ]
+    return traces, sorted(eligible_numbers)
+
+
+def _strategy_planning(
+    table: TelemetryTable,
+    laps: Sequence[Mapping[str, Any]],
+    race_summary: Mapping[str, Any],
+    strategy: Mapping[str, Any],
+) -> dict[str, Any]:
+    """What a stop costs this driver, and which plan is quickest.
+
+    `PIT-LOSS-001`, `STRATEGY-SIM-001`. The existing strategy block answers
+    whether the fuel reaches; this answers which plan wins, over measured
+    quantities only. Every input is something this session recorded: green
+    pace and the degradation slope from the laps, burn and capacity from the
+    fuel trace, and the cost of a stop from the driver's own stops.
+    """
+
+    unavailable = {
+        "schema_version": 1,
+        "status": "unavailable",
+        "pit_loss": None,
+        "plan_comparison": None,
+    }
+    traces, _eligible = _clean_lap_traces(table, laps)
+    usable = [
+        trace
+        for trace in traces
+        if trace.status == lap_reference.STATUS_USABLE
+        and trace.covered_time_s is not None
+    ]
+    if not usable:
+        return {**unavailable, "reason": "no_clean_green_reference_lap"}
+
+    reference = min(usable, key=lambda trace: trace.covered_time_s)
+    pit_report = pit_loss.measure_pit_loss(
+        session_time_s=table.get("SessionTime", "SessionTimeOfDay", default=None),
+        on_pit_road=table.get("OnPitRoad", default=False),
+        lap_dist_pct=table.get("LapDistPct", default=None),
+        speed_m_s=table.get("Speed", default=None),
+        lap_numbers=table.get("Lap", default=None),
+        reference=reference,
+    )
+
+    base_lap_s = _median([trace.covered_time_s for trace in usable])
+    forecast = strategy.get("forecast") or {}
+    comparison = strategy_model.compare_strategies(
+        race_laps=race_summary.get("scheduled_laps"),
+        base_lap_s=base_lap_s,
+        degradation_s_per_lap=strategy.get("median_green_lap_degradation_s_per_lap"),
+        pit_loss_s=pit_report.median_loss_s,
+        fuel_capacity_l=forecast.get("maximum_recorded_run_start_fuel_l"),
+        green_burn_l_per_lap=strategy.get("measured_green_fuel_l_per_lap"),
+    )
+
+    return {
+        "schema_version": 1,
+        "status": comparison.status,
+        "reason": comparison.reason,
+        "reference_lap": reference.lap_number,
+        "representative_green_lap_s": _round(base_lap_s, 3),
+        "pit_loss": pit_report.to_payload(),
+        "plan_comparison": comparison.to_payload(),
+        "limitations": [
+            "The ranking is a race-time comparison, not a finishing-position "
+            "prediction: the field's pace and the driver's track position are "
+            "not modelled.",
+            "Capacity is the largest fuel load actually observed at a run start, "
+            "which may be below the car's legal maximum.",
+            "Degradation is the measured green-lap slope extended linearly; a "
+            "calibrated tire model would replace it.",
+        ],
+    }
+
+
 def _pace_attribution(
     table: TelemetryTable,
     laps: Sequence[Mapping[str, Any]],
@@ -7575,6 +7696,7 @@ def analyze_telemetry(
     coaching_signals = _coaching_signals(runs)
     pace_attribution = _pace_attribution(table, laps, track_profile)
     strategy = _strategy(runs, race_summary)
+    strategy_planning = _strategy_planning(table, laps, race_summary, strategy)
     technical_insights = build_technical_insights(
         laps,
         runs,
@@ -7660,6 +7782,7 @@ def analyze_telemetry(
         "conditions": conditions,
         "driver_adjustments": driver_adjustments,
         "strategy": strategy,
+        "strategy_planning": strategy_planning,
         "technical_insights": technical_insights,
         "coaching_signals": coaching_signals,
         "pace_attribution": pace_attribution,
