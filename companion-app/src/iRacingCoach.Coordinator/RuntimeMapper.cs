@@ -8,7 +8,7 @@ namespace iRacingCoach.Coordinator;
 public static class RuntimeMapper
 {
     private const string Garage61TargetDerivationVersion = "explicit-analysis-paths-v1";
-    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v13";
+    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v14";
     private const double RacePlanRelativeTolerance = 1e-9;
     private static readonly HashSet<string> RacePlanStatuses = new(StringComparer.Ordinal)
     {

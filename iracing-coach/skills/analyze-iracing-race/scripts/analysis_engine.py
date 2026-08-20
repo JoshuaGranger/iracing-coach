@@ -65,7 +65,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v13"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v14"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -991,6 +991,14 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     long_accel = table.get("LongAccel", default=None)
     fuel = table.get("FuelLevel", default=None)
     flags = table.get("SessionFlags", default=0)
+    # iRacing publishes the finished lap's own scored time in LapLastLapTime.
+    # Deriving a lap time from sample timestamps is short by one sample interval
+    # by construction (the last sample of a lap precedes the start/finish
+    # crossing), a bias measured at 10-31 ms per lap on real recordings and
+    # independent of sample rate. Every other car already uses the SDK's
+    # authoritative timing; only the player's lap was guessed. Read it here and
+    # prefer it, falling back to the derived duration when it is absent.
+    last_lap_time = table.get("LapLastLapTime", default=None)
     session_state = table.get("SessionState", default=None)
     has_session_state = table.has("SessionState")
     pit = table.get("OnPitRoad", default=False)
@@ -1008,6 +1016,27 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
         lap_value = _finite(raw_lap)
         if lap_value is not None and lap_value >= 0:
             groups[int(lap_value)].append(index)
+    def _sdk_lap_time(lap_number: int, derived: float) -> float | None:
+        # LapLastLapTime reports the lap that just ended, updating about 1.5 s
+        # INTO the next lap and holding until the lap after, so lap N's scored
+        # time is the value held late in lap N+1 - reading it at the boundary
+        # returns lap N-1 instead. Take the value at the last sample of lap N+1,
+        # by when it has certainly settled and has not yet rolled forward. Guard
+        # against the off-by-one-lap trap by rejecting a reading that disagrees
+        # with the derived duration by more than a second; a real lap and its
+        # own sample span never differ by that much.
+        if last_lap_time is None:
+            return None
+        following = groups.get(lap_number + 1)
+        if not following:
+            return None
+        scored = _finite(last_lap_time[following[-1]])
+        if scored is None or scored <= 0.0:
+            return None
+        if abs(scored - derived) > 1.0:
+            return None
+        return scored
+
     summaries: list[dict[str, Any]] = []
     for lap_number in sorted(groups):
         indices = groups[lap_number]
@@ -1016,6 +1045,9 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
         start, end = indices[0], indices[-1]
         start_time, end_time = _finite(times[start]), _finite(times[end])
         duration = end_time - start_time if start_time is not None and end_time is not None else sum(dts[i] for i in indices)
+        scored_lap_time = _sdk_lap_time(lap_number, duration)
+        lap_time_value = scored_lap_time if scored_lap_time is not None else duration
+        lap_time_source = "sdk_scored" if scored_lap_time is not None else "sample_derived"
         caution_time = 0.0
         green_time = 0.0
         pit_time = 0.0
@@ -1154,7 +1186,8 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
                 "end_index": end,
                 "start_time": _round(start_time),
                 "end_time": _round(end_time),
-                "lap_time_s": _round(duration),
+                "lap_time_s": _round(lap_time_value),
+                "lap_time_source": lap_time_source,
                 "complete": complete,
                 "flag_state": classified,
                 "flag_states": flag_states,

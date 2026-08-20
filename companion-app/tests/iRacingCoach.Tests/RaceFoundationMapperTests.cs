@@ -127,7 +127,7 @@ public sealed class RaceFoundationMapperTests
         {
           "analysis_id": "foundation-test",
           "analysis_view": {
-            "analysis_profile_version":"post-race-foundations-v13",
+            "analysis_profile_version":"post-race-foundations-v14",
             "schema_version": 1,
             "identity": { "track_name": "Iowa Speedway", "track_config": "Oval", "car_name": "NASCAR Truck", "is_fixed_setup": true },
             "race_summary": { "recorded_laps": 2, "scheduled_laps": 10, "pit_stops_detected": 0 },

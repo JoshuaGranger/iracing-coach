@@ -252,7 +252,7 @@ public sealed class CoordinatorTests
     {
         using var response = JsonDocument.Parse("""
         {"analysis_view":{
-          "analysis_profile_version":"post-race-foundations-v13",
+          "analysis_profile_version":"post-race-foundations-v14",
           "identity":{"event_type":"Race"},
           "race_summary":{"recorded_laps":8,"scheduled_laps":500,"scheduled_minutes":30.5},
           "runs":[],"laps":[],"lap_traces":{"traces":[]},
@@ -306,11 +306,11 @@ public sealed class CoordinatorTests
         }
 
         var exact = Map(
-            "post-race-foundations-v13",
+            "post-race-foundations-v14",
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":80}");
         var hybrid = Map(
-            "post-race-foundations-v13",
+            "post-race-foundations-v14",
             "{\"recorded_laps\":7,\"scheduled_laps\":500,\"scheduled_minutes\":30.5}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var legacy = Map(
@@ -318,7 +318,7 @@ public sealed class CoordinatorTests
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var timed = Map(
-            "post-race-foundations-v13",
+            "post-race-foundations-v14",
             "{\"recorded_laps\":7,\"scheduled_laps\":null,\"scheduled_minutes\":30.5}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":null}");
 
@@ -608,7 +608,7 @@ public sealed class CoordinatorTests
     public void ArchivedAnalysis_CurrentLapProfileKeepsResolvedDistance()
     {
         using var report = JsonDocument.Parse("""
-        {"analysis_profile_version":"post-race-foundations-v13","identity":{},
+        {"analysis_profile_version":"post-race-foundations-v14","identity":{},
          "race_summary":{"recorded_laps":80,"scheduled_laps":100},"laps":[],"runs":[],
          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
          "strategy":{"forecast":{"status":"usable","scheduled_laps":100,"minimum_stops_all_green":2,"equal_stint_pit_targets_all_green":[33,67]}},
@@ -2534,7 +2534,7 @@ public sealed class CoordinatorTests
         analysis_view = new
         {
             schema_version = 1,
-            analysis_profile_version = "post-race-foundations-v13",
+            analysis_profile_version = "post-race-foundations-v14",
             identity = new { event_type = sessionType, track_name = "Recorded Track", car_name = "Recorded Car" },
             race_summary = new
             {

@@ -62,7 +62,7 @@ public sealed class RacePlanningRecommendationTests
         using var response = JsonDocument.Parse("""
         {
           "analysis_view": {
-            "analysis_profile_version":"post-race-foundations-v13",
+            "analysis_profile_version":"post-race-foundations-v14",
             "identity": {"track_name":"Hybrid Speedway","car_name":"Test Car","is_fixed_setup":true},
             "race_summary": {"scheduled_laps":500,"scheduled_minutes":30.5,"recorded_laps":8},
             "runs":[],"lap_traces":{"traces":[]},
@@ -106,7 +106,7 @@ public sealed class RacePlanningRecommendationTests
         using var response = JsonDocument.Parse("""
         {
           "analysis_view": {
-            "analysis_profile_version":"post-race-foundations-v13",
+            "analysis_profile_version":"post-race-foundations-v14",
             "identity":{"track_name":"Timed Speedway","car_name":"Test Car"},
             "race_summary":{"scheduled_minutes":30.5},
             "runs":[{"pace":{"early_average_lap_s":75.0,"late_average_lap_s":75.0}}],
@@ -172,7 +172,7 @@ public sealed class RacePlanningRecommendationTests
     public void ExactLapDistance_RemainsKnownWhenFuelForecastIsUnavailable()
     {
         using var response = JsonDocument.Parse("""
-        {"analysis_view":{"analysis_profile_version":"post-race-foundations-v13","identity":{},
+        {"analysis_view":{"analysis_profile_version":"post-race-foundations-v14","identity":{},
           "race_summary":{"scheduled_laps":80},"runs":[],"lap_traces":{"traces":[]},
           "strategy":{"forecast":{"status":"insufficient_evidence","scheduled_laps":80}}},
          "race_card":{"actions":[],"corner_playbook":{"rows":[]},"race_triggers":[]}}
