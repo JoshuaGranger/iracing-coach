@@ -33,6 +33,18 @@ function Get-ProjectVersion([string]$ProjectPath) {
     return [string]($projectDocument.Project.PropertyGroup.Version | Select-Object -First 1)
 }
 
+function Get-PayloadRelativePath([string]$BasePath, [string]$FullPath) {
+    # [System.IO.Path]::GetRelativePath exists only on .NET Core / PowerShell 7,
+    # so it throws under Windows PowerShell 5.1. Every payload file is known to
+    # live beneath $BasePath, so a prefix strip is exact and portable.
+    $baseFull = [System.IO.Path]::GetFullPath($BasePath).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    $targetFull = [System.IO.Path]::GetFullPath($FullPath)
+    if (-not $targetFull.StartsWith($baseFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Payload file escaped the payload root: $targetFull"
+    }
+    return $targetFull.Substring($baseFull.Length)
+}
+
 function Reset-ReleaseDirectory([string]$Path) {
     $resolved = [System.IO.Path]::GetFullPath($Path)
     $allowedRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'artifacts')) + [System.IO.Path]::DirectorySeparatorChar
@@ -183,7 +195,7 @@ $payloadFiles = @(Get-ChildItem -LiteralPath $payload -Recurse -File | Where-Obj
         [System.StringComparison]::OrdinalIgnoreCase)
 })
 $manifestFiles = @($payloadFiles | ForEach-Object {
-    $relative = [System.IO.Path]::GetRelativePath($payload, $_.FullName).Replace('\', '/')
+    $relative = (Get-PayloadRelativePath $payload $_.FullName).Replace('\', '/')
     $component = 'application'
     $componentVersion = $version
     if ($relative.StartsWith('python/', [System.StringComparison]::OrdinalIgnoreCase)) {
