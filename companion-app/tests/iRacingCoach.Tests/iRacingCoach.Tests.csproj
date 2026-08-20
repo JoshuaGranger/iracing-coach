@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\iRacingCoach.Contracts\iRacingCoach.Contracts.csproj" />
     <ProjectReference Include="..\..\src\iRacingCoach.Coordinator\iRacingCoach.Coordinator.csproj" />
     <ProjectReference Include="..\..\src\iRacingCoach.UI\iRacingCoach.UI.csproj" />
+    <ProjectReference Include="..\..\src\iRacingCoach.Telemetry\iRacingCoach.Telemetry.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\..\contracts\**\*.json" Link="fixtures\contracts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
