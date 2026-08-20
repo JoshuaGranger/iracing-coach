@@ -115,7 +115,7 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 RepairFlag = repair,
                 Towing = (ReadDouble("PlayerCarTowTime", bestOffset) ?? 0) > 0,
                 Lap = lapRaw.HasValue ? Math.Max(1, lapRaw.Value + 1) : null,
-                LapsRemaining = lapsRemaining.HasValue && lapsRemaining.Value >= 0 ? Math.Max(0, (int)Math.Ceiling(lapsRemaining.Value)) : null,
+                LapsRemaining = LapsRemainingOrUnknown(lapsRemaining),
                 OverallPosition = Positive(overallPosition),
                 ClassPosition = Positive(classPosition),
                 GapToLeaderSeconds = NonNegative(leaderGap),
@@ -429,6 +429,28 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
         return float.IsFinite((float)value) && value >= 0 ? value : null;
     }
     private static T? ArrayValue<T>(T[] values, int? index) where T : struct => index is >= 0 && index.Value < values.Length ? values[index.Value] : null;
+    // iRacing reports SessionLapsRemain(Ex) as 32767 - int16 max - when the
+    // session has no lap limit, e.g. a timed race. That sentinel is "unknown /
+    // not lap-limited", never a real count, and displaying it literally is the
+    // "32767 laps remaining" defect. Any value at or beyond the sentinel, or a
+    // count larger than any real race, is treated as unknown. A finite integer
+    // laps figure is otherwise rounded up as before.
+    private const double UnlimitedLapsSentinel = 32767.0;
+    private const double ImplausibleLapsCeiling = 10_000.0;
+
+    internal static int? LapsRemainingOrUnknown(double? value)
+    {
+        if (value is not { } laps || !double.IsFinite(laps) || laps < 0)
+        {
+            return null;
+        }
+        if (laps >= UnlimitedLapsSentinel || laps >= ImplausibleLapsCeiling)
+        {
+            return null;
+        }
+        return Math.Max(0, (int)Math.Ceiling(laps));
+    }
+
     private static int? Positive(int? value) => value is > 0 ? value : null;
     private static double? Positive(double? value) => value is > 0 && double.IsFinite(value.Value) ? value : null;
     private static double? NonNegative(double? value) => value is >= 0 && double.IsFinite(value.Value) ? value : null;

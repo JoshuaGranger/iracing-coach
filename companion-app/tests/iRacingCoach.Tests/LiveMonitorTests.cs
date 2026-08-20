@@ -8,6 +8,25 @@ namespace iRacingCoach.Tests;
 public sealed class LiveMonitorTests
 {
     [TestMethod]
+    public void LapsRemaining_TreatsTheIRacingUnlimitedSentinelAsUnknown()
+    {
+        // 32767 is iRacing's "no lap limit" sentinel and must never reach the UI
+        // as a literal count - this is the "32767 laps remaining" defect.
+        Assert.IsNull(IRacingSdkTelemetrySource.LapsRemainingOrUnknown(32767));
+        Assert.IsNull(IRacingSdkTelemetrySource.LapsRemainingOrUnknown(32768));
+        Assert.IsNull(IRacingSdkTelemetrySource.LapsRemainingOrUnknown(50000));
+        Assert.IsNull(IRacingSdkTelemetrySource.LapsRemainingOrUnknown(-1));
+        Assert.IsNull(IRacingSdkTelemetrySource.LapsRemainingOrUnknown(double.NaN));
+        Assert.IsNull(IRacingSdkTelemetrySource.LapsRemainingOrUnknown(null));
+
+        // A real, finite count still rounds up as before.
+        Assert.AreEqual(0, IRacingSdkTelemetrySource.LapsRemainingOrUnknown(0));
+        Assert.AreEqual(5, IRacingSdkTelemetrySource.LapsRemainingOrUnknown(4.2));
+        Assert.AreEqual(43, IRacingSdkTelemetrySource.LapsRemainingOrUnknown(43));
+    }
+
+
+    [TestMethod]
     public void BuiltInLayouts_DefaultIsTheOnlyImmutableDashboardAndRaceModesAreSeededEditable()
     {
         var preferences = new LiveMonitorLayout();

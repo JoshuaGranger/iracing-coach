@@ -1566,7 +1566,7 @@ def _analysis_pipeline_sha256() -> str:
 #   - only formatting, comments, typing or naming changed -> re-record below
 #     alone. Cached analyses stay valid, which is the whole point.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "584dc6d4cb22c23870dfb33a7baefcdc958735db210b99c987b0e621579c30d8"
+    "b7bc8e0aa9eaa6af524e20f40bcda409754d01e196572696cc869759c483346c"
 )
 
 

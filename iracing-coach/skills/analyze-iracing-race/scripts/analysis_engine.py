@@ -65,7 +65,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v14"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v15"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -7719,8 +7719,57 @@ def analyze_telemetry(
         if official_caution_laps_number is not None
         else None
     )
+    # Home shows a best clean lap and a pace trend per race, but the compact
+    # dashboard summary is exactly this race_summary block, which did not carry
+    # them - so those columns rendered as dashes on every row while the data sat
+    # unused in laps/runs. Derive them here, once, from the same clean-green
+    # laps the rest of the analysis already trusts, so both the dashboard
+    # projection and the interactive overview read one authoritative value.
+    _clean_home_laps = [
+        lap
+        for lap in laps
+        if lap.get("flag_state") == "green"
+        and lap.get("complete")
+        and (_finite(lap.get("lap_time_s")) or 0.0) > 0.0
+    ]
+    _clean_home_times = [
+        value
+        for lap in _clean_home_laps
+        if (value := _finite(lap.get("lap_time_s"))) is not None
+    ]
+    best_clean_lap_s = min(_clean_home_times) if _clean_home_times else None
+    longest_green_run = (
+        max((_finite(run.get("green_laps")) or 0.0) for run in runs) if runs else 0.0
+    )
+    pace_consistency_percent = None
+    if len(_clean_home_times) >= 2:
+        _mean_clean = _mean(_clean_home_times)
+        if _mean_clean and _mean_clean > 0:
+            _variance = sum((value - _mean_clean) ** 2 for value in _clean_home_times) / len(_clean_home_times)
+            pace_consistency_percent = _variance**0.5 / _mean_clean * 100.0
+    pace_slope_s_per_lap = None
+    if len(_clean_home_laps) >= 2:
+        _points = [
+            (float(lap["lap"]), value)
+            for lap in _clean_home_laps
+            if (value := _finite(lap.get("lap_time_s"))) is not None
+        ]
+        if len(_points) >= 2:
+            _n = len(_points)
+            _sx = sum(x for x, _ in _points)
+            _sy = sum(y for _, y in _points)
+            _sxx = sum(x * x for x, _ in _points)
+            _sxy = sum(x * y for x, y in _points)
+            _denominator = _n * _sxx - _sx * _sx
+            if _denominator:
+                pace_slope_s_per_lap = (_n * _sxy - _sx * _sy) / _denominator
+
     race_summary = {
         "scheduled_laps": _round(scheduled_laps, 0),
+        "best_clean_lap_s": _round(best_clean_lap_s, 3),
+        "longest_green_run": _round(longest_green_run, 0),
+        "pace_slope_s_per_lap": _round(pace_slope_s_per_lap, 4),
+        "pace_consistency_percent": _round(pace_consistency_percent, 2),
         "scheduled_minutes": _round(scheduled_minutes, 1),
         "recorded_laps": len(completed_race_laps),
         "green_laps_estimated": _round(green_laps, 2),

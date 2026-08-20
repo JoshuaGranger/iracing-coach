@@ -193,7 +193,7 @@ public sealed class RacePlanDecisionConsumerTests
     private static string Response(string decision, int legacyStops) => $$"""
     {
       "analysis_view":{
-        "analysis_profile_version":"post-race-foundations-v14",
+        "analysis_profile_version":"post-race-foundations-v15",
         "identity":{"track_name":"Contract Speedway","car_name":"Contract Car"},
         "race_summary":{"scheduled_laps":50},
         "runs":[],"lap_traces":{"traces":[]},
@@ -212,7 +212,7 @@ public sealed class RacePlanDecisionConsumerTests
     private static string ResponseWithoutDecision(double scheduled, double range, int stops, IReadOnlyList<double> targets) => $$"""
     {
       "analysis_view":{
-        "analysis_profile_version":"post-race-foundations-v14",
+        "analysis_profile_version":"post-race-foundations-v15",
         "identity":{"track_name":"Legacy Speedway","car_name":"Legacy Car"},
         "race_summary":{"scheduled_laps":{{scheduled.ToString("R", CultureInfo.InvariantCulture)}},"recorded_laps":10},
         "runs":[],"lap_traces":{"traces":[]},

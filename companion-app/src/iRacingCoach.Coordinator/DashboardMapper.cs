@@ -128,7 +128,11 @@ public static class DashboardMapper
             Text(session, "season_name") ?? string.Empty,
             selector,
             new RaceOverview(recordedLaps, greenLaps, cautions, pitStops, runs,
-                FuelUsedGallons: Number(summary, "fuel_used_gal")));
+                LongestGreenRun: Integer(summary, "longest_green_run"),
+                PaceSlopeSecondsPerLap: Number(summary, "pace_slope_s_per_lap"),
+                PaceConsistencyPercent: Number(summary, "pace_consistency_percent"),
+                FuelUsedGallons: Number(summary, "fuel_used_gal"),
+                BestCleanLapSeconds: Number(summary, "best_clean_lap_s")));
     }
 
     private static JsonElement MatchDashboardRace(JsonElement session, IReadOnlyList<JsonElement> dashboardRaces)

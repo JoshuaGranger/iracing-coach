@@ -252,7 +252,7 @@ public sealed class CoordinatorTests
     {
         using var response = JsonDocument.Parse("""
         {"analysis_view":{
-          "analysis_profile_version":"post-race-foundations-v14",
+          "analysis_profile_version":"post-race-foundations-v15",
           "identity":{"event_type":"Race"},
           "race_summary":{"recorded_laps":8,"scheduled_laps":500,"scheduled_minutes":30.5},
           "runs":[],"laps":[],"lap_traces":{"traces":[]},
@@ -306,11 +306,11 @@ public sealed class CoordinatorTests
         }
 
         var exact = Map(
-            "post-race-foundations-v14",
+            "post-race-foundations-v15",
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":80}");
         var hybrid = Map(
-            "post-race-foundations-v14",
+            "post-race-foundations-v15",
             "{\"recorded_laps\":7,\"scheduled_laps\":500,\"scheduled_minutes\":30.5}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var legacy = Map(
@@ -318,7 +318,7 @@ public sealed class CoordinatorTests
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var timed = Map(
-            "post-race-foundations-v14",
+            "post-race-foundations-v15",
             "{\"recorded_laps\":7,\"scheduled_laps\":null,\"scheduled_minutes\":30.5}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":null}");
 
@@ -608,7 +608,7 @@ public sealed class CoordinatorTests
     public void ArchivedAnalysis_CurrentLapProfileKeepsResolvedDistance()
     {
         using var report = JsonDocument.Parse("""
-        {"analysis_profile_version":"post-race-foundations-v14","identity":{},
+        {"analysis_profile_version":"post-race-foundations-v15","identity":{},
          "race_summary":{"recorded_laps":80,"scheduled_laps":100},"laps":[],"runs":[],
          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
          "strategy":{"forecast":{"status":"usable","scheduled_laps":100,"minimum_stops_all_green":2,"equal_stint_pit_targets_all_green":[33,67]}},
@@ -1558,7 +1558,9 @@ public sealed class CoordinatorTests
         StringAssert.Contains(home, "State.SetLiveMonitorVisible(true)");
         StringAssert.Contains(home, "State.HomeDataReady");
         StringAssert.Contains(home, "Best clean lap");
-        StringAssert.Contains(home, "FuelUsed(overview)");
+        // The rightmost column is now a single consistent fuel metric on every
+        // row rather than a tire/control reading that flips per row.
+        StringAssert.Contains(home, "FuelStrong(overview)");
         Assert.DoesNotContain("State.Navigate(\"live\")", home);
         Assert.DoesNotContain("State.ToggleLiveMonitor", home);
     }
@@ -2534,7 +2536,7 @@ public sealed class CoordinatorTests
         analysis_view = new
         {
             schema_version = 1,
-            analysis_profile_version = "post-race-foundations-v14",
+            analysis_profile_version = "post-race-foundations-v15",
             identity = new { event_type = sessionType, track_name = "Recorded Track", car_name = "Recorded Car" },
             race_summary = new
             {
