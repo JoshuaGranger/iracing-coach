@@ -668,7 +668,7 @@ body {
 /* Race Planning: make the requested race distance the decision, not an irrelevant tank-range headline. */
 .planning-decision-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, .72fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, .6fr);
   align-items: center;
   gap: 26px;
   padding: 16px 18px;
@@ -681,8 +681,11 @@ body {
 
 .planning-decision-hero > div:first-child { display: grid; gap: 6px; }
 .planning-decision-hero > div:first-child > strong {
-  font-size: clamp(20px, 2vw, 30px);
-  letter-spacing: -.025em;
+  display: block;
+  font-size: clamp(19px, 1.7vw, 27px);
+  line-height: 1.18;
+  letter-spacing: -.02em;
+  text-wrap: balance;
 }
 .planning-decision-hero p {
   max-width: 78ch;
