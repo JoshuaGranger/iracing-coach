@@ -215,7 +215,7 @@
                                                     <div class="technical-tire-bands" aria-label="@tire.Corner wear outer middle inner">
                                                         @foreach (var band in TireBands(tire))
                                                         {
-                                                            <span><small>@band.Label</small><b>@Percent(band.Value)</b></span>
+                                                            <span style="--tread-color:@TreadColor(band.Value)"><small>@band.Label</small><b>@Percent(band.Value)</b></span>
                                                         }
                                                     </div>
                                                     <footer>
@@ -662,6 +662,25 @@
     private static string Positions(double? value) => value.HasValue ? $"{value.Value:+0;-0;0} positions" : "—";
     private static string Duration(double? value) => value.HasValue && value.Value > 0 ? $"{value.Value:0.0} s" : "—";
     private static string Percent(double? value) => value.HasValue ? $"{value.Value:0.0}%" : "—";
+
+    // Grade a tire band by tread remaining, the way a crew chief reads a tire:
+    // fresh reads green, worn slides through amber to red. A continuous hue
+    // avoids a threshold cliff where 90.1% and 89.9% look categorically
+    // different. Mapped across 78-100% remaining, the band where oval right-side
+    // wear actually lives; outside it the value clamps. Falls back to the
+    // neutral amber for a band with no measured tread (returns the token the
+    // CSS already used) so temperature-only cards are unaffected.
+    private static string TreadColor(double? remaining)
+    {
+        if (remaining is not { } value)
+        {
+            return "#efc44b";
+        }
+
+        var fraction = Math.Clamp((value - 78.0) / (100.0 - 78.0), 0.0, 1.0);
+        var hue = (int)Math.Round(10 + fraction * (128 - 10));
+        return "hsl(" + hue.ToString(System.Globalization.CultureInfo.InvariantCulture) + " 64% 54%)";
+    }
     private static string Pressure(double? value) => value.HasValue ? $"{value.Value:0.0} psi" : "—";
     private static string Temperature(double? value) => value.HasValue ? $"{value.Value:0}°F" : "—";
     private static double? AverageBand(AnalysisTireBands bands)
