@@ -1,6 +1,10 @@
 @implements IDisposable
 
 <div class="tuning-workbench-page tuning-workbench-v3">
+    @if (State.TuningSourceSetup is { } sourceSetup)
+    {
+        <div class="setup-tuning-origin"><button class="back-button" @onclick='() => State.Navigate("setup")'>← Setup library</button><strong>@sourceSetup.Name</strong><span>Linked recording · @sourceSetup.Car</span></div>
+    }
     <header class="tuning-session-bar">
         @if (EvidenceRaces.Count > 0)
         {
@@ -483,6 +487,7 @@
     private async Task ChangeRace(ChangeEventArgs args)
     {
         var raceId = args.Value?.ToString()?.Trim() ?? string.Empty;
+        State.ClearSetupTuningContext();
         await RequestLoadRace(raceId, allowRetry: true);
     }
 

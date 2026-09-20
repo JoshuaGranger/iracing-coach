@@ -1,0 +1,40 @@
+{
+  "assumptions": [
+    "Reserves exactly one green lap of fuel.",
+    "User-entered values are assumptions; this is an estimate to verify in practice."
+  ],
+  "contract_version": 1,
+  "distance_label": "50 laps",
+  "estimated": true,
+  "evidence": "Estimate",
+  "green_burn_gallons": 0.4,
+  "missing": [],
+  "race_plan_decision": {
+    "all_green_range_laps": 49.0,
+    "assumptions": [
+      "Reserves exactly one green lap of fuel.",
+      "User-entered values are assumptions; this is an estimate to verify in practice."
+    ],
+    "caution_scenario": null,
+    "classification": "user-assumption estimate",
+    "decision_version": 1,
+    "equal_stint_pit_targets": [
+      25.0
+    ],
+    "final_stint_margin_laps": 48.0,
+    "green_burn_l_per_lap": 1.5141647136,
+    "limitations": [],
+    "maximum_start_fuel_l": 75.70823568,
+    "minimum_stops": 1,
+    "no_stop_language_permitted": false,
+    "re_decidable": true,
+    "reserve_fuel_l": 1.5141647136,
+    "reserve_green_laps": 1.0,
+    "scheduled_laps": 50.0,
+    "status": "usable",
+    "stints": 2,
+    "usable_fuel_l": 74.1940709664
+  },
+  "scheduled_laps": 50.0,
+  "start_fuel_gallons": 20.0
+}

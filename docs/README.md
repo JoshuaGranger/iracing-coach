@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.16.0-development.md)
+7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.17.0-development.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -57,7 +57,8 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
-  - [Current development snapshot: 0.16.0](06-reality/implementation-snapshot-0.16.0-development.md)
+  - [Current development snapshot: 0.17.0](06-reality/implementation-snapshot-0.17.0-development.md)
+  - [Prior development snapshot: 0.16.0](06-reality/implementation-snapshot-0.16.0-development.md)
   - [Prior development candidate: 0.15.0](06-reality/implementation-snapshot-0.15.0-development.md)
   - [Technical Data signal coverage: 0.15.0 development](06-reality/technical-data-signal-coverage-0.15.0-development.md)
   - [Stable packaged snapshot: 0.14.2](06-reality/implementation-snapshot-0.14.2.md)

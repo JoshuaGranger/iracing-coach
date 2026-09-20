@@ -8,7 +8,7 @@ namespace iRacingCoach.Coordinator;
 public static class RuntimeMapper
 {
     private const string Garage61TargetDerivationVersion = "explicit-analysis-paths-v1";
-    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v15";
+    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v16";
     private const double RacePlanRelativeTolerance = 1e-9;
     private static readonly HashSet<string> RacePlanStatuses = new(StringComparer.Ordinal)
     {
@@ -179,8 +179,9 @@ public static class RuntimeMapper
         var fingerprint = Text(identity, "setup_fingerprint") ?? Text(report, "analysis_id") ?? analysisPath;
         return new LocalSetup(fingerprint, Text(identity, "setup_name") ?? "Recorded setup",
             DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
-            DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")) ?? string.Empty, "Recorded race", analysisPath, fingerprint,
-            "Linked to archived race", "Setup parameters recorded by iRacing; the archived report remains read only.", fields);
+            string.Join(" · ", new[] { DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")), Text(identity, "track_config") }.Where(value => !string.IsNullOrWhiteSpace(value))), "Recorded race", analysisPath, fingerprint,
+            "Linked to archived race", "Setup parameters recorded by iRacing; the archived report remains read only.", fields,
+            Text(identity, "season_name") ?? Text(identity, "season_key") ?? (Integer(identity, "season_year") > 0 && Integer(identity, "season_quarter") > 0 ? $"{Integer(identity, "season_year")}S{Integer(identity, "season_quarter")}" : string.Empty), [analysisPath]);
     }
 
     private static void FlattenSetup(JsonElement element, string prefix, List<SetupField> fields)
@@ -240,7 +241,7 @@ public static class RuntimeMapper
                         var unit = Text(field, "unit");
                         return new SetupField(property.Name, Text(field, "label") ?? Humanize(property.Name.Split('.').Last()) ?? property.Name,
                             Text(field, "section") ?? Humanize(property.Name.Split('.').First()) ?? "Setup", string.IsNullOrWhiteSpace(unit) || raw.Contains(unit, StringComparison.OrdinalIgnoreCase) ? raw : $"{raw} {unit}");
-                    }).ToArray() : []));
+                    }).ToArray() : [], Text(identity, "season_key") ?? string.Empty));
         }
         return result;
     }
@@ -1004,6 +1005,26 @@ public static class RuntimeMapper
             distanceLabel,
             distanceIsEstimated,
             fuelPlan);
+    }
+
+    public static RacePlanBriefing EventPlan(JsonElement response, string car, string track, string setup, RacePlanBriefing? reference = null)
+    {
+        if (Integer(response, "contract_version") != 1) throw new InvalidDataException("Unsupported event-plan contract.");
+        var decision = ParseRacePlanDecision(Object(response, "race_plan_decision"));
+        var assumptions = Array(response, "assumptions").Select(Value).Where(value => value.Length > 0).ToArray();
+        var missing = Array(response, "missing").Select(Value).Where(value => value.Length > 0).ToArray();
+        var evidence = Text(response, "evidence") ?? "Preparation";
+        var distance = Text(response, "distance_label") ?? "Distance unresolved";
+        return new RacePlanBriefing(track, car, setup, Integer(response, "scheduled_laps"),
+            Number(response, "green_burn_gallons"), null,
+            decision.AllGreenRangeLaps is { } range ? $"{range:0.0} green laps" : "Fuel sample needed",
+            decision.IsUsable ? $"{decision.MinimumStops} fuel stops" : "Fuel decision incomplete",
+            decision.EqualStintPitTargets.Select(value => (int)Math.Round(value)).ToArray(),
+            reference?.TireGuidance ?? "Record a clean practice run and a tire reading to establish this setup's long-run behavior.",
+            reference?.Priorities.Where(item => !item.Label.Equals("Strategy", StringComparison.OrdinalIgnoreCase)).ToArray()
+                ?? [new RaceAction("Practice", new(EvidenceKind.Inferred, "Run five clean laps with the selected setup. Check fuel use, representative pace and the tire reading before committing to the race plan."))],
+            reference?.Corners ?? [], reference?.Triggers.Where(item => !item.Label.Contains("fuel", StringComparison.OrdinalIgnoreCase)).ToArray() ?? [],
+            assumptions.Concat(missing).ToArray(), evidence, distance, Boolean(response, "estimated") == true, decision);
     }
 
     private static RacePlanDecisionView ReadRacePlanDecision(JsonElement forecast)

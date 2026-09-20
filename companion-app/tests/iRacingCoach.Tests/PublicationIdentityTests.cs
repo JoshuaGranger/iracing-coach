@@ -48,11 +48,9 @@ public sealed class PublicationIdentityTests
         state.PlanDistanceValue = 50;
 
         var pending = state.GeneratePlanAsync();
-        await backend.WaitForAsync("iracing_strategy_history|");
         await backend.WaitForAsync("analyze_iracing_race|selector-plan");
         state.PlanDistanceValue = 60;
         state.PlanDistanceValue = 50;
-        backend.Complete("iracing_strategy_history|", JsonSerializer.SerializeToElement(Array.Empty<object>()));
         backend.Complete("analyze_iracing_race|selector-plan", AnalysisEnvelope("selector-plan", "analysis-plan", "Plan Track"));
         await pending;
 

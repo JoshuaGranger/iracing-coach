@@ -5,7 +5,7 @@
     "required_for_deterministic_workflows": false
   },
   "backend": {
-    "analysis_profile_version": "post-race-foundations-v15",
+    "analysis_profile_version": "post-race-foundations-v16",
     "analysis_schema_version": 2,
     "analysis_view_envelope_version": 1,
     "analyze_result_contract_version": 1,
@@ -32,7 +32,7 @@
       "2025-03-26",
       "2024-11-05"
     ],
-    "tool_count": 17,
+    "tool_count": 18,
     "transport": "stdio-jsonl-utf8",
     "tuning_schema_version": 1
   },

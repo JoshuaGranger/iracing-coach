@@ -8,7 +8,7 @@ public sealed class PlanningAndStartingTuneUiTests
     public void StartingTune_UsesAutomaticSeasonAndSearchableLocalEventSelectors()
     {
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
-        var page = File.ReadAllText(Path.Combine(ui, "SetupPage.razor"));
+        var page = File.ReadAllText(Path.Combine(ui, "StartingTunePage.razor"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         var iterationCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "iteration-ux.css"));
 
@@ -74,7 +74,7 @@ public sealed class PlanningAndStartingTuneUiTests
         Assert.DoesNotContain("Regex.Match(plan.FuelRange", page);
         Assert.DoesNotContain("Math.Ceiling(plan.ScheduledLaps", page);
         StringAssert.Contains(page, "Decision unavailable");
-        StringAssert.Contains(page, "null => \"Resolve race distance first\"");
+        StringAssert.Contains(page, "null => \"Add the missing fuel or pace inputs\"");
         StringAssert.Contains(page, "Planning assumptions");
         Assert.DoesNotContain(">Start over</button>", page);
         Assert.DoesNotContain("workflow-layout planning-layout", page);

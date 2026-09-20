@@ -175,6 +175,7 @@ public sealed class LocalOnlyBackendClient : IBackendClient
         "discover_iracing_sessions",
         "iracing_companion_dashboard",
         "iracing_strategy_history",
+        "plan_iracing_race",
         "recommend_open_setup_tuning",
         "recommend_structured_open_setup_tuning",
         "record_open_setup_feedback"

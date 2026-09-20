@@ -248,15 +248,75 @@
             "type": "string"
           },
           "target_hz": {
-            "default": 20,
+            "default": null,
+            "description": "Omit or pass null to analyze every native record.",
             "maximum": 60,
             "minimum": 1,
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           }
         },
         "type": "object"
       },
       "name": "analyze_iracing_race"
+    },
+    {
+      "description": "Calculate a next-event fuel plan for the requested distance from an archived race and/or explicitly supplied assumptions. Offline; does not change source data.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "distance": {
+            "exclusiveMinimum": 0,
+            "maximum": 1000,
+            "type": "number"
+          },
+          "distance_mode": {
+            "default": "Laps",
+            "enum": [
+              "Laps",
+              "Minutes"
+            ],
+            "type": "string"
+          },
+          "green_burn_gallons": {
+            "exclusiveMinimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lap_seconds": {
+            "exclusiveMinimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "start_fuel_gallons": {
+            "exclusiveMinimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "distance"
+        ],
+        "type": "object"
+      },
+      "name": "plan_iracing_race"
     },
     {
       "description": "Check whether the season/car/track/setup knowledge bundle is fresh, stale, or missing.",

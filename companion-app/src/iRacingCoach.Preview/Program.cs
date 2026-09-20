@@ -8,7 +8,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var isolatedCoachHome = builder.Configuration["qa-coach-home"];
-if (string.IsNullOrWhiteSpace(isolatedCoachHome))
+var hostProfile = CompanionHostProfile.FromArguments(args);
+if (hostProfile.IsIsolated)
+{
+    builder.Services.AddSingleton(_ => hostProfile.CreateState());
+}
+else if (string.IsNullOrWhiteSpace(isolatedCoachHome))
 {
     builder.Services.AddSingleton<CompanionState>();
 }

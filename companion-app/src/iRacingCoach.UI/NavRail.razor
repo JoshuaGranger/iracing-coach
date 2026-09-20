@@ -22,7 +22,7 @@
         </button>
     </div>
     <div class="rail-services" aria-label="Service status">
-        <div class="rail-service" title="Race analysis and data processing"><span class="status-orb @(State.ServiceFailureCount > 0 ? "warning" : State.ServiceRequestInFlight ? "checking" : "ready")" aria-hidden="true"></span><span class="nav-label"><strong>Race analysis</strong><small>@LocalActivity</small></span></div>
+        <div class="rail-service" title="Race analysis and data processing"><span class="status-orb @(State.LocalAnalysisNeedsAttention ? "warning" : State.ServiceRequestInFlight ? "checking" : "ready")" aria-hidden="true"></span><span class="nav-label"><strong>Race analysis</strong><small>@LocalActivity</small></span></div>
         <div class="rail-service" title="Reference laps"><span class="status-orb @(State.Garage61.Available ? "ready" : State.Garage61.Configured ? "warning" : "neutral")" aria-hidden="true"></span><span class="nav-label"><strong>Garage61</strong><small>@GarageActivity</small></span></div>
         <div class="rail-service" title="Optional AI coaching"><span class="status-orb @(State.IsCoaching ? "checking" : State.CoachEngine.ChatGptConnected ? "ready" : "neutral")" aria-hidden="true"></span><span class="nav-label"><strong>AI coaching</strong><small>@AiActivity</small></span></div>
         @foreach (var item in State.Health.Where(item => (item.State is "warning" or "unavailable") && item.Id is not "garage61" and not "coachengine"))
@@ -43,7 +43,7 @@
         ("setup", "Setups", "setup", ProductCapability.SetupLibrary),
         ("tuning", "Progressive Tuning", "wrench", ProductCapability.ProgressiveTuning)
     ];
-    private string LocalActivity => State.ServiceRequestInFlight ? "Working" : State.ServiceFailureCount > 0 ? "Needs attention" : "Ready";
+    private string LocalActivity => State.ServiceRequestInFlight ? "Working" : State.LocalAnalysisNeedsAttention ? "Needs attention" : "Ready";
     private string GarageActivity => State.Garage61StatusLabel;
     private string AiActivity => State.IsCoaching ? "Working" : State.CoachEngine.ChatGptConnected ? "Connected" : "Not connected";
 }

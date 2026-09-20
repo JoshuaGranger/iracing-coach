@@ -89,10 +89,13 @@ public static class ProgressiveTuningCoordinator
         Selector = race.EffectiveSelector,
         AnalysisPath = string.IsNullOrWhiteSpace(identity.AnalysisPath) ? race.AnalysisPath : identity.AnalysisPath,
         SessionType = string.IsNullOrWhiteSpace(identity.SessionType) ? race.SessionType : identity.SessionType,
-        Track = string.IsNullOrWhiteSpace(identity.Track) ? race.Track : identity.Track,
-        Layout = string.IsNullOrWhiteSpace(identity.Layout) ? race.Layout : identity.Layout,
+        // The exact selector is validated before binding. Discovery uses short display
+        // labels (Iowa), while analysis may use SDK labels (Iowa Speedway). Keep the
+        // bound catalog labels consistent; backend track IDs/configuration stay intact.
+        Track = string.IsNullOrWhiteSpace(race.Track) ? identity.Track : race.Track,
+        Layout = string.IsNullOrWhiteSpace(race.Layout) ? identity.Layout : race.Layout,
         CarPath = string.IsNullOrWhiteSpace(identity.CarPath) ? race.CarPath : identity.CarPath,
-        Car = string.IsNullOrWhiteSpace(identity.Car) ? race.Car : identity.Car,
+        Car = string.IsNullOrWhiteSpace(race.Car) ? identity.Car : race.Car,
         SetupType = string.Equals(identity.SetupType, "Unknown", StringComparison.OrdinalIgnoreCase)
             ? race.SetupType
             : identity.SetupType

@@ -84,6 +84,7 @@ public sealed record CapabilityDecision(
 public sealed class CapabilityContext
 {
     public bool HasRaceRecordings { get; init; }
+    public bool HasPlanningEventCatalog { get; init; }
     public bool HasOpenAnalyzedRace { get; init; }
     public bool HasSetupFiles { get; init; }
     public bool HasComparableSetups { get; init; }
@@ -136,7 +137,7 @@ public static class CapabilityRegistry
         return capability switch
         {
             ProductCapability.LiveTelemetry when !context.LiveConnected => Temporary(definition, "Waiting for iRacing", "Start or join an iRacing session; connection retries automatically."),
-            ProductCapability.RacePlanning => Conditional(definition, context.HasRaceRecordings),
+            ProductCapability.RacePlanning => Conditional(definition, context.HasRaceRecordings || context.HasPlanningEventCatalog),
             ProductCapability.ProgressiveTuning => Conditional(definition, context.HasOpenAnalyzedRace),
             ProductCapability.SetupComparison => Conditional(definition, context.HasComparableSetups),
             ProductCapability.TrackMap => Conditional(definition, context.HasTrackView),
@@ -188,7 +189,7 @@ public static class CapabilityRegistry
             Supported(ProductCapability.LiveTelemetry, "Live telemetry", "See trustworthy current race data", "iRacing SDK shared memory", "Waiting for iRacing; automatic reconnect"),
             Supported(ProductCapability.LiveMonitor, "Telemetry popout", "Keep glanceable race cues above iRacing", "Validated live telemetry snapshot"),
             Supported(ProductCapability.RaceAnalysis, "Race analysis", "Turn a finalized race recording into deterministic coaching", "Local IBT analysis and archived Race Cards", "Analysis in progress; background job status remains visible"),
-            ConditionalDefinition(ProductCapability.RacePlanning, "Race planning", "Reuse comparable personal race history", "Analyzed local race history", "At least one recorded race"),
+            ConditionalDefinition(ProductCapability.RacePlanning, "Race planning", "Prepare an event using recorded evidence or explicit assumptions", "Installed car/layout catalog and optional analyzed history", "An installed event combination or a recorded race"),
             Supported(ProductCapability.SetupLibrary, "Setup library", "Find and identify local setup files without modifying them", "Read-only .sto discovery"),
             ConditionalDefinition(ProductCapability.ProgressiveTuning, "Progressive tuning", "Run one controlled setup experiment", "Analyzed open-setup race plus embedded setup", "An analyzed open-setup race exists"),
             Supported(ProductCapability.Connections, "Connections", "Manage working optional services", "Private Coach Engine and Garage61 credential adapter"),

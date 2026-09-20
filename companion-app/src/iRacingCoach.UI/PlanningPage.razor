@@ -3,27 +3,23 @@
         <div><span class="eyebrow">Race planning</span><h1>Next race</h1></div>
     </div>
 
-    @if (State.Races.Count == 0)
-    {
-        <section class="surface-card compact-empty-surface"><div class="empty-state"><span class="empty-icon"><ProductIcon Name="planning" Size="22" /></span><h2>Finish a recorded race first</h2><p>Planning uses the recorded car, track, setup type, and distance.</p><button class="button primary" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button></div></section>
-    }
-    else
-    {
         <div class="planning-workspace @(State.PlanGenerated ? "has-results" : "setup-only")">
             <section class="surface-card planning-setup-card" aria-labelledby="planning-context-title">
                 <div class="planning-setup-heading">
                     <div><span class="eyebrow">Next event</span><h2 id="planning-context-title">Race details</h2></div>
-                    <button class="button primary compact" disabled="@(State.SelectedPlanRace is null)" @onclick="BuildPlan">Build plan</button>
+                    <button class="button primary compact" disabled="@(!State.CanBuildPlan)" @onclick="BuildPlan">@(State.PlanBusy ? "Building…" : "Build plan")</button>
                 </div>
 
                 <div class="planning-setup-grid">
                     <label>Car
                         <select value="@State.SelectedPlanCarId" @onchange="ChangeCar">
+                            <option value="">Choose a car</option>
                             @foreach (var car in State.Cars) { <option value="@car.Id">@car.Name</option> }
                         </select>
                     </label>
                     <label>Track and layout
                         <select value="@State.SelectedPlanTrack" @onchange="ChangeTrack">
+                            <option value="">Choose a track and layout</option>
                             @foreach (var track in PlanTracks) { <option value="@track.Key">@track.Label</option> }
                         </select>
                     </label>
@@ -36,7 +32,7 @@
                     </div>
                     <label class="planning-reference-field">Based on
                         <select value="@State.SelectedPlanRaceId" @onchange="ChangeReference">
-                            <option value="">Choose a recorded race</option>
+                            <option value="">Practice preparation / estimates</option>
                             @foreach (var race in MatchingRaces) { <option value="@race.Id">@ReferenceLabel(race)</option> }
                         </select>
                     </label>
@@ -53,8 +49,18 @@
                 }
                 else
                 {
-                    <p class="planning-reference-missing">Choose a matching race to build the plan.</p>
+                    <p class="planning-reference-missing">No matching recording selected. Build a practice plan, or add fuel and pace assumptions below for an estimate.</p>
                 }
+                <details class="planning-assumptions planning-input-assumptions" open="@(State.SelectedPlanRace is null)">
+                    <summary>Fuel and pace assumptions <span>Optional · overrides recorded values</span></summary>
+                    <div class="planning-assumption-grid">
+                        <label>Green fuel / lap (US gal)<input type="number" min="0.001" step="0.01" @bind="State.PlanGreenBurnGallons" placeholder="From practice" /></label>
+                        <label>Available starting fuel (US gal)<input type="number" min="0.01" step="0.1" @bind="State.PlanStartFuelGallons" placeholder="Check event limit" /></label>
+                        <label>Representative lap (seconds)<input type="number" min="1" step="0.1" @bind="State.PlanLapSeconds" placeholder="For timed races" /></label>
+                    </div>
+                    <p>Entered values produce an estimate. Every fuel calculation holds back one green lap. Leave a field blank to use matching recorded evidence.</p>
+                </details>
+                <p class="planning-status" role="status">@State.PlanMessage</p>
             </section>
 
             @if (State.PlanGenerated)
@@ -63,7 +69,7 @@
                     @if (State.PlanBriefing is { } plan)
                     {
                         <section class="surface-card plan-briefing" data-assumption-count="@plan.Assumptions.Count">
-                            <div class="analysis-section-heading"><div><span class="eyebrow">Race briefing</span><h2>@plan.Track · @plan.Car</h2></div><span class="status-label @(plan.Confidence.Equals("Low", StringComparison.OrdinalIgnoreCase) ? "warning" : "success")">@plan.Confidence confidence</span></div>
+                            <div class="analysis-section-heading"><div><span class="eyebrow">Race briefing</span><h2>@plan.Track · @plan.Car</h2></div><span class="status-label @(plan.Confidence.Equals("Recorded reference", StringComparison.OrdinalIgnoreCase) ? "success" : "warning")">@plan.Confidence</span></div>
                             <div class="planning-decision-hero" data-planning-decision>
                                 <div>
                                     <span class="eyebrow">Recommended opening plan</span>
@@ -82,7 +88,7 @@
                                 @if (plan.GreenFuelGallonsPerLap.HasValue) { <div><span>Green fuel use</span><strong>@plan.GreenFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                                 @if (plan.CautionFuelGallonsPerLap.HasValue) { <div><span>Caution fuel use</span><strong>@plan.CautionFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                             </div>
-                            @if (PlanPitTargets(plan).Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>Backend equal-stint windows</span><strong>@string.Join(" · ", PlanPitTargets(plan).Select(lap => $"Lap {lap:0.#}"))</strong></div> }
+                            @if (PlanPitTargets(plan).Count > 0) { <div class="pit-target"><ProductIcon Name="planning" Size="18" /><span>Equal-stint pit targets</span><strong>@string.Join(" · ", PlanPitTargets(plan).Select(lap => $"Lap {lap:0.#}"))</strong></div> }
                             @if (plan.Assumptions.Count > 0) { <details class="planning-assumptions"><summary>Planning assumptions</summary><ul>@foreach (var assumption in plan.Assumptions) { <li>@assumption</li> }</ul></details> }
                             @if (plan.Priorities.Any(UsefulPriority) || UsefulTireGuidance(plan.TireGuidance) || plan.Triggers.Any(item => UsefulTrigger(plan, item)))
                             {
@@ -95,7 +101,7 @@
                         </section>
                     }
                     <section class="surface-card planning-history">
-                        <div class="card-header"><div><span class="eyebrow">Race comparisons</span><h2>Comparable races</h2></div></div>
+                        <div class="card-header"><div><span class="eyebrow">Recorded comparisons</span><h2>Comparable runs</h2></div></div>
                         <p class="section-copy">@ScenarioCountMessage</p>
                         @if (State.StrategyScenarios.Count == 0)
                         {
@@ -109,19 +115,13 @@
                 </div>
             }
         </div>
-    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     private CompanionState? _initializedState;
     private bool _initialDistanceApplied;
-    private IEnumerable<(string Key, string Label)> PlanTracks => State.Races.OfType<RecentRace>()
-        .Where(race => !string.IsNullOrWhiteSpace(race.Track))
-        .Select(race => ($"{race.Track}|{race.Layout}", string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track} · {race.Layout}"))
-        .DistinctBy(item => item.Item1, StringComparer.OrdinalIgnoreCase)
-        .OrderBy(item => item.Item2, StringComparer.CurrentCultureIgnoreCase)
-        .Select(item => (item.Item1, item.Item2));
+    private IEnumerable<(string Key, string Label)> PlanTracks => State.PlanTrackOptions;
     private IEnumerable<RecentRace> MatchingRaces => State.Races.OfType<RecentRace>().Where(race =>
         string.Equals(State.SelectedPlanCarId, race.CarPath.Length > 0 ? race.CarPath : race.Car, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(State.SelectedPlanTrack, $"{race.Track}|{race.Layout}", StringComparison.OrdinalIgnoreCase) &&
@@ -155,6 +155,7 @@
     }
     private void UseReferenceDistance(bool onlyWhenUnchangedDefault = false)
     {
+        if (State.SelectedPlanRace is null) return;
         var overview = State.SelectedPlanRace?.Overview;
         var laps = overview?.ScheduledLaps;
         var minutes = overview?.ScheduledMinutes;
@@ -194,9 +195,9 @@
     private static string FriendlyWindow(string value) => DateTimeOffset.TryParse(value, out var date) ? date.ToLocalTime().ToString("MMM d · h:mm tt") : value;
     private string ScenarioCountMessage => State.StrategyScenarios.Count switch
     {
-        0 => "No comparable race is available yet.",
-        1 => "One comparable race can inform this plan.",
-        var count => $"{count} comparable races can inform this plan."
+        0 => "No comparable run is available yet.",
+        1 => "One comparable run can inform this plan.",
+        var count => $"{count} comparable runs can inform this plan."
     };
     private static string FriendlyScenarioLabel(string value) => value.Replace("Recorded ", string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
     private static bool UsefulScenarioNote(string value) => !string.IsNullOrWhiteSpace(value)
@@ -241,11 +242,11 @@
         if (plan.FuelPlan is not { IsUsable: true } decision) return plan.FuelPlan?.UnavailableReason
             ?? "Use the recorded fuel burn as the baseline and resolve the governing finish constraint.";
         if (NoStopAuthorized(plan)) return decision.FinalStintMarginLaps is { } margin
-            ? $"The backend decision carries a {margin:0.0}-lap final-stint margin. There is no planned fuel stop unless live evidence changes."
-            : "The backend decision authorizes no-stop language, with no displayed margin available.";
+            ? $"The plan leaves a {margin:0.0}-lap final-stint margin. There is no planned fuel stop unless live evidence changes."
+            : "The plan covers the race without a scheduled fuel stop.";
         return decision.EqualStintPitTargets.Count > 0
-            ? $"The backend decision requires {decision.MinimumStops} stop{(decision.MinimumStops == 1 ? string.Empty : "s")}; the first balanced window is lap {decision.EqualStintPitTargets[0]:0.#}."
-            : "The backend decision requires a stop, but no equal-stint target is available.";
+            ? $"The plan requires {decision.MinimumStops} stop{(decision.MinimumStops == 1 ? string.Empty : "s")}; the first balanced window is lap {decision.EqualStintPitTargets[0]:0.#}."
+            : "The plan requires a stop, but no equal-stint target is available.";
     }
     private static string ConservativeRangeLabel(RacePlanBriefing plan) => ConservativeRange(plan) is { } range ? $"{range:0.0} laps" : "Not available";
     private static string DistanceMarker(RacePlanBriefing plan)
@@ -267,15 +268,17 @@
     }
     private static string FuelMargin(RacePlanBriefing plan)
     {
-        if (plan.FuelPlan is not { IsUsable: true } decision) return "Authoritative margin unavailable";
+        if (plan.FuelPlan is not { IsUsable: true } decision) return "Fuel margin unavailable";
         return decision.FinalStintMarginLaps is { } margin
-            ? $"+{margin:0.0} laps after the final stint"
-            : "Authoritative margin unavailable";
+            ? decision.MinimumStops > 0
+                ? $"+{margin:0.0} laps of total capacity across {decision.Stints} stints"
+                : $"+{margin:0.0} laps after the final stint"
+            : "Fuel margin unavailable";
     }
     private static string PlannedStops(RacePlanBriefing plan) => AuthoritativeStops(plan)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "—";
     private static string PitWindowSummary(RacePlanBriefing plan) => AuthoritativeStops(plan) switch
     {
-        null => "Resolve race distance first",
+        null => "Add the missing fuel or pace inputs",
         0 when NoStopAuthorized(plan) => "No scheduled fuel stop",
         _ when PlanPitTargets(plan).Count > 0 => string.Join(" · ", PlanPitTargets(plan).Select(lap => $"lap {lap:0.#}")),
         _ => "Window needs live fuel use"

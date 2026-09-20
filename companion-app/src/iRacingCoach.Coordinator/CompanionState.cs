@@ -41,7 +41,7 @@ public sealed class CompanionState : IDisposable
     // Content completeness is a separate question again, and RuntimeMapper already
     // answers it: HasCurrentAnalysisProfile rejects a response emitted by an
     // analyzer older than the fields the UI now reads.
-    private const string AppVersion = "0.16.0";
+    private const string AppVersion = "0.17.0";
 
     // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
     // roughly 1.8x - one 25 MB entry spanned 615,614 lines - and allocating fresh options
@@ -188,7 +188,7 @@ public sealed class CompanionState : IDisposable
     public string SettingsMessage { get; private set; } = "Preferences and racing history live in the Coach folder. Account connections remain protected on this PC.";
     public bool SettingsWritable => Settings.Compatibility.Writable;
     public string DataMessage { get; private set; } = "Looking for finalized iRacing recordings…";
-    public string PlanMessage { get; private set; } = "Choose one of your recorded races to use its exact car, track, and setup context.";
+    public string PlanMessage { get; private set; } = "Choose your event and distance. Recorded evidence and optional assumptions will fill the plan.";
     public string SetupMessage { get; private set; } = "Only setup files found on this PC are shown.";
     public string TuningMessage { get; private set; } = "Choose an analyzed open-setup race and describe what the car did.";
     // UI-only launch-session preference. This intentionally does not live in
@@ -217,6 +217,20 @@ public sealed class CompanionState : IDisposable
     public string SelectedPlanTrack { get => _selectedPlanTrack; set => SetPlanInput(ref _selectedPlanTrack, value); }
     public string PlanDistanceMode { get => _planDistanceMode; set => SetPlanInput(ref _planDistanceMode, value); }
     public double PlanDistanceValue { get => _planDistanceValue; set => SetPlanInput(ref _planDistanceValue, value); }
+    private double? _planGreenBurnGallons;
+    private double? _planStartFuelGallons;
+    private double? _planLapSeconds;
+    public double? PlanGreenBurnGallons { get => _planGreenBurnGallons; set => SetPlanInput(ref _planGreenBurnGallons, value); }
+    public double? PlanStartFuelGallons { get => _planStartFuelGallons; set => SetPlanInput(ref _planStartFuelGallons, value); }
+    public double? PlanLapSeconds { get => _planLapSeconds; set => SetPlanInput(ref _planLapSeconds, value); }
+    public bool PlanBusy { get; private set; }
+    public bool CanBuildPlan => !PlanBusy && SelectedPlanCarId.Length > 0 && SelectedPlanTrack.Length > 0 && double.IsFinite(PlanDistanceValue) && PlanDistanceValue is > 0 and <= 1000;
+    public IReadOnlyList<(string Key, string Label)> PlanTrackOptions => Races
+        .Where(race => race.Track.Length > 0)
+        .Select(race => (Key: $"{race.Track}|{race.Layout}", Label: string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track} · {race.Layout}"))
+        .Concat(Tracks.Select(track => (Key: $"installed:{track.Id}", Label: track.Name)))
+        .DistinctBy(item => string.Concat(item.Label.Where(char.IsLetterOrDigit)), StringComparer.OrdinalIgnoreCase)
+        .OrderBy(item => item.Label, StringComparer.CurrentCultureIgnoreCase).ToArray();
     public string PlanSetupType { get => _planSetupType; set => SetPlanInput(ref _planSetupType, value); }
     public string SelectedTuningRaceId { get => _selectedTuningRaceId; set => SetExperimentInput(ref _selectedTuningRaceId, value); }
     public string SelectedTuningTargetRaceId { get; private set; } = string.Empty;
@@ -224,6 +238,44 @@ public sealed class CompanionState : IDisposable
     public string SelectedTuningTurnId { get; private set; } = string.Empty;
     public string SelectedSetupId { get; set; } = string.Empty;
     public string CompareSetupId { get; set; } = string.Empty;
+    public string TuningSourceSetupId { get; private set; } = string.Empty;
+    public LocalSetup? TuningSourceSetup => Setups.FirstOrDefault(item => item.Id == TuningSourceSetupId);
+    public string SetupSearch { get; set; } = string.Empty;
+    public string SetupCarFilter { get; set; } = string.Empty;
+    public string SetupTrackFilter { get; set; } = string.Empty;
+    public string SetupSeasonFilter { get; set; } = string.Empty;
+    public IEnumerable<LocalSetup> FilteredSetups => Setups.Where(item =>
+        (SetupCarFilter.Length == 0 || item.Car == SetupCarFilter)
+        && (SetupTrackFilter.Length == 0 || item.Track == SetupTrackFilter)
+        && (SetupSeasonFilter.Length == 0 || (item.Season.Length == 0 ? "Unknown" : item.Season) == SetupSeasonFilter)
+        && (SetupSearch.Trim().Length == 0 || $"{item.Name} {item.Car} {item.Track} {item.Role}".Contains(SetupSearch.Trim(), StringComparison.CurrentCultureIgnoreCase)));
+
+    public IReadOnlyList<RecentRace> SetupEvidenceRaces(LocalSetup setup) => Races.Where(race =>
+        !string.IsNullOrWhiteSpace(race.AnalysisPath) && (setup.AnalysisPaths ?? []).Append(setup.StoPath)
+            .Any(path => string.Equals(path, race.AnalysisPath, StringComparison.OrdinalIgnoreCase))).ToArray();
+
+    public async Task BeginSetupTuningAsync(string setupId, string? raceId = null, CancellationToken cancellationToken = default)
+    {
+        var setup = Setups.FirstOrDefault(item => item.Id == setupId);
+        if (setup is null) return;
+        var evidence = SetupEvidenceRaces(setup);
+        var race = raceId is null ? evidence.FirstOrDefault() : evidence.FirstOrDefault(item => item.Id == raceId);
+        if (race is null) { Notify("Record and analyze a run with this setup to attach driving evidence."); return; }
+        SelectedSetupId = setup.Id;
+        TuningSourceSetupId = setup.Id;
+        await SelectTuningRaceAsync(race.Id, cancellationToken);
+        if (SelectedTuningRaceId != race.Id) return;
+        if (CurrentAnalysis?.SetupFingerprint != setup.Fingerprint)
+        {
+            TuningSourceSetupId = string.Empty;
+            Notify("The race setup fingerprint changed. Refresh the setup library before tuning.");
+            return;
+        }
+        Navigate("tuning");
+    }
+
+    public void ClearSetupTuningContext() { TuningSourceSetupId = string.Empty; RaiseChanged(); }
+
     public int StartingTuneStep { get; private set; } = 1;
     public string StartingTuneSeason { get => _startingTuneSeason; set => SetStartingTuneInput(ref _startingTuneSeason, value); }
     public string StartingTuneCar { get => _startingTuneCar; set => SetStartingTuneInput(ref _startingTuneCar, value); }
@@ -255,6 +307,7 @@ public sealed class CompanionState : IDisposable
     public bool AnalysisWorkspaceOpen { get; private set; }
     public bool AnalysisLoading { get; private set; }
     public string AnalysisMessage { get; private set; } = string.Empty;
+    public RecoverableAppError? AnalysisError { get; private set; }
     public string Garage61ReferenceMessage { get; private set; } = string.Empty;
     public bool IsGarage61ReferenceSyncing => Volatile.Read(ref _garage61ReferenceSyncActive) != 0;
     public Garage61Connection Garage61 { get; private set; } = Garage61StatusReducer.Unprobed(false);
@@ -275,6 +328,8 @@ public sealed class CompanionState : IDisposable
     public int ServiceFailureCount { get; private set; }
     public RecoverableAppError? LastRecoverableError { get; private set; }
     public bool ServiceRequestInFlight => Volatile.Read(ref _serviceRequestsInFlight) > 0;
+    public bool LocalAnalysisNeedsAttention => AnalysisError is not null
+        || Health.Any(item => item.Id == "backend" && item.State == "unavailable");
     public LiveMonitorState LiveState => _liveTelemetry.Current;
     public LiveReplayCaptureStatus ReplayCaptureStatus => _liveReplayCapture.Status;
     public bool LiveCoachingPaused => _liveTelemetry.CoachingPaused;
@@ -328,6 +383,7 @@ public sealed class CompanionState : IDisposable
             return new CapabilityContext
             {
                 HasRaceRecordings = Races.Count > 0,
+                HasPlanningEventCatalog = Cars.Count > 0 && Tracks.Count > 0,
                 // Progressive tuning can start from any analyzed race as evidence. The
                 // open-setup target is chosen inside the workflow when the evidence race
                 // itself was fixed, so the navigation gate must not hide that path.
@@ -928,14 +984,32 @@ public sealed class CompanionState : IDisposable
             Settings.IRacingRoot,
             Settings.ArchiveRoot);
         AnalysisWorkspaceOpen = true;
+        AnalysisError = null;
         AnalysisLoading = true;
         AnalysisMessage = race.Analyzed ? "Opening telemetry…" : "Reading telemetry…";
         CurrentRaceCard = null;
         CurrentAnalysis = null;
         Garage61ReferenceMessage = string.Empty;
         RaiseChanged();
-        if (!force && TryLoadUiAnalysisCache(race))
+        CachedAnalysis? cached;
+        try
         {
+            cached = force ? null : await LoadCachedAnalysisAsync(race, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (AnalysisRequestStillCurrent(request))
+            {
+                AnalysisLoading = false;
+                AnalysisMessage = "Opening this recording was cancelled.";
+                RaiseChanged();
+            }
+            return;
+        }
+        if (!AnalysisRequestStillCurrent(request)) return;
+        if (cached is not null)
+        {
+            PublishCachedAnalysis(race, cached);
             RaiseChanged();
             return;
         }
@@ -946,7 +1020,7 @@ public sealed class CompanionState : IDisposable
                 selector = request.Selector,
                 iracing_root = request.IRacingRoot,
                 archive_root = request.ArchiveRoot,
-                target_hz = 20
+                target_hz = (double?)null
             }, token);
             EnsureResponseMatchesSession(race, result);
             var mappedCard = RuntimeMapper.HasCurrentAnalysisProfile(result)
@@ -959,7 +1033,7 @@ public sealed class CompanionState : IDisposable
             CurrentRaceCard = mappedCard;
             CurrentAnalysis = mappedAnalysis;
             ApplySuccessfulRaceAnalysis(race, mappedAnalysis, AnalysisPathFromResponse(result));
-        }, cancellationToken);
+        }, cancellationToken, error => { if (AnalysisRequestStillCurrent(request)) AnalysisError = error; });
         if (Volatile.Read(ref _analysisSelectionEpoch) != request.Epoch) return;
         AnalysisLoading = false;
         if (!AnalysisRequestStillCurrent(request))
@@ -968,7 +1042,8 @@ public sealed class CompanionState : IDisposable
             RaiseChanged();
             return;
         }
-        AnalysisMessage = CurrentAnalysis is null ? "This recording could not be opened. Retry or copy the support details." : string.Empty;
+        AnalysisMessage = CurrentAnalysis is null ? "This recording could not be opened. Retry or copy the support details."
+            : CurrentRaceCard is null ? "This analysis was produced by an incompatible backend. Close the app and launch the current development build, then retry." : string.Empty;
         RaiseChanged();
     }
 
@@ -1024,6 +1099,9 @@ public sealed class CompanionState : IDisposable
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
         field = value;
         Interlocked.Increment(ref _planRequestEpoch);
+        PlanGenerated = false;
+        PlanBriefing = null;
+        StrategyScenarios.Clear();
     }
 
     private void SetExperimentInput<T>(ref T field, T value)
@@ -1042,119 +1120,80 @@ public sealed class CompanionState : IDisposable
 
     public async Task GeneratePlanAsync(CancellationToken cancellationToken = default)
     {
+        if (!CanBuildPlan) { PlanMessage = "Choose a car, track and race distance first."; RaiseChanged(); return; }
         var race = SelectedPlanRace;
-        if (race is null)
+        if (race is not null && (!PlanCarMatches(race)
+            || !string.Equals(SelectedPlanTrack, $"{race.Track}|{race.Layout}", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(PlanSetupType, race.SetupType, StringComparison.OrdinalIgnoreCase)))
         {
-            Notify("Choose a recorded race first.");
-            return;
+            PlanMessage = "The reference race must match the selected car, layout and setup type.";
+            RaiseChanged(); return;
         }
-        if (SelectedPlanCarId.Length > 0 &&
-            !string.Equals(SelectedPlanCarId, race.CarPath.Length > 0 ? race.CarPath : race.Car, StringComparison.OrdinalIgnoreCase))
-        {
-            PlanMessage = "Choose a reference race recorded with the selected car so the plan uses matching evidence.";
-            Notify(PlanMessage);
-            return;
-        }
-        var raceTrackKey = $"{race.Track}|{race.Layout}";
-        if (SelectedPlanTrack.Length > 0 && !string.Equals(SelectedPlanTrack, raceTrackKey, StringComparison.OrdinalIgnoreCase))
-        {
-            PlanMessage = "Choose a comparable recorded race for this track. The app will not invent fuel or setup guidance for an unmatched event.";
-            Notify(PlanMessage);
-            RaiseChanged();
-            return;
-        }
-        if (!race.Analyzed || race.AnalysisPath.Length == 0)
-        {
-            PlanMessage = "Analyze this race first so planning can use its exact recorded context.";
-            Notify(PlanMessage);
-            return;
-        }
-
-        var request = new PlanPublicationRequest(
-            Interlocked.Increment(ref _planRequestEpoch),
-            race.Id,
-            race.EffectiveSelector,
-            race.AnalysisPath,
-            SelectedPlanCarId,
-            SelectedPlanTrack,
-            PlanSetupType,
-            PlanDistanceMode,
-            PlanDistanceValue,
-            Settings.IRacingRoot,
-            Settings.ArchiveRoot);
-
+        var epoch = Interlocked.Increment(ref _planRequestEpoch);
+        var archiveRoot = Settings.ArchiveRoot;
+        var iracingRoot = Settings.IRacingRoot;
+        var car = Cars.FirstOrDefault(item => item.Id == SelectedPlanCarId)?.Name ?? SelectedPlanCarId;
+        var track = PlanTrackOptions.FirstOrDefault(item => item.Key == SelectedPlanTrack).Label ?? SelectedPlanTrack;
+        var setup = PlanSetupType;
+        var distance = PlanDistanceValue;
+        var distanceMode = PlanDistanceMode;
+        var burn = PlanGreenBurnGallons;
+        var fuel = PlanStartFuelGallons;
+        var pace = PlanLapSeconds;
+        bool StillCurrent() => Volatile.Read(ref _planRequestEpoch) == epoch
+            && Settings.ArchiveRoot == archiveRoot && Settings.IRacingRoot == iracingRoot;
+        PlanBusy = true;
+        PlanGenerated = false;
+        PlanMessage = "Building the event plan…";
+        RaiseChanged();
         try
         {
-            var historyTask = CallBackendAsync("iracing_strategy_history", new
+            RacePlanBriefing? reference = null;
+            string? analysisPath = null;
+            StrategyScenario[] scenarios = [];
+            if (race is not null)
             {
-                analysis_path = request.AnalysisPath,
-                archive_root = request.ArchiveRoot,
-                include_other_seasons = false,
-                limit = 200
+                var analysis = await CallBackendAsync("analyze_iracing_race", new
+                {
+                    selector = race.EffectiveSelector, iracing_root = iracingRoot,
+                    archive_root = archiveRoot, target_hz = (double?)null
+                }, cancellationToken);
+                EnsureResponseMatchesSession(race, analysis);
+                if (!StillCurrent()) return;
+                reference = RuntimeMapper.Plan(analysis, distance, distanceMode);
+                analysisPath = AnalysisPathFromResponse(analysis);
+                if (string.IsNullOrWhiteSpace(analysisPath)) analysisPath = race.AnalysisPath;
+                if (string.IsNullOrWhiteSpace(analysisPath)) throw new InvalidDataException("The reference analysis has no saved evidence path.");
+                try
+                {
+                    var history = await CallBackendAsync("iracing_strategy_history", new { analysis_path = analysisPath, archive_root = archiveRoot, include_other_seasons = false, limit = 200 }, cancellationToken);
+                    scenarios = RuntimeMapper.Strategy(history).ToArray();
+                }
+                catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
+                { /* History enriches a plan; its absence must not prevent a fuel decision. */ }
+            }
+            if (!StillCurrent()) return;
+            var result = await CallBackendAsync("plan_iracing_race", new
+            {
+                archive_root = archiveRoot, analysis_path = analysisPath,
+                distance, distance_mode = distanceMode, green_burn_gallons = burn,
+                start_fuel_gallons = fuel, lap_seconds = pace
             }, cancellationToken);
-            var analysisTask = CallBackendAsync("analyze_iracing_race", new
-            {
-                selector = request.Selector,
-                iracing_root = request.IRacingRoot,
-                archive_root = request.ArchiveRoot,
-                target_hz = 20
-            }, cancellationToken);
-            await Task.WhenAll(historyTask, analysisTask);
-            var result = await historyTask;
-            var stagedScenarios = RuntimeMapper.Strategy(result).ToArray();
-            var stagedBriefing = RuntimeMapper.Plan(await analysisTask, request.DistanceValue, request.DistanceMode);
-            if (!PlanRequestStillCurrent(request)) return;
-            StrategyScenarios.Clear();
-            StrategyScenarios.AddRange(stagedScenarios);
-            PlanBriefing = stagedBriefing;
-            PersistPortableArtifact("strategy-history", $"strategy-{race.Id}", new
-            {
-                schemaVersion = 1,
-                raceId = race.Id,
-                createdUtc = DateTimeOffset.UtcNow,
-                result
-            });
+            var briefing = RuntimeMapper.EventPlan(result, car, track, setup, reference);
+            if (!StillCurrent()) return;
+            PlanBriefing = briefing;
+            StrategyScenarios.Clear(); StrategyScenarios.AddRange(scenarios);
             PlanGenerated = true;
-            PlanMessage = StrategyScenarios.Count == 0
-                ? "No directly comparable historical runs exist yet. More recorded races will improve this view."
-                : $"Found {StrategyScenarios.Count} directly comparable recorded run{(StrategyScenarios.Count == 1 ? string.Empty : "s")}.";
-            Notify("Race history checked.");
+            PlanMessage = briefing.FuelPlan is { IsUsable: true } ? "Plan ready. Review the assumptions before the race." : briefing.FuelPlan?.UnavailableReason ?? "Record a practice run to fill the missing measurements.";
+            PersistPortableArtifact("event-plans", $"plan-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}", new { schemaVersion = 1, car, track, setup, distance, distanceMode, referenceRaceId = race?.Id, result });
         }
-        catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
+        catch (OperationCanceledException) { if (StillCurrent()) PlanMessage = "Plan cancelled."; }
+        catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException or IOException)
         {
-            if (!PlanRequestStillCurrent(request)) return;
-            PlanMessage = Bound(ex.Message);
-            Notify("The plan could not be built from the available history.");
+            if (StillCurrent()) { PlanMessage = Bound(ex.Message); Notify("The plan could not be built."); }
         }
-        RaiseChanged();
+        finally { PlanBusy = false; RaiseChanged(); }
     }
-
-    private bool PlanRequestStillCurrent(PlanPublicationRequest request) =>
-        Volatile.Read(ref _planRequestEpoch) == request.Epoch
-        && string.Equals(SelectedPlanRaceId, request.RaceId, StringComparison.Ordinal)
-        && SelectedPlanRace is { } currentRace
-        && string.Equals(currentRace.EffectiveSelector, request.Selector, StringComparison.Ordinal)
-        && string.Equals(currentRace.AnalysisPath, request.AnalysisPath, StringComparison.Ordinal)
-        && string.Equals(SelectedPlanCarId, request.CarId, StringComparison.Ordinal)
-        && string.Equals(SelectedPlanTrack, request.Track, StringComparison.Ordinal)
-        && string.Equals(PlanSetupType, request.SetupType, StringComparison.Ordinal)
-        && string.Equals(PlanDistanceMode, request.DistanceMode, StringComparison.Ordinal)
-        && PlanDistanceValue.Equals(request.DistanceValue)
-        && string.Equals(Settings.IRacingRoot, request.IRacingRoot, StringComparison.Ordinal)
-        && string.Equals(Settings.ArchiveRoot, request.ArchiveRoot, StringComparison.Ordinal);
-
-    private sealed record PlanPublicationRequest(
-        long Epoch,
-        string RaceId,
-        string Selector,
-        string AnalysisPath,
-        string CarId,
-        string Track,
-        string SetupType,
-        string DistanceMode,
-        double DistanceValue,
-        string IRacingRoot,
-        string ArchiveRoot);
 
     public async Task GenerateExperimentAsync(CancellationToken cancellationToken = default)
     {
@@ -1294,9 +1333,24 @@ public sealed class CompanionState : IDisposable
 
         TuningMessage = "Loading this race's track and telemetry…";
         RaiseChanged();
-        if (TryLoadUiAnalysisCache(race))
+        CachedAnalysis? cached;
+        try
         {
-            if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id)) return;
+            cached = await LoadCachedAnalysisAsync(race, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (IsCurrentTuningRaceSelection(selectionEpoch, race.Id))
+            {
+                TuningMessage = "Opening this recording was cancelled.";
+                RaiseChanged();
+            }
+            return;
+        }
+        if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id)) return;
+        if (cached is not null)
+        {
+            PublishCachedAnalysis(race, cached);
             ActivateTuningAnalysis(race);
             RaiseChanged();
             return;
@@ -1309,7 +1363,7 @@ public sealed class CompanionState : IDisposable
                 selector = race.EffectiveSelector,
                 iracing_root = Settings.IRacingRoot,
                 archive_root = Settings.ArchiveRoot,
-                target_hz = 20
+                target_hz = (double?)null
             }, cancellationToken);
             EnsureResponseMatchesSession(race, result);
             var raceCard = RuntimeMapper.HasCurrentAnalysisProfile(result)
@@ -1930,7 +1984,7 @@ public sealed class CompanionState : IDisposable
             selector = race.EffectiveSelector,
             iracing_root = Settings.IRacingRoot,
             archive_root = Settings.ArchiveRoot,
-            target_hz = 20
+            target_hz = (double?)null
         }, cancellationToken);
         EnsureResponseMatchesSession(race, response);
         var analysis = RuntimeMapper.Analysis(response);
@@ -2777,40 +2831,30 @@ public sealed class CompanionState : IDisposable
     public void SelectPlanCar(string? carId)
     {
         SelectedPlanCarId = carId?.Trim() ?? string.Empty;
-        var preferred = Races.OfType<RecentRace>().FirstOrDefault(race =>
-                PlanCarMatches(race) && string.Equals(SelectedPlanTrack, $"{race.Track}|{race.Layout}", StringComparison.OrdinalIgnoreCase))
-            ?? Races.OfType<RecentRace>().FirstOrDefault(PlanCarMatches);
-        ApplyPlanReference(preferred, updateTrack: true);
+        SelectMatchingPlanReference();
         RaiseChanged();
     }
 
     public void SelectPlanTrack(string? trackKey)
     {
         SelectedPlanTrack = trackKey?.Trim() ?? string.Empty;
-        ApplyPlanReference(Races.OfType<RecentRace>().FirstOrDefault(race =>
-            PlanCarMatches(race) && string.Equals(SelectedPlanTrack, $"{race.Track}|{race.Layout}", StringComparison.OrdinalIgnoreCase)), updateTrack: false);
+        SelectMatchingPlanReference();
         RaiseChanged();
     }
 
     public void SelectPlanSetupType(string? setupType)
     {
         PlanSetupType = setupType?.Trim() ?? "Fixed";
-        SelectedPlanRaceId = Races.OfType<RecentRace>().FirstOrDefault(race =>
-            PlanCarMatches(race) &&
-            string.Equals(SelectedPlanTrack, $"{race.Track}|{race.Layout}", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(PlanSetupType, race.SetupType, StringComparison.OrdinalIgnoreCase))?.Id ?? string.Empty;
+        SelectMatchingPlanReference();
         RaiseChanged();
     }
 
+    private void SelectMatchingPlanReference() => SelectedPlanRaceId = Races.FirstOrDefault(race =>
+        PlanCarMatches(race) && string.Equals(SelectedPlanTrack, $"{race.Track}|{race.Layout}", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(PlanSetupType, race.SetupType, StringComparison.OrdinalIgnoreCase))?.Id ?? string.Empty;
+
     private bool PlanCarMatches(RecentRace race) => string.Equals(SelectedPlanCarId, race.CarPath.Length > 0 ? race.CarPath : race.Car, StringComparison.OrdinalIgnoreCase);
 
-    private void ApplyPlanReference(RecentRace? race, bool updateTrack)
-    {
-        SelectedPlanRaceId = race?.Id ?? string.Empty;
-        if (race is null) return;
-        if (updateTrack) SelectedPlanTrack = $"{race.Track}|{race.Layout}";
-        PlanSetupType = race.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase) ? "Open" : "Fixed";
-    }
     public void DismissToast() { Toast = null; RaiseChanged(); }
     public void Notify(string message) { Toast = message; RaiseChanged(); }
     public void OpenLogs()
@@ -2944,7 +2988,7 @@ public sealed class CompanionState : IDisposable
         RaiseChanged();
     }
 
-    private async Task RunJobAsync(string title, string canonicalKey, string stage, Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
+    private async Task RunJobAsync(string title, string canonicalKey, string stage, Func<CancellationToken, Task> operation, CancellationToken cancellationToken, Action<RecoverableAppError>? onError = null)
     {
         if (Jobs.Any(job => job.CanonicalKey == canonicalKey && job.Status is "queued" or "running"))
         {
@@ -2975,6 +3019,7 @@ public sealed class CompanionState : IDisposable
         catch (Exception ex)
         {
             ReportUnhandledException($"job {title}", ex);
+            if (LastRecoverableError is { } error) onError?.Invoke(error);
             job.Status = "failed"; job.Stage = Bound(ex.Message); job.Cancellable = false; job.Elapsed = timer.Elapsed;
             Toast = $"{title} needs attention.";
         }
@@ -3020,16 +3065,17 @@ public sealed class CompanionState : IDisposable
     private void ApplyRaceDefaults()
     {
         var latest = Races.FirstOrDefault();
-        if (SelectedPlanRaceId.Length == 0 || Races.All(race => race.Id != SelectedPlanRaceId))
-            SelectedPlanRaceId = latest?.Id ?? string.Empty;
-        if (SelectedPlanCarId.Length == 0)
-            SelectedPlanCarId = latest is null ? string.Empty : latest.CarPath.Length > 0 ? latest.CarPath : latest.Car;
-        if (SelectedPlanTrack.Length == 0 && latest is not null)
-            SelectedPlanTrack = $"{latest.Track}|{latest.Layout}";
-        if (latest is not null)
+        // Defaults apply only before the first event selection. Inventory refresh
+        // must not replace an intentional practice plan or change its setup rules.
+        if (Volatile.Read(ref _planRequestEpoch) == 0 && latest is not null)
         {
+            SelectedPlanRaceId = latest.Id;
+            SelectedPlanCarId = latest.CarPath.Length > 0 ? latest.CarPath : latest.Car;
+            SelectedPlanTrack = $"{latest.Track}|{latest.Layout}";
             PlanSetupType = latest.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase) ? "Open" : "Fixed";
         }
+        else if (SelectedPlanRaceId.Length > 0 && Races.All(race => race.Id != SelectedPlanRaceId))
+            SelectedPlanRaceId = string.Empty;
         if (SelectedTuningRaceId.Length == 0 || TuningEvidenceRaces.All(race => race.Id != SelectedTuningRaceId))
             SelectedTuningRaceId = TuningEvidenceRaces.FirstOrDefault()?.Id ?? string.Empty;
     }
@@ -3054,7 +3100,7 @@ public sealed class CompanionState : IDisposable
         }
         foreach (var setup in setups)
         {
-            if (!found.ContainsKey(setup.Car)) found[setup.Car] = new InstalledCar(setup.Car, setup.Car, setup.StoPath, "Local setup");
+            if (!found.ContainsKey(setup.Car) && !found.Values.Any(item => item.Name.Equals(setup.Car, StringComparison.OrdinalIgnoreCase))) found[setup.Car] = new InstalledCar(setup.Car, setup.Car, setup.StoPath, "Local setup");
         }
         foreach (var root in InstalledCarRoots())
         {
@@ -3207,7 +3253,7 @@ public sealed class CompanionState : IDisposable
     [
         new("App", $"v{AppVersion} · Windows x64", "ready"),
         new("Race analysis service", health.Ok ? $"Ready · {BackendVersionLabel(health.ServerVersion)} · {health.ToolCount} tools" : health.Error ?? "Unavailable", health.Ok ? "ready" : "warning"),
-        new("Contract compatibility", health.Ok && health.ToolCount == 17 ? "Compatible · MCP v1" : $"Expected 17 tools; found {health.ToolCount}", health.Ok && health.ToolCount == 17 ? "ready" : "warning"),
+        new("Service protocol", health.Ok ? $"Connected · MCP v1 · {health.ToolCount} tools" : "Check the local analysis service", health.Ok ? "ready" : "warning"),
         new("Coach Engine", CoachEngine.Installed ? $"{CoachEngine.RuntimeVersion} · {(CoachEngine.Running ? "running" : "stopped")}" : CoachEngine.Message, CoachEngine.Installed ? "ready" : "warning"),
         new("ChatGPT", CoachEngine.ChatGptConnected ? "Connected" : "Not connected; deterministic features remain available", CoachEngine.ChatGptConnected ? "ready" : "neutral"),
         new("iRacing folder", Settings.IRacingRoot, Directory.Exists(Settings.IRacingRoot) ? "ready" : "warning"),
@@ -3356,20 +3402,8 @@ public sealed class CompanionState : IDisposable
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { error = "The selected folder path is not valid."; return false; }
     }
 
-    private static string? FindWorkspaceFile(string relativePath)
-    {
-        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
-        {
-            var current = new DirectoryInfo(start);
-            while (current is not null)
-            {
-                var candidate = Path.Combine(current.FullName, relativePath);
-                if (File.Exists(candidate)) return candidate;
-                current = current.Parent;
-            }
-        }
-        return null;
-    }
+    private static string? FindWorkspaceFile(string relativePath) =>
+        BackendLocator.Find(relativePath, AppContext.BaseDirectory, Directory.GetCurrentDirectory());
 
     private static string Bound(string value) => value.Length <= 240 ? value : value[..240] + "…";
 
@@ -3422,86 +3456,66 @@ public sealed class CompanionState : IDisposable
         return "Garage61 could not finish the reference search. Try again.";
     }
 
-    private bool TryLoadUiAnalysisCache(RecentRace race)
+    private sealed record CachedAnalysis(AnalysisWorkspace Analysis, RaceCard? Card, string AnalysisPath, string Message);
+
+    private Task<CachedAnalysis?> LoadCachedAnalysisAsync(RecentRace race, CancellationToken cancellationToken)
     {
         var path = UiAnalysisCachePath(race);
-        if (!File.Exists(path)) return TryLoadArchiveOnlyAnalysis(race);
-        if (!CachedSchemaMayBeCurrent(path))
+        // Parsing and projection can take hundreds of milliseconds on a real race.
+        // Stage immutable results off the UI thread; callers own publication identity.
+        return Task.Run(() => ReadCachedAnalysis(race, path, cancellationToken), cancellationToken);
+    }
+
+    private static CachedAnalysis? ReadCachedAnalysis(RecentRace race, string path, CancellationToken cancellationToken)
+    {
+        var sourceAvailable = !string.IsNullOrWhiteSpace(race.SourcePath) && File.Exists(race.SourcePath);
+        if (File.Exists(path))
         {
-            EvictDeadCacheEntry(path);
-            return TryLoadArchiveOnlyAnalysis(race);
-        }
-        try
-        {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
-            var root = document.RootElement;
-            if (!root.TryGetProperty("schemaVersion", out var schema)
-                || schema.ValueKind != JsonValueKind.Number
-                || !schema.TryGetInt32(out var cacheSchema)
-                || cacheSchema != UiAnalysisCacheEnvelopeVersion) return TryLoadArchiveOnlyAnalysis(race);
-            if (!CacheMatchesSession(root, race)) return TryLoadArchiveOnlyAnalysis(race);
-            if (!root.TryGetProperty("response", out var response) || response.ValueKind != JsonValueKind.Object) return TryLoadArchiveOnlyAnalysis(race);
-            if (!ResponseMatchesSession(response, race)) return TryLoadArchiveOnlyAnalysis(race);
-            var cachedSourceWrite = root.TryGetProperty("sourceLastWriteUtc", out var stamp) && stamp.ValueKind == JsonValueKind.String
-                ? stamp.GetString() : null;
-            if (!string.IsNullOrWhiteSpace(race.SourcePath) && File.Exists(race.SourcePath))
+            try
             {
-                var current = File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture);
-                if (!string.Equals(current, cachedSourceWrite, StringComparison.Ordinal)) return false;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!CachedSchemaMayBeCurrent(path)) File.Delete(path);
+                else
+                {
+                    using var document = JsonDocument.Parse(File.ReadAllText(path));
+                    var root = document.RootElement;
+                    if (root.TryGetProperty("schemaVersion", out var schema) && schema.TryGetInt32(out var version) && version == UiAnalysisCacheEnvelopeVersion
+                        && CacheMatchesSession(root, race) && root.TryGetProperty("response", out var response)
+                        && ResponseMatchesSession(response, race) && RuntimeMapper.HasCurrentAnalysisProfile(response))
+                    {
+                        var stamp = root.TryGetProperty("sourceLastWriteUtc", out var saved) && saved.ValueKind == JsonValueKind.String ? saved.GetString() : null;
+                        if (sourceAvailable && !string.Equals(File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture), stamp, StringComparison.Ordinal)) return null;
+                        var analysis = RuntimeMapper.Analysis(response);
+                        EnsureAnalysisMatchesSession(race, analysis);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        return new(analysis, RuntimeMapper.RaceCard(response), AnalysisPathFromResponse(response), string.Empty);
+                    }
+                }
             }
-            var analysis = RuntimeMapper.Analysis(response);
-            EnsureAnalysisMatchesSession(race, analysis);
-            CurrentRaceCard = RuntimeMapper.HasCurrentAnalysisProfile(response)
-                ? RuntimeMapper.RaceCard(response)
-                : null;
-            CurrentAnalysis = analysis;
-            ApplySuccessfulRaceAnalysis(race, analysis, AnalysisPathFromResponse(response));
-            AnalysisLoading = false;
-            AnalysisMessage = string.Empty;
-            ApiCacheHitCount++;
-            return true;
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException) { }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
-        {
-            ReportUnhandledException("saved analysis cache", ex);
-            return TryLoadArchiveOnlyAnalysis(race);
-        }
-    }
-
-    private bool TryLoadArchiveOnlyAnalysis(RecentRace race)
-    {
-        // A finalized recording can be reanalyzed under current semantics.
-        // Preserve historical rows whose source no longer exists, but never
-        // let an unversioned analysis.json act as the live cache for an
-        // available source recording.
-        var sourceAvailable = !string.IsNullOrWhiteSpace(race.SourcePath)
-            && File.Exists(race.SourcePath);
-        return !sourceAvailable && TryLoadArchivedAnalysis(race);
-    }
-
-    private bool TryLoadArchivedAnalysis(RecentRace race)
-    {
-        if (string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return false;
+        if (sourceAvailable || string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return null;
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
             var analysis = RuntimeMapper.ArchivedAnalysis(document.RootElement);
-            if (!AnalysisMatchesSession(race, analysis)) return false;
-            CurrentAnalysis = analysis;
-            CurrentRaceCard = RuntimeMapper.HasCurrentAnalysisProfile(document.RootElement)
-                ? RuntimeMapper.ArchivedRaceCard(document.RootElement)
-                : null;
-            ApplySuccessfulRaceAnalysis(race, CurrentAnalysis, race.AnalysisPath);
-            AnalysisLoading = false;
-            AnalysisMessage = string.Empty;
-            ApiCacheHitCount++;
-            return true;
+            if (!AnalysisMatchesSession(race, analysis)) return null;
+            var current = RuntimeMapper.HasCurrentAnalysisProfile(document.RootElement);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new(analysis, current ? RuntimeMapper.ArchivedRaceCard(document.RootElement) : null, race.AnalysisPath,
+                current ? string.Empty : "This saved analysis uses an older analysis format. Its recording is missing. Restore the original IBT to your telemetry folder, then retry to refresh the analysis. Your archived race is preserved.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
-        {
-            ReportUnhandledException("archived race analysis", ex);
-            return false;
-        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException) { return null; }
+    }
+
+    private void PublishCachedAnalysis(RecentRace race, CachedAnalysis cached)
+    {
+        CurrentAnalysis = cached.Analysis;
+        CurrentRaceCard = cached.Card;
+        ApplySuccessfulRaceAnalysis(race, cached.Analysis, cached.AnalysisPath);
+        AnalysisLoading = false;
+        AnalysisMessage = cached.Message;
+        ApiCacheHitCount++;
     }
 
     private IReadOnlyList<RecentRace> LoadArchivedRaces()
@@ -3848,7 +3862,7 @@ public sealed class CompanionState : IDisposable
                         selector = race.EffectiveSelector,
                         iracing_root = Settings.IRacingRoot,
                         archive_root = Settings.ArchiveRoot,
-                        target_hz = 20
+                        target_hz = (double?)null
                     }, _homeAnalysisCancellation.Token, DetachedBackendOperationPolicy.CompleteForCache);
                     if (!result.TryGetProperty("analysis_view", out var view) || view.ValueKind != JsonValueKind.Object)
                         throw new InvalidDataException("Background race analysis did not return an analysis view.");
@@ -4040,7 +4054,12 @@ public sealed class CompanionState : IDisposable
             try
             {
                 using var document = JsonDocument.Parse(File.ReadAllText(path));
-                if (RuntimeMapper.ArchivedSetup(document.RootElement, path) is { } setup && result.All(item => !string.Equals(item.Id, setup.Id, StringComparison.OrdinalIgnoreCase))) result.Add(setup);
+                if (RuntimeMapper.ArchivedSetup(document.RootElement, path) is { } setup)
+                {
+                    var index = result.FindIndex(item => string.Equals(item.Id, setup.Id, StringComparison.OrdinalIgnoreCase));
+                    if (index < 0) result.Add(setup);
+                    else result[index] = result[index] with { AnalysisPaths = (result[index].AnalysisPaths ?? []).Concat(setup.AnalysisPaths ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() };
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
             {
@@ -4066,6 +4085,18 @@ public sealed class CompanionState : IDisposable
             savedUtc = DateTimeOffset.UtcNow,
             response
         });
+        // A new analysis can have a new report path while retaining the same setup.
+        // Update the catalog immediately so tuning is not gated on the next inventory refresh.
+        if (response.TryGetProperty("analysis_view", out var view)
+            && RuntimeMapper.ArchivedSetup(view, AnalysisPathFromResponse(response)) is { } setup)
+        {
+            var index = Setups.FindIndex(item => string.Equals(item.Id, setup.Id, StringComparison.OrdinalIgnoreCase));
+            if (index < 0) Setups.Add(setup);
+            else Setups[index] = setup with
+            {
+                AnalysisPaths = (Setups[index].AnalysisPaths ?? []).Concat(setup.AnalysisPaths ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+            };
+        }
     }
 
     private static string AnalysisPathFromResponse(JsonElement response)

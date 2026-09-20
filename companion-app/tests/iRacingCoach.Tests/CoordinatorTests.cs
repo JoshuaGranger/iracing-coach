@@ -14,6 +14,40 @@ namespace iRacingCoach.Tests;
 public sealed class CoordinatorTests
 {
     [TestMethod]
+    public async Task InventoryRefreshPreservesAnIntentionalPracticeEvent()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-plan-refresh", Guid.NewGuid().ToString("N"));
+        using var state = new CompanionState(new FakeBackend(dashboard: DashboardWithFinalizedRaces(2)), new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        state.SelectedPlanCarId = "different-car";
+        state.SelectedPlanTrack = "installed:different-layout";
+        state.PlanSetupType = "Open";
+        state.PlanDistanceValue = 70;
+        await state.RefreshDashboardAsync();
+        Assert.IsNotEmpty(state.Races);
+        Assert.AreEqual(string.Empty, state.SelectedPlanRaceId);
+        Assert.AreEqual("different-car", state.SelectedPlanCarId);
+        Assert.AreEqual("installed:different-layout", state.SelectedPlanTrack);
+        Assert.AreEqual("Open", state.PlanSetupType);
+        Assert.AreEqual(70d, state.PlanDistanceValue);
+    }
+
+    [TestMethod]
+    public async Task CancellingBeforeCacheReadClearsTheAnalysisLoadingState()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-cache-cancel", Guid.NewGuid().ToString("N"));
+        var backend = new FakeBackend();
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace("cancelled", "Iowa", "Oval", "Test car", "Today", "Fixed", "Ready", "Recorded", false, true, 0, 0);
+        await state.AnalyzeRaceAsync(race, new CancellationToken(canceled: true));
+        Assert.IsFalse(state.AnalysisLoading);
+        Assert.IsNull(state.CurrentAnalysis);
+        StringAssert.Contains(state.AnalysisMessage, "cancelled");
+        Assert.AreEqual(0, backend.AnalyzeCalls);
+    }
+
+    [TestMethod]
     public void RuntimeState_StartsWithoutSampleRacesCarsOrSetups()
     {
         using var state = new CompanionState(new FakeBackend());
@@ -252,7 +286,7 @@ public sealed class CoordinatorTests
     {
         using var response = JsonDocument.Parse("""
         {"analysis_view":{
-          "analysis_profile_version":"post-race-foundations-v15",
+          "analysis_profile_version":"post-race-foundations-v16",
           "identity":{"event_type":"Race"},
           "race_summary":{"recorded_laps":8,"scheduled_laps":500,"scheduled_minutes":30.5},
           "runs":[],"laps":[],"lap_traces":{"traces":[]},
@@ -306,11 +340,11 @@ public sealed class CoordinatorTests
         }
 
         var exact = Map(
-            "post-race-foundations-v15",
+            "post-race-foundations-v16",
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":80}");
         var hybrid = Map(
-            "post-race-foundations-v15",
+            "post-race-foundations-v16",
             "{\"recorded_laps\":7,\"scheduled_laps\":500,\"scheduled_minutes\":30.5}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var legacy = Map(
@@ -318,7 +352,7 @@ public sealed class CoordinatorTests
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var timed = Map(
-            "post-race-foundations-v15",
+            "post-race-foundations-v16",
             "{\"recorded_laps\":7,\"scheduled_laps\":null,\"scheduled_minutes\":30.5}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":null}");
 
@@ -608,7 +642,7 @@ public sealed class CoordinatorTests
     public void ArchivedAnalysis_CurrentLapProfileKeepsResolvedDistance()
     {
         using var report = JsonDocument.Parse("""
-        {"analysis_profile_version":"post-race-foundations-v15","identity":{},
+        {"analysis_profile_version":"post-race-foundations-v16","identity":{},
          "race_summary":{"recorded_laps":80,"scheduled_laps":100},"laps":[],"runs":[],
          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
          "strategy":{"forecast":{"status":"usable","scheduled_laps":100,"minimum_stops_all_green":2,"equal_stint_pit_targets_all_green":[33,67]}},
@@ -2515,6 +2549,55 @@ public sealed class CoordinatorTests
             File.Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)), overwrite: true);
     }
 
+    [TestMethod]
+    public async Task OldAnalysisProfile_IsRecomputedInsteadOfOpeningABlankWorkspace()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-profile-migration", Guid.NewGuid().ToString("N"));
+        const string selector = "subsession:8001:1";
+        var old = JsonDocument.Parse(HomeAnalysisResponse(selector: selector).GetRawText().Replace("post-race-foundations-v16", "post-race-foundations-v15"));
+        WriteUiAnalysisCache(root, selector, old.RootElement);
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        state.ReportUnhandledException("Garage61", new InvalidOperationException("A separate connection failed."));
+        var race = new RecentRace(selector, "Recorded Track", "", "Recorded Car", "Today", "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: selector);
+
+        await state.AnalyzeRaceAsync(race);
+
+        Assert.AreEqual(1, backend.AnalyzeCalls);
+        Assert.IsNotNull(state.CurrentAnalysis);
+        Assert.IsNotNull(state.CurrentRaceCard);
+        Assert.IsFalse(state.AnalysisLoading);
+        Assert.IsNull(state.AnalysisError, "A Garage61 failure is not this analysis's support reference.");
+        Assert.IsFalse(state.LocalAnalysisNeedsAttention);
+        Assert.AreEqual(string.Empty, state.AnalysisMessage);
+    }
+
+    [TestMethod]
+    public async Task FreshAnalysisImmediatelyLinksItsEmbeddedSetupToTheRecording()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-setup-link", Guid.NewGuid().ToString("N"));
+        const string selector = "subsession:8001:1";
+        var reportPath = Path.Combine(root, "report", "analysis.json");
+        var json = System.Text.Json.Nodes.JsonNode.Parse(HomeAnalysisResponse(reportPath, selector: selector).GetRawText())!;
+        json["analysis_view"]!["identity"]!["setup"] = JsonSerializer.SerializeToNode(new { chassis = new { front_brake_bias = "65%" } });
+        json["analysis_view"]!["identity"]!["setup_fingerprint"] = "embedded-setup";
+        using var response = JsonDocument.Parse(json.ToJsonString());
+        using var state = new CompanionState(new FakeBackend(analysis: response.RootElement.Clone()), new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(selector, "Recorded Track", "", "Recorded Car", "Today", "Open", "Recorded", "Race", false, false, 0, 0,
+            EventKey: "8001", SessionType: "Race", Selector: selector);
+        state.Races.Add(race);
+
+        await state.AnalyzeRaceAsync(race);
+
+        var setup = state.Setups.Single();
+        Assert.AreEqual("embedded-setup", setup.Fingerprint);
+        Assert.AreEqual(reportPath, setup.AnalysisPaths!.Single());
+        Assert.AreEqual(selector, state.SetupEvidenceRaces(setup).Single().Id);
+    }
+
     private static JsonElement HomeAnalysisResponse(string analysisPath = "", string sessionType = "Race", string? selector = null)
     {
         var partial = JsonSerializer.SerializeToElement(new
@@ -2536,7 +2619,7 @@ public sealed class CoordinatorTests
         analysis_view = new
         {
             schema_version = 1,
-            analysis_profile_version = "post-race-foundations-v15",
+            analysis_profile_version = "post-race-foundations-v16",
             identity = new { event_type = sessionType, track_name = "Recorded Track", car_name = "Recorded Car" },
             race_summary = new
             {

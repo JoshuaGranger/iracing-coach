@@ -494,10 +494,28 @@ TOOLS: list[dict[str, Any]] = [
                 "selector": {"type": "string", "description": "'latest', an IBT path, a SubSessionID, or a discovery group_id such as 'subsession:<id>:<sim_session_num>' to pin the exact event phase.", "default": "latest"},
                 "iracing_root": {"type": "string"},
                 "archive_root": {"type": "string"},
-                "target_hz": {"type": "number", "minimum": 1, "maximum": 60, "default": 20},
+                "target_hz": {"type": ["number", "null"], "minimum": 1, "maximum": 60, "default": None, "description": "Omit or pass null to analyze every native record."},
             },
             "additionalProperties": False,
         },
+    },
+    {
+        "name": "plan_iracing_race",
+        "description": "Calculate a next-event fuel plan for the requested distance from an archived race and/or explicitly supplied assumptions. Offline; does not change source data.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "archive_root": {"type": "string"},
+                "analysis_path": {"type": ["string", "null"]},
+                "distance": {"type": "number", "exclusiveMinimum": 0, "maximum": 1000},
+                "distance_mode": {"type": "string", "enum": ["Laps", "Minutes"], "default": "Laps"},
+                "green_burn_gallons": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                "start_fuel_gallons": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                "lap_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0}
+            },
+            "required": ["distance"],
+            "additionalProperties": False
+        }
     },
     {
         "name": "iracing_knowledge_cache_status",
@@ -816,8 +834,15 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
             selector=_bounded_selector(arguments.get("selector", "latest")),
             iracing_root=_iracing_root(arguments.get("iracing_root")),
             archive_root=str(archive_root),
-            target_hz=float(arguments.get("target_hz", 20)),
+            target_hz=arguments.get("target_hz"),
         )
+    if name == "plan_iracing_race":
+        from event_planning import build_event_plan
+        analysis = _read_analysis(str(_analysis_path(arguments["analysis_path"], archive_root))) if arguments.get("analysis_path") else None
+        return build_event_plan(
+            distance=arguments.get("distance"), distance_mode=arguments.get("distance_mode", "Laps"),
+            analysis=analysis, green_burn_gallons=arguments.get("green_burn_gallons"),
+            start_fuel_gallons=arguments.get("start_fuel_gallons"), lap_seconds=arguments.get("lap_seconds"))
     if name == "iracing_knowledge_cache_status":
         if arguments.get("analysis_path"):
             arguments = {**arguments, "analysis_path": str(_analysis_path(arguments["analysis_path"], archive_root))}

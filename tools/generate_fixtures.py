@@ -1541,6 +1541,8 @@ def main() -> int:
             },
         },
     )
+    from event_planning import build_event_plan
+    _write_json("event-plan-estimate.json", build_event_plan(distance=50, green_burn_gallons=0.4, start_fuel_gallons=20))
     _build_tiny_ibt(FIXTURE_ROOT / "ibt" / "synthetic-race.ibt")
     _build_tiny_ibt(FIXTURE_ROOT / "ibt" / "truncated-race.ibt", truncate=True)
     print(json.dumps({"ok": True, "fixture_root": str(FIXTURE_ROOT)}, indent=2))

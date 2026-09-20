@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import tempfile
 from pathlib import Path
 from unittest import mock
 
@@ -83,6 +84,17 @@ class AnalysisPipelineIdentityTests(unittest.TestCase):
             workflow._analysis_pipeline_sha256(),
         )
         self.assertEqual(len(workflow._analysis_pipeline_sha256()), 64)
+
+    def test_reviewed_source_hash_is_independent_of_checkout_line_endings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in analysis_engine.ANALYZER_SOURCE_FILES:
+                (root / name).write_bytes(b"# synthetic module\nx = 1\n")
+            with mock.patch.object(analysis_engine, "__file__", str(root / "analysis_engine.py")):
+                unix = analysis_engine.analyzer_bundle_sha256()
+                for name in analysis_engine.ANALYZER_SOURCE_FILES:
+                    (root / name).write_bytes(b"# synthetic module\r\nx = 1\r\n")
+                self.assertEqual(unix, analysis_engine.analyzer_bundle_sha256())
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience runner

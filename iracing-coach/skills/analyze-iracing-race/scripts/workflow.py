@@ -1087,7 +1087,7 @@ def _selection_archive_identity(selection: Mapping[str, Any]) -> dict[str, str]:
 
 def _analysis_cache_identity(
     source_fingerprints: Sequence[Mapping[str, Any]],
-    rate: float,
+    rate: float | None,
     pipeline_sha256: str,
     selection: Mapping[str, Any],
 ) -> str:
@@ -1332,7 +1332,7 @@ def _source_catalog_record(
 
 
 def _load_analysis_telemetry(
-    source_paths: Sequence[str], target_hz: float
+    source_paths: Sequence[str], target_hz: float | None
 ) -> dict[str, Any]:
     """Load and time-merge relevant channels from one grouped sim session."""
 
@@ -1566,7 +1566,7 @@ def _analysis_pipeline_sha256() -> str:
 #   - only formatting, comments, typing or naming changed -> re-record below
 #     alone. Cached analyses stay valid, which is the whole point.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "b7bc8e0aa9eaa6af524e20f40bcda409754d01e196572696cc869759c483346c"
+    "72ab8b109993f823143955705599b58145afbba5a07316e168e0e2cc37f9205b"
 )
 
 
@@ -1772,12 +1772,12 @@ def analyze_race_workflow(
     selector: str = "latest",
     iracing_root: str | os.PathLike[str] | None = None,
     archive_root: str | os.PathLike[str] | None = None,
-    target_hz: float = 20,
+    target_hz: float | None = None,
 ) -> dict[str, Any]:
     """Resolve, analyze, report, and archive one local recording offline."""
 
     workflow_started = time.perf_counter()
-    rate = _target_rate(target_hz)
+    rate = None if target_hz is None else _target_rate(target_hz)
     selection = _resolve_session_selection(selector, iracing_root)
     source_paths = [str(Path(path).resolve()) for path in selection.get("files", ())]
     if not source_paths:

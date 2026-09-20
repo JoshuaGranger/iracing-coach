@@ -57,6 +57,7 @@ TOOL_CAPABILITIES: Mapping[str, str] = {
     "iracing_knowledge_cache_status": CAPABILITY_READ_ANALYSIS,
     "iracing_setup_history": CAPABILITY_READ_SETUP,
     "iracing_strategy_history": CAPABILITY_READ_ANALYSIS,
+    "plan_iracing_race": CAPABILITY_READ_ANALYSIS,
     "query_iracing_telemetry": CAPABILITY_READ_ANALYSIS,
     "recommend_open_setup_tuning": CAPABILITY_READ_SETUP,
     "recommend_structured_open_setup_tuning": CAPABILITY_READ_SETUP,

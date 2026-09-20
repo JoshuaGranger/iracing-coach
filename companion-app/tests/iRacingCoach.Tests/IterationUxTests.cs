@@ -56,7 +56,7 @@ public sealed class IterationUxTests
     {
         var ui = UiRoot();
         var planning = File.ReadAllText(Path.Combine(ui, "PlanningPage.razor"));
-        var setup = File.ReadAllText(Path.Combine(ui, "SetupPage.razor"));
+        var setup = File.ReadAllText(Path.Combine(ui, "StartingTunePage.razor"));
 
         Assert.DoesNotContain(">Start over</button>", planning);
         StringAssert.Contains(planning, "data-planning-decision");
@@ -79,7 +79,7 @@ public sealed class IterationUxTests
     {
         var ui = UiRoot();
         var analysis = File.ReadAllText(Path.Combine(ui, "AnalysisWorkspacePage.razor"));
-        var setup = File.ReadAllText(Path.Combine(ui, "SetupPage.razor"));
+        var setup = File.ReadAllText(Path.Combine(ui, "StartingTunePage.razor"));
         var live = File.ReadAllText(Path.Combine(ui, "LiveTelemetryVisuals.razor"));
 
         Assert.DoesNotContain("How this was graded", analysis);

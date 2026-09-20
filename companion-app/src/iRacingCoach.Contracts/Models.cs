@@ -128,7 +128,9 @@ public sealed record LocalSetup(
     string Fingerprint,
     string PairStatus,
     string Note,
-    IReadOnlyList<SetupField> Fields);
+    IReadOnlyList<SetupField> Fields,
+    string Season = "",
+    IReadOnlyList<string>? AnalysisPaths = null);
 
 public sealed record EvidenceText(EvidenceKind Kind, string Text)
 {
@@ -1226,7 +1228,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.16.0",
+    string ClientVersion = "0.17.0",
     string LocalStateRoot = "",
     string UserProfileRoot = "",
     string TemporaryRoot = "",

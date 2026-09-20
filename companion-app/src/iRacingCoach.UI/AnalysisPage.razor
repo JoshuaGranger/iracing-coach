@@ -24,7 +24,7 @@
                     <span class="eyebrow">Recording not opened</span>
                     <h1>Telemetry could not be loaded</h1>
                     <p>@(string.IsNullOrWhiteSpace(State.AnalysisMessage) ? "This recording did not contain enough supported data to open." : State.AnalysisMessage)</p>
-                    <div class="button-row"><button class="button primary" @onclick="() => State.ReanalyzeRaceAsync()">Retry</button>@if (State.LastRecoverableError is not null) { <span class="support-reference">Reference @State.LastRecoverableError.Id</span> }</div>
+                    <div class="button-row"><button class="button primary" @onclick="() => State.ReanalyzeRaceAsync()">Retry</button>@if (State.AnalysisError is not null) { <span class="support-reference">Reference @State.AnalysisError.Id</span> }</div>
                 </section>
             }
         </div>

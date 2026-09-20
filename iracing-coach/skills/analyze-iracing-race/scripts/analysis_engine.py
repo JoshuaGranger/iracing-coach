@@ -65,7 +65,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v15"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v16"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -7225,7 +7225,7 @@ def analyzer_bundle_sha256() -> str:
     for name in ANALYZER_SOURCE_FILES:
         digest.update(name.encode("utf-8"))
         digest.update(b"\x00")
-        digest.update((module_dir / name).read_bytes())
+        digest.update((module_dir / name).read_text(encoding="utf-8").replace("\r\n", "\n").encode("utf-8"))
         digest.update(b"\x1e")
     return digest.hexdigest()
 

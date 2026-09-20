@@ -1,146 +1,119 @@
-<div class="starting-tune-page">
-    <div class="page-heading compact-heading starting-tune-heading">
-        <div><span class="eyebrow">Setups</span><h1>Starting Tune</h1></div>
-        <span class="starting-tune-season" title="The current iRacing season is selected automatically"><ProductIcon Name="calendar" Size="14" />@FriendlySeason(State.StartingTuneSeason)</span>
-    </div>
-
-    <section class="surface-card form-panel starting-tune" aria-labelledby="starting-tune-heading">
-        <div class="starting-tune-card-heading"><div><span class="eyebrow">Step @State.StartingTuneStep of 4</span><h2 id="starting-tune-heading">@StartingTuneHeading</h2></div></div>
-        <div class="starting-tune-step-rail">
-            <nav class="progress-rail" aria-label="Starting Tune progress">
-                @foreach (var step in new[] { (1, "Event"), (2, "Source"), (3, "Checks"), (4, "Run") })
+@if (_creating)
+{
+    <button class="back-button" @onclick="() => _creating = false">← Setup library</button>
+    <StartingTunePage State="State" />
+}
+else
+{
+    <div class="setup-library-page">
+        <header class="page-heading compact-heading">
+            <div><span class="eyebrow">Setups</span><h1>Your setup library</h1><p>Local files and the setup values saved with your recordings.</p></div>
+            <button class="button primary" @onclick="NewSetup">New setup</button>
+        </header>
+        <section class="surface-card setup-library-toolbar" aria-label="Filter setups">
+            <label>Search<input type="search" placeholder="Name, car, track…" @bind="State.SetupSearch" @bind:event="oninput" /></label>
+            <label>Car<select @bind="State.SetupCarFilter"><option value="">All cars</option>@foreach (var value in Cars) { <option>@value</option> }</select></label>
+            <label>Track<select @bind="State.SetupTrackFilter"><option value="">All tracks</option>@foreach (var value in Tracks) { <option>@value</option> }</select></label>
+            <label>Season<select @bind="State.SetupSeasonFilter"><option value="">All seasons</option>@foreach (var value in Seasons) { <option>@value</option> }</select></label>
+            <span>@VisibleSetups.Count setup@(VisibleSetups.Count == 1 ? "" : "s")</span>
+        </section>
+        @if (VisibleSetups.Count == 0)
+        {
+            <section class="surface-card"><div class="empty-state"><ProductIcon Name="wrench" Size="24" /><h2>@(State.Setups.Count == 0 ? "Build your first baseline" : "No matching setups")</h2><p>@(State.Setups.Count == 0 ? "Analyze a recording to bring in its actual setup values, or use New setup to find a starting baseline." : "Clear the filters to see the rest of your library.")</p><button class="button secondary" @onclick="ClearFilters">Clear filters</button></div></section>
+        }
+        else
+        {
+            <div class="setup-library-workspace">
+                <section class="surface-card setup-library-list" aria-label="Setup library">
+                    @foreach (var setup in VisibleSetups)
+                    {
+                        var evidence = State.SetupEvidenceRaces(setup);
+                        <button class="setup-library-row @(Selected?.Id == setup.Id ? "selected" : null)" aria-pressed="@(Selected?.Id == setup.Id)" @onclick="() => Select(setup)">
+                            <span class="setup-library-row-top"><strong>@setup.Name</strong><small>@SourceLabel(setup)</small></span>
+                            <span>@setup.Car · @(setup.Track.Length > 0 ? setup.Track : "Track unspecified")</span>
+                            <small>@setup.Fields.Count values · @evidence.Count linked recording@(evidence.Count == 1 ? "" : "s") · @(setup.Season.Length > 0 ? setup.Season : "Season unknown")</small>
+                        </button>
+                    }
+                </section>
+                @if (Selected is { } selected)
                 {
-                    <button type="button" class="@(State.StartingTuneStep == step.Item1 ? "active" : State.StartingTuneStep > step.Item1 ? "done" : null)" disabled="@(step.Item1 > 1 && State.StartingTunePackage is null)" @onclick="() => State.SetStartingTuneStep(step.Item1)"><span>@step.Item1</span>@step.Item2</button>
-                }
-            </nav>
-            @if (State.StartingTuneStep == 1)
-            {
-                <fieldset class="starting-tune-purpose">
-                    <legend>Session</legend>
-                    <div role="group" aria-label="Starting Tune session">
-                        @foreach (var purpose in new[] { "Race", "Qualifying" })
+                    var linked = State.SetupEvidenceRaces(selected);
+                    <section class="surface-card setup-library-detail">
+                        <div class="setup-detail-heading"><div><span class="eyebrow">@SourceLabel(selected)</span><h2>@selected.Name</h2><p>@selected.Car · @selected.Track</p></div><span class="status-label">@selected.Role</span></div>
+                        <div class="button-row">
+                            <button class="button primary" disabled="@(linked.Count == 0 || _tuning)" @onclick="() => Tune(selected)">@(_tuning ? "Opening…" : "Tune this setup")</button>
+                            <button class="button secondary" @onclick="() => ShowSource(selected)">Show source</button>
+                            @if (IsSetupFile(selected)) { <button class="button secondary" @onclick="() => SaveCopy(selected)">Save a copy</button> }
+                        </div>
+                        <p class="setup-source-note">@selected.Note</p>
+                        @if (linked.Count > 0)
                         {
-                            <button type="button" class="@(PurposeSelected(purpose) ? "selected" : null)" aria-pressed="@PurposeSelected(purpose).ToString().ToLowerInvariant()" @onclick="() => SelectPurpose(purpose)">@purpose</button>
+                            <div class="setup-linked-races"><h3>Recorded performance</h3><p>Values from each linked recording. Weather, fuel, traffic and driving can affect comparisons.</p>
+                            @foreach (var race in linked)
+                            {
+                                <article><div><strong>@race.Track · @race.Date</strong><small>@race.SetupType setup · @race.Layout</small></div><div><span>Clean best</span><b>@Seconds(race.Overview?.BestCleanLapSeconds)</b></div><div><span>Pace change</span><b>@Signed(race.Overview?.PaceSlopeSecondsPerLap)</b></div><div><span>Lowest tire</span><b>@Percent(race.Overview?.LowestTireRemainingPercent)</b></div><button class="button secondary compact" @onclick="() => State.OpenRaceFromHomeAsync(race)">Analyze</button></article>
+                            }
+                            </div>
                         }
-                    </div>
-                </fieldset>
-            }
-        </div>
-        @if (State.StartingTuneStep == 1)
-        {
-            <div class="starting-tune-event-grid">
-                <label class="searchable-local-field">
-                    <span>Car</span>
-                    <input class="catalog-combobox"
-                           list="starting-tune-cars"
-                           autocomplete="off"
-                           placeholder="Type or browse installed cars"
-                           aria-describedby="starting-tune-car-status"
-                           aria-invalid="@(CarSelectionValid ? "false" : "true")"
-                           @bind="State.StartingTuneCar"
-                           @bind:event="oninput" />
-                    <datalist id="starting-tune-cars">
-                        @foreach (var car in CarChoices) { <option value="@car.Name"></option> }
-                    </datalist>
-                    <small id="starting-tune-car-status" class="@(CarSelectionValid ? null : "validation-message")">@CarSelectionStatus</small>
-                </label>
-                <label class="searchable-local-field">
-                    <span>Track and layout</span>
-                    <input class="catalog-combobox"
-                           list="starting-tune-tracks"
-                           autocomplete="off"
-                           placeholder="Type or browse installed layouts"
-                           aria-describedby="starting-tune-track-status"
-                           aria-invalid="@(TrackSelectionValid ? "false" : "true")"
-                           @bind="State.StartingTuneTrack"
-                           @bind:event="oninput" />
-                    <datalist id="starting-tune-tracks">
-                        @foreach (var track in TrackChoices) { <option value="@track.Name"></option> }
-                    </datalist>
-                    <small id="starting-tune-track-status" class="@(TrackSelectionValid ? null : "validation-message")">@TrackSelectionStatus</small>
-                </label>
-            </div>
-            <div class="starting-tune-primary-action">
-                <span>Local setups and recorded sessions only</span>
-                <button class="button primary" disabled="@(!CanBuildStartingTune)" @onclick="BuildStartingTune">@(State.StartingTuneBusy ? "Finding source…" : "Find starting point")</button>
-            </div>
-        }
-        else if (State.StartingTunePackage is { } package)
-        {
-            @if (State.StartingTuneStep == 2)
-            {
-                <div class="source-details" data-setup-source="@package.Source" data-setup-fingerprint="@package.Fingerprint"><div><span>Starting setup</span><strong>@package.Donor</strong></div><div><span>Car</span><strong>@package.Car</strong></div><div><span>Track</span><strong>@package.Track</strong></div></div>
-                @if (package.Capability is { } capability)
-                {
-                    <div class="source-details starting-tune-capability" data-purpose-match="@capability.PurposeMatch" data-source-shape="@capability.SourceShape" data-load-permitted="@capability.LoadPermitted.ToString().ToLowerInvariant()"><div><span>Purpose</span><strong>@capability.PurposeMatch</strong></div><div><span>Evidence</span><strong>@capability.EvidenceLevel</strong></div><div><span>Load</span><strong>@(capability.LoadPermitted ? "Validated .sto" : "Unavailable")</strong></div></div>
+                        else
+                        {
+                            <div class="setup-evidence-empty"><strong>Attach driving evidence</strong><p>Run this setup in iRacing, record telemetry, then analyze that recording. Car and track names alone do not establish a setup match.</p><button class="button secondary compact" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button></div>
+                        }
+                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId"><option value="">No comparison</option>@foreach (var candidate in Comparable(selected)) { <option value="@candidate.Id">@candidate.Name</option> }</select></label></div>
+                        @if (selected.Fields.Count == 0)
+                        {
+                            <p class="setup-source-note">This .sto has no readable export yet. Export its setup sheet from iRacing or analyze a recorded run to see the numeric settings.</p>
+                        }
+                        else if (Comparison(selected) is { } comparison)
+                        {
+                            <table class="setup-values-table"><thead><tr><th>Setting</th><th>@selected.Name</th><th>@comparison.Name</th></tr></thead><tbody>
+                            @foreach (var row in Differences(selected, comparison)) { <tr class="@(row.Left == row.Right ? null : "changed")"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
+                            </tbody></table>
+                        }
+                        else
+                        {
+                            @foreach (var group in selected.Fields.GroupBy(field => field.Group))
+                            {
+                                <details class="setup-values-group" open><summary>@group.Key <span>@group.Count()</span></summary><dl>@foreach (var field in group) { <div><dt>@field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
+                            }
+                        }
+                    </section>
                 }
-                <p class="section-copy">@package.Confirmation</p>
-                @if (package.Risks.Count > 0) { <details class="evidence-details"><summary>Cautions</summary><ul>@foreach (var risk in package.Risks) { <li>@risk</li> }</ul></details> }
-                <div class="workflow-actions"><button class="button secondary" @onclick="State.ResetStartingTune">Change event</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(3)">Review checks</button></div>
-            }
-            else if (State.StartingTuneStep == 3)
-            {
-                <div class="source-details tune-check-summary"><div><span>Session</span><strong>@package.Purpose</strong></div><div><span>Status</span><strong>@package.Status</strong></div></div>
-                <ol class="baseline-checks">@foreach (var check in package.BaselineChecks) { <li>@check</li> }</ol>
-                <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(2)">Back</button><button class="button primary" @onclick="() => State.SetStartingTuneStep(4)">Baseline run</button></div>
-            }
-            else
-            {
-                <div class="baseline-run-card"><ProductIcon Name="race" Size="22" /><div><h2>Run five clean laps</h2><p>Use the unchanged setup, then analyze the session and give feedback by corner.</p></div></div>
-                <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(3)">Back</button><button class="button primary" @onclick="OpenTuning">Open tuning</button></div>
-            }
+            </div>
         }
-        @if (!string.IsNullOrWhiteSpace(State.SetupMessage)) { <p class="fine-print starting-tune-message">@State.SetupMessage</p> }
-    </section>
-</div>
+    </div>
+}
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
-    private CompanionState? _initializedState;
-    private IEnumerable<InstalledCar> CarChoices => State.Cars
-        .DistinctBy(car => car.Name, StringComparer.CurrentCultureIgnoreCase)
-        .OrderBy(car => car.Name, StringComparer.CurrentCultureIgnoreCase);
-    private IEnumerable<InstalledTrack> TrackChoices => State.Tracks
-        .DistinctBy(track => track.Name, StringComparer.CurrentCultureIgnoreCase)
-        .OrderBy(track => track.Name, StringComparer.CurrentCultureIgnoreCase);
-    private bool CarSelectionValid => CatalogSelectionValid(State.StartingTuneCar, CarChoices.Select(car => car.Name), State.Cars.Count == 0);
-    private bool TrackSelectionValid => CatalogSelectionValid(State.StartingTuneTrack, TrackChoices.Select(track => track.Name), State.Tracks.Count == 0);
-    private string CarSelectionStatus => SelectionStatus(State.StartingTuneCar, CarSelectionValid, State.Cars.Count, "car");
-    private string TrackSelectionStatus => SelectionStatus(State.StartingTuneTrack, TrackSelectionValid, State.Tracks.Count, "track layout");
-    private bool CanBuildStartingTune => !State.StartingTuneBusy && CarSelectionValid && TrackSelectionValid;
-    private string StartingTuneHeading => State.StartingTuneStep switch { 1 => "Choose the event", 2 => "Confirm the source", 3 => "Verify the baseline", _ => "Record the baseline" };
-
-    protected override void OnParametersSet()
+    private bool _creating;
+    private bool _tuning;
+    private IReadOnlyList<LocalSetup> VisibleSetups => State.FilteredSetups.ToArray();
+    private LocalSetup? Selected => VisibleSetups.FirstOrDefault(item => item.Id == State.SelectedSetupId) ?? VisibleSetups.FirstOrDefault();
+    private IEnumerable<string> Cars => State.Setups.Select(item => item.Car).Where(value => value.Length > 0).Distinct().Order();
+    private IEnumerable<string> Tracks => State.Setups.Select(item => item.Track).Where(value => value.Length > 0).Distinct().Order();
+    private IEnumerable<string> Seasons => State.Setups.Select(item => item.Season.Length > 0 ? item.Season : "Unknown").Distinct().OrderDescending();
+    protected override void OnParametersSet() { if (Selected is { } setup) State.SelectedSetupId = setup.Id; }
+    private void Select(LocalSetup setup) { State.SelectedSetupId = setup.Id; State.CompareSetupId = string.Empty; }
+    private void NewSetup() { if (Selected is { } setup) State.SelectedSetupId = setup.Id; State.OpenStartingTune(); _creating = true; }
+    private void ClearFilters() { State.SetupSearch = State.SetupCarFilter = State.SetupTrackFilter = State.SetupSeasonFilter = string.Empty; }
+    private void ShowSource(LocalSetup setup) { State.SelectedSetupId = setup.Id; State.OpenSelectedSetupFolder(); }
+    private Task SaveCopy(LocalSetup setup) { State.SelectedSetupId = setup.Id; return State.CopySelectedSetupAsync(); }
+    private async Task Tune(LocalSetup setup) { _tuning = true; try { await State.BeginSetupTuningAsync(setup.Id); } finally { _tuning = false; } }
+    private static bool IsSetupFile(LocalSetup setup) => System.IO.Path.GetExtension(setup.StoPath).Equals(".sto", StringComparison.OrdinalIgnoreCase);
+    private static string SourceLabel(LocalSetup setup) => IsSetupFile(setup) ? "Local .sto" : "Recorded telemetry";
+    private static string Seconds(double? value) => value is { } v ? $"{v:0.000}s" : "—";
+    private static string Signed(double? value) => value is { } v ? $"{v:+0.000;-0.000;0.000}s/lap" : "—";
+    private static string Percent(double? value) => value is { } v ? $"{v:0.0}%" : "—";
+    private IEnumerable<LocalSetup> Comparable(LocalSetup setup) => State.Setups.Where(item => item.Id != setup.Id && item.Car.Equals(setup.Car, StringComparison.OrdinalIgnoreCase) && item.Track.Equals(setup.Track, StringComparison.OrdinalIgnoreCase) && item.Fields.Count > 0);
+    private LocalSetup? Comparison(LocalSetup setup) => Comparable(setup).FirstOrDefault(item => item.Id == State.CompareSetupId);
+    private static IEnumerable<(string Label, string Left, string Right)> Differences(LocalSetup left, LocalSetup right)
     {
-        if (ReferenceEquals(_initializedState, State)) return;
-        _initializedState = State;
-        var recent = State.Races.FirstOrDefault(race => race.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase)) ?? State.Races.FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(State.StartingTuneCar))
-            State.StartingTuneCar = State.SelectedSetup?.Car ?? recent?.Car ?? State.Cars.FirstOrDefault()?.Name ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(State.StartingTuneTrack))
-            State.StartingTuneTrack = State.SelectedSetup?.Track ?? (recent is null ? State.Tracks.FirstOrDefault()?.Name ?? string.Empty : EventTrack(recent));
+        var keys = left.Fields.Select(field => field.Key).Concat(right.Fields.Select(field => field.Key)).Distinct();
+        foreach (var key in keys)
+        {
+            var a = left.Fields.FirstOrDefault(field => field.Key == key); var b = right.Fields.FirstOrDefault(field => field.Key == key);
+            yield return ($"{(a ?? b)!.Group} · {(a ?? b)!.Label}", a?.Value ?? "—", b?.Value ?? "—");
+        }
     }
-
-    private static string EventTrack(RecentRace race) => string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track} - {race.Layout}";
-    private static string FriendlySeason(string value)
-    {
-        var separator = value.IndexOf("S", StringComparison.OrdinalIgnoreCase);
-        return separator > 0 && separator < value.Length - 1 ? $"{value[..separator]} Season {value[(separator + 1)..]}" : value;
-    }
-    private bool PurposeSelected(string purpose) => State.StartingTunePurpose.Equals(purpose, StringComparison.OrdinalIgnoreCase);
-    private void SelectPurpose(string purpose) => State.StartingTunePurpose = purpose;
-    private static bool CatalogSelectionValid(string value, IEnumerable<string> choices, bool allowTypedFallback) =>
-        !string.IsNullOrWhiteSpace(value)
-        && (allowTypedFallback || choices.Any(choice => string.Equals(choice, value.Trim(), StringComparison.CurrentCultureIgnoreCase)));
-
-    private static string SelectionStatus(string value, bool valid, int count, string noun) =>
-        count == 0
-            ? $"No local catalog was found; type the exact iRacing {noun}."
-            : string.IsNullOrWhiteSpace(value)
-                ? $"Choose an installed {noun} from {count} available."
-                : valid
-                    ? $"Installed {noun} selected."
-                    : $"Keep typing or choose one of the {count} installed options.";
-    private Task BuildStartingTune() => State.BuildStartingTuneAsync();
-    private void OpenTuning() => State.Navigate("tuning");
 }
