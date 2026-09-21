@@ -157,6 +157,16 @@ class StrategyRankingTests(unittest.TestCase):
         self.assertEqual(by_count[0].infeasible_reason, "stint_exceeds_fuel_range")
         self.assertTrue(by_count[2].feasible)
 
+    def test_infeasible_strategies_are_strict_json_with_no_invented_finish_time(self) -> None:
+        result = sm.compare_strategies(**self.BASE, degradation_s_per_lap=0.0)
+        payload = json.loads(json.dumps(result.to_payload(), allow_nan=False))
+        infeasible = [item for item in payload["strategies"] if not item["feasible"]]
+        self.assertTrue(infeasible)
+        self.assertTrue(all(item["total_time_s"] is None for item in infeasible))
+        self.assertTrue(all(item["infeasible_reason"] for item in infeasible))
+        feasible = [item for item in payload["strategies"] if item["feasible"]]
+        self.assertTrue(all(item["total_time_s"] > 0 for item in feasible))
+
     def test_heavy_degradation_eventually_pays_for_an_extra_stop(self) -> None:
         light = sm.compare_strategies(**self.BASE, degradation_s_per_lap=0.01)
         heavy = sm.compare_strategies(**self.BASE, degradation_s_per_lap=0.5)

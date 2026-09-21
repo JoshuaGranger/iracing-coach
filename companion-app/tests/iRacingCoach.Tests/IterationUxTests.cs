@@ -19,7 +19,7 @@ public sealed class IterationUxTests
         StringAssert.Contains(page, "data-technical-no-stop");
         StringAssert.Contains(page, "data-fuel-decision");
         StringAssert.Contains(page, "technical-pit-timeline");
-        StringAssert.Contains(page, "Stay out: backend margin");
+        StringAssert.Contains(page, "Stay out:");
         StringAssert.Contains(page, "NoStopAuthorized");
         Assert.DoesNotContain("range >= Workspace.ScheduledLaps", page);
         StringAssert.Contains(page, "2 tires");

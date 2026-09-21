@@ -24,6 +24,7 @@ from __future__ import annotations
 import ast
 import datetime as _datetime
 import importlib
+import itertools
 import math
 import mmap
 import os
@@ -1187,15 +1188,29 @@ def load_telemetry(
                     f"cannot memory-map {_path_label(layout.path)} read-only: {exc}"
                 ) from exc
             with mapped:
-                for record_index in indices:
-                    record_offset = (
-                        layout.buffer_offset + record_index * layout.buffer_length
-                    )
+                # Decode each complete column in C using the validated record stride.
+                # Padding skips other channels without 20+ million Python calls for
+                # a typical race. Scalar, array and character semantics stay identical.
+                start = layout.buffer_offset
+                end = start + layout.record_count * layout.buffer_length
+                with memoryview(mapped)[start:end] as records:
                     for variable in selected:
-                        absolute = record_offset + variable.offset
-                        samples[variable.name].append(
-                            _decode_value(mapped, absolute, variable)
+                        type_name, _, format_code = _TYPE_INFO[variable.type_code]
+                        field = f"{variable.count}s" if type_name == "char" else f"{variable.count}{format_code}"
+                        trailing = layout.buffer_length - variable.offset - variable.byte_size
+                        decoder = struct.Struct(f"<{variable.offset}x{field}{trailing}x")
+                        step, _ = _sampling_plan(layout.header["tick_rate"], target_hz)
+                        rows = (
+                            itertools.islice(decoder.iter_unpack(records), 0, None, int(step))
+                            if step.is_integer()
+                            else (decoder.unpack_from(records, index * layout.buffer_length) for index in indices)
                         )
+                        if type_name == "char":
+                            samples[variable.name] = [_decode_c_string(row[0]) for row in rows]
+                        elif variable.count == 1:
+                            samples[variable.name] = [row[0] for row in rows]
+                        else:
+                            samples[variable.name] = [list(row) for row in rows]
 
     public = _layout_public(layout)
     session_info = public.pop("session_info")
@@ -1730,10 +1745,9 @@ def _fallback_group_key(metadata: Mapping[str, Any]) -> tuple[Any, ...]:
     if session_id not in {None, 0}:
         return ("session", session_id, session_num)
 
+    # SessionUniqueID is reused (often 1) across offline simulator launches.
+    # It cannot identify an event without its recording time and car/track.
     unique_id = _as_int(metadata.get("session_unique_id"))
-    if unique_id not in {None, 0}:
-        return ("sim", unique_id, session_num)
-
     # Offline/test sessions may expose no server IDs.  Prefer session metadata
     # time; it is more reliable than filesystem mtime.  Remaining fields avoid
     # merging different local events that happened to start together.
@@ -1746,11 +1760,12 @@ def _fallback_group_key(metadata: Mapping[str, Any]) -> tuple[Any, ...]:
     else:
         time_value = metadata.get("start_time_unix")
     if metadata.get("time_source") == "mtime":
-        time_value = None
+        time_value = metadata.get("path")
     return (
         "local",
         time_value,
         session_num,
+        unique_id,
         metadata.get("track_id"),
         metadata.get("track_config_name"),
         metadata.get("car_id"),
@@ -1849,6 +1864,7 @@ def discover_sessions(
                 "series_id": representative.get("series_id"),
                 "track_id": representative.get("track_id"),
                 "track_name": representative.get("track_name"),
+                "track_display_name": representative.get("track_display_name"),
                 "track_config_name": representative.get("track_config_name"),
                 "car_id": representative.get("car_id"),
                 "car_path": representative.get("car_path"),

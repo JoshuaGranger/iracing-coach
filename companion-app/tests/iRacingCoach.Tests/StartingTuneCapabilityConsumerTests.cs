@@ -9,6 +9,13 @@ namespace iRacingCoach.Tests;
 public sealed class StartingTuneCapabilityConsumerTests
 {
     [TestMethod]
+    public void MissingBaselineExplainsHowToContinue()
+    {
+        using var response = JsonDocument.Parse("{\"ok\":false,\"status\":\"needs-baseline-export-or-research\"}");
+        var error = Assert.Throws<InvalidDataException>(() => RuntimeMapper.SetupPackage(response.RootElement, "Car", "Track", "2026S4", "Race"));
+        StringAssert.Contains(error.Message, "Save or export a baseline setup");
+    }
+    [TestMethod]
     public void HtmlOnlyCapability_RemainsEvidenceButNeverOffersLoad()
     {
         using var response = Package(Capability("race", "race", "exact-purpose", "html_only", false, "parameters-readable", "no-loadable-sto-in-source"));

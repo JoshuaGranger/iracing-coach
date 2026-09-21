@@ -22,12 +22,11 @@
         {
             <div class="button-row"><button class="button primary" @onclick="() => State.ConnectChatGptAsync()">Connect ChatGPT</button><button class="button secondary" @onclick="() => State.ConnectChatGptAsync(true)">Use a verification code</button></div>
         }
-        <small>Coach Engine handles sign-in securely. iRacing Coach never displays your credentials.</small>
     </section>
 
     <section class="surface-card connection-card" aria-labelledby="garage61-connection">
         <div class="connection-heading">
-            <div><span class="eyebrow">Personal data connection</span><h2 id="garage61-connection">Garage61</h2></div>
+            <div><span class="eyebrow">Reference laps</span><h2 id="garage61-connection">Garage61</h2></div>
             <span class="status-label @(State.Garage61.Available ? "success" : State.Garage61.Configured ? "warning" : "neutral")">@State.Garage61StatusLabel</span>
         </div>
         <p>@Garage61Message</p>
@@ -37,7 +36,7 @@
             <div><dt>Permission</dt><dd>@Axis(State.Garage61.Permission)</dd></div>
             <div><dt>Availability</dt><dd>@Axis(State.Garage61.Availability)</dd></div>
         </dl>
-        <label class="connection-secret"><span>Personal access token<small>The value is hidden immediately and protected for this Windows user.</small></span><input type="password" autocomplete="off" spellcheck="false" placeholder="@(State.Garage61.Configured ? "Enter a new token to replace the saved connection" : "Paste your Garage61 token")" @bind="State.Garage61KeyInput" @bind:event="oninput" /></label>
+        <label class="connection-secret"><span>Personal access token<small>Saved for this Windows account.</small></span><input type="password" autocomplete="off" spellcheck="false" placeholder="@(State.Garage61.Configured ? "Enter a new token to replace the saved connection" : "Paste your Garage61 token")" @bind="State.Garage61KeyInput" @bind:event="oninput" /></label>
         <div class="button-row">
             <button class="button primary" disabled="@string.IsNullOrWhiteSpace(State.Garage61KeyInput)" @onclick="() => State.ConnectGarage61Async()">Connect Garage61</button>
             @if (State.Garage61.Configured) { <button class="button secondary" @onclick="() => State.DisconnectGarage61Async()">Disconnect</button> }
@@ -52,7 +51,7 @@
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     [Parameter] public bool Embedded { get; set; }
     private string CoachEngineMessage => !State.CoachEngine.Installed
-        ? "Coach Engine needs repair before ChatGPT can connect."
+        ? "Repair the installation to connect ChatGPT."
         : State.CoachEngine.Running ? State.CoachEngine.Message : "Coach Engine is restarting.";
     private string Garage61Message => State.Garage61.Message;
     private static string Axis(string value) => value.Replace('_', ' ') switch

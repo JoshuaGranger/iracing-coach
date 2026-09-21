@@ -1017,7 +1017,7 @@ def _response(request_id: Any, result: Any = None, error: Mapping[str, Any] | No
 
 
 def _write(message: Mapping[str, Any]) -> None:
-    sys.stdout.write(json.dumps(message, separators=(",", ":"), ensure_ascii=False, default=str) + "\n")
+    sys.stdout.write(json.dumps(message, separators=(",", ":"), ensure_ascii=False, default=str, allow_nan=False) + "\n")
     sys.stdout.flush()
 
 
@@ -1056,7 +1056,7 @@ def handle(message: Mapping[str, Any]) -> dict[str, Any] | None:
             return _response(request_id, error={"code": -32602, "message": "Tool arguments must be an object."})
         try:
             result = call_tool(name, arguments)
-            text = json.dumps(result, indent=2, ensure_ascii=False, default=str)
+            text = json.dumps(result, separators=(",", ":"), ensure_ascii=False, default=str, allow_nan=False)
             return _response(request_id, {"content": [{"type": "text", "text": text}], "isError": False})
         except Exception as exc:  # MCP tools must return actionable diagnostics.
             traceback.print_exc(file=sys.stderr)

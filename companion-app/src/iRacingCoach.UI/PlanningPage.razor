@@ -58,7 +58,7 @@
                         <label>Available starting fuel (US gal)<input type="number" min="0.01" step="0.1" @bind="State.PlanStartFuelGallons" placeholder="Check event limit" /></label>
                         <label>Representative lap (seconds)<input type="number" min="1" step="0.1" @bind="State.PlanLapSeconds" placeholder="For timed races" /></label>
                     </div>
-                    <p>Entered values produce an estimate. Every fuel calculation holds back one green lap. Leave a field blank to use matching recorded evidence.</p>
+                    <p>Fuel plans include a one-lap reserve. Leave a field blank to use the selected recording.</p>
                 </details>
                 <p class="planning-status" role="status">@State.PlanMessage</p>
             </section>
@@ -235,14 +235,14 @@
         if (NoStopAuthorized(plan)) return $"Start with a no-stop plan for {plan.DistanceLabel}";
         return AuthoritativeStops(plan) is > 0 and var stops
             ? $"Start with a {stops}-stop all-green plan"
-            : "Resolve an authoritative fuel decision before choosing a stop plan";
+            : "Add fuel use and race distance to calculate stops";
     }
     private static string OpeningPlanExplanation(RacePlanBriefing plan)
     {
         if (plan.FuelPlan is not { IsUsable: true } decision) return plan.FuelPlan?.UnavailableReason
-            ?? "Use the recorded fuel burn as the baseline and resolve the governing finish constraint.";
+            ?? "Add the race distance and fuel use to calculate a stop plan.";
         if (NoStopAuthorized(plan)) return decision.FinalStintMarginLaps is { } margin
-            ? $"The plan leaves a {margin:0.0}-lap final-stint margin. There is no planned fuel stop unless live evidence changes."
+            ? $"The plan leaves {margin:0.0} laps of fuel at the finish. Reassess if fuel use rises."
             : "The plan covers the race without a scheduled fuel stop.";
         return decision.EqualStintPitTargets.Count > 0
             ? $"The plan requires {decision.MinimumStops} stop{(decision.MinimumStops == 1 ? string.Empty : "s")}; the first balanced window is lap {decision.EqualStintPitTargets[0]:0.#}."

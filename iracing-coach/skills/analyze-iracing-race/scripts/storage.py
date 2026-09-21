@@ -564,7 +564,7 @@ def _atomic_write_text(
     jitter_ms=_atomic_jitter_ms,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    fd, temp_name = tempfile.mkstemp(prefix=".write-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
@@ -596,7 +596,9 @@ def _atomic_copy_verified(
         if actual_source_sha256 != expected_sha256:
             raise ArchiveVerificationFailed("source-digest-changed-before-copy")
         return
-    fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
+    # A telemetry filename can already be close to the Windows path limit.
+    # The temporary sibling needs uniqueness, not another copy of that name.
+    fd, temp_name = tempfile.mkstemp(prefix=".copy-", dir=destination.parent)
     try:
         with source.open("rb") as source_handle, os.fdopen(fd, "wb") as target_handle:
             shutil.copyfileobj(source_handle, target_handle, 1024 * 1024)
@@ -617,7 +619,7 @@ def _atomic_copy_verified(
 
 
 def _json_text(value: Any) -> str:
-    return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n"
+    return json.dumps(value, separators=(",", ":"), sort_keys=True, ensure_ascii=False, default=str, allow_nan=False) + "\n"
 
 
 def _validated_context(context: Mapping[str, str]) -> dict[str, str]:

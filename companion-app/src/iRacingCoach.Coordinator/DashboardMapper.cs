@@ -84,7 +84,7 @@ public static class DashboardMapper
         var id = groupId ?? selector;
         if (string.IsNullOrWhiteSpace(id)) id = Guid.NewGuid().ToString("N");
         var eventKey = Text(session, "subsession_id") ?? Text(session, "session_id") ?? id;
-        var track = RuntimeMapper.DisplayTrack(Text(session, "track_name") ?? Text(session, "track_path")) ?? "Unknown track";
+        var track = RuntimeMapper.DisplayTrack(Text(session, "track_display_name") ?? Text(session, "track_name") ?? Text(session, "track_path")) ?? "Unknown track";
         var layout = RuntimeMapper.DisplayLayout(Text(session, "track_config_name") ?? Text(session, "track_config"));
         var car = RuntimeMapper.DisplayCar(Text(session, "car_name") ?? Text(session, "car_path")) ?? "Unknown car";
         var fixedSetup = Boolean(session, "is_fixed_setup");

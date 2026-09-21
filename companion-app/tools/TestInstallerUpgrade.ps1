@@ -25,6 +25,7 @@ if (-not $resolvedTarget.StartsWith($temporaryRoot, [System.StringComparison]::O
 
 $app = $null
 $uninstallSandbox = $null
+$appProfile = Join-Path $temporaryRoot ('iracing-coach-host-' + [guid]::NewGuid().ToString('N'))
 $portableUpgradeRoot = Join-Path $temporaryRoot ('iRacingCoach-Archive-Test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $portableUpgradeRoot 'data\driver-models') -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $portableUpgradeRoot 'data\driver-models\continuity.json') -Value '{"samples":42}' -Encoding ascii
@@ -47,6 +48,16 @@ try {
     )
     $missing = @($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $resolvedTarget $_)) })
     if ($missing.Count -gt 0) { throw "First install is missing: $($missing -join ', ')." }
+
+    $legacyTarget = $resolvedTarget + '-legacy'
+    if (-not $legacyTarget.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe legacy test path.' }
+    New-Item -ItemType Directory -Path $legacyTarget -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $legacyTarget 'unowned-marker.txt') -Value 'Preserve unrecognized folders.'
+    $unowned = Start-Process -FilePath $installerPath -ArgumentList @('--test-remove-legacy', $legacyTarget) -WindowStyle Hidden -Wait -PassThru
+    if ($unowned.ExitCode -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $legacyTarget 'unowned-marker.txt'))) { throw 'Legacy cleanup touched an unrecognized directory.' }
+    Copy-Item -LiteralPath (Join-Path $resolvedTarget 'iRacing Coach.exe') -Destination (Join-Path $legacyTarget 'iRacing Coach.exe')
+    $legacy = Start-Process -FilePath $installerPath -ArgumentList @('--test-remove-legacy', $legacyTarget) -WindowStyle Hidden -Wait -PassThru
+    if ($legacy.ExitCode -ne 0 -or (Test-Path -LiteralPath $legacyTarget)) { throw 'Legacy cleanup left an owned prior installation behind.' }
 
     $validated = Start-Process -FilePath $installerPath -ArgumentList @('--test-validate-payload', $resolvedTarget) -WindowStyle Hidden -Wait -PassThru
     if ($validated.ExitCode -ne 0) { throw 'The installed exact payload did not match its complete manifest.' }
@@ -85,7 +96,7 @@ try {
 
     $marker = Join-Path $resolvedTarget 'old-version-marker.txt'
     Set-Content -LiteralPath $marker -Value 'This must be removed by the replacement install.' -Encoding ascii
-    $app = Start-Process -FilePath (Join-Path $resolvedTarget 'iRacing Coach.exe') -ArgumentList '--minimized' -PassThru
+    $app = Start-Process -FilePath (Join-Path $resolvedTarget 'iRacing Coach.exe') -ArgumentList @('--minimized', '--isolated-profile', ('"' + $appProfile + '"'), '--isolated-no-webview') -WindowStyle Hidden -PassThru
     Start-Sleep -Seconds 5
     $app.Refresh()
     if ($app.HasExited) { throw 'The first installed app did not remain running for the upgrade test.' }
@@ -182,7 +193,7 @@ try {
 }
 finally {
     if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force }
-    foreach ($path in @($resolvedTarget, ($resolvedTarget + '.previous'), ($resolvedTarget + '.installing'))) {
+    foreach ($path in @($resolvedTarget, ($resolvedTarget + '.previous'), ($resolvedTarget + '.installing'), ($resolvedTarget + '-legacy'))) {
         $resolved = [System.IO.Path]::GetFullPath($path)
         if (-not $resolved.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
             -not [System.IO.Path]::GetFileName($resolved).StartsWith('iRacingCoach-Installer-Test-', [System.StringComparison]::Ordinal)) {
@@ -204,4 +215,10 @@ finally {
         throw "Refusing to clean an unguarded archive test root: $resolvedArchiveTest"
     }
     if ([System.IO.Directory]::Exists($resolvedArchiveTest)) { [System.IO.Directory]::Delete($resolvedArchiveTest, $true) }
+    $resolvedAppProfile = [System.IO.Path]::GetFullPath($appProfile)
+    if (-not $resolvedAppProfile.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+        [System.IO.Path]::GetFileName($resolvedAppProfile) -notmatch '^iracing-coach-host-[0-9a-f]{32}$') {
+        throw 'Refusing to clean an unguarded app profile.'
+    }
+    if ([System.IO.Directory]::Exists($resolvedAppProfile)) { [System.IO.Directory]::Delete($resolvedAppProfile, $true) }
 }

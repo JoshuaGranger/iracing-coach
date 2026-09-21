@@ -58,6 +58,18 @@ public sealed class HostIsolationTests
     }
 
     [TestMethod]
+    public void RestoreDefaults_KeepsTheIsolatedRecordingAndInstallationRoots()
+    {
+        using var isolated = IsolatedProfileRoot.Create();
+        using var state = isolated.Profile.CreateState();
+        var defaults = new CompanionSettings(isolated.Profile.Paths);
+        state.Settings.IRacingRoot = Path.Combine(isolated.Root, "alternate-recordings");
+        state.Settings.IRacingInstallRoot = Path.Combine(isolated.Root, "alternate-install");
+        state.ResetSettings();
+        AssertExactIsolatedRoots(defaults, state.Settings);
+    }
+
+    [TestMethod]
     public void IsolatedNoWebView_IsExplicitUniqueAndUnavailableInProduction()
     {
         using var isolated = IsolatedProfileRoot.Create(disableWebView: true);

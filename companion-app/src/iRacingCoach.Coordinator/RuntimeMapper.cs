@@ -8,7 +8,7 @@ namespace iRacingCoach.Coordinator;
 public static class RuntimeMapper
 {
     private const string Garage61TargetDerivationVersion = "explicit-analysis-paths-v1";
-    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v16";
+    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v17";
     private const double RacePlanRelativeTolerance = 1e-9;
     private static readonly HashSet<string> RacePlanStatuses = new(StringComparer.Ordinal)
     {
@@ -590,7 +590,10 @@ public static class RuntimeMapper
 
     public static SetupPackageView SetupPackage(JsonElement response, string requestedCar, string requestedTrack, string requestedSeason, string purpose)
     {
-        if (Boolean(response, "ok") != true) throw new InvalidDataException(Text(response, "message") ?? "A starting tune package could not be built from the selected context.");
+        if (Boolean(response, "ok") != true) throw new InvalidDataException(Text(response, "message")
+            ?? (Text(response, "status") == "needs-baseline-export-or-research"
+                ? "No matching setup file was found for this car, layout, and season. Save or export a baseline setup in iRacing, then retry."
+                : "A starting tune package could not be built from the selected context."));
         var capability = ReadStartingTuneCapability(response, purpose);
         var raceBaseline = Object(response, "baseline");
         var qualifyingBaseline = Object(response, "qualifying");

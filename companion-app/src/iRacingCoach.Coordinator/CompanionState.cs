@@ -29,8 +29,9 @@ public sealed class CompanionState : IDisposable
     // away perfectly good responses and forced the whole library to be re-analyzed.
     //
     // Envelope version: the shape of the stored wrapper itself. Bumping it discards
-    // entries, so it should almost never change.
-    private const int UiAnalysisCacheEnvelopeVersion = 13;
+    // entries, so it should almost never change. Version 14 retires v16 analysis
+    // before reading its large payload; v17 changes clean-lap evidence screening.
+    private const int UiAnalysisCacheEnvelopeVersion = 14;
 
     // Projection version: how RuntimeMapper turns a response into view models.
     // Bump this freely - it is recorded, never a reason to reject. A stored
@@ -41,7 +42,7 @@ public sealed class CompanionState : IDisposable
     // Content completeness is a separate question again, and RuntimeMapper already
     // answers it: HasCurrentAnalysisProfile rejects a response emitted by an
     // analyzer older than the fields the UI now reads.
-    private const string AppVersion = "0.17.0";
+    private const string AppVersion = "0.17.1";
 
     // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
     // roughly 1.8x - one 25 MB entry spanned 615,614 lines - and allocating fresh options
@@ -61,6 +62,7 @@ public sealed class CompanionState : IDisposable
     private readonly bool _allowExternalHostActions;
     private readonly Dictionary<string, CancellationTokenSource> _jobTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly BackendOperationCoordinator _backendOperations = new();
+    private readonly ArchivedRaceCatalog _archivedRaceCatalog = new();
     private readonly object _homeAnalysisSync = new();
     private readonly object _liveMonitorVisibilityGate = new();
     private readonly object _settingsPersistenceGate = new();
@@ -69,6 +71,8 @@ public sealed class CompanionState : IDisposable
     private readonly object _watcherSync = new();
     private readonly Queue<RecentRace> _homeAnalysisQueue = [];
     private readonly HashSet<string> _homeAnalysisActiveKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, RecoverableAppError> _homeAnalysisErrors = new(StringComparer.OrdinalIgnoreCase);
+    private string? _homeAnalysisCurrentKey;
     private readonly CancellationTokenSource _homeAnalysisCancellation = new();
     private Task? _homeAnalysisWorker;
     private static readonly TimeSpan HomeAnalysisRetryDelay = TimeSpan.FromMilliseconds(250);
@@ -185,7 +189,7 @@ public sealed class CompanionState : IDisposable
     public bool ExperimentGenerated { get; private set; }
     public bool DiagnosticsExpanded { get; private set; }
     public string? Toast { get; private set; }
-    public string SettingsMessage { get; private set; } = "Preferences and racing history live in the Coach folder. Account connections remain protected on this PC.";
+    public string SettingsMessage { get; private set; } = "Preferences and race history are saved in the Coach folder.";
     public bool SettingsWritable => Settings.Compatibility.Writable;
     public string DataMessage { get; private set; } = "Looking for finalized iRacing recordings…";
     public string PlanMessage { get; private set; } = "Choose your event and distance. Recorded evidence and optional assumptions will fill the plan.";
@@ -329,7 +333,25 @@ public sealed class CompanionState : IDisposable
     public RecoverableAppError? LastRecoverableError { get; private set; }
     public bool ServiceRequestInFlight => Volatile.Read(ref _serviceRequestsInFlight) > 0;
     public bool LocalAnalysisNeedsAttention => AnalysisError is not null
+        || FailedRaceAnalysisCount > 0
         || Health.Any(item => item.Id == "backend" && item.State == "unavailable");
+    public int FailedRaceAnalysisCount { get { lock (_homeAnalysisSync) return _homeAnalysisErrors.Count; } }
+    public int PendingRaceAnalysisCount { get { lock (_homeAnalysisSync) return _homeAnalysisActiveKeys.Count; } }
+    public string RaceAnalysisStatus(RecentRace race)
+    {
+        var key = UiAnalysisCacheKey(race);
+        lock (_homeAnalysisSync)
+        {
+            if (_homeAnalysisErrors.ContainsKey(key)) return "Analysis failed · Open to retry";
+            if (string.Equals(key, _homeAnalysisCurrentKey, StringComparison.OrdinalIgnoreCase)) return "Analyzing…";
+            if (_homeAnalysisActiveKeys.Contains(key)) return "Queued for analysis";
+        }
+        return string.Empty;
+    }
+    public string? RaceAnalysisFailure(RecentRace race)
+    {
+        lock (_homeAnalysisSync) return _homeAnalysisErrors.GetValueOrDefault(UiAnalysisCacheKey(race))?.Message;
+    }
     public LiveMonitorState LiveState => _liveTelemetry.Current;
     public LiveReplayCaptureStatus ReplayCaptureStatus => _liveReplayCapture.Status;
     public bool LiveCoachingPaused => _liveTelemetry.CoachingPaused;
@@ -1102,6 +1124,7 @@ public sealed class CompanionState : IDisposable
         PlanGenerated = false;
         PlanBriefing = null;
         StrategyScenarios.Clear();
+        PlanMessage = string.Empty;
     }
 
     private void SetExperimentInput<T>(ref T field, T value)
@@ -2277,7 +2300,15 @@ public sealed class CompanionState : IDisposable
     {
         if (string.IsNullOrWhiteSpace(StartingTuneCar)) StartingTuneCar = SelectedSetup?.Car ?? Races.FirstOrDefault(race => race.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase))?.Car ?? string.Empty;
         if (string.IsNullOrWhiteSpace(StartingTuneTrack)) StartingTuneTrack = SelectedSetup?.Track ?? Races.FirstOrDefault(race => race.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase))?.Track ?? string.Empty;
+        NormalizeStartingTuneTrack();
         RaiseChanged();
+    }
+
+    public void NormalizeStartingTuneTrack()
+    {
+        static string Key(string value) => value.Trim().Replace(" · ", " - ", StringComparison.Ordinal);
+        var match = Tracks.FirstOrDefault(track => string.Equals(Key(track.Name), Key(StartingTuneTrack), StringComparison.OrdinalIgnoreCase));
+        if (match is not null) StartingTuneTrack = match.Name;
     }
 
     public async Task BuildStartingTuneAsync(CancellationToken cancellationToken = default)
@@ -2296,7 +2327,7 @@ public sealed class CompanionState : IDisposable
             StartingTunePurpose.Trim(),
             Interlocked.Increment(ref _startingTuneSelectionEpoch));
         StartingTuneBusy = true;
-        SetupMessage = "Reviewing your local setups and recorded context…";
+        SetupMessage = "Finding a matching setup…";
         RaiseChanged();
         try
         {
@@ -2316,7 +2347,7 @@ public sealed class CompanionState : IDisposable
             }
             StartingTunePackage = staged;
             StartingTuneStep = 2;
-            SetupMessage = "A read-only source and rollback record are ready for review.";
+            SetupMessage = "Starting setup found. Review the checks before driving.";
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
         {
@@ -2390,7 +2421,7 @@ public sealed class CompanionState : IDisposable
             }
             EnsureRepository();
             SaveSettingsToStore();
-            SettingsMessage = "Settings saved. Account connections stay protected on this Windows user.";
+            SettingsMessage = "Settings saved.";
             Toast = "Settings saved.";
             SettingsSaved?.Invoke(Settings);
             _ = RefreshDataAsync(false, CancellationToken.None);
@@ -2696,7 +2727,7 @@ public sealed class CompanionState : IDisposable
 
     public void ResetSettings()
     {
-        var defaults = new CompanionSettings();
+        var defaults = new CompanionSettings(_pathProvider);
         Settings.IRacingRoot = defaults.IRacingRoot;
         Settings.IRacingInstallRoot = defaults.IRacingInstallRoot;
         Settings.ThemeColor = ThemeColors.DefaultId;
@@ -2722,7 +2753,7 @@ public sealed class CompanionState : IDisposable
         Settings.LiveMonitor.PlacementRecoveredAt = null;
         Settings.LiveMonitor.GlobalHotkey = liveDefaults.GlobalHotkey;
         LiveMonitorVisibilityRequested?.Invoke(false, false);
-        SettingsMessage = "App preferences were restored. Protected account connections and racing history were kept.";
+        SettingsMessage = "Default preferences restored.";
         RaiseChanged();
     }
 
@@ -3035,7 +3066,7 @@ public sealed class CompanionState : IDisposable
         Directory.CreateDirectory(Settings.LogsRoot);
         LoadPortableCoachingHistory();
         SettingsMessage = SettingsWritable
-            ? Archive.Message + " Account connections stay protected on this PC."
+            ? Archive.Message
             : Settings.Compatibility.Message;
     }
 
@@ -3255,7 +3286,7 @@ public sealed class CompanionState : IDisposable
         new("Race analysis service", health.Ok ? $"Ready · {BackendVersionLabel(health.ServerVersion)} · {health.ToolCount} tools" : health.Error ?? "Unavailable", health.Ok ? "ready" : "warning"),
         new("Service protocol", health.Ok ? $"Connected · MCP v1 · {health.ToolCount} tools" : "Check the local analysis service", health.Ok ? "ready" : "warning"),
         new("Coach Engine", CoachEngine.Installed ? $"{CoachEngine.RuntimeVersion} · {(CoachEngine.Running ? "running" : "stopped")}" : CoachEngine.Message, CoachEngine.Installed ? "ready" : "warning"),
-        new("ChatGPT", CoachEngine.ChatGptConnected ? "Connected" : "Not connected; deterministic features remain available", CoachEngine.ChatGptConnected ? "ready" : "neutral"),
+        new("ChatGPT", CoachEngine.ChatGptConnected ? "Connected" : "Not connected", CoachEngine.ChatGptConnected ? "ready" : "neutral"),
         new("iRacing folder", Settings.IRacingRoot, Directory.Exists(Settings.IRacingRoot) ? "ready" : "warning"),
         new("iRacing installation", Settings.IRacingInstallRoot, Directory.Exists(Settings.IRacingInstallRoot) ? "ready" : "neutral"),
         new("Coach folder", Settings.CoachHome, Directory.Exists(Settings.CoachHome) ? "ready" : "warning"),
@@ -3527,8 +3558,7 @@ public sealed class CompanionState : IDisposable
         {
             try
             {
-                using var document = JsonDocument.Parse(File.ReadAllText(path));
-                result.Add(RuntimeMapper.ArchivedRace(document.RootElement, path));
+                result.Add(ReadArchivedCatalog(path).Race);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
             {
@@ -3537,6 +3567,10 @@ public sealed class CompanionState : IDisposable
         }
         return result;
     }
+
+    private ArchivedRaceCatalog.Entry ReadArchivedCatalog(string path) =>
+        _archivedRaceCatalog.Read(path, Path.Combine(Settings.ArchiveRoot, "ui-catalog-cache"),
+            () => _archive.MarkActive(Settings.CoachHome));
 
     private RecentRace EnrichRaceOverview(RecentRace race)
     {
@@ -3560,10 +3594,9 @@ public sealed class CompanionState : IDisposable
         if (string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return false;
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
-            var archived = RuntimeMapper.ArchivedAnalysis(document.RootElement);
-            if (!AnalysisMatchesSession(race, archived)) return false;
-            overview = RuntimeMapper.Overview(document.RootElement);
+            var archived = ReadArchivedCatalog(race.AnalysisPath).Race;
+            if (!SameSessionPhase(race, archived) || archived.Overview is null) return false;
+            overview = archived.Overview;
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
@@ -3658,7 +3691,7 @@ public sealed class CompanionState : IDisposable
                 ? stamp.GetString() : null;
             var sourceMatches = string.IsNullOrWhiteSpace(race.SourcePath) || !File.Exists(race.SourcePath)
                 || string.Equals(File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture), cachedSourceWrite, StringComparison.Ordinal);
-            if (!validSchema || !hasResponse || !sourceMatches || !CacheMatchesSession(root, race) || !ResponseMatchesSession(response, race)) return false;
+            if (!validSchema || !hasResponse || !sourceMatches || !CacheMatchesSession(root, race) || !ResponseMatchesSession(response, race) || !RuntimeMapper.HasCurrentAnalysisProfile(response)) return false;
             overview = RuntimeMapper.Overview(response);
             var cachedPath = AnalysisPathFromResponse(response);
             if (!string.IsNullOrWhiteSpace(cachedPath)) analysisPath = cachedPath;
@@ -3718,6 +3751,10 @@ public sealed class CompanionState : IDisposable
 
     private bool ApplyRaceAnalysisState(RecentRace race, RaceOverview overview, bool analyzed, string analysisPath)
     {
+        if (analyzed)
+        {
+            lock (_homeAnalysisSync) _homeAnalysisErrors.Remove(UiAnalysisCacheKey(race));
+        }
         lock (_inventoryGate)
         {
             var changed = false;
@@ -3794,6 +3831,9 @@ public sealed class CompanionState : IDisposable
 
         lock (_homeAnalysisSync)
         {
+            var currentKeys = candidates.Select(UiAnalysisCacheKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var key in _homeAnalysisErrors.Keys.Where(key => !currentKeys.Contains(key)).ToArray())
+                _homeAnalysisErrors.Remove(key);
             foreach (var race in missing)
             {
                 var key = UiAnalysisCacheKey(race);
@@ -3841,6 +3881,12 @@ public sealed class CompanionState : IDisposable
     private async Task ProcessHomeAnalysisRaceAsync(RecentRace race)
     {
         var key = UiAnalysisCacheKey(race);
+        lock (_homeAnalysisSync)
+        {
+            _homeAnalysisCurrentKey = key;
+            _homeAnalysisErrors.Remove(key);
+        }
+        RaiseChanged();
         try
         {
             if (TryReadUiAnalysisCache(race, out var cachedOverview, out var cachedAnalysisPath))
@@ -3883,17 +3929,22 @@ public sealed class CompanionState : IDisposable
                     // remaining invisible to the job tray and bounded during startup.
                     await Task.Delay(HomeAnalysisRetryDelay, _homeAnalysisCancellation.Token);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Release the active key below. A later refresh or file event may
-                    // schedule another bounded attempt without creating an infinite loop.
+                    var error = StructuredAppLog.Record("background race analysis", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
+                    lock (_homeAnalysisSync) _homeAnalysisErrors[key] = error;
                     return;
                 }
             }
         }
         finally
         {
-            lock (_homeAnalysisSync) _homeAnalysisActiveKeys.Remove(key);
+            lock (_homeAnalysisSync)
+            {
+                _homeAnalysisActiveKeys.Remove(key);
+                _homeAnalysisCurrentKey = null;
+            }
+            RaiseChanged();
         }
     }
 
@@ -4053,8 +4104,7 @@ public sealed class CompanionState : IDisposable
         {
             try
             {
-                using var document = JsonDocument.Parse(File.ReadAllText(path));
-                if (RuntimeMapper.ArchivedSetup(document.RootElement, path) is { } setup)
+                if (ReadArchivedCatalog(path).Setup is { } setup)
                 {
                     var index = result.FindIndex(item => string.Equals(item.Id, setup.Id, StringComparison.OrdinalIgnoreCase));
                     if (index < 0) result.Add(setup);

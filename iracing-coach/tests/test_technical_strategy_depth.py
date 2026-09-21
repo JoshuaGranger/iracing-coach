@@ -202,6 +202,27 @@ class TechnicalStrategyDepthTests(unittest.TestCase):
         self.assertLess(metrics["Race-pace variation"]["numeric_value"], 1.0)
         self.assertEqual(metrics["Fastest race pace"]["numeric_value"], 81.5)
 
+    def test_damage_screening_overrides_earlier_run_reference_membership(self) -> None:
+        laps = [_lap(1, 81.0), _lap(2, 82.0), _lap(3, 83.0)]
+        for lap in laps:
+            lap["damage_repair_context"] = {"automatic_coaching_reference_eligible": False}
+        run = _run(1, 1, 3)
+        run["valid_green_lap_numbers"] = [1, 2, 3]
+        insight = build_technical_insights(laps, [run], {}, {"forecast": {}}, {}, {})[3]
+        self.assertEqual(insight["pace_sample"]["valid_reference_laps"], 0)
+        self.assertEqual(insight["pace_sample"]["scope"], "representative race pace")
+        labels = [item["label"] for item in insight["metrics"]]
+        self.assertNotIn("Fastest clean", labels)
+        self.assertIn("Fastest race pace", labels)
+
+    def test_final_clean_lap_screening_rejects_damage_traffic_and_restarts(self) -> None:
+        from analysis_engine import _screened_clean_laps
+        laps = [_lap(number, 80.0 + number) for number in range(1, 7)]
+        laps[1]["flag_state"] = "caution"
+        laps[3]["damage_repair_context"] = {"automatic_coaching_reference_eligible": False}
+        laps[4]["clean_context"] = {"traffic_proximity_fraction": 0.5}
+        self.assertEqual([lap["lap"] for lap in _screened_clean_laps(laps)], [1, 6])
+
     def test_right_side_call_is_explicit_and_two_vs_four_requires_both_calls(self) -> None:
         two = _run(1, 1, 20)
         two.update(

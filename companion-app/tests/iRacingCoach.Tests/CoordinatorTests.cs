@@ -14,6 +14,19 @@ namespace iRacingCoach.Tests;
 public sealed class CoordinatorTests
 {
     [TestMethod]
+    public void StartingTuneAcceptsTheTrackLabelFromARecordedSetup()
+    {
+        using var state = new CompanionState(new FakeBackend());
+        state.Tracks.Add(new InstalledTrack("iowa", "Iowa Speedway - Oval", "iowa", "recording"));
+        state.StartingTuneTrack = "Iowa Speedway · Oval";
+        state.OpenStartingTune();
+        Assert.AreEqual("Iowa Speedway - Oval", state.StartingTuneTrack);
+        state.StartingTuneTrack = "Unrecognized track";
+        state.NormalizeStartingTuneTrack();
+        Assert.AreEqual("Unrecognized track", state.StartingTuneTrack);
+    }
+
+    [TestMethod]
     public async Task InventoryRefreshPreservesAnIntentionalPracticeEvent()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-plan-refresh", Guid.NewGuid().ToString("N"));
@@ -180,6 +193,17 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public void DashboardMapper_PrefersRecordedDisplayNameOverInternalTrackPath()
+    {
+        using var dashboard = JsonDocument.Parse("""
+        {"ok":true,"races":[{"group_id":"subsession:44:1","sim_session_type":"Race","track_name":"bristol fullpit","track_display_name":"Bristol Motor Speedway","track_config_name":"Single Pit Road"}]}
+        """);
+        var race = DashboardMapper.Map(dashboard.RootElement).Single();
+        Assert.AreEqual("Bristol Motor Speedway", race.Track);
+        Assert.AreEqual("Single Pit Road", race.Layout);
+    }
+
+    [TestMethod]
     public void EventBrowser_GroupsQualifyingRaceAndReconnectFilesNewestFirst()
     {
         using var dashboard = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "dashboard-populated.json")));
@@ -286,7 +310,7 @@ public sealed class CoordinatorTests
     {
         using var response = JsonDocument.Parse("""
         {"analysis_view":{
-          "analysis_profile_version":"post-race-foundations-v16",
+          "analysis_profile_version":"post-race-foundations-v17",
           "identity":{"event_type":"Race"},
           "race_summary":{"recorded_laps":8,"scheduled_laps":500,"scheduled_minutes":30.5},
           "runs":[],"laps":[],"lap_traces":{"traces":[]},
@@ -340,11 +364,11 @@ public sealed class CoordinatorTests
         }
 
         var exact = Map(
-            "post-race-foundations-v16",
+            "post-race-foundations-v17",
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":80}");
         var hybrid = Map(
-            "post-race-foundations-v16",
+            "post-race-foundations-v17",
             "{\"recorded_laps\":7,\"scheduled_laps\":500,\"scheduled_minutes\":30.5}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var legacy = Map(
@@ -352,7 +376,7 @@ public sealed class CoordinatorTests
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var timed = Map(
-            "post-race-foundations-v16",
+            "post-race-foundations-v17",
             "{\"recorded_laps\":7,\"scheduled_laps\":null,\"scheduled_minutes\":30.5}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":null}");
 
@@ -642,7 +666,7 @@ public sealed class CoordinatorTests
     public void ArchivedAnalysis_CurrentLapProfileKeepsResolvedDistance()
     {
         using var report = JsonDocument.Parse("""
-        {"analysis_profile_version":"post-race-foundations-v16","identity":{},
+        {"analysis_profile_version":"post-race-foundations-v17","identity":{},
          "race_summary":{"recorded_laps":80,"scheduled_laps":100},"laps":[],"runs":[],
          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
          "strategy":{"forecast":{"status":"usable","scheduled_laps":100,"minimum_stops_all_green":2,"equal_stint_pit_targets_all_green":[33,67]}},
@@ -1018,7 +1042,7 @@ public sealed class CoordinatorTests
 
         Assert.AreEqual(1, backend.AnalyzeCalls, "A cache entry from a retired schema must not be served.");
         using var rewritten = JsonDocument.Parse(File.ReadAllText(UiAnalysisCachePath(root, selector)));
-        Assert.AreEqual(13, rewritten.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(14, rewritten.RootElement.GetProperty("schemaVersion").GetInt32());
     }
 
     [TestMethod]
@@ -1062,7 +1086,7 @@ public sealed class CoordinatorTests
 
         Assert.AreEqual(1, backend.AnalyzeCalls);
         using var rebuilt = JsonDocument.Parse(File.ReadAllText(cachePath));
-        Assert.AreEqual(13, rebuilt.RootElement.GetProperty("schemaVersion").GetInt32(),
+        Assert.AreEqual(14, rebuilt.RootElement.GetProperty("schemaVersion").GetInt32(),
             "The retired entry must be replaced by a current one, not left alongside it.");
     }
 
@@ -1269,7 +1293,7 @@ public sealed class CoordinatorTests
 
         var cachePath = UiAnalysisCachePath(root, selector);
         using var regenerated = JsonDocument.Parse(File.ReadAllText(cachePath));
-        Assert.AreEqual(13, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(14, regenerated.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.AreEqual(1, backend.AnalyzeCalls, "A schema-11 cache predates the corrected scheduled-distance and Garage61 projections and must be regenerated exactly once.");
         Assert.IsEmpty(state.Jobs, "Cache migration remains quiet background maintenance.");
     }
@@ -1442,6 +1466,11 @@ public sealed class CoordinatorTests
 
         Assert.IsNull(state.Races.Single().Overview?.BestCleanLapSeconds,
             "The bounded first pass should stop after its one retry without inventing summary data.");
+        Assert.AreEqual(1, state.FailedRaceAnalysisCount);
+        Assert.IsTrue(state.LocalAnalysisNeedsAttention, "An exhausted background retry must not show Ready.");
+        StringAssert.Contains(state.RaceAnalysisStatus(state.Races.Single()), "Open to retry");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(state.RaceAnalysisFailure(state.Races.Single())));
+        Assert.AreEqual(0, state.PendingRaceAnalysisCount);
         await state.RefreshDashboardAsync();
         await WaitUntilAsync(
             () => backend.AnalyzeCalls == 3 && state.Races.Single().Overview?.BestCleanLapSeconds is > 0,
@@ -1449,6 +1478,8 @@ public sealed class CoordinatorTests
         await Task.Delay(100);
 
         Assert.AreEqual(3, backend.AnalyzeCalls, "A later refresh may schedule the race again after the active key is released.");
+        Assert.AreEqual(0, state.FailedRaceAnalysisCount);
+        Assert.IsNull(state.RaceAnalysisFailure(state.Races.Single()));
         Assert.IsEmpty(state.Jobs);
     }
 
@@ -1643,8 +1674,8 @@ public sealed class CoordinatorTests
         await WaitUntilAsync(() => backend.ToolCalls >= 4, TimeSpan.FromSeconds(2));
         await Task.WhenAll(first, state.RefreshDashboardAsync(), state.RefreshDashboardAsync());
 
-        Assert.AreEqual(8, backend.ToolCalls, "Requests arriving during the active pass must coalesce into exactly one trailing pass.");
-        Assert.AreEqual(2, backend.Garage61Calls);
+        Assert.IsTrue(backend.ToolCalls is 7 or 8, "Two catalog passes make six calls; an overlapping optional connection probe may be shared.");
+        Assert.IsTrue(backend.Garage61Calls is 1 or 2);
         Assert.AreEqual(2, state.LocalInventoryGeneration);
     }
 
@@ -2554,7 +2585,7 @@ public sealed class CoordinatorTests
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-profile-migration", Guid.NewGuid().ToString("N"));
         const string selector = "subsession:8001:1";
-        var old = JsonDocument.Parse(HomeAnalysisResponse(selector: selector).GetRawText().Replace("post-race-foundations-v16", "post-race-foundations-v15"));
+        var old = JsonDocument.Parse(HomeAnalysisResponse(selector: selector).GetRawText().Replace("post-race-foundations-v17", "post-race-foundations-v15"));
         WriteUiAnalysisCache(root, selector, old.RootElement);
         var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
         using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
@@ -2619,7 +2650,7 @@ public sealed class CoordinatorTests
         analysis_view = new
         {
             schema_version = 1,
-            analysis_profile_version = "post-race-foundations-v16",
+            analysis_profile_version = "post-race-foundations-v17",
             identity = new { event_type = sessionType, track_name = "Recorded Track", car_name = "Recorded Car" },
             race_summary = new
             {
@@ -2827,7 +2858,7 @@ public sealed class CoordinatorTests
         }).ToArray()
     });
 
-    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 13, string sessionType = "Race", string? storedSelector = null, int projectionVersion = 1)
+    private static void WriteUiAnalysisCache(string coachHome, string selector, JsonElement response, int schemaVersion = 14, string sessionType = "Race", string? storedSelector = null, int projectionVersion = 1)
     {
         var directory = Path.Combine(coachHome, "data", "ui-analysis-cache");
         Directory.CreateDirectory(directory);

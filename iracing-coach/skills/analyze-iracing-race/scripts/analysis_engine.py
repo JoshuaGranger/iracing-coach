@@ -65,7 +65,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v16"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v17"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -6265,7 +6265,7 @@ def build_technical_insights(
     if total_used > 0.0:
         fuel_metrics.append(
             metric(
-                "Race fuel used",
+                "Fuel used in runs",
                 round(total_used, 2),
                 "gal",
                 detail="Sum of positive fuel-level change across analyzed runs.",
@@ -6365,10 +6365,12 @@ def build_technical_insights(
             and abs(value - race_time_median) <= race_time_limit
         )
     ]
+    screened_numbers = {int(lap["lap"]) for lap in _screened_clean_laps(completed)}
     reference_laps = [
         lap
         for lap in green_timed_laps
         if int(_finite(lap.get("lap")) or -1) in valid_reference_numbers
+        and int(lap["lap"]) in screened_numbers
     ]
     pace_laps = reference_laps if len(reference_laps) >= 2 else race_pace_laps
     pace_scope = "clean reference" if len(reference_laps) >= 2 else "representative race pace"
@@ -7303,6 +7305,19 @@ def _field_pace(table: TelemetryTable) -> dict[str, Any]:
     return payload
 
 
+def _screened_clean_laps(laps: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Apply final damage, traffic and restart evidence to clean-lap claims."""
+    result = []
+    previous_flag = None
+    for lap in sorted(laps, key=lambda item: _finite(item.get("lap")) or -1.0):
+        number = _finite(lap.get("lap"))
+        reasons = _corner_lap_exclusion_reasons(lap, previous_flag)
+        previous_flag = str(lap.get("flag_state") or "")
+        if not reasons and number is not None and number >= 0:
+            result.append(lap)
+    return result
+
+
 def _clean_lap_traces(
     table: TelemetryTable, laps: Sequence[Mapping[str, Any]]
 ) -> tuple[list[Any], list[int]]:
@@ -7316,14 +7331,7 @@ def _clean_lap_traces(
     if not table.has("LapDistPct") or not table.has("SessionTime") or not table.has("Lap"):
         return [], []
 
-    previous_flag: str | None = None
-    eligible_numbers: set[int] = set()
-    for lap in sorted(laps, key=lambda item: _finite(item.get("lap")) or -1.0):
-        number = _finite(lap.get("lap"))
-        reasons = _corner_lap_exclusion_reasons(lap, previous_flag)
-        previous_flag = str(lap.get("flag_state") or "")
-        if not reasons and number is not None and number >= 0:
-            eligible_numbers.add(int(number))
+    eligible_numbers = {int(lap["lap"]) for lap in _screened_clean_laps(laps)}
     if not eligible_numbers:
         return [], []
 
@@ -7727,10 +7735,8 @@ def analyze_telemetry(
     # projection and the interactive overview read one authoritative value.
     _clean_home_laps = [
         lap
-        for lap in laps
-        if lap.get("flag_state") == "green"
-        and lap.get("complete")
-        and (_finite(lap.get("lap_time_s")) or 0.0) > 0.0
+        for lap in _screened_clean_laps(laps)
+        if (_finite(lap.get("lap_time_s")) or 0.0) > 0.0
     ]
     _clean_home_times = [
         value

@@ -288,6 +288,19 @@ class IbtReaderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ibt_reader.load_telemetry(source, channels=["Speed"], target_hz=0)
 
+    def test_column_decoder_matches_bounded_reader_at_every_supported_rate(self) -> None:
+        source = self.root / "race.ibt"
+        build_ibt(source, record_count=19)
+        digest = hashlib.sha256(source.read_bytes()).digest()
+        for rate in (None, 60, 30, 20, 17, 1):
+            with self.subTest(rate=rate):
+                loaded = ibt_reader.load_telemetry(source, target_hz=rate)
+                chunks = list(ibt_reader.iter_telemetry_chunks(source, target_hz=rate, chunk_size=3))
+                self.assertEqual(loaded["sample_indices"], [index for chunk in chunks for index in chunk["sample_indices"]])
+                for name, values in loaded["samples"].items():
+                    self.assertEqual(values, [value for chunk in chunks for value in chunk["samples"][name]])
+        self.assertEqual(hashlib.sha256(source.read_bytes()).digest(), digest)
+
     def test_truncation_type_and_variable_bounds_have_specific_errors(self) -> None:
         truncated = self.root / "truncated.ibt"
         build_ibt(truncated)
@@ -363,6 +376,20 @@ class IbtReaderTests(unittest.TestCase):
         latest = ibt_reader.discover_sessions(self.root, latest_only=True)
         self.assertEqual(latest[0]["subsession_id"], 22)
         self.assertEqual(latest[0]["time_source"], "mtime")
+
+    def test_offline_sessions_with_reused_simulator_ids_stay_separate(self) -> None:
+        for day in range(2):
+            build_ibt(self.root / f"offline-{day}.ibt", base_epoch=1_780_000_000 + day * 86400,
+                      subsession_id=0, session_id=0, session_unique_id=1)
+        sessions = ibt_reader.discover_sessions(self.root)
+        self.assertEqual(len(sessions), 2)
+        self.assertTrue(all(item["file_count"] == 1 for item in sessions))
+
+    def test_offline_files_without_event_time_are_not_merged_by_simulator_id(self) -> None:
+        for entry in range(2):
+            build_ibt(self.root / f"unknown-{entry}.ibt", base_epoch=0,
+                      subsession_id=0, session_id=0, session_unique_id=1)
+        self.assertEqual(len(ibt_reader.discover_sessions(self.root)), 2)
 
     def test_full_discovery_reports_bad_files_without_hiding_good_ones(self) -> None:
         good = self.root / "good.ibt"

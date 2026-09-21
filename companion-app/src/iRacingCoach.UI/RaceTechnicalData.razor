@@ -458,18 +458,18 @@
         ? "The race fit inside the fuel window"
         : "No service decision was exercised";
     private string NoStopExplanation => NoStopAuthorized
-        ? $"The backend decision carried a {FuelPlan!.FinalStintMarginLaps:0.0}-lap final-stint margin and permitted no-stop language. Tire-call performance cannot be compared because no service was recorded."
+        ? $"The fuel plan left a {FuelPlan!.FinalStintMarginLaps:0.0}-lap margin. No tire service was recorded."
         : "No pit service was recorded, so there is no measured two-tire, four-tire, fuel-only, or pit-cycle outcome to compare for this race.";
     private string FuelDecisionHeadline => NoStopAuthorized
-        ? $"Stay out: backend margin {FuelPlan!.FinalStintMarginLaps:0.0} laps"
+        ? $"Stay out: {FuelPlan!.FinalStintMarginLaps:0.0} laps of fuel to spare"
         : AuthoritativeFuelStops is > 0 and var stops
             ? $"Plan at least {stops} fuel stop{(stops == 1 ? string.Empty : "s")}"
             : "Use the race burn as the next planning baseline";
     private string FuelDecisionExplanation => NoStopAuthorized
-        ? $"For this backend-owned decision, protect the transported {FuelPlan!.FinalStintMarginLaps:0.0}-lap final-stint margin and reassess only if live consumption rises."
+        ? $"The plan leaves {FuelPlan!.FinalStintMarginLaps:0.0} laps of fuel at the finish. Reassess if fuel use rises."
         : AuthoritativeFuelStops is > 0
-            ? $"The backend decision requires {AuthoritativeFuelStops} stop{(AuthoritativeFuelStops == 1 ? string.Empty : "s")}. Use its equal-stint targets and the recorded run bars below; do not re-decide from the displayed range."
-            : FuelPlan?.UnavailableReason ?? "The race supplied a consumption baseline, but the authoritative fuel decision is unavailable.";
+            ? $"Plan {AuthoritativeFuelStops} fuel stop{(AuthoritativeFuelStops == 1 ? string.Empty : "s")}. The pit targets below split the race into equal stints."
+            : FuelPlan?.UnavailableReason ?? "Fuel use was recorded, but there is not enough data to calculate a stop plan.";
     private string FuelDistancePercent
     {
         get

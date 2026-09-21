@@ -119,6 +119,7 @@
             State.StartingTuneCar = State.SelectedSetup?.Car ?? recent?.Car ?? State.Cars.FirstOrDefault()?.Name ?? string.Empty;
         if (string.IsNullOrWhiteSpace(State.StartingTuneTrack))
             State.StartingTuneTrack = State.SelectedSetup?.Track ?? (recent is null ? State.Tracks.FirstOrDefault()?.Name ?? string.Empty : EventTrack(recent));
+        State.NormalizeStartingTuneTrack();
     }
 
     private static string EventTrack(RecentRace race) => string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track} - {race.Layout}";

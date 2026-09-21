@@ -976,7 +976,7 @@ class AnalysisEngineTests(unittest.TestCase):
 
         self.assertEqual(
             analysis["analysis_profile_version"],
-            "post-race-foundations-v16",
+            "post-race-foundations-v17",
         )
         observed = analysis["runs"][0]["tire_observation"]["tires"]["LF"]
         self.assertEqual(observed["carcass_temperature_f"]["CL"], 212.0)

@@ -1543,7 +1543,7 @@ def _analysis_pipeline_sha256() -> str:
     # and test_analysis_pipeline_identity enforces that: it fails when the analyzer
     # bundle changes without a deliberate decision, so the maintainer must either
     # bump a version (math changed, caches must fall) or re-record the digest
-    # (formatting only, caches stay valid).
+    # (compatible implementation change, caches stay valid).
     return stable_hash(
         {
             "schema": 2,
@@ -1563,10 +1563,15 @@ def _analysis_pipeline_sha256() -> str:
 #   - analysis math or output changed  -> bump ANALYSIS_SCHEMA_VERSION or
 #     ANALYSIS_PROFILE_VERSION in analysis_engine.py, then re-record below.
 #     Cached analyses become unreachable, which is correct: they are wrong.
-#   - only formatting, comments, typing or naming changed -> re-record below
-#     alone. Cached analyses stay valid, which is the whole point.
+#   - valid cached answers remain identical -> re-record below after parity tests.
+#     Invalid legacy payloads may be rejected explicitly without retiring valid
+#     entries. The strict JSON cache reader rebuilds old Infinity payloads once.
+# Review 2026-09-20: v17 deliberately retires v16 because final damage/traffic
+# screening now governs clean summary and technical-insight claims. Bulk decode
+# and compact JSON preserve samples (chunk-reader parity at integer/fractional
+# rates). Infeasible strategies serialize null instead of invalid Infinity.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "72ab8b109993f823143955705599b58145afbba5a07316e168e0e2cc37f9205b"
+    "86fabb58e137375b53c89dd2bb609e27ecba8079c4ea1861a7480d3018862909"
 )
 
 
@@ -1754,7 +1759,7 @@ def _write_json_cache(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, default=str)
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str, allow_nan=False)
         + "\n",
         encoding="utf-8",
     )
@@ -1765,6 +1770,10 @@ def _elapsed_ms(start: float, end: float) -> float:
     """Return bounded monotonic stage timing for companion diagnostics."""
 
     return round(min(86_400_000.0, max(0.0, (end - start) * 1000.0)), 3)
+
+
+def _reject_nonfinite_json(value: str) -> None:
+    raise ValueError(f"Non-finite number in cached analysis: {value}")
 
 
 def analyze_race_workflow(
@@ -1814,8 +1823,8 @@ def analyze_race_workflow(
     cached_payload: Any = None
     if analysis_cache_path.is_file():
         try:
-            cached_payload = json.loads(analysis_cache_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            cached_payload = json.loads(analysis_cache_path.read_text(encoding="utf-8"), parse_constant=_reject_nonfinite_json)
+        except (OSError, ValueError):
             cached_payload = None
     cached_analysis = (
         cached_payload.get("analysis")

@@ -65,6 +65,6 @@
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     private static readonly (int Number, string Label)[] Steps = [(1, "iRacing"), (2, "ChatGPT"), (3, "Garage61"), (4, "Verify"), (5, "Ready")];
     private string CoachEngineMessage => !State.CoachEngine.Installed
-        ? "Coach Engine needs repair before ChatGPT can connect."
+        ? "Repair the installation to connect ChatGPT."
         : State.CoachEngine.Running ? State.CoachEngine.Message : "Coach Engine is starting.";
 }

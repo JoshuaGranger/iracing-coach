@@ -63,7 +63,7 @@ else
                     if (race is null) { continue; }
                     var overview = race.Overview;
                     <button class="race-event-row race-analysis-row" role="listitem" @onclick="() => OpenEvent(group)" title="Open @group.Track race analysis">
-                        <span class="event-main"><strong>@group.Track</strong><small>@EventSubtitle(group, race)</small></span>
+                        <span class="event-main"><strong>@group.Track</strong><small>@EventSubtitle(group, race)</small>@if (State.RaceAnalysisStatus(race) is { Length: > 0 } status) { <small class="status-label @(State.RaceAnalysisFailure(race) is null ? "neutral" : "warning")" title="@State.RaceAnalysisFailure(race)">@status</small> }</span>
                         <span class="event-result">@Result(race)</span>
                         <span class="event-race-shape race-condition-stat"><strong><i class="metric-dot green"></i>@Metric(overview?.GreenLaps) green</strong><small><i class="metric-dot yellow"></i>@Metric(overview?.CautionLaps) caution</small></span>
                         <span class="event-long-run"><strong>@BestLap(overview)</strong><small>@RunSummary(overview)</small></span>
@@ -96,8 +96,8 @@ else
         (_, > 0) => $"P{race.FinishPosition}",
         _ => "—"
     };
-    private static string Metric(int? value) => value is > 0 ? value.Value.ToString() : "—";
-    private static string Plural(int? value, string noun) => value is > 0 ? $"{value} {noun}{(value == 1 ? string.Empty : "s")}" : $"No {noun}s";
+    private static string Metric(int? value) => value is >= 0 ? value.Value.ToString() : "—";
+    private static string Plural(int? value, string noun) => value is >= 0 ? $"{value} {noun}{(value == 1 ? string.Empty : "s")}" : $"— {noun}s";
     private static string BestLap(RaceOverview? overview) => overview?.BestCleanLapSeconds is > 0 ? FormatLap(overview.BestCleanLapSeconds.Value) : "—";
     private static string FormatLap(double seconds) => TimeSpan.FromSeconds(seconds).ToString(seconds >= 60 ? "m\\:ss\\.fff" : "s\\.fff");
     private static string RunSummary(RaceOverview? overview) => $"{Metric(overview?.LongestGreenRun)} green max · {Plural(overview?.Runs, "run")} · {Plural(overview?.PitStops, "stop")}";

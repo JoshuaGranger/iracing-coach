@@ -3,7 +3,7 @@
 </div>
 
 <section class="home-live-strip @(State.LiveState.Snapshot.Connected ? "connected" : "waiting")" aria-label="Live telemetry connection">
-    <div class="home-live-status"><span class="status-orb @(State.LiveState.Snapshot.Connected ? "ready" : "neutral")"></span><div><strong>@State.LiveState.Snapshot.ConnectionLabel</strong><small>@(State.LiveState.Snapshot.Connected ? $"{State.LiveState.Snapshot.Flag} · {State.LiveState.Snapshot.PrimaryCue.Message}" : "Start iRacing when you are ready. Live monitoring stays local.")</small></div></div>
+    <div class="home-live-status"><span class="status-orb @(State.LiveState.Snapshot.Connected ? "ready" : "neutral")"></span><div><strong>@State.LiveState.Snapshot.ConnectionLabel</strong><small>@(State.LiveState.Snapshot.Connected ? $"{State.LiveState.Snapshot.Flag} · {State.LiveState.Snapshot.PrimaryCue.Message}" : "Start a session in iRacing to connect.")</small></div></div>
     <div class="home-live-actions"><button class="button primary compact" title="Open the always-on-top telemetry window" @onclick='() => State.SetLiveMonitorVisible(true)'>Open live telemetry</button></div>
 </section>
 
@@ -12,10 +12,10 @@
 <section aria-labelledby="workflows-title">
     <div class="section-heading"><div><span class="eyebrow">Workflows</span><h2 id="workflows-title">Start here</h2></div></div>
     <div class="workflow-grid">
-        <button class="workflow-card analysis" @onclick='() => State.Navigate("analysis")'><span class="workflow-icon"><ProductIcon Name="analysis" Size="20" /></span><span class="workflow-copy"><strong>Review a race</strong><small>Turn a recording into clear coaching points</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
+        <button class="workflow-card analysis" @onclick='() => State.Navigate("analysis")'><span class="workflow-icon"><ProductIcon Name="analysis" Size="20" /></span><span class="workflow-copy"><strong>Review a race</strong><small>Compare laps, fuel use and tire wear</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
         @if (State.IsCapabilityVisible(ProductCapability.RacePlanning))
         {
-            <button class="workflow-card planning" @onclick='() => State.Navigate("planning")'><span class="workflow-icon"><ProductIcon Name="planning" Size="20" /></span><span class="workflow-copy"><strong>Plan the next race</strong><small>Use recorded evidence or practice estimates</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
+            <button class="workflow-card planning" @onclick='() => State.Navigate("planning")'><span class="workflow-icon"><ProductIcon Name="planning" Size="20" /></span><span class="workflow-copy"><strong>Plan the next race</strong><small>Calculate fuel and pit stops</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
         }
         <button class="workflow-card setup" @onclick='() => State.Navigate("setup")'><span class="workflow-icon"><ProductIcon Name="setup" Size="20" /></span><span class="workflow-copy"><strong>Open your setup library</strong><small>Inspect, compare and tune your setups</small></span><span class="arrow"><ProductIcon Name="arrow-right" Size="16" /></span></button>
         @if (State.IsCapabilityVisible(ProductCapability.ProgressiveTuning))
@@ -51,7 +51,7 @@ else
             var overview = race.Overview;
             <button class="race-row home-race-row" @onclick="() => OpenRace(race)" title="Open @race.Track race analysis">
                 <span class="track-avatar" aria-hidden="true">@Initials(race.Track)</span>
-                <span class="race-main"><span class="race-title"><strong>@race.Track</strong><span>@race.Layout</span></span><small>@race.Car · @race.Date</small></span>
+                <span class="race-main"><span class="race-title"><strong>@race.Track</strong><span>@race.Layout</span></span><small>@race.Car · @race.Date</small>@if (State.RaceAnalysisStatus(race) is { Length: > 0 } status) { <small class="status-label @(State.RaceAnalysisFailure(race) is null ? "neutral" : "warning")" title="@State.RaceAnalysisFailure(race)">@status</small> }</span>
                 <span class="race-stat result-stat"><span>Result</span><strong>@(HasResult(race) ? Result(race) : "—")</strong><small>@race.SetupType setup</small></span>
                 <span class="race-stat race-condition-stat"><span>Race laps</span><strong><i class="metric-dot green"></i>@Metric(overview?.GreenLaps) green</strong><small><i class="metric-dot yellow"></i>@Metric(overview?.CautionLaps) caution</small></span>
                 <span class="race-stat"><span>Best clean lap</span><strong>@BestLap(overview)</strong><small>@Metric(overview?.LongestGreenRun) green max · @Plural(overview?.PitStops, "stop")</small></span>
@@ -78,8 +78,8 @@ else
         _ => string.Empty
     };
     private static string Initials(string value) => string.Concat(value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(word => char.ToUpperInvariant(word[0])));
-    private static string Metric(int? value) => value is > 0 ? value.Value.ToString() : "—";
-    private static string Plural(int? value, string noun) => value is > 0 ? $"{value} {noun}{(value == 1 ? string.Empty : "s")}" : $"— {noun}s";
+    private static string Metric(int? value) => value is >= 0 ? value.Value.ToString() : "—";
+    private static string Plural(int? value, string noun) => value is >= 0 ? $"{value} {noun}{(value == 1 ? string.Empty : "s")}" : $"— {noun}s";
     private static string BestLap(RaceOverview? overview)
     {
         if (overview?.BestCleanLapSeconds is not > 0) return "—";

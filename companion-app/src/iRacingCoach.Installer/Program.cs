@@ -5,12 +5,13 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Windows.Forms.VisualStyles;
 
 namespace iRacingCoach.Installer;
 
 internal static class Program
 {
-    internal const string ProductVersion = "0.17.0";
+    internal const string ProductVersion = "0.17.1";
     internal static string RepairInstallerFileName => $"iRacingCoach-{ProductVersion}-Setup.exe";
     internal static string PerUserTarget => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "iRacing Coach");
 
@@ -18,6 +19,11 @@ internal static class Program
     private static int Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Length >= 2 && args[0] == "--test-remove-legacy")
+        {
+            try { InstallerEngine.RemoveOwnedLegacyInstallation(ValidateTestTarget(args[1])); return 0; }
+            catch { return 1; }
+        }
         if (args.Length >= 2 && args[0] == "--test-install")
         {
             var testErrorPath = Path.Combine(Path.GetTempPath(), "iRacingCoach-installer-test-error.txt");
@@ -114,11 +120,12 @@ internal static class Program
 
 internal sealed class InstallerForm : Form
 {
-    private readonly Button _install = new() { Text = "Install iRacing Coach", Width = 180, Height = 40, BackColor = Color.FromArgb(70, 81, 94), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-    private readonly CheckBox _desktop = new() { Text = "Create a desktop shortcut", AutoSize = true, Checked = true, ForeColor = Color.FromArgb(195, 196, 196) };
-    private readonly CheckBox _launch = new() { Text = "Open iRacing Coach after installation", AutoSize = true, Checked = true, ForeColor = Color.FromArgb(195, 196, 196) };
+    private readonly Button _install = new ReadableButton() { Text = "Install iRacing Coach", Width = 180, Height = 40, BackColor = Color.FromArgb(70, 81, 94), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+    private readonly CheckBox _desktop = new ReadableCheckBox() { Text = "Create a desktop shortcut", AutoSize = true, Checked = true, ForeColor = Color.FromArgb(195, 196, 196) };
+    private readonly CheckBox _launch = new ReadableCheckBox() { Text = "Open iRacing Coach after installation", AutoSize = true, Checked = true, ForeColor = Color.FromArgb(195, 196, 196) };
     private readonly Label _status = new() { Text = "Ready to install", AutoSize = true, ForeColor = Color.FromArgb(150, 153, 157) };
     private readonly ProgressBar _progress = new() { Width = 430, Height = 8, Style = ProgressBarStyle.Marquee, Visible = false };
+    private bool _installing;
 
     public InstallerForm()
     {
@@ -151,21 +158,59 @@ internal sealed class InstallerForm : Form
 
     private async void InstallClicked(object? sender, EventArgs e)
     {
+        if (_installing) return;
+        _installing = true;
+        var desktopShortcut = _desktop.Checked;
+        var launch = _launch.Checked;
         _install.Enabled = false; _desktop.Enabled = false; _launch.Enabled = false; _progress.Visible = true; _status.Text = "Installing app files…";
         try
         {
             var target = Program.PerUserTarget;
-            await Task.Run(() => InstallerEngine.Install(target, integrateWithWindows: true, desktopShortcut: _desktop.Checked));
+            await Task.Run(() => InstallerEngine.Install(target, integrateWithWindows: true, desktopShortcut: desktopShortcut));
             _progress.Visible = false; _status.Text = "Installation complete"; _install.Text = "Close"; _install.Enabled = true;
             _install.Click -= InstallClicked;
             _install.Click += (_, _) => Close();
-            if (_launch.Checked) Process.Start(new ProcessStartInfo(Path.Combine(target, "iRacing Coach.exe")) { UseShellExecute = true });
+            if (launch) Process.Start(new ProcessStartInfo(Path.Combine(target, "iRacing Coach.exe")) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
             _progress.Visible = false; _status.Text = "Installation did not complete"; _install.Text = "Try again"; _install.Enabled = true; _desktop.Enabled = true; _launch.Enabled = true;
             MessageBox.Show(ex.Message, "iRacing Coach Setup", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+        finally { _installing = false; }
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (_installing && e.CloseReason == CloseReason.UserClosing) e.Cancel = true;
+        base.OnFormClosing(e);
+    }
+}
+
+internal sealed class ReadableButton : Button
+{
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if (Enabled) { base.OnPaint(e); return; }
+        e.Graphics.Clear(BackColor);
+        ControlPaint.DrawBorder(e.Graphics, ClientRectangle, ForeColor, ButtonBorderStyle.Solid);
+        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+    }
+}
+
+internal sealed class ReadableCheckBox : CheckBox
+{
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if (Enabled) { base.OnPaint(e); return; }
+        e.Graphics.Clear(BackColor);
+        var state = Checked ? CheckBoxState.CheckedDisabled : CheckBoxState.UncheckedDisabled;
+        var glyph = CheckBoxRenderer.GetGlyphSize(e.Graphics, state);
+        CheckBoxRenderer.DrawCheckBox(e.Graphics, new Point(0, (Height - glyph.Height) / 2), state);
+        var bounds = new Rectangle(glyph.Width + 4, 0, Math.Max(0, Width - glyph.Width - 4), Height);
+        TextRenderer.DrawText(e.Graphics, Text, Font, bounds, ForeColor,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
 }
 
@@ -299,12 +344,32 @@ internal static class InstallerEngine
             if (string.Equals(candidate.TrimEnd(Path.DirectorySeparatorChar), currentTarget, StringComparison.OrdinalIgnoreCase)) continue;
             if (!Directory.Exists(candidate)) continue;
             if (!File.Exists(Path.Combine(candidate, "iRacing Coach.exe")) && !File.Exists(Path.Combine(candidate, "Uninstall iRacing Coach.exe"))) continue;
-            try { Directory.Delete(candidate, recursive: true); }
-            catch (UnauthorizedAccessException) { }
-            catch (IOException) { }
+            RemoveOwnedLegacyInstallation(candidate);
         }
         using var currentUserUninstall = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", writable: true);
         currentUserUninstall?.DeleteSubKeyTree("iRacingCoach", throwOnMissingSubKey: false);
+    }
+
+    internal static void RemoveOwnedLegacyInstallation(string candidate)
+    {
+        candidate = Path.GetFullPath(candidate);
+        if (!Directory.Exists(candidate)) return;
+        if ((File.GetAttributes(candidate) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException($"The older installation at {candidate} is a linked folder. Remove that installation before retrying.");
+        if (!File.Exists(Path.Combine(candidate, "iRacing Coach.exe")) &&
+            !File.Exists(Path.Combine(candidate, "Uninstall iRacing Coach.exe"))) return;
+        StopRunningPriorVersion(candidate);
+        var deadline = DateTime.UtcNow.AddSeconds(12);
+        while (true)
+        {
+            try { Directory.Delete(candidate, recursive: true); return; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (DateTime.UtcNow >= deadline)
+                    throw new IOException($"The older installation at {candidate} could not be removed. Close that version or uninstall it in Windows, then retry setup.", ex);
+                Thread.Sleep(200);
+            }
+        }
     }
 
     private static void CacheRepairInstaller()

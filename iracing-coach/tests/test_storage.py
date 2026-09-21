@@ -16,6 +16,7 @@ SCRIPTS = PLUGIN_ROOT / "skills" / "analyze-iracing-race" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from storage import ArchiveStore  # noqa: E402
+import storage  # noqa: E402
 
 
 CONTEXT = {
@@ -28,6 +29,23 @@ CONTEXT = {
 
 
 class StorageCacheIntegrityTests(unittest.TestCase):
+    def test_atomic_copy_and_write_do_not_repeat_long_destination_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.ibt"
+            source.write_bytes(b"immutable telemetry")
+            # The final name fits the filesystem's component limit; the old
+            # temporary prefix repeated it and exceeded that limit.
+            name_length = min(249, 258 - len(str(root)) - 1)
+            destination = root / ("x" * (name_length - 4) + ".ibt")
+            digest = storage.file_sha256(source)
+            storage._atomic_copy_verified(source, destination, digest)
+            self.assertEqual(destination.read_bytes(), source.read_bytes())
+            self.assertEqual(storage.file_sha256(source), digest)
+            storage._atomic_write_text(destination, "derived content")
+            self.assertEqual(destination.read_text(), "derived content")
+            self.assertEqual(set(root.iterdir()), {source, destination})
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.store = ArchiveStore(self.temporary.name)

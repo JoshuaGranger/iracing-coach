@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.17.0-development.md)
+7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.17.1-development.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -57,7 +57,8 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
-  - [Current development snapshot: 0.17.0](06-reality/implementation-snapshot-0.17.0-development.md)
+  - [Current development snapshot: 0.17.1](06-reality/implementation-snapshot-0.17.1-development.md)
+  - [Prior development snapshot: 0.17.0](06-reality/implementation-snapshot-0.17.0-development.md)
   - [Prior development snapshot: 0.16.0](06-reality/implementation-snapshot-0.16.0-development.md)
   - [Prior development candidate: 0.15.0](06-reality/implementation-snapshot-0.15.0-development.md)
   - [Technical Data signal coverage: 0.15.0 development](06-reality/technical-data-signal-coverage-0.15.0-development.md)
@@ -96,13 +97,13 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 ## Current baseline
 
 - Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
-- Current source version: `0.16.0` development; its explicitly requested installer is a simulator-feedback candidate until the exact artifact completes the release gates and Joshua accepts it
+- Current source version: `0.17.1` development; a simulator-feedback candidate pending the remaining hardware/service checks and Joshua's acceptance
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Current source verification: 255/255 .NET tests, 247/247 Python tests, 9/9 JavaScript syntax checks, and a Release solution build with zero warnings and zero errors
-- Current direct-browser evidence: the real August 9 Iowa 7,775-frame replay was exercised at 1280x720 and 1920x1080; a real 82-lap selection remained logically complete with bounded rendering; a synthetic 500-lap case passed the fixed rendering budgets; measured pointer-tool round trips and remaining caveats are recorded in the 0.16.0 snapshot
-- Current package boundary: no 0.16.0 installer hash, source commit, lifecycle certification, or user acceptance is claimed until the exact frozen package passes those separate gates
+- Current source verification: 374/374 application tests and 1,017/1,017 Python tests; contract/export verification passed
+- Current direct-browser evidence: real fixed-setup Iowa and open-setup New Hampshire recordings were exercised across navigation, telemetry editing, analysis, planning, setups, tuning, and settings. Exact coverage and unresolved native/remote checks are recorded in the 0.17.1 snapshot.
+- Current package boundary: checksums and installer lifecycle results are supplied with the frozen package. Full DESKTOP-SIM and native rendering certification remain outstanding.
 - Prior installer lifecycle evidence: the 0.15.0 feedback candidate passed guarded install, rollback, running-app replacement, data-preservation, uninstall, reinstall, and final-uninstall checks; this is historical evidence, not proof of the 0.16.0 candidate
 - Development focus: Race Analysis, Technical data, Race replay, global analysis layouts, exact-configuration maps, retained raw telemetry, NASCAR-first tire/capability foundations, and Progressive Tuning evidence-contract v2. Supported and unavailable states remain evidence-gated; development implementation is not user acceptance.
 
-The current source reality is summarized in `06-reality/implementation-snapshot-0.16.0-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. The 0.15.0 installer candidate remains historical feedback evidence, not an accepted release. Build binaries and private user data are not part of the source repository.
+The current source reality is summarized in `06-reality/implementation-snapshot-0.17.1-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Build binaries and private user data are not part of the source repository.

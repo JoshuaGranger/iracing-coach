@@ -43,7 +43,9 @@
         ("setup", "Setups", "setup", ProductCapability.SetupLibrary),
         ("tuning", "Progressive Tuning", "wrench", ProductCapability.ProgressiveTuning)
     ];
-    private string LocalActivity => State.ServiceRequestInFlight ? "Working" : State.LocalAnalysisNeedsAttention ? "Needs attention" : "Ready";
+    private string LocalActivity => State.PendingRaceAnalysisCount is > 0 and var pending
+        ? State.LiveState.Snapshot.Connected ? $"Paused while driving · {pending} left" : $"Analyzing · {pending} left"
+        : State.ServiceRequestInFlight ? "Working" : State.FailedRaceAnalysisCount is > 0 and var failed ? $"{failed} failed · Retry race" : State.LocalAnalysisNeedsAttention ? "Needs attention" : "Ready";
     private string GarageActivity => State.Garage61StatusLabel;
     private string AiActivity => State.IsCoaching ? "Working" : State.CoachEngine.ChatGptConnected ? "Connected" : "Not connected";
 }

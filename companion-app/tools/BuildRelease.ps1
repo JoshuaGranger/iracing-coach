@@ -13,7 +13,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '0.17.0'
+$version = '0.17.1'
 $pythonVersion = '3.12.13'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot '..'))

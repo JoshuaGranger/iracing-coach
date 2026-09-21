@@ -93,7 +93,7 @@ class Strategy:
         return {
             "stop_count": self.stop_count,
             "stint_laps": list(self.stint_laps),
-            "total_time_s": round(self.total_time_s, 3),
+            "total_time_s": round(self.total_time_s, 3) if math.isfinite(self.total_time_s) else None,
             "green_time_s": round(self.green_time_s, 3),
             "pit_time_s": round(self.pit_time_s, 3),
             "degradation_time_s": round(self.degradation_time_s, 3),
