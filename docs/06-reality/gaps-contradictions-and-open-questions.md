@@ -2,6 +2,12 @@
 
 This is the current criticism backlog. Items remain open until evidence closes them; they are not hidden in optimistic release prose.
 
+## Current user testing feedback
+
+The [0.17.0 testing feedback](testing-feedback-0.17.0.md) records two open installer items: unreadable disabled-control text after clicking Install (`INSTALL-FB-001`) and automatic removal of previous installed versions in future releases (`INSTALL-FB-002`). The latter reinforces `UPG-001` and must preserve durable Coach data.
+
+## Tracked gaps
+
 | ID | Issue | Why it matters | Closure evidence |
 | --- | --- | --- | --- |
 | `GAP-001` | Representative real-telemetry breadth remains incomplete. | Fixtures cannot prove every SDK field combination, timing, reconnect, car, or session variance. | Direct real-system evidence tied to exact builds and representative sessions, with failures retained rather than generalized away. |
