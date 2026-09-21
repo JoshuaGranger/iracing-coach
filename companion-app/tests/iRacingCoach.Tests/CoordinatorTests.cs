@@ -14,6 +14,81 @@ namespace iRacingCoach.Tests;
 public sealed class CoordinatorTests
 {
     [TestMethod]
+    [DataRow("analyze_iracing_race", false)]
+    [DataRow("iracing_strategy_history", true)]
+    [DataRow("plan_iracing_race", false)]
+    public async Task PlanningContainsInvalidJsonAndTreatsHistoryAsOptional(string failedTool, bool shouldBuild)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-plan-json", Guid.NewGuid().ToString("N"));
+        var fail = true;
+        var backend = new FakeBackend(analysis: HomeAnalysisResponse(Path.Combine(root, "analysis.json")), responseOverride: (tool, _, _) =>
+        {
+            if (fail && tool == failedTool) return JsonDocument.Parse("{\"total_time_s\":Infinity}").RootElement;
+            if (tool == "plan_iracing_race")
+                return JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "event-plan-estimate.json"))).RootElement.Clone();
+            return null;
+        });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        state.Settings.LocalStateRootOverride = Path.Combine(root, "local");
+        var race = new RecentRace("ref", "Bristol Motor Speedway", "Single Pit Road", "Toyota Supra Class B", "Today", "Open", "Recorded", "", false, false, 0, 0,
+            CarPath: "stockcars2 supra2019", Selector: "subsession:9001:1");
+        state.Races.Add(race);
+        state.SelectedPlanRaceId = race.Id;
+        state.SelectedPlanCarId = race.CarPath;
+        state.SelectedPlanTrack = $"{race.Track}|{race.Layout}";
+        state.PlanSetupType = race.SetupType;
+        state.PlanDistanceValue = 160;
+        await state.GeneratePlanAsync();
+        Assert.IsFalse(state.PlanBusy);
+        Assert.AreEqual(shouldBuild, state.PlanGenerated, state.PlanMessage);
+        if (!shouldBuild)
+        {
+            Assert.IsNull(state.PlanBriefing);
+            StringAssert.Contains(state.PlanMessage, "retry its analysis");
+            fail = false;
+            await state.GeneratePlanAsync();
+            Assert.IsTrue(state.PlanGenerated, "The same page must remain usable for retry: " + state.PlanMessage);
+        }
+    }
+
+    [TestMethod]
+    public async Task SetupLibraryLoadsPastFiveHundredAndExposesBackendTruncation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-large-setup-library", Guid.NewGuid().ToString("N"));
+        var truncated = false;
+        var requested = 0;
+        var backend = new FakeBackend(responseOverride: (tool, _, arguments) =>
+        {
+            if (tool != "catalog_iracing_setups") return null;
+            requested = JsonSerializer.SerializeToElement(arguments).GetProperty("maximum_entries").GetInt32();
+            return JsonSerializer.SerializeToElement(new
+            {
+                ok = true, output_truncated = 600 > requested, scan_truncated = truncated,
+                entries = Enumerable.Range(0, Math.Min(600, requested)).Select(index => new
+                {
+                    stem = index < 500 ? $"Atlanta {index}" : $"Maconi Bristol 26S4 {index}",
+                    car_folder = "stockcars2 supra2019",
+                    filename_identity = new { track_hint = index < 500 ? "Atlanta" : "Bristol", season_key = "2026S4" },
+                    sources = new { sto = new[] { new { path = Path.Combine(root, $"setup-{index}.sto"), sha256 = $"hash-{index}" } } }
+                })
+            });
+        });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        state.Settings.LocalStateRootOverride = Path.Combine(root, "local");
+        state.Settings.IRacingRoot = Path.Combine(root, "iRacing");
+        state.Settings.IRacingInstallRoot = Path.Combine(root, "install");
+        await state.RefreshDashboardAsync();
+        state.SetupSearch = "Bristol";
+        Assert.AreEqual(100, state.FilteredSetups.Count(), "Search must include local files beyond entry 500.");
+        Assert.AreEqual(string.Empty, state.SetupCatalogWarning);
+        truncated = true;
+        await state.RefreshDashboardAsync();
+        StringAssert.Contains(state.SetupCatalogWarning, "incomplete");
+    }
+
+    [TestMethod]
     public void StartingTuneAcceptsTheTrackLabelFromARecordedSetup()
     {
         using var state = new CompanionState(new FakeBackend());

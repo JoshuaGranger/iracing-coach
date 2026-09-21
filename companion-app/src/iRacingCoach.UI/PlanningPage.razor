@@ -41,7 +41,7 @@
                 @if (State.SelectedPlanRace is { } selected)
                 {
                     <div class="planning-reference-summary">
-                        <span class="status-label success">Ready to build</span>
+                        <span class="status-label @(State.CanBuildPlan ? "success" : "warning")">@State.PlanReadinessText</span>
                         <strong>@selected.Track@(string.IsNullOrWhiteSpace(selected.Layout) ? string.Empty : $" · {selected.Layout}")</strong>
                         <span>@selected.Car</span>
                         <small>@ReferenceFacts(selected)</small>

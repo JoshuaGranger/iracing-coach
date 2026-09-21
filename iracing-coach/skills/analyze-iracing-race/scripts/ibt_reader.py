@@ -1868,6 +1868,7 @@ def discover_sessions(
                 "track_config_name": representative.get("track_config_name"),
                 "car_id": representative.get("car_id"),
                 "car_path": representative.get("car_path"),
+                "car_name": representative.get("car_screen_name"),
                 "is_fixed_setup": representative.get("is_fixed_setup"),
                 "start_time_unix": start_time,
                 "end_time_unix": end_time,

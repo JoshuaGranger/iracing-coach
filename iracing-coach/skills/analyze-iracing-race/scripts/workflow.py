@@ -1571,7 +1571,7 @@ def _analysis_pipeline_sha256() -> str:
 # and compact JSON preserve samples (chunk-reader parity at integer/fractional
 # rates). Infeasible strategies serialize null instead of invalid Infinity.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "86fabb58e137375b53c89dd2bb609e27ecba8079c4ea1861a7480d3018862909"
+    "e4b93e9a9446a72389a036b73f0af8c2a8d383fd303c1f96c779ca33a8cdfeb1"
 )
 
 

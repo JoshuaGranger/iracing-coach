@@ -42,7 +42,7 @@ public sealed class CompanionState : IDisposable
     // Content completeness is a separate question again, and RuntimeMapper already
     // answers it: HasCurrentAnalysisProfile rejects a response emitted by an
     // analyzer older than the fields the UI now reads.
-    private const string AppVersion = "0.17.1";
+    private const string AppVersion = "0.17.2";
 
     // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
     // roughly 1.8x - one 25 MB entry spanned 615,614 lines - and allocating fresh options
@@ -229,6 +229,11 @@ public sealed class CompanionState : IDisposable
     public double? PlanLapSeconds { get => _planLapSeconds; set => SetPlanInput(ref _planLapSeconds, value); }
     public bool PlanBusy { get; private set; }
     public bool CanBuildPlan => !PlanBusy && SelectedPlanCarId.Length > 0 && SelectedPlanTrack.Length > 0 && double.IsFinite(PlanDistanceValue) && PlanDistanceValue is > 0 and <= 1000;
+    public string PlanReadinessText => PlanBusy ? "Building…"
+        : SelectedPlanCarId.Length == 0 ? "Choose a car"
+        : SelectedPlanTrack.Length == 0 ? "Choose a track and layout"
+        : !double.IsFinite(PlanDistanceValue) || PlanDistanceValue is <= 0 or > 1000 ? "Enter a race distance from 1 to 1000"
+        : "Ready to build";
     public IReadOnlyList<(string Key, string Label)> PlanTrackOptions => Races
         .Where(race => race.Track.Length > 0)
         .Select(race => (Key: $"{race.Track}|{race.Layout}", Label: string.IsNullOrWhiteSpace(race.Layout) ? race.Track : $"{race.Track} · {race.Layout}"))
@@ -245,6 +250,7 @@ public sealed class CompanionState : IDisposable
     public string TuningSourceSetupId { get; private set; } = string.Empty;
     public LocalSetup? TuningSourceSetup => Setups.FirstOrDefault(item => item.Id == TuningSourceSetupId);
     public string SetupSearch { get; set; } = string.Empty;
+    public string SetupCatalogWarning { get; private set; } = string.Empty;
     public string SetupCarFilter { get; set; } = string.Empty;
     public string SetupTrackFilter { get; set; } = string.Empty;
     public string SetupSeasonFilter { get; set; } = string.Empty;
@@ -612,19 +618,23 @@ public sealed class CompanionState : IDisposable
                     throw new InvalidDataException("The race-session response did not include a sessions array.");
                 return response;
             }, cancellationToken);
+            var setupCatalogWarning = string.Empty;
             var setupTask = ReadRefreshSectionAsync("Local setups", async () =>
             {
                 var response = await CallBackendAsync("catalog_iracing_setups", new
                 {
                     root = roots.IRacingRoot,
                     archive_root = roots.ArchiveRoot,
-                    maximum_entries = 500
+                    maximum_entries = 1000
                 }, cancellationToken);
                 if (response.ValueKind != JsonValueKind.Object
                     || !response.TryGetProperty("entries", out var entries)
                     || entries.ValueKind != JsonValueKind.Array)
                     throw new InvalidDataException("The setup response did not include an entries array.");
                 var setups = RuntimeMapper.Setups(response).ToList();
+                if ((response.TryGetProperty("output_truncated", out var outputTruncated) && outputTruncated.ValueKind == JsonValueKind.True)
+                    || (response.TryGetProperty("scan_truncated", out var scanTruncated) && scanTruncated.ValueKind == JsonValueKind.True))
+                    setupCatalogWarning = "This setup library is incomplete: the scan reached its file or entry limit. Search only covers the loaded entries.";
                 foreach (var archived in LoadArchivedSetups())
                     if (setups.All(setup => !string.Equals(setup.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) setups.Add(archived);
                 return (IReadOnlyList<LocalSetup>)setups.ToArray();
@@ -680,6 +690,7 @@ public sealed class CompanionState : IDisposable
             }
 
             PublishLocalInventory(next, dashboard.Success);
+            if (setups.Success) SetupCatalogWarning = setupCatalogWarning;
             ConfigureWatchers(roots.IRacingRoot);
             if (health.Success)
             {
@@ -1167,6 +1178,8 @@ public sealed class CompanionState : IDisposable
             && Settings.ArchiveRoot == archiveRoot && Settings.IRacingRoot == iracingRoot;
         PlanBusy = true;
         PlanGenerated = false;
+        PlanBriefing = null;
+        StrategyScenarios.Clear();
         PlanMessage = "Building the event plan…";
         RaiseChanged();
         try
@@ -1192,7 +1205,7 @@ public sealed class CompanionState : IDisposable
                     var history = await CallBackendAsync("iracing_strategy_history", new { analysis_path = analysisPath, archive_root = archiveRoot, include_other_seasons = false, limit = 200 }, cancellationToken);
                     scenarios = RuntimeMapper.Strategy(history).ToArray();
                 }
-                catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
+                catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException or JsonException or IOException)
                 { /* History enriches a plan; its absence must not prevent a fuel decision. */ }
             }
             if (!StillCurrent()) return;
@@ -1211,6 +1224,15 @@ public sealed class CompanionState : IDisposable
             PersistPortableArtifact("event-plans", $"plan-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}", new { schemaVersion = 1, car, track, setup, distance, distanceMode, referenceRaceId = race?.Id, result });
         }
         catch (OperationCanceledException) { if (StillCurrent()) PlanMessage = "Plan cancelled."; }
+        catch (JsonException ex)
+        {
+            if (StillCurrent())
+            {
+                _ = StructuredAppLog.Record("race planning", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
+                PlanMessage = "The race data could not be read. Open the reference race in Race Analysis and retry its analysis, then build the plan again.";
+                Notify("The plan could not be built.");
+            }
+        }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException or IOException)
         {
             if (StillCurrent()) { PlanMessage = Bound(ex.Message); Notify("The plan could not be built."); }
@@ -3558,7 +3580,7 @@ public sealed class CompanionState : IDisposable
         {
             try
             {
-                result.Add(ReadArchivedCatalog(path).Race);
+                if (ReadArchivedCatalog(path)?.Race is { } race) result.Add(race);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
             {
@@ -3568,7 +3590,7 @@ public sealed class CompanionState : IDisposable
         return result;
     }
 
-    private ArchivedRaceCatalog.Entry ReadArchivedCatalog(string path) =>
+    private ArchivedRaceCatalog.Entry? ReadArchivedCatalog(string path) =>
         _archivedRaceCatalog.Read(path, Path.Combine(Settings.ArchiveRoot, "ui-catalog-cache"),
             () => _archive.MarkActive(Settings.CoachHome));
 
@@ -3594,8 +3616,8 @@ public sealed class CompanionState : IDisposable
         if (string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return false;
         try
         {
-            var archived = ReadArchivedCatalog(race.AnalysisPath).Race;
-            if (!SameSessionPhase(race, archived) || archived.Overview is null) return false;
+            var archived = ReadArchivedCatalog(race.AnalysisPath)?.Race;
+            if (archived is null || !SameSessionPhase(race, archived) || archived.Overview is null) return false;
             overview = archived.Overview;
             return true;
         }
@@ -4104,7 +4126,7 @@ public sealed class CompanionState : IDisposable
         {
             try
             {
-                if (ReadArchivedCatalog(path).Setup is { } setup)
+                if (ReadArchivedCatalog(path)?.Setup is { } setup)
                 {
                     var index = result.FindIndex(item => string.Equals(item.Id, setup.Id, StringComparison.OrdinalIgnoreCase));
                     if (index < 0) result.Add(setup);

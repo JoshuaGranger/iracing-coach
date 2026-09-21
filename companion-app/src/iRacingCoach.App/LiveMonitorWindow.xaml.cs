@@ -823,7 +823,9 @@ public partial class LiveMonitorWindow : Window
         Preferences.OverallScale = Math.Clamp(requested, .8, 1.25);
         SavePreferences();
         ApplyScale();
-        EnsureWindowVisible();
+        // SizeToContent updates the native rectangle after layout. Clamping here
+        // used the old width and allowed the expanded controls off the display.
+        _ = Dispatcher.BeginInvoke(EnsureWindowVisible, DispatcherPriority.ContextIdle);
     }
 
     private void UpdateSizePresetSelection()

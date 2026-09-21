@@ -10,6 +10,10 @@ else
             <div><span class="eyebrow">Setups</span><h1>Your setup library</h1><p>Local files and the setup values saved with your recordings.</p></div>
             <button class="button primary" @onclick="NewSetup">New setup</button>
         </header>
+        @if (!string.IsNullOrWhiteSpace(State.SetupCatalogWarning))
+        {
+            <p class="status-label warning" role="status">@State.SetupCatalogWarning</p>
+        }
         <section class="surface-card setup-library-toolbar" aria-label="Filter setups">
             <label>Search<input type="search" placeholder="Name, car, track…" @bind="State.SetupSearch" @bind:event="oninput" /></label>
             <label>Car<select @bind="State.SetupCarFilter"><option value="">All cars</option>@foreach (var value in Cars) { <option>@value</option> }</select></label>

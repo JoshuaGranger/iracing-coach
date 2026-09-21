@@ -13,16 +13,20 @@ internal sealed class ArchivedRaceCatalog
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (long Length, DateTime LastWriteUtc)> _invalidReports = new(StringComparer.OrdinalIgnoreCase);
 
     internal sealed record Entry(int Version, string ReportPath, long Length, DateTime LastWriteUtc, RecentRace Race, LocalSetup? Setup);
 
-    public Entry Read(string path, string cacheRoot, Action beforeWrite)
+    public Entry? Read(string path, string cacheRoot, Action beforeWrite)
     {
         path = Path.GetFullPath(path);
         lock (_gate)
         {
             var info = new FileInfo(path);
             if (!info.Exists) throw new FileNotFoundException("The saved race could not be found.", path);
+            if (_invalidReports.TryGetValue(path, out var failed)
+                && failed.Length == info.Length && failed.LastWriteUtc == info.LastWriteTimeUtc) return null;
+            _invalidReports.Remove(path);
             bool Current(Entry? entry) => entry is not null && entry.Race is not null && entry.Version == ProjectionVersion
                 && string.Equals(entry.ReportPath, path, StringComparison.OrdinalIgnoreCase)
                 && entry.Length == info.Length && entry.LastWriteUtc == info.LastWriteTimeUtc;
@@ -39,9 +43,20 @@ internal sealed class ArchivedRaceCatalog
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
 
-            using var document = JsonDocument.Parse(File.ReadAllBytes(path));
-            var entry = new Entry(ProjectionVersion, path, info.Length, info.LastWriteTimeUtc,
-                RuntimeMapper.ArchivedRace(document.RootElement, path), RuntimeMapper.ArchivedSetup(document.RootElement, path));
+            Entry entry;
+            try
+            {
+                using var document = JsonDocument.Parse(File.ReadAllBytes(path));
+                entry = new Entry(ProjectionVersion, path, info.Length, info.LastWriteTimeUtc,
+                    RuntimeMapper.ArchivedRace(document.RootElement, path), RuntimeMapper.ArchivedSetup(document.RootElement, path));
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidDataException or InvalidOperationException)
+            {
+                // Report this revision once. Both catalogs share this reader, so an
+                // unchanged invalid report is neither reparsed nor logged per refresh.
+                _invalidReports[path] = (info.Length, info.LastWriteTimeUtc);
+                throw;
+            }
             info.Refresh();
             if (!Current(entry)) throw new IOException("The saved race changed while its summary was loading. Retry the refresh.");
             _entries[path] = entry;

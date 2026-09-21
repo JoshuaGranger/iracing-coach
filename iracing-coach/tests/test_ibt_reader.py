@@ -359,6 +359,7 @@ class IbtReaderTests(unittest.TestCase):
         old_group = next(item for item in groups if item["subsession_id"] == 11)
         self.assertEqual(old_group["sim_session_num"], 1)
         self.assertEqual(old_group["file_count"], 2)
+        self.assertEqual(old_group["car_name"], "NASCAR Cup Series Next Gen")
 
         latest = ibt_reader.discover_sessions(self.root, latest_only=True)
         self.assertEqual(len(latest), 1)

@@ -9,6 +9,26 @@ namespace iRacingCoach.Tests;
 public sealed class DevelopmentRoundTests
 {
     [TestMethod]
+    public void PlanReadinessExplainsWhyTheActionIsDisabled()
+    {
+        using var state = State(new PlanBackend());
+        Assert.IsFalse(state.CanBuildPlan);
+        Assert.AreEqual("Choose a car", state.PlanReadinessText);
+        state.SelectedPlanCarId = "car";
+        Assert.AreEqual("Choose a track and layout", state.PlanReadinessText);
+        state.SelectedPlanTrack = "track";
+        foreach (var distance in new[] { 0d, -1d, double.NaN, double.PositiveInfinity, 1001d })
+        {
+            state.PlanDistanceValue = distance;
+            Assert.IsFalse(state.CanBuildPlan);
+            StringAssert.Contains(state.PlanReadinessText, "Enter a race distance");
+        }
+        state.PlanDistanceValue = 160;
+        Assert.IsTrue(state.CanBuildPlan);
+        Assert.AreEqual("Ready to build", state.PlanReadinessText);
+    }
+
+    [TestMethod]
     public void PackagedBackendWinsOverAnUnrelatedWorkingCheckout()
     {
         var root = Root();
