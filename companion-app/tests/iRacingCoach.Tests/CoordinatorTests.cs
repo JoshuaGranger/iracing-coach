@@ -14,6 +14,30 @@ namespace iRacingCoach.Tests;
 public sealed class CoordinatorTests
 {
     [TestMethod]
+    public void IdenticalSetupBytesInDifferentCarsRemainIndependentlySelectable()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-identical-setups", Guid.NewGuid().ToString("N"));
+        var cars = new[] { "chevycamarozl12022", "fordmustang2022", "toyotacamry2022" };
+        var catalog = JsonSerializer.SerializeToElement(new
+        {
+            entries = cars.Select(car => new
+            {
+                stem = "Bristol 26S4 Q", car_folder = car,
+                sources = new { sto = new[] { new { path = Path.Combine(root, car, "Bristol 26S4 Q.sto"), sha256 = "same-content" } } }
+            })
+        });
+        var setups = RuntimeMapper.Setups(catalog);
+        Assert.AreEqual(3, setups.Select(setup => setup.Id).Distinct().Count());
+        Assert.AreEqual(1, setups.Select(setup => setup.Fingerprint).Distinct().Count());
+        using var state = new CompanionState(new FakeBackend(), new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        foreach (var setup in setups) state.Setups.Add(setup);
+        state.SelectedSetupId = setups[1].Id;
+        Assert.AreEqual(setups[1].StoPath, state.SelectedSetup!.StoPath);
+        var refreshed = RuntimeMapper.Setups(catalog);
+        Assert.AreEqual(setups[1].Id, refreshed[1].Id);
+    }
+
+    [TestMethod]
     public async Task SetupCopyUsesBoundedArchiveAndExposesFailureForRetry()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-copy-test", Guid.NewGuid().ToString("N"));

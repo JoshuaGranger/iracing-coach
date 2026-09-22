@@ -89,6 +89,8 @@ def copy_iracing_setup_to_coach_workflow(
     if path_is_within(store.root, setup_root):
         raise TuningWorkflowError("Coach setup copies must be stored outside the iRacing setups directory.")
     fingerprint = store.source_fingerprints([source])[0]
+    if not 0 < fingerprint["size"] <= 16 * 1024 * 1024:
+        raise TuningWorkflowError("Setup copy requires a non-empty .sto file no larger than 16 MiB.")
     digest = fingerprint["sha256"]
     destination = (store.root / "setup-copies" / digest / "setup.sto").resolve()
     manifest_path = destination.with_name("manifest.json").resolve()

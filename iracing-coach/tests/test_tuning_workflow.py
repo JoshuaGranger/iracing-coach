@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -107,6 +108,16 @@ class TuningWorkflowTests(unittest.TestCase):
                 source_path=source, iracing_root=self.iracing, archive_root=self.archive)
         self.assertEqual(saved.read_bytes(), b"user edited saved copy")
         self.assertEqual(source.read_bytes(), original)
+
+    def test_setup_copy_rechecks_size_after_source_fingerprinting(self) -> None:
+        source = next(self.setup_dir.glob("*.sto"))
+        fingerprint = ArchiveStore(self.archive).source_fingerprints([source])[0]
+        fingerprint["size"] = 16 * 1024 * 1024 + 1
+        with mock.patch.object(ArchiveStore, "source_fingerprints", return_value=[fingerprint]):
+            with self.assertRaisesRegex(tuning_workflow.TuningWorkflowError, "16 MiB"):
+                tuning_workflow.copy_iracing_setup_to_coach_workflow(
+                    source_path=source, iracing_root=self.iracing, archive_root=self.archive)
+        self.assertFalse(self.archive.exists())
 
     def test_setup_copy_rejects_sources_and_destinations_outside_its_contract(self) -> None:
         outside = self.root / "outside.sto"

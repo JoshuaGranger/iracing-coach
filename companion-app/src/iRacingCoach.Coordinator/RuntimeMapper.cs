@@ -222,7 +222,10 @@ public static class RuntimeMapper
             var stem = Text(entry, "stem") ?? Path.GetFileNameWithoutExtension(path);
             var warning = Object(Object(Object(entry, "parsed_html"), "identity"), "mismatches");
             result.Add(new LocalSetup(
-                Text(sto, "sha256") ?? path,
+                // Equal bytes can legitimately exist under different cars or
+                // filenames. Selection identifies the file, not its contents;
+                // the separate fingerprint still identifies matching evidence.
+                "file:" + path.Replace('\\', '/').ToUpperInvariant(),
                 stem,
                 DisplayCar(Text(entry, "car_folder")) ?? string.Empty,
                 DisplayTrack(Text(identity, "track_hint")) ?? string.Empty,

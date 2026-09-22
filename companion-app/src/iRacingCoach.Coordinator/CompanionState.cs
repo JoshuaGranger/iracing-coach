@@ -42,7 +42,7 @@ public sealed class CompanionState : IDisposable
     // Content completeness is a separate question again, and RuntimeMapper already
     // answers it: HasCurrentAnalysisProfile rejects a response emitted by an
     // analyzer older than the fields the UI now reads.
-    private const string AppVersion = "0.17.4";
+    private const string AppVersion = "0.17.5";
 
     // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
     // roughly 1.8x - one 25 MB entry spanned 615,614 lines - and allocating fresh options
@@ -194,6 +194,7 @@ public sealed class CompanionState : IDisposable
     public string DataMessage { get; private set; } = "Looking for finalized iRacing recordings…";
     public string PlanMessage { get; private set; } = "Choose your event and distance. Recorded evidence and optional assumptions will fill the plan.";
     public string SetupMessage { get; private set; } = "Only setup files found on this PC are shown.";
+    public string SetupCopyMessage { get; private set; } = string.Empty;
     public string TuningMessage { get; private set; } = "Choose an analyzed open-setup race and describe what the car did.";
     // UI-only launch-session preference. This intentionally does not live in
     // CompanionSettings, so every app launch starts on Early while navigation
@@ -2321,11 +2322,13 @@ public sealed class CompanionState : IDisposable
             SetupMessage = copied
                 ? "An exact copy was saved in your Coach setup library."
                 : "That exact setup is already in your Coach setup library.";
+            SetupCopyMessage = SetupMessage;
             Notify(SetupMessage);
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
         {
             SetupMessage = Bound(ex.Message);
+            SetupCopyMessage = SetupMessage;
             Notify($"The setup was not copied: {SetupMessage}");
         }
         RaiseChanged();

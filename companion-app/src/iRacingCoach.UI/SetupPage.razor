@@ -16,9 +16,9 @@ else
         {
             <p class="status-label warning" role="status">@State.SetupCatalogWarning</p>
         }
-        @if (!string.IsNullOrWhiteSpace(State.SetupMessage))
+        @if (!string.IsNullOrWhiteSpace(State.SetupCopyMessage))
         {
-            <p role="status">@State.SetupMessage</p>
+            <p role="status">@State.SetupCopyMessage</p>
         }
         <section class="surface-card setup-library-toolbar" aria-label="Filter setups">
             <label>Search<input type="search" placeholder="Name, car, track…" @bind="State.SetupSearch" @bind:event="oninput" /></label>
@@ -38,7 +38,7 @@ else
                     @foreach (var setup in visibleSetups)
                     {
                         var evidence = State.SetupEvidenceRaces(setup);
-                        <button class="setup-library-row @(selectedSetup?.Id == setup.Id ? "selected" : null)" aria-pressed="@(selectedSetup?.Id == setup.Id)" @onclick="() => Select(setup)">
+                        <button class="setup-library-row @(selectedSetup?.Id == setup.Id ? "selected" : null)" aria-pressed="@(selectedSetup?.Id == setup.Id ? "true" : "false")" @onclick="() => Select(setup)">
                             <span class="setup-library-row-top"><strong>@setup.Name</strong><small>@SourceLabel(setup)</small></span>
                             <span>@setup.Car · @(setup.Track.Length > 0 ? setup.Track : "Track unspecified")</span>
                             <small>@setup.Fields.Count values · @evidence.Count linked recording@(evidence.Count == 1 ? "" : "s") · @(setup.Season.Length > 0 ? setup.Season : "Season unknown")</small>
