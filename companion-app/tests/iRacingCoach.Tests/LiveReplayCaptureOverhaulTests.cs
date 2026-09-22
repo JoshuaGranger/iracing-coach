@@ -168,6 +168,39 @@ public sealed class LiveReplayCaptureOverhaulTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void RaceReplay_PreservesCanonicalRacingFramesAndHonorsExplicitGaps(bool hasGap)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "analyze-repair-heavy.json")));
+        static AnalysisReplayCarState Car(double percent) => new(1, percent, 1, 0, 1, 1, false, 3, null, 0, null, null);
+        var replay = new AnalysisRaceReplay(
+            "partial", [], [], [],
+            [new(1, "1", 1, "Class", "Car", "Driver", null, true, false)],
+            [
+                new(100, "parade_laps", 0, [], [Car(.1)]),
+                new(100.4, "racing", 4, ["green"], [Car(.2)]),
+                new(100.8, "racing", 4, ["green"], [Car(.3)], GapBefore: hasGap),
+                new(101.2, "checkered", 1, ["checkered"], [Car(.4)])
+            ],
+            60, 1, "linear lap-distance interpolation",
+            Representation: new(72, 4, 60, 2.5, 10000, true, .4, true, 0));
+        var component = new RaceReplayWorkspace();
+        var type = typeof(RaceReplayWorkspace);
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        type.GetProperty(nameof(RaceReplayWorkspace.Workspace))!.SetValue(component,
+            RuntimeMapper.ArchivedAnalysis(document.RootElement) with { Replay = replay });
+        type.GetMethod("RebuildReplayCache", flags)!.Invoke(component, null);
+        type.GetProperty("PlaybackFraction", flags)!.SetValue(component, .5);
+
+        Assert.HasCount(4, (IReadOnlyList<AnalysisReplayFrame>)type.GetProperty("Frames", flags)!.GetValue(component)!,
+            "The recorded racing phase must remain between the parade and checkered frames.");
+        Assert.AreEqual("racing", ((AnalysisReplayFrame)type.GetProperty("CurrentFrame", flags)!.GetValue(component)!).SessionState);
+        Assert.AreEqual(!hasGap, (bool)type.GetProperty("CurrentInstantAvailable", flags)!.GetValue(component)!,
+            "Display decimation must not create a gap, while an explicit source gap must remain unavailable.");
+    }
+
+    [TestMethod]
     public void ReplayV2Codec_RoundTripsRecordedStateAndExplicitEvents()
     {
         var frames = BuildFrames(60, seconds: 2, cars: 24, includeEvent: true);

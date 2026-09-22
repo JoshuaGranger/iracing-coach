@@ -385,6 +385,7 @@
             || state.Contains("grid", StringComparison.OrdinalIgnoreCase)
             || state.Contains("parade", StringComparison.OrdinalIgnoreCase)
             || state.Contains("race", StringComparison.OrdinalIgnoreCase)
+            || state.Equals("racing", StringComparison.OrdinalIgnoreCase)
             || state.Contains("check", StringComparison.OrdinalIgnoreCase)
             || state.Contains("cool", StringComparison.OrdinalIgnoreCase);
     }
@@ -1202,7 +1203,7 @@
     private static string Position(int? value) => value.HasValue && value.Value > 0 ? value.Value.ToString(CultureInfo.InvariantCulture) : "—";
     private static string ReplayLapTime(double? seconds) => seconds is > 0 ? TimeSpan.FromSeconds(seconds.Value).ToString(@"m\:ss\.fff") : "—";
     private static bool IsChecker(string label) => label.Contains("check", StringComparison.OrdinalIgnoreCase);
-    private static bool IsSignificantState(string state) => state.Contains("race", StringComparison.OrdinalIgnoreCase) || state.Contains("green", StringComparison.OrdinalIgnoreCase) || state.Contains("check", StringComparison.OrdinalIgnoreCase) || state.Contains("cool", StringComparison.OrdinalIgnoreCase);
+    private static bool IsSignificantState(string state) => state.Contains("race", StringComparison.OrdinalIgnoreCase) || state.Equals("racing", StringComparison.OrdinalIgnoreCase) || state.Contains("green", StringComparison.OrdinalIgnoreCase) || state.Contains("check", StringComparison.OrdinalIgnoreCase) || state.Contains("cool", StringComparison.OrdinalIgnoreCase);
     private static string FlagKind(string label) => label.Contains("yellow", StringComparison.OrdinalIgnoreCase) || label.Contains("caution", StringComparison.OrdinalIgnoreCase) ? "caution" : IsChecker(label) ? "checker" : label.Contains("pit", StringComparison.OrdinalIgnoreCase) ? "pit" : "flag";
     private static string EventKind(string kind) => kind.Contains("incident", StringComparison.OrdinalIgnoreCase) ? "incident"
         : kind.Contains("pit", StringComparison.OrdinalIgnoreCase) ? "pit"
