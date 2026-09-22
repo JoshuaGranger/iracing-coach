@@ -55,7 +55,7 @@
             </CoachErrorBoundary>
         </section>
     </main>
-    @if (State.Jobs.Any(job => job.Status is "queued" or "running" or "failed"))
+        @if (State.Jobs.Count > 0)
     {
         <JobTray State="State" />
     }

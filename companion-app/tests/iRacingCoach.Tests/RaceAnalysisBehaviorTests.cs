@@ -391,8 +391,8 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(page, ">Technical data</button>");
         StringAssert.Contains(page, ">Race replay</button>");
         Assert.DoesNotContain(">Race review</button>", page);
-        StringAssert.Contains(page, "private string RaceDataSection { get; set; } = \"telemetry\";");
-        StringAssert.Contains(page, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" />");
+        StringAssert.Contains(page, "private string _raceDataSection = \"telemetry\";");
+        StringAssert.Contains(page, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" OnInspect=\"InspectFinding\"");
 
         StringAssert.Contains(technical, "data-analysis-section=\"technical\"");
         StringAssert.Contains(technical, "@if (ActiveInvestigation is null)");
@@ -882,7 +882,7 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(analysis, "overview?.GreenLaps");
         StringAssert.Contains(analysis, "overview?.PaceConsistencyPercent");
         StringAssert.Contains(workspace, "race-analysis-toolbar");
-        StringAssert.Contains(workspace, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" />");
+        StringAssert.Contains(workspace, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" OnInspect=\"InspectFinding\"");
         StringAssert.Contains(workspace, "<RaceReplayWorkspace Workspace=\"Workspace\" />");
         StringAssert.Contains(telemetry, "Average of selected laps");
         StringAssert.Contains(telemetry, "SpeedHeatmapStops");
@@ -1426,7 +1426,7 @@ public sealed class RaceAnalysisBehaviorTests
     public void FullScreenTracePanel_CapturesEscapeWithoutLeavingPointerButtonSelected()
     {
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
-        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
+        var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor")).ReplaceLineEndings("\n");
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
 
         StringAssert.Contains(telemetry, "data-analysis-trace-studio\n                 tabindex=\"-1\"");

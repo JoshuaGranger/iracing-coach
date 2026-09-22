@@ -20,7 +20,7 @@
                         <div class="job-actions">
                             @if (job.Cancellable) { <button @onclick="() => State.CancelJob(job.Id)">Cancel</button> }
                             @if (job.Status is "cancelled" or "failed") { <button @onclick="() => State.RetryJobAsync(job)">Retry</button> }
-                            @if (!string.IsNullOrWhiteSpace(job.ArtifactLabel)) { <button @onclick="State.OpenArtifact">Open @job.ArtifactLabel</button> }
+                            @if (job.Status == "complete" && !string.IsNullOrWhiteSpace(job.ArtifactLabel)) { <button @onclick="() => State.OpenArtifactAsync(job)">Open @job.ArtifactLabel</button> }
                         </div>
                     </article>
                 }

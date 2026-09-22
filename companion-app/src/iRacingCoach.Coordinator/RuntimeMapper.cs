@@ -8,7 +8,7 @@ namespace iRacingCoach.Coordinator;
 public static class RuntimeMapper
 {
     private const string Garage61TargetDerivationVersion = "explicit-analysis-paths-v1";
-    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v18";
+    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v19";
     private const double RacePlanRelativeTolerance = 1e-9;
     private static readonly HashSet<string> RacePlanStatuses = new(StringComparer.Ordinal)
     {
@@ -441,7 +441,7 @@ public static class RuntimeMapper
                 ? new AnalysisPitStop(
                     serviceStart.HasValue && serviceEnd.HasValue ? Math.Max(0, serviceEnd.Value - serviceStart.Value) : null,
                     Number(pitService, "fuel_added_l") is { } fuelAddedLiters ? fuelAddedLiters / 3.785411784 : null,
-                    Number(pitAssessment, "fuel_laps_remaining_at_end"),
+                    Number(pitAssessment, "post_stop_all_green_range_laps"),
                     Array(pitService, "tires_changed_observed").Select(Value).Where(value => value.Length > 0).ToArray(),
                     TireWearPercent(tires, "LF"), TireWearPercent(tires, "RF"), TireWearPercent(tires, "LR"), TireWearPercent(tires, "RR"),
                     repairCompletedSeconds > .005 ? repairCompletedSeconds : null,
@@ -588,7 +588,9 @@ public static class RuntimeMapper
             tuningMap,
             resolvedScheduledMinutes,
             declaredLapLimit,
-            declaredTimeLimitMinutes);
+            declaredTimeLimitMinutes,
+            RaceInvestigationMapper.Map(Object(view, "race_investigation")),
+            summary.ValueKind == JsonValueKind.Object ? Overview(view) : null);
     }
 
     public static SetupPackageView SetupPackage(JsonElement response, string requestedCar, string requestedTrack, string requestedSeason, string purpose)

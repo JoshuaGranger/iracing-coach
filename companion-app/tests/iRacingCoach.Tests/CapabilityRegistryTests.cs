@@ -257,7 +257,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(analysis, "RaceDataSection == \"telemetry\"");
         StringAssert.Contains(analysis, "RaceDataSection == \"technical\"");
         StringAssert.Contains(analysis, "RaceDataSection == \"replay\"");
-        StringAssert.Contains(analysis, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" />");
+        StringAssert.Contains(analysis, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" OnInspect=\"InspectFinding\"");
         StringAssert.Contains(analysis, "<RaceReplayWorkspace Workspace=\"Workspace\" />");
         StringAssert.Contains(technical, "data-technical-overview");
         StringAssert.Contains(replay, "data-replay-unavailable");
@@ -488,7 +488,7 @@ public sealed class CapabilityRegistryTests
         Assert.DoesNotContain("\"connections\", \"Connections\"", navigation);
         StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "SettingsPage.razor")), "<ConnectionsPage State=\"State\" Embedded=\"true\"");
         var home = File.ReadAllText(Path.Combine(ui, "HomePage.razor"));
-        StringAssert.Contains(home, "Open your setup library");
+        StringAssert.Contains(home, "Compare setups");
         StringAssert.Contains(home, "home-race-row");
         StringAssert.Contains(home, "TireMetric");
         Assert.DoesNotContain("Automatic discovery", home);
@@ -689,7 +689,7 @@ public sealed class CapabilityRegistryTests
     [TestMethod]
     public void ReleaseIdentity_IsSynchronizedAcrossPackagingAndRepairSurfaces()
     {
-        const string version = "0.17.7";
+        const string version = "0.18.0";
         var root = CompanionRoot();
         var releaseScript = File.ReadAllText(Path.Combine(root, "tools", "BuildRelease.ps1"));
         var appProject = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "iRacingCoach.App.csproj"));
@@ -732,7 +732,7 @@ public sealed class CapabilityRegistryTests
             Assert.DoesNotContain("0.14.2", liveIdentitySource,
                 "Historical release identities must not remain in active packaging or repair surfaces.");
             Assert.DoesNotContain("0.15.0", liveIdentitySource,
-                "The prior development candidate must not remain in active 0.17.7 packaging or repair surfaces.");
+                "The prior development candidate must not remain in active 0.18.0 packaging or repair surfaces.");
         }
     }
 

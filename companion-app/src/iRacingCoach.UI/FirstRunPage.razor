@@ -1,5 +1,5 @@
 <div class="first-run-shell">
-    <div class="first-run-intro"><span class="eyebrow">Welcome to iRacing Coach</span><h1>Let’s get ready to race</h1><p>Five quick checks for iRacing data and optional connections.</p></div>
+    <div class="first-run-intro"><h1>Set up iRacing Coach</h1></div>
 
     <ol class="setup-progress" aria-label="Setup progress">
         @foreach (var step in Steps) { <li class="@(State.SetupStep == step.Number ? "active" : State.SetupStep > step.Number ? "complete" : "")"><span>@if (State.SetupStep > step.Number) { <ProductIcon Name="check" Size="15" /> } else { @step.Number }</span><strong>@step.Label</strong></li> }
@@ -16,9 +16,14 @@
                 }
                 <div class="detection-row"><span class="status-orb @(State.IRacingDetected ? "ready" : "neutral")"></span><div><strong>@(State.IRacingDetected ? "iRacing Documents found" : "Ready to look")</strong><small>@(State.IRacingDetected ? "Telemetry and setup folders are available" : "Detection is read only")</small></div></div>
                 <button class="button primary" @onclick="State.DetectIRacing">@(State.IRacingDetected ? "Continue" : "Detect iRacing")</button>
+                @if (!State.IRacingDetected)
+                {
+                    <button class="button secondary" @onclick='() => State.Navigate("settings")'>Choose folders</button>
+                    <p class="fine-print">Set the iRacing Documents folder in Settings, save, then continue setup.</p>
+                }
                 break;
             case 2:
-                <span class="eyebrow">Step 2 of 5</span><h2>Connect ChatGPT</h2><p>ChatGPT can explain coaching points from your race data. Local racing tools remain available if you connect later or go offline.</p>
+                <span class="eyebrow">Step 2 of 5</span><h2>Connect ChatGPT</h2><p>Ask follow-up questions about an analyzed race. You can connect later in Settings.</p>
                 <div class="connection-summary"><span class="status-orb @(State.CoachEngine.ChatGptConnected ? "ready" : State.CoachEngine.Running ? "neutral" : "warning")"></span><strong>@(State.CoachEngine.ChatGptConnected ? "Connected" : "Not connected")</strong><small>@CoachEngineMessage</small></div>
                 @if (State.CoachEngine.ChatGptConnected)
                 {
@@ -35,7 +40,7 @@
                 }
                 break;
             case 3:
-                <span class="eyebrow">Step 3 of 5</span><h2>Connect Garage61</h2><p>Add your Garage61 personal token once. Windows protects it for this user and keeps it out of copied Coach data.</p>
+                <span class="eyebrow">Step 3 of 5</span><h2>Connect Garage61</h2><p>Add reference laps from your Garage61 account. You can connect later in Settings.</p>
                 @if (State.Garage61.Configured)
                 {
                     <div class="connection-summary"><span class="status-orb @(State.Garage61.Available ? "ready" : "neutral")"></span><strong>@State.Garage61StatusLabel</strong><small>@State.Garage61.Message</small></div>
@@ -53,8 +58,8 @@
                 <button class="button primary" @onclick="() => State.VerifyInstallationAsync()">Verify installation</button>
                 break;
             default:
-                <span class="eyebrow">Step 5 of 5</span><h2>Ready</h2><p>Your local racing tools are ready. Optional connections can always be changed from Connections.</p>
-                <div class="ready-callout"><span><ProductIcon Name="check" Size="19" /></span><div><strong>iRacing Coach is ready</strong><small>New recordings and live telemetry will be detected automatically.</small></div></div>
+                <span class="eyebrow">Step 5 of 5</span><h2>Setup complete</h2>
+                <p>New recordings will appear on Home. Start an iRacing session to use live telemetry.</p>
                 <button class="button primary" @onclick="State.CompleteFirstRun">Open iRacing Coach</button>
                 break;
         }

@@ -12,6 +12,18 @@
         @if (IsRaceWorkspace)
         {
             <div class="analysis-context-toggles" role="group" aria-label="Telemetry context panels" @onclick:stopPropagation="true">
+                @if (Inspection is not null)
+                {
+                    <button type="button" class="context-toggle-chip active" @onclick="() => OnReturnToFindings.InvokeAsync()">← Back to findings</button>
+                    @if (_inspectionTraceLayout is not null)
+                    {
+                        <button type="button" class="context-toggle-chip" @onclick="RestoreTraceLayout">Restore my traces</button>
+                    }
+                    @if (Inspection.StartPct is { } start && Inspection.EndPct is { } end)
+                    {
+                        <span class="fine-print">Inspect @((start * 100).ToString("0"))–@((end * 100).ToString("0"))% of lap</span>
+                    }
+                }
                 <button type="button"
                         class="context-toggle-chip @(!TrackPanelCollapsed ? "active" : null)"
                         data-context-toggle="track"
@@ -355,7 +367,7 @@
                  data-analysis-trace-studio
                  tabindex="-1">
                 <div class="panel-title trace-panel-title">
-                    <div class="trace-panel-summary"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare</span></div>
+                    <div class="trace-panel-summary"><strong>Aligned traces</strong><span>@Selected.Count selected · hover to compare · scroll to see more laps</span></div>
                     <div @ref="SpotlightControlElement" class="trace-spotlight-control" @onfocusout="HandleSpotlightFocusOut" @onclick:stopPropagation="true">
                         <button @ref="SpotlightTriggerElement" type="button"
                                 class="spotlight-menu-trigger"
@@ -397,7 +409,7 @@
                         }
                     </div>
                     <div class="trace-panel-actions">
-                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" title="Customize trace charts" aria-label="Customize trace charts" aria-expanded="@AriaBoolean(TraceToolboxOpen)" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
+                        <button @ref="TraceToolboxButtonElement" type="button" class="trace-toolbox-button" disabled="@(_inspectionTraceLayout is not null)" title="@(_inspectionTraceLayout is null ? "Customize trace charts" : "Restore my traces to edit your saved layout")" aria-label="Customize trace charts" aria-expanded="@AriaBoolean(TraceToolboxOpen)" aria-controls="analysis-trace-toolbox" @onclick="ToggleTraceToolbox">
                             <ProductIcon Name="setup" Size="15" /><span>Customize</span>
                         </button>
                         <button @ref="TraceExpandButtonElement" type="button" class="trace-expand-button" title="@(TraceExpanded ? "Exit full screen (Esc)" : "View traces full screen")" aria-label="@(TraceExpanded ? "Exit full-screen traces" : "View traces full screen")" aria-pressed="@AriaBoolean(TraceExpanded)" @onclick="() => ToggleTraceExpanded(false)">
@@ -544,6 +556,10 @@
                         var panel = TraceRows[row]; var top = ChartTop + row * ChartRowHeight;
                         <svg:g @key="panel.Preferences.Id" data-analysis-render-row data-row-id="@panel.Preferences.Id">
                         <rect data-analysis-chart-row data-analysis-row-target="chart" data-row-id="@panel.Preferences.Id" data-row-index="@row" data-row-name="@RowLabel(panel)" data-primary-name="@panel.Signals[0].Name" data-secondary-name="@(panel.Signals.Count > 1 ? panel.Signals[1].Name : string.Empty)" x="@PlotLeft" y="@top" width="@PlotWidth" height="@ChartPlotHeight" class="chart-row" />
+                        @if (Inspection?.StartPct is { } regionStart && Inspection.EndPct is { } regionEnd && regionEnd > regionStart)
+                        {
+                            <rect data-investigation-region x="@F(PlotLeft + Math.Clamp(regionStart, 0, 1) * PlotWidth)" y="@top" width="@F(Math.Clamp(regionEnd - regionStart, 0, 1) * PlotWidth)" height="@ChartPlotHeight" fill="var(--accent)" opacity="0.12" pointer-events="none" />
+                        }
                         <line data-analysis-horizontal-grid x1="@PlotLeft" y1="@(top + ChartPlotHeight / 2)" x2="@PlotRight" y2="@(top + ChartPlotHeight / 2)" class="chart-grid-line" />
                         @if (!panel.Signals.Any(HasSignalData))
                         {
@@ -581,6 +597,11 @@
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
     [Parameter] public bool IsRaceWorkspace { get; set; }
+    [Parameter] public bool Visible { get; set; } = true;
+    [Parameter] public RaceInvestigationInspection? Inspection { get; set; }
+    [Parameter] public EventCallback OnReturnToFindings { get; set; }
+    private RaceInvestigationInspection? _appliedInspection;
+    private AnalysisTraceLayout? _inspectionTraceLayout;
     private readonly HashSet<int> Selected = [];
     private string? _analysisId;
     private AnalysisWorkspace? _workspaceReference;
@@ -683,17 +704,25 @@
         "#B8F25D", "#FFB56B", "#54ECE5", "#D58CFF", "#F07B67"
     ];
 
+    protected override bool ShouldRender() => Visible;
+
     protected override void OnParametersSet()
     {
         State.Settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
         State.Settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
         _ = AnalysisTraceLayoutSets.ValidateAndRepair(State.Settings.RaceAnalysisTraceLayouts, State.Settings.RaceAnalysisTraces);
-        if (_analysisId == Workspace.AnalysisId && ReferenceEquals(_workspaceReference, Workspace)) return;
+        if (_analysisId == Workspace.AnalysisId && ReferenceEquals(_workspaceReference, Workspace))
+        {
+            ApplyInspection();
+            return;
+        }
         KeepPitPopoverOpen();
         ActivePitLap = null;
         ActivePitDirection = null;
         ActiveIncidentLap = null;
         _analysisId = Workspace.AnalysisId;
+        _inspectionTraceLayout = null;
+        _appliedInspection = null;
         _workspaceReference = Workspace;
         Mode = "traces";
         SpotlightLap = null;
@@ -705,10 +734,48 @@
         RebuildCalculatedTireWear();
         _selectedTraceRowId = TraceLayout.Rows.FirstOrDefault()?.Id;
         InvalidateTraceRender();
+        ApplyInspection();
+    }
+
+    private void ApplyInspection()
+    {
+        if (Inspection is null || ReferenceEquals(Inspection, _appliedInspection)) return;
+        _appliedInspection = Inspection;
+        var signals = (Inspection.SignalKeys ?? ["speed", "throttle", "brake", "steering"])
+            .Select(key => key == "time-delta" ? "delta" : key)
+            .Where(key => AnalysisTraceLayouts.Signal(key) is not null).Distinct().Take(6).ToArray();
+        _inspectionTraceLayout = new AnalysisTraceLayout
+        {
+            Rows = signals.Select(signal => new AnalysisTraceRow { PrimarySignalId = signal }).ToList()
+        };
+        if (_inspectionTraceLayout.Rows.Count == 0) _inspectionTraceLayout = null;
+        TraceToolboxOpen = false;
+        Selected.Clear();
+        // Findings may deliberately include observed laps excluded from coaching references.
+        // Preserve that exact selection instead of applying the clean-lap default.
+        CleanLapsOnly = false;
+        GreenLapsOnly = false;
+        foreach (var lap in Inspection.LapNumbers)
+            if (Workspace.Traces.Any(trace => trace.Lap == lap)) Selected.Add(lap);
+        if (Inspection.StartPct is { } start && Inspection.EndPct is { } end)
+            Cursor = Math.Clamp((start + end) / 2, 0, 1);
+        SpotlightLap = null;
+        SpotlightMenuOpen = false;
+        LapRailCollapsed = false;
+        TrackPanelCollapsed = false;
+        InvalidateTraceRender();
+        _cursorInteropSignature = string.Empty;
+    }
+
+    private void RestoreTraceLayout()
+    {
+        _inspectionTraceLayout = null;
+        InvalidateTraceRender();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!Visible) return;
         // Layout editing is independent of lap selection. Keep drag/drop and
         // keyboard reordering available after Clear leaves the chart empty.
         await ConfigureTraceLayoutInteropAsync();
@@ -888,7 +955,7 @@
     private AnalysisTraceLayoutSet TraceLayoutPreferences => State.Settings.RaceAnalysisTraceLayouts;
     private IReadOnlyList<AnalysisTraceLayoutChoice> TraceLayoutChoices => AnalysisTraceLayoutSets.Choices(TraceLayoutPreferences);
     private AnalysisTraceLayoutChoice ActiveTraceLayout => AnalysisTraceLayoutSets.Active(TraceLayoutPreferences);
-    private AnalysisTraceLayout TraceLayout => ActiveTraceLayout.Named.Layout;
+    private AnalysisTraceLayout TraceLayout => _inspectionTraceLayout ?? ActiveTraceLayout.Named.Layout;
     private AnalysisTraceLayout EditableTraceLayout => AnalysisTraceLayoutSets.EnsureEditable(TraceLayoutPreferences).Layout;
     private IReadOnlyList<TracePanelRow> TraceRows => TraceLayout.Rows.Select(row => new TracePanelRow(
         row,

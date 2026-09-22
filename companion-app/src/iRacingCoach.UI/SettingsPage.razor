@@ -1,5 +1,9 @@
 <div class="page-heading compact-heading settings-heading">
     <div><span class="eyebrow">Settings</span><h1>App and data</h1></div>
+    @if (!State.Settings.FirstRunComplete)
+    {
+        <button class="button secondary" @onclick='() => State.Navigate("first-run")'>Continue setup</button>
+    }
 </div>
 
 <div class="settings-hub-grid">
@@ -25,9 +29,9 @@
     <section class="surface-card settings-hub-card" aria-labelledby="portable-copy-heading">
         <div class="settings-hub-heading">
             <div><ProductIcon Name="duplicate" Size="18" /><h2 id="portable-copy-heading">Move or back up</h2></div>
-            <button class="button primary compact" @onclick="OpenBackupGuide">Guide me</button>
+            <button class="button primary compact" @onclick="OpenBackupGuide">Prepare copy</button>
         </div>
-        <p class="settings-card-copy">Safely copy the complete Coach folder to another drive or PC.</p>
+        <p class="settings-card-copy">Copy race history, recordings, preferences and tuning work to another drive or PC.</p>
         @if (State.Archive is not null)
         {
             <div class="settings-summary-list">
@@ -43,7 +47,7 @@
         {
             <div class="settings-result @(State.BackupPreparation.SafeToCopy ? "success" : "warning")">
                 <ProductIcon Name="@(State.BackupPreparation.SafeToCopy ? "check" : "info")" Size="16" />
-                <div><strong>@(State.BackupPreparation.SafeToCopy ? "Safe to copy" : "Not ready")</strong><span>@State.BackupPreparation.Message</span></div>
+                <div><strong>@(State.BackupPreparation.SafeToCopy ? "Ready to copy" : "Not ready")</strong><span>@State.BackupPreparation.Message</span></div>
             </div>
         }
         @if (State.Archive is not null && State.Archive.Restored.UnresolvedSources > 0)
@@ -100,7 +104,7 @@
         </div>
         <label class="settings-inline-field"><span>Show / hide hotkey</span><input placeholder="Ctrl+Shift+L" @bind="State.Settings.LiveMonitor.GlobalHotkey" @bind:event="oninput" /></label>
         <div class="settings-toggle-stack compact">
-            <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.SafeGlanceEnabled" /><span><strong>Safe-glance cues</strong><small>Hold ordinary cue changes for safer moments.</small></span></label>
+            <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.SafeGlanceEnabled" /><span><strong>Delay coaching through corners</strong><small>Show routine cues on straights, under caution or in the pits. Urgent warnings appear immediately.</small></span></label>
             <label class="toggle-row"><input type="checkbox" @bind="State.Settings.LiveMonitor.ReopenOnConnect" /><span><strong>Open with iRacing</strong><small>Show the popout when live telemetry connects.</small></span></label>
         </div>
     </section>
@@ -109,7 +113,7 @@
 <section class="surface-card settings-accordion @(_connectionsOpen ? "open" : null)">
         <button class="settings-accordion-toggle" aria-expanded="@(_connectionsOpen ? "true" : "false")" @onclick="ToggleConnections">
         <span><ProductIcon Name="connections" Size="17" /><strong>Connections</strong></span>
-        <small>Garage61 and optional coaching</small>
+        <small>ChatGPT and Garage61</small>
         <ProductIcon Name="chevron-down" Size="16" />
     </button>
         <div class="settings-accordion-body" aria-hidden="@(_connectionsOpen ? "false" : "true")" inert="@(_connectionsOpen ? null : string.Empty)">
@@ -168,6 +172,11 @@
     private int _backupStage = 1;
     private bool CustomThemeSelected => string.Equals(ThemeColors.Normalize(State.Settings.ThemeColor), ThemeColors.CustomId, StringComparison.Ordinal);
     private string CustomThemeClass => CustomThemeSelected ? "active" : string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (State.ConsumeConnectionsNavigationRequest()) _connectionsOpen = true;
+    }
 
     private void ToggleConnections() => _connectionsOpen = !_connectionsOpen;
     private void OpenBackupGuide() { _backupStage = State.BackupPreparation?.SafeToCopy == true ? 3 : 1; _backupGuideOpen = true; }

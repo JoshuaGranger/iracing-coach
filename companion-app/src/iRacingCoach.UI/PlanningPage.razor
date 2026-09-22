@@ -72,7 +72,7 @@
                             <div class="analysis-section-heading"><div><span class="eyebrow">Race briefing</span><h2>@plan.Track · @plan.Car</h2></div><span class="status-label @(plan.Confidence.Equals("Recorded reference", StringComparison.OrdinalIgnoreCase) ? "success" : "warning")">@plan.Confidence</span></div>
                             <div class="planning-decision-hero" data-planning-decision>
                                 <div>
-                                    <span class="eyebrow">Recommended opening plan</span>
+                                    <span class="eyebrow">All-green fuel plan</span>
                                     <strong>@OpeningPlan(plan)</strong>
                                     <p>@OpeningPlanExplanation(plan)</p>
                                 </div>
@@ -84,7 +84,7 @@
                             </div>
                             <div class="briefing-metrics planning-briefing-metrics">
                                 <div><span>Fuel decision</span><strong>@FuelDecision(plan)</strong><small>@FuelMargin(plan)</small></div>
-                                <div><span>Planned stops</span><strong>@PlannedStops(plan)</strong><small>@PitWindowSummary(plan)</small></div>
+                                <div><span>Fuel stops</span><strong>@PlannedStops(plan)</strong><small>@PitWindowSummary(plan)</small></div>
                                 @if (plan.GreenFuelGallonsPerLap.HasValue) { <div><span>Green fuel use</span><strong>@plan.GreenFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                                 @if (plan.CautionFuelGallonsPerLap.HasValue) { <div><span>Caution fuel use</span><strong>@plan.CautionFuelGallonsPerLap.Value.ToString("0.000")</strong><small>gal/lap</small></div> }
                             </div>
@@ -232,9 +232,9 @@
         plan.FuelPlan is { IsUsable: true } decision ? decision.EqualStintPitTargets : [];
     private static string OpeningPlan(RacePlanBriefing plan)
     {
-        if (NoStopAuthorized(plan)) return $"Start with a no-stop plan for {plan.DistanceLabel}";
+        if (NoStopAuthorized(plan)) return $"Fuel covers {plan.DistanceLabel} without a stop";
         return AuthoritativeStops(plan) is > 0 and var stops
-            ? $"Start with a {stops}-stop all-green plan"
+            ? $"Fuel requires at least {stops} stop{(stops == 1 ? string.Empty : "s")}"
             : "Add fuel use and race distance to calculate stops";
     }
     private static string OpeningPlanExplanation(RacePlanBriefing plan)
@@ -245,7 +245,7 @@
             ? $"The plan leaves {margin:0.0} laps of fuel at the finish. Reassess if fuel use rises."
             : "The plan covers the race without a scheduled fuel stop.";
         return decision.EqualStintPitTargets.Count > 0
-            ? $"The plan requires {decision.MinimumStops} stop{(decision.MinimumStops == 1 ? string.Empty : "s")}; the first balanced window is lap {decision.EqualStintPitTargets[0]:0.#}."
+            ? $"Equal fuel stints put the first stop at lap {decision.EqualStintPitTargets[0]:0.#}. Tire pace and cautions may favor a different stop."
             : "The plan requires a stop, but no equal-stint target is available.";
     }
     private static string ConservativeRangeLabel(RacePlanBriefing plan) => ConservativeRange(plan) is { } range ? $"{range:0.0} laps" : "Not available";
@@ -258,7 +258,7 @@
     }
     private static string FuelDecision(RacePlanBriefing plan)
     {
-        if (NoStopAuthorized(plan)) return "Stay out";
+        if (NoStopAuthorized(plan)) return "No fuel stop needed";
         return AuthoritativeStops(plan) switch
         {
             1 => "1 stop",

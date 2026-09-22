@@ -30,22 +30,21 @@
             <span class="status-label @(State.Garage61.Available ? "success" : State.Garage61.Configured ? "warning" : "neutral")">@State.Garage61StatusLabel</span>
         </div>
         <p>@Garage61Message</p>
+        <details class="settings-disclosure"><summary>Connection checks</summary>
         <dl class="connection-facts" aria-label="Garage61 connection checks">
             <div><dt>Credential</dt><dd>@Axis(State.Garage61.Credential)</dd></div>
             <div><dt>Authentication</dt><dd>@Axis(State.Garage61.Authentication)</dd></div>
             <div><dt>Permission</dt><dd>@Axis(State.Garage61.Permission)</dd></div>
             <div><dt>Availability</dt><dd>@Axis(State.Garage61.Availability)</dd></div>
         </dl>
+        </details>
         <label class="connection-secret"><span>Personal access token<small>Saved for this Windows account.</small></span><input type="password" autocomplete="off" spellcheck="false" placeholder="@(State.Garage61.Configured ? "Enter a new token to replace the saved connection" : "Paste your Garage61 token")" @bind="State.Garage61KeyInput" @bind:event="oninput" /></label>
         <div class="button-row">
             <button class="button primary" disabled="@string.IsNullOrWhiteSpace(State.Garage61KeyInput)" @onclick="() => State.ConnectGarage61Async()">Connect Garage61</button>
             @if (State.Garage61.Configured) { <button class="button secondary" @onclick="() => State.DisconnectGarage61Async()">Disconnect</button> }
         </div>
-        <small>Garage61 is reconnected once on each PC after moving the Coach folder.</small>
     </section>
 </div>
-
-@if (!Embedded) { <section class="surface-card offline-promise"><div><span class="status-orb ready"></span><strong>Local tools work without these services</strong></div></section> }
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;

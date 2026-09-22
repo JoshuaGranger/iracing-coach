@@ -127,6 +127,7 @@ ANALYSIS_VIEW_FIELDS: tuple[tuple[str, str, Any], ...] = (
     ("tire_learning", "object", dict),
     ("garage61_representative_laps", "object", dict),
     ("technical_insights", "array", list),
+    ("race_investigation", "object", dict),
     ("corner_tire_age", "object", dict),
     ("groove_evolution", "object", dict),
     ("strategy", "object", dict),
@@ -1575,8 +1576,10 @@ def _analysis_pipeline_sha256() -> str:
 # clock/provenance; gap, nonfinite and overflow regressions retain v17 answers.
 # Review 2026-09-22: v18 fixes pace slopes to retain recorded green-lap
 # exposure between eligible observations instead of compressing excluded laps.
+# Review 2026-09-22: v19 adds deterministic race investigations, exact lap
+# windows, conditional control trials and measured/initial track provenance.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "ab8d91e3dc99e02e5b54f24b2a49ee3baf504c1e3b64eb2e5086e859bc55104b"
+    "260b76154736ac7041d6bef5808e9f319f54451496e0daae6bbe5d0486317ef4"
 )
 
 

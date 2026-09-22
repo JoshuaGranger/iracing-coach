@@ -280,18 +280,20 @@ public sealed class HostIsolationTests
         var window = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "MainWindow.xaml.cs"));
         var app = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "App.xaml.cs"));
 
-        StringAssert.Contains(xaml, "BlazorWebViewInitializing=\"OnBlazorWebViewInitializing\"");
-        StringAssert.Contains(xaml, "UrlLoading=\"OnBlazorUrlLoading\"");
+        StringAssert.Contains(xaml, "<ContentControl x:Name=\"BrowserHost\"");
+        Assert.DoesNotContain("BlazorWebView", xaml,
+            "XAML must not create a browser before the isolated-host browser guard is evaluated.");
+        StringAssert.Contains(window, "_browser.BlazorWebViewInitializing += OnBlazorWebViewInitializing;");
+        StringAssert.Contains(window, "_browser.UrlLoading += OnBlazorUrlLoading;");
         StringAssert.Contains(window, "e.UserDataFolder = userData;");
         StringAssert.Contains(window, "--disable-background-networking");
         StringAssert.Contains(window, "--proxy-server=http://127.0.0.1:9");
         StringAssert.Contains(window, "UrlLoadingStrategy.CancelLoad");
-        var browserServicesGuard = window.IndexOf("if (hostProfile.AllowEmbeddedBrowser) Resources.Add(\"services\", _services);", StringComparison.Ordinal);
-        var initializeComponent = window.IndexOf("InitializeComponent();", StringComparison.Ordinal);
-        Assert.IsGreaterThan(-1, browserServicesGuard);
-        Assert.IsGreaterThan(-1, initializeComponent);
-        Assert.IsGreaterThan(browserServicesGuard, initializeComponent);
         StringAssert.Contains(window, "if (!hostProfile.AllowEmbeddedBrowser) Content = BuildIsolatedEvidenceSurface();");
+        StringAssert.Contains(window, "else if (!IsWebView2Available()) Content = BuildRuntimeNotice();");
+        StringAssert.Contains(window, "else InitializeBrowser();");
+        StringAssert.Contains(window, "new WindowsFormsHost { Child = _browser }");
+        StringAssert.Contains(window, "services.AddWindowsFormsBlazorWebView();");
         StringAssert.Contains(window, "private static UIElement BuildIsolatedEvidenceSurface()");
         Assert.DoesNotContain("BlazorWebView", window[window.IndexOf("private static UIElement BuildIsolatedEvidenceSurface()", StringComparison.Ordinal)..]);
         StringAssert.Contains(window, "if (hostProfile.AllowMachineIntegration) _ = StartupRegistration.Apply");

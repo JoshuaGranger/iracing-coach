@@ -30,6 +30,7 @@ try:  # Package import and direct script loading are both supported.
     from . import lap_reference
     from . import pit_loss
     from . import race_plan_decision
+    from .race_investigation import build_race_investigation
     from . import strategy_model
     from . import time_loss
     from . import tire_energy
@@ -40,6 +41,7 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     import lap_reference
     import pit_loss
     import race_plan_decision
+    from race_investigation import build_race_investigation
     import strategy_model
     import time_loss
     import tire_energy
@@ -65,7 +67,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v18"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v19"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -74,6 +76,7 @@ ANALYZER_SOURCE_FILES = (
     "lap_reference.py",
     "pit_loss.py",
     "race_foundations.py",
+    "race_investigation.py",
     "strategy_model.py",
     "time_loss.py",
     "tire_energy.py",
@@ -911,6 +914,25 @@ def _session_track_usage(table: TelemetryTable) -> str | None:
         if state and state.lower() != "carry over":
             return state
     return None
+
+
+def _track_usage_context(table: TelemetryTable, race_session: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain session inheritance and configuration without inventing a history."""
+    sessions = _path_get(table.session_info, "SessionInfo", "Sessions") or []
+    states = []
+    for session in sessions if isinstance(sessions, Sequence) else ():
+        if not isinstance(session, Mapping):
+            continue
+        state = str(session.get("SessionTrackRubberState") or "").strip()
+        if state:
+            states.append({"session_type": str(session.get("SessionType") or "Session"),
+                           "state": state, "session_num": session.get("SessionNum")})
+        if session is race_session or session == race_session:
+            break
+    dynamic = _path_get(table.session_info, "WeekendInfo", "TrackDynamicTrack")
+    return {"session_states": states, "dynamic_track_enabled": _bool(dynamic) if dynamic is not None else None,
+            "recorded_usage_channel": table.has("TrackUsage"),
+            "provenance": "Embedded SessionInfo.Sessions[].SessionTrackRubberState and WeekendInfo.TrackDynamicTrack metadata; not a sampled rubber history."}
 
 
 def _lap_conditions(table: TelemetryTable, indices: Sequence[int]) -> dict[str, Any]:
@@ -5577,7 +5599,9 @@ def build_technical_insights(
                 "derived",
                 signed=True,
                 detail="Position immediately before each stop compared with the start of the following run.",
-                action="Review stops that lost positions for entry, service, exit, and restart execution.",
+                action=("Review stops that lost positions for entry, service, exit, and restart execution."
+                        if cycle_total < 0 else "Compare the recorded position gain with traffic and caution timing before repeating the stop call."
+                        if cycle_total > 0 else "Review individual stop cycles; the net position change was zero."),
                 tone="positive" if cycle_total > 0 else "attention" if cycle_total < 0 else "neutral",
                 group="outcome",
             )
@@ -5595,21 +5619,20 @@ def build_technical_insights(
     elif runs:
         pit_metrics.append(
             metric(
-                "Stops completed",
+                "Stops recorded",
                 0,
-                detail="The race was completed without a pit stop.",
-                action="Keep the no-stop plan when the selected race distance remains inside the measured fuel range.",
-                tone="positive",
+                detail="No pit stop was observed in the available recording; completion and strategy intent are not established.",
+                action="Check recording coverage and fuel range before using this as a no-stop reference.",
                 group="outcome",
             )
         )
         if completed_distance is not None:
             pit_metrics.append(
                 metric(
-                    "Distance completed",
+                    "Recorded lap extent",
                     int(round(completed_distance)),
                     "laps",
-                    detail="Completed recorded race distance.",
+                    detail="Recorded race summary or last observed run lap; this does not confirm a race finish.",
                     group="outcome",
                 )
             )
@@ -5801,13 +5824,13 @@ def build_technical_insights(
     elif runs and scheduled_distance is not None and all_green_range is not None:
         no_stop_headroom = all_green_range - scheduled_distance
         pit_takeaway = (
-            f"No fuel stop was needed for {scheduled_distance:.0f} laps; all-green range retained "
+            f"No stop was recorded; estimated all-green fuel range covers {scheduled_distance:.0f} scheduled laps with "
             f"{no_stop_headroom:.1f} lap(s) beyond the scheduled distance."
             if no_stop_headroom >= 0.0
-            else f"No stop occurred, but all-green range was {abs(no_stop_headroom):.1f} lap(s) short of the scheduled distance."
+            else f"No stop was recorded; estimated all-green fuel range was {abs(no_stop_headroom):.1f} lap(s) short of the scheduled distance."
         )
     elif runs:
-        pit_takeaway = "The race used a no-stop plan; stop execution is not part of this debrief."
+        pit_takeaway = "No pit stop was observed in the available recording; race completion and the intended strategy are unknown."
     else:
         pit_takeaway = "No complete pit-cycle comparison is available."
     pit_rating = (
@@ -6231,13 +6254,16 @@ def build_technical_insights(
             )
         )
     if range_laps is not None:
+        reserve_green_laps = _finite(forecast.get("operational_reserve_green_laps"))
+        reserve_detail = (f"The recorded operational reserve is {reserve_green_laps:g} green lap(s)."
+                          if reserve_green_laps is not None else "The operational reserve value is unavailable in this forecast.")
         fuel_metrics.append(
             metric(
                 "All-green range",
                 round(range_laps, 1),
                 "laps",
                 "derived",
-                detail="Range using observed run-start capacity, measured green burn, and the configured two-lap reserve.",
+                detail="Range using observed run-start capacity and measured green burn. " + reserve_detail,
                 action="Treat this as a fuel-feasibility boundary, not an optimal pit-call claim.",
                 group="range",
             )
@@ -7390,6 +7416,30 @@ def _screened_clean_laps(laps: Sequence[Mapping[str, Any]]) -> list[Mapping[str,
     return result
 
 
+def investigation_lap_exclusions(analysis: Mapping[str, Any]) -> dict[int, list[str]]:
+    """Reuse the coaching screen and preserve exact reasons for the investigation."""
+    incident_laps = {
+        int(number)
+        for event in ((analysis.get("damage_repair") or {}).get("incident_points") or {}).get("events", ())
+        if (number := _finite(event.get("candidate_lap"))) is not None
+        and (_finite(event.get("points_added")) or 0.0) > 0.0
+    }
+    result: dict[int, list[str]] = {}
+    previous_flag = None
+    for lap in sorted(analysis.get("laps", ()), key=lambda item: _finite(item.get("lap")) or -1.0):
+        number = _finite(lap.get("lap"))
+        reasons = _corner_lap_exclusion_reasons(lap, previous_flag)
+        previous_flag = str(lap.get("flag_state") or "")
+        if number is None or number <= 0:
+            continue
+        if int(number) in incident_laps:
+            reasons.append("incident_points")
+        if (_finite(lap.get("lap_time_s")) or 0.0) <= 0.0:
+            reasons.append("lap_timing_unavailable")
+        result[int(number)] = list(dict.fromkeys(reasons))
+    return result
+
+
 def _clean_lap_traces(
     table: TelemetryTable, laps: Sequence[Mapping[str, Any]]
 ) -> tuple[list[Any], list[int]]:
@@ -7990,6 +8040,7 @@ def analyze_telemetry(
         "corner_tire_age": corner_tire_age,
         "setup_telemetry": setup_telemetry,
         "conditions": conditions,
+        "track_usage_context": _track_usage_context(table, race_session),
         "driver_adjustments": driver_adjustments,
         "strategy": strategy,
         "strategy_planning": strategy_planning,
@@ -8015,6 +8066,9 @@ def analyze_telemetry(
             },
         },
     }
+    analysis["race_investigation"] = build_race_investigation(
+        analysis, lap_exclusions=investigation_lap_exclusions(analysis)
+    )
     return analysis
 
 

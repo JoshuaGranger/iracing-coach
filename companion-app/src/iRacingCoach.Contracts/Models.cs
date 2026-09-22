@@ -717,7 +717,9 @@ public sealed record AnalysisWorkspace(
     TuningMapView? TuningMap = null,
     double ScheduledMinutes = 0,
     int DeclaredLapLimit = 0,
-    double DeclaredTimeLimitMinutes = 0);
+    double DeclaredTimeLimitMinutes = 0,
+    RaceInvestigation? Investigation = null,
+    RaceOverview? Overview = null);
 
 public sealed class JobItem
 {
@@ -1228,7 +1230,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.17.7",
+    string ClientVersion = "0.18.0",
     string LocalStateRoot = "",
     string UserProfileRoot = "",
     string TemporaryRoot = "",

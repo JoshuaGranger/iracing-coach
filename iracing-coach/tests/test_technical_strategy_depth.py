@@ -81,10 +81,37 @@ class TechnicalStrategyDepthTests(unittest.TestCase):
 
         self.assertEqual(pit["status"], "available")
         self.assertEqual(pit["rating"], "no-stop")
-        self.assertIn("No fuel stop was needed for 15 laps", pit["takeaway"])
+        self.assertIn("estimated all-green fuel range covers 15 scheduled laps", pit["takeaway"])
         metrics = {item["label"]: item for item in pit["metrics"]}
-        self.assertEqual(metrics["Stops completed"]["numeric_value"], 0)
+        self.assertEqual(metrics["Stops recorded"]["numeric_value"], 0)
         self.assertEqual(metrics["No-stop headroom"]["numeric_value"], 19.7)
+
+    def test_partial_recording_without_stops_never_claims_finish_or_strategy_intent(self) -> None:
+        for race, strategy in (({}, {}), ({"scheduled_laps": 100, "recorded_laps": 12}, {"forecast": {"all_green_range_laps": 120.0}})):
+            with self.subTest(race=race):
+                pit = build_technical_insights([], [_run(1, 8, 12)], race, strategy, {}, {})[0]
+                rendered = str(pit)
+                self.assertNotIn("race was completed", rendered)
+                self.assertNotIn("used a no-stop plan", rendered)
+                self.assertNotIn("No fuel stop was needed", rendered)
+                self.assertIn("No stop was recorded" if race else "No pit stop was observed", pit["takeaway"])
+                metrics = {item["label"]: item for item in pit["metrics"]}
+                self.assertEqual(metrics["Stops recorded"]["numeric_value"], 0)
+                self.assertIn("does not confirm a race finish", metrics["Recorded lap extent"]["detail"])
+
+    def test_pit_action_matches_measured_gain_or_loss_and_range_uses_recorded_reserve(self) -> None:
+        run = _run(1, 1, 10)
+        run["ended_with_pit_stop"] = True
+        for net in (-2, 0, 2):
+            for reserve in (None, 1.0, 3.0):
+                strategy = {"pit_assessments": [{"was_pit_stop": True, "run_number": 1, "pit_cycle_position_change": net}],
+                            "forecast": {"all_green_range_laps": 30.0, "operational_reserve_green_laps": reserve}}
+                insights = {item["key"]: item for item in build_technical_insights([], [run], {}, strategy, {}, {})}
+                action = next(item["action"] for item in insights["pit"]["metrics"] if item["label"] == "Pit-cycle net")
+                self.assertEqual("lost positions" in action, net < 0)
+                detail = next(item["detail"] for item in insights["fuel"]["metrics"] if item["label"] == "All-green range")
+                self.assertNotIn("two-lap", detail)
+                self.assertIn("unavailable" if reserve is None else f"{reserve:g} green lap(s)", detail)
 
     def test_hybrid_limit_never_becomes_an_exact_no_stop_claim(self) -> None:
         runs = [_run(1, 1, 15)]

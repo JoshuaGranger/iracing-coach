@@ -1,6 +1,6 @@
 <div class="starting-tune-page">
     <div class="page-heading compact-heading starting-tune-heading">
-        <div><span class="eyebrow">Setups</span><h1>Starting Tune</h1></div>
+        <div><span class="eyebrow">Setups</span><h1>Find a baseline</h1></div>
         <span class="starting-tune-season" title="The current iRacing season is selected automatically"><ProductIcon Name="calendar" Size="14" />@FriendlySeason(State.StartingTuneSeason)</span>
     </div>
 
@@ -61,7 +61,7 @@
                 </label>
             </div>
             <div class="starting-tune-primary-action">
-                <span>Local setups and recorded sessions only</span>
+                <span>Choose a setup you already have or have driven.</span>
                 <button class="button primary" disabled="@(!CanBuildStartingTune)" @onclick="BuildStartingTune">@(State.StartingTuneBusy ? "Finding source…" : "Find starting point")</button>
             </div>
         }
@@ -86,8 +86,8 @@
             }
             else
             {
-                <div class="baseline-run-card"><ProductIcon Name="race" Size="22" /><div><h2>Run five clean laps</h2><p>Use the unchanged setup, then analyze the session and give feedback by corner.</p></div></div>
-                <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(3)">Back</button><button class="button primary" @onclick="OpenTuning">Open tuning</button></div>
+                <div class="baseline-run-card"><ProductIcon Name="race" Size="22" /><div><h2>Record how this setup behaves</h2><p>Drive the unchanged setup. Include a full green run if you are testing late-run pace; a few quick laps will not show how it fades.</p><p>@(State.CanContinueStartingTuneTuning ? "A recording with this setup is ready to review in tuning." : "Analyze a recording made with this setup before choosing a change.")</p></div></div>
+                <div class="workflow-actions"><button class="button secondary" @onclick="() => State.SetStartingTuneStep(3)">Back</button>@if (State.CanContinueStartingTuneTuning) { <button class="button primary" disabled="@_openingTuning" @onclick="OpenTuning">@(_openingTuning ? "Opening…" : "Tune this baseline")</button> } else { <button class="button primary" @onclick='() => State.Navigate("analysis")'>Review a recording</button> }</div>
             }
         }
         @if (!string.IsNullOrWhiteSpace(State.SetupMessage)) { <p class="fine-print starting-tune-message">@State.SetupMessage</p> }
@@ -97,6 +97,7 @@
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     private CompanionState? _initializedState;
+    private bool _openingTuning;
     private IEnumerable<InstalledCar> CarChoices => State.Cars
         .DistinctBy(car => car.Name, StringComparer.CurrentCultureIgnoreCase)
         .OrderBy(car => car.Name, StringComparer.CurrentCultureIgnoreCase);
@@ -143,9 +144,11 @@
                     ? $"Installed {noun} selected."
                     : $"Keep typing or choose one of the {count} installed options.";
     private Task BuildStartingTune() => State.BuildStartingTuneAsync();
-    private void OpenTuning()
+    private async Task OpenTuning()
     {
-        State.ClearSetupTuningContext();
-        State.Navigate("tuning");
+        if (_openingTuning) return;
+        _openingTuning = true;
+        try { await State.ContinueStartingTuneTuningAsync(); }
+        finally { _openingTuning = false; }
     }
 }

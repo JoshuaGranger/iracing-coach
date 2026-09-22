@@ -1,0 +1,261 @@
+@using System.Globalization
+
+<section class="race-pace-investigation" data-pace-investigation aria-label="Race pace investigation">
+    <header class="investigation-intro">
+        <div><span class="section-label">What changed</span><h3>@Headline</h3></div>
+        @if (Selected?.Actions.OrderBy(action => action.Priority).FirstOrDefault() is { } firstAction)
+        {
+            <div class="first-driving-trial"><div><strong>@firstAction.Title</strong><p>@firstAction.Instruction</p></div><button type="button" class="trace-button" data-investigation-inspect="lead-action" @onclick="() => InspectAction(firstAction)">Show the evidence</button></div>
+        }
+        @if (Investigation.UnavailableReason is not null)
+        {
+            <p class="unavailable-message" role="status">@Investigation.UnavailableReason</p>
+        }
+    </header>
+
+    @if (Investigation.Laps.Count > 0)
+    {
+        <div class="race-timeline-panel">
+            <div class="chart-heading"><strong>Race progression</strong><div class="chart-legend"><span class="clean-key">Screened lap</span><span class="observed-key">Other observed lap</span><span class="caution-key">Caution</span><span class="position-key">Position</span></div></div>
+            <svg viewBox="0 0 1000 232" class="race-timeline" role="img" aria-label="Recorded race pace and position, including laps excluded from comparison">
+                <text x="8" y="18" class="axis-caption">LAP TIME · s</text>
+                @foreach (var tick in PaceTicks)
+                {
+                    <line x1="50" x2="978" y1="@N(PaceY(tick))" y2="@N(PaceY(tick))" class="grid-line" />
+                    <g><text x="40" y="@N(PaceY(tick) + 4)" text-anchor="end" class="axis-label">@tick.ToString("0.0", CultureInfo.InvariantCulture)</text></g>
+                }
+                @foreach (var lap in Investigation.Laps)
+                {
+                    if (lap.FlagState == "caution")
+                    {
+                        <rect x="@N(LapX(lap.Lap) - LapWidth / 2)" y="29" width="@N(Math.Max(2, LapWidth))" height="126" class="caution-band"><title>Lap @lap.Lap · caution · @Seconds(lap.LapTimeSeconds)</title></rect>
+                    }
+                    if (InSelectedWindow(lap.Lap))
+                    {
+                        <rect x="@N(LapX(lap.Lap) - LapWidth / 2)" y="29" width="@N(Math.Max(2, LapWidth))" height="126" class="@(InBaseline(lap.Lap) ? "baseline-band" : "compared-band")" />
+                    }
+                    if (lap.LapTimeSeconds is > 0 && lap.PlotPace)
+                    {
+                        <circle cx="@N(LapX(lap.Lap))" cy="@N(PaceY(lap.LapTimeSeconds.Value))" r="@(InSelectedWindow(lap.Lap) ? "3.8" : "2.6")" class="lap-point @(lap.Eligible ? "screened" : "observed")" @onclick="() => Inspect([lap.Lap])"><title>@LapTitle(lap)</title></circle>
+                    }
+                }
+                @foreach (var item in Investigation.Timeline)
+                {
+                    if (item.Kind.Contains("pit", StringComparison.OrdinalIgnoreCase) || item.Kind.Contains("service", StringComparison.OrdinalIgnoreCase) || item.Kind.Contains("incident", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <line x1="@N(LapX(item.Lap))" x2="@N(LapX(item.Lap))" y1="26" y2="156" class="event-line @(item.Kind.Contains("incident") ? "incident" : "service")"><title>Lap @item.Lap · @item.Label · @item.Detail</title></line>
+                    }
+                }
+                <text x="8" y="182" class="axis-caption">POSITION</text>
+                <polyline points="@PositionPoints" class="position-path" />
+                @foreach (var tick in LapTicks)
+                {
+                    <g><text x="@N(LapX(tick))" y="228" text-anchor="middle" class="axis-label">@tick</text></g>
+                }
+                <text x="978" y="18" text-anchor="end" class="axis-caption">LAP</text>
+            </svg>
+            <div class="timeline-events" aria-label="Race events">
+                @foreach (var item in Investigation.Timeline.Where(IsKeyEvent))
+                {
+                    <button type="button" class="event-chip" data-investigation-event="@item.Kind" title="@item.Detail" @onclick="() => Inspect([item.Lap])"><b>@($"L{item.Lap}")</b><span>@item.Label</span></button>
+                }
+            </div>
+        </div>
+    }
+
+    @if (Investigation.Comparisons.Count > 0)
+    {
+        <nav class="comparison-selector" aria-label="Choose a pace comparison">
+            @foreach (var comparison in Investigation.Comparisons)
+            {
+                <button type="button" class="comparison-choice @(Selected?.Id == comparison.Id ? "selected" : "")" aria-pressed="@(Selected?.Id == comparison.Id)" data-investigation-comparison="@comparison.Id" @onclick="() => Select(comparison.Id)">
+                    <span>@comparison.Title</span><strong>@Delta(comparison.DeltaSeconds, "s")</strong>
+                </button>
+            }
+        </nav>
+    }
+
+    @if (Selected is { } selected)
+    {
+        <div class="comparison-body" data-selected-comparison="@selected.Id">
+            <header class="comparison-heading"><div><span class="section-label">@Scope(selected)</span><h3>@selected.Title</h3></div><button type="button" class="trace-button" data-investigation-inspect="comparison" @onclick="InspectSelected"><ProductIcon Name="analysis" Size="15" />Compare traces</button></header>
+            <div class="comparison-columns">
+                <div class="measured-evidence">
+                    <div class="cohort-pair">
+                        @foreach (var cohort in new[] { selected.Baseline, selected.Compared })
+                        {
+                            <article class="cohort @(cohort == selected.Baseline ? "baseline" : "compared")"><span>@cohort.Label</span><strong>@Seconds(cohort.MedianLapSeconds)<small>median</small></strong><button type="button" @onclick="() => Inspect(cohort.LapNumbers)">@LapList(cohort.LapNumbers)<ProductIcon Name="chevron-right" Size="13" /></button></article>
+                        }
+                    </div>
+                    <div class="paired-metrics">
+                        @foreach (var metric in selected.Metrics)
+                        {
+                            <article class="paired-metric" title="@metric.Detail" data-investigation-metric="@metric.Key"><span>@metric.Label</span><div><b class="baseline-value">@Value(metric.Baseline, metric.Unit)</b><span class="metric-arrow">→</span><b class="compared-value">@Value(metric.Compared, metric.Unit)</b></div><small>@Delta(metric.Delta, metric.Unit)</small></article>
+                        }
+                    </div>
+                </div>
+                <aside class="driving-trials" aria-label="What to try next">
+                    <span class="section-label">Next time in the car</span>
+                    @foreach (var action in selected.Actions.OrderBy(action => action.Priority))
+                    {
+                        <article class="driving-trial"><h4>@action.Title</h4><p>@action.Instruction</p>
+                            @if (action.Evidence.Count > 0) { <ul>@foreach (var evidence in action.Evidence) { <li>@evidence</li> }</ul> }
+                            @if (!string.IsNullOrWhiteSpace(action.Limitation)) { <details><summary>When to use this comparison</summary><p>@action.Limitation</p></details> }
+                            @if (action.LapNumbers.Count > 0) { <button type="button" class="trace-button compact" data-investigation-inspect="action" @onclick="() => InspectAction(action)">Show the evidence<ProductIcon Name="chevron-right" Size="13" /></button> }
+                        </article>
+                    }
+                    @if (selected.Actions.Count == 0) { <p>No driving change is supported by these laps.</p> }
+                </aside>
+            </div>
+
+            @if (selected.Corners.Count > 0)
+            {
+                <section class="corner-evidence"><div class="subsection-heading"><h4>Where the difference appears</h4><span>Selected lap groups</span></div><div class="corner-grid">
+                    @foreach (var corner in selected.Corners)
+                    {
+                        <article><header><strong>@corner.Label</strong><b>@Delta(corner.DeltaSeconds, "s")</b></header>
+                            @foreach (var metric in corner.Metrics) { <div class="corner-metric" title="@metric.Detail"><span>@metric.Label</span><span><b class="baseline-value">@Value(metric.Baseline, metric.Unit)</b> → <b class="compared-value">@Value(metric.Compared, metric.Unit)</b></span></div> }
+                            <button type="button" @onclick="() => InspectCorner(corner)">Open this section<ProductIcon Name="chevron-right" Size="13" /></button>
+                        </article>
+                    }
+                </div></section>
+            }
+
+            <section class="possible-causes"><div class="subsection-heading"><h4>What could explain it</h4><span>Evidence for this comparison</span></div><div class="hypothesis-grid">
+                @foreach (var hypothesis in selected.Hypotheses)
+                {
+                    <article class="hypothesis" data-investigation-hypothesis="@hypothesis.Key"><header><strong>@hypothesis.Label</strong><span class="hypothesis-status @hypothesis.Status">@Status(hypothesis.Status)</span></header>
+                        @foreach (var fact in hypothesis.Supporting) { <p class="supporting">@fact</p> }
+                        @foreach (var fact in hypothesis.Contradicting) { <p class="contradicting">@fact</p> }
+                        @foreach (var fact in hypothesis.Unknown) { <p class="unknown">@fact</p> }
+                        @if (!string.IsNullOrWhiteSpace(hypothesis.GeneralContext))
+                        {
+                            <details><summary>How this can affect a race</summary><p>@hypothesis.GeneralContext</p>@foreach (var reference in hypothesis.References ?? []) { if (SafeLink(reference.Url)) { <a href="@reference.Url" target="_blank" rel="noopener noreferrer">@reference.Title</a> } }</details>
+                        }
+                    </article>
+                }
+            </div></section>
+
+            @if (Investigation.TrackEvolution is { } track)
+            {
+                <section class="track-evolution" data-investigation-track><div class="subsection-heading"><h4>Track conditions</h4><span>@(track.UsageSource is null ? "Temperature and starting state" : "Recorded evolution")</span></div><p>@track.Summary</p>
+                    @if (track.Points.Any(point => point.TrackTemperatureF.HasValue))
+                    {
+                        <div class="track-chart"><span>Track temperature · °F</span><svg viewBox="0 0 1000 75" role="img" aria-label="Recorded track temperature by race lap"><polyline points="@TrackPoints(track, false)" class="temperature-path" />@foreach (var point in track.Points.Where(point => point.TrackTemperatureF.HasValue)) { <circle cx="@N(LapX(point.Lap))" cy="@N(TrackY(track, point.TrackTemperatureF!.Value, false))" r="2" class="temperature-point"><title>Lap @point.Lap · @Value(point.TrackTemperatureF, "°F")</title></circle> }</svg><div class="track-scale"><span>Lap @Investigation.Laps.FirstOrDefault()?.Lap</span><span>@TrackRange(track, false)</span><span>Lap @Investigation.Laps.LastOrDefault()?.Lap</span></div></div>
+                    }
+                    @if (track.UsageSource is not null && track.Points.Any(point => point.UsageValue.HasValue))
+                    {
+                        <div class="track-chart"><span>Recorded track usage · @track.UsageUnit</span><svg viewBox="0 0 1000 75" role="img" aria-label="Recorded track usage by race lap"><polyline points="@TrackPoints(track, true)" class="usage-path" /></svg><div class="track-scale"><span>Lap @Investigation.Laps.FirstOrDefault()?.Lap</span><span>@TrackRange(track, true)</span><span>Lap @Investigation.Laps.LastOrDefault()?.Lap</span></div></div>
+                    }
+                    @if (track.StartingUsage is not null) { <p class="starting-state"><b>Starting track state</b><span>@track.StartingUsage</span></p> }
+                    <details><summary>Condition sources</summary><p>@track.Provenance</p>@foreach (var limitation in track.Limitations) { <p>@limitation</p> }</details>
+                </section>
+            }
+
+            <details class="sampling-details" data-investigation-sampling><summary>Lap selection and evidence details</summary>
+                @foreach (var cohort in new[] { selected.Baseline, selected.Compared })
+                {
+                    <div><h4>@cohort.Label</h4><p>@LapList(cohort.LapNumbers) · @cohort.EligibleLapNumbers.Count of @cohort.LapCount passed comparison screening</p><p>Green exposure: @Value(cohort.GreenAgeStart, "laps")–@Value(cohort.GreenAgeEnd, "laps")</p>
+                        @foreach (var excluded in cohort.ExcludedLaps) { <p>Lap @excluded.Lap: @string.Join(", ", excluded.Reasons.Select(Humanize))</p> }
+                    </div>
+                }
+                @foreach (var limitation in Investigation.Limitations) { <p>@limitation</p> }
+            </details>
+        </div>
+    }
+    else if (Investigation.UnavailableReason is null)
+    {
+        <div class="empty-investigation"><h4>No comparable lap groups yet</h4><p>The recorded laps remain visible above.</p>@foreach (var limitation in Investigation.Limitations) { <p>@limitation</p> }</div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public RaceInvestigation Investigation { get; set; } = null!;
+    [Parameter] public EventCallback<RaceInvestigationInspection> OnInspect { get; set; }
+    private RaceInvestigation? _previous;
+    private RaceInvestigationComparison? Selected { get; set; }
+    private HashSet<int> _baselineLaps = [];
+    private HashSet<int> _comparedLaps = [];
+    private int MinLap = 1;
+    private int MaxLap = 1;
+    private (double Min, double Max, int Count) _paceBounds = (0, 1, 0);
+    private (double Min, double Max, int Count) _temperatureBounds = (0, 1, 0);
+    private (double Min, double Max, int Count) _usageBounds = (0, 1, 0);
+    private string PositionPoints = "";
+    private string _temperaturePoints = "";
+    private string _usagePoints = "";
+    private string Headline => Selected is { DeltaSeconds: { } delta } selected
+        ? $"{selected.Compared.Label}: {Math.Abs(delta):0.000} s/lap {(delta >= 0 ? "slower" : "faster")} than {selected.Baseline.Label.ToLowerInvariant()}."
+        : Investigation.Summary;
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_previous, Investigation)) return;
+        _previous = Investigation;
+        Select(Investigation.DefaultComparisonId);
+        CacheChartGeometry();
+    }
+    private void Select(string? id)
+    {
+        Selected = Investigation.Comparisons.FirstOrDefault(comparison => comparison.Id == id) ?? Investigation.Comparisons.FirstOrDefault();
+        _baselineLaps = Selected?.Baseline.LapNumbers.ToHashSet() ?? [];
+        _comparedLaps = Selected?.Compared.LapNumbers.ToHashSet() ?? [];
+    }
+    private void CacheChartGeometry()
+    {
+        MinLap = Investigation.Laps.Select(lap => lap.Lap).DefaultIfEmpty(1).Min();
+        MaxLap = Investigation.Laps.Select(lap => lap.Lap).DefaultIfEmpty(1).Max();
+        _paceBounds = Bounds(Investigation.Laps.Where(lap => lap.PlotPace && lap.LapTimeSeconds is > 0).Select(lap => lap.LapTimeSeconds!.Value));
+        var maximumPosition = Investigation.Laps.Select(lap => lap.Position ?? 1).DefaultIfEmpty(1).Max();
+        PositionPoints = string.Join(" ", Investigation.Laps.Where(lap => lap.Position is > 0).Select(lap => $"{N(LapX(lap.Lap))},{N(190 + (lap.Position!.Value - 1) * 22.0 / Math.Max(1, maximumPosition - 1))}"));
+        var track = Investigation.TrackEvolution;
+        _temperatureBounds = track is null ? (0, 1, 0) : Bounds(TrackValues(track, false));
+        _usageBounds = track is null ? (0, 1, 0) : Bounds(TrackValues(track, true));
+        _temperaturePoints = track is null ? "" : BuildTrackPoints(track, false);
+        _usagePoints = track is null ? "" : BuildTrackPoints(track, true);
+    }
+    private static (double Min, double Max, int Count) Bounds(IEnumerable<double> values)
+    {
+        var minimum = 0d;
+        var maximum = 1d;
+        var count = 0;
+        foreach (var value in values)
+        {
+            minimum = count == 0 ? value : Math.Min(minimum, value);
+            maximum = count == 0 ? value : Math.Max(maximum, value);
+            count++;
+        }
+        return (minimum, maximum, count);
+    }
+    private Task Inspect(IReadOnlyList<int> laps) => OnInspect.InvokeAsync(new RaceInvestigationInspection(laps));
+    private Task InspectSelected() => OnInspect.InvokeAsync(new RaceInvestigationInspection(InspectionLaps(), SignalKeys: ["speed", "throttle", "brake", "steering"]));
+    private Task InspectAction(RaceInvestigationAction action) => OnInspect.InvokeAsync(new RaceInvestigationInspection(action.LapNumbers, action.StartPct, action.EndPct, action.SignalKeys));
+    private Task InspectCorner(RaceInvestigationCorner corner) => OnInspect.InvokeAsync(new RaceInvestigationInspection(InspectionLaps(), corner.StartPct, corner.EndPct, ["speed", "throttle", "brake", "steering"]));
+    private IReadOnlyList<int> InspectionLaps() => Selected is { } selected
+        ? selected.Baseline.LapNumbers.Concat(selected.Compared.LapNumbers).Distinct().ToArray()
+        : [];
+    private bool InBaseline(int lap) => _baselineLaps.Contains(lap);
+    private bool InSelectedWindow(int lap) => _baselineLaps.Contains(lap) || _comparedLaps.Contains(lap);
+    private double LapX(int lap) => 50 + 928.0 * (lap - MinLap) / Math.Max(1, MaxLap - MinLap);
+    private double LapWidth => 928.0 / Math.Max(1, MaxLap - MinLap);
+    private double PaceMin => _paceBounds.Min;
+    private double PaceMax => _paceBounds.Max;
+    private double PaceY(double value) => 151 - (value - PaceMin) / Math.Max(.2, PaceMax - PaceMin) * 116;
+    private IEnumerable<double> PaceTicks => Enumerable.Range(0, 4).Select(index => PaceMin + Math.Max(.2, PaceMax - PaceMin) * index / 3);
+    private IEnumerable<int> LapTicks => Enumerable.Range(0, 6).Select(index => MinLap + (int)Math.Round((MaxLap - MinLap) * index / 5.0)).Distinct();
+    private static bool IsKeyEvent(RaceInvestigationEvent item) => !item.Kind.Contains("caution", StringComparison.OrdinalIgnoreCase);
+    private static string LapTitle(RaceInvestigationLap lap) => $"Lap {lap.Lap} · {Seconds(lap.LapTimeSeconds)} · P{lap.Position?.ToString() ?? "—"} · {(lap.Eligible ? "Passed screening" : string.Join(", ", lap.ExclusionReasons.Select(Humanize)))}";
+    private static string N(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+    private static string Seconds(double? value) => value.HasValue ? $"{value.Value.ToString("0.000", CultureInfo.CurrentCulture)} s" : "—";
+    private static string Value(double? value, string unit) => value.HasValue ? $"{value.Value.ToString(unit == "s" ? "0.000" : "0.##", CultureInfo.CurrentCulture)}{(unit == "%" ? "" : " ")}{unit}".Trim() : "—";
+    private static string Delta(double? value, string unit) => value.HasValue ? $"{(value.Value > 0 ? "+" : "")}{Value(value, unit)}" : "—";
+    private static string LapList(IReadOnlyList<int> laps) => laps.Count == 0 ? "No laps" : $"Laps {string.Join(", ", laps)}";
+    private static string Humanize(string text) => text.Replace('_', ' ');
+    private static string Scope(RaceInvestigationComparison comparison) => comparison.Eligibility == "eligible" ? "Clean comparison laps" : "Includes laps with traffic or other exclusions";
+    private static string Status(string status) => status switch { "supported" => "Observed change", "possible" => "Possible", "not_supported" => "Not supported here", _ => "Unresolved" };
+    private static bool SafeLink(string link) => Uri.TryCreate(link, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http";
+    private static IEnumerable<double> TrackValues(RaceTrackEvolution track, bool usage) => track.Points.Select(point => usage ? point.UsageValue : point.TrackTemperatureF).Where(value => value.HasValue).Select(value => value!.Value);
+    private double TrackY(RaceTrackEvolution track, double value, bool usage) { var bounds = usage ? _usageBounds : _temperatureBounds; return 62 - 48 * (value - bounds.Min) / Math.Max(1, bounds.Max - bounds.Min); }
+    private string TrackPoints(RaceTrackEvolution track, bool usage) => usage ? _usagePoints : _temperaturePoints;
+    private string BuildTrackPoints(RaceTrackEvolution track, bool usage) => string.Join(" ", track.Points.Where(point => (usage ? point.UsageValue : point.TrackTemperatureF).HasValue).Select(point => $"{N(LapX(point.Lap))},{N(TrackY(track, (usage ? point.UsageValue : point.TrackTemperatureF)!.Value, usage))}"));
+    private string TrackRange(RaceTrackEvolution track, bool usage) { var bounds = usage ? _usageBounds : _temperatureBounds; return bounds.Count == 0 ? "—" : $"{Value(bounds.Min, usage ? track.UsageUnit ?? "" : "°F")} – {Value(bounds.Max, usage ? track.UsageUnit ?? "" : "°F")}"; }
+}

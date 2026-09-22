@@ -315,7 +315,7 @@ public sealed class CodexAppServerSupervisor : ICoachEngineSupervisor
 
             await RequestAsync("initialize", new
             {
-                clientInfo = new { name = "iracing_coach", title = "iRacing Coach", version = "0.17.7" }
+                clientInfo = new { name = "iracing_coach", title = "iRacing Coach", version = "0.18.0" }
             }, cancellationToken);
             await NotifyAsync("initialized", new { }, cancellationToken);
             SetCurrent(new(true, true, false, "running", "Coach Engine is running.", installation.RuntimeVersion));
@@ -372,10 +372,10 @@ public sealed class CodexAppServerSupervisor : ICoachEngineSupervisor
         if (string.IsNullOrWhiteSpace(question)) throw new ArgumentException("Enter a coaching question.", nameof(question));
         return AskStructuredCoachCoreAsync(
             threadId,
-            $"Driver question:\n{question.Trim()}",
+            $"Driver question:\n{question.Trim()}\n\n{RaceCoachResponseValidator.EvidenceInstructions(evidenceJson)}",
             evidenceJson,
             "ai-coaching-output.schema.json",
-            schemaRequired: false,
+            schemaRequired: true,
             cancellationToken);
     }
 

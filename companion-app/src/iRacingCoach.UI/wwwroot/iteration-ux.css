@@ -904,3 +904,18 @@ body {
 .tuning-active-corner-panel .tuning-ratings label > span .product-icon { color: var(--text-muted); }
 .tuning-active-corner-panel .tuning-ratings input { min-width: 0; accent-color: var(--accent); }
 .tuning-active-corner-panel .tuning-ratings output { font-family: var(--metric-font, Consolas, monospace); }
+
+.race-technical-data .technical-investigation-content.pace-investigation-content { display: block; overflow: auto; min-height: 0; padding: 14px; }
+.race-technical-data .racecraft-measurement-details { margin-top: 18px; }
+.race-technical-data .racecraft-measurement-details > summary { padding: 10px 0; cursor: pointer; color: var(--text-secondary); }
+.race-technical-data .racecraft-measurement-details .technical-findings-list { align-content: start; grid-auto-rows: auto; }
+
+.analysis-workspace-page { position: relative; }
+.race-coach-drawer { position: absolute; z-index: 35; top: 64px; right: 12px; width: min(550px, calc(100% - 24px)); max-height: calc(100% - 76px); overflow: auto; padding: 18px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: 8px; box-shadow: 0 12px 36px #0008; }
+.race-coach-panel h3 { margin: 12px 0 6px; font-size: 18px; }
+.race-coach-panel header p { color: var(--text-muted); margin: 0 0 16px; }
+.race-coach-panel label { display: block; margin: 12px 0 6px; }
+.race-coach-panel textarea { width: 100%; resize: vertical; }
+.coach-question-suggestions { display: flex; gap: 6px; flex-wrap: wrap; }
+.coach-question-suggestions button { padding: 7px 10px; border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--surface-1); color: var(--text-primary); text-align: left; }
+.race-coach-answer { overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.6; padding: 14px 0; }

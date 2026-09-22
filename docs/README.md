@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.17.7-development.md)
+7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.18.0-development.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -57,8 +57,12 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
+  - [Current development snapshot: 0.18.0](06-reality/implementation-snapshot-0.18.0-development.md)
+  - [Whole-app usefulness audit: September 22](06-reality/whole-app-usefulness-audit-2026-09-22.md)
+  - [Full control-by-control rationale](06-reality/whole-app-control-audit-2026-09-22.md) and [declaration inventory](06-reality/whole-app-control-inventory-2026-09-22.md)
+  - [Whole-app acceptance coverage: September 22](06-reality/whole-app-acceptance-coverage-2026-09-22.md)
   - [Bristol pace-loss investigation and unreleased trend correction](06-reality/bristol-pace-investigation-2026-09-22.md)
-  - [Current development snapshot: 0.17.7](06-reality/implementation-snapshot-0.17.7-development.md)
+  - [Prior development snapshot: 0.17.7](06-reality/implementation-snapshot-0.17.7-development.md)
   - [Prior development snapshot: 0.17.6](06-reality/implementation-snapshot-0.17.6-development.md)
   - [Prior development snapshot: 0.17.5](06-reality/implementation-snapshot-0.17.5-development.md)
   - [Prior development snapshot: 0.17.4](06-reality/implementation-snapshot-0.17.4-development.md)
@@ -104,13 +108,13 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 ## Current baseline
 
 - Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
-- Current source version: `0.17.7` development plus the unreleased analysis-profile-v18 [Bristol pace-trend correction](06-reality/bristol-pace-investigation-2026-09-22.md); simulator-PC recorded-data QA and the diagnostic workflow remain pending Joshua's acceptance
+- Current source version: `0.18.0` development, analysis profile `post-race-foundations-v19`; race investigation, trace handoffs, follow-up questions, tuning-note persistence and workflow repairs are described in the [current snapshot](06-reality/implementation-snapshot-0.18.0-development.md). Development implementation remains pending Joshua's acceptance.
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Current source verification: 390/390 application tests and 1,048/1,048 Python tests; contract/export verification passed
-- Current interaction evidence: resumed native DESKTOP-SIM testing confirmed corrected planning alignment, fuel decisions after distance changes, lap selection, saved layouts, replay seeking and setup comparison reset. It exposed repeated 29-second replay reconstruction on cached analysis and clipped paired-chart labels. Version 0.17.7 fixes those findings; exact native retest boundaries and timings are in the current snapshot. Active live telemetry remains deferred at Joshua's request.
-- Current package boundary: 0.17.7 is a .NET self-contained win-x64 development transport transferred through the private NAS. It reuses installed Python/Coach Engine runtimes and is not a full portable release or installer. Installed 0.17.0 remains unchanged. The frozen 0.17.1 installer and portable archive retain their own checksums and lifecycle results.
+- Current source verification: **434/434 application tests passed, zero skipped**, and **1,067/1,067 backend tests, 21 contracts and 28 fixtures passed** final repository verification. The current snapshot separates these checks from bounded interaction evidence.
+- Current interaction evidence: native 0.18 candidate 2 passed host input/rendering, coherent Bristol fuel, matched comparison/trace/return navigation, selected planning/setup/tuning/replay checks and a disconnected popout round trip. It exposed missing published investigation styles, clipped hover values and compact Tuning overlap; candidate 3 passed exact 1280×720 overview and four-chart hover checks but still failed investigation styling. Candidate 4 passed readable investigation styling and four-chart inspection at exactly 1280×720, trace-layout restoration and complete-race totals before/open/return/hard reload. Its native report remains in progress; these are bounded passes. Browser retests confirmed four focused trace channels and rejected grid-size selector restoration. The [coverage document](06-reality/whole-app-acceptance-coverage-2026-09-22.md) separates source, automated, browser and native evidence. Authenticated AI and active live telemetry remain unverified; live testing is deferred at Joshua's request.
+- Current package boundary: 0.18 candidate 4 is a .NET self-contained win-x64 **development transport**, with 676 ZIP entries and archive SHA-256 recorded in the [snapshot](06-reality/implementation-snapshot-0.18.0-development.md). It reuses the already installed Python and Coach Engine runtimes; it is **not a full portable package or installer**. DESKTOP-SIM verified the archive hash and all 675 manifest-listed files; completed candidate-4 native checks are recorded in the snapshot. The production installation and original racing files are outside the isolated development profile.
 - Prior installer lifecycle evidence: the 0.15.0 feedback candidate passed guarded install, rollback, running-app replacement, data-preservation, uninstall, reinstall, and final-uninstall checks; this is historical evidence, not proof of the 0.16.0 candidate
-- Development focus: Race Analysis, Technical data, Race replay, global analysis layouts, exact-configuration maps, retained raw telemetry, NASCAR-first tire/capability foundations, and Progressive Tuning evidence-contract v2. Supported and unavailable states remain evidence-gated; development implementation is not user acceptance.
+- Development focus: explain pace changes with the relevant laps, measured conditions and controls; connect findings to trace inspection and a useful next driving test; preserve exact recording/setup context and pending notes. The usefulness audit covers 257 baseline control declarations/gesture families, **not 257 accepted native controls**. Practice-baseline discovery, useful experiment history, a real setup A/B cycle and broader native/live acceptance remain open.
 
-The current source reality is summarized in `06-reality/implementation-snapshot-0.17.7-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Build binaries and private user data are not part of the source repository.
+The current source reality is summarized in `06-reality/implementation-snapshot-0.18.0-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Build binaries and private user data are not part of the source repository.

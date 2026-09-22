@@ -1301,6 +1301,44 @@ def _garage61_auth_states_fixture() -> dict[str, Any]:
     }
 
 
+def _race_investigation_fixture() -> dict[str, Any]:
+    from analysis_engine import investigation_lap_exclusions
+    from race_investigation import build_race_investigation
+
+    laps, traces = [], []
+    for number in range(1, 13):
+        late = number >= 10
+        seconds = 30.0 + number * 0.02 + (1.0 if late else 0.0)
+        laps.append({
+            "lap": number, "complete": True, "flag_state": "green", "green_fraction": 1.0,
+            "racing_state_fraction": 1.0, "pit_time_s": 0.0, "lap_time_s": seconds,
+            "position": {"end": 3 if late else 1},
+            "conditions": {"track_temperature_f": 80.0, "track_usage": "moderate usage", "track_usage_percent": None},
+            "clean_context": {"on_track_fraction": 1.0, "traffic_proximity_fraction": 0.3 if late else 0.0},
+            "controls": {"brake_mean": 0.2 if late else 0.1, "throttle_mean": 0.6 if late else 0.8,
+                         "steering_abs_mean_rad": 0.3 if late else 0.2},
+            "fuel": {"start_l": 40.0 - number * 0.2},
+        })
+        traces.append({"lap": number, "points": [
+            {"lap_pct": index / 40.0, "session_time_s": number * 40 + index / 40.0 * seconds,
+             "speed_mph": 95.0 if late else 100.0, "brake": 0.2 if late else 0.1,
+             "throttle": 0.6 if late else 0.8, "steering_rad": 0.3 if late else 0.2}
+            for index in range(41)
+        ]})
+    analysis = {
+        "laps": laps, "lap_traces": {"traces": traces},
+        "runs": [{"run_number": 1, "start_lap": 1, "end_lap": 12}],
+        "track_profile": {"detected_corner_segments": [{"start_pct": 0.1, "end_pct": 0.4}]},
+        "track_usage_context": {"session_states": [
+            {"session_type": "Practice", "state": "moderate usage"},
+            {"session_type": "Race", "state": "carry over"},
+        ]},
+    }
+    result = build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
+    result["fixture_metadata"] = {"synthetic": True, "real_driver_or_setup_data": False, "production_use_allowed": False}
+    return result
+
+
 def main() -> int:
     card = _race_card()
     damage = _damage_repair()
@@ -1519,6 +1557,7 @@ def main() -> int:
     )
     _write_json("analyze-repair-heavy.json", analyze)
     _write_json("race-card.json", card)
+    _write_json("race-investigation.json", _race_investigation_fixture())
     _write_json("track-phase-visualization.json", _visualization_fixture())
     _write_json(
         "track-phase-visualization-unavailable.json",

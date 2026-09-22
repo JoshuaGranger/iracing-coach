@@ -216,7 +216,7 @@
                     {
                         <label>Name<input value="@Active.Name" maxlength="40" @onchange="RenameLayout" /></label>
                     }
-                    <div class="toolbox-grid-controls">
+                    <div class="toolbox-grid-controls" @key="_gridControlsRevision">
                         <label>Columns<select value="@Active.Columns" @onchange="ChangeColumns">@for (var value = 1; value <= 8; value++) { <option value="@value">@value</option> }</select></label>
                         <label>Rows<select value="@Active.Rows" @onchange="ChangeRows">@for (var value = 1; value <= 8; value++) { <option value="@value">@value</option> }</select></label>
                     </div>
@@ -239,7 +239,7 @@
                                 <button class="@(selected.DisplayStyle == style ? "active" : null)" aria-pressed="@(selected.DisplayStyle == style ? "true" : "false")" @onclick="() => SetTileStyle(selected.Id, style)"><ProductIcon Name="@StyleIcon(style)" Size="17" /><span>@StyleLabel(style)</span></button>
                             }
                         </div>
-                        <div class="toolbox-grid-controls">
+                        <div class="toolbox-grid-controls" @key="_gridControlsRevision">
                             @if (selectedDefinition.Units.Count > 1)
                             {
                                 <label>Unit<select value="@selected.Unit" @onchange="args => ChangeTileUnit(selected.Id, args)">@foreach (var unit in selectedDefinition.Units) { <option value="@unit">@(string.IsNullOrWhiteSpace(unit) ? "None" : unit)</option> }</select></label>
@@ -555,8 +555,11 @@
 
     private void ChangeRows(ChangeEventArgs args) => ResizeGrid(Parse(args, Active.Rows), Active.Columns);
     private void ChangeColumns(ChangeEventArgs args) => ResizeGrid(Active.Rows, Parse(args, Active.Columns));
+    private int _gridControlsRevision;
     private void ResizeGrid(int rows, int columns)
     {
+        // Recreate the selects after a rejected change so their displayed values match the retained grid.
+        _gridControlsRevision++;
         TryMutation(() => LiveMonitorLayouts.TryResizeGrid(LiveMonitorLayouts.EnsureEditable(Preferences), rows, columns, out _), $"Grid resized to {columns} x {rows}.", "Those dimensions cannot hold every widget.");
     }
 

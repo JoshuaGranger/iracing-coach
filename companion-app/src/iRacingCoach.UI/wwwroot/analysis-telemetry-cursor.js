@@ -400,9 +400,14 @@
     setAttributeIfChanged(state.sharedLine, "x1", cursorX.toFixed(3));
     setAttributeIfChanged(state.sharedLine, "x2", cursorX.toFixed(3));
 
-    const maximumOffset = Math.max(0, state.config.traces.length - state.config.tooltipCapacity);
+    // Rows scale with the SVG, while HTML tooltip typography stays in screen pixels.
+    // Bound the visible slots by the smallest rendered row to prevent cards overlapping.
+    const renderedRowHeight = Math.min(...state.config.rows.map(row => row.plotHeight * scaleY));
+    const screenCapacity = Math.max(1, Math.floor((renderedRowHeight - 18) / state.config.tooltipRowHeight));
+    state.visibleTooltipCapacity = Math.min(state.config.tooltipCapacity, screenCapacity);
+    const maximumOffset = Math.max(0, state.config.traces.length - state.visibleTooltipCapacity);
     state.lapOffset = clamp(state.lapOffset, 0, maximumOffset);
-    const visibleTraces = state.config.traces.slice(state.lapOffset, state.lapOffset + state.config.tooltipCapacity);
+    const visibleTraces = state.config.traces.slice(state.lapOffset, state.lapOffset + state.visibleTooltipCapacity);
 
     state.config.rows.forEach((row, rowIndex) => {
       const dom = state.domRows[rowIndex];
@@ -568,7 +573,7 @@
     };
     state.wheel = (event) => {
       if (Math.abs(event.deltaY) < 0.01) return;
-      const maximumOffset = Math.max(0, state.config.traces.length - state.config.tooltipCapacity);
+      const maximumOffset = Math.max(0, state.config.traces.length - (state.visibleTooltipCapacity || state.config.tooltipCapacity));
       if (maximumOffset === 0) return;
       event.preventDefault();
       state.lapOffset = clamp(state.lapOffset + (event.deltaY > 0 ? 1 : -1), 0, maximumOffset);

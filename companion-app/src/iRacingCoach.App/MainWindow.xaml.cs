@@ -12,6 +12,8 @@ using iRacingCoach.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.AspNetCore.Components.WebView;
+using Microsoft.AspNetCore.Components.WebView.WindowsForms;
+using System.Windows.Forms.Integration;
 using Forms = System.Windows.Forms;
 
 namespace iRacingCoach.App;
@@ -23,6 +25,7 @@ public partial class MainWindow : Window
     private readonly CompanionState _state;
     private readonly CompanionHostProfile _hostProfile;
     private readonly ServiceProvider _services;
+    private BlazorWebView? _browser;
     private readonly LiveMonitorWindow _liveMonitor;
     private readonly Forms.NotifyIcon _trayIcon;
     private readonly Forms.ToolStripMenuItem _monitorItem;
@@ -42,8 +45,7 @@ public partial class MainWindow : Window
         ArgumentNullException.ThrowIfNull(hostProfile);
         _hostProfile = hostProfile;
         var services = new ServiceCollection();
-        services.AddWpfBlazorWebView();
-        var allArguments = Environment.GetCommandLineArgs();
+        services.AddWindowsFormsBlazorWebView();
         _state = hostProfile.CreateState();
         var state = _state;
         services.AddSingleton(state);
@@ -51,9 +53,10 @@ public partial class MainWindow : Window
         services.AddBlazorWebViewDeveloperTools();
 #endif
         _services = services.BuildServiceProvider();
-        if (hostProfile.AllowEmbeddedBrowser) Resources.Add("services", _services);
         InitializeComponent();
         if (!hostProfile.AllowEmbeddedBrowser) Content = BuildIsolatedEvidenceSurface();
+        else if (!IsWebView2Available()) Content = BuildRuntimeNotice();
+        else InitializeBrowser();
         _liveMonitor = new LiveMonitorWindow(state);
 
         _monitorItem = new Forms.ToolStripMenuItem("Show telemetry popout", null, (_, _) => _state.ToggleLiveMonitor());
@@ -101,7 +104,21 @@ public partial class MainWindow : Window
 
         if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--minimized", StringComparison.OrdinalIgnoreCase)))
             Loaded += (_, _) => HideToTray(false);
-        if (!IsWebView2Available()) Content = BuildRuntimeNotice();
+    }
+
+    private void InitializeBrowser()
+    {
+        // The .NET 10 WPF Blazor host requires a D3D9 composition device, which can
+        // fail before startup on remote/display-adapter sessions. The supported
+        // windowed WebView2 host preserves the same local Blazor app without that
+        // composition requirement. The main window has no overlapping WPF content.
+        _browser = new BlazorWebView { Dock = Forms.DockStyle.Fill };
+        _browser.BlazorWebViewInitializing += OnBlazorWebViewInitializing;
+        _browser.UrlLoading += OnBlazorUrlLoading;
+        _browser.RootComponents.Add(new RootComponent("#app", typeof(iRacingCoach.UI.CompanionShell), null));
+        _browser.Services = _services;
+        _browser.HostPage = "wwwroot\\index.html";
+        BrowserHost.Content = new WindowsFormsHost { Child = _browser };
     }
 
     public event Action? ExitRequested;
@@ -284,6 +301,7 @@ public partial class MainWindow : Window
             TryCleanup(() => _ = UnregisterHotKey(_windowSource.Handle, LiveMonitorHotkeyId), "unregister Live Monitor hotkey");
         }
         TryCleanup(_liveMonitor.CloseMonitor, "close Live Monitor");
+        TryCleanup(() => _browser?.Dispose(), "dispose embedded browser");
         TryCleanup(Close, "close main window");
         TryCleanup(_trayIcon.Dispose, "dispose tray icon");
         TryCleanup(_state.Dispose, "stop application services");

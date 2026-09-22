@@ -9,8 +9,8 @@ else
     var selectedSetup = visibleSetups.FirstOrDefault(item => item.Id == State.SelectedSetupId) ?? visibleSetups.FirstOrDefault();
     <div class="setup-library-page">
         <header class="page-heading compact-heading">
-            <div><span class="eyebrow">Setups</span><h1>Your setup library</h1><p>Local files and the setup values saved with your recordings.</p></div>
-            <button class="button primary" @onclick="NewSetup">New setup</button>
+            <div><span class="eyebrow">Setups</span><h1>Your setup library</h1></div>
+            <button class="button primary" @onclick="NewSetup">Find a baseline</button>
         </header>
         @if (!string.IsNullOrWhiteSpace(State.SetupCatalogWarning))
         {
@@ -29,7 +29,7 @@ else
         </section>
         @if (visibleSetups.Count == 0)
         {
-            <section class="surface-card"><div class="empty-state"><ProductIcon Name="wrench" Size="24" /><h2>@(State.Setups.Count == 0 ? "Build your first baseline" : "No matching setups")</h2><p>@(State.Setups.Count == 0 ? "Analyze a recording to bring in its actual setup values, or use New setup to find a starting baseline." : "Clear the filters to see the rest of your library.")</p><button class="button secondary" @onclick="ClearFilters">Clear filters</button></div></section>
+            <section class="surface-card"><div class="empty-state"><ProductIcon Name="wrench" Size="24" /><h2>@(State.Setups.Count == 0 ? "No setups yet" : "No matching setups")</h2><p>@(State.Setups.Count == 0 ? "Analyze a recording to add the setup you drove, or find a baseline for your next session." : "Clear the filters to see the rest of your library.")</p>@if (State.Setups.Count == 0) { <button class="button secondary" @onclick='() => State.Navigate("analysis")'>Review a recording</button> } else { <button class="button secondary" @onclick="ClearFilters">Clear filters</button> }</div></section>
         }
         else
         {
@@ -51,8 +51,8 @@ else
                     <section class="surface-card setup-library-detail">
                         <div class="setup-detail-heading"><div><span class="eyebrow">@SourceLabel(selected)</span><h2>@selected.Name</h2><p>@selected.Car · @selected.Track</p></div><span class="status-label">@selected.Role</span></div>
                         <div class="button-row">
-                            <button class="button primary" disabled="@(linked.Count == 0 || _tuning)" @onclick="() => Tune(selected)">@(_tuning ? "Opening…" : "Tune this setup")</button>
-                            <button class="button secondary" @onclick="() => ShowSource(selected)">Show source</button>
+                            <button class="button primary" disabled="@(linked.Count == 0 || _tuning)" title="@(linked.Count == 0 ? "Analyze a recording made with this setup first" : "Use a linked recording to test a setup change")" @onclick="() => Tune(selected)">@(_tuning ? "Opening…" : "Tune this setup")</button>
+                            <button class="button secondary" @onclick="() => ShowSource(selected)">Open source location</button>
                             @if (IsSetupFile(selected)) { <button class="button secondary" @onclick="() => SaveCopy(selected)">Save a copy</button> }
                         </div>
                         <p class="setup-source-note">@selected.Note</p>
@@ -67,7 +67,7 @@ else
                         }
                         else
                         {
-                            <div class="setup-evidence-empty"><strong>Attach driving evidence</strong><p>Run this setup in iRacing, record telemetry, then analyze that recording. Car and track names alone do not establish a setup match.</p><button class="button secondary compact" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button></div>
+                            <div class="setup-evidence-empty"><strong>No recording uses this setup yet</strong><p>Record a run with this setup, then analyze it to compare handling and pace.</p><button class="button secondary compact" @onclick='() => State.Navigate("analysis")'>Review a recording</button></div>
                         }
                         <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId"><option value="">No comparison</option>@foreach (var candidate in Comparable(selected)) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</select></label></div>
                         @if (selected.Fields.Count == 0)

@@ -42,7 +42,7 @@ public sealed class CompanionState : IDisposable
     // Content completeness is a separate question again, and RuntimeMapper already
     // answers it: HasCurrentAnalysisProfile rejects a response emitted by an
     // analyzer older than the fields the UI now reads.
-    private const string AppVersion = "0.17.7";
+    private const string AppVersion = "0.18.0";
 
     // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
     // roughly 1.8x - one 25 MB entry spanned 615,614 lines - and allocating fresh options
@@ -88,6 +88,9 @@ public sealed class CompanionState : IDisposable
     private readonly List<FileSystemWatcher> _watchers = [];
     private string _watcherRoot = string.Empty;
     private LocalInventorySnapshot? _localInventory;
+    private RefreshRoots _settingsDataRoots;
+    private string? _ensuredCoachHome;
+    private bool _garageCredentialRefreshPending;
     private bool _initialized;
     private bool _disposed;
     private bool _liveMonitorAutoReopenSuppressed;
@@ -149,6 +152,7 @@ public sealed class CompanionState : IDisposable
         _pathProvider = pathProvider ?? WindowsCompanionPathProvider.Instance;
         _allowExternalHostActions = allowExternalHostActions;
         Settings = settingsStore?.Load() ?? new CompanionSettings(_pathProvider);
+        _settingsDataRoots = new(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
         Settings.LiveMonitor ??= new LiveMonitorLayout();
         if (!Settings.Compatibility.Writable) SettingsMessage = Settings.Compatibility.Message;
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
@@ -179,6 +183,7 @@ public sealed class CompanionState : IDisposable
     public event Action? RawTelemetryLocateRequested;
 
     public string CurrentPage { get; private set; } = "home";
+    public bool ConnectionsNavigationRequested { get; private set; }
     public bool RailCollapsed { get; private set; }
     public bool JobTrayOpen { get; private set; }
     public bool IsRefreshing { get; private set; }
@@ -286,6 +291,24 @@ public sealed class CompanionState : IDisposable
     }
 
     public void ClearSetupTuningContext() { TuningSourceSetupId = string.Empty; RaiseChanged(); }
+
+    private LocalSetup? StartingTuneSourceSetup => StartingTunePackage is { } package
+        && !string.IsNullOrWhiteSpace(package.Fingerprint)
+        ? Setups.FirstOrDefault(setup =>
+            string.Equals(setup.Fingerprint, package.Fingerprint, StringComparison.Ordinal)
+            && string.Equals(setup.Car, package.Car, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(setup.Track, package.Track, StringComparison.OrdinalIgnoreCase))
+        : null;
+
+    public bool CanContinueStartingTuneTuning => StartingTuneSourceSetup is { } setup && SetupEvidenceRaces(setup).Count > 0;
+
+    public Task ContinueStartingTuneTuningAsync(CancellationToken cancellationToken = default)
+    {
+        if (StartingTuneSourceSetup is { } setup && SetupEvidenceRaces(setup).Count > 0)
+            return BeginSetupTuningAsync(setup.Id, cancellationToken: cancellationToken);
+        Notify("Analyze a recording made with the selected starting setup before tuning it.");
+        return Task.CompletedTask;
+    }
 
     public int StartingTuneStep { get; private set; } = 1;
     public string StartingTuneSeason { get => _startingTuneSeason; set => SetStartingTuneInput(ref _startingTuneSeason, value); }
@@ -486,6 +509,7 @@ public sealed class CompanionState : IDisposable
             var detectedInstall = new CompanionSettings().IRacingInstallRoot;
             if (Directory.Exists(detectedInstall)) Settings.IRacingInstallRoot = detectedInstall;
         }
+        _settingsDataRoots = new(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
         try
         {
             EnsureRepository();
@@ -1484,32 +1508,39 @@ public sealed class CompanionState : IDisposable
         RaiseChanged();
     }
 
-    public async Task ReplaceTuningFeedbackBatchAsync(
+    public Task ReplaceTuningFeedbackBatchAsync(
         string cornerId,
         string runPhase,
         IEnumerable<ProgressiveTuningFeedback> items,
         CancellationToken cancellationToken = default)
+        => ReplaceTuningFeedbackBatchAsync(TuningDraft, RequireCurrentTuningTurn(cornerId), runPhase, items, cancellationToken);
+
+    public async Task ReplaceTuningFeedbackBatchAsync(
+        ProgressiveTuningDraft sourceDraft,
+        TuningTurn sourceTurn,
+        string runPhase,
+        IEnumerable<ProgressiveTuningFeedback> items,
+        CancellationToken cancellationToken = default)
     {
-        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
-        var normalizedCorner = cornerId?.Trim() ?? string.Empty;
+        var normalizedCorner = sourceTurn.CornerId.Trim();
         var normalizedPhase = RequireTuningRunPhase(runPhase ?? string.Empty);
-        _ = RequireCurrentTuningTurn(normalizedCorner);
-        var draft = TuningDraft;
         var replacement = items.Select(item => ValidateTuningFeedback(item with
             {
                 FeedbackId = string.IsNullOrWhiteSpace(item.FeedbackId) ? Guid.NewGuid().ToString("N") : item.FeedbackId,
                 CornerId = normalizedCorner,
                 RunPhase = normalizedPhase
-            }))
+            }, sourceTurn))
             .GroupBy(item => item.FeedbackId, StringComparer.Ordinal)
             .Select(group => group.Last())
             .ToArray();
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var draft = TuningDraftForPendingEdit(sourceDraft);
         var retained = draft.Feedback.Where(item =>
             !string.Equals(item.CornerId, normalizedCorner, StringComparison.Ordinal)
             || !string.Equals(NormalizeTuningRunPhase(item.RunPhase), normalizedPhase, StringComparison.Ordinal));
         var updated = draft with { Feedback = retained.Concat(replacement).ToArray(), UpdatedUtc = DateTimeOffset.UtcNow };
         await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
-        if (!IsCurrentTuningDraft(draft)) return;
+        if (!IsCurrentTuningDraftIdentity(sourceDraft)) return;
         TuningDraft = updated;
         SyncLegacyTuningFeedback();
         RaiseChanged();
@@ -1532,15 +1563,18 @@ public sealed class CompanionState : IDisposable
         RaiseChanged();
     }
 
-    public async Task SaveTuningGeneralNoteAsync(string note, CancellationToken cancellationToken = default)
+    public Task SaveTuningGeneralNoteAsync(string note, CancellationToken cancellationToken = default)
+        => SaveTuningGeneralNoteAsync(TuningDraft, note, cancellationToken);
+
+    public async Task SaveTuningGeneralNoteAsync(ProgressiveTuningDraft sourceDraft, string note, CancellationToken cancellationToken = default)
     {
-        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
         var value = note?.Trim() ?? string.Empty;
         if (value.Length > 8_000) throw new InvalidOperationException("General feedback must be 8,000 characters or fewer.");
-        var draft = TuningDraft;
+        using var mutation = await EnterTuningDraftMutationAsync(cancellationToken);
+        var draft = TuningDraftForPendingEdit(sourceDraft);
         var updated = draft with { GeneralNote = value, UpdatedUtc = DateTimeOffset.UtcNow };
         await SaveTuningDraftSnapshotAsync(updated, cancellationToken);
-        if (!IsCurrentTuningDraft(draft)) return;
+        if (!IsCurrentTuningDraftIdentity(sourceDraft)) return;
         TuningDraft = updated;
         TuningNotes = value;
         RaiseChanged();
@@ -2177,9 +2211,24 @@ public sealed class CompanionState : IDisposable
             ?? throw new InvalidOperationException("The selected turn is not part of the current track map.");
     }
 
-    private ProgressiveTuningFeedback ValidateTuningFeedback(ProgressiveTuningFeedback feedback)
+    private ProgressiveTuningDraft TuningDraftForPendingEdit(ProgressiveTuningDraft sourceDraft)
     {
-        var turn = RequireCurrentTuningTurn(feedback.CornerId.Trim());
+        var draft = IsCurrentTuningDraftIdentity(sourceDraft)
+            ? TuningDraft
+            : new PortableTuningDraftStore(Settings.CoachHome).Load(sourceDraft.RepresentativeSession) ?? sourceDraft;
+        if (!string.Equals(draft.DraftId, sourceDraft.DraftId, StringComparison.Ordinal)
+            || !string.Equals(draft.MapIdentity, sourceDraft.MapIdentity, StringComparison.Ordinal)
+            || !string.Equals(ProgressiveTuningCoordinator.TuningIdentityKey(draft.RepresentativeSession),
+                ProgressiveTuningCoordinator.TuningIdentityKey(sourceDraft.RepresentativeSession), StringComparison.Ordinal))
+            throw new InvalidOperationException("This feedback belongs to an older recording or track map. Reopen that recording before editing it.");
+        return draft;
+    }
+
+    private ProgressiveTuningFeedback ValidateTuningFeedback(ProgressiveTuningFeedback feedback)
+        => ValidateTuningFeedback(feedback, RequireCurrentTuningTurn(feedback.CornerId.Trim()));
+
+    private static ProgressiveTuningFeedback ValidateTuningFeedback(ProgressiveTuningFeedback feedback, TuningTurn turn)
+    {
         if (feedback.StartPct is not { } start
             || feedback.ApexPct is not { } apex
             || feedback.EndPct is not { } end
@@ -2470,15 +2519,23 @@ public sealed class CompanionState : IDisposable
             if (!string.IsNullOrWhiteSpace(Garage61KeyInput))
             {
                 _garage61Credentials.Store(Garage61KeyInput);
+                _garageCredentialRefreshPending = true;
                 Settings.Garage61ApiKey = string.Empty;
                 Garage61KeyInput = string.Empty;
             }
-            EnsureRepository();
+            if (!string.Equals(_ensuredCoachHome, Settings.CoachHome, StringComparison.Ordinal))
+                EnsureRepository();
             SaveSettingsToStore();
             SettingsMessage = "Settings saved.";
             Toast = "Settings saved.";
             SettingsSaved?.Invoke(Settings);
-            _ = RefreshDataAsync(false, CancellationToken.None);
+            var dataRoots = new RefreshRoots(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
+            if (dataRoots != _settingsDataRoots || _garageCredentialRefreshPending)
+            {
+                _settingsDataRoots = dataRoots;
+                _garageCredentialRefreshPending = false;
+                _ = RefreshDataAsync(false, CancellationToken.None);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException)
         {
@@ -2653,6 +2710,8 @@ public sealed class CompanionState : IDisposable
 
     public async Task AskRaceCoachAsync(CancellationToken cancellationToken = default)
     {
+        var question = CoachQuestion.Trim();
+        if (question.Length == 0) { Notify("Enter a question about this race."); return; }
         if (CurrentRaceCard is null)
         {
             Toast = "Analyze a recorded race before asking the Coach.";
@@ -2682,7 +2741,11 @@ public sealed class CompanionState : IDisposable
 
         _coachRequest?.Cancel();
         _coachRequest?.Dispose();
-        _coachRequest = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _coachRequest = request;
+        var analysisId = CurrentAnalysis.AnalysisId;
+        CoachAnswerAnalysisId = analysisId;
+        var workflowKey = $"race:{(SelectedRaceSessionId.Length > 0 ? SelectedRaceSessionId : CurrentRaceCard.Title)}";
         IsCoaching = true;
         AiRequestCount++;
         var aiStarted = Stopwatch.GetTimestamp();
@@ -2691,10 +2754,10 @@ public sealed class CompanionState : IDisposable
         RaiseChanged();
         try
         {
-            var workflowKey = $"race:{(SelectedRaceSessionId.Length > 0 ? SelectedRaceSessionId : CurrentRaceCard.Title)}";
             Settings.CoachThreadIds.TryGetValue(workflowKey, out var threadId);
             var evidence = BuildCoachEvidence(packet);
-            var reply = await _coachEngine.AskCoachAsync(threadId, CoachQuestion, evidence, _coachRequest.Token);
+            var reply = await _coachEngine.AskCoachAsync(threadId, question, evidence, request.Token);
+            var answer = RaceCoachResponseValidator.ValidateAndFormat(reply.Text, evidence);
             Settings.CoachThreadIds[workflowKey] = reply.ThreadId;
             PersistSettingsQuietly();
             PersistPortableArtifact("ai-coaching", $"coach-{Guid.NewGuid():N}", new
@@ -2703,32 +2766,45 @@ public sealed class CompanionState : IDisposable
                 createdUtc = DateTimeOffset.UtcNow,
                 workflowKey,
                 threadId = reply.ThreadId,
-                question = CoachQuestion,
+                question,
                 evidence = JsonSerializer.Deserialize<JsonElement>(evidence),
                 structuredResponse = reply.Text
             });
-            CoachAnswer = FormatCoachReply(reply.Text);
-            CoachingHistory.Insert(0, new($"coach-{reply.TurnId}", DateTimeOffset.UtcNow, workflowKey, CoachQuestion, CoachAnswer));
-            CoachProgress = "Coaching response complete";
+            CoachingHistory.Insert(0, new($"coach-{reply.TurnId}", DateTimeOffset.UtcNow, workflowKey, question, answer));
+            if (ReferenceEquals(_coachRequest, request))
+            {
+                CoachAnswer = answer;
+                CoachAnswerAnalysisId = analysisId;
+                CoachProgress = "Answered";
+            }
         }
         catch (OperationCanceledException)
         {
-            CoachProgress = "Coaching request cancelled";
+            if (ReferenceEquals(_coachRequest, request)) CoachProgress = "Cancelled";
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or TimeoutException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or InvalidOperationException or JsonException or TimeoutException)
         {
-            CoachProgress = "Coach could not finish this request";
-            CoachAnswer = $"Your race analysis is safe. Reconnect ChatGPT from Connections and try again. {Bound(ex.Message)}";
+            if (ReferenceEquals(_coachRequest, request))
+            {
+                CoachProgress = "Could not answer";
+                CoachAnswer = ex is InvalidDataException
+                    ? Bound(ex.Message)
+                    : $"{Bound(ex.Message)} Check the ChatGPT connection in Settings, then retry.";
+            }
         }
         finally
         {
-            LastAiDuration = Stopwatch.GetElapsedTime(aiStarted);
-            IsCoaching = false;
+            if (ReferenceEquals(_coachRequest, request))
+            {
+                LastAiDuration = Stopwatch.GetElapsedTime(aiStarted);
+                IsCoaching = false;
+            }
             RaiseChanged();
         }
     }
 
     public void CancelCoachRequest() => _coachRequest?.Cancel();
+    public string CoachAnswerAnalysisId { get; private set; } = string.Empty;
 
     public void ContinueSetupWithoutConnection()
     {
@@ -2834,7 +2910,8 @@ public sealed class CompanionState : IDisposable
 
     public void Navigate(string page)
     {
-        if (string.Equals(page, "connections", StringComparison.OrdinalIgnoreCase)) page = "settings";
+        ConnectionsNavigationRequested = string.Equals(page, "connections", StringComparison.OrdinalIgnoreCase);
+        if (ConnectionsNavigationRequested) page = "settings";
         var capability = page switch
         {
             "planning" => ProductCapability.RacePlanning,
@@ -2844,6 +2921,13 @@ public sealed class CompanionState : IDisposable
         CurrentPage = capability.HasValue && !IsCapabilityVisible(capability.Value) ? "home" : page;
         Toast = null;
         RaiseChanged();
+    }
+
+    public bool ConsumeConnectionsNavigationRequest()
+    {
+        var requested = ConnectionsNavigationRequested;
+        ConnectionsNavigationRequested = false;
+        return requested;
     }
 
     public void SetPrimaryUiVisible(bool visible)
@@ -3033,7 +3117,16 @@ public sealed class CompanionState : IDisposable
         await AnalyzeRaceAsync(race, cancellationToken, force: true);
     }
     public void ClearCompletedJobs() { Jobs.RemoveAll(job => job.Status is "complete" or "cancelled" or "failed"); RaiseChanged(); }
-    public void OpenArtifact() { Navigate("analysis"); }
+    public async Task OpenArtifactAsync(JobItem job, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        if (job.Status != "complete" || !job.CanonicalKey.StartsWith("session:", StringComparison.Ordinal)) return;
+        var raceId = job.CanonicalKey["session:".Length..];
+        var race = Races.Concat(EventSessions).FirstOrDefault(candidate => candidate?.Id == raceId);
+        if (race is null) { Notify("That recording is no longer in the race list. Refresh recordings to find it."); return; }
+        Navigate("analysis");
+        await AnalyzeRaceAsync(race, cancellationToken);
+    }
     public void RequestLocateRawTelemetry() => RawTelemetryLocateRequested?.Invoke();
 
     public async Task RegisterLocatedTelemetryAsync(string path, CancellationToken cancellationToken = default)
@@ -3092,6 +3185,7 @@ public sealed class CompanionState : IDisposable
             _archive.MarkActive(Settings.CoachHome);
             await operation(linked.Token);
             job.Status = "complete"; job.Stage = "Complete"; job.Progress = 100; job.Cancellable = false; job.Elapsed = timer.Elapsed;
+            job.ArtifactLabel = canonicalKey.StartsWith("session:", StringComparison.Ordinal) ? "race" : null;
             JobTrayOpen = false;
             Toast = null;
         }
@@ -3122,6 +3216,7 @@ public sealed class CompanionState : IDisposable
         SettingsMessage = SettingsWritable
             ? Archive.Message
             : Settings.Compatibility.Message;
+        _ensuredCoachHome = Settings.CoachHome;
     }
 
     private void LoadPortableCoachingHistory()
@@ -3141,9 +3236,12 @@ public sealed class CompanionState : IDisposable
                 var workflow = root.TryGetProperty("workflowKey", out var workflowValue) ? workflowValue.GetString() ?? "Archived race" : "Archived race";
                 var question = root.TryGetProperty("question", out var questionValue) ? questionValue.GetString() ?? "Coaching question" : "Coaching question";
                 var response = root.TryGetProperty("structuredResponse", out var responseValue) ? responseValue.GetString() ?? string.Empty : string.Empty;
-                CoachingHistory.Add(new(Path.GetFileNameWithoutExtension(path), created, workflow, question, FormatCoachReply(response)));
+                var answer = "This older answer has no verifiable evidence references. Ask again to review the current analysis.";
+                if (root.TryGetProperty("evidence", out var evidenceValue) && evidenceValue.ValueKind == JsonValueKind.Object)
+                    answer = RaceCoachResponseValidator.ValidateAndFormat(response, evidenceValue.GetRawText());
+                CoachingHistory.Add(new(Path.GetFileNameWithoutExtension(path), created, workflow, question, answer));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException) { }
         }
     }
 
@@ -3456,6 +3554,7 @@ public sealed class CompanionState : IDisposable
                 .Select(item => new { id = item.Definition.Id.ToString(), item.Definition.Name, item.Definition.UserValue }),
             setup_changes_allowed = selected?.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase) == true,
             numeric_packet = packet,
+            investigation = CurrentAnalysis is null ? null : RaceCoachPacketBuilder.InvestigationContext(CurrentAnalysis),
             race = new
             {
                 card.Title,
@@ -3765,28 +3864,12 @@ public sealed class CompanionState : IDisposable
 
     private static RaceOverview BuildRaceOverview(AnalysisWorkspace analysis)
     {
-        var incidentLaps = (analysis.Damage.Incidents ?? []).Where(incident => incident.Points > 0).Select(incident => incident.Lap).ToHashSet();
-        var cleanTimes = analysis.Traces.Where(trace => trace.IsComparable()
-                && !incidentLaps.Contains(trace.Lap)
-                && trace.LapTimeSeconds is > 0)
-            .Select(trace => trace.LapTimeSeconds!.Value).ToArray();
-        double? consistency = null;
-        if (cleanTimes.Length >= 2)
-        {
-            var mean = cleanTimes.Average();
-            if (mean > 0) consistency = Math.Sqrt(cleanTimes.Sum(value => Math.Pow(value - mean, 2)) / cleanTimes.Length) / mean * 100;
-        }
-        var longest = analysis.Runs.Where(run => run.ComparisonEligible).OrderByDescending(run => run.GreenLaps).FirstOrDefault();
-        var tire = analysis.Runs.Where(run => run.TireRemainingPercent.HasValue).OrderBy(run => run.TireRemainingPercent).FirstOrDefault();
-        var controlChanges = analysis.Runs.Where(run => run.ComparisonEligible).SelectMany(run => new[] { run.EarlyBrakeVsLatePercent, run.EarlySteerVsLatePercent })
-            .Where(value => value.HasValue).Select(value => Math.Abs(value!.Value)).ToArray();
-        var controlChange = controlChanges.Length > 0 ? controlChanges.Max() : (double?)null;
-        var recordedFuel = analysis.Runs.Where(run => run.FuelUsedGallons.HasValue).Select(run => run.FuelUsedGallons!.Value).ToArray();
-        return new RaceOverview(
-            analysis.RecordedLaps, analysis.Runs.Sum(run => run.GreenLaps), analysis.Runs.Sum(run => run.CautionLaps),
-            analysis.PitStops, analysis.Runs.Count, analysis.Runs.Select(run => run.GreenLaps).DefaultIfEmpty().Max(), longest?.PaceSlopeSecondsPerLap,
-            consistency, tire?.TireRemainingPercent, tire?.TireName ?? string.Empty, controlChange,
-            recordedFuel.Length > 0 ? recordedFuel.Sum() : null, cleanTimes.Length > 0 ? cleanTimes.Min() : null,
+        // Runs exclude laps that cross a service boundary. Their totals cannot
+        // replace the backend's complete-race summary when a recording opens.
+        return analysis.Overview ?? new RaceOverview(
+            RecordedLaps: analysis.RecordedLaps,
+            PitStops: analysis.PitStops,
+            Runs: analysis.Runs.Count,
             ScheduledLaps: analysis.ScheduledLaps,
             ScheduledMinutes: analysis.ScheduledMinutes,
             DeclaredLapLimit: analysis.DeclaredLapLimit,

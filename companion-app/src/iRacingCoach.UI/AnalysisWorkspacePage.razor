@@ -14,6 +14,7 @@
                 </div>
             </div>
             <div class="analysis-context-actions race-session-actions">
+                <button type="button" class="segmented" aria-expanded="@(_coachOpen ? "true" : "false")" @onclick="() => _coachOpen = !_coachOpen">Ask about this race</button>
                 @if (EventSessions.Count > 1)
                 {
                     <div class="event-session-switch" role="group" aria-label="Event session">
@@ -49,6 +50,14 @@
         </header>
     }
 
+    @if (_coachOpen)
+    {
+        <aside class="race-coach-drawer" aria-label="Race questions">
+            <button type="button" class="technical-back" @onclick="() => _coachOpen = false">Close</button>
+            <RaceCoachPanel State="State" Workspace="Workspace" />
+        </aside>
+    }
+
     @if (!IsRaceWorkspace && Workspace.Grades.Count > 0)
     {
         <details class="grade-drawer">
@@ -71,9 +80,9 @@
     }
 
     <div class="@(IsRaceWorkspace ? "race-data-workspace" : "analysis-one-screen")">
-        @if (!IsRaceWorkspace || RaceDataSection == "telemetry")
+        @if (!IsRaceWorkspace || RaceDataSection == "telemetry" || _telemetryVisited)
         {
-            <main class="analysis-primary-column race-telemetry-page">
+            <main class="analysis-primary-column race-telemetry-page" style="@(IsRaceWorkspace && RaceDataSection != "telemetry" ? "display:none" : null)">
                 @if (!IsRaceWorkspace)
                 {
                     <section class="analysis-focus-strip" aria-label="What matters from this session">
@@ -85,16 +94,16 @@
                     </section>
                 }
 
-                <TelemetryWorkspace State="State" Workspace="Workspace" IsRaceWorkspace="IsRaceWorkspace" />
+                <TelemetryWorkspace State="State" Workspace="Workspace" IsRaceWorkspace="IsRaceWorkspace" Inspection="_inspection" OnReturnToFindings="ReturnToFindings" Visible="@(!IsRaceWorkspace || RaceDataSection == "telemetry")" />
             </main>
         }
 
-        @if (!IsRaceWorkspace || RaceDataSection == "technical")
+        @if (!IsRaceWorkspace || RaceDataSection == "technical" || _technicalVisited)
         {
-            <section class="@(IsRaceWorkspace ? "race-review-page" : "qualifying-review-shell")">
+            <section class="@(IsRaceWorkspace ? "race-review-page" : "qualifying-review-shell")" style="@(IsRaceWorkspace && RaceDataSection != "technical" ? "display:none" : null)">
                 @if (IsRaceWorkspace)
                 {
-                    <RaceTechnicalData Workspace="Workspace" Card="Card" />
+                    <RaceTechnicalData Workspace="Workspace" Card="Card" OnInspect="InspectFinding" Visible="@(!IsRaceWorkspace || RaceDataSection == "technical")" />
                 }
                 else
                 {
@@ -169,7 +178,27 @@
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
     [Parameter, EditorRequired] public RaceCard Card { get; set; } = null!;
-    private string RaceDataSection { get; set; } = "telemetry";
+    private string _raceDataSection = "telemetry";
+    private bool _telemetryVisited = true;
+    private bool _technicalVisited;
+    private bool _coachOpen;
+    private RaceInvestigationInspection? _inspection;
+    private string RaceDataSection
+    {
+        get => _raceDataSection;
+        set
+        {
+            _raceDataSection = value;
+            _telemetryVisited |= value == "telemetry";
+            _technicalVisited |= value == "technical";
+        }
+    }
+    private void InspectFinding(RaceInvestigationInspection inspection)
+    {
+        _inspection = inspection with { };
+        RaceDataSection = "telemetry";
+    }
+    private void ReturnToFindings() => RaceDataSection = "technical";
     private string? _analysisId;
     private IReadOnlyList<RaceReviewCornerSummary> _cornerAreas = [];
     private RecentRace? SelectedEventSession => EventSessions.FirstOrDefault(session => session.Id == State.SelectedRaceSessionId);
@@ -177,12 +206,15 @@
         ? !session.IsQualifying
         : string.Equals(Workspace.SessionType, "Race", StringComparison.OrdinalIgnoreCase);
     private string ContextSummary => IsRaceWorkspace
-        ? string.Join(" · ", new[] { Workspace.Car, Workspace.SetupType }.Where(value => !string.IsNullOrWhiteSpace(value)))
+        ? string.Join(" · ", new[] { Workspace.Car, Workspace.SetupType, SelectedEventSession?.Date }.Where(value => !string.IsNullOrWhiteSpace(value)))
         : string.Join(" · ", new[] { Workspace.Car, Workspace.SetupType, $"{Workspace.RecordedLaps} laps" }.Where(value => !string.IsNullOrWhiteSpace(value)));
     protected override void OnParametersSet()
     {
         if (_analysisId == Workspace.AnalysisId) return;
         _analysisId = Workspace.AnalysisId;
+        _inspection = null;
+        _coachOpen = false;
+        _technicalVisited = false;
         _cornerAreas = RaceReviewMetrics.BuildCornerSummaries(Workspace);
         RaceDataSection = "telemetry";
     }

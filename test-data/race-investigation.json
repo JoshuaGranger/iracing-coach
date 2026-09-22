@@ -1,0 +1,889 @@
+{
+  "comparison_coverage": {
+    "candidate_count": 2,
+    "generated_count": 2,
+    "selection_policy": "At most 24 comparisons: retain the latest/default window, the first and last four candidates, then the largest absolute median pace changes. All recorded laps remain in the timeline."
+  },
+  "comparisons": [
+    {
+      "actions": [
+        {
+          "end_pct": null,
+          "evidence": [
+            "Laps 7–9 were 0.120 s/lap slower than laps 1–3 by median."
+          ],
+          "instruction": "Inspect these exact laps in telemetry or replay to locate where time is lost. No specific input change is supported yet; first establish a repeatable difference on complete, clear laps at similar fuel and run age.",
+          "lap_numbers": [
+            1,
+            2,
+            3,
+            7,
+            8,
+            9
+          ],
+          "limitation": "Change one input at a time on clear, complete green laps at similar run age and fuel. The observed association is not a proven cause.",
+          "priority": 1,
+          "signal_keys": [
+            "delta",
+            "speed",
+            "brake",
+            "throttle",
+            "steering"
+          ],
+          "start_pct": null,
+          "title": "Locate the repeatable pace loss"
+        }
+      ],
+      "baseline": {
+        "eligible_lap_numbers": [
+          1,
+          2,
+          3
+        ],
+        "excluded_laps": [],
+        "fuel_start_gal": 10.461,
+        "green_age_end": 3.0,
+        "green_age_start": 1.0,
+        "label": "Laps 1–3",
+        "lap_count": 3,
+        "lap_numbers": [
+          1,
+          2,
+          3
+        ],
+        "median_lap_s": 30.04,
+        "representative_lap": 2,
+        "run_number": 1,
+        "track_temp_f": 80.0
+      },
+      "compared": {
+        "eligible_lap_numbers": [
+          7,
+          8,
+          9
+        ],
+        "excluded_laps": [],
+        "fuel_start_gal": 10.144,
+        "green_age_end": 9.0,
+        "green_age_start": 7.0,
+        "label": "Laps 7–9",
+        "lap_count": 3,
+        "lap_numbers": [
+          7,
+          8,
+          9
+        ],
+        "median_lap_s": 30.16,
+        "representative_lap": 8,
+        "run_number": 1,
+        "track_temp_f": 80.0
+      },
+      "corners": [
+        {
+          "delta_s": 0.036,
+          "end_pct": 0.4,
+          "id": "track-area-1",
+          "label": "Track area 1 (10–40% lap)",
+          "metrics": [
+            {
+              "baseline": 9.012,
+              "compared": 9.048,
+              "delta": 0.036,
+              "detail": "3 earlier and 3 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "elapsed",
+              "label": "Area time",
+              "unit": "s"
+            },
+            {
+              "baseline": 100.0,
+              "compared": 100.0,
+              "delta": 0.0,
+              "detail": "3 earlier and 3 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "entry_speed",
+              "label": "Entry speed",
+              "unit": "mph"
+            },
+            {
+              "baseline": 100.0,
+              "compared": 100.0,
+              "delta": 0.0,
+              "detail": "3 earlier and 3 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "minimum_speed",
+              "label": "Minimum speed",
+              "unit": "mph"
+            },
+            {
+              "baseline": 100.0,
+              "compared": 100.0,
+              "delta": 0.0,
+              "detail": "3 earlier and 3 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "exit_speed",
+              "label": "Exit speed",
+              "unit": "mph"
+            },
+            {
+              "baseline": 10.0,
+              "compared": 10.0,
+              "delta": 0.0,
+              "detail": "3 earlier and 3 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "brake",
+              "label": "Brake demand",
+              "unit": "%"
+            },
+            {
+              "baseline": 80.0,
+              "compared": 80.0,
+              "delta": 0.0,
+              "detail": "3 earlier and 3 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "throttle",
+              "label": "Throttle demand",
+              "unit": "%"
+            },
+            {
+              "baseline": 11.459,
+              "compared": 11.459,
+              "delta": 0.0,
+              "detail": "3 earlier and 3 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "steering",
+              "label": "Steering demand",
+              "unit": "deg"
+            }
+          ],
+          "start_pct": 0.1
+        }
+      ],
+      "delta_s": 0.12,
+      "eligibility": "eligible",
+      "hypotheses": [
+        {
+          "contradicting": [
+            "No large change was found in the available whole-lap control summaries."
+          ],
+          "general_context": "",
+          "key": "driving",
+          "label": "Driving inputs",
+          "references": [],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "Changed inputs describe what happened; they do not establish whether the driver, grip, traffic or setup caused the change. Mental focus is not measured."
+          ]
+        },
+        {
+          "contradicting": [
+            "Both selected windows pass the recorded traffic screen."
+          ],
+          "general_context": "",
+          "key": "traffic",
+          "label": "Traffic",
+          "references": [],
+          "status": "not_supported",
+          "supporting": [],
+          "unknown": [
+            "Proximity does not prove a blocker, contact, or the amount of time lost; inspect the selected laps in replay."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "iRacing's oval track model allows a more rubbered surface to shift wear toward the tire and reduce the long-run advantage of staying in the groove. That is general behavior, not proof of this race's cause.",
+          "key": "track",
+          "label": "Track evolution",
+          "references": [
+            {
+              "title": "iRacing 2026 Season 1: oval track and tire interaction",
+              "url": "https://support.iracing.com/support/solutions/articles/31000177717-2026-season-1-initial-release-notes-2025-12-08-03-"
+            }
+          ],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "Inherited session rubber label: moderate usage. Rubber progression during this race was not measured.",
+            "Temperature alone cannot rule out changing rubber, marbles or usable grip."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "",
+          "key": "fuel",
+          "label": "Fuel load",
+          "references": [],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "The comparison is not fuel-corrected; a measured fuel difference does not quantify its lap-time effect."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "",
+          "key": "tires",
+          "label": "Tires and service",
+          "references": [],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "Run-relative green exposure is not exact tire wear. Initial tire age and mixed sets can prevent a like-for-like comparison.",
+            "A stop reading belongs to the preceding run; absent final-run readings cannot establish final tire wear."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "",
+          "key": "damage",
+          "label": "Damage and repairs",
+          "references": [],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "No recorded repair workload does not establish an undamaged car. Incident points do not identify physical damage or fault."
+          ]
+        }
+      ],
+      "id": "run-1-clean",
+      "kind": "within_run",
+      "metrics": [
+        {
+          "baseline": 30.04,
+          "compared": 30.16,
+          "delta": 0.12,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "pace",
+          "label": "Lap time",
+          "unit": "s"
+        },
+        {
+          "baseline": 10.0,
+          "compared": 10.0,
+          "delta": 0.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "brake",
+          "label": "Average brake",
+          "unit": "%"
+        },
+        {
+          "baseline": 80.0,
+          "compared": 80.0,
+          "delta": 0.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "throttle",
+          "label": "Average throttle",
+          "unit": "%"
+        },
+        {
+          "baseline": 11.459,
+          "compared": 11.459,
+          "delta": 0.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "steering",
+          "label": "Steering demand",
+          "unit": "deg"
+        },
+        {
+          "baseline": 0.0,
+          "compared": 0.0,
+          "delta": 0.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "traffic",
+          "label": "Close-traffic exposure",
+          "unit": "%"
+        },
+        {
+          "baseline": 10.461,
+          "compared": 10.144,
+          "delta": -0.317,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "fuel",
+          "label": "Starting fuel",
+          "unit": "gal"
+        },
+        {
+          "baseline": 80.0,
+          "compared": 80.0,
+          "delta": 0.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "track_temperature",
+          "label": "Track temperature",
+          "unit": "°F"
+        }
+      ],
+      "summary": "Laps 7–9 were 0.120 s/lap slower than laps 1–3 by median.",
+      "title": "Run 1: clean early versus late"
+    },
+    {
+      "actions": [
+        {
+          "end_pct": 0.4,
+          "evidence": [
+            "Track area 1 (10–40% lap) took 0.348 s longer in the later window.",
+            "Brake demand rose 10.0 percentage points while minimum speed fell 5.0 mph."
+          ],
+          "instruction": "At Track area 1 (10–40% lap), keep the entry controlled and release brake pressure progressively. Check whether minimum speed recovers without adding steering correction or sacrificing exit speed.",
+          "lap_numbers": [
+            1,
+            2,
+            3,
+            4,
+            9,
+            10,
+            11,
+            12
+          ],
+          "limitation": "The later window includes excluded laps. Confirm the pattern on a clear lap before treating this as a driving correction. Change one input at a time on clear, complete green laps at similar run age and fuel. The observed association is not a proven cause.",
+          "priority": 1,
+          "signal_keys": [
+            "speed",
+            "brake",
+            "steering",
+            "delta"
+          ],
+          "start_pct": 0.1,
+          "title": "Test a smoother brake release"
+        }
+      ],
+      "baseline": {
+        "eligible_lap_numbers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "excluded_laps": [],
+        "fuel_start_gal": 10.435,
+        "green_age_end": 4.0,
+        "green_age_start": 1.0,
+        "label": "Laps 1–4",
+        "lap_count": 4,
+        "lap_numbers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "median_lap_s": 30.05,
+        "representative_lap": 2,
+        "run_number": 1,
+        "track_temp_f": 80.0
+      },
+      "compared": {
+        "eligible_lap_numbers": [
+          9
+        ],
+        "excluded_laps": [
+          {
+            "lap": 10,
+            "reasons": [
+              "close_traffic"
+            ]
+          },
+          {
+            "lap": 11,
+            "reasons": [
+              "close_traffic"
+            ]
+          },
+          {
+            "lap": 12,
+            "reasons": [
+              "close_traffic"
+            ]
+          }
+        ],
+        "fuel_start_gal": 10.012,
+        "green_age_end": 12.0,
+        "green_age_start": 9.0,
+        "label": "Laps 9–12",
+        "lap_count": 4,
+        "lap_numbers": [
+          9,
+          10,
+          11,
+          12
+        ],
+        "median_lap_s": 31.21,
+        "representative_lap": 11,
+        "run_number": 1,
+        "track_temp_f": 80.0
+      },
+      "corners": [
+        {
+          "delta_s": 0.348,
+          "end_pct": 0.4,
+          "id": "track-area-1",
+          "label": "Track area 1 (10–40% lap)",
+          "metrics": [
+            {
+              "baseline": 9.015,
+              "compared": 9.363,
+              "delta": 0.348,
+              "detail": "4 earlier and 4 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "elapsed",
+              "label": "Area time",
+              "unit": "s"
+            },
+            {
+              "baseline": 100.0,
+              "compared": 95.0,
+              "delta": -5.0,
+              "detail": "4 earlier and 4 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "entry_speed",
+              "label": "Entry speed",
+              "unit": "mph"
+            },
+            {
+              "baseline": 100.0,
+              "compared": 95.0,
+              "delta": -5.0,
+              "detail": "4 earlier and 4 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "minimum_speed",
+              "label": "Minimum speed",
+              "unit": "mph"
+            },
+            {
+              "baseline": 100.0,
+              "compared": 95.0,
+              "delta": -5.0,
+              "detail": "4 earlier and 4 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "exit_speed",
+              "label": "Exit speed",
+              "unit": "mph"
+            },
+            {
+              "baseline": 10.0,
+              "compared": 20.0,
+              "delta": 10.0,
+              "detail": "4 earlier and 4 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "brake",
+              "label": "Brake demand",
+              "unit": "%"
+            },
+            {
+              "baseline": 80.0,
+              "compared": 60.0,
+              "delta": -20.0,
+              "detail": "4 earlier and 4 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "throttle",
+              "label": "Throttle demand",
+              "unit": "%"
+            },
+            {
+              "baseline": 11.459,
+              "compared": 17.189,
+              "delta": 5.73,
+              "detail": "4 earlier and 4 later laps; distance-binned traces.",
+              "evidence": "derived",
+              "key": "steering",
+              "label": "Steering demand",
+              "unit": "deg"
+            }
+          ],
+          "start_pct": 0.1
+        }
+      ],
+      "delta_s": 1.16,
+      "eligibility": "mixed",
+      "hypotheses": [
+        {
+          "contradicting": [],
+          "general_context": "",
+          "key": "driving",
+          "label": "Driving inputs",
+          "references": [],
+          "status": "supported",
+          "supporting": [
+            "Average brake: 10.00 → 20.00 %.",
+            "Average throttle: 80.00 → 60.00 %.",
+            "Steering demand: 11.46 → 17.19 deg."
+          ],
+          "unknown": [
+            "Changed inputs describe what happened; they do not establish whether the driver, grip, traffic or setup caused the change. Mental focus is not measured."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "",
+          "key": "traffic",
+          "label": "Traffic",
+          "references": [],
+          "status": "possible",
+          "supporting": [
+            "0 earlier and 3 later laps triggered the proximity screen.",
+            "Close-traffic exposure: 0.00 → 30.00 %."
+          ],
+          "unknown": [
+            "Proximity does not prove a blocker, contact, or the amount of time lost; inspect the selected laps in replay."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "iRacing's oval track model allows a more rubbered surface to shift wear toward the tire and reduce the long-run advantage of staying in the groove. That is general behavior, not proof of this race's cause.",
+          "key": "track",
+          "label": "Track evolution",
+          "references": [
+            {
+              "title": "iRacing 2026 Season 1: oval track and tire interaction",
+              "url": "https://support.iracing.com/support/solutions/articles/31000177717-2026-season-1-initial-release-notes-2025-12-08-03-"
+            }
+          ],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "Inherited session rubber label: moderate usage. Rubber progression during this race was not measured.",
+            "Temperature alone cannot rule out changing rubber, marbles or usable grip."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "",
+          "key": "fuel",
+          "label": "Fuel load",
+          "references": [],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "The comparison is not fuel-corrected; a measured fuel difference does not quantify its lap-time effect."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "",
+          "key": "tires",
+          "label": "Tires and service",
+          "references": [],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "Run-relative green exposure is not exact tire wear. Initial tire age and mixed sets can prevent a like-for-like comparison.",
+            "A stop reading belongs to the preceding run; absent final-run readings cannot establish final tire wear."
+          ]
+        },
+        {
+          "contradicting": [],
+          "general_context": "",
+          "key": "damage",
+          "label": "Damage and repairs",
+          "references": [],
+          "status": "unresolved",
+          "supporting": [],
+          "unknown": [
+            "No recorded repair workload does not establish an undamaged car. Incident points do not identify physical damage or fault."
+          ]
+        }
+      ],
+      "id": "run-1-finish",
+      "kind": "observed_finish",
+      "metrics": [
+        {
+          "baseline": 30.05,
+          "compared": 31.21,
+          "delta": 1.16,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "pace",
+          "label": "Lap time",
+          "unit": "s"
+        },
+        {
+          "baseline": 10.0,
+          "compared": 20.0,
+          "delta": 10.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "brake",
+          "label": "Average brake",
+          "unit": "%"
+        },
+        {
+          "baseline": 80.0,
+          "compared": 60.0,
+          "delta": -20.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "throttle",
+          "label": "Average throttle",
+          "unit": "%"
+        },
+        {
+          "baseline": 11.459,
+          "compared": 17.189,
+          "delta": 5.73,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "steering",
+          "label": "Steering demand",
+          "unit": "deg"
+        },
+        {
+          "baseline": 0.0,
+          "compared": 30.0,
+          "delta": 30.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "traffic",
+          "label": "Close-traffic exposure",
+          "unit": "%"
+        },
+        {
+          "baseline": 10.435,
+          "compared": 10.012,
+          "delta": -0.423,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "fuel",
+          "label": "Starting fuel",
+          "unit": "gal"
+        },
+        {
+          "baseline": 80.0,
+          "compared": 80.0,
+          "delta": 0.0,
+          "detail": "Median of per-lap observations; later window minus earlier window.",
+          "evidence": "derived",
+          "key": "track_temperature",
+          "label": "Track temperature",
+          "unit": "°F"
+        }
+      ],
+      "summary": "Laps 9–12 were 1.160 s/lap slower than laps 1–4 by median. 3 of 8 selected laps are excluded from clean coaching.",
+      "title": "Run 1: earlier to final green laps"
+    }
+  ],
+  "default_comparison_id": "run-1-finish",
+  "fixture_metadata": {
+    "production_use_allowed": false,
+    "real_driver_or_setup_data": false,
+    "synthetic": true
+  },
+  "laps": [
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 1,
+      "lap_time_s": 30.02,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 2,
+      "lap_time_s": 30.04,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 3,
+      "lap_time_s": 30.06,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 4,
+      "lap_time_s": 30.08,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 5,
+      "lap_time_s": 30.1,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 6,
+      "lap_time_s": 30.12,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 7,
+      "lap_time_s": 30.14,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 8,
+      "lap_time_s": 30.16,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": true,
+      "exclusion_reasons": [],
+      "flag_state": "green",
+      "lap": 9,
+      "lap_time_s": 30.18,
+      "plot_pace": true,
+      "position": 1.0,
+      "run_number": 1
+    },
+    {
+      "eligible": false,
+      "exclusion_reasons": [
+        "close_traffic"
+      ],
+      "flag_state": "green",
+      "lap": 10,
+      "lap_time_s": 31.2,
+      "plot_pace": true,
+      "position": 3.0,
+      "run_number": 1
+    },
+    {
+      "eligible": false,
+      "exclusion_reasons": [
+        "close_traffic"
+      ],
+      "flag_state": "green",
+      "lap": 11,
+      "lap_time_s": 31.22,
+      "plot_pace": true,
+      "position": 3.0,
+      "run_number": 1
+    },
+    {
+      "eligible": false,
+      "exclusion_reasons": [
+        "close_traffic"
+      ],
+      "flag_state": "green",
+      "lap": 12,
+      "lap_time_s": 31.24,
+      "plot_pace": true,
+      "position": 3.0,
+      "run_number": 1
+    }
+  ],
+  "limitations": [
+    "Window medians are observed comparisons, not estimates of a single cause.",
+    "Clean windows use the existing recorded eligibility screen; observed finish windows retain excluded laps and their reasons.",
+    "Cross-run exposure uses sampled green-time fractions from complete laps, not measured tire wear or exact physical green distance.",
+    "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
+    "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."
+  ],
+  "schema_version": 1,
+  "status": "available",
+  "summary": "Laps 9–12 were 1.160 s/lap slower than laps 1–4 by median. 3 of 8 selected laps are excluded from clean coaching.",
+  "timeline": [],
+  "track_evolution": {
+    "limitations": [
+      "Track temperature is a separate measurement; stable temperature does not establish stable rubber, marbles or grip.",
+      "A starting or carry-over rubber label does not measure subsequent rubber build-up or groove grip."
+    ],
+    "points": [
+      {
+        "lap": 1,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 2,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 3,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 4,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 5,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 6,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 7,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 8,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 9,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 10,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 11,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      },
+      {
+        "lap": 12,
+        "track_temp_f": 80.0,
+        "usage_value": null
+      }
+    ],
+    "provenance": "SessionTrackRubberState session metadata; not a measured race-long series. Session initialization: Practice: moderate usage → Race: carry over. The metadata labels are not sampled evolution.",
+    "starting_usage": "moderate usage",
+    "status": "starting_state_only",
+    "summary": "Inherited session rubber label: moderate usage. Rubber progression during this race was not measured.",
+    "usage_source": null,
+    "usage_unit": "%"
+  }
+}

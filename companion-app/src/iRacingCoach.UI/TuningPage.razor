@@ -1,6 +1,7 @@
-@implements IDisposable
+@implements IAsyncDisposable
 
 <div class="tuning-workbench-page tuning-workbench-v3">
+    <div class="tuning-context-header">
     @if (State.TuningSourceSetup is { } sourceSetup)
     {
         <div class="setup-tuning-origin"><button class="back-button" @onclick='() => State.Navigate("setup")'>← Setup library</button><strong>@sourceSetup.Name</strong><span>Linked recording · @sourceSetup.Car</span></div>
@@ -41,6 +42,7 @@
             <span class="tuning-working" role="status"><i></i>@_workingLabel</span>
         }
     </header>
+    </div>
 
     @if (EvidenceRaces.Count == 0)
     {
@@ -121,12 +123,15 @@
                 <div class="tuning-toolbox-scroll">
                     @if (_editorOpen)
                     {
+                        var feedbackDraft = State.TuningDraft;
+                        var feedbackTurn = _selectedTurn;
+                        var feedbackPriority = PriorityCornerId;
                         <div class="tuning-active-corner-panel" data-active-corner-editor>
-                            <ProgressiveTuningFeedbackEditor Turn="_selectedTurn"
+                            <ProgressiveTuningFeedbackEditor @ref="_feedbackEditor" Turn="_selectedTurn"
                                                              RunPhase="@State.TuningActiveRunPhase"
                                                              ExistingFeedback="State.TuningDraft.Feedback"
                                                              IsPriorityCorner="@IsSelectedPriorityCorner"
-                                                             FeedbackChanged="SaveFeedback"
+                                                             FeedbackChanged="batch => SaveFeedback(batch, feedbackDraft, feedbackTurn, feedbackPriority)"
                                                              PriorityChanged="SetPriorityCorner"
                                                              CloseRequested="CloseFeedbackEditor"
                                                              SaveStatus="@_feedbackSaveStatus" />
@@ -139,7 +144,7 @@
                             ?? result.CandidateWhitelist.FirstOrDefault();
                         <section class="tuning-result-card">
                             <header>
-                                <div><span class="eyebrow">Controlled test</span><h2>@(selectedChange?.System ?? "No safe change")</h2></div>
+                                <div><span class="eyebrow">Controlled test</span><h2>@(selectedChange?.System ?? "No supported change")</h2></div>
                                 <span class="status-label neutral">One system</span>
                             </header>
                             @if (!string.IsNullOrWhiteSpace(result.Recommendation.Summary))
@@ -182,7 +187,7 @@
                             else
                             {
                                 var reason = string.Join(" ", result.MissingRequired.Concat(result.Limitations));
-                                <p>@(string.IsNullOrWhiteSpace(reason) ? "The available evidence does not support a safe setup change." : reason)</p>
+                                <p>@(string.IsNullOrWhiteSpace(reason) ? "This recording does not support a setup-change recommendation." : reason)</p>
                             }
                         </section>
                     }
@@ -305,6 +310,9 @@
 
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _noteSave;
+    private ProgressiveTuningFeedbackEditor? _feedbackEditor;
+    private PendingGeneralNote? _pendingGeneralNote;
+    private Task _generalNoteWrite = Task.CompletedTask;
     private TuningTurn? _selectedTurn;
     private string _generalNote = string.Empty;
     private string _feedbackSaveStatus = string.Empty;
@@ -506,7 +514,7 @@
 
     private async Task LoadRace(string raceId)
     {
-        CancelPendingGeneralNote();
+        await FlushPendingEditsAsync();
         _working = true;
         _workingLabel = "Loading race";
         _actionMessage = string.Empty;
@@ -559,6 +567,7 @@
 
     private async Task SelectTurn(TuningTurn turn)
     {
+        if (_feedbackEditor is not null) await _feedbackEditor.FlushPendingNoteAsync();
         _selectedTurn = turn;
         _editorOpen = true;
         _feedbackSaveStatus = string.Empty;
@@ -568,17 +577,20 @@
 
     private async Task CloseFeedbackEditor()
     {
+        if (_feedbackEditor is not null) await _feedbackEditor.FlushPendingNoteAsync();
         _editorOpen = false;
         await State.SelectTuningTurnAsync(string.Empty, _lifetime.Token);
     }
 
-    private void HandleCorrectionModeChanged(bool open)
+    private async Task HandleCorrectionModeChanged(bool open)
     {
+        if (open && _feedbackEditor is not null) await _feedbackEditor.FlushPendingNoteAsync();
         if (open) _editorOpen = false;
     }
 
-    private void SelectRunPhase(string phase)
+    private async Task SelectRunPhase(string phase)
     {
+        if (_feedbackEditor is not null) await _feedbackEditor.FlushPendingNoteAsync();
         State.TuningActiveRunPhase = phase;
         _hideStructuredResult = true;
     }
@@ -586,21 +598,21 @@
     private int PhaseFeedbackCount(string phase) => State.TuningDraft.Feedback.Count(item =>
         string.Equals(item.RunPhase, phase, StringComparison.OrdinalIgnoreCase));
 
-    private async Task SaveFeedback(ProgressiveTuningFeedbackBatch batch)
+    private async Task SaveFeedback(ProgressiveTuningFeedbackBatch batch, ProgressiveTuningDraft sourceDraft, TuningTurn? sourceTurn, string? sourcePriority)
     {
         _feedbackSaveStatus = "Saving…";
         _actionMessage = string.Empty;
         var normalized = batch.Feedback.Select(item => item with
         {
-            Priority = string.Equals(PriorityCornerId, batch.CornerId, StringComparison.Ordinal) ? 5 : Math.Min(item.Priority, 4)
+            Priority = string.Equals(sourcePriority, batch.CornerId, StringComparison.Ordinal) ? 5 : Math.Min(item.Priority, 4)
         }).ToArray();
         try
         {
             await State.ReplaceTuningFeedbackBatchAsync(
-                batch.CornerId,
+                sourceDraft,
+                sourceTurn ?? throw new InvalidOperationException("Select the turn again before saving feedback."),
                 batch.RunPhase,
-                normalized,
-                _lifetime.Token);
+                normalized);
             _feedbackSaveStatus = "Saved";
             _hideStructuredResult = true;
         }
@@ -641,19 +653,16 @@
     private async Task GeneralNoteChanged(ChangeEventArgs args)
     {
         var value = args.Value?.ToString() ?? string.Empty;
-        var draftId = State.TuningDraft.DraftId;
         _generalNote = value;
         _generalSaveStatus = string.Empty;
         CancelPendingGeneralNote();
-        _noteSave = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _pendingGeneralNote = new PendingGeneralNote(State.TuningDraft, value);
+        _noteSave = new CancellationTokenSource();
+        var token = _noteSave.Token;
         try
         {
-            await Task.Delay(450, _noteSave.Token);
-            if (!string.Equals(State.TuningDraft.DraftId, draftId, StringComparison.Ordinal)) return;
-            _generalSaveStatus = "Saving…";
-            await State.SaveTuningGeneralNoteAsync(value, _noteSave.Token);
-            _generalSaveStatus = "Saved";
-            _hideStructuredResult = true;
+            await Task.Delay(450, token);
+            await FlushPendingGeneralNoteAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -770,6 +779,7 @@
 
     private async Task AnalyzeFeedback()
     {
+        await FlushPendingEditsAsync();
         _working = true;
         _workingLabel = "Analyzing";
         _actionMessage = string.Empty;
@@ -842,11 +852,42 @@
 
     private static string AriaBoolean(bool value) => value ? "true" : "false";
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
+    {
+        try { await FlushPendingEditsAsync(); }
+        finally { _lifetime.Cancel(); _lifetime.Dispose(); }
+    }
+
+    private async Task FlushPendingEditsAsync()
+    {
+        if (_feedbackEditor is not null) await _feedbackEditor.FlushPendingNoteAsync();
+        await FlushPendingGeneralNoteAsync();
+    }
+
+    private Task FlushPendingGeneralNoteAsync()
     {
         CancelPendingGeneralNote();
-        _lifetime.Cancel();
-        _lifetime.Dispose();
+        var pending = _pendingGeneralNote;
+        _pendingGeneralNote = null;
+        if (pending is not null) _generalNoteWrite = WriteGeneralNoteAfterAsync(_generalNoteWrite, pending);
+        return _generalNoteWrite;
+    }
+
+    private async Task WriteGeneralNoteAfterAsync(Task preceding, PendingGeneralNote pending)
+    {
+        await preceding;
+        try
+        {
+            _generalSaveStatus = "Saving…";
+            await State.SaveTuningGeneralNoteAsync(pending.Draft, pending.Value);
+            _generalSaveStatus = "Saved";
+            _hideStructuredResult = true;
+        }
+        catch (Exception ex)
+        {
+            _generalSaveStatus = "Not saved";
+            ShowFailure(ex.Message);
+        }
     }
 
     private void CancelPendingGeneralNote()
@@ -858,4 +899,5 @@
 
     private sealed record RunEvidence(int Run, string Value, string Label);
     private sealed record TireEvidence(int Run, string Corner, double Wear);
+    private sealed record PendingGeneralNote(ProgressiveTuningDraft Draft, string Value);
 }

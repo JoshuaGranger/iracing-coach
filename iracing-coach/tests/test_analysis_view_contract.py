@@ -72,6 +72,11 @@ class AnalysisViewProducerContractTests(unittest.TestCase):
         self.assertTrue(self.view["identity"])
         self.assertTrue(self.view["race_summary"])
         self.assertTrue(self.view["laps"])
+        self.assertEqual(self.view["race_investigation"]["schema_version"], 1)
+        self.assertEqual(
+            [item["lap"] for item in self.view["race_investigation"]["laps"]],
+            [item["lap"] for item in self.analysis["laps"] if item["lap"] > 0],
+        )
 
     def test_every_declared_field_is_present_even_with_an_empty_analysis(self) -> None:
         empty = workflow.build_analysis_view({})

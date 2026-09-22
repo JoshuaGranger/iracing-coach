@@ -1,6 +1,6 @@
 @using System.Security.Cryptography
 @using System.Text
-@implements IDisposable
+@implements IAsyncDisposable
 
 <section class="tuning-feedback-editor" aria-labelledby="turn-feedback-heading">
     @if (Turn is null)
@@ -187,6 +187,8 @@
     private readonly Dictionary<string, string> _balanceByStage = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _extraSymptoms = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _noteSave;
+    private PendingNote? _pendingNote;
+    private Task _noteWrite = Task.CompletedTask;
     private string _seedSignature = string.Empty;
     private string _parameterKey = string.Empty;
     private string _extraStage = "whole";
@@ -207,7 +209,7 @@
         string.Equals(item.CornerId, Turn.CornerId, StringComparison.Ordinal)
         && string.Equals(item.RunPhase, RunPhase, StringComparison.OrdinalIgnoreCase));
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         var turnId = Turn?.CornerId ?? string.Empty;
         var parameterKey = $"{turnId}|{RunPhase}";
@@ -220,8 +222,9 @@
             $"{item.FeedbackId}:{string.Join(',', item.CornerPhases)}:{item.SymptomId}:{item.Severity}:{item.DriverConfidence}:{item.Priority}:{item.Note}"));
         if (string.Equals(parameterKey, _parameterKey, StringComparison.Ordinal)
             && string.Equals(signature, _seedSignature, StringComparison.Ordinal)) return;
-
-        CancelPendingNote();
+        if (string.Equals(parameterKey, _parameterKey, StringComparison.Ordinal)
+            && (_pendingNote is not null || !_noteWrite.IsCompleted)) return;
+        await FlushPendingNoteAsync();
         _parameterKey = parameterKey;
         _seedSignature = signature;
         _balanceByStage.Clear();
@@ -292,11 +295,13 @@
         var runPhase = RunPhase;
         _note = args.Value?.ToString()?.TrimStart() ?? string.Empty;
         CancelPendingNote();
+        _pendingNote = new PendingNote(BuildFeedbackBatch(turn, runPhase), FeedbackChanged);
         _noteSave = new CancellationTokenSource();
+        var token = _noteSave.Token;
         try
         {
-            await Task.Delay(350, _noteSave.Token);
-            await PublishAsync(turn, runPhase);
+            await Task.Delay(350, token);
+            await FlushPendingNoteAsync();
         }
         catch (OperationCanceledException) { }
     }
@@ -307,7 +312,14 @@
         await PublishAsync(Turn, RunPhase);
     }
 
-    private async Task PublishAsync(TuningTurn turn, string runPhase)
+    private Task PublishAsync(TuningTurn turn, string runPhase)
+    {
+        CancelPendingNote();
+        _pendingNote = new PendingNote(BuildFeedbackBatch(turn, runPhase), FeedbackChanged);
+        return FlushPendingNoteAsync();
+    }
+
+    private ProgressiveTuningFeedbackBatch BuildFeedbackBatch(TuningTurn turn, string runPhase)
     {
         var state = new FeedbackEditorState
         {
@@ -331,7 +343,7 @@
         if (feedback.Count == 0 && state.Note.Length > 0)
             feedback.Add(CreateFeedback(turn, runPhase, "whole", "other", state));
 
-        await FeedbackChanged.InvokeAsync(new ProgressiveTuningFeedbackBatch(turn.CornerId, runPhase, feedback));
+        return new ProgressiveTuningFeedbackBatch(turn.CornerId, runPhase, feedback);
     }
 
     private static ProgressiveTuningFeedback CreateFeedback(
@@ -370,7 +382,22 @@
 
     private static string AriaBoolean(bool value) => value ? "true" : "false";
 
-    public void Dispose() => CancelPendingNote();
+    public Task FlushPendingNoteAsync()
+    {
+        CancelPendingNote();
+        var pending = _pendingNote;
+        _pendingNote = null;
+        if (pending is not null) _noteWrite = WriteAfterAsync(_noteWrite, pending);
+        return _noteWrite;
+    }
+
+    private static async Task WriteAfterAsync(Task preceding, PendingNote pending)
+    {
+        await preceding;
+        await pending.Callback.InvokeAsync(pending.Batch);
+    }
+
+    public async ValueTask DisposeAsync() => await FlushPendingNoteAsync();
 
     private void CancelPendingNote()
     {
@@ -380,6 +407,7 @@
     }
 
     private sealed record SymptomOption(string Id, string Label, string Help);
+    private sealed record PendingNote(ProgressiveTuningFeedbackBatch Batch, EventCallback<ProgressiveTuningFeedbackBatch> Callback);
 
     private sealed class FeedbackEditorState
     {

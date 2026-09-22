@@ -13,7 +13,7 @@
                 }
             </div>
             <div class="diagnostics-actions">
-                <button class="button secondary" @onclick="CheckAgain">Run health test</button>
+                <button class="button secondary" @onclick="CheckAgain">Check installation</button>
                 <button class="button secondary" @onclick="State.OpenLogs">Open logs</button>
             </div>
         </div>
@@ -22,6 +22,6 @@
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
-    private string TroubleshootingSummary => State.Diagnostics.Any(item => item.State is "warning" or "unavailable") ? "Needs attention" : "All checks ready";
+    private string TroubleshootingSummary => State.Diagnostics.Any(item => item.State is "warning" or "unavailable") ? "Review detected issues" : "Installation and data checks";
     private Task CheckAgain() => State.RunHealthCheckAsync();
 }

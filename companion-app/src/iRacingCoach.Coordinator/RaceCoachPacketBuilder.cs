@@ -41,6 +41,8 @@ internal sealed record RaceCoachPacket(
 
 internal static class RaceCoachPacketBuilder
 {
+    private const int MaximumLapSamples = 512;
+    private const int MaximumComparisons = 8;
     private static readonly JsonSerializerOptions CanonicalJson = new(JsonSerializerDefaults.Web);
     private static readonly string[] Subjects =
     [
@@ -54,7 +56,7 @@ internal static class RaceCoachPacketBuilder
         {
             ["lap_series"] = LapSection(analysis),
             ["run_series"] = RunSection(analysis),
-            ["corner_window"] = Unavailable(analysis, "corner_window", "No bounded corner-window numeric series was selected."),
+            ["corner_window"] = CornerSection(analysis),
             ["plan"] = PlanSection(analysis),
             ["tire"] = TireSection(analysis),
             ["setup"] = Unavailable(analysis, "setup", "No numeric setup values were included in this analysis."),
@@ -76,6 +78,37 @@ internal static class RaceCoachPacketBuilder
 
     private static CoachPacketSection LapSection(AnalysisWorkspace analysis)
     {
+        if (UsableInvestigation(analysis) is { } investigation)
+        {
+            var observed = BoundLaps(investigation.Laps.Where(lap => Finite(lap.LapTimeSeconds)).OrderBy(lap => lap.Lap).ToArray());
+            if (observed.Count > 0)
+            {
+                var start = observed[0].Lap;
+                var end = observed[^1].Lap;
+                var numeric = new List<CoachNumericSeries>
+                {
+                    Series("observed_lap_number", "lap", observed.Select(lap => (double)lap.Lap), "lap", start, end),
+                    Series("observed_lap_time", "s", observed.Select(lap => lap.LapTimeSeconds!.Value), "lap", start, end),
+                    Series("reference_screening_passed", "boolean:1=passed;0=excluded", observed.Select(lap => lap.Eligible ? 1d : 0d), "lap", start, end),
+                    Series("green_pace_plot_included", "boolean:1=included;0=excluded", observed.Select(lap => lap.PlotPace ? 1d : 0d), "lap", start, end)
+                };
+                foreach (var comparison in InvestigationComparisons(investigation))
+                {
+                    AddCohort(numeric, comparison.Id + "/baseline", comparison.Baseline);
+                    AddCohort(numeric, comparison.Id + "/compared", comparison.Compared);
+                    var window = ComparisonWindow(comparison);
+                    if (window is null) continue;
+                    AddScalar(numeric, comparison.Id + "/all_laps_passed_screening", "boolean:1=passed;0=not_all_passed",
+                        comparison.Eligibility == "eligible" ? 1d : 0d, "lap", window.Value.Start, window.Value.End);
+                    AddScalar(numeric, comparison.Id + "/median_lap_delta", "s", comparison.DeltaSeconds, "lap", window.Value.Start, window.Value.End);
+                    foreach (var metric in comparison.Metrics.Take(24))
+                        AddMetric(numeric, comparison.Id + "/" + metric.Key, metric, "lap", window.Value.Start, window.Value.End);
+                }
+                return Supported(analysis, "lap_series",
+                    "Recorded lap times paired by index with exact lap numbers and screening flags. Excluded, caution and final observed laps remain observations, not clean coaching references. Cohort deltas are comparisons, not proven causes; initial/final sample bounds are in the attached investigation context.",
+                    "derived", numeric);
+            }
+        }
         var laps = analysis.Laps
             .Where(lap => lap.IsComparable() && Finite(lap.LapTimeSeconds))
             .OrderBy(lap => lap.Lap)
@@ -84,9 +117,117 @@ internal static class RaceCoachPacketBuilder
             return Unavailable(analysis, "lap_series", "No complete, unconfounded lap times were recorded.");
         var series = new[]
         {
+            Series("lap_number", "lap", laps.Select(lap => (double)lap.Lap), "lap", laps[0].Lap, laps[^1].Lap),
             Series("lap_time", "s", laps.Select(lap => lap.LapTimeSeconds!.Value), "lap", laps[0].Lap, laps[^1].Lap)
         };
         return Supported(analysis, "lap_series", "Complete unconfounded lap times from deterministic analysis.", "measured", series);
+    }
+
+    private static CoachPacketSection CornerSection(AnalysisWorkspace analysis)
+    {
+        var investigation = UsableInvestigation(analysis);
+        if (investigation is null)
+            return Unavailable(analysis, "corner_window", "No bounded corner-window numeric series was selected.");
+        var series = new List<CoachNumericSeries>();
+        foreach (var comparison in InvestigationComparisons(investigation))
+        {
+            var addedCohorts = false;
+            foreach (var corner in comparison.Corners.Take(12))
+            {
+                if (corner.StartPct is not >= 0 or > 1 || corner.EndPct is not >= 0 or > 1 || corner.EndPct <= corner.StartPct)
+                    continue;
+                var start = corner.StartPct!.Value;
+                var end = corner.EndPct!.Value;
+                var prefix = comparison.Id + "/" + corner.Id;
+                var before = series.Count;
+                AddScalar(series, prefix + "/area_time_delta", "s", corner.DeltaSeconds, "corner", start, end);
+                foreach (var metric in corner.Metrics.Take(16))
+                    AddMetric(series, prefix + "/" + metric.Key, metric, "corner", start, end);
+                if (series.Count == before) continue;
+                AddScalar(series, prefix + "/all_laps_passed_screening", "boolean:1=passed;0=not_all_passed",
+                    comparison.Eligibility == "eligible" ? 1d : 0d, "corner", start, end);
+                if (addedCohorts) continue;
+                AddCohort(series, comparison.Id + "/baseline", comparison.Baseline);
+                AddCohort(series, comparison.Id + "/compared", comparison.Compared);
+                addedCohorts = true;
+            }
+        }
+        return series.Count == 0
+            ? Unavailable(analysis, "corner_window", "No supported bounded track area has finite comparison measurements.")
+            : Supported(analysis, "corner_window",
+                "Backend track-area comparisons with exact cohort lap identifiers. Corner window bounds are fractions of one lap, not named official turns or telemetry targets. Observed comparisons retain their screening limits; differences do not establish a cause or a target input.", "derived", series);
+    }
+
+    // This is the only investigation context intended for a Coach request. Never
+    // serialize RaceInvestigation.Source: it deliberately retains unknown fields.
+    public static object? InvestigationContext(AnalysisWorkspace analysis)
+    {
+        var investigation = UsableInvestigation(analysis);
+        if (investigation is null) return null;
+        var laps = BoundLaps(investigation.Laps.OrderBy(lap => lap.Lap).ToArray());
+        var comparisons = InvestigationComparisons(investigation);
+        return new
+        {
+            schema_version = investigation.SchemaVersion,
+            investigation.Status,
+            investigation.Summary,
+            default_comparison_id = investigation.DefaultComparisonId,
+            coverage = new { recorded_lap_count = investigation.Laps.Count, included_lap_count = laps.Count,
+                complete_lap_series = laps.Count == investigation.Laps.Count,
+                sample_policy = "All laps up to 512; longer recordings retain the first 256 and last 256. Every numeric sample has an exact lap identifier.",
+                comparison_count = investigation.Comparisons.Count, included_comparison_count = comparisons.Count },
+            comparisons,
+            laps,
+            timeline = investigation.Timeline.Take(128).ToArray(),
+            track_evolution = investigation.TrackEvolution is { } track ? new
+            {
+                track.Status, track.Provenance, track.StartingUsage, track.Summary,
+                track.UsageUnit, track.UsageSource, points = BoundTrackPoints(track.Points), track.Limitations,
+                coverage = new { recorded_point_count = track.Points.Count, included_point_count = Math.Min(track.Points.Count, MaximumLapSamples) }
+            } : null,
+            investigation.Limitations,
+            interpretation = "Starting track usage is metadata, not measured evolution. Temperature alone cannot establish or exclude changing rubber/grip. Screening eligibility is not causal proof. Driving trials are conditional experiments, never exact target telemetry."
+        };
+    }
+
+    private static RaceInvestigation? UsableInvestigation(AnalysisWorkspace analysis) =>
+        analysis.Investigation is { SchemaVersion: 1, UnavailableReason: null } investigation ? investigation : null;
+
+    private static IReadOnlyList<RaceInvestigationComparison> InvestigationComparisons(RaceInvestigation investigation) =>
+        investigation.Comparisons.OrderByDescending(comparison => comparison.Id == investigation.DefaultComparisonId).Take(MaximumComparisons).ToArray();
+
+    private static IReadOnlyList<RaceInvestigationLap> BoundLaps(IReadOnlyList<RaceInvestigationLap> laps) =>
+        laps.Count <= MaximumLapSamples ? laps : laps.Take(MaximumLapSamples / 2).Concat(laps.TakeLast(MaximumLapSamples / 2)).ToArray();
+
+    private static IReadOnlyList<RaceTrackEvolutionPoint> BoundTrackPoints(IReadOnlyList<RaceTrackEvolutionPoint> points) =>
+        points.Count <= MaximumLapSamples ? points : points.Take(MaximumLapSamples / 2).Concat(points.TakeLast(MaximumLapSamples / 2)).ToArray();
+
+    private static (int Start, int End)? ComparisonWindow(RaceInvestigationComparison comparison)
+    {
+        var laps = comparison.Baseline.LapNumbers.Concat(comparison.Compared.LapNumbers).ToArray();
+        return laps.Length == 0 ? null : (laps.Min(), laps.Max());
+    }
+
+    private static void AddCohort(ICollection<CoachNumericSeries> series, string prefix, RaceInvestigationCohort cohort)
+    {
+        if (cohort.LapNumbers.Count == 0) return;
+        var start = cohort.LapNumbers.Min();
+        var end = cohort.LapNumbers.Max();
+        var laps = cohort.LapNumbers.Take(MaximumLapSamples).ToArray();
+        series.Add(Series(prefix + "/lap_number", "lap", laps.Select(lap => (double)lap), "lap", start, end));
+        series.Add(Series(prefix + "/reference_screening_passed", "boolean:1=passed;0=excluded", laps.Select(lap => cohort.EligibleLapNumbers.Contains(lap) ? 1d : 0d), "lap", start, end));
+        AddScalar(series, prefix + "/median_lap_time", "s", cohort.MedianLapSeconds, "lap", start, end);
+        AddScalar(series, prefix + "/green_age_start", "green lap equivalents", cohort.GreenAgeStart, "lap", start, end);
+        AddScalar(series, prefix + "/green_age_end", "green lap equivalents", cohort.GreenAgeEnd, "lap", start, end);
+    }
+
+    private static void AddMetric(ICollection<CoachNumericSeries> series, string prefix, RaceInvestigationMetric metric,
+        string kind, double start, double end)
+    {
+        if (string.IsNullOrWhiteSpace(metric.Unit)) return;
+        AddScalar(series, prefix + "/baseline", metric.Unit, metric.Baseline, kind, start, end);
+        AddScalar(series, prefix + "/compared", metric.Unit, metric.Compared, kind, start, end);
+        AddScalar(series, prefix + "/delta", metric.Unit, metric.Delta, kind, start, end);
     }
 
     private static CoachPacketSection RunSection(AnalysisWorkspace analysis)

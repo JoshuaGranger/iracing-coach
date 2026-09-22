@@ -74,6 +74,63 @@
                 <span class="technical-investigation-summary">@InvestigationSummary</span>
             </header>
 
+            @if (ActiveInvestigation == "racecraft" && Workspace.Investigation is { } investigation)
+            {
+                <div class="technical-investigation-content pace-investigation-content">
+                    <RacePaceInvestigation Investigation="investigation" OnInspect="OnInspect" />
+                        @if (Garage61Laps.Count > 0)
+                        {
+                            <section class="technical-reference-laps" data-garage61-references>
+                                <header>
+                                    <span>Comparable reference laps</span>
+                                    @if (State.Garage61ReferenceActionVisible)
+                                    {
+                                        <button type="button" class="technical-reference-action" disabled="@State.IsGarage61ReferenceSyncing" @onclick="FindGarage61ReferencesAsync">@(State.IsGarage61ReferenceSyncing ? "Refreshing…" : "Refresh")</button>
+                                    }
+                                </header>
+                                <div>
+                                    @foreach (var reference in Garage61Laps)
+                                    {
+                                        <article>
+                                            <span>@ReferenceRole(reference)</span>
+                                            <strong>@LapTime(reference.LapTimeSeconds)</strong>
+                                        </article>
+                                    }
+                                </div>
+                            </section>
+                        }
+                        else if (State.Garage61ReferenceActionVisible)
+                        {
+                            <section class="technical-reference-empty" data-garage61-reference-action>
+                                <span><strong>Comparable reference laps</strong><small>Find laps that can sharpen this race comparison.</small></span>
+                                <button type="button" class="technical-reference-action" disabled="@State.IsGarage61ReferenceSyncing" @onclick="FindGarage61ReferencesAsync">@(State.IsGarage61ReferenceSyncing ? "Finding…" : "Find reference laps")</button>
+                            </section>
+                        }
+                        @if (State.Garage61ReferenceMessage.Length > 0)
+                        {
+                            <p class="technical-reference-message" role="status">@State.Garage61ReferenceMessage</p>
+                        }
+
+                    @if (ActiveMetrics.Count > 0)
+                    {
+                        <details class="racecraft-measurement-details">
+                            <summary>All race measurements (@ActiveMetrics.Count)</summary>
+                            <div class="technical-findings-list @MetricDensityClass(ActiveMetrics.Count)">
+                                @foreach (var metric in ActiveMetrics)
+                                {
+                                    <article class="@MetricTone(metric)">
+                                        <header><span class="technical-finding-group">@MetricGroupLabel(metric)</span><div><span>@metric.Label</span><strong>@metric.Value</strong></div></header>
+                                        @if (!string.IsNullOrWhiteSpace(metric.Detail)) { <p>@metric.Detail</p> }
+                                        @if (!string.IsNullOrWhiteSpace(metric.Action)) { <small><b>Next step</b>@metric.Action</small> }
+                                    </article>
+                                }
+                            </div>
+                        </details>
+                    }
+                </div>
+            }
+            else
+            {
             <div class="technical-investigation-content @MetricDensityClass(ActiveMetrics.Count)">
                 <section class="technical-complete-findings" data-technical-complete-findings>
                     <header><span>Race findings</span><strong>@ActiveTakeaway</strong></header>
@@ -89,7 +146,7 @@
                                 <article class="@MetricTone(metric)" title="@MetricDetailTooltip(metric)" aria-label="@MetricDetailAriaLabel(metric)">
                                     <header><span class="technical-finding-group">@MetricGroupLabel(metric)</span><div><span>@metric.Label</span><strong>@metric.Value</strong></div></header>
                                     @if (!string.IsNullOrWhiteSpace(metric.Detail)) { <p>@metric.Detail</p> }
-                                    @if (!string.IsNullOrWhiteSpace(metric.Action)) { <small><b>Next lap</b>@metric.Action</small> }
+                                    @if (!string.IsNullOrWhiteSpace(metric.Action)) { <small><b>Next step</b>@metric.Action</small> }
                                 </article>
                             }
                         </div>
@@ -153,8 +210,8 @@
                                         <article><span>Pit-cycle positions</span><strong>@Positions(pitRun.PitStop?.PitCyclePositionChange)</strong></article>
                                         <article><span>Damage repair</span><strong>@Duration(pitRun.PitStop?.DamageRepairedSeconds)</strong></article>
                                         <article><span>Penalty service</span><strong>@Duration(pitRun.PitStop?.PenaltyServedSeconds)</strong></article>
-                                        <article><span>Fuel range after stop</span><strong>@Laps(pitRun.PitStop?.EstimatedFuelLapsRemaining)</strong></article>
-                                        <article><span>Race laps remaining</span><strong>@Laps(pitRun.PitStop?.RaceLapsRemainingAfterStop)</strong></article>
+                                        <article title="Fuel at the next run start divided by measured green-lap consumption; no reserve deducted."><span>Post-stop green range</span><strong>@Laps(pitRun.PitStop?.EstimatedFuelLapsRemaining)</strong><small>Before reserve</small></article>
+                                        <article title="Scheduled finish minus the next run start lap; assumes all remaining laps are green."><span>Scheduled laps left</span><strong>@Laps(pitRun.PitStop?.RaceLapsRemainingAfterStop)</strong><small>At next run start</small></article>
                                         <article><span>Flag at stop</span><strong>@(pitRun.EndedUnderCaution is true ? "Caution" : pitRun.EndedUnderCaution is false ? "Green" : "Unknown")</strong></article>
                                     </div>
                                     @if (TwoVsFourMetrics.Count > 0)
@@ -388,6 +445,7 @@
             }
                 </div>
             </div>
+            }
         </div>
     }
 </section>
@@ -395,6 +453,9 @@
 @code {
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
     [Parameter, EditorRequired] public RaceCard Card { get; set; } = null!;
+    [Parameter] public EventCallback<RaceInvestigationInspection> OnInspect { get; set; }
+    [Parameter] public bool Visible { get; set; } = true;
+    protected override bool ShouldRender() => Visible;
 
     private string? ActiveInvestigation { get; set; }
     private int? _selectedRunNumber;
@@ -489,25 +550,18 @@
     private string IncidentSummary => (Workspace.Damage.Incidents ?? []).Count == 0 ? "None" : $"x{IncidentPoints}";
     private string InvestigationTitle => ActiveInvestigation switch { "pit" => "Pit strategy", "tires" => "Tire condition", "fuel" => "Fuel use", _ => "Racecraft & pace" };
     private string InvestigationSummary => ActiveInvestigation switch { "pit" => PitSummary, "tires" => TireSummary, "fuel" => FuelSummary, _ => PaceSummary };
-    private string PitState => InsightRating(PitInsight) ?? (AuthoritativeFuelStops switch
-    {
-        { } minimum when Workspace.PitStops <= minimum => "On all-green target",
-        { } minimum when Workspace.PitStops == minimum + 1 => "One extra stop",
-        { } minimum when Workspace.PitStops > minimum => $"{Workspace.PitStops - minimum} extra stops",
-        _ => PitRuns.Count > 0 ? "Available" : "Unavailable"
-    });
-    private string PitStateClass => InsightStateClass(PitInsight) ?? (PitState switch { "On all-green target" => "positive", "Available" => "neutral", "Unavailable" => "unavailable", _ => "attention" });
+    private string PitState => InsightRating(PitInsight) ?? (PitRuns.Count > 0 ? "Stops recorded" : "No stops recorded");
+    private string PitStateClass => InsightStateClass(PitInsight) ?? "neutral";
     private string PitTakeaway => InsightTakeaway(PitInsight) ?? (AuthoritativeFuelStops is { } minimum
-        ? Workspace.PitStops <= minimum
-            ? $"{Workspace.PitStops} stop{(Workspace.PitStops == 1 ? string.Empty : "s")}; the all-green target was {minimum}."
-            : $"Review the {Workspace.PitStops - minimum} stop difference from the all-green target."
-        : PitRuns.Count > 0 ? $"Start with the {Duration(PitRuns.Max(run => run.PitStop?.ServiceSeconds ?? 0))} longest service window." : "No stop outcome can be evaluated.");
-    private string TireState => InsightRating(TireInsight) ?? (LowestRemainingTireRun?.TireRemainingPercent switch { >= 70 => "Strong margin", >= 45 => "Moderate margin", < 45 => "Low margin", _ => TireStops.Count > 0 ? "Snapshots available" : "Unavailable" });
-    private string TireStateClass => InsightStateClass(TireInsight) ?? (TireState switch { "Strong margin" => "positive", "Moderate margin" or "Snapshots available" => "neutral", "Low margin" => "attention", _ => "unavailable" });
+        ? $"{Workspace.PitStops} recorded stops; minimum {minimum} for all-green fuel range. Tire and caution calls need separate comparison."
+        : PitRuns.Count > 0 ? $"Longest recorded service: {Duration(PitRuns.Max(run => run.PitStop?.ServiceSeconds ?? 0))}." : "No pit service was recorded.");
+    private string TireState => InsightRating(TireInsight) ?? (LowestRemainingTireRun?.TireRemainingPercent is { } remaining
+        ? $"{remaining:0.0}% at last reading" : TireStops.Count > 0 ? "Snapshots available" : "No wear reading");
+    private string TireStateClass => InsightStateClass(TireInsight) ?? (TireStops.Count > 0 ? "neutral" : "unavailable");
     private string TireTakeaway => InsightTakeaway(TireInsight) ?? (LowestRemainingTireRun is { } run
         ? $"{run.TireName} was lowest at {run.TireRemainingPercent:0.0}% remaining."
         : TireStops.Count > 0 ? "Use the stop snapshots to compare inner, middle, and outer condition." : "No tire-condition outcome can be evaluated.");
-    private string FuelState => InsightRating(FuelInsight) ?? (NoStopAuthorized
+    private string FuelState => FuelInsight?.Rating.Equals("safe", StringComparison.OrdinalIgnoreCase) == true ? "Projected surplus" : InsightRating(FuelInsight) ?? (NoStopAuthorized
         ? "Full-race range"
         : AuthoritativeFuelStops is > 0
             ? "Stop required"
@@ -516,11 +570,11 @@
                 : FuelRuns.Count > 0 ? "Consumption available" : "Unavailable");
     private string FuelStateClass => InsightStateClass(FuelInsight) ?? (FuelState switch { "Full-race range" => "positive", "Stop required" => "attention", "Consumption available" => "neutral", _ => "unavailable" });
     private string FuelTakeaway => InsightTakeaway(FuelInsight) ?? (AuthoritativeFuelStops is { } minimum
-        ? $"All-green target: {minimum} stop{(minimum == 1 ? string.Empty : "s")} plus {FuelReserve} reserve."
+        ? $"All-green fuel minimum: {minimum} stop{(minimum == 1 ? string.Empty : "s")} plus {FuelReserve} reserve."
         : FuelRuns.Count > 0 ? $"Run {FuelRuns.MaxBy(run => run.FuelUsedGallons)?.Number} used the most fuel." : "No fuel outcome can be evaluated.");
     private string PaceState => InsightRating(RacecraftInsight) ?? (RepresentativePaceRun?.PaceSlopeSecondsPerLap switch { > .02 => "Falling off", < -.01 => "Improving", not null => "Stable", _ => ComparableRuns.Count > 0 ? "Comparable" : "Unavailable" });
     private string PaceStateClass => InsightStateClass(RacecraftInsight) ?? (PaceState switch { "Stable" or "Improving" => "positive", "Comparable" => "neutral", "Falling off" => "attention", _ => "unavailable" });
-    private string PaceTakeaway => InsightTakeaway(RacecraftInsight) ?? (RepresentativePaceRun is { } run
+    private string PaceTakeaway => Workspace.Investigation?.Summary ?? InsightTakeaway(RacecraftInsight) ?? (RepresentativePaceRun is { } run
         ? $"Run {run.Number}: {PaceTrend(run)} across {run.GreenLaps} green laps."
         : "No clean run is long enough for a pace outcome.");
 
@@ -530,8 +584,24 @@
         new("Snapshots", TireStops.Count.ToString(), "measured"), new("Most wear", MostTireWearReading, "measured"), new("Changed", TireChangeCount.ToString(), "measured"));
     private IReadOnlyList<CardMetric> FuelCardMetrics => CardMetrics(FuelInsight,
         new("Green lap", FuelPerGreenLap, "measured"), new("Range", FuelRange, "derived"), new("Reserve", FuelReserve, "calculated"));
-    private IReadOnlyList<CardMetric> RacecraftCardMetrics => CardMetrics(RacecraftInsight,
-        new("Fastest clean", FastestCleanLap, "measured"), new("Comparable runs", ComparableRuns.Count.ToString(), "derived"), new("Incidents", IncidentSummary, "measured"));
+    private IReadOnlyList<CardMetric> RacecraftCardMetrics => RacecraftOverviewMetrics(CardMetrics(RacecraftInsight,
+        new("Fastest clean", FastestCleanLap, "measured"), new("Comparable runs", ComparableRuns.Count.ToString(), "derived"), new("Incidents", IncidentSummary, "measured")));
+    private static IReadOnlyList<CardMetric> RacecraftOverviewMetrics(IReadOnlyList<CardMetric> metrics)
+    {
+        // Outcome, sustained pace, reference pace, repeatability, and incidents are the
+        // overview. Phase breakdowns and control averages remain in the drilldown.
+        var labels = new[]
+        {
+            new[] { "Net positions" },
+            new[] { "Long-run change", "Comparable runs" },
+            new[] { "Fastest clean", "Fastest race pace" },
+            new[] { "Median clean", "Median race pace" },
+            new[] { "Clean-lap variation", "Race-pace variation" },
+            new[] { "Incident points", "Incidents" }
+        };
+        return labels.Select(slot => metrics.FirstOrDefault(metric => slot.Contains(metric.Label, StringComparer.OrdinalIgnoreCase)))
+            .Where(metric => metric is not null).Cast<CardMetric>().ToArray();
+    }
     private static IReadOnlyList<CardMetric> CardMetrics(AnalysisTechnicalInsight? insight, params CardMetric[] fallback)
     {
         var metrics = insight?.Metrics.Select(metric => new CardMetric(

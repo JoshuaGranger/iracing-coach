@@ -45,6 +45,9 @@
     "race_grades": {
       "type": "object"
     },
+    "race_investigation": {
+      "type": "object"
+    },
     "race_replay": {
       "type": "object"
     },
@@ -95,6 +98,7 @@
     "tire_learning",
     "garage61_representative_laps",
     "technical_insights",
+    "race_investigation",
     "corner_tire_age",
     "groove_evolution",
     "strategy",
