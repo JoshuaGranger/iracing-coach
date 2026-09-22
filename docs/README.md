@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.17.6-development.md)
+7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.17.7-development.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -57,7 +57,8 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
-  - [Current development snapshot: 0.17.6](06-reality/implementation-snapshot-0.17.6-development.md)
+  - [Current development snapshot: 0.17.7](06-reality/implementation-snapshot-0.17.7-development.md)
+  - [Prior development snapshot: 0.17.6](06-reality/implementation-snapshot-0.17.6-development.md)
   - [Prior development snapshot: 0.17.5](06-reality/implementation-snapshot-0.17.5-development.md)
   - [Prior development snapshot: 0.17.4](06-reality/implementation-snapshot-0.17.4-development.md)
   - [Prior development snapshot: 0.17.3](06-reality/implementation-snapshot-0.17.3-development.md)
@@ -102,13 +103,13 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 ## Current baseline
 
 - Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
-- Current source version: `0.17.6` development; a simulator-PC recorded-data QA follow-up pending Joshua's acceptance
+- Current source version: `0.17.7` development; a simulator-PC recorded-data QA follow-up pending Joshua's acceptance
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Current source verification: 390/390 application tests and 1,029/1,029 Python tests; contract/export verification passed
-- Current interaction evidence: native DESKTOP-SIM access recovered after a full Codex restart. Further recorded-data checks confirmed setup selection/copying/filtering and exposed a racing-phase replay defect, planning column misalignment, and ambiguous setup-comparison headings. Version 0.17.6 fixes those findings. Active live telemetry is deferred at Joshua's request; exact native retest boundaries are in the current snapshot.
-- Current package boundary: 0.17.6 is a .NET self-contained win-x64 development transport transferred through the private NAS. It reuses installed Python/Coach Engine runtimes and is not a full portable release or installer. Installed 0.17.0 remains unchanged. The frozen 0.17.1 installer and portable archive retain their own checksums and lifecycle results.
+- Current source verification: 390/390 application tests and 1,039/1,039 Python tests; contract/export verification passed
+- Current interaction evidence: resumed native DESKTOP-SIM testing confirmed corrected planning alignment, fuel decisions after distance changes, lap selection, saved layouts, replay seeking and setup comparison reset. It exposed repeated 29-second replay reconstruction on cached analysis and clipped paired-chart labels. Version 0.17.7 fixes those findings; exact native retest boundaries and timings are in the current snapshot. Active live telemetry remains deferred at Joshua's request.
+- Current package boundary: 0.17.7 is a .NET self-contained win-x64 development transport transferred through the private NAS. It reuses installed Python/Coach Engine runtimes and is not a full portable release or installer. Installed 0.17.0 remains unchanged. The frozen 0.17.1 installer and portable archive retain their own checksums and lifecycle results.
 - Prior installer lifecycle evidence: the 0.15.0 feedback candidate passed guarded install, rollback, running-app replacement, data-preservation, uninstall, reinstall, and final-uninstall checks; this is historical evidence, not proof of the 0.16.0 candidate
 - Development focus: Race Analysis, Technical data, Race replay, global analysis layouts, exact-configuration maps, retained raw telemetry, NASCAR-first tire/capability foundations, and Progressive Tuning evidence-contract v2. Supported and unavailable states remain evidence-gated; development implementation is not user acceptance.
 
-The current source reality is summarized in `06-reality/implementation-snapshot-0.17.6-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Build binaries and private user data are not part of the source repository.
+The current source reality is summarized in `06-reality/implementation-snapshot-0.17.7-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Build binaries and private user data are not part of the source repository.

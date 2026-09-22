@@ -7,11 +7,11 @@ iRacing Coach is a local-first Windows race-engineering and driver-coaching appl
 ## Current baseline
 
 - Latest accepted packaged release: `0.14.2`
-- Current source: `0.17.6` development
+- Current source: `0.17.7` development
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Backend: standard-library Python 3.10+, exposed through bounded MCP/CLI contracts
 
-The exact implementation and remaining limits are recorded in [the current development snapshot](docs/06-reality/implementation-snapshot-0.17.6-development.md). Stable `0.14.2` package evidence remains immutable in [its release snapshot](docs/06-reality/implementation-snapshot-0.14.2.md).
+The exact implementation and remaining limits are recorded in [the current development snapshot](docs/06-reality/implementation-snapshot-0.17.7-development.md). Stable `0.14.2` package evidence remains immutable in [its release snapshot](docs/06-reality/implementation-snapshot-0.14.2.md).
 
 ## Repository layout
 
