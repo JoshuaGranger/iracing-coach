@@ -65,7 +65,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v17"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v18"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -3252,6 +3252,58 @@ def _wear_reading_changed(
     )
 
 
+def _pace_slope_by_green_exposure(
+    run_laps: Sequence[Mapping[str, Any]],
+    eligible_laps: Sequence[Mapping[str, Any]],
+) -> tuple[float | None, str | None]:
+    """Retain complete-lap green exposure between clean pace observations.
+
+    Green-lap equivalents sum sampled green-time fractions; they approximate
+    exposure, not physical distance. Complete excluded traffic/restart laps
+    still contribute. An incomplete lap's fraction describes only its observed
+    samples, so it cannot establish a whole lap's exposure. Withhold the rate
+    across incomplete or missing laps, without discarding unrelated pace means.
+    """
+
+    timed_laps = sorted(
+        (lap for lap in eligible_laps if _finite(lap.get("lap_time_s")) is not None),
+        key=lambda item: item["start_index"],
+    )
+    # Retain the established first-observation exclusion and minimum support.
+    retained_laps = timed_laps[1:] if len(timed_laps) > 4 else timed_laps
+    if len(retained_laps) < 3:
+        return None, "insufficient_timed_clean_laps"
+    first, last = retained_laps[0], retained_laps[-1]
+    span_laps = sorted(
+        (lap for lap in run_laps if first["start_index"] <= lap["start_index"] <= last["start_index"]),
+        key=lambda item: item["start_index"],
+    )
+    retained_numbers = {lap["lap"] for lap in retained_laps}
+    expected_number = first["lap"]
+    exposure = 0.0
+    points: list[tuple[float, float]] = []
+    for lap in span_laps:
+        if lap["lap"] != expected_number:
+            return None, "missing_lap_exposure_between_observations"
+        expected_number += 1
+        if not lap.get("complete"):
+            return None, "incomplete_lap_exposure_between_observations"
+        # The first retained observation defines zero. Earlier exposure is only
+        # a constant offset, and observations after the last do not affect slope.
+        if lap["lap"] != first["lap"]:
+            fraction = _finite(lap.get("green_fraction"))
+            if fraction is None or not 0.0 <= fraction <= 1.0:
+                return None, "green_lap_exposure_missing_or_invalid"
+            exposure += fraction
+        lap_time = _finite(lap.get("lap_time_s"))
+        if lap["lap"] in retained_numbers and lap_time is not None:
+            points.append((exposure, lap_time))
+    if len(points) != len(retained_laps):
+        return None, "missing_lap_exposure_between_observations"
+    slope = _linear_slope(points)
+    return slope, "insufficient_green_lap_exposure" if slope is None else None
+
+
 def _runs(table: TelemetryTable, laps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     race_laps = [
         lap for lap in laps
@@ -3344,12 +3396,14 @@ def _runs(table: TelemetryTable, laps: list[dict[str, Any]]) -> list[dict[str, A
             ):
                 valid_green.append(lap)
             previous_flag = str(lap.get("flag_state") or "")
-        pace_points = [
-            (float(position), float(lap["lap_time_s"]))
-            for position, lap in enumerate(valid_green, 1)
-            if _finite(lap.get("lap_time_s")) is not None
+        exposure_laps = [
+            lap for lap in laps
+            if lap["start_index"] >= start and lap["end_index"] <= end
+            and (_finite(lap.get("lap")) or 0.0) > 0.0
         ]
-        slope = _linear_slope(pace_points[1:]) if len(pace_points) > 4 else _linear_slope(pace_points)
+        slope, slope_unavailable_reason = _pace_slope_by_green_exposure(
+            exposure_laps, valid_green
+        )
         first_third_count = max(1, len(valid_green) // 3) if valid_green else 0
         last_third_count = first_third_count
         early = valid_green[:first_third_count]
@@ -3466,6 +3520,13 @@ def _runs(table: TelemetryTable, laps: list[dict[str, Any]]) -> list[dict[str, A
                         if early_lap_time is not None and late_lap_time is not None else None
                     ),
                     "green_lap_time_slope_s_per_lap": _round(slope, 4),
+                    "slope_basis": "cumulative_recorded_green_lap_equivalents",
+                    "slope_exposure_definition": (
+                        "Sum of sampled green-time fractions over complete laps between "
+                        "retained pace observations; an exposure approximation, not physical "
+                        "green distance. Incomplete or missing intervening laps withhold the rate."
+                    ),
+                    "slope_unavailable_reason": slope_unavailable_reason,
                 },
                 "driving_load": {
                     "early_brake_energy_proxy": _round(early_brake),

@@ -484,7 +484,7 @@ public sealed class CoordinatorTests
     {
         using var response = JsonDocument.Parse("""
         {"analysis_view":{
-          "analysis_profile_version":"post-race-foundations-v17",
+          "analysis_profile_version":"post-race-foundations-v18",
           "identity":{"event_type":"Race"},
           "race_summary":{"recorded_laps":8,"scheduled_laps":500,"scheduled_minutes":30.5},
           "runs":[],"laps":[],"lap_traces":{"traces":[]},
@@ -538,11 +538,11 @@ public sealed class CoordinatorTests
         }
 
         var exact = Map(
-            "post-race-foundations-v17",
+            "post-race-foundations-v18",
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":80}");
         var hybrid = Map(
-            "post-race-foundations-v17",
+            "post-race-foundations-v18",
             "{\"recorded_laps\":7,\"scheduled_laps\":500,\"scheduled_minutes\":30.5}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var legacy = Map(
@@ -550,7 +550,7 @@ public sealed class CoordinatorTests
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var timed = Map(
-            "post-race-foundations-v17",
+            "post-race-foundations-v18",
             "{\"recorded_laps\":7,\"scheduled_laps\":null,\"scheduled_minutes\":30.5}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":null}");
 
@@ -840,7 +840,7 @@ public sealed class CoordinatorTests
     public void ArchivedAnalysis_CurrentLapProfileKeepsResolvedDistance()
     {
         using var report = JsonDocument.Parse("""
-        {"analysis_profile_version":"post-race-foundations-v17","identity":{},
+        {"analysis_profile_version":"post-race-foundations-v18","identity":{},
          "race_summary":{"recorded_laps":80,"scheduled_laps":100},"laps":[],"runs":[],
          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
          "strategy":{"forecast":{"status":"usable","scheduled_laps":100,"minimum_stops_all_green":2,"equal_stint_pit_targets_all_green":[33,67]}},
@@ -2759,7 +2759,7 @@ public sealed class CoordinatorTests
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-profile-migration", Guid.NewGuid().ToString("N"));
         const string selector = "subsession:8001:1";
-        var old = JsonDocument.Parse(HomeAnalysisResponse(selector: selector).GetRawText().Replace("post-race-foundations-v17", "post-race-foundations-v15"));
+        var old = JsonDocument.Parse(HomeAnalysisResponse(selector: selector).GetRawText().Replace("post-race-foundations-v18", "post-race-foundations-v15"));
         WriteUiAnalysisCache(root, selector, old.RootElement);
         var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
         using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
@@ -2824,7 +2824,7 @@ public sealed class CoordinatorTests
         analysis_view = new
         {
             schema_version = 1,
-            analysis_profile_version = "post-race-foundations-v17",
+            analysis_profile_version = "post-race-foundations-v18",
             identity = new { event_type = sessionType, track_name = "Recorded Track", car_name = "Recorded Car" },
             race_summary = new
             {

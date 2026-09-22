@@ -57,6 +57,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
+  - [Bristol pace-loss investigation and unreleased trend correction](06-reality/bristol-pace-investigation-2026-09-22.md)
   - [Current development snapshot: 0.17.7](06-reality/implementation-snapshot-0.17.7-development.md)
   - [Prior development snapshot: 0.17.6](06-reality/implementation-snapshot-0.17.6-development.md)
   - [Prior development snapshot: 0.17.5](06-reality/implementation-snapshot-0.17.5-development.md)
@@ -103,10 +104,10 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 ## Current baseline
 
 - Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
-- Current source version: `0.17.7` development; a simulator-PC recorded-data QA follow-up pending Joshua's acceptance
+- Current source version: `0.17.7` development plus the unreleased analysis-profile-v18 [Bristol pace-trend correction](06-reality/bristol-pace-investigation-2026-09-22.md); simulator-PC recorded-data QA and the diagnostic workflow remain pending Joshua's acceptance
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Current source verification: 390/390 application tests and 1,039/1,039 Python tests; contract/export verification passed
+- Current source verification: 390/390 application tests and 1,048/1,048 Python tests; contract/export verification passed
 - Current interaction evidence: resumed native DESKTOP-SIM testing confirmed corrected planning alignment, fuel decisions after distance changes, lap selection, saved layouts, replay seeking and setup comparison reset. It exposed repeated 29-second replay reconstruction on cached analysis and clipped paired-chart labels. Version 0.17.7 fixes those findings; exact native retest boundaries and timings are in the current snapshot. Active live telemetry remains deferred at Joshua's request.
 - Current package boundary: 0.17.7 is a .NET self-contained win-x64 development transport transferred through the private NAS. It reuses installed Python/Coach Engine runtimes and is not a full portable release or installer. Installed 0.17.0 remains unchanged. The frozen 0.17.1 installer and portable archive retain their own checksums and lifecycle results.
 - Prior installer lifecycle evidence: the 0.15.0 feedback candidate passed guarded install, rollback, running-app replacement, data-preservation, uninstall, reinstall, and final-uninstall checks; this is historical evidence, not proof of the 0.16.0 candidate

@@ -1573,8 +1573,10 @@ def _analysis_pipeline_sha256() -> str:
 # Review 2026-09-21: optional traces normalize once, and None skips float
 # conversion. Full native-rate Iowa/New Hampshire outputs match with a fixed
 # clock/provenance; gap, nonfinite and overflow regressions retain v17 answers.
+# Review 2026-09-22: v18 fixes pace slopes to retain recorded green-lap
+# exposure between eligible observations instead of compressing excluded laps.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "eec071b866ba83c93d902ac3f220eda76417faa51a6228f2d301c6bc6f02b101"
+    "ab8d91e3dc99e02e5b54f24b2a49ee3baf504c1e3b64eb2e5086e859bc55104b"
 )
 
 
