@@ -486,6 +486,12 @@
             "minimum": 1,
             "type": "integer"
           },
+          "offset": {
+            "default": 0,
+            "maximum": 2000,
+            "minimum": 0,
+            "type": "integer"
+          },
           "role": {
             "enum": [
               "race",

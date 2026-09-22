@@ -371,6 +371,7 @@ def _setup_catalog(args: argparse.Namespace) -> Any:
         season=args.season,
         role=args.role,
         maximum_entries=args.maximum_entries,
+        offset=args.offset,
     )
 
 
@@ -824,6 +825,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=200,
     )
     setup_catalog.set_defaults(handler=_setup_catalog)
+    setup_catalog.add_argument("--offset", type=_bounded_int(0, 2000), default=0)
 
     setup_package = subparsers.add_parser(
         "setup-package",

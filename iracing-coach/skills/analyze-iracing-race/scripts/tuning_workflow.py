@@ -11,7 +11,7 @@ from typing import Any, Mapping, Sequence
 try:  # Package import and direct script execution are both supported.
     from . import backend_roots
     from .path_security import local_path
-    from .setup_catalog import catalog_setups, compare_setups, normalize_embedded_setup
+    from .setup_catalog import HARD_MAX_ENTRIES, catalog_setups, compare_setups, normalize_embedded_setup
     from .storage import ArchiveStore, safe_slug, stable_hash, utc_now
     from .tuning_engine import (
         STRUCTURED_TUNING_RULESET_ID,
@@ -27,7 +27,7 @@ try:  # Package import and direct script execution are both supported.
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     import backend_roots
     from path_security import local_path
-    from setup_catalog import catalog_setups, compare_setups, normalize_embedded_setup
+    from setup_catalog import HARD_MAX_ENTRIES, catalog_setups, compare_setups, normalize_embedded_setup
     from storage import ArchiveStore, safe_slug, stable_hash, utc_now
     from tuning_engine import (
         STRUCTURED_TUNING_RULESET_ID,
@@ -205,18 +205,25 @@ def catalog_iracing_setups_workflow(
     season: str | None = None,
     role: str | None = None,
     maximum_entries: int = 200,
+    offset: int = 0,
 ) -> dict[str, Any]:
     """Scan source setups read-only and archive a normalized local index."""
 
     maximum = max(1, min(int(maximum_entries), 1_000))
+    start = int(offset)
+    if not 0 <= start <= HARD_MAX_ENTRIES:
+        raise TuningWorkflowError(f"offset must be between 0 and {HARD_MAX_ENTRIES}.")
     setups = _setup_root(root)
-    catalog = catalog_setups(setups, max_entries=1_000)
+    catalog = catalog_setups(setups, max_entries=HARD_MAX_ENTRIES)
+    revision = stable_hash(catalog, length=64)
     catalog["cataloged_at"] = utc_now()
     store = ArchiveStore(archive_root)
     index_path = store.save_tuning_catalog(catalog)
     filtered = _filter_entries(
         catalog.get("entries") or [], car=car, track=track, season=season, role=role
     )
+    page = filtered[start:start + maximum]
+    next_offset = start + len(page) if start + len(page) < len(filtered) else None
     return {
         "ok": True,
         "read_only_sources": True,
@@ -230,8 +237,11 @@ def catalog_iracing_setups_workflow(
             "parse_errors": sum(1 for item in catalog.get("entries") or [] if item.get("parse_error")),
         },
         "filters": {"car": car, "track": track, "season": season, "role": role},
-        "entries": filtered[:maximum],
-        "output_truncated": len(filtered) > maximum,
+        "entries": page,
+        "catalog_revision": revision,
+        "offset": start,
+        "next_offset": next_offset,
+        "output_truncated": next_offset is not None,
         "scan_truncated": bool(catalog.get("scan_truncated") or catalog.get("entries_truncated")),
         "errors": catalog.get("errors") or [],
     }
@@ -454,7 +464,7 @@ def build_open_setup_package_workflow(
         }
 
     setups = _setup_root(iracing_root)
-    catalog = catalog_setups(setups, max_entries=1_000)
+    catalog = catalog_setups(setups, max_entries=HARD_MAX_ENTRIES)
     catalog["cataloged_at"] = utc_now()
     catalog_path = store.save_tuning_catalog(catalog)
     exact = _filter_entries(

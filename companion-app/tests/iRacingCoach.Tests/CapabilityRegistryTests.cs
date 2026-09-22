@@ -689,7 +689,7 @@ public sealed class CapabilityRegistryTests
     [TestMethod]
     public void ReleaseIdentity_IsSynchronizedAcrossPackagingAndRepairSurfaces()
     {
-        const string version = "0.17.2";
+        const string version = "0.17.3";
         var root = CompanionRoot();
         var releaseScript = File.ReadAllText(Path.Combine(root, "tools", "BuildRelease.ps1"));
         var appProject = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "iRacingCoach.App.csproj"));
@@ -732,7 +732,7 @@ public sealed class CapabilityRegistryTests
             Assert.DoesNotContain("0.14.2", liveIdentitySource,
                 "Historical release identities must not remain in active packaging or repair surfaces.");
             Assert.DoesNotContain("0.15.0", liveIdentitySource,
-                "The prior development candidate must not remain in active 0.17.2 packaging or repair surfaces.");
+                "The prior development candidate must not remain in active 0.17.3 packaging or repair surfaces.");
         }
     }
 

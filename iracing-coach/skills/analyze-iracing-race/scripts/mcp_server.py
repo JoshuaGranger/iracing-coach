@@ -607,6 +607,7 @@ TOOLS: list[dict[str, Any]] = [
                 "season": {"type": "string", "maxLength": 32},
                 "role": {"type": "string", "enum": ["race", "qualifying", "endurance", "R", "Q", "E"]},
                 "maximum_entries": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 200},
+                "offset": {"type": "integer", "minimum": 0, "maximum": 2000, "default": 0},
             },
             "additionalProperties": False,
         },
@@ -889,6 +890,7 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
             season=arguments.get("season"),
             role=arguments.get("role"),
             maximum_entries=int(arguments.get("maximum_entries", 200)),
+            offset=int(arguments.get("offset", 0)),
         )
     if name == "build_open_setup_package":
         analysis_path = (

@@ -102,6 +102,55 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    [DataRow("revision")]
+    [DataRow("offset")]
+    [DataRow("error")]
+    public async Task SetupCatalogLoadsEveryPageAndRetainsInventoryWhenPaginationFails(string failure)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-paged-setups", Guid.NewGuid().ToString("N"));
+        var failing = false;
+        var offsets = new List<int>();
+        var backend = new FakeBackend(responseOverride: (tool, _, arguments) =>
+        {
+            if (tool != "catalog_iracing_setups") return null;
+            var request = JsonSerializer.SerializeToElement(arguments);
+            var offset = request.TryGetProperty("offset", out var value) ? value.GetInt32() : 0;
+            offsets.Add(offset);
+            if (failing && failure == "error" && offset > 0) throw new IOException("Second page unavailable");
+            return JsonSerializer.SerializeToElement(new
+            {
+                ok = true,
+                catalog_revision = failing && failure == "revision" && offset > 0 ? "changed" : "stable",
+                next_offset = offset == 0 ? (int?)(failing && failure == "offset" ? 0 : 1000) : null,
+                output_truncated = offset == 0,
+                scan_truncated = false,
+                entries = Enumerable.Range(offset, Math.Min(1000, 1079 - offset)).Select(index => new
+                {
+                    stem = $"{(failing ? "Changed" : "Original")} Bristol {index}",
+                    car_folder = index >= 1048 ? "tundra" : "stockcars2 supra2019",
+                    filename_identity = new { track_hint = "Bristol", season_key = "2026S4" },
+                    sources = new { sto = new[] { new { path = Path.Combine(root, $"setup-{index}.sto"), sha256 = $"hash-{index}" } } }
+                })
+            });
+        });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        state.Settings.LocalStateRootOverride = Path.Combine(root, "local");
+        state.Settings.IRacingRoot = Path.Combine(root, "iRacing");
+        state.Settings.IRacingInstallRoot = Path.Combine(root, "install");
+        await state.RefreshDashboardAsync();
+        CollectionAssert.AreEqual(new[] { 0, 1000 }, offsets);
+        Assert.HasCount(1079, state.Setups);
+        Assert.AreEqual(31, state.Setups.Count(setup => setup.Car.Contains("tundra", StringComparison.OrdinalIgnoreCase)));
+        Assert.AreEqual(string.Empty, state.SetupCatalogWarning, "A complete paginated response is not truncated.");
+        var previous = state.Setups.ToArray();
+        failing = true;
+        await state.RefreshDashboardAsync();
+        CollectionAssert.AreEqual(previous, state.Setups.ToArray(), "Failed or inconsistent pages must never replace the complete inventory.");
+        Assert.IsFalse(state.LocalInventorySections.Single(section => section.Name == "Local setups").Current);
+    }
+
+    [TestMethod]
     public async Task InventoryRefreshPreservesAnIntentionalPracticeEvent()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-plan-refresh", Guid.NewGuid().ToString("N"));

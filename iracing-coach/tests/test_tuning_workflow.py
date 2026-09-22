@@ -100,6 +100,38 @@ class TuningWorkflowTests(unittest.TestCase):
             changed[side] = 1
             self.assertFalse(tuning_workflow._comparison_is_exact({"summary": changed}))
 
+    def test_catalog_pages_include_cars_after_the_first_thousand_entries(self) -> None:
+        earlier = self.iracing / "setups" / "acar"
+        later = self.iracing / "setups" / "tundra"
+        earlier.mkdir()
+        later.mkdir()
+        for index in range(1046):
+            (earlier / f"Atlanta 26S4 R {index:04}.sto").write_bytes(b"synthetic setup")
+        for index in range(31):
+            (later / f"Bristol 26S4 R {index:04}.sto").write_bytes(b"synthetic tail setup")
+        args = {"root": self.iracing, "archive_root": self.archive, "maximum_entries": 1000}
+        first = tuning_workflow.catalog_iracing_setups_workflow(**args)
+        second = tuning_workflow.catalog_iracing_setups_workflow(**args, offset=first["next_offset"])
+        self.assertEqual((len(first["entries"]), len(second["entries"])), (1000, 79))
+        self.assertEqual(first["catalog_revision"], second["catalog_revision"])
+        self.assertIsNone(second["next_offset"])
+        self.assertFalse(second["output_truncated"])
+        self.assertFalse(second["scan_truncated"])
+        keys = [(entry["car_folder"], entry["stem"]) for entry in first["entries"] + second["entries"]]
+        self.assertEqual(len(set(keys)), 1079)
+        filtered = tuning_workflow.catalog_iracing_setups_workflow(**args, car="tundra")
+        self.assertEqual(len(filtered["entries"]), 31, "Filtering must see entries after position 1000.")
+        self.assertIsNone(filtered["next_offset"])
+        changed = later / "Bristol 26S4 R 0030.sto"
+        changed.write_bytes(b"replacement synthetic source")
+        refreshed = tuning_workflow.catalog_iracing_setups_workflow(**args, offset=1000)
+        self.assertNotEqual(first["catalog_revision"], refreshed["catalog_revision"])
+
+    def test_catalog_rejects_out_of_bounds_page_offsets(self) -> None:
+        for offset in (-1, 2001):
+            with self.subTest(offset=offset), self.assertRaises(tuning_workflow.TuningWorkflowError):
+                tuning_workflow.catalog_iracing_setups_workflow(root=self.iracing, archive_root=self.archive, offset=offset)
+
     def test_catalog_package_recommend_feedback_history_end_to_end(self) -> None:
         catalog = tuning_workflow.catalog_iracing_setups_workflow(
             root=self.iracing,

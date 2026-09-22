@@ -42,7 +42,7 @@ public sealed class CompanionState : IDisposable
     // Content completeness is a separate question again, and RuntimeMapper already
     // answers it: HasCurrentAnalysisProfile rejects a response emitted by an
     // analyzer older than the fields the UI now reads.
-    private const string AppVersion = "0.17.2";
+    private const string AppVersion = "0.17.3";
 
     // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
     // roughly 1.8x - one 25 MB entry spanned 615,614 lines - and allocating fresh options
@@ -621,23 +621,48 @@ public sealed class CompanionState : IDisposable
             var setupCatalogWarning = string.Empty;
             var setupTask = ReadRefreshSectionAsync("Local setups", async () =>
             {
-                var response = await CallBackendAsync("catalog_iracing_setups", new
+                var localSetups = new List<LocalSetup>();
+                var offset = 0;
+                string? revision = null;
+                var incomplete = false;
+                for (var page = 0; ; page++)
                 {
-                    root = roots.IRacingRoot,
-                    archive_root = roots.ArchiveRoot,
-                    maximum_entries = 1000
-                }, cancellationToken);
-                if (response.ValueKind != JsonValueKind.Object
-                    || !response.TryGetProperty("entries", out var entries)
-                    || entries.ValueKind != JsonValueKind.Array)
-                    throw new InvalidDataException("The setup response did not include an entries array.");
-                var setups = RuntimeMapper.Setups(response).ToList();
-                if ((response.TryGetProperty("output_truncated", out var outputTruncated) && outputTruncated.ValueKind == JsonValueKind.True)
-                    || (response.TryGetProperty("scan_truncated", out var scanTruncated) && scanTruncated.ValueKind == JsonValueKind.True))
+                    if (page >= 4) throw new InvalidDataException("The setup catalog returned too many pages. Retry the refresh.");
+                    var arguments = new Dictionary<string, object>
+                    {
+                        ["root"] = roots.IRacingRoot,
+                        ["archive_root"] = roots.ArchiveRoot,
+                        ["maximum_entries"] = 1000
+                    };
+                    if (offset > 0) arguments["offset"] = offset;
+                    var response = await CallBackendAsync("catalog_iracing_setups", arguments, cancellationToken);
+                    if (response.ValueKind != JsonValueKind.Object
+                        || !response.TryGetProperty("entries", out var entries)
+                        || entries.ValueKind != JsonValueKind.Array)
+                        throw new InvalidDataException("The setup response did not include an entries array.");
+                    var pageRevision = response.TryGetProperty("catalog_revision", out var revisionValue)
+                        && revisionValue.ValueKind == JsonValueKind.String ? revisionValue.GetString() : null;
+                    if (offset > 0 && (string.IsNullOrEmpty(pageRevision) || pageRevision != revision))
+                        throw new InvalidDataException("The setup library changed while loading. Retry the refresh.");
+                    revision = pageRevision;
+                    localSetups.AddRange(RuntimeMapper.Setups(response));
+                    if (localSetups.Count > 2000) throw new InvalidDataException("The setup response exceeded the supported catalog size.");
+                    incomplete |= response.TryGetProperty("scan_truncated", out var scanTruncated) && scanTruncated.ValueKind == JsonValueKind.True;
+                    if (!response.TryGetProperty("next_offset", out var next) || next.ValueKind == JsonValueKind.Null)
+                    {
+                        incomplete |= response.TryGetProperty("output_truncated", out var outputTruncated) && outputTruncated.ValueKind == JsonValueKind.True;
+                        break;
+                    }
+                    if (string.IsNullOrEmpty(revision) || next.ValueKind != JsonValueKind.Number
+                        || !next.TryGetInt32(out var nextOffset) || nextOffset <= offset || nextOffset >= 2000)
+                        throw new InvalidDataException("The setup catalog returned an invalid next page.");
+                    offset = nextOffset;
+                }
+                if (incomplete)
                     setupCatalogWarning = "This setup library is incomplete: the scan reached its file or entry limit. Search only covers the loaded entries.";
                 foreach (var archived in LoadArchivedSetups())
-                    if (setups.All(setup => !string.Equals(setup.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) setups.Add(archived);
-                return (IReadOnlyList<LocalSetup>)setups.ToArray();
+                    if (localSetups.All(setup => !string.Equals(setup.Id, archived.Id, StringComparison.OrdinalIgnoreCase))) localSetups.Add(archived);
+                return (IReadOnlyList<LocalSetup>)localSetups.ToArray();
             }, cancellationToken);
             var garageBeforeProbe = Garage61;
             var garageTask = ReadRefreshSectionAsync("Garage61", async () =>
