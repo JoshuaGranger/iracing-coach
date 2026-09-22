@@ -87,6 +87,41 @@ class TuningWorkflowTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_setup_copy_preserves_source_deduplicates_and_never_overwrites_changed_copy(self) -> None:
+        source = next(self.setup_dir.glob("*.sto"))
+        original = source.read_bytes()
+        first = tuning_workflow.copy_iracing_setup_to_coach_workflow(
+            source_path=source, iracing_root=self.iracing, archive_root=self.archive)
+        saved = Path(first["path"])
+        self.assertTrue(first["copied"])
+        self.assertEqual(saved.read_bytes(), original)
+        self.assertTrue(saved.is_relative_to(self.archive))
+        manifest = json.loads(saved.with_name("manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["original_file_name"], source.name)
+        second = tuning_workflow.copy_iracing_setup_to_coach_workflow(
+            source_path=source, iracing_root=self.iracing, archive_root=self.archive)
+        self.assertFalse(second["copied"])
+        saved.write_bytes(b"user edited saved copy")
+        with self.assertRaisesRegex(tuning_workflow.TuningWorkflowError, "not overwritten"):
+            tuning_workflow.copy_iracing_setup_to_coach_workflow(
+                source_path=source, iracing_root=self.iracing, archive_root=self.archive)
+        self.assertEqual(saved.read_bytes(), b"user edited saved copy")
+        self.assertEqual(source.read_bytes(), original)
+
+    def test_setup_copy_rejects_sources_and_destinations_outside_its_contract(self) -> None:
+        outside = self.root / "outside.sto"
+        outside.write_bytes(b"private source outside setups")
+        html = next(self.setup_dir.glob("*.htm"))
+        for source in (outside, html):
+            with self.subTest(source=source.name), self.assertRaises(tuning_workflow.TuningWorkflowError):
+                tuning_workflow.copy_iracing_setup_to_coach_workflow(
+                    source_path=source, iracing_root=self.iracing, archive_root=self.archive)
+        source = next(self.setup_dir.glob("*.sto"))
+        with self.assertRaisesRegex(tuning_workflow.TuningWorkflowError, "outside"):
+            tuning_workflow.copy_iracing_setup_to_coach_workflow(
+                source_path=source, iracing_root=self.iracing, archive_root=self.setup_dir / "copies")
+        self.assertFalse(self.archive.exists())
+
     def test_semantic_match_requires_zero_unmatched_material_fields(self) -> None:
         exact_summary = {
             "common_fields": 20,

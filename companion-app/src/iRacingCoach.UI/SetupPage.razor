@@ -5,6 +5,8 @@
 }
 else
 {
+    var visibleSetups = VisibleSetups;
+    var selectedSetup = visibleSetups.FirstOrDefault(item => item.Id == State.SelectedSetupId) ?? visibleSetups.FirstOrDefault();
     <div class="setup-library-page">
         <header class="page-heading compact-heading">
             <div><span class="eyebrow">Setups</span><h1>Your setup library</h1><p>Local files and the setup values saved with your recordings.</p></div>
@@ -14,14 +16,18 @@ else
         {
             <p class="status-label warning" role="status">@State.SetupCatalogWarning</p>
         }
+        @if (!string.IsNullOrWhiteSpace(State.SetupMessage))
+        {
+            <p role="status">@State.SetupMessage</p>
+        }
         <section class="surface-card setup-library-toolbar" aria-label="Filter setups">
             <label>Search<input type="search" placeholder="Name, car, track…" @bind="State.SetupSearch" @bind:event="oninput" /></label>
             <label>Car<select @bind="State.SetupCarFilter"><option value="">All cars</option>@foreach (var value in Cars) { <option>@value</option> }</select></label>
             <label>Track<select @bind="State.SetupTrackFilter"><option value="">All tracks</option>@foreach (var value in Tracks) { <option>@value</option> }</select></label>
             <label>Season<select @bind="State.SetupSeasonFilter"><option value="">All seasons</option>@foreach (var value in Seasons) { <option>@value</option> }</select></label>
-            <span>@VisibleSetups.Count setup@(VisibleSetups.Count == 1 ? "" : "s")</span>
+            <span>@visibleSetups.Count setup@(visibleSetups.Count == 1 ? "" : "s")</span>
         </section>
-        @if (VisibleSetups.Count == 0)
+        @if (visibleSetups.Count == 0)
         {
             <section class="surface-card"><div class="empty-state"><ProductIcon Name="wrench" Size="24" /><h2>@(State.Setups.Count == 0 ? "Build your first baseline" : "No matching setups")</h2><p>@(State.Setups.Count == 0 ? "Analyze a recording to bring in its actual setup values, or use New setup to find a starting baseline." : "Clear the filters to see the rest of your library.")</p><button class="button secondary" @onclick="ClearFilters">Clear filters</button></div></section>
         }
@@ -29,17 +35,17 @@ else
         {
             <div class="setup-library-workspace">
                 <section class="surface-card setup-library-list" aria-label="Setup library">
-                    @foreach (var setup in VisibleSetups)
+                    @foreach (var setup in visibleSetups)
                     {
                         var evidence = State.SetupEvidenceRaces(setup);
-                        <button class="setup-library-row @(Selected?.Id == setup.Id ? "selected" : null)" aria-pressed="@(Selected?.Id == setup.Id)" @onclick="() => Select(setup)">
+                        <button class="setup-library-row @(selectedSetup?.Id == setup.Id ? "selected" : null)" aria-pressed="@(selectedSetup?.Id == setup.Id)" @onclick="() => Select(setup)">
                             <span class="setup-library-row-top"><strong>@setup.Name</strong><small>@SourceLabel(setup)</small></span>
                             <span>@setup.Car · @(setup.Track.Length > 0 ? setup.Track : "Track unspecified")</span>
                             <small>@setup.Fields.Count values · @evidence.Count linked recording@(evidence.Count == 1 ? "" : "s") · @(setup.Season.Length > 0 ? setup.Season : "Season unknown")</small>
                         </button>
                     }
                 </section>
-                @if (Selected is { } selected)
+                @if (selectedSetup is { } selected)
                 {
                     var linked = State.SetupEvidenceRaces(selected);
                     <section class="surface-card setup-library-detail">

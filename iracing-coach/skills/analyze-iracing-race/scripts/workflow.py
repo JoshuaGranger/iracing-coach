@@ -1570,8 +1570,11 @@ def _analysis_pipeline_sha256() -> str:
 # screening now governs clean summary and technical-insight claims. Bulk decode
 # and compact JSON preserve samples (chunk-reader parity at integer/fractional
 # rates). Infeasible strategies serialize null instead of invalid Infinity.
+# Review 2026-09-21: optional traces normalize once, and None skips float
+# conversion. Full native-rate Iowa/New Hampshire outputs match with a fixed
+# clock/provenance; gap, nonfinite and overflow regressions retain v17 answers.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "e4b93e9a9446a72389a036b73f0af8c2a8d383fd303c1f96c779ca33a8cdfeb1"
+    "eec071b866ba83c93d902ac3f220eda76417faa51a6228f2d301c6bc6f02b101"
 )
 
 
@@ -4180,6 +4183,7 @@ try:  # Support both package imports and direct script-folder execution.
     from .tuning_workflow import (  # noqa: E402
         build_open_setup_package_workflow,
         catalog_iracing_setups_workflow,
+        copy_iracing_setup_to_coach_workflow,
         iracing_setup_history_workflow,
         recommend_open_setup_tuning_workflow,
         recommend_structured_open_setup_tuning_workflow,
@@ -4189,6 +4193,7 @@ except ImportError:  # pragma: no cover - normal CLI/MCP loading path.
     from tuning_workflow import (  # type: ignore[no-redef]  # noqa: E402
         build_open_setup_package_workflow,
         catalog_iracing_setups_workflow,
+        copy_iracing_setup_to_coach_workflow,
         iracing_setup_history_workflow,
         recommend_open_setup_tuning_workflow,
         recommend_structured_open_setup_tuning_workflow,
@@ -4203,6 +4208,7 @@ __all__ = [
     "analyze_race_workflow",
     "build_open_setup_package_workflow",
     "catalog_iracing_setups_workflow",
+    "copy_iracing_setup_to_coach_workflow",
     "companion_dashboard_workflow",
     "discover_sessions_workflow",
     "garage61_status_workflow",

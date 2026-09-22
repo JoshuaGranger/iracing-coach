@@ -979,11 +979,11 @@ public sealed class LiveMonitorTests
         StringAssert.Contains(script, "event.preventDefault()");
         StringAssert.Contains(host, "live-telemetry-layout.js");
         StringAssert.Contains(previewHost, "live-telemetry-layout.js");
-        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.17.3-viewport-fit");
-        StringAssert.Contains(host, "live-telemetry-tile-charts.js?v=0.17.3-instrument-grid");
+        StringAssert.Contains(host, "live-telemetry-layout.js?v=0.17.4-viewport-fit");
+        StringAssert.Contains(host, "live-telemetry-tile-charts.js?v=0.17.4-instrument-grid");
         StringAssert.Contains(previewHost, "@Assets[\"_content/iRacingCoach.UI/live-telemetry-layout.js\"]");
         StringAssert.Contains(previewHost, "@Assets[\"_content/iRacingCoach.UI/coach.css\"]");
-        Assert.DoesNotContain("?v=0.17.3", previewHost,
+        Assert.DoesNotContain("?v=0.17.4", previewHost,
             "The Preview host uses generated static-asset fingerprints instead of manual query-string versions.");
 
         foreach (var interactionHook in new[]

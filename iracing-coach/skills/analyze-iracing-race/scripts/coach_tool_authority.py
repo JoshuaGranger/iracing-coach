@@ -49,6 +49,7 @@ TOOL_CAPABILITIES: Mapping[str, str] = {
     "archive_iracing_knowledge": CAPABILITY_WRITE,
     "build_open_setup_package": CAPABILITY_WRITE,
     "catalog_iracing_setups": CAPABILITY_READ_SETUP,
+    "copy_iracing_setup_to_coach": CAPABILITY_WRITE,
     "discover_iracing_sessions": CAPABILITY_READ_ANALYSIS,
     "find_iracing_telemetry_events": CAPABILITY_READ_ANALYSIS,
     "garage61_auth_status": CAPABILITY_CREDENTIAL,

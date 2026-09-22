@@ -613,6 +613,20 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "copy_iracing_setup_to_coach",
+        "description": "Save an exact, verified STO copy in the configured Coach archive without modifying source setups or overwriting changed copies.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source_path": {"type": "string"},
+                "iracing_root": {"type": "string"},
+                "archive_root": {"type": "string"},
+            },
+            "required": ["source_path"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "build_open_setup_package",
         "description": "Create a season-scoped open-setup race/Q baseline for an exact car/track or a researched donor family; source setups remain read-only.",
         "inputSchema": {
@@ -891,6 +905,12 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
             role=arguments.get("role"),
             maximum_entries=int(arguments.get("maximum_entries", 200)),
             offset=int(arguments.get("offset", 0)),
+        )
+    if name == "copy_iracing_setup_to_coach":
+        iracing_root = _iracing_root(arguments.get("iracing_root"))
+        return _workflow_function("copy_iracing_setup_to_coach_workflow")(
+            source_path=str(_bounded_path(arguments["source_path"], iracing_root, "source_path")),
+            iracing_root=str(iracing_root), archive_root=str(archive_root),
         )
     if name == "build_open_setup_package":
         analysis_path = (

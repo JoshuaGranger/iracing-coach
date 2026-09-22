@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
@@ -29,6 +30,21 @@ CONTEXT = {
 
 
 class StorageCacheIntegrityTests(unittest.TestCase):
+    def test_copy_does_not_overwrite_a_destination_created_during_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, destination = root / "source.sto", root / "copy.sto"
+            source.write_bytes(b"immutable original")
+            def competing_copy(temporary, target):
+                Path(target).write_bytes(b"new user copy")
+                raise FileExistsError()
+            with mock.patch.object(storage.os, "link", side_effect=competing_copy):
+                with self.assertRaises(storage.ArchiveVerificationFailed):
+                    storage._atomic_copy_verified(source, destination, storage.file_sha256(source), replace_existing=False)
+            self.assertEqual(source.read_bytes(), b"immutable original")
+            self.assertEqual(destination.read_bytes(), b"new user copy")
+            self.assertEqual(set(root.iterdir()), {source, destination})
+
     def test_atomic_copy_and_write_do_not_repeat_long_destination_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

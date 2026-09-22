@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -17,6 +18,23 @@ import mcp_server  # noqa: E402
 
 
 class McpServerSafetyTests(unittest.TestCase):
+    def test_setup_copy_tool_dispatches_with_confined_source_and_archive(self) -> None:
+        self.assertIn("copy_iracing_setup_to_coach", {tool["name"] for tool in mcp_server.TOOLS})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            iracing = root / "iRacing"
+            archive = root / "coach" / "data"
+            source = iracing / "setups" / "car" / "race.sto"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"synthetic opaque setup")
+            with mock.patch.object(mcp_server, "DEFAULT_IRACING_ROOT", iracing), mock.patch.object(mcp_server, "DEFAULT_ARCHIVE_ROOT", archive):
+                result = mcp_server.call_tool("copy_iracing_setup_to_coach", {"source_path": str(source)})
+                self.assertEqual(Path(result["path"]).read_bytes(), source.read_bytes())
+                with self.assertRaisesRegex(ValueError, "must stay within"):
+                    mcp_server.call_tool("copy_iracing_setup_to_coach", {"source_path": str(root / "outside.sto")})
+                with self.assertRaisesRegex(ValueError, "must stay within"):
+                    mcp_server.call_tool("copy_iracing_setup_to_coach", {"source_path": str(source), "archive_root": str(root / "outside")})
+
     def test_stdio_server_uses_one_json_rpc_object_per_line(self) -> None:
         requests = [
             {

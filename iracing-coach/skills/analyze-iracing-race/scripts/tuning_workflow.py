@@ -10,9 +10,9 @@ from typing import Any, Mapping, Sequence
 
 try:  # Package import and direct script execution are both supported.
     from . import backend_roots
-    from .path_security import local_path
+    from .path_security import local_path, path_is_within
     from .setup_catalog import HARD_MAX_ENTRIES, catalog_setups, compare_setups, normalize_embedded_setup
-    from .storage import ArchiveStore, safe_slug, stable_hash, utc_now
+    from .storage import ArchiveStore, _atomic_copy_verified, _atomic_write_text, file_sha256, safe_slug, stable_hash, utc_now
     from .tuning_engine import (
         STRUCTURED_TUNING_RULESET_ID,
         StructuredTuningError,
@@ -26,9 +26,9 @@ try:  # Package import and direct script execution are both supported.
     )
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     import backend_roots
-    from path_security import local_path
+    from path_security import local_path, path_is_within
     from setup_catalog import HARD_MAX_ENTRIES, catalog_setups, compare_setups, normalize_embedded_setup
-    from storage import ArchiveStore, safe_slug, stable_hash, utc_now
+    from storage import ArchiveStore, _atomic_copy_verified, _atomic_write_text, file_sha256, safe_slug, stable_hash, utc_now
     from tuning_engine import (
         STRUCTURED_TUNING_RULESET_ID,
         StructuredTuningError,
@@ -71,6 +71,42 @@ def _setup_root(root: str | os.PathLike[str] | None) -> Path:
     if not candidate.is_dir():
         raise TuningWorkflowError(f"iRacing setup directory does not exist: {candidate}")
     return candidate.resolve()
+
+
+def copy_iracing_setup_to_coach_workflow(
+    *, source_path: str | os.PathLike[str],
+    iracing_root: str | os.PathLike[str] | None = None,
+    archive_root: str | os.PathLike[str] | None = None,
+) -> dict[str, Any]:
+    """Save an exact STO copy in a bounded content-addressed Coach directory."""
+    setup_root = _setup_root(iracing_root)
+    source = local_path(source_path, "source_path", strict=True)
+    if not path_is_within(source, setup_root) or source.suffix.casefold() != ".sto" or not source.is_file():
+        raise TuningWorkflowError("Choose a .sto file inside the configured iRacing setups directory.")
+    if not 0 < source.stat().st_size <= 16 * 1024 * 1024:
+        raise TuningWorkflowError("Setup copy requires a non-empty .sto file no larger than 16 MiB.")
+    store = ArchiveStore(archive_root)
+    if path_is_within(store.root, setup_root):
+        raise TuningWorkflowError("Coach setup copies must be stored outside the iRacing setups directory.")
+    fingerprint = store.source_fingerprints([source])[0]
+    digest = fingerprint["sha256"]
+    destination = (store.root / "setup-copies" / digest / "setup.sto").resolve()
+    manifest_path = destination.with_name("manifest.json").resolve()
+    if not path_is_within(destination, store.root) or not path_is_within(manifest_path, store.root):
+        raise TuningWorkflowError("Setup copy destination must stay inside the configured Coach archive.")
+    copied = not destination.exists()
+    if not copied and file_sha256(destination) != digest:
+        raise TuningWorkflowError("The existing Coach copy has changed; it was not overwritten.")
+    _atomic_copy_verified(source, destination, digest, replace_existing=False)
+    if store.source_fingerprints([source])[0] != fingerprint:
+        raise TuningWorkflowError("The source setup changed during copying; retry after it has finished saving.")
+    if not manifest_path.exists():
+        _atomic_write_text(manifest_path, json.dumps({
+            "schema_version": 1, "sha256": digest, "size": fingerprint["size"],
+            "original_file_name": source.name, "source_path": str(source),
+            "copied_at": utc_now(), "archived_file": destination.name,
+        }, sort_keys=True, allow_nan=False) + "\n")
+    return {"schema_version": 1, "copied": copied, "path": str(destination), "sha256": digest}
 
 
 def _read_analysis(path: str | os.PathLike[str]) -> tuple[Path, dict[str, Any]]:

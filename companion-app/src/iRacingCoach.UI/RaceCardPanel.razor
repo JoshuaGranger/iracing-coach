@@ -12,7 +12,7 @@
         <div class="race-corner-grid">
         @foreach (var row in Card.Corners.Where(HasCornerEvidence))
         {
-            <article class="scenario-card"><strong>@row.Zone</strong>@foreach (var claim in Claims(row).Where(item => Supported(item.Claim))) { <p><span>@claim.Label</span><br /><EvidenceBadge Kind="claim.Claim.Kind" /> @claim.Claim.Text</p> }</article>
+            <article class="scenario-card"><strong>@row.Zone</strong>@foreach (var claim in Claims(row).Where(item => Supported(item.Claim))) { <p><span>@claim.Label</span><br /><EvidenceBadge Kind="claim.Claim.Kind" /> @CornerEvidencePresentation.Describe(claim.Claim.Text)</p> }</article>
         }
         </div>
     }

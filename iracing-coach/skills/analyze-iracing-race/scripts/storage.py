@@ -585,6 +585,7 @@ def _atomic_copy_verified(
     destination: Path,
     expected_sha256: str,
     *,
+    replace_existing: bool = True,
     sleeper=time.sleep,
     jitter_ms=_atomic_jitter_ms,
 ) -> None:
@@ -596,6 +597,8 @@ def _atomic_copy_verified(
         if actual_source_sha256 != expected_sha256:
             raise ArchiveVerificationFailed("source-digest-changed-before-copy")
         return
+    if not replace_existing and destination.exists():
+        raise ArchiveVerificationFailed("existing-copy-digest-mismatch")
     # A telemetry filename can already be close to the Windows path limit.
     # The temporary sibling needs uniqueness, not another copy of that name.
     fd, temp_name = tempfile.mkstemp(prefix=".copy-", dir=destination.parent)
@@ -608,9 +611,19 @@ def _atomic_copy_verified(
         actual_sha256 = file_sha256(temporary)
         if actual_sha256 != expected_sha256:
             raise ArchiveVerificationFailed("archived-digest-mismatch")
-        _atomic_replace_with_retry(
-            temporary, destination, sleeper=sleeper, jitter_ms=jitter_ms
-        )
+        if replace_existing:
+            _atomic_replace_with_retry(
+                temporary, destination, sleeper=sleeper, jitter_ms=jitter_ms
+            )
+        else:
+            # Publish the verified temporary without a check-then-replace race.
+            # This links only our temporary sibling, never the source file;
+            # the temporary name is removed below, leaving an independent copy.
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                if not destination.is_file() or file_sha256(destination) != expected_sha256:
+                    raise ArchiveVerificationFailed("existing-copy-digest-mismatch") from None
     finally:
         try:
             os.unlink(temp_name)
@@ -2052,7 +2065,12 @@ class ArchiveStore:
                 archived_name = prior_archived_name
             else:
                 suffix = source.suffix.casefold() if source.suffix else ".bin"
-                archived_name = f"{safe_slug(source.stem, 'telemetry')}{suffix}"
+                # The enclosing SHA-256 directory supplies identity. Repeating
+                # the long simulator filename here can exceed MAX_PATH even
+                # when the archive root and manifest are ordinary local paths.
+                # Preserve that name in provenance, and reuse existing archive
+                # names above so upgrades never rename an immutable copy.
+                archived_name = f"telemetry{suffix}"
             destination = archive_dir / archived_name
             _atomic_copy_verified(source, destination, sha256)
 

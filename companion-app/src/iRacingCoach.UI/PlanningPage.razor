@@ -219,7 +219,7 @@
         && !claim.Text.Contains("no external target", StringComparison.OrdinalIgnoreCase)
         && !claim.Text.Contains("before assigning cause", StringComparison.OrdinalIgnoreCase);
     private static bool HasSupportedPhase(CornerCoachingRow row) => UsefulCornerPhase(row.Early) || UsefulCornerPhase(row.Middle) || UsefulCornerPhase(row.Late);
-    private static string FriendlyCornerText(string value) => System.Text.RegularExpressions.Regex.Replace(value, @"([0-9]+(?:\.[0-9]+)?) rad median steering", match =>
+    private static string FriendlyCornerText(string value) => System.Text.RegularExpressions.Regex.Replace(CornerEvidencePresentation.Describe(value), @"([0-9]+(?:\.[0-9]+)?) rad median steering", match =>
         double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var radians)
             ? $"{radians * 180d / Math.PI:0.0}° median steering"
             : match.Value);

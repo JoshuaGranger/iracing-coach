@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import sys
 import tempfile
@@ -20,6 +21,7 @@ from analysis_engine import (  # noqa: E402
     _find_race_session,
     _lap_limit,
     _lap_summaries,
+    _lap_trace_payload,
     _phase_comparison,
     _race_grades,
     _runs,
@@ -945,6 +947,38 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertIn("lf-wheel-speed", point_signals)
         self.assertIn("lf-wheel-slip", point_signals)
         self.assertNotIn("rf-wheel-speed", point_signals)
+
+    def test_optional_trace_reducers_preserve_gaps_and_reject_nonfinite_samples(self) -> None:
+        table = TelemetryTable({"channels": {
+            "LapDistPct": [0.1] * 6 + [0.6] * 4,
+            "Speed": [30.0] * 10,
+            "FuelUsePerHour": [None, math.nan, math.inf, "bad", 2, "4"],
+            "PlayerTrackSurface": [1, None, math.inf, "bad", 3, 2],
+            "BrakeABScutPct": [None, 0.2, math.nan, math.inf, 0.8, "bad"],
+            "LFrideHeight": [None, -0.1, 0.05, math.nan, math.inf, None],
+            "AirTemp": [None, math.nan, math.inf],
+        }})
+        trace = _lap_trace_payload(table, [{"lap": 1, "start_index": 0, "end_index": 9}])
+        points = trace["traces"][0]["points"]
+        self.assertEqual(len(points), 2)
+        self.assertEqual(points[0]["additional_signals"]["fuel-use-rate"], 3.0)
+        self.assertEqual(points[0]["additional_signals"]["track-surface"], 2.0)
+        self.assertEqual(points[0]["additional_signals"]["abs-cut"], 80.0)
+        self.assertEqual(points[0]["additional_signals"]["lf-ride-height"], -3.937)
+        self.assertEqual(points[1]["additional_signals"], {})
+        self.assertNotIn("air-temperature", {item["id"] for item in trace["additional_signal_catalog"]})
+        json.dumps(trace, allow_nan=False)
+
+    def test_optional_trace_conversion_and_median_overflow_remain_gaps(self) -> None:
+        table = TelemetryTable({"channels": {
+            "LapDistPct": [0.1, 0.1],
+            "Speed": [30.0, 30.0],
+            "FuelUsePerHour": [1e308, 1e308],
+            "TrackTemp": [1e308, 1e308],
+        }})
+        trace = _lap_trace_payload(table, [{"lap": 1, "start_index": 0, "end_index": 1}])
+        self.assertEqual(trace["traces"][0]["points"][0]["additional_signals"], {})
+        json.dumps(trace, allow_nan=False)
 
     def test_abs_active_trace_does_not_infer_activation_from_cut_percentage(self) -> None:
         telemetry = synthetic_telemetry(lap_count=2)

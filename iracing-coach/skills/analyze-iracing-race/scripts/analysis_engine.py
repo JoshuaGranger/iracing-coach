@@ -187,6 +187,8 @@ def _now() -> str:
 
 
 def _finite(value: Any) -> float | None:
+    if value is None:
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -1316,10 +1318,12 @@ def _additional_trace_sources(
         channel, raw = table.resolve(*aliases, default=None)
         if channel is None:
             return None, raw
-        converted = [
-            transform(value, channel) if transform is not None else _finite(value)
-            for value in raw
-        ]
+        # register is the normalization boundary; untransformed channels do
+        # not need a second complete conversion pass before reaching it.
+        converted = (
+            [transform(value, channel) for value in raw]
+            if transform is not None else raw
+        )
         register(
             signal_id,
             name,
@@ -1614,7 +1618,14 @@ def _lap_trace_payload(
             session_times = values(indices, session_time)
             additional_signals: dict[str, float] = {}
             for signal_id, signal_series in additional_series.items():
-                samples = values(indices, signal_series)
+                # register already guarantees finite floats or None. Keep
+                # gaps, but avoid converting every native sample again.
+                samples = [
+                    value
+                    for index in indices
+                    if index < len(signal_series)
+                    and (value := signal_series[index]) is not None
+                ]
                 if not samples:
                     continue
                 reducer = additional_reducers[signal_id]
@@ -1625,7 +1636,7 @@ def _lap_trace_payload(
                 elif reducer == "last":
                     representative = samples[-1]
                 else:
-                    representative = _median(samples)
+                    representative = statistics.median(samples)
                 rounded = _round(representative, additional_digits[signal_id])
                 if rounded is not None:
                     additional_signals[signal_id] = rounded

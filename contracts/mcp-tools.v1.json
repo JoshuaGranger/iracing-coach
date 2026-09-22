@@ -521,6 +521,28 @@
       "name": "catalog_iracing_setups"
     },
     {
+      "description": "Save an exact, verified STO copy in the configured Coach archive without modifying source setups or overwriting changed copies.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "iracing_root": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path"
+        ],
+        "type": "object"
+      },
+      "name": "copy_iracing_setup_to_coach"
+    },
+    {
       "description": "Create a season-scoped open-setup race/Q baseline for an exact car/track or a researched donor family; source setups remain read-only.",
       "inputSchema": {
         "additionalProperties": false,

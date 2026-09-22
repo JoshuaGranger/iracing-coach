@@ -42,7 +42,7 @@ public sealed class CompanionState : IDisposable
     // Content completeness is a separate question again, and RuntimeMapper already
     // answers it: HasCurrentAnalysisProfile rejects a response emitted by an
     // analyzer older than the fields the UI now reads.
-    private const string AppVersion = "0.17.3";
+    private const string AppVersion = "0.17.4";
 
     // Portable artifacts are machine-read. Indenting them inflated the analysis cache by
     // roughly 1.8x - one 25 MB entry spanned 615,614 lines - and allocating fresh options
@@ -2311,9 +2311,13 @@ public sealed class CompanionState : IDisposable
             {
                 source_path = setup.StoPath,
                 iracing_root = Settings.IRacingRoot,
-                coach_home = Settings.CoachHome
+                archive_root = Settings.ArchiveRoot
             }, cancellationToken);
-            var copied = response.TryGetProperty("copied", out var value) && value.ValueKind == JsonValueKind.True;
+            if (response.ValueKind != JsonValueKind.Object ||
+                !response.TryGetProperty("schema_version", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out var version) || version != 1 ||
+                !response.TryGetProperty("copied", out var value) || value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new InvalidDataException("The setup copy response is incomplete or uses an unsupported version.");
+            var copied = value.ValueKind == JsonValueKind.True;
             SetupMessage = copied
                 ? "An exact copy was saved in your Coach setup library."
                 : "That exact setup is already in your Coach setup library.";
@@ -2322,7 +2326,7 @@ public sealed class CompanionState : IDisposable
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
         {
             SetupMessage = Bound(ex.Message);
-            Notify("The setup was not copied.");
+            Notify($"The setup was not copied: {SetupMessage}");
         }
         RaiseChanged();
     }

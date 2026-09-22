@@ -14,6 +14,32 @@ namespace iRacingCoach.Tests;
 public sealed class CoordinatorTests
 {
     [TestMethod]
+    public async Task SetupCopyUsesBoundedArchiveAndExposesFailureForRetry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-copy-test", Guid.NewGuid().ToString("N"));
+        var fail = true;
+        var backend = new FakeBackend(responseOverride: (tool, callNumber, arguments) =>
+        {
+            if (tool != "copy_iracing_setup_to_coach") return null;
+            var args = JsonSerializer.SerializeToElement(arguments);
+            Assert.AreEqual(Path.Combine(root, "data"), args.GetProperty("archive_root").GetString());
+            Assert.IsFalse(args.TryGetProperty("coach_home", out _));
+            if (fail) throw new InvalidDataException("The existing copy has changed; it was not overwritten.");
+            return JsonDocument.Parse("{\"schema_version\":1,\"copied\":true}").RootElement.Clone();
+        });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        state.Settings.LocalStateRootOverride = Path.Combine(root, "local");
+        state.Setups.Add(new LocalSetup("setup-1", "Race", "Car", "Track", "Race", Path.Combine(root, "race.sto"), "hash", "sto_only", "", []));
+        state.SelectedSetupId = "setup-1";
+        await state.CopySelectedSetupAsync();
+        Assert.Contains("not overwritten", state.SetupMessage);
+        fail = false;
+        await state.CopySelectedSetupAsync();
+        Assert.Contains("exact copy was saved", state.SetupMessage);
+    }
+
+    [TestMethod]
     [DataRow("analyze_iracing_race", false)]
     [DataRow("iracing_strategy_history", true)]
     [DataRow("plan_iracing_race", false)]

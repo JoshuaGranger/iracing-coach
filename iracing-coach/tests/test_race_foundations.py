@@ -823,6 +823,47 @@ class RaceFoundationTests(unittest.TestCase):
             self.assertEqual(archived.read_bytes(), b"recorded telemetry")
             self.assertIn("never deleted by analysis", manifest["retention"])
 
+    def test_raw_archive_long_source_name_fits_windows_path_and_preserves_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / ("stockcars2_supra2019_" + "bristol_" * 9 + ".ibt")
+            source.write_bytes(b"immutable long-name telemetry")
+            archive_root = root / ("a" * max(10, 103 - len(str(root))))
+            store = ArchiveStore(archive_root)
+            fingerprint = store.source_fingerprints([source])[0]
+            old_destination = store.telemetry_traces_dir / "raw" / fingerprint["sha256"] / source.name
+            self.assertGreater(len(str(old_destination)), 260)
+            result = store.archive_raw_telemetry([fingerprint])
+            archived = Path(result["items"][0]["archive_path"])
+            self.assertLess(len(str(archived)), 260)
+            self.assertEqual(file_sha256(archived), fingerprint["sha256"])
+            self.assertEqual(file_sha256(source), fingerprint["sha256"])
+            manifest = json.loads((archived.parent / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["original_file_name"], source.name)
+            self.assertEqual(manifest["source_discoveries"][0]["original_file_name"], source.name)
+            self.assertEqual(manifest["original_path"], str(source))
+
+    def test_raw_archive_keeps_existing_manifest_filename_on_upgrade(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "legacy-race.ibt"
+            source.write_bytes(b"immutable legacy archive")
+            store = ArchiveStore(root / "archive")
+            fingerprint = store.source_fingerprints([source])[0]
+            result = store.archive_raw_telemetry([fingerprint])
+            archived = Path(result["items"][0]["archive_path"])
+            legacy = archived.with_name(source.name)
+            archived.rename(legacy)
+            manifest_path = legacy.parent / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["archived_file"] = legacy.name
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            repeated = store.archive_raw_telemetry([fingerprint])
+            self.assertEqual(repeated["items"][0]["archive_path"], str(legacy))
+            self.assertFalse(archived.exists())
+            self.assertEqual(file_sha256(legacy), fingerprint["sha256"])
+            self.assertEqual(file_sha256(source), fingerprint["sha256"])
+
     def test_raw_archive_preserves_duplicate_content_discovery_history(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

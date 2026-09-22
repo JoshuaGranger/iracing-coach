@@ -110,6 +110,9 @@ class DeniedAuthorityTests(unittest.TestCase):
     def test_writing_setup_feedback_is_denied_to_every_workflow(self):
         self._assert_denied_everywhere("record_open_setup_feedback")
 
+    def test_copying_a_setup_is_denied_to_every_coach_workflow(self):
+        self._assert_denied_everywhere("copy_iracing_setup_to_coach")
+
     def test_building_a_setup_package_is_denied_to_every_workflow(self):
         self._assert_denied_everywhere("build_open_setup_package")
 
