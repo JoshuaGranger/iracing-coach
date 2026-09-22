@@ -1844,27 +1844,26 @@ label.theme-color-custom.active { border-color:var(--focus);box-shadow:inset 0 0
 .trace-row-label-trigger > .product-icon { flex: 0 0 auto; margin-top: 1px; color: var(--text-muted); }
 .trace-row-grip { opacity: 0; transition: opacity var(--motion-hover) var(--ease); }
 .analysis-trace-studio.editing .trace-row-grip { opacity: .72; }
-.trace-row-label-copy { min-width: 0; display: block; }
+.trace-row-label-copy { min-width: 0; flex: 1 1 auto; display: block; }
 .trace-row-remove { flex:0 0 auto;width:22px;height:22px;display:grid;place-items:center;padding:0;color:var(--text-muted);background:color-mix(in srgb,var(--surface-3) 82%,transparent);border:1px solid transparent;border-radius:4px;cursor:pointer;pointer-events:auto; }
 .trace-row-remove:hover { color:var(--danger);background:color-mix(in srgb,var(--danger) 9%,var(--surface-3));border-color:color-mix(in srgb,var(--danger) 34%,var(--border-subtle)); }
 .trace-row-remove:disabled { color:var(--text-disabled);background:transparent;cursor:not-allowed; }
 .trace-row-label-copy > strong {
-  max-inline-size: 12ch;
   display: block;
-  overflow-wrap: break-word;
-  word-break: normal;
-  white-space: normal;
   color: currentColor;
   font: 650 12px/13px var(--ui-font,"Segoe UI Variable Text","Segoe UI",sans-serif);
   letter-spacing: normal;
 }
+.trace-row-signal-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trace-row-unit {
   display: block;
   margin-top: 1px;
   color: var(--text-muted);
   font: 400 var(--font-size-min)/12px var(--ui-font,"Segoe UI Variable Text","Segoe UI",sans-serif);
   letter-spacing: normal;
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .trace-row-label-tooltip {
   position: absolute;

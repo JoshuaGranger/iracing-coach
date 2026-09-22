@@ -520,7 +520,7 @@
                                      @onfocus="() => ActivateTraceRow(panel.Preferences.Id)"
                                      @onkeydown="args => HandleTraceRowKeyDown(panel.Preferences.Id, args)">
                                     <ProductIcon Name="grip" Size="14" Class="trace-row-grip" />
-                                    <span class="trace-row-label-copy"><strong>@RowLabel(panel)</strong><span class="trace-row-unit">@RowUnit(panel)</span></span>
+                                    <span class="trace-row-label-copy"><strong>@foreach (var signal in panel.Signals) { <span class="trace-row-signal-name">@signal.Name</span> }</strong><span class="trace-row-unit">@RowUnit(panel)</span></span>
                                     @if (TraceToolboxOpen)
                                     {
                                         <button type="button"

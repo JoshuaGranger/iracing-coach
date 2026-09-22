@@ -984,7 +984,7 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(traceLayout, "const duration = structuralMotionMs(state.root)");
         Assert.DoesNotContain("duration: 200", traceLayout, StringComparison.Ordinal);
         StringAssert.Contains(css, ".trace-row-label-copy > strong");
-        StringAssert.Contains(css, "max-inline-size: 12ch");
+        StringAssert.Contains(css, ".trace-row-signal-name");
         StringAssert.Contains(css, ".trace-row-unit");
         StringAssert.Contains(css, "white-space: pre-line;");
         StringAssert.Contains(css, "user-select: none;");

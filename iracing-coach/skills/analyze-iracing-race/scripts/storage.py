@@ -2576,6 +2576,90 @@ class ArchiveStore:
         if not matches:
             return None
 
+        cache_key = self._verified_live_replay_cache_key(matches)
+        # Replace the derived entry for this phase instead of accumulating a
+        # new large file whenever a capture or decoder revision changes.
+        cache_path = self.root / "replay-cache" / f"{stable_hash(session_identity, 32)}.json" if cache_key else None
+        if cache_path is not None:
+            try:
+                if cache_path.stat().st_size <= 256 * 1024 * 1024:
+                    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                    replay = cached.get("replay") if isinstance(cached, Mapping) else None
+                    if (isinstance(replay, dict)
+                        and cached.get("cache_schema") == 1
+                        and cached.get("cache_key") == cache_key
+                        and cached.get("replay_sha256") == stable_hash(replay, 64)):
+                        # Enforce strict JSON even if a damaged cache contains
+                        # Python's nonstandard NaN/Infinity tokens.
+                        _json_text(replay)
+                        return replay
+            except (OSError, ValueError):
+                pass
+
+        replay = self._materialize_live_replay(matches)
+        if cache_path is not None:
+            try:
+                # Only persist an answer if finalized manifests and source
+                # bytes still match the snapshot verified before decoding.
+                if self._verified_live_replay_cache_key(matches) == cache_key:
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    _atomic_write_text(cache_path, _json_text({
+                        "cache_schema": 1,
+                        "cache_key": cache_key,
+                        "replay_sha256": stable_hash(replay, 64),
+                        "replay": replay,
+                    }))
+            except (OSError, ValueError):
+                # A disposable acceleration cache must never prevent analysis.
+                pass
+        return replay
+
+    def _verified_live_replay_cache_key(
+        self, matches: Sequence[tuple[Path, Mapping[str, Any]]]
+    ) -> str | None:
+        """Verify actual bytes every time; never trust just size or mtime."""
+        sources: list[dict[str, Any]] = []
+        try:
+            for manifest_path, manifest in matches:
+                if str(manifest.get("status") or "").casefold() != "finalized":
+                    return None
+                if manifest_path.stat().st_size > _REPLAY_MANIFEST_MAX_BYTES:
+                    return None
+                current_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if current_manifest != manifest:
+                    return None
+                chunks = manifest.get("chunks")
+                if not isinstance(chunks, list) or not chunks:
+                    return None
+                verified: list[dict[str, str]] = []
+                for chunk in chunks:
+                    if not isinstance(chunk, Mapping) or not chunk.get("file"):
+                        return None
+                    chunk_path = (manifest_path.parent / str(chunk["file"])).resolve()
+                    expected = str(chunk.get("sha256") or "").lower()
+                    if (manifest_path.parent.resolve() not in chunk_path.parents
+                        or not chunk_path.is_file()
+                        or not _SOURCE_HASH_PATTERN.fullmatch(expected)):
+                        return None
+                    if (chunk_path.suffix.lower() != ".ircr2"
+                        and chunk_path.stat().st_size > _REPLAY_LEGACY_CHUNK_MAX_BYTES):
+                        return None
+                    if file_sha256(chunk_path) != expected:
+                        return None
+                    verified.append({"path": str(chunk_path), "sha256": expected})
+                sources.append({"path": str(manifest_path), "manifest": manifest, "chunks": verified})
+            return stable_hash({
+                "cache_schema": 1,
+                "materializer_sha256": file_sha256(Path(__file__)),
+                "decoder_sha256": file_sha256(Path(__file__).with_name("live_replay_v2.py")),
+                "sources": sources,
+            }, 64)
+        except (OSError, ValueError):
+            return None
+
+    def _materialize_live_replay(
+        self, matches: Sequence[tuple[Path, Mapping[str, Any]]]
+    ) -> dict[str, Any]:
         hinted_times = [
             value
             for _, manifest in matches
