@@ -69,14 +69,14 @@ else
                         {
                             <div class="setup-evidence-empty"><strong>Attach driving evidence</strong><p>Run this setup in iRacing, record telemetry, then analyze that recording. Car and track names alone do not establish a setup match.</p><button class="button secondary compact" @onclick='() => State.Navigate("analysis")'>Open Race Analysis</button></div>
                         }
-                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId"><option value="">No comparison</option>@foreach (var candidate in Comparable(selected)) { <option value="@candidate.Id">@candidate.Name</option> }</select></label></div>
+                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId"><option value="">No comparison</option>@foreach (var candidate in Comparable(selected)) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</select></label></div>
                         @if (selected.Fields.Count == 0)
                         {
                             <p class="setup-source-note">This .sto has no readable export yet. Export its setup sheet from iRacing or analyze a recorded run to see the numeric settings.</p>
                         }
                         else if (Comparison(selected) is { } comparison)
                         {
-                            <table class="setup-values-table"><thead><tr><th>Setting</th><th>@selected.Name</th><th>@comparison.Name</th></tr></thead><tbody>
+                            <table class="setup-values-table"><thead><tr><th>Setting</th><th>Selected setup<br />@ComparisonLabel(selected)</th><th>Comparison setup<br />@ComparisonLabel(comparison)</th></tr></thead><tbody>
                             @foreach (var row in Differences(selected, comparison)) { <tr class="@(row.Left == row.Right ? null : "changed")"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
                             </tbody></table>
                         }
@@ -117,6 +117,12 @@ else
     private static string Percent(double? value) => value is { } v ? $"{v:0.0}%" : "—";
     private IEnumerable<LocalSetup> Comparable(LocalSetup setup) => State.Setups.Where(item => item.Id != setup.Id && item.Car.Equals(setup.Car, StringComparison.OrdinalIgnoreCase) && item.Track.Equals(setup.Track, StringComparison.OrdinalIgnoreCase) && item.Fields.Count > 0);
     private LocalSetup? Comparison(LocalSetup setup) => Comparable(setup).FirstOrDefault(item => item.Id == State.CompareSetupId);
+    private string ComparisonLabel(LocalSetup setup)
+    {
+        var dates = State.SetupEvidenceRaces(setup).Select(race => race.Date)
+            .Where(date => !string.IsNullOrWhiteSpace(date)).Distinct().ToArray();
+        return dates.Length > 0 ? $"{setup.Name} · {string.Join(" / ", dates)}" : $"{setup.Name} · {SourceLabel(setup)}";
+    }
     private static IEnumerable<(string Label, string Left, string Right)> Differences(LocalSetup left, LocalSetup right)
     {
         var keys = left.Fields.Select(field => field.Key).Concat(right.Fields.Select(field => field.Key)).Distinct();
