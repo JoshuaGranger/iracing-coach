@@ -143,6 +143,31 @@ public sealed class LiveReplayCaptureOverhaulTests
     }
 
     [TestMethod]
+    public void RaceReplay_MissingPlayerPositionsExplainUnavailabilityBeforePartialCaptureWarnings()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "analyze-repair-heavy.json")));
+        var replay = new AnalysisRaceReplay(
+            "partial",
+            ["The merged capture has 3 session-time gap(s); continuous channel coverage is not claimed."],
+            [], [],
+            [new(1, "1", 1, "Class", "Car", "Driver", null, true, false)],
+            [
+                new(3585.383, "cooldown", 1, ["checkered"], [new(1, null, 150, 149, 1, 1, false, -1, null, 0, null, null)]),
+                new(3586.383, "cooldown", 1, ["checkered"], [new(1, null, 150, 149, 1, 1, false, -1, null, 0, null, null)])
+            ],
+            20, 1, "recorded", new("partial", 2, 2, 1, 3, .533, 3585.383, 3586.383));
+        var workspace = RuntimeMapper.ArchivedAnalysis(document.RootElement) with { Replay = replay };
+        var component = new RaceReplayWorkspace();
+        var type = typeof(RaceReplayWorkspace);
+        type.GetProperty(nameof(RaceReplayWorkspace.Workspace))!.SetValue(component, workspace);
+        type.GetMethod("RebuildReplayCache", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(component, null);
+
+        Assert.IsFalse((bool)type.GetProperty("ReplayAvailable", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component)!);
+        Assert.AreEqual("Your car's track position was not recorded during the replay.",
+            type.GetProperty("ReplayUnavailableReason", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component));
+    }
+
+    [TestMethod]
     public void ReplayV2Codec_RoundTripsRecordedStateAndExplicitEvents()
     {
         var frames = BuildFrames(60, seconds: 2, cars: 24, includeEvent: true);

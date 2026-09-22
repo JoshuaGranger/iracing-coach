@@ -1228,7 +1228,7 @@ public sealed record BackendConfiguration(
     string ArchiveRoot,
     string CoachHomeRoot,
     string IRacingInstallRoot = "",
-    string ClientVersion = "0.17.5",
+    string ClientVersion = "0.17.6",
     string LocalStateRoot = "",
     string UserProfileRoot = "",
     string TemporaryRoot = "",

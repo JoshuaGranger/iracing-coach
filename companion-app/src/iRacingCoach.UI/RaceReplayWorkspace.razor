@@ -507,13 +507,16 @@
         get
         {
             if (Replay is null) return "Race replay needs full-field timing and car positions, which are unavailable for this race.";
+            // A partial capture can include general gap warnings even when a
+            // different requirement actually prevents playback. Explain the
+            // observed blocking condition before those broader warnings.
+            if (_recordedFrameCount > 0 && !_hasReplayPhaseFrames) return "The recording did not include the grid, parade laps, race, or post-checker phase.";
+            if (_hasReplayPhaseFrames && PlayerCarIndex.HasValue && Frames.Count == 0) return "Your car's track position was not recorded during the replay.";
             var stated = Replay.UnavailableReasons.FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason));
             if (!string.IsNullOrWhiteSpace(stated)) return HumanizeReplayUnavailableReason(stated);
             var coverage = Replay.Coverage.FirstOrDefault(item => item.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.Reason));
             if (coverage?.Reason is { Length: > 0 } reason) return HumanizeReplayUnavailableReason(reason);
             if (!TemporalCoverageIsUsable(Replay.TemporalCoverage)) return "Too little of the race timeline is available to replay it reliably.";
-            if (_recordedFrameCount > 0 && !_hasReplayPhaseFrames) return "The recording did not include the grid, parade laps, race, or post-checker phase.";
-            if (_recordedFrameCount > 0 && Frames.Count == 0) return "No synchronized position for your car was recorded during the playable race timeline.";
             if (PlayerCarIndex is { } player && !ParticipantHasReplayData(player)) return "There are not enough synchronized positions for your car to replay this race.";
             if (!HasTrackGeometry) return "The track map needed for replay is unavailable for this race.";
             return "The synchronized full-field timeline needed for replay is unavailable for this race.";
