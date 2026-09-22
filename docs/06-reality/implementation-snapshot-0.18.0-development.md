@@ -1,6 +1,6 @@
 # iRacing Coach 0.18.0 development: explain the race and preserve the driver's work
 
-Date: September 22, 2026. Application source version: **0.18.0**. Analysis profile: **post-race-foundations-v19**. This follows the [0.17.7 snapshot](implementation-snapshot-0.17.7-development.md) and the [Bristol investigation](bristol-pace-investigation-2026-09-22.md). It records development implementation, not a released installer or whole-app acceptance.
+Date: September 22, 2026. Application source version: **0.18.0**. Analysis profile: **post-race-foundations-v19**. This follows the [0.17.7 snapshot](implementation-snapshot-0.17.7-development.md) and the [Bristol investigation](bristol-pace-investigation-2026-09-22.md). It records development implementation, built installer/portable packages and bounded acceptance evidence; it does not establish whole-app acceptance.
 
 The user needs the app to explain what changed in a race, show the relevant data, and identify what to try differently. This round therefore joins measured pace changes to lap comparisons and driving tests, and repairs workflow failures that lose context or make the displayed evidence contradictory.
 
@@ -32,7 +32,7 @@ The disconnected panel offers the connection path. Browser retest confirmed that
 | Race-analysis jobs | Open result and Retry use the job's recording identity, rather than the currently selected race. Missing recordings and duplicate running work receive explicit handling. This is not a claim that every non-analysis job has a new retry implementation. |
 | Planning | Labels distinguish all-green fuel feasibility and minimum fuel stops from optimal tire/caution strategy. |
 | First run and Settings | Failed detection offers Choose folders; Settings offers Continue setup until setup completes. Diagnostics and backup actions use concrete task labels. |
-| Installer and older-version cleanup | Existing source uses custom disabled-control painting for readable installer buttons/checkboxes, plus upgrade backup and legacy-install cleanup. These predate this round; installer source changed only for versioning. The 0.18 development transport does not exercise install, upgrade, rollback or uninstall. |
+| Installer and older-version cleanup | Existing source uses custom disabled-control painting for readable installer buttons/checkboxes, plus upgrade backup and legacy-install cleanup. These predate this round; installer source changed only for versioning. The exact full installer subsequently passed guarded install, replacement, rollback and uninstall checks. Visual disabled-text/progress rendering and Windows integration remain untested. |
 
 The [whole-app usefulness audit](whole-app-usefulness-audit-2026-09-22.md) covers **257 baseline control declarations/gesture families in 25 product files** and twelve prioritized findings. Dynamic row controls are grouped by action; conditional declarations can be counted separately. This is a complete baseline **source inventory**, not proof that every button was clicked, every state passed, or all requested usefulness gaps are closed. The [acceptance coverage document](whole-app-acceptance-coverage-2026-09-22.md) records those distinctions.
 
@@ -70,13 +70,17 @@ The Home/browser total discrepancy was traced to a second UI projection after op
 
 ## Candidate-4 native confirmation
 
-DESKTOP-SIM verified the exact candidate-4 archive hash and all **675 manifest-listed files** (the ZIP has 676 entries including its manifest), then ran `C:\Temp\ICQA0180-c4-0922\app` in the reused disposable profile. `QA-0180-CANDIDATE4-NATIVE-20260922.md` remains an in-progress report; the following are its completed checks, not whole-app acceptance.
+DESKTOP-SIM verified the exact candidate-4 archive hash and all **675 manifest-listed files** (the ZIP has 676 entries including its manifest), then ran `C:\Temp\ICQA0180-c4-0922\app` in the reused disposable profile. `QA-0180-CANDIDATE4-NATIVE-20260922.md` is complete for its bounded acceptance scope. The following are its completed checks, not whole-app acceptance.
 
 - The investigation is styled and readable at exactly **1280×720**, and all four Technical overview cards fit. Screenshots: `QA-0180-c4-investigation-1280x720.png` and `QA-0180-c4-overview-1280x720.png`.
 - Show evidence displays **Speed, Brake, Steering and Time delta**. All ten selected laps, 116–120 and 155–159, remain readable through synchronized tooltip scrolling without overlap. Back to findings dismisses the open Spotlight menu, reopening evidence keeps it dismissed, and Restore my traces restores the earlier ten-row custom layout. Screenshot: `QA-0180-c4-tooltip-final159-1280x720.png`.
 - Complete-race green/caution/fuel totals remain consistent before opening, after each Bristol race, on return and after hard reload. Screenshots: `QA-0180-c4-home-before.png`, `QA-0180-c4-totals-after-primary.png`, `QA-0180-c4-totals-after-both.png` and `QA-0180-c4-totals-reloaded.png`.
 
-The 9:08 PM recording was fully rendered by a **13.235-second observation upper bound**, including tool/observer latency. This is not a precise app-duration benchmark. A retained candidate-3 QA note followed a 9.990-second phase switch; that timing does not establish subsecond save behavior. The report had not yet completed candidate-4 note restart acceptance at this snapshot.
+The 9:08 PM recording was fully rendered by a **13.235-second observation upper bound**, including tool/observer latency. This is not a precise app-duration benchmark. A retained candidate-3 QA note followed a 9.990-second phase switch; that timing does not establish subsecond save behavior. Candidate 4 subsequently confirmed the same Early/zone-1 note after stopping candidate 3 and launching candidate 4 in the shared disposable profile, with no note leaked into Mid. The QA marker and its Other detail were cleared after verification; no handling analysis was submitted.
+
+Candidate 4 also confirmed the source-linked setup bar and 3:09 PM race selector fully visible in Tuning at **1280×720**, maximized Tuning at **2560×1392**, and restoration to 1280×720 (`QA-0180-c4-tuning-1280x720.png`, `QA-0180-c4-tuning-maximized.png`). Exact **1920×1080 remains unverified**: the supported native tool refused the requested resize outside the current window bounds. That is a testing-control limit, not an app defect.
+
+Settings page scrolling, Connections/Troubleshooting disclosures and read-only local service/path diagnostics worked at 1280×720. Authentication, repair, save and reset were not exercised in that candidate. No native crash was observed; the accessible error log contained only the expected contained Garage61-disabled events. Production installation/settings/credentials and original recordings/setups were unchanged.
 
 ## Verification status
 
@@ -91,7 +95,8 @@ The 9:08 PM recording was fully rendered by a **13.235-second observation upper 
 | Browser review | At 1280×720, bounded investigation, Settings and disconnected dashboard-editor checks passed. Exact four-channel inspection and rejected grid-size selector restoration passed after repairs. Detailed steps/limits: ignored `companion-app/artifacts/product-audit-20260922/ROOT-BROWSER-QA-20260922.md`. |
 | DESKTOP-SIM 0.18 candidate 2 | Bounded checks completed above, including coherent fuel and comparison/trace handoffs. Missing scoped styles, hover clipping and compact Tuning overlap were found. Later scoped retests are recorded separately below. |
 | DESKTOP-SIM 0.18 candidate 3 | Exact native 1280×720 overview, four-channel hover and compact Tuning checks passed; investigation styling still failed after reload. Candidate 4 replaces that scoped styling path and its visible native styling now passes. |
-| DESKTOP-SIM 0.18 candidate 4 | Exact hash and 675 manifest files verified; readable investigation and four overview cards at 1280×720, four-channel scrolling through all ten lap values, trace restoration/menu dismissal, and complete-race totals through open/return/reload passed. The native report remains in progress. |
+| DESKTOP-SIM 0.18 candidate 4 | Exact hash and 675 manifest files verified; readable investigation and four overview cards at 1280×720, four-channel scrolling through all ten lap values, trace restoration/menu dismissal, and complete-race totals through open/return/reload passed. Compact/maximized Tuning, the retained phase-specific note across the candidate restart, and read-only Settings checks also passed. The bounded native report is complete; other control families retain their stated limits. |
+| Full installer/portable artifacts | Built from clean `a7153b8082598586d2d9c9bbccf47efcf122d862`; all 9,333 payload hashes verified. The exact portable passed native startup/Bristol smoke using bundled runtimes; the exact installer passed guarded lifecycle checks. Scope and exclusions are recorded below. |
 | Authenticated AI / Garage61 | Not established by isolated-profile tests; pending authorized real-service interaction. |
 | Active simulator telemetry | Deferred at the user's request. Recording review does not validate live cue timing, focus or sustained telemetry performance. |
 
@@ -101,18 +106,47 @@ The cold path remains a measured performance gap against the requested seconds-a
 
 Focused suites overlap the full suite; their totals must not be added to claim wider test coverage. Existing 0.17.7 native results retain their original scope and executable identity. They do not become 0.18 passes because the source has been repaired.
 
-## Development transport boundary
+## Development transport history
 
-The 0.18 candidate is a **.NET self-contained win-x64 development transport**. It includes the development application/backend for isolated evaluation but **reuses the already installed Python and Coach Engine runtimes**. It is **not a full portable package or installer**, and does not establish a new install/upgrade/uninstall lifecycle pass. Original racing files and production settings are not test fixtures to modify.
+The candidate-4 artifact used for the native checks above is a **.NET self-contained win-x64 development transport**. It includes the development application/backend for isolated evaluation but **reuses the already installed Python and Coach Engine runtimes**. It is **not a full portable package or installer**; its historical interaction evidence is separate from the subsequent exact full-package checks below. Original racing files and production settings are not test fixtures to modify.
 
-| Final transport identity | Value |
+| Tested development transport identity | Value |
 |---|---|
 | Source revision | Candidate 4 was built from `7e9a356dec0fe659b04ff93b81c6c24d36f8dbd3` plus this round's uncommitted changes. Final release provenance belongs in the release manifest. |
 | Candidate directory / archive | `iRacingCoach-0.18.0-development-transfer-candidate4.zip` on the private QA share; **82,970,844 bytes**, **676 ZIP entries**. |
 | SHA-256 / manifest verification | Archive SHA-256: `71cad6530282f25cf63f389227ec5d7a00a275779ae970b39dc571215c550f3c`. DESKTOP-SIM verified the ZIP hash and all 675 manifest-listed files. Completed native checks are recorded above. |
-| Native report | Candidate-2/3 findings and completed candidate-4 retests recorded above. `QA-0180-CANDIDATE4-NATIVE-20260922.md` is still in progress; no exhaustive native acceptance claim. |
+| Native report | Candidate-2/3 findings and completed candidate-4 retests recorded above. `QA-0180-CANDIDATE4-NATIVE-20260922.md` is complete for its bounded scope; no exhaustive native acceptance claim. |
 
-Private recordings, redacted derived investigations, screenshots and candidate binaries remain in ignored artifacts or the private QA share. The source repository retains sanitized fixtures, tests and these reviewable conclusions.
+## Full installer and portable package identity
+
+The complete packages were then built from **clean commit `a7153b8082598586d2d9c9bbccf47efcf122d862`**. Implementation was committed as `67ab162`; the final commit only normalized the CSS file ending. No production source changed after the package source commit. Package manifests retain the build provenance; subsequent documentation updates do not change that executable identity.
+
+Both packages include the self-contained **.NET win-x64** application, the backend, **Python 3.12.13** and the signed, pinned **Coach Engine 0.146.0-alpha.9.2**. Unlike the earlier development transport, these carry their own Python and Coach Engine. All **9,333 manifest-listed payload file hashes** were verified, with the release manifest additional to those files.
+
+Location: `C:\Users\joshu\Downloads\iRacingCoach-0.18.0-development`. Each package has an adjacent `.sha256` file.
+
+| Package | Size | SHA-256 |
+|---|---:|---|
+| `iRacingCoach-0.18.0-Setup.exe` | 500,217,896 bytes | `0f68a702795fd26421bacf3e3590398374e58a10f662cf6eedbbe330b7cc2fad` |
+| `iRacingCoach-0.18.0-Portable-win-x64.zip` | 384,220,408 bytes | `0ff9d701fe86f0fbf5e3bdcaabce45bc1a4be711a188efe56b6a7ffaeec6035b` |
+
+### Exact full portable smoke — passed
+
+`QA-0180-FULL-PORTABLE-SMOKE-20260922.md`/JSON records the exact ZIP above on DESKTOP-SIM. Extraction to `C:\Temp\ICQA0180-full-0922\app` verified all **9,333 manifest-listed hashes and sizes**, 9,334 actual files including the manifest, and no extra payload. Python and Coach Engine were ordinary extracted directories, not junctions to installed runtimes. Packaged Python executed as **3.12.13 AMD64** from `app/python/python.exe`; packaged Coach Engine reported **0.146.0-alpha.9.2** with a **Valid OpenAI OpCo, LLC Authenticode signature**.
+
+The packaged app launched natively and showed Race analysis Ready. The primary Bristol recording retained **128 green / 31 caution / 18.45 gal**, opened a styled investigation showing **155–159 versus 116–120, +1.496 s/lap**, and opened exactly **Speed, Brake, Steering and Time delta**, ten selected laps and **63–77%** focus without overlap at **1426×893**. Screenshots: `QA-0180-full-home.png`, `QA-0180-full-investigation.png`, `QA-0180-full-evidence.png`.
+
+This smoke reused the existing isolated archive/cache; it did **not** perform fresh raw analysis or authenticate AI. Backend readiness was observed through the UI and successful recording flow, but the short-lived worker's executable path was not captured. It used the machine's installed WebView2 and did not repeat the complete candidate-4 matrix. The production installed executable and original primary Bristol telemetry hashes remained unchanged; no native crash was observed.
+
+### Exact installer guarded lifecycle — passed
+
+The exact Setup executable/hash above passed `installer-lifecycle-0180-report.md` and `installer-lifecycle-0180-results.json` under the ignored `companion-app/artifacts/product-audit-20260922/` directory. Its installed manifest identified the same clean source commit and **9,333 payload files**.
+
+The guarded temporary-directory test passed installation; full-manifest verification and rejection of modified, missing or extra files; rollback restoring the previous payload; replacement of an app running from the exact test install path; removal of the prior marker without `.previous`/`.installing` leftovers; recognized owned-legacy removal while preserving unowned content; fake app-state/credential cleanup; unchanged archive/source-fixture hashes; detached uninstall, reinstall, second uninstall and final temporary cleanup. The production installed executable hash remained unchanged.
+
+Replacement used the **same 0.18 payload plus an old-version marker**, not migration from every prior release. Archive/source and credentials in the lifecycle assertions were disposable fixtures. Windows integration was disabled by guarded test flags, and the replacement app ran without WebView. Therefore production registry, shortcuts, tasks/services/firewall cleanup, visual installer progress/disabled-text contrast and interactive uninstall prompts remain **unverified**. These scoped passes do not replace the separate native rendering evidence or establish whole-app acceptance.
+
+Private recordings, redacted derived investigations and screenshots remain in ignored artifacts or the private QA share; built binaries are in the development output locations described above. The source repository retains sanitized fixtures, tests and these reviewable conclusions.
 
 ## Remaining work
 
