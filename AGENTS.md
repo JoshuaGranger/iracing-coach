@@ -8,6 +8,8 @@ Joshua's direction (September 22, 2026): **"I would rather an app that has 5 fea
 
 As capability increases, complexity cannot increase from the user's interface or experience. Favor a small number of complete, effective racing workflows over feature count. Before adding a screen, chart, menu or button, identify the racing decision it improves, the action it enables, and how its benefit can be checked in a later recording. Remove or consolidate tools that fail that test. Use restrained, beautiful presentation and concise racing language; remove agentic prose and generic assurances. See `docs/01-product/companion-design-principles.md` for the design and acceptance method.
 
+Keep the core investigation on one well-planned screen: track location, exact comparison/run context and critical telemetry visible together. Do not hide driving inputs in accordions or replace the familiar synchronized chart/map cursor with a separate slider. Comparable green exposure and supported slip evidence matter; copying a faster lap's input curves is not a coaching objective. Evaluate compact top navigation as an alternative to the wide global rail; the final app-wide navigation format is not yet decided.
+
 ## Development boundaries
 
 Before changing code, read `docs/README.md` and run:

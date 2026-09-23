@@ -34,6 +34,26 @@ Treat copy as part of the reasoning interface. Keep a sentence if it conveys an 
 
 ## Two concrete studies using the Bristol recording
 
+### Current revision: one-screen investigation
+
+Joshua rejected the prior study's page-length layout, prose, hidden driving inputs, separate inspection slider and absent map. He also required exact run age for each selected lap and information about slipping/sliding. These corrections are binding requirements `RA-135`–`RA-137` and `UI-025`; a thin global top navigation remains an exploration under `NAV-008`.
+
+The current `compact-investigation.html` replaces that presentation with:
+
+- A 36 px analysis navigation strip and one viewport-bound workspace; no page headline, instructional paragraphs, telemetry accordion or slider.
+- The backend's recorded track layout with the selected area, preceding approach, start/finish and synchronized position marker. Numbered detected areas are not official turn numbers.
+- All six channels visible together: speed, elapsed time gap, throttle, brake, steering and body sideslip. Pointer motion and touch dragging inspect the charts directly; arrows/Home/End are keyboard equivalents. Map selection and inspection retain the same pair and area.
+- Each actual lap's accumulated green exposure beside its identity, not only a general six-lap pool label. Area 4 uses laps 36 and 132 at 22.7 and 23.8 green equivalents since their run starts.
+- Exact source sideslip preserved through the backend study projection. It is a chassis velocity angle with a signed peak retained in each distance bin, not tire slip or a grip estimate. Summaries require at least two values and 80% area coverage; the trace retains gaps. No advice to copy the faster pass's input curves is implied.
+
+For this Area 4 pair, the slower pass has lower median absolute body slip (2.782° versus 3.084°), despite arriving about 6 mph slower and losing time. This is an observation about this screened pair; it does not certify less tire sliding, diagnose understeer, or identify the cause. Entry conditions, run age, speed, steering and slip have to be interpreted together.
+
+The six critical channels occupy the available vertical space. Details about method and caveats are behind one information button, while exact lap age remains visible. The left column now holds racing evidence rather than global app navigation. Source changes are restricted to the offline study/backend projection; the installed app and full app shell are unchanged.
+
+Current revision verification: all 1,076 backend tests, 21 contracts and 28 fixtures passed. Three added cases cover exact-lap exposure with signed body-slip values, absent slip without steering-based inference, and sparse slip that must not produce whole-area statistics. JavaScript syntax passed. Browser checks at 1280×720 and 390×844 found all six channels, pair ages, map and area choices within the viewport without document overflow. Direct chart and map dragging synchronized all six cursors/readouts and map position; keyboard Home/End, area selection, both tabs, details dialog and Escape were exercised. Both fitted run lines remain. No console errors were captured. These are standalone-study checks, not installed-app or complete global-navigation acceptance.
+
+### Earlier revisions (superseded presentation)
+
 These are interactive presentation studies, not additions to the released 0.18.0 application. Private derived inputs and generated pages are in the ignored `companion-app/artifacts/companion-design-20260922/` directory. The existing temporary mobile gallery serves the study through its restricted route.
 
 ### Compare the runs on a shared scale

@@ -109,7 +109,8 @@ def segment_context(traces: list[dict], candidates: list[dict], areas: list[dict
             row = {'x': x, 'fast': {}, 'slow': {}}
             for name, item in [('fast', fast), ('slow', slow)]:
                 for source, target, multiplier in [('speed_mph', 'speed', 1), ('throttle', 'throttle', 100),
-                        ('brake_mean', 'brake', 100), ('steering_rad', 'steering', 180/math.pi)]:
+                        ('brake_mean', 'brake', 100), ('steering_rad', 'steering', 180/math.pi),
+                        ('slip_angle_deg', 'slip', 1)]:
                     value = _sample(item[2], x, source)
                     row[name][target] = value*multiplier if value is not None else None
             times = [_crossing(item[2], x) for item in (fast, slow)]
@@ -128,4 +129,18 @@ def segment_context(traces: list[dict], candidates: list[dict], areas: list[dict
                 if None not in (entry['slow']['speed'], entry['fast']['speed']) else None,
             'rows': rows,
         }
+        # Signed chassis sideslip from the existing backend trace, not tire slip
+        # or a grip-loss verdict. Keep unavailable values unavailable.
+        result[area['id']]['slip'] = {'basis': 'chassis_velocity_angle', 'unit': 'deg'}
+        for name, item in [('fast', fast), ('slow', slow)]:
+            core_slip = [abs(v) for p in item[2] if start <= p['lap_pct'] <= end
+                         and (v := _number(p.get('slip_angle_deg'))) is not None]
+            core_count = sum(start <= p['lap_pct'] <= end for p in item[2])
+            coverage = len(core_slip)/core_count if core_count else 0
+            summarized = len(core_slip) >= 2 and coverage >= .8
+            result[area['id']]['slip'][name] = {
+                'coverage': coverage,
+                'median_abs': statistics.median(core_slip) if summarized else None,
+                'peak_abs': max(core_slip) if summarized else None,
+            }
     return result

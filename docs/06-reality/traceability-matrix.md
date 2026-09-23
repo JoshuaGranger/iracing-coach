@@ -32,6 +32,7 @@ This matrix maps specification areas to implementation and verification anchors.
 | --- | --- | --- |
 | `PROD-020`, `PROD-021`, `UI-023`, `UI-024` | `AGENTS.md`, `companion-design-principles.md`, whole-app usefulness/control audits | Binding user direction. The current application is not claimed to satisfy the simplicity/outcome bar; feature removal, complete experiment follow-up and broader usability work remain open. |
 | `RA-130` to `RA-134` | Offline backend `investigation_study.py`, `test_investigation_study.py`, private Bristol interactive study | Backend study calculations and presentation prototypes only, not wired into the application contract or installed package. Exact-lap upstream context is demonstrated; production integration and next-recording outcome tracking remain open. |
+| `RA-135` to `RA-137`, `UI-025`, `NAV-008` | `compact-investigation.html`, existing backend track geometry and sideslip trace, exact-lap exposure, private compact-study browser checks | Compact offline study: map, run ages and six simultaneous channels; synchronized direct inspection. No production shell change. Full application navigation and production integration remain pending. |
 
 ## Maintenance rule
 

@@ -35,6 +35,8 @@ The UI should feel like a calm professional race-engineering workspace: black/ch
 
 `UI-024`: Remove agentic prose, generic assurances, repeated methodology, and text narrating obvious controls from normal views. Keep concise observations, material changing limitations, and specific racing actions. Technical detail remains inspectable when needed. Verify hierarchy, whitespace, typography, chart legibility, keyboard operation and unclipped controls at supported sizes; hiding complexity must not hide evidence or accessibility.
 
+`UI-025`: In a critical-data workspace, maximize usable chart/map space before adding chrome, headings, summaries or nested cards. Verify that the track, comparison context and necessary input traces fit together at 1280×720. A zero-scroll claim requires checking every required element's rendered bounds and readability, not merely setting overflow to hidden. Core channels must not be placed behind accordions to manufacture a compact default. Desktop acceptance and phone review-layout checks are separate evidence.
+
 ## Accessibility
 
 | ID | Requirement |

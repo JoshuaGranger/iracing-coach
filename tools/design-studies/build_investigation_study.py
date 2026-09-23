@@ -32,8 +32,16 @@ def main():
     candidates = [p for p in points if p['lap'] in chosen]
     data = {'points': points, 'fits': run_fits(points), 'comparison': comparison,
             'segments': segment_context(analysis['lap_traces']['traces'], candidates, comparison['corners'])}
+    geometry = analysis.get('track_geometry', {})
+    quality = geometry.get('quality', {})
+    if (geometry.get('status') == 'usable' and geometry.get('coordinate_system') == 'normalized_local_vector'
+            and quality.get('geometry_plausible') is True and quality.get('main_loop_complete') is True):
+        data['map'] = {'points': [{k: p[k] for k in ('x', 'y', 'lap_pct')} for p in geometry['main_path']],
+                       'start_finish': geometry.get('start_finish_line')}
+    else:
+        data['map'] = None
     colors = json.loads((ROOT/'config/theme.dark.json').read_text(encoding='utf-8'))['colors']
-    template = (Path(__file__).parent/'investigation.html').read_text(encoding='utf-8')
+    template = (Path(__file__).parent/'compact-investigation.html').read_text(encoding='utf-8')
     html = template.replace('__THEME__', ';'.join(f'--{key}:{value}' for key,value in colors.items()))
     html = html.replace('__DATA__', json.dumps(data, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c'))
     args.output.parent.mkdir(parents=True, exist_ok=True)

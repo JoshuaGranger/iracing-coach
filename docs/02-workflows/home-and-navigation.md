@@ -14,6 +14,8 @@ The final-product navigation order is:
 
 Current source uses this order. Connection management is a Settings section rather than a primary destination.
 
+Joshua's September 22 feedback questions the wide left rail and proposes evaluating a thin horizontal top strip to recover working space. This is an explicit design exploration, not acceptance of a new app-wide navigation format. Compare content area, task switches, discoverability and supported-size behavior before changing the production shell. The current compact investigation study demonstrates its two actual analysis destinations in a 36 px top strip; it does not exercise all seven application destinations.
+
 ## Navigation requirements
 
 | ID | Requirement | Acceptance oracle |
@@ -25,6 +27,7 @@ Current source uses this order. Connection management is a Settings section rath
 | `NAV-005` | Global service status MUST be compact and truthful. | Local reads/cache hits, Garage61 requests/state, and AI state reflect actual counters. |
 | `NAV-006` | Routine “updated just now” or “refreshing” chatter MUST NOT occupy the command bar. | Header remains empty unless an actionable problem exists. |
 | `NAV-007` | Normal navigation copy MUST describe racing tasks, not workspace/account/developer concepts. | No `local workspace`, account menu, roadmap copy, or raw service implementation terms. |
+| `NAV-008` | Navigation revisions SHOULD minimize space taken from core work and evaluate a compact horizontal strip against the current wide rail. | Before/after usable content dimensions, same-task navigation steps, keyboard behavior and legibility at 1280×720; no acceptance inferred from a two-tab prototype. |
 
 ## Home contract
 

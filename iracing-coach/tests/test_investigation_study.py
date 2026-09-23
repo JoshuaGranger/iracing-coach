@@ -76,6 +76,34 @@ class InvestigationStudyTests(unittest.TestCase):
         traces[1]['points'].reverse()
         self.assertEqual(segment_context(traces, self.points()[:2], self.areas()), {})
 
+    def test_run_age_and_recorded_body_slip_stay_with_exact_laps(self):
+        traces = self.traces()[:2]
+        for trace in traces:
+            for point in trace['points']:
+                point['slip_angle_deg'] = -2.0 if trace['lap'] == 1 else -3.0
+        value = segment_context(traces, self.points()[:2], self.areas())['selected']
+        self.assertEqual(value['fast']['green_age'], 1)
+        self.assertEqual(value['slow']['green_age'], 2)
+        self.assertEqual(value['slip']['fast']['median_abs'], 2)
+        self.assertEqual(value['slip']['slow']['peak_abs'], 3)
+        self.assertTrue(all(row['fast']['slip'] == -2 for row in value['rows']))
+        self.assertTrue(all(row['slow']['slip'] == -3 for row in value['rows']))
+
+    def test_absent_body_slip_is_not_inferred_from_steering(self):
+        value = segment_context(self.traces()[:2], self.points()[:2], self.areas())['selected']
+        self.assertIsNone(value['slip']['fast']['median_abs'])
+        self.assertEqual(value['slip']['fast']['coverage'], 0)
+        self.assertTrue(all(row['fast']['slip'] is None for row in value['rows']))
+
+    def test_sparse_slip_does_not_describe_the_whole_selected_area(self):
+        traces = self.traces()[:2]
+        traces[0]['points'][25]['slip_angle_deg'] = -4
+        value = segment_context(traces, self.points()[:2], self.areas())['selected']
+        self.assertGreater(value['slip']['fast']['coverage'], 0)
+        self.assertLess(value['slip']['fast']['coverage'], .8)
+        self.assertIsNone(value['slip']['fast']['median_abs'])
+        self.assertIsNone(value['slip']['fast']['peak_abs'])
+
 
 if __name__ == '__main__':
     unittest.main()
