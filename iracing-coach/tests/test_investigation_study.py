@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/analyze-iracing-race/scripts'))
-from investigation_study import run_fits, segment_context
+from investigation_study import observed_trends, review_areas, run_fits, segment_context
 
 
 class InvestigationStudyTests(unittest.TestCase):
@@ -41,6 +41,43 @@ class InvestigationStudyTests(unittest.TestCase):
         self.assertEqual([p['x'] for p in fit['points']], [1, 3])
         self.assertEqual(fit['count'], 3)
         self.assertEqual(run_fits(points[:2]), [])
+
+    def test_observed_trend_includes_traffic_but_never_invents_lap_zero(self):
+        points = self.points()
+        points[1].update(eligible=False, lap_time_s=21)
+        trend = observed_trends(points)[0]
+        self.assertTrue(trend['includes_reference_exclusions'])
+        self.assertEqual([p['x'] for p in trend['segments'][0]], [1, 2, 3])
+        self.assertEqual(trend['segments'][0][0]['sample_laps'], [1, 2, 3])
+        self.assertAlmostEqual(trend['segments'][0][0]['y'], 20.3)
+
+    def test_observed_trend_does_not_bridge_missing_laps_or_mix_runs(self):
+        points = self.points()+[dict(p, lap=p['lap']+5, green_age=p['green_age']+5) for p in self.points()]
+        points += [dict(p, run_number=2, lap=p['lap']+20, lap_time_s=50) for p in self.points()]
+        trends = observed_trends(points)
+        self.assertEqual([[p['lap'] for p in s] for s in trends[0]['segments']], [[1, 2, 3], [6, 7, 8]])
+        self.assertEqual(trends[1]['segments'][0][0]['y'], 50)
+        points[1]['green_age'] = 0
+        self.assertEqual(len(observed_trends(points)[0]['segments']), 1)
+
+    def test_merged_area_recomputes_elapsed_time_including_intervening_distance(self):
+        traces = self.traces()[:2]
+        # Two cohorts, with all additional time in the space between fragments.
+        traces += [dict(t, lap=t['lap']+2) for t in self.traces()[:2]]
+        for trace in traces:
+            for point in trace['points']:
+                x = point['lap_pct']
+                point['session_time_s'] = trace['lap']*100+x*20
+                if trace['lap'] in (2, 4):
+                    point['session_time_s'] += max(0, min(x-.3, .1))*10
+        regions = [{'id': 'merged', 'label': 'Review corner', 'start_pct': .2, 'end_pct': .5,
+                    'boundary_status': 'review_estimate'}]
+        value = review_areas(traces, [1, 3], [2, 4], regions)[0]
+        self.assertAlmostEqual(value['delta_s'], 1)
+        self.assertEqual(value['boundary_status'], 'review_estimate')
+        # A missing sample span inside the merge disqualifies the candidate.
+        traces[1]['points'] = [p for p in traces[1]['points'] if not .3 < p['lap_pct'] < .4]
+        self.assertEqual(review_areas(traces, [1, 3], [2, 4], regions), [])
 
     def test_carry_in_and_segment_loss_are_separate(self):
         context = segment_context(self.traces()[:2], self.points()[:2], self.areas())['selected']
@@ -84,6 +121,8 @@ class InvestigationStudyTests(unittest.TestCase):
         value = segment_context(traces, self.points()[:2], self.areas())['selected']
         self.assertEqual(value['fast']['green_age'], 1)
         self.assertEqual(value['slow']['green_age'], 2)
+        self.assertEqual(value['fast']['run_number'], 1)
+        self.assertEqual(value['slow']['run_number'], 1)
         self.assertEqual(value['slip']['fast']['median_abs'], 2)
         self.assertEqual(value['slip']['slow']['peak_abs'], 3)
         self.assertTrue(all(row['fast']['slip'] == -2 for row in value['rows']))

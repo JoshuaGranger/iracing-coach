@@ -1,0 +1,12 @@
+{
+  "scope": "Bristol September 20 open-setup six-lap review only",
+  "boundaryStatus": "review_sections_not_verified_turns",
+  "source": "User feedback: detected sections 5, 6 and 7 belong to one corner. Exact official turn boundaries remain unverified.",
+  "regions": [
+    {"id": "review-a", "label": "A", "start_pct": 0.13, "end_pct": 0.19, "boundary_status": "detected_section"},
+    {"id": "review-b", "label": "B", "start_pct": 0.195, "end_pct": 0.245, "boundary_status": "detected_section"},
+    {"id": "review-c", "label": "C", "start_pct": 0.25, "end_pct": 0.345, "boundary_status": "detected_section"},
+    {"id": "review-d", "label": "D", "start_pct": 0.625, "end_pct": 0.77, "boundary_status": "detected_section"},
+    {"id": "review-e", "label": "E", "start_pct": 0.775, "end_pct": 0.86, "boundary_status": "driver_confirmed_grouping"}
+  ]
+}

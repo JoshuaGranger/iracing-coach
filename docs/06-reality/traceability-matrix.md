@@ -36,4 +36,6 @@ This matrix maps specification areas to implementation and verification anchors.
 
 ## Maintenance rule
 
+September 22 visual redesign: `RA-138`–`RA-139` are demonstrated by the private revised study, `bristol-review-sections.json`, `review_areas` and merged-interval regression coverage. `RA-130` now distinguishes observed trends from screened-fit figures. `observed_trends` has explicit missing-lap, exposure, run-isolation and edge-domain coverage. This is offline study evidence only; [the redesign report](../01-product/visual-companion-redesign-2026-09-22.md) records unresolved native integration, four-turn annotation and mobile acceptance. The Opus 5.5/Astra debate supports prioritization, not correctness certification.
+
 When a requirement changes, the author must inspect all mapped implementation and evidence anchors. When implementation changes behavior, the author must update the affected requirement or record a deliberate deviation. When a test changes without a requirement change, reviewers must confirm that the test still measures the requirement rather than merely current behavior.

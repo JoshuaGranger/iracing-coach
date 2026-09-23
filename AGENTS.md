@@ -12,6 +12,8 @@ Keep the core investigation on one well-planned screen: track location, exact co
 
 ## Development boundaries
 
+Apply the approved visual-first investigation direction across the app. Every chart must make comparison membership, units and selection marks understandable without an explanatory essay. Distinguish an observed run trend from a screened pace fit; never extend a screened line into unsupported observations just to fill the chart. Detected analysis sections are not official turn numbers. See `docs/01-product/visual-companion-redesign-2026-09-22.md` for the app-wide consolidation plan and production acceptance gates; a prototype or model agreement is not installed-app acceptance.
+
 Before changing code, read `docs/README.md` and run:
 
 ```powershell

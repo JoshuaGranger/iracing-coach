@@ -32,6 +32,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [Mission, scope, and operating context](01-product/mission-scope-and-operating-context.md)
   - [Capability status](01-product/capability-status.md)
   - [Design around a racing question](01-product/companion-design-principles.md)
+  - [Visual companion redesign and Opus 5.5 debate](01-product/visual-companion-redesign-2026-09-22.md)
 - `02-workflows`
   - [Home and navigation](02-workflows/home-and-navigation.md)
   - [Live telemetry and monitor](02-workflows/live-telemetry-and-monitor.md)

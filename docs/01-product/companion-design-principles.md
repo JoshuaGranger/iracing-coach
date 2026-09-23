@@ -34,7 +34,9 @@ Treat copy as part of the reasoning interface. Keep a sentence if it conveys an 
 
 ## Two concrete studies using the Bristol recording
 
-### Current revision: one-screen investigation
+The latest revision and app-wide decisions are in [Visual companion redesign](visual-companion-redesign-2026-09-22.md). It replaces the primary screened straight lines with observed-run medians, labels the cohorts separately, removes shading, and recomputes the confirmed section merge. The prior descriptions below are retained as development history, not current UI acceptance.
+
+### Prior compact revision: one-screen investigation
 
 Joshua rejected the prior study's page-length layout, prose, hidden driving inputs, separate inspection slider and absent map. He also required exact run age for each selected lap and information about slipping/sliding. These corrections are binding requirements `RA-135`–`RA-137` and `UI-025`; a thin global top navigation remains an exploration under `NAV-008`.
 

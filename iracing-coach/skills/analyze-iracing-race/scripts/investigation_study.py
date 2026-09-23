@@ -10,7 +10,59 @@ import statistics
 from bisect import bisect_left
 
 from analysis_engine import _linear_slope
-from race_investigation import _corner_lap, _crossing, _number
+from race_investigation import _corner_lap, _corners, _crossing, _number
+
+
+def observed_trends(points: list[dict]) -> list[dict]:
+    """Five-observation medians of recorded pace, including reference exclusions.
+
+    This describes what happened, not clean-air potential or tire degradation.
+    Never invent a lap-zero time or bridge a missing lap/exposure discontinuity.
+    At the ends of each uninterrupted sequence, use the available 3–4 samples.
+    """
+    result = []
+    for run in sorted({p['run_number'] for p in points}):
+        selected = sorted([p for p in points if p['run_number'] == run
+                           and _number(p.get('green_age')) is not None
+                           and (_number(p.get('lap_time_s')) or 0) > 0], key=lambda p: p['lap'])
+        chunks = []
+        for point in selected:
+            if (not chunks or point['lap'] != chunks[-1][-1]['lap']+1
+                    or not 0 < point['green_age']-chunks[-1][-1]['green_age'] <= 1.5):
+                chunks.append([])
+            chunks[-1].append(point)
+        segments = []
+        for chunk in chunks:
+            if len(chunk) < 3:
+                continue
+            segment = []
+            for index, point in enumerate(chunk):
+                sample = chunk[max(0, index-2):index+3]
+                segment.append({'x': point['green_age'], 'y': statistics.median(p['lap_time_s'] for p in sample),
+                                'lap': point['lap'], 'sample_laps': [p['lap'] for p in sample]})
+            segments.append(segment)
+        result.append({'run_number': run, 'method': 'centered_five_observation_median',
+                       'includes_reference_exclusions': True, 'segments': segments})
+    return result
+
+
+def review_areas(traces: list[dict], before: list[int], after: list[int], regions: list[dict]) -> list[dict]:
+    """Recompute comparison metrics over explicitly supplied review boundaries.
+
+    Boundaries/provenance are supplied by the caller, never inferred from a
+    desired corner count. A merge includes the intervening recorded distances.
+    """
+    result = []
+    for region in regions:
+        start, end = region['start_pct'], region['end_pct']
+        if not 0 <= start < end <= 1:
+            raise ValueError('Review region requires increasing in-lap boundaries')
+        covered = {t['lap']: t for t in traces if _covered(_points(t), start, end)}
+        projected = _corners(before, after, covered, {'detected_corner_segments': [region]})
+        if projected and projected[0]['delta_s'] is not None:
+            result.append(dict(projected[0], id=region['id'], label=region['label'],
+                               boundary_status=region['boundary_status']))
+    return sorted(result, key=lambda area: area['delta_s'], reverse=True)
 
 
 def run_fits(points: list[dict]) -> list[dict]:
@@ -122,8 +174,10 @@ def segment_context(traces: list[dict], candidates: list[dict], areas: list[dict
             'start': start, 'end': end, 'context_start': context_start,
             'context_label': 'Previous area and approach' if index else 'Recorded start of this lap',
             'context_complete': valid_context, 'candidate_count': len(ranked),
-            'fast': {'lap': fast[1], 'seconds': fast[0], 'green_age': fast[3]['green_age']},
-            'slow': {'lap': slow[1], 'seconds': slow[0], 'green_age': slow[3]['green_age']},
+            'fast': {'lap': fast[1], 'seconds': fast[0], 'green_age': fast[3]['green_age'],
+                     'run_number': fast[3]['run_number']},
+            'slow': {'lap': slow[1], 'seconds': slow[0], 'green_age': slow[3]['green_age'],
+                     'run_number': slow[3]['run_number']},
             'segment_delta': slow[0]-fast[0], 'entry_delta': entry['delta'], 'exit_delta': exit_row['delta'],
             'entry_speed_difference': (entry['slow']['speed']-entry['fast']['speed'])
                 if None not in (entry['slow']['speed'], entry['fast']['speed']) else None,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'iracing-coach/skills/analyze-iracing-race/scripts'))
-from investigation_study import run_fits, segment_context
+from investigation_study import observed_trends, review_areas, run_fits, segment_context
 from race_investigation import _run_exposure
 
 
@@ -30,7 +30,11 @@ def main():
     points = [dict(p, green_age=ages.get(p['lap'])) for p in investigation['laps'] if p.get('plot_pace')]
     chosen = set(comparison['baseline']['lap_numbers']+comparison['compared']['lap_numbers'])
     candidates = [p for p in points if p['lap'] in chosen]
-    data = {'points': points, 'fits': run_fits(points), 'comparison': comparison,
+    regions = json.loads((Path(__file__).parent/'bristol-review-sections.json').read_text(encoding='utf-8'))
+    comparison = {k: comparison[k] for k in ('baseline', 'compared', 'delta_s', 'id', 'eligibility')}
+    comparison['corners'] = review_areas(analysis['lap_traces']['traces'],
+        comparison['baseline']['lap_numbers'], comparison['compared']['lap_numbers'], regions['regions'])
+    data = {'points': points, 'fits': run_fits(points), 'trends': observed_trends(points), 'comparison': comparison,
             'segments': segment_context(analysis['lap_traces']['traces'], candidates, comparison['corners'])}
     geometry = analysis.get('track_geometry', {})
     quality = geometry.get('quality', {})
