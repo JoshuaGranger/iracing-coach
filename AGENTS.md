@@ -2,6 +2,14 @@
 
 This repository contains the Windows application, its deterministic backend, shared contracts, sanitized test data, and product documentation.
 
+## Product north star
+
+Joshua's direction (September 22, 2026): **"I would rather an app that has 5 features that win me more races than an app that has 1000 features, graphics, and charts that don't help me win any more races."**
+
+As capability increases, complexity cannot increase from the user's interface or experience. Favor a small number of complete, effective racing workflows over feature count. Before adding a screen, chart, menu or button, identify the racing decision it improves, the action it enables, and how its benefit can be checked in a later recording. Remove or consolidate tools that fail that test. Use restrained, beautiful presentation and concise racing language; remove agentic prose and generic assurances. See `docs/01-product/companion-design-principles.md` for the design and acceptance method.
+
+## Development boundaries
+
 Before changing code, read `docs/README.md` and run:
 
 ```powershell

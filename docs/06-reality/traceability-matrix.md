@@ -26,6 +26,13 @@ This matrix maps specification areas to implementation and verification anchors.
 | `QA-*`, `REL-*` | build/verify scripts and release packet | release records, targeted iteration evidence, direct local/native validation | Gate scope follows the changed behavior; packaged releases require full applicable release evidence |
 | `UI-*`, `ACC-*`, `PERF-*` | `coach.css`, `ThemeColors.cs`, Razor/WPF surfaces, full-page canvas renderer, native retained-tile renderer, `analysis-telemetry-cursor.js`, replay renderer/shared clock, Home analysis priority gate, performance probe | theme/application tests, source contracts, visual baselines, UI audit, targeted JavaScript/.NET assertions, scheduler tests, performance packet, Race Analysis overhaul acceptance matrix | New Race Analysis surfaces have focused structural evidence only. Every changed control/state still requires 1280x720 and 1920x1080 maximized/nonmaximized click-through, intermediate animation/clipping review, reduced-motion repetition, and replay load measurement |
 
+## September 22 outcome-led design update
+
+| Specification | Implementation/evidence anchors | Status |
+| --- | --- | --- |
+| `PROD-020`, `PROD-021`, `UI-023`, `UI-024` | `AGENTS.md`, `companion-design-principles.md`, whole-app usefulness/control audits | Binding user direction. The current application is not claimed to satisfy the simplicity/outcome bar; feature removal, complete experiment follow-up and broader usability work remain open. |
+| `RA-130` to `RA-134` | Offline backend `investigation_study.py`, `test_investigation_study.py`, private Bristol interactive study | Backend study calculations and presentation prototypes only, not wired into the application contract or installed package. Exact-lap upstream context is demonstrated; production integration and next-recording outcome tracking remain open. |
+
 ## Maintenance rule
 
 When a requirement changes, the author must inspect all mapped implementation and evidence anchors. When implementation changes behavior, the author must update the affected requirement or record a deliberate deviation. When a test changes without a requirement change, reviewers must confirm that the test still measures the requirement rather than merely current behavior.

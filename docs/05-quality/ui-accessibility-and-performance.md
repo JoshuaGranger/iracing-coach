@@ -29,6 +29,12 @@ The UI should feel like a calm professional race-engineering workspace: black/ch
 | `UI-021` | Section changes, Technical data drill-in/back, map-layer changes, context/toolbox reflow, replay playback, leader-rail auto-scroll, and running-order/continuous-flag-timeline updates MUST use coordinated motion with no intermediate clipping, overlap, stale frame, or asynchronous endpoint jump. Reduced motion MUST preserve state synchronization while removing or shortening nonessential interpolation. |
 | `UI-022` | All structural expansion, collapse, drawer, and post-drop reflow motion MUST consume the single generated `motionMs.structure` / `--motion-structure` duration, currently 500 ms. Pointer tracking, chart cursors, live telemetry paint, scrolling, hover response, and active drag feedback MUST remain frame-local and MUST NOT inherit that structural duration. Reduced motion sets structural duration to zero without suppressing new telemetry samples. |
 
+## Outcome and simplicity review
+
+`UI-023`: Apply `PROD-020` and `PROD-021` to every changed user journey. Present one primary racing question and its useful next action. Keep advanced inspection in the same context through progressive disclosure; adding capability must not require the user to configure more controls or visit more destinations for the existing task. Record what was removed or consolidated, along with before/after task steps and visible choices. No arbitrary feature quota substitutes for usefulness.
+
+`UI-024`: Remove agentic prose, generic assurances, repeated methodology, and text narrating obvious controls from normal views. Keep concise observations, material changing limitations, and specific racing actions. Technical detail remains inspectable when needed. Verify hierarchy, whitespace, typography, chart legibility, keyboard operation and unclipped controls at supported sizes; hiding complexity must not hide evidence or accessibility.
+
 ## Accessibility
 
 | ID | Requirement |

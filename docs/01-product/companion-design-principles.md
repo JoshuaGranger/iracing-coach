@@ -1,6 +1,16 @@
 # Design around a racing question
 
-Date: September 22, 2026. This is a development method and proposal record, not a claim of new installed features or acceptance of the whole application.
+Date: September 22, 2026. Product direction is binding; studies and proposed features are not claims of installed functionality or acceptance of the whole application.
+
+## North star
+
+> I would rather an app that has 5 features that win me more races than an app that has 1000 features, graphics, and charts that don't help me win any more races.
+
+Joshua also requires: **as capability increases, complexity cannot increase from the user's interface or experience.** The result should be simple, powerful and beautiful. These instructions are also recorded in `AGENTS.md` and requirements `PROD-020`, `PROD-021`, `UI-023` and `UI-024` so future development reads them before adding features.
+
+Every proposed feature must answer three questions: which racing decision becomes better, what the driver can do differently, and how a subsequent recording can show whether it helped. A chart that is merely interesting does not pass. Remove, consolidate or defer controls with no defensible role in that outcome. Preserve useful preparation, reliability and safety functions when they enable the racing workflow; do not turn a preference for five effective features into an arbitrary quota.
+
+Acceptance needs a complete path from observation through action to evaluation. Examples include a repeatable reduction in comparable-run pace loss, improved consistency without sacrificing pace, avoiding a fuel mistake, or an experiment that demonstrably improves a relevant driving measurement. Race wins are the ambition, not a causal promise from one recording. Current experiment history and next-recording follow-up remain incomplete.
 
 Joshua singled out the race progression graphic as the first independently proposed feature that impressed him and asked for more of that kind of invention. Preserve what made it useful: it makes a race understandable and makes the next investigation easier to choose.
 
@@ -30,9 +40,9 @@ These are interactive presentation studies, not additions to the released 0.18.0
 
 **Question:** Did the second run follow the same fade pattern, or did its performance change at comparable green exposure?
 
-The study switches the same observed lap points between race-lap position and green laps into each run, retaining run colors, screened/excluded point distinctions, exact lap selection and temperature context. It highlights the backend's existing comparison of laps 35–37 and 130–132: about 22–24 green-lap equivalents, with Run 2 slower by 0.270 seconds per lap.
+Following Joshua's critique, the revised study opens with both runs overlaid on green laps into each run. It removes the redundant race-lap axis toggle; chronology remains the job of race progression. Solid/dashed least-squares trend lines use only screened points and stop at the first/last fitted observation. The underlying dots and exact lap selection remain. The existing comparison of laps 35–37 and 130–132 is about 22–24 green-lap equivalents, with Run 2 slower by 0.270 seconds per lap.
 
-This makes the comparison that was previously a numeric option visible as part of the race's shape. Green exposure comes from the existing backend calculation, not a UI reconstruction of tire wear. Fuel differs substantially between the windows; identical tire condition, grip, damage state or driving intent cannot be inferred. The aligned curves are descriptive, not a fitted degradation model or a prediction of an unobserved stint.
+Green exposure and fitting come from backend code, not UI arithmetic. Fuel differs substantially between the windows; identical tire condition, grip, damage state or driving intent cannot be inferred. The fitted pace lines are descriptive, not a tire degradation model or a prediction of an unobserved stint. The study fits the plotted investigation eligibility set; it must not silently relabel these coefficients as a separately calculated run-summary slope.
 
 **Before production:** add an explicit optional per-lap exposure field to the backend projection, preserve missing/gapped exposure, test race and run alignment across cautions/service/partial laps, and integrate the view into the existing investigation with keyboard and touch equivalents. Do not create another top-level analysis section.
 
@@ -40,11 +50,24 @@ This makes the comparison that was previously a numeric option visible as part o
 
 **Question:** Where did the extra time appear, and which driving observations changed there?
 
-The study ranks the backend's area-time differences on a common signed scale. Selecting an area updates its entry/minimum/exit speed, brake, throttle and steering measurements together with any existing area-specific driving trial. Switching between the observed finish fade and the screened similar-exposure comparison changes the full set together. On a phone, selecting an area brings its details into view and provides a return to the area list.
+The revised study uses the screened similar-exposure comparison directly and removes the finish-comparison selector. The three largest losses are visible; four remaining areas sit under one disclosure. Rank bars retain the two groups' median differences. Selecting an area instead compares the fastest and slowest actual segment instances among those same six laps, not median traces or the globally fastest/slowest whole lap.
 
-This reduces the work of finding the relevant area and reconciling several cards. For the finish comparison, the 62.5–77% area has a 0.322-second median difference, minimum speed falls from about 108.3 to 99.5 mph, and median brake demand rises from 0 to 5.1%. Those are observations; the five finish laps have close-traffic exclusions. Area medians cover only selected portions of the lap and must not be presented as an additive decomposition of the whole-lap median. Until a verified turn mapping exists, do not replace percentage bounds with invented corner names.
+Speed and cumulative time difference include the preceding area and approach. One shared inspection position updates all readings; throttle, brake and steering open together under Driving inputs. Timing on entry, added inside, and on exit refer to an explicit context origin. Selecting 62.5–77% compares laps 36 and 132: the latter arrives about 6.0 mph slower, with a 0.121-second gap accumulated since 25% lap distance; another 0.096 seconds accumulates inside. The upstream loss and entry speed make the preceding exit worth inspecting. They do not prove a mechanical or driving cause, or physically allocate the in-area loss to driver inputs within that area.
 
-**Before production:** preserve exact cohort context in both rank and trace views, handle negative changes and absent inputs, show selected lap rows on evidence handoff, and link accepted official turn names only where provenance exists. The study reuses backend comparison values and actions without introducing new causal rules.
+The first area starts context at the available beginning of the same lap; the study does not invent a previous-lap continuation. Missing approach coverage withholds cumulative time gaps. Missing segment coverage excludes that candidate. Fastest/slowest are limited to the six-lap comparison pool, which is visible. Area medians are not an additive whole-lap breakdown. Percentage bounds remain until verified corner names exist.
+
+**Before production:** integrate optional backend projections into the app contract with fixtures, preserve exact cohort context in rank/trace handoffs, support verified cross-lap approach context, and complete the one-change trial and subsequent-recording check. Do not ship another top-level analysis destination. This study offers evidence for selecting a trial; it does not complete the outcome loop.
+
+### Complexity comparison
+
+| Task | Initial study | Revised study |
+| --- | --- | --- |
+| Compare run shapes | Choose an axis before the useful overlay | Overlay and fit visible immediately; no axis controls |
+| Find comparable loss | Change away from unequal-age finish comparison | Similar exposure already selected; no mode selector |
+| Choose a relevant area | Seven equal-priority buttons | Three largest losses, one disclosure for the rest |
+| Inspect what preceded the loss | No aligned upstream traces | Select an area once; speed and gap appear together; inputs available in one disclosure |
+
+There are still two study views. The production target is deeper investigation in the existing race workspace, not two new application pages. Additional data must reduce investigative work rather than create a new configuration task.
 
 ## Next opportunities beyond these studies
 
@@ -55,12 +78,14 @@ This reduces the work of finding the relevant area and reconciling several cards
 | Did the change I tried help? | Retain one intended change and its success criteria, find a compatible later practice/test recording, and reopen the before/after result. Remember unsuccessful experiments. | Exact car/layout/setup lineage, comparable runs and confounds; insufficient data leaves a pending experiment rather than a verdict. |
 | What should I do next session? | Carry one supported driving focus from analysis into a practice test, then check it against the next recording. | Specific observed issue and expected trace change, no invented target inputs. The app must support practice discovery and experiment history for this to work end to end. |
 
-These are proposed directions, not newly accepted requirements or completed features. Favor improvements that remove investigative work from the driver while keeping the observations inspectable.
+These future opportunities are proposals, not completed features. The north star and September 22 run/segment feedback are explicit user requirements. Favor improvements that remove investigative work from the driver while keeping observations inspectable and the resulting action measurable.
 
 ## Study verification
 
 - Existing repository verification: 1,067 backend tests, 21 contracts and 28 fixtures passed before the study work.
 - The study reads the latest redacted v19 Bristol investigation. Its 127 plotted laps retain the backend's plotting and comparison-screening decisions.
 - Exposure uses the backend `_run_exposure` function; highlighted cohort start/end values were checked against the stored backend comparison within rounding precision.
-- Area values, metric pairs and driving trials are copied from the backend projection. Chart position and display formatting are the only browser calculations.
-- JavaScript syntax passed. Browser checks covered race/exposure switching, keyboard lap selection, both comparison cohorts, positive and negative area changes, and mobile detail selection at 390×844. There was no horizontal overflow or captured console error. This does not add production application acceptance or a new package version.
+- The revised study's least-squares lines, segment selection, boundary interpolation and upstream timing are computed in backend `investigation_study.py`, reusing existing backend helpers. Browser work is presentation and selection.
+- Six focused tests cover fit eligibility/domain, inherited versus in-area time, segment ranking independently of whole-lap ranking, missing approach, missing segment, incompatible age, and reversed traces. Final repository verification passed 1,073 backend tests, 21 contracts and 28 fixtures.
+- Reproducible study builder/template are under `tools/design-studies/`. Input analysis and generated private pages remain ignored. JavaScript syntax, phone layout, exact-lap selection and synchronized trace inspection have separate browser checks. No production UI or contract changed, and no new package was built.
+- Browser revision checks passed at 390×844 and 1280×720: all seven area selections, entry/exit inspection with the keyboard slider, synchronized readings/cursors in all five charts, driving-input disclosure, mobile return, exact lap keyboard selection and both overlaid fitted lines. No horizontal overflow or captured console errors were observed. The standalone mobile review page scrolls; this is not proof of the production app's fixed-height workspace requirement.

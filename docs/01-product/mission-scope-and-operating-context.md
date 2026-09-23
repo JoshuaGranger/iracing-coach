@@ -28,6 +28,8 @@ Live Telemetry and Live Monitor are first-class supporting workflows.
 
 ## Product principles
 
+Joshua's north star, September 22, 2026: **"I would rather an app that has 5 features that win me more races than an app that has 1000 features, graphics, and charts that don't help me win any more races."** Feature count and visualization count are not success measures. Race outcomes also depend on the field and circumstances; the app must demonstrate better supported decisions and measurable driving/strategy improvements without promising wins it cannot guarantee.
+
 | ID | Requirement |
 | --- | --- |
 | `PROD-010` | The application MUST show useful deterministic local results before optional AI or network enrichment. |
@@ -40,6 +42,8 @@ Live Telemetry and Live Monitor are first-class supporting workflows.
 | `PROD-017` | A structurally impossible feature MUST be removed rather than shipped as a permanent empty or “Unavailable” shell. |
 | `PROD-018` | Temporarily disconnected services MAY show a compact actionable recovery state. |
 | `PROD-019` | Navigation alone MUST NOT trigger backend, Garage61, or AI work. |
+| `PROD-020` | New capability MUST NOT increase the complexity of the default user journey. The developer MUST show the before/after steps and visible decisions for the same racing task; a new permanent screen/control requires a concrete unmet decision that cannot be served more simply in the existing workflow. |
+| `PROD-021` | A proposed feature MUST identify the racing decision it improves, the action it enables, and a real-recording acceptance measure. A working chart or button alone is insufficient. Low-value and duplicate tools MUST be removed or consolidated; fewer complete workflows are preferred to a larger feature catalog. |
 
 ## Non-goals and prohibitions
 
