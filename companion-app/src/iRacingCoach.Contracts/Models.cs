@@ -1110,7 +1110,8 @@ public sealed record RacePlanDecisionView(
     IReadOnlyList<string> Assumptions,
     IReadOnlyList<string> Limitations,
     IReadOnlyDictionary<string, string> ExtensionData,
-    bool IsLegacy = false)
+    bool IsLegacy = false,
+    IReadOnlyList<RacePlanStopWindow>? StopWindows = null)
 {
     public bool IsUsable =>
         Status.Equals("usable", StringComparison.Ordinal) &&
@@ -1119,6 +1120,9 @@ public sealed record RacePlanDecisionView(
     public string UnavailableReason => Limitations.FirstOrDefault()
         ?? "The authoritative fuel decision is unavailable.";
 }
+
+/// <summary>All-green fuel window for one decided stop; a fuel bound, not a tire or caution strategy.</summary>
+public sealed record RacePlanStopWindow(int Stop, double EarliestLap, double LatestLap);
 
 public sealed record RacePlanBriefing(
     string Track,

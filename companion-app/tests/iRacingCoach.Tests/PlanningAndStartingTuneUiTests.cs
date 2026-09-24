@@ -52,6 +52,13 @@ public sealed class PlanningAndStartingTuneUiTests
         StringAssert.Contains(page, "planning-setup-grid");
         StringAssert.Contains(page, "planning-reference-summary");
         StringAssert.Contains(page, "button primary compact");
+        StringAssert.Contains(page, "Change car, track or reference");
+        StringAssert.Contains(page, "class=\"plan-strip\"");
+        StringAssert.Contains(page, "decision.StopWindows");
+        StringAssert.Contains(page, "tire wear, cautions and track position decide where in the window");
+        Assert.DoesNotContain("Race priorities", page, "Coaching belongs to the investigation, not the fuel plan.");
+        Assert.DoesNotContain("Corner evidence by run phase", page);
+        Assert.DoesNotContain("optimal", page, StringComparison.OrdinalIgnoreCase);
         StringAssert.Contains(page, "State.Cars");
         StringAssert.Contains(page, "PlanTracks");
         StringAssert.Contains(page, "MatchingRaces");
@@ -84,6 +91,7 @@ public sealed class PlanningAndStartingTuneUiTests
         StringAssert.Contains(css, ".planning-results { min-width: 0; display: grid;");
         StringAssert.Contains(css, "@media (max-width: 620px)");
         StringAssert.Contains(iterationCss, ".planning-decision-hero");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "wwwroot", "race-investigation.css")), ".plan-strip-track");
     }
 
     [TestMethod]

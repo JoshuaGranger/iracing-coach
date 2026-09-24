@@ -106,6 +106,31 @@ class FrozenVectorTests(unittest.TestCase):
                 self.assertGreaterEqual(decision.final_stint_margin_laps, 0.0)
 
 
+class StopWindowTests(unittest.TestCase):
+    def test_each_stop_window_is_bounded_by_fuel_reach_and_the_finish(self):
+        decision = rpd.decide_from_range(scheduled_laps=160.0, all_green_range_laps=139.4)
+        self.assertEqual(decision.minimum_stops, 1)
+        [window] = decision.to_payload()["stop_windows"]
+        self.assertEqual(window["stop"], 1)
+        self.assertAlmostEqual(window["earliest_lap"], 160.0 - 139.4)
+        self.assertAlmostEqual(window["latest_lap"], 139.4)
+        self.assertTrue(window["earliest_lap"] <= decision.equal_stint_pit_targets[0] <= window["latest_lap"])
+
+    def test_multi_stop_windows_leave_each_remaining_stint_within_range(self):
+        decision = rpd.decide_from_range(scheduled_laps=300.0, all_green_range_laps=110.0)
+        windows = decision.to_payload()["stop_windows"]
+        self.assertEqual([w["stop"] for w in windows], [1, 2])
+        for window, target in zip(windows, decision.equal_stint_pit_targets):
+            stints_left = decision.stints - window["stop"]
+            self.assertAlmostEqual(window["earliest_lap"], max(0.0, 300.0 - stints_left * 110.0))
+            self.assertAlmostEqual(window["latest_lap"], min(300.0, window["stop"] * 110.0))
+            self.assertTrue(window["earliest_lap"] <= target <= window["latest_lap"])
+
+    def test_no_stop_or_unusable_decisions_have_no_window(self):
+        self.assertEqual(rpd.decide_from_range(scheduled_laps=100.0, all_green_range_laps=139.4).to_payload()["stop_windows"], [])
+        self.assertEqual(rpd.decide_from_range(scheduled_laps=None, all_green_range_laps=139.4).to_payload()["stop_windows"], [])
+
+
 class NoStopLanguageTests(unittest.TestCase):
     def test_no_stop_language_is_refused_whenever_a_stop_is_decided(self):
         for label, scheduled, exact_range, expected, _ in FROZEN_VECTORS:

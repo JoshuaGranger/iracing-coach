@@ -24,7 +24,7 @@ public static class RuntimeMapper
         "decision_version", "equal_stint_pit_targets", "final_stint_margin_laps",
         "green_burn_l_per_lap", "limitations", "maximum_start_fuel_l", "minimum_stops",
         "no_stop_language_permitted", "re_decidable", "reserve_fuel_l", "reserve_green_laps",
-        "scheduled_laps", "status", "stints", "usable_fuel_l"
+        "scheduled_laps", "status", "stints", "stop_windows", "usable_fuel_l"
     };
 
     public static RecentRace ArchivedRace(JsonElement report, string analysisPath)
@@ -146,6 +146,17 @@ public static class RuntimeMapper
             ["analysis_view"] = report.Clone()
         }));
         return MapAnalysis(wrapped.RootElement, Object(wrapped.RootElement, "analysis_view"));
+    }
+
+    /// <summary>A saved analysis document in the shape of an analyze response, for consumers that need its evidence without the recording.</summary>
+    public static JsonElement ArchivedAnalysisResponse(string analysisJson)
+    {
+        using var report = JsonDocument.Parse(analysisJson);
+        return JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+        {
+            ["analysis_id"] = Text(report.RootElement, "analysis_id") ?? string.Empty,
+            ["analysis_view"] = report.RootElement.Clone()
+        });
     }
 
     public static bool HasCurrentAnalysisProfile(JsonElement report)
@@ -1158,7 +1169,31 @@ public static class RuntimeMapper
         return new RacePlanDecisionView(
             version, status, scheduledLaps, greenBurn, maximumFuel, reserveGreenLaps, reserveFuel,
             usableFuel, rangeLaps, stops, stints, margin, targets, caution, noStop, reDecidable,
-            true, classification, assumptions, limitations, extensionData);
+            true, classification, assumptions, limitations, extensionData,
+            StopWindows: RacePlanStopWindows(payload, stops.Value, scheduledLaps.Value, targets));
+    }
+
+    /// <summary>
+    /// Optional additive windows. A malformed or inconsistent list is dropped so the
+    /// plan still states its decided stops, but never an unsupported window.
+    /// </summary>
+    private static IReadOnlyList<RacePlanStopWindow> RacePlanStopWindows(JsonElement payload, int stops, double scheduledLaps, IReadOnlyList<double> targets)
+    {
+        if (!payload.TryGetProperty("stop_windows", out var value) || value.ValueKind != JsonValueKind.Array) return [];
+        var windows = new List<RacePlanStopWindow>();
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object
+                || !item.TryGetProperty("stop", out var stop) || !stop.TryGetInt32(out var number)
+                || NumberValue(item.TryGetProperty("earliest_lap", out var earliest) ? earliest : default) is not { } start
+                || NumberValue(item.TryGetProperty("latest_lap", out var latest) ? latest : default) is not { } end
+                || number != windows.Count + 1 || start < 0 || end > scheduledLaps + 1e-9 || start > end)
+                return [];
+            windows.Add(new RacePlanStopWindow(number, start, end));
+        }
+        if (windows.Count != stops) return [];
+        return windows.Zip(targets).All(pair => pair.First.EarliestLap - 1e-9 <= pair.Second && pair.Second <= pair.First.LatestLap + 1e-9)
+            ? windows : [];
     }
 
     private static RacePlanDecisionView ReadLegacyRacePlanDecision(JsonElement forecast)

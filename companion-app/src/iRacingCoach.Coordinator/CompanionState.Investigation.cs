@@ -72,6 +72,24 @@ public sealed partial class CompanionState
         RaiseChanged();
     }
 
+    private string _planContextSessionId = string.Empty;
+
+    /// <summary>
+    /// Plan follows the race the driver selected, once per selection. The newest
+    /// recording is only a first-run default; it never replaces a chosen race.
+    /// </summary>
+    private void CarryPlanContext()
+    {
+        if (SelectedRaceSessionId.Length == 0 || SelectedRaceSessionId == _planContextSessionId) return;
+        var race = Races.OfType<RecentRace>().FirstOrDefault(candidate => string.Equals(candidate.Id, SelectedRaceSessionId, StringComparison.Ordinal));
+        if (race is null || !race.IsRace) return;
+        _planContextSessionId = SelectedRaceSessionId;
+        SelectedPlanCarId = race.CarPath.Length > 0 ? race.CarPath : race.Car;
+        SelectedPlanTrack = $"{race.Track}|{race.Layout}";
+        PlanSetupType = race.SetupType.Equals("Open", StringComparison.OrdinalIgnoreCase) ? "Open" : "Fixed";
+        SelectedPlanRaceId = race.Id;
+    }
+
     public DrivingTrial? SavedTrialFor(string analysisId, string comparisonId, string title) =>
         DrivingTrials.FirstOrDefault(trial => string.Equals(trial.Source.AnalysisId, analysisId, StringComparison.Ordinal)
             && string.Equals(trial.ComparisonId, comparisonId, StringComparison.Ordinal)
@@ -105,7 +123,7 @@ public sealed partial class CompanionState
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is BackendDomainException or JsonException or KeyNotFoundException or InvalidOperationException)
         {
-            Notify(ex is BackendDomainException ? Bound(ex.Message) : "The test could not be saved. Refresh the analysis and try again.");
+            Notify(ex is BackendDomainException ? Bound(BackendMessage(ex.Message)) : "The test could not be saved. Refresh the analysis and try again.");
         }
         finally
         {
@@ -178,6 +196,21 @@ public sealed partial class CompanionState
         return _geometryByConfiguration.GetValueOrDefault(configurationKey);
     }
 
+    /// <summary>The human sentence inside a backend error envelope; never raw JSON.</summary>
+    private static string BackendMessage(string message)
+    {
+        var trimmed = message.Trim();
+        if (!trimmed.StartsWith('{')) return message;
+        try
+        {
+            using var document = JsonDocument.Parse(trimmed);
+            return document.RootElement.TryGetProperty("message", out var text) && text.ValueKind == JsonValueKind.String
+                ? text.GetString() ?? message
+                : message;
+        }
+        catch (JsonException) { return message; }
+    }
+
     private static bool SameText(string? left, string? right) =>
         !string.IsNullOrWhiteSpace(left) && string.Equals(left.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
 
@@ -193,7 +226,7 @@ public sealed partial class CompanionState
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is BackendDomainException or JsonException or KeyNotFoundException or InvalidOperationException)
         {
-            Notify(ex is BackendDomainException ? Bound(ex.Message) : "That test could not be opened.");
+            Notify(ex is BackendDomainException ? Bound(BackendMessage(ex.Message)) : "That test could not be opened.");
         }
     }
 

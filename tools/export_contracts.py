@@ -369,6 +369,9 @@ def _race_plan_decision_schema() -> dict[str, Any]:
             "scheduled_laps": number_or_null,
             "status": {"enum": list(race_plan_decision.PLAN_STATUSES), "type": "string"},
             "stints": {"type": ["integer", "null"]},
+            # Additive: all-green fuel window per decided stop. Empty when no
+            # stop is decided. A fuel window, never a tire or caution strategy.
+            "stop_windows": {"type": "array", "items": {"type": "object"}},
             "usable_fuel_l": number_or_null,
         },
     }

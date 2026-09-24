@@ -1241,15 +1241,27 @@ public sealed partial class CompanionState : IDisposable
             StrategyScenario[] scenarios = [];
             if (race is not null)
             {
-                var analysis = await CallBackendAsync("analyze_iracing_race", new
+                JsonElement analysis;
+                var recordingPresent = !string.IsNullOrWhiteSpace(race.SourcePath) && File.Exists(race.SourcePath);
+                if (!recordingPresent && TryGetAnalysisPath(race, out var savedPath))
                 {
-                    selector = race.EffectiveSelector, iracing_root = iracingRoot,
-                    archive_root = archiveRoot, target_hz = (double?)null
-                }, cancellationToken);
-                EnsureResponseMatchesSession(race, analysis);
+                    // The saved analysis carries the fuel evidence; planning never needs the
+                    // original recording once it has been analyzed.
+                    analysis = await Task.Run(() => RuntimeMapper.ArchivedAnalysisResponse(File.ReadAllText(savedPath)), cancellationToken);
+                    analysisPath = savedPath;
+                }
+                else
+                {
+                    analysis = await CallBackendAsync("analyze_iracing_race", new
+                    {
+                        selector = race.EffectiveSelector, iracing_root = iracingRoot,
+                        archive_root = archiveRoot, target_hz = (double?)null
+                    }, cancellationToken);
+                    EnsureResponseMatchesSession(race, analysis);
+                    analysisPath = AnalysisPathFromResponse(analysis);
+                }
                 if (!StillCurrent()) return;
                 reference = RuntimeMapper.Plan(analysis, distance, distanceMode);
-                analysisPath = AnalysisPathFromResponse(analysis);
                 if (string.IsNullOrWhiteSpace(analysisPath)) analysisPath = race.AnalysisPath;
                 if (string.IsNullOrWhiteSpace(analysisPath)) throw new InvalidDataException("The reference analysis has no saved evidence path.");
                 try
@@ -1272,7 +1284,7 @@ public sealed partial class CompanionState : IDisposable
             PlanBriefing = briefing;
             StrategyScenarios.Clear(); StrategyScenarios.AddRange(scenarios);
             PlanGenerated = true;
-            PlanMessage = briefing.FuelPlan is { IsUsable: true } ? "Plan ready. Review the assumptions before the race." : briefing.FuelPlan?.UnavailableReason ?? "Record a practice run to fill the missing measurements.";
+            PlanMessage = briefing.FuelPlan is { IsUsable: true } ? string.Empty : briefing.FuelPlan?.UnavailableReason ?? "Record a practice run to fill the missing measurements.";
             PersistPortableArtifact("event-plans", $"plan-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}", new { schemaVersion = 1, car, track, setup, distance, distanceMode, referenceRaceId = race?.Id, result });
         }
         catch (OperationCanceledException) { if (StillCurrent()) PlanMessage = "Plan cancelled."; }
@@ -1287,7 +1299,7 @@ public sealed partial class CompanionState : IDisposable
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException or IOException)
         {
-            if (StillCurrent()) { PlanMessage = Bound(ex.Message); Notify("The plan could not be built."); }
+            if (StillCurrent()) { PlanMessage = Bound(BackendMessage(ex.Message)); Notify("The plan could not be built."); }
         }
         finally { PlanBusy = false; RaiseChanged(); }
     }
@@ -2921,6 +2933,7 @@ public sealed partial class CompanionState : IDisposable
             _ => (ProductCapability?)null
         };
         CurrentPage = capability.HasValue && !IsCapabilityVisible(capability.Value) ? "home" : page;
+        if (CurrentPage == "planning") CarryPlanContext();
         Toast = null;
         RaiseChanged();
     }

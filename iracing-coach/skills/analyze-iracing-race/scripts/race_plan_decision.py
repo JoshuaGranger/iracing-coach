@@ -311,6 +311,28 @@ class RacePlanDecision:
             limitations=self.limitations,
         )
 
+    def stop_windows(self) -> list[dict[str, Any]]:
+        """All-green fuel window for each decided stop.
+
+        Stop k is fuel-feasible from the lap where the remaining full-range
+        stints can still reach the finish to the lap where the fuel taken on at
+        the previous stop runs out: [max(0, D - (S - k) * R), min(D, k * R)].
+        This is a fuel window only; tire wear, cautions and track position can
+        make a different stop inside it better, and nothing here ranks them.
+        """
+        if not self.usable or not self.minimum_stops:
+            return []
+        assert self.scheduled_laps is not None and self.all_green_range_laps is not None and self.stints is not None
+        distance, range_laps, stints = self.scheduled_laps, self.all_green_range_laps, self.stints
+        return [
+            {
+                "stop": stop,
+                "earliest_lap": max(0.0, distance - (stints - stop) * range_laps),
+                "latest_lap": min(distance, stop * range_laps),
+            }
+            for stop in range(1, stints)
+        ]
+
     def to_payload(self) -> dict[str, Any]:
         """The transported form. Exact numbers; every key always present."""
         return {
@@ -334,6 +356,7 @@ class RacePlanDecision:
             "scheduled_laps": self.scheduled_laps,
             "status": self.status,
             "stints": self.stints,
+            "stop_windows": self.stop_windows(),
             "usable_fuel_l": self.usable_fuel_l,
         }
 

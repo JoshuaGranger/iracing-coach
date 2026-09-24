@@ -61,7 +61,7 @@ public sealed class IterationUxTests
         Assert.DoesNotContain(">Start over</button>", planning);
         StringAssert.Contains(planning, "data-planning-decision");
         StringAssert.Contains(planning, "No scheduled fuel stop");
-        StringAssert.Contains(planning, "Respond during the race");
+        Assert.DoesNotContain("Respond during the race", planning, "Plan states one fuel decision; race-time coaching lives in the investigation.");
         Assert.DoesNotContain("<EvidenceBadge", planning);
         Assert.DoesNotContain("Local recordings", planning);
         StringAssert.Contains(setup, "starting-tune-step-rail");

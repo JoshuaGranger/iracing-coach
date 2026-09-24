@@ -3239,6 +3239,51 @@ public sealed class CoordinatorTests
         Assert.IsNotNull(state.SavedTrialFor("source", "runs-1-2-age", "Carry more speed into section D"));
     }
 
+    [TestMethod]
+    public void Planning_FollowsTheReviewedRaceInsteadOfTheNewestRecording()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-plan-context", Guid.NewGuid().ToString("N"));
+        using var state = new CompanionState(new FakeBackend(), new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        RecentRace Race(string id, string date, string setup) => new(id, "Bristol Motor Speedway", "Single Pit Road", "Toyota Supra Class B", date, setup,
+            "Analyzed", "Race", false, true, 1, 3, CarPath: "stockcars2 supra2019", SessionType: "Race");
+        var newest = Race("subsession:88792080:2", "Sep 20 · 9:08 PM", "Open");
+        var reviewed = Race("subsession:88784656:2", "Sep 20 · 3:09 PM", "Open");
+        state.Races.AddRange([newest, reviewed]);
+        state.EventSessions.AddRange([newest, reviewed]);
+        state.SelectedPlanRaceId = newest.Id;
+
+        state.SelectRaceSession(reviewed);
+        state.Navigate("planning");
+        Assert.AreEqual(reviewed.Id, state.SelectedPlanRaceId, "Plan must use the race being investigated, not the latest recording.");
+        Assert.AreEqual("stockcars2 supra2019", state.SelectedPlanCarId);
+        Assert.AreEqual("Bristol Motor Speedway|Single Pit Road", state.SelectedPlanTrack);
+
+        state.SelectedPlanRaceId = newest.Id;
+        state.Navigate("home");
+        state.Navigate("planning");
+        Assert.AreEqual(newest.Id, state.SelectedPlanRaceId, "A reference chosen in Plan is kept until another race is selected.");
+    }
+
+    [TestMethod]
+    public void PlanStopWindowsMapOnlyWhenTheyAgreeWithTheDecidedStops()
+    {
+        JsonElement Forecast(string windows) => JsonDocument.Parse($$$"""
+            {"race_plan_decision":{"all_green_range_laps":139.4,"assumptions":[],"caution_scenario":null,"classification":"all-green fuel feasibility","decision_version":1,
+             "equal_stint_pit_targets":[80.0],"final_stint_margin_laps":118.8,"green_burn_l_per_lap":null,"limitations":[],"maximum_start_fuel_l":null,"minimum_stops":1,
+             "no_stop_language_permitted":false,"re_decidable":true,"reserve_fuel_l":null,"reserve_green_laps":1.0,"scheduled_laps":160.0,"status":"usable","stints":2,
+             "stop_windows":{{{windows}}},"usable_fuel_l":null}}
+            """).RootElement;
+        var response = (string windows) => JsonSerializer.SerializeToElement(new
+        {
+            analysis_view = new { analysis_profile_version = "post-race-foundations-v19", strategy = new { forecast = Forecast(windows) }, identity = new { }, race_summary = new { } }
+        });
+        var mapped = RuntimeMapper.Plan(response("""[{"stop":1,"earliest_lap":20.6,"latest_lap":139.4}]""")).FuelPlan!;
+        Assert.AreEqual(1, mapped.StopWindows!.Single().Stop);
+        Assert.AreEqual(20.6, mapped.StopWindows!.Single().EarliestLap, 1e-9);
+        foreach (var invalid in new[] { "[]", """[{"stop":1,"earliest_lap":90,"latest_lap":139.4}]""", """[{"stop":1,"earliest_lap":20.6,"latest_lap":170}]""", "\"bad\"" })
+            Assert.IsEmpty(RuntimeMapper.Plan(response(invalid)).FuelPlan!.StopWindows!, $"An inconsistent window is never displayed: {invalid}");
+    }
+
     private sealed class FakeBackend(
         JsonElement? dashboard = null,
         JsonElement? tuning = null,

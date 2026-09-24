@@ -102,6 +102,12 @@
         "null"
       ]
     },
+    "stop_windows": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
     "usable_fuel_l": {
       "type": [
         "number",

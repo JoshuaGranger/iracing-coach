@@ -33,6 +33,13 @@
     "scheduled_laps": 50.0,
     "status": "usable",
     "stints": 2,
+    "stop_windows": [
+      {
+        "earliest_lap": 1.0,
+        "latest_lap": 49.0,
+        "stop": 1
+      }
+    ],
     "usable_fuel_l": 74.1940709664
   },
   "scheduled_laps": 50.0,
