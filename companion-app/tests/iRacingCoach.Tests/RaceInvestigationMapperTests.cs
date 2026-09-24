@@ -86,28 +86,176 @@ public sealed class RaceInvestigationMapperTests
         Assert.IsNull(RaceInvestigationMapper.Map(default));
     }
 
+    internal static RaceInvestigation CurrentFixture()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(TestRepositoryPaths.RepositoryRoot, "test-data", "race-investigation.json")));
+        return RaceInvestigationMapper.Map(document.RootElement)!;
+    }
+
     [TestMethod]
-    public async Task RenderKeepsExcludedFinalLapsAndSeparatesStartingTrackStateFromEvolution()
+    public void CurrentProjectionMapsRunsSectionsPassPairsAndSaveableTests()
+    {
+        var investigation = CurrentFixture();
+        Assert.IsNull(investigation.UnavailableReason, investigation.UnavailableReason);
+        Assert.AreEqual(2, investigation.SchemaVersion);
+        Assert.AreEqual(RaceInvestigationMapper.CurrentProjectionVersion, investigation.ProjectionVersion);
+        Assert.IsTrue(investigation.HasSectionInspection);
+        Assert.IsTrue(investigation.Laps.Any(lap => lap.GreenExposure is > 0));
+        var run = investigation.Runs!.Single();
+        Assert.IsTrue(run.Trend.IncludesReferenceExclusions);
+        Assert.IsTrue(run.Trend.Segments.All(segment => segment.Count >= 3));
+        Assert.IsNotNull(run.Fit);
+        Assert.IsLessThanOrEqualTo(run.Fit.DomainEnd, run.Fit.Points.Max(point => point.X));
+        Assert.AreEqual("detected_in_recording", investigation.Sections!.Source);
+        var clean = investigation.Comparisons.Single(item => item.Id == "run-1-clean");
+        var pair = clean.Inspection!.Sections["A"];
+        Assert.AreNotEqual(pair.A.Lap, pair.B.Lap);
+        Assert.IsTrue(pair.Rows.Any(row => Math.Abs(row.X - pair.StartPct) < 1e-9), "The section entry must be an inspected row.");
+        var trial = clean.Actions.Single().Trial!;
+        Assert.AreEqual(3, trial.MinimumLaps);
+        Assert.IsGreaterThan(trial.ReferenceMedianSeconds, trial.BaselineMedianSeconds);
+        var finish = investigation.Comparisons.Single(item => item.Id == "run-1-finish");
+        Assert.AreEqual("mixed", finish.Eligibility);
+        Assert.IsTrue(finish.Actions.All(action => action.Trial is null), "Traffic-affected windows must never become a test baseline.");
+    }
+
+    [TestMethod]
+    public void LegacyProjectionStillMapsButDoesNotClaimSectionInspection()
     {
         using var document = JsonDocument.Parse(InvestigationJson);
         var investigation = RaceInvestigationMapper.Map(document.RootElement)!;
-        using var services = new ServiceCollection().AddSingleton<ILoggerFactory>(Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance).BuildServiceProvider();
-        await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        var html = await renderer.Dispatcher.InvokeAsync(async () =>
+        Assert.AreEqual(1, investigation.SchemaVersion);
+        Assert.IsNull(investigation.Runs);
+        Assert.IsFalse(investigation.HasSectionInspection);
+        Assert.IsNull(investigation.Comparisons.Single().Inspection);
+    }
+
+    [TestMethod]
+    public void IncompatibleOrIncompleteCurrentProjectionFailsClearly()
+    {
+        var text = File.ReadAllText(Path.Combine(TestRepositoryPaths.RepositoryRoot, "test-data", "race-investigation.json"));
+        foreach (var input in new[]
         {
-            var output = await renderer.RenderComponentAsync<RacePaceInvestigation>(ParameterView.FromDictionary(
-                new Dictionary<string, object?> { [nameof(RacePaceInvestigation.Investigation)] = investigation }));
-            return output.ToHtmlString();
-        });
-        StringAssert.Contains(html, "Last recorded laps");
-        StringAssert.Contains(html, "Lap 33");
+            text.Replace("\"schema_version\": 2", "\"schema_version\": 3", StringComparison.Ordinal),
+            text.Replace("\"runs\":", "\"runs_removed\":", StringComparison.Ordinal),
+            text.Replace("\"projection_version\":", "\"projection_removed\":", StringComparison.Ordinal)
+        })
+        {
+            Assert.AreNotEqual(text, input, "The fixture edit must apply.");
+            using var document = JsonDocument.Parse(input);
+            var investigation = RaceInvestigationMapper.Map(document.RootElement)!;
+            Assert.AreEqual("unavailable", investigation.Status);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(investigation.UnavailableReason));
+        }
+    }
+
+    [TestMethod]
+    public void CachedResponsesNeedTheCurrentInvestigationProjection()
+    {
+        var current = File.ReadAllText(Path.Combine(TestRepositoryPaths.RepositoryRoot, "test-data", "race-investigation.json"));
+        JsonElement Response(string investigation) => JsonDocument.Parse($"{{\"analysis_view\":{{\"race_investigation\":{investigation}}}}}").RootElement;
+        Assert.IsTrue(RuntimeMapper.HasCurrentInvestigation(Response(current)));
+        Assert.IsFalse(RuntimeMapper.HasCurrentInvestigation(Response(InvestigationJson)));
+        Assert.IsFalse(RuntimeMapper.HasCurrentInvestigation(Response(current.Replace(RaceInvestigationMapper.CurrentProjectionVersion, "older", StringComparison.Ordinal))));
+        Assert.IsTrue(RuntimeMapper.HasCurrentInvestigation(Response("null")), "Without an investigation the analysis profile alone decides.");
+    }
+
+    [TestMethod]
+    public async Task RaceViewKeepsExcludedLapsVisibleWithExactIdentityAndTest()
+    {
+        using var document = JsonDocument.Parse(InvestigationJson);
+        var investigation = RaceInvestigationMapper.Map(document.RootElement)!;
+        var html = await RaceInvestigationPerformanceTests.Render<RaceInvestigationView>(new() { [nameof(RaceInvestigationView.Investigation)] = investigation });
+        StringAssert.Contains(html, "data-lap=\"33\"");
         StringAssert.Contains(html, "close traffic");
-        StringAssert.Contains(html, "Starting track state");
-        StringAssert.Contains(html, "moderately high usage");
-        Assert.IsFalse(html.Contains("Recorded track usage", StringComparison.Ordinal));
+        StringAssert.Contains(html, "Run 2 · 3 laps · 31, 32, 33");
+        StringAssert.Contains(html, "27.0–30.0 green");
         StringAssert.Contains(html, "Compare corner entry");
-        StringAssert.Contains(html, "data-investigation-inspect=\"action\"");
-        StringAssert.Contains(html, "https://example.org/track");
+        StringAssert.Contains(html, "cannot be saved as a test");
         Assert.IsFalse(html.Contains("javascript:", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task SectionsViewShowsSixChannelsPassIdentityAndSplitTiming()
+    {
+        var investigation = CurrentFixture();
+        var html = await RaceInvestigationPerformanceTests.Render<RaceInvestigationView>(new()
+        {
+            [nameof(RaceInvestigationView.Investigation)] = investigation,
+            [nameof(RaceInvestigationView.View)] = "sections",
+            [nameof(RaceInvestigationView.ComparisonId)] = "run-1-clean"
+        });
+        foreach (var channel in new[] { "speed", "gap", "throttle", "brake", "steering", "slip" })
+            StringAssert.Contains(html, $"data-channel=\"{channel}\"");
+        Assert.AreEqual(6, CountOf(html, "data-ri-chart"), "All six channels are charts; none hides behind a disclosure.");
+        StringAssert.Contains(html, "Entry<b>");
+        StringAssert.Contains(html, "Inside<b>");
+        StringAssert.Contains(html, "Body slip");
+        StringAssert.Contains(html, "Median pass of each group");
+        StringAssert.Contains(html, "data-section=\"A\"");
+        StringAssert.Contains(html, "Repeat section A at the same run age");
+        Assert.IsFalse(html.Contains("<details", StringComparison.Ordinal), "Critical inputs are never inside an accordion.");
+    }
+
+    [TestMethod]
+    public async Task RunsViewOverlaysObservedTrendAndKeepsFitOptional()
+    {
+        var investigation = CurrentFixture();
+        var html = await RaceInvestigationPerformanceTests.Render<RaceInvestigationView>(new()
+        {
+            [nameof(RaceInvestigationView.Investigation)] = investigation,
+            [nameof(RaceInvestigationView.View)] = "runs"
+        });
+        StringAssert.Contains(html, "class=\"ri-trend\"");
+        StringAssert.Contains(html, "Screened fit");
+        Assert.IsFalse(html.Contains("class=\"ri-fit\"", StringComparison.Ordinal), "The screened fit is shown only on request.");
+        StringAssert.Contains(html, "Green laps into run");
+        StringAssert.Contains(html, "five-lap median of recorded laps, including traffic");
+    }
+
+    [TestMethod]
+    public async Task LegacyInvestigationOffersRefreshInsteadOfEmptyRunsOrSections()
+    {
+        using var document = JsonDocument.Parse(InvestigationJson);
+        var investigation = RaceInvestigationMapper.Map(document.RootElement)!;
+        foreach (var view in new[] { "runs", "sections" })
+        {
+            var html = await RaceInvestigationPerformanceTests.Render<RaceInvestigationView>(new()
+            {
+                [nameof(RaceInvestigationView.Investigation)] = investigation,
+                [nameof(RaceInvestigationView.View)] = view
+            });
+            StringAssert.Contains(html, "data-legacy-investigation");
+        }
+    }
+
+    [TestMethod]
+    public void TrialRecordsMapEveryCheckAndKeepVerdictsDistinct()
+    {
+        var spec = """{"metric":{"key":"section_s","label":"Section time","unit":"s","direction":"decrease","start_pct":0.625,"end_pct":0.77},"section":{"id":"D","label":"D","start_pct":0.625,"end_pct":0.77,"boundary_status":"detected_section"},"annotation":{"configuration_key":"365-single-pit-road","source":"configuration_catalog","version":"v1"},"baseline":{"laps":[130,131,132],"median_s":2.5,"count":3},"reference":{"laps":[35,36,37],"median_s":2.4,"count":3},"exposure_window":[21.8,23.8],"conditions":{"fuel_start_gal":5.7,"track_temp_f":78},"success":{"threshold_s":0.05,"minimum_laps":3,"rule":"rule"}}""";
+        var recording = """{"analysis_id":"later","recorded_at":"2026-09-24T18:00:00+00:00","track":"Bristol Motor Speedway","layout":"Single Pit Road","configuration_key":"365-single-pit-road","car_id":116,"car":"Toyota Supra Class B","session_type":"Practice","subsession_id":0}""";
+        var json = $$$"""{"schema_version":1,"trial_id":"trial-0123456789abcdef0123","created_at":"2026-09-23T00:00:00Z","title":"Carry more speed into section D","instruction":"Test one change.","evidence":["e"],"source":{"analysis_id":"source","recorded_at":"2026-09-20T20:09:09+00:00","track":"Bristol Motor Speedway","layout":"Single Pit Road","car":"Toyota Supra Class B","car_id":116},"comparison":{"id":"runs-1-2-age","title":"Runs 1 and 2"},{{{spec[1..^1]}}},"evaluation_count":2,"future_field":{"kept":true}}""";
+        var evaluations = $$"""[{"evaluated_at":"a","analysis_id":"first","recording":{{recording}},"verdict":"not_comparable","reasons":["No screened laps between 19.8 and 25.8 green laps into a run."],"confounds":[]},{"evaluated_at":"b","analysis_id":"later","recording":{{recording}},"verdict":"not_established","reasons":["Moved +0.010 s"],"confounds":["Starting fuel 5.7 → 12.0 gal."],"window":[19.8,25.8],"laps":[{"lap":22,"seconds":2.49,"green_exposure":21.5,"fuel_start_gal":12.0}],"median_s":2.49,"count":1,"improvement_s":0.01}]""";
+        using var trialDocument = JsonDocument.Parse(json);
+        using var evaluationDocument = JsonDocument.Parse(evaluations);
+        var trial = RaceInvestigationMapper.Trial(trialDocument.RootElement, evaluationDocument.RootElement);
+        Assert.AreEqual("runs-1-2-age", trial.ComparisonId);
+        Assert.AreEqual(0.05, trial.Spec.ThresholdSeconds);
+        Assert.AreEqual(21.8, trial.Spec.ExposureStart);
+        Assert.HasCount(2, trial.Evaluations);
+        CollectionAssert.AreEqual(new[] { "not_comparable", "not_established" }, trial.Evaluations.Select(item => item.Verdict).ToArray());
+        Assert.AreEqual("116", trial.Source.CarId);
+        Assert.IsTrue(trial.IsOpen, "Neither check established a result, so the test stays open.");
+        Assert.AreEqual("Not comparable", InvestigationPresentation.Verdict("not_comparable"));
+        Assert.AreEqual("Not established", InvestigationPresentation.Verdict("not_established"));
+        using var future = JsonDocument.Parse(json.Replace("\"schema_version\":1", "\"schema_version\":2", StringComparison.Ordinal));
+        Assert.ThrowsExactly<JsonException>(() => RaceInvestigationMapper.Trial(future.RootElement));
+    }
+
+    private static int CountOf(string text, string value)
+    {
+        var count = 0;
+        for (var index = text.IndexOf(value, StringComparison.Ordinal); index >= 0; index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal)) count++;
+        return count;
     }
 }

@@ -1,0 +1,176 @@
+@inherits MeasuredChart
+@using System.Globalization
+@using static iRacingCoach.UI.InvestigationPresentation
+
+<div class="ri-progress" data-ri-progress>
+    <div class="ri-chart-head">
+        <div class="ri-legend">
+            <span><i class="dot"></i>Screened lap</span><span><i class="dot hollow"></i>Excluded lap</span>
+            <span><i class="line"></i>Run trend</span><span><i class="caution"></i>Caution</span>
+            <span><i class="service"></i>Service</span><span><i class="incident"></i>Incident</span>
+        </div>
+        <output class="ri-readout" aria-live="polite">@Readout</output>
+    </div>
+    <div class="ri-plot" @ref="Target">
+        @if (Investigation.Laps.Count == 0)
+        {
+            <div class="ri-empty"><strong>No recorded laps</strong><span>@Investigation.Summary</span></div>
+        }
+        else
+        {
+            var pace = PaceScale;
+            var position = PositionScale;
+            <svg class="ri-plot-svg" viewBox="0 0 @N(Width) @N(Height)" role="group" aria-label="Race progression: lap time, run trend, cautions, service, incidents and position by lap">
+                @foreach (var tick in Ticks(pace.YMin, pace.YMax, 4))
+                {
+                    <line x1="@N(pace.Left)" x2="@N(pace.Right)" y1="@N(pace.Y(tick))" y2="@N(pace.Y(tick))" class="ri-grid" />
+                    <g><text x="@N(pace.Left - 6)" y="@N(pace.Y(tick) + 4)" text-anchor="end" class="ri-axis">@tick.ToString("0.0", CultureInfo.CurrentCulture)</text></g>
+                }
+                <g><text x="@N(pace.Left)" y="12" class="ri-axis-title">Lap time · s</text></g>
+                @foreach (var lap in Investigation.Laps.Where(lap => lap.FlagState == "caution"))
+                {
+                    <rect x="@N(pace.X(lap.Lap) - LapWidth(pace) / 2)" y="@N(pace.Bottom + 2)" width="@N(Math.Max(1.5, LapWidth(pace)))" height="5" class="ri-caution"><title>Lap @lap.Lap · caution</title></rect>
+                }
+                @foreach (var item in Events)
+                {
+                    var x = pace.X(item.Lap);
+                    <line x1="@N(x)" x2="@N(x)" y1="@N(pace.Top)" y2="@N(pace.Bottom)" class="ri-event @EventClass(item)" />
+                    <g><text x="@N(x + 3)" y="@N(pace.Top + 10)" class="ri-event-label @EventClass(item)">@EventShort(item)<title>Lap @item.Lap · @item.Label · @item.Detail</title></text></g>
+                }
+                @if (Selected is { } comparison)
+                {
+                    foreach (var cohort in new[] { comparison.Baseline, comparison.Compared })
+                    {
+                        if (cohort.LapNumbers.Count == 0) continue;
+                        var start = pace.X(cohort.LapNumbers.Min()) - 4;
+                        var end = pace.X(cohort.LapNumbers.Max()) + 4;
+                        <path d="M@(N(start)),@(N(pace.Bottom + 12))V@(N(pace.Bottom + 16))H@(N(end))V@(N(pace.Bottom + 12))" class="ri-bracket" stroke="@RunColor(cohort.RunNumber)" />
+                        <g><text x="@N((start + end) / 2)" y="@N(pace.Bottom + 28)" text-anchor="middle" class="ri-bracket-label">@Laps(cohort.LapNumbers)</text></g>
+                    }
+                }
+                @foreach (var run in Investigation.Runs ?? [])
+                {
+                    foreach (var segment in run.Trend.Segments)
+                    {
+                        <path d="@TrendPath(pace, segment)" class="ri-trend" stroke="@RunColor(run.RunNumber)" />
+                    }
+                }
+                @foreach (var lap in Plotted)
+                {
+                    var color = RunColor(lap.RunNumber);
+                    var chosen = _chosen.Contains(lap.Lap);
+                    var x = pace.X(lap.Lap);
+                    var y = pace.Y(Math.Clamp(lap.LapTimeSeconds!.Value, pace.YMin, pace.YMax));
+                    if (chosen) { <circle cx="@N(x)" cy="@N(y)" r="6.5" class="ri-ring" stroke="@color" /> }
+                    <circle cx="@N(x)" cy="@N(y)" r="@(chosen ? "3.6" : "2.5")" fill="@(lap.Eligible ? color : "var(--surface-1)")" stroke="@color"
+                            class="ri-dot @(lap.Eligible ? null : "excluded")" tabindex="0" data-lap="@lap.Lap"
+                            @onmouseenter="() => _hover = lap" @onfocus="() => _hover = lap" aria-label="@LapLabel(lap)"><title>@LapLabel(lap)</title></circle>
+                }
+                @if (position is { } pos)
+                {
+                    <g><text x="@N(pos.Left)" y="@N(pos.Top - 5)" class="ri-axis-title">Position</text></g>
+                    <line x1="@N(pos.Left)" x2="@N(pos.Right)" y1="@N(pos.Top)" y2="@N(pos.Top)" class="ri-grid" />
+                    <line x1="@N(pos.Left)" x2="@N(pos.Right)" y1="@N(pos.Bottom)" y2="@N(pos.Bottom)" class="ri-grid" />
+                    <g><text x="@N(pos.Left - 6)" y="@N(pos.Top + 4)" text-anchor="end" class="ri-axis">P1</text></g>
+                    <g><text x="@N(pos.Left - 6)" y="@N(pos.Bottom + 4)" text-anchor="end" class="ri-axis">P@(pos.YMax.ToString("0", CultureInfo.CurrentCulture))</text></g>
+                    <path d="@PositionPath(pos)" class="ri-position" />
+                }
+                @foreach (var tick in LapTicks)
+                {
+                    <g><text x="@N(pace.X(tick))" y="@N(Height - 4)" text-anchor="middle" class="ri-axis">@tick</text></g>
+                }
+                <g><text x="4" y="@N(Height - 4)" class="ri-axis-title">Lap</text></g>
+            </svg>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RaceInvestigation Investigation { get; set; } = null!;
+    [Parameter] public RaceInvestigationComparison? Selected { get; set; }
+
+    private RaceInvestigationLap? _hover;
+    private HashSet<int> _chosen = [];
+    private IReadOnlyList<RaceInvestigationLap> Plotted { get; set; } = [];
+    private IReadOnlyList<RaceInvestigationEvent> Events { get; set; } = [];
+    private int MinLap => Investigation.Laps.Min(lap => lap.Lap);
+    private int MaxLap => Investigation.Laps.Max(lap => lap.Lap);
+
+    protected override void OnParametersSet()
+    {
+        Plotted = Investigation.Laps.Where(lap => lap.PlotPace && lap.LapTimeSeconds is > 0).ToArray();
+        Events = Investigation.Timeline.Where(item => item.Kind is "pit_service" or "incident").ToArray();
+        _chosen = Selected is null ? [] : Selected.Baseline.LapNumbers.Concat(Selected.Compared.LapNumbers).ToHashSet();
+        if (_hover is not null && Investigation.Laps.All(lap => lap.Lap != _hover.Lap)) _hover = null;
+    }
+
+    private bool HasPositions => Investigation.Laps.Count(lap => lap.Position is > 0) >= 2;
+    private double PositionBandHeight => HasPositions ? Math.Clamp(Height * .18, 34, 70) : 0;
+
+    private PlotScale PaceScale
+    {
+        get
+        {
+            var times = Plotted.Select(lap => lap.LapTimeSeconds!.Value).DefaultIfEmpty(0).ToArray();
+            var min = times.Min();
+            var max = times.Max();
+            var pad = Math.Max(.08, (max - min) * .06);
+            var bottomSpace = 32 + (HasPositions ? PositionBandHeight + 18 : 0) + 18;
+            return new PlotScale(44, 18, Math.Max(60, Width - 56), Math.Max(60, Height - 18 - bottomSpace), MinLap, Math.Max(MinLap + 1, MaxLap), min - pad, max + pad);
+        }
+    }
+
+    private PlotScale? PositionScale
+    {
+        get
+        {
+            if (!HasPositions) return null;
+            var pace = PaceScale;
+            var positions = Investigation.Laps.Where(lap => lap.Position is > 0).Select(lap => (double)lap.Position!.Value).ToArray();
+            var worst = Math.Max(2, positions.Max());
+            // Position 1 is drawn at the top of the band; see PositionPath.
+            return new PlotScale(pace.Left, pace.Bottom + 44, pace.Width, PositionBandHeight, pace.XMin, pace.XMax, 1, worst);
+        }
+    }
+
+    private string PositionPath(PlotScale scale)
+    {
+        var builder = new System.Text.StringBuilder();
+        RaceInvestigationLap? previous = null;
+        foreach (var lap in Investigation.Laps.Where(lap => lap.Position is > 0))
+        {
+            // Inverted: P1 at the top.
+            var y = scale.Top + (lap.Position!.Value - scale.YMin) / Math.Max(1, scale.YMax - scale.YMin) * scale.Height;
+            var move = previous is null || lap.Lap != previous.Lap + 1;
+            builder.Append(move ? 'M' : 'L').Append(N(scale.X(lap.Lap))).Append(',').Append(N(y)).Append(' ');
+            previous = lap;
+        }
+        return builder.ToString();
+    }
+
+    private static double LapWidth(PlotScale scale) => scale.Width / Math.Max(1, scale.XMax - scale.XMin);
+
+    private IEnumerable<int> LapTicks => Ticks(MinLap, MaxLap, 8).Select(value => (int)Math.Round(value)).Distinct();
+
+    private static string TrendPath(PlotScale plot, IReadOnlyList<RaceTrendPoint> segment) =>
+        string.Concat(segment.Select((point, index) => $"{(index == 0 ? 'M' : 'L')}{N(plot.X(point.Lap))},{N(plot.Y(Math.Clamp(point.Y, plot.YMin, plot.YMax)))} "));
+
+    private static string EventClass(RaceInvestigationEvent item) => item.Kind == "incident" ? "incident" : "service";
+    private static string EventShort(RaceInvestigationEvent item) => item.Kind == "incident"
+        ? (item.Value is { } points ? $"+{points:0}x" : "Inc")
+        : "Pit";
+
+    private string Readout => _hover is { } lap ? LapLabel(lap) : Selected is { } selected
+        ? $"{selected.Title}: {Signed(selected.DeltaSeconds)} s/lap by median"
+        : "Point to a lap for its time, position and screening";
+
+    private static string LapLabel(RaceInvestigationLap lap)
+    {
+        var parts = new List<string> { $"Lap {lap.Lap}", $"{LapTime(lap.LapTimeSeconds)} s" };
+        if (lap.Position is { } position) parts.Add($"P{position}");
+        if (lap.RunNumber is { } run) parts.Add($"Run {run}");
+        if (lap.GreenExposure is { } exposure) parts.Add(Exposure(exposure));
+        parts.Add(lap.Eligible ? "screened" : Reasons(lap.ExclusionReasons));
+        return string.Join(" · ", parts);
+    }
+}

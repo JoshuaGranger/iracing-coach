@@ -1,0 +1,200 @@
+@using System.Globalization
+@using static iRacingCoach.UI.InvestigationPresentation
+
+@if (State.OpenedTrial is { } opened)
+{
+    <TrialDetail State="State" Trial="opened" />
+}
+else
+{
+<div class="sessions-page" data-sessions>
+    <div class="sessions-head">
+        <h1>Sessions</h1>
+        <div class="sessions-filter" role="group" aria-label="Session type">
+            @foreach (var (id, label) in Filters)
+            {
+                <button type="button" aria-pressed="@(_filter == id ? "true" : "false")" @onclick="() => _filter = id">@label</button>
+            }
+        </div>
+        <label class="search-field"><span class="sr-only">Search sessions</span><input type="search" placeholder="Search track, car or series" @bind="State.RaceSearchText" @bind:event="oninput" /></label>
+    </div>
+
+    @if (State.DrivingTrials.Count > 0)
+    {
+        <section class="tests-panel" aria-label="Saved tests">
+            <header><strong>Tests</strong><span>One change each, checked on a later recording at the same run age</span></header>
+            @foreach (var trial in State.DrivingTrials.Take(6))
+            {
+                var candidate = State.UncheckedTrialCandidates(trial).FirstOrDefault();
+                <div class="test-row" data-trial="@trial.TrialId">
+                    <span class="test-title"><b>@trial.Title</b><small>@TrialSource(trial)</small></span>
+                    <span class="test-status">
+                        @if (trial.LatestEvaluation is { } latest)
+                        {
+                            <span class="verdict @VerdictTone(latest.Verdict)">@Verdict(latest.Verdict)</span>
+                            <small>@(latest.Reasons.FirstOrDefault() ?? "") · @DateLabel(latest.Recording.RecordedAt)</small>
+                        }
+                        else if (candidate is not null)
+                        {
+                            <span class="verdict waiting">Ready to check</span>
+                            <small>@candidate.SessionType · @candidate.Date</small>
+                        }
+                        else
+                        {
+                            <span class="verdict waiting">Waiting</span>
+                            <small>Record the same car and layout, then drive @Window(trial.Spec)</small>
+                        }
+                    </span>
+                    <span class="test-actions">
+                        @if (candidate is not null)
+                        {
+                            <button type="button" class="ri-button" @onclick="() => State.CheckDrivingTrialAsync(trial, candidate)">Check @candidate.SessionType.ToLowerInvariant()</button>
+                        }
+                        <button type="button" class="ri-button secondary" @onclick="() => State.OpenDrivingTrialAsync(trial.TrialId)">Open</button>
+                    </span>
+                </div>
+            }
+        </section>
+    }
+
+    @if (!State.HomeDataReady)
+    {
+        <div class="sessions-empty"><strong>Reading your recordings</strong><span>Sessions appear as soon as the telemetry folder has been checked.</span></div>
+    }
+    else if (BackendUnavailable && State.EventGroups.Count == 0)
+    {
+        <div class="sessions-empty"><strong>Recordings could not be read</strong><span>Local analysis is not running.</span><button type="button" class="ri-button" @onclick="State.OpenTroubleshooting">Open troubleshooting</button></div>
+    }
+    else if (Groups.Count == 0)
+    {
+        <div class="sessions-empty">
+            <strong>@(State.EventGroups.Count == 0 ? "No recorded sessions yet" : "No matching sessions")</strong>
+            <span>@(State.EventGroups.Count == 0 ? "Turn on telemetry recording in iRacing; practice, qualifying and race files appear here automatically." : "Clear the search or choose another session type.")</span>
+            @if (State.EventGroups.Count > 0) { <button type="button" class="ri-button secondary" @onclick="ClearFilters">Show all sessions</button> }
+        </div>
+    }
+    else
+    {
+        <div class="session-table" role="list">
+            @foreach (var group in Groups)
+            {
+                <div class="session-group" role="listitem">
+                    @{ var first = true; }
+                    @foreach (var session in group.Sessions)
+                    {
+                        var overview = session.Overview;
+                        var selected = session.Id == State.SelectedRaceSessionId && State.CurrentAnalysis is not null;
+                        <button type="button" class="session-row @(first ? null : "sub") @(selected ? "selected" : null)" data-session="@session.Id" @onclick="() => Open(session)"
+                                title="Open @session.SessionType.ToLowerInvariant() analysis">
+                            <span class="session-main">
+                                @if (first) { <b>@group.Track <span class="ri-muted">@group.Layout</span></b> }
+                                <small>@SessionWhen(session) · @group.Car@(string.IsNullOrWhiteSpace(group.SetupType) ? "" : $" · {group.SetupType} setup")</small>
+                            </span>
+                            <span class="session-type @TypeClass(session)">@TypeLabel(session)</span>
+                            <span>@Result(session)</span>
+                            <span class="session-extra">@Laps(overview)</span>
+                            <span class="session-status @StatusClass(session)" title="@State.RaceAnalysisFailure(session)">@(group.Archived ? "Saved analysis · recording not in folder" : Status(session, overview))</span>
+                            <span aria-hidden="true"><ProductIcon Name="chevron-right" Size="14" /></span>
+                        </button>
+                        first = false;
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+
+    private static readonly (string Id, string Label)[] Filters = [("all", "All"), ("race", "Races"), ("practice", "Practice & tests")];
+    private string _filter = "all";
+
+    private bool BackendUnavailable => State.Health.Any(item => item.Id == "backend" && item.State == "unavailable");
+
+    private sealed record Group(string Id, string Track, string Layout, string Car, string SetupType, IReadOnlyList<RecentRace> Sessions, bool Archived = false);
+
+    private IReadOnlyList<Group> Groups
+    {
+        get
+        {
+            var search = State.RaceSearchText?.Trim() ?? "";
+            var recorded = State.EventGroups.OfType<RaceEventGroup>()
+                .Select(group => new Group(group.Id, group.Track, group.Layout, group.Car, group.SetupType,
+                    (group.Sessions ?? []).OfType<RecentRace>().Where(Matches).OrderBy(session => session.IsRace ? 0 : 1)
+                        .ThenByDescending(session => session.StartTimeUtc, StringComparer.Ordinal).ToArray()))
+                .ToList();
+            // Saved analyses stay reviewable after their recording is moved or deleted.
+            var sessions = State.EventGroups.OfType<RaceEventGroup>().SelectMany(group => group.Sessions ?? []).OfType<RecentRace>().ToArray();
+            var ids = sessions.Select(session => session.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var keys = sessions.Select(session => session.EventKey).Where(key => key.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            recorded.AddRange(State.Races.OfType<RecentRace>()
+                .Where(race => !ids.Contains(race.Id) && (race.EventKey.Length == 0 || !keys.Contains(race.EventKey))
+                    && !string.IsNullOrWhiteSpace(race.AnalysisPath) && Matches(race))
+                .Select(race => new Group(race.Id, race.Track, race.Layout, race.Car, race.SetupType, [race], Archived: true)));
+            return recorded
+                .Where(group => group.Sessions.Count > 0)
+                .Where(group => search.Length == 0 || new[] { group.Track, group.Layout, group.Car }
+                    .Concat(group.Sessions.Select(session => session.Series))
+                    .Any(value => value?.Contains(search, StringComparison.OrdinalIgnoreCase) == true))
+                .OrderByDescending(group => group.Sessions.Max(session => session.StartTimeUtc), StringComparer.Ordinal)
+                .ToArray();
+        }
+    }
+
+    private bool Matches(RecentRace session) => _filter switch
+    {
+        "race" => session.IsRace,
+        "practice" => !session.IsRace && !session.IsQualifying,
+        _ => true
+    };
+
+    private void ClearFilters() { _filter = "all"; State.RaceSearchText = string.Empty; }
+
+    private Task Open(RecentRace session) => State.OpenRaceFromHomeAsync(session);
+
+    private static string TypeLabel(RecentRace session) => session.IsRace ? "Race" : session.IsQualifying ? "Qualifying"
+        : string.IsNullOrWhiteSpace(session.SessionType) || session.SessionType == "Recorded session" ? "Session" : session.SessionType;
+    private static string TypeClass(RecentRace session) => session.IsRace ? "race" : session.IsQualifying ? "qualifying" : "practice";
+
+    private static string SessionWhen(RecentRace session) => string.IsNullOrWhiteSpace(session.Date) ? DateLabel(session.StartTimeUtc) : session.Date;
+
+    private static string Result(RecentRace session) => (session.StartPosition, session.FinishPosition) switch
+    {
+        (> 0, > 0) => $"P{session.StartPosition} → P{session.FinishPosition}",
+        (_, > 0) => $"P{session.FinishPosition}",
+        _ => ""
+    };
+
+    private static string Laps(RaceOverview? overview)
+    {
+        if (overview is null) return "";
+        var parts = new List<string>();
+        if (overview.GreenLaps > 0 || overview.CautionLaps > 0) parts.Add($"{overview.GreenLaps} green · {overview.CautionLaps} caution");
+        else if (overview.RecordedLaps > 0) parts.Add($"{overview.RecordedLaps} laps");
+        if (overview.BestCleanLapSeconds is > 0) parts.Add($"best {LapTime(overview.BestCleanLapSeconds)}");
+        return string.Join(" · ", parts);
+    }
+
+    private string Status(RecentRace session, RaceOverview? overview)
+    {
+        var status = State.RaceAnalysisStatus(session);
+        if (status.Length > 0) return status;
+        if (State.DrivingTrials.Any(trial => trial.Source.SubsessionId is { Length: > 0 } id && session.EventKey.Contains(id, StringComparison.Ordinal) && session.IsRace))
+            return "Test saved";
+        if (State.DrivingTrials.Any(trial => State.TrialCandidates(trial).Any(candidate => candidate.Id == session.Id)))
+            return "Can check a test";
+        return "";
+    }
+
+    private string StatusClass(RecentRace session) => State.RaceAnalysisFailure(session) is not null ? "warning"
+        : State.DrivingTrials.Any(trial => State.TrialCandidates(trial).Any(candidate => candidate.Id == session.Id)) ? "test" : "";
+
+    private static string TrialSource(DrivingTrial trial) =>
+        $"{trial.Source.Track} · {DateLabel(trial.Source.RecordedAt)} · {trial.Source.Car} · section {trial.Spec.SectionLabel}";
+
+    private static string Window(RaceTrialSpec spec) => spec.ExposureStart is { } start && spec.ExposureEnd is { } end
+        ? $"{spec.MinimumLaps} clear laps at {start.ToString("0", CultureInfo.CurrentCulture)}–{end.ToString("0", CultureInfo.CurrentCulture)} green laps into a run"
+        : $"{spec.MinimumLaps} clear laps";
+}

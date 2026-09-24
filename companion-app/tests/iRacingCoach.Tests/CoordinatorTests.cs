@@ -1790,30 +1790,28 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
-    public void HomeSurface_UsesOneNativeTelemetryActionAndWaitsForStableWorkflows()
+    public void SessionsSurface_WaitsForDiscoveryAndLeavesTelemetryToLive()
     {
-        var home = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "HomePage.razor"));
+        var sessions = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "SessionsPage.razor"));
+        var topBar = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "AppTopBar.razor"));
 
-        StringAssert.Contains(home, "State.SetLiveMonitorVisible(true)");
-        StringAssert.Contains(home, "State.HomeDataReady");
-        StringAssert.Contains(home, "Best clean lap");
-        // The rightmost column is now a single consistent fuel metric on every
-        // row rather than a tire/control reading that flips per row.
-        StringAssert.Contains(home, "FuelStrong(overview)");
-        Assert.DoesNotContain("State.Navigate(\"live\")", home);
-        Assert.DoesNotContain("State.ToggleLiveMonitor", home);
+        StringAssert.Contains(sessions, "State.HomeDataReady");
+        StringAssert.Contains(sessions, "best {LapTime(overview.BestCleanLapSeconds)}");
+        StringAssert.Contains(topBar, "(\"live\", \"Live\", ProductCapability.LiveTelemetry)");
+        Assert.DoesNotContain("State.SetLiveMonitorVisible", sessions);
+        Assert.DoesNotContain("State.ToggleLiveMonitor", sessions);
     }
 
     [TestMethod]
     public void HomeSurface_DoesNotClaimRaceHistoryIsEmptyBeforeDiscoveryCompletes()
     {
-        var home = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "HomePage.razor"));
+        var home = File.ReadAllText(Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI", "SessionsPage.razor"));
         var loadingBranch = home.IndexOf("@if (!State.HomeDataReady)", StringComparison.Ordinal);
-        var emptyBranch = home.IndexOf("else if (State.Races.Count == 0)", StringComparison.Ordinal);
+        var emptyBranch = home.IndexOf("No recorded sessions yet", StringComparison.Ordinal);
 
         Assert.IsGreaterThanOrEqualTo(0, loadingBranch);
         Assert.IsGreaterThan(loadingBranch, emptyBranch);
-        StringAssert.Contains(home, "Loading recent races");
+        StringAssert.Contains(home, "Reading your recordings");
     }
 
     [TestMethod]
@@ -3086,6 +3084,160 @@ public sealed class CoordinatorTests
     }
 
     private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;
+
+    [TestMethod]
+    public async Task Startup_RestoresOnlyAValidatedCachedInvestigation()
+    {
+        foreach (var (bookmarkedAnalysis, restores) in new[] { ("home-summary-test", true), ("an-older-analysis", false) })
+        {
+            var root = Path.Combine(Path.GetTempPath(), "iracing-coach-restore", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            const string selector = "subsession:9101:1";
+            File.WriteAllText(Path.Combine(root, "settings.json"), JsonSerializer.Serialize(new
+            {
+                coachHome = root,
+                firstRunComplete = true,
+                settingsSchemaVersion = 5,
+                lastInvestigation = new { sessionId = selector, analysisId = bookmarkedAnalysis, view = "runs", comparisonId = "run-1-clean" }
+            }));
+            WriteUiAnalysisCache(root, selector, HomeAnalysisResponse(selector: selector));
+            var discovery = JsonSerializer.SerializeToElement(new
+            {
+                sessions = new[]
+                {
+                    new
+                    {
+                        group_id = selector, subsession_id = 9101, session_id = 8101, sim_session_type = "Race", event_type = "Race",
+                        is_race = true, valid = true, is_fixed_setup = true, track_name = "Recorded Track", track_config_name = "Oval",
+                        car_name = "Recorded Car", car_path = "recorded-car", start_time_utc = "2026-08-01T20:00:00Z", file_count = 1,
+                        files = new[] { "recording.ibt" }, analysis_status = "analyzed"
+                    }
+                }
+            });
+            var backend = new FakeBackend(discovery: discovery, analysis: HomeAnalysisResponse(selector: selector));
+            using var state = new CompanionState(
+                backend,
+                new JsonSettingsStore(Path.Combine(root, "settings.json")),
+                new DisconnectedLiveTelemetrySource(),
+                new DisabledCoachEngineSupervisor(),
+                new FakeGarage61CredentialStore(Path.Combine(root, "garage61.credential")));
+
+            await state.InitializeAsync();
+
+            if (restores)
+            {
+                Assert.AreEqual("analysis", state.CurrentPage, "A usable cached investigation reopens where the driver left it.");
+                Assert.IsTrue(state.AnalysisWorkspaceOpen);
+                Assert.AreEqual("home-summary-test", state.CurrentAnalysis!.AnalysisId);
+                Assert.AreEqual("runs", state.InvestigationSelection.View);
+                Assert.AreEqual("run-1-clean", state.InvestigationSelection.ComparisonId);
+            }
+            else
+            {
+                Assert.AreEqual("home", state.CurrentPage, "A bookmark for another analysis falls back to the session library.");
+                Assert.IsFalse(state.AnalysisWorkspaceOpen);
+            }
+            Assert.AreEqual(0, backend.AnalyzeCalls, "Restoring never starts an analysis.");
+        }
+    }
+
+    [TestMethod]
+    public void OfflineSessionsWithoutASubsessionAreSeparateEvents()
+    {
+        object Session(string id, int subsession, string type, string track, string start) => new
+        {
+            group_id = id, subsession_id = subsession, session_id = 0, sim_session_type = type, event_type = type, is_race = type == "Race",
+            valid = true, is_fixed_setup = false, track_display_name = track, track_config_name = "Oval", car_name = "Toyota Supra Class B",
+            car_path = "supra", start_time_utc = start, file_count = 1, files = new[] { id + ".ibt" }
+        };
+        var discovery = JsonSerializer.SerializeToElement(new
+        {
+            sessions = new[]
+            {
+                Session("file:iowa-test", 0, "Offline Testing", "Iowa Speedway", "2026-08-03T22:27:00Z"),
+                Session("file:nh-test", 0, "Offline Testing", "New Hampshire Motor Speedway", "2026-08-02T13:30:00Z"),
+                Session("subsession:9001:2", 9001, "Race", "Iowa Speedway", "2026-08-03T20:09:00Z"),
+                Session("subsession:9001:0", 9001, "Practice", "Iowa Speedway", "2026-08-03T20:02:00Z")
+            }
+        });
+        var sessions = DashboardMapper.MapEvents(JsonSerializer.SerializeToElement(new { races = Array.Empty<object>() }), discovery);
+        var groups = DashboardMapper.GroupEvents(sessions);
+        Assert.HasCount(3, groups, "Offline sessions report subsession 0 and must not merge into one event.");
+        Assert.AreEqual("New Hampshire Motor Speedway", groups.Single(group => group.Sessions.Any(session => session.Id == "file:nh-test")).Track);
+        Assert.HasCount(2, groups.Single(group => group.Sessions.Any(session => session.Id == "subsession:9001:2")).Sessions,
+            "A real subsession still groups its practice and race.");
+    }
+
+    [TestMethod]
+    public void TrialCandidatesAreLaterSessionsOfTheSameCarAndLayoutAndDropCheckedRecordings()
+    {
+        using var state = new CompanionState(new FakeBackend(), new JsonSettingsStore(Path.Combine(Path.GetTempPath(), "iracing-coach-trials", Guid.NewGuid().ToString("N"), "settings.json")));
+        RecentRace Session(string id, string type, string start, string layout = "Single Pit Road", string car = "Toyota Supra Class B") =>
+            new(id, "Bristol Motor Speedway", layout, car, start, "Open", "Recorded", type, false, false, 0, 0, StartTimeUtc: start, SessionType: type, EventKey: id);
+        state.EventSessions.AddRange([
+            Session("later-practice", "Practice", "2026-09-24T18:00:00Z"),
+            Session("later-test", "Offline Testing", "2026-09-25T18:00:00Z"),
+            Session("earlier-practice", "Practice", "2026-09-19T18:00:00Z"),
+            Session("later-qualifying", "Qualifying", "2026-09-24T19:00:00Z"),
+            Session("other-layout", "Practice", "2026-09-24T18:00:00Z", layout: "Dual Pit Roads"),
+            Session("other-car", "Practice", "2026-09-24T18:00:00Z", car: "Ford Mustang Class B")
+        ]);
+        var source = new DrivingTrialRecording("source", null, "2026-09-20T20:09:09+00:00", "Bristol Motor Speedway", "Single Pit Road",
+            "365-single-pit-road", "116", "Toyota Supra Class B", "supra", null, null, "Race", "88784656");
+        var spec = new RaceTrialSpec("section_s", "Section time", .625, .77, "D", "D", .625, .77, 2.5, [130, 131, 132], 2.4, [35, 36, 37],
+            21.8, 23.8, .05, 3, "rule", 5.7, 78, "v1");
+        var trial = new DrivingTrial("trial-0123456789abcdef0123", "2026-09-23T00:00:00Z", "Carry more speed into section D", "Test", [], source,
+            "runs-1-2-age", "Runs 1 and 2", spec, 0, null, []);
+        CollectionAssert.AreEqual(new[] { "later-test", "later-practice" }, state.TrialCandidates(trial).Select(session => session.Id).ToArray());
+        var checkedPractice = new DrivingTrialEvaluation("now", "later", null,
+            source with { RecordedAt = "2026-09-24T18:00:00+00:00", SessionType = "Practice" }, "not_comparable", ["No laps"], [], null, null, [], null, 0, null, null);
+        var checkedTrial = trial with { Evaluations = [checkedPractice], LatestEvaluation = checkedPractice, EvaluationCount = 1 };
+        CollectionAssert.AreEqual(new[] { "later-test" }, state.UncheckedTrialCandidates(checkedTrial).Select(session => session.Id).ToArray());
+    }
+
+    [TestMethod]
+    public async Task SavingATestSendsTheArchivedAnalysisAndComparisonNeverAppNumbers()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-save-trial", Guid.NewGuid().ToString("N"));
+        object? saved = null;
+        var trialJson = JsonSerializer.SerializeToElement(JsonNode.Parse("""
+            {"ok":true,"created":true,"trial":{"schema_version":1,"trial_id":"trial-0123456789abcdef0123","created_at":"2026-09-23T00:00:00Z","title":"Carry more speed into section D","instruction":"Test one change.","evidence":[],
+             "source":{"analysis_id":"source","recorded_at":"2026-09-20T20:09:09+00:00","track":"Bristol Motor Speedway","layout":"Single Pit Road","car":"Toyota Supra Class B"},
+             "comparison":{"id":"runs-1-2-age","title":"Runs 1 and 2"},
+             "metric":{"key":"section_s","label":"Section time","unit":"s","start_pct":0.625,"end_pct":0.77},"section":{"id":"D","label":"D","start_pct":0.625,"end_pct":0.77},
+             "baseline":{"laps":[130,131,132],"median_s":2.5},"reference":{"laps":[35,36,37],"median_s":2.4},"exposure_window":[21.8,23.8],
+             "success":{"threshold_s":0.05,"minimum_laps":3,"rule":"rule"},"evaluation_count":0,"latest_evaluation":null}}
+            """));
+        var backend = new FakeBackend(responseOverride: (tool, _, arguments) =>
+        {
+            if (tool != "save_driving_trial") return null;
+            saved = arguments;
+            return trialJson;
+        });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace("subsession:1:2", "Bristol Motor Speedway", "Single Pit Road", "Toyota Supra Class B", "Sep 20", "Open", "Analyzed", "Race",
+            false, true, 1, 3, SessionType: "Race");
+        state.EventSessions.Add(race);
+        state.SelectRaceSession(race);
+
+        await state.SaveDrivingTrialAsync("runs-1-2-age", 1);
+        Assert.IsNull(saved, "Without an archived analysis nothing is sent.");
+        StringAssert.Contains(state.Toast ?? "", "Refresh the analysis");
+
+        var analysisPath = Path.Combine(state.Settings.ArchiveRoot, "reports", "bristol", "analysis.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(analysisPath)!);
+        File.WriteAllText(analysisPath, "{}");
+        state.EventSessions[0] = race with { AnalysisPath = analysisPath };
+        await state.SaveDrivingTrialAsync("runs-1-2-age", 1);
+        var arguments = JsonSerializer.SerializeToElement(saved);
+        Assert.AreEqual(Path.GetFullPath(analysisPath), arguments.GetProperty("analysis_path").GetString());
+        Assert.AreEqual("runs-1-2-age", arguments.GetProperty("comparison_id").GetString());
+        Assert.AreEqual(1, arguments.GetProperty("action_priority").GetInt32());
+        Assert.IsFalse(arguments.TryGetProperty("threshold_s", out _), "The backend derives every measured value from its own analysis.");
+        Assert.AreEqual("trial-0123456789abcdef0123", state.DrivingTrials.Single().TrialId);
+        Assert.IsNotNull(state.SavedTrialFor("source", "runs-1-2-age", "Carry more speed into section D"));
+    }
 
     private sealed class FakeBackend(
         JsonElement? dashboard = null,

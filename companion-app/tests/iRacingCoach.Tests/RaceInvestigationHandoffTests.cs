@@ -68,25 +68,32 @@ public sealed class RaceInvestigationHandoffTests
     }
 
     [TestMethod]
-    public void FindingsReturnRetainsTechnicalWorkspaceAndInspection()
+    public void InvestigationViewAndSelectionAreRetainedPerRecordingAndSurviveInspection()
     {
         using var state = CreateState(new NeverBackend());
+        Publish(state, "race-a");
         var component = new AnalysisWorkspacePage();
         Set(component, "State", state);
-        Set(component, "Workspace", Workspace("race-a"));
+        Set(component, "Workspace", state.CurrentAnalysis!);
         Set(component, "Card", Card());
         Invoke(component, "OnParametersSet");
-        Set(component, "RaceDataSection", "technical");
+        Assert.AreEqual("race", Property(component, "RaceDataSection"), "A newly opened race starts on its progression.");
+        state.SetInvestigationSelection("sections", "later-run", "turn-pair");
         var request = new RaceInvestigationInspection([12, 33], .1, .4);
         Invoke(component, "InspectFinding", request);
-        Assert.AreEqual("telemetry", Property(component, "RaceDataSection"));
-        Assert.IsTrue((bool)Field(component, "_technicalVisited")!);
+        Assert.AreEqual("traces", Property(component, "RaceDataSection"));
+        Assert.AreEqual("later-run", state.InvestigationSelection.ComparisonId, "Opening traces keeps the chosen comparison.");
+        Assert.AreEqual("turn-pair", state.InvestigationSelection.SectionId);
         Invoke(component, "ReturnToFindings");
-        Assert.AreEqual("technical", Property(component, "RaceDataSection"));
+        Assert.AreEqual("sections", Property(component, "RaceDataSection"));
         CollectionAssert.AreEqual(request.LapNumbers.ToArray(), ((RaceInvestigationInspection)Field(component, "_inspection")!).LapNumbers.ToArray());
-        Set(component, "Workspace", Workspace("race-b"));
+        Assert.AreEqual("race-a", state.Settings.LastInvestigation!.AnalysisId, "The selection is bookmarked for a validated restore.");
+        Publish(state, "race-b");
+        Set(component, "Workspace", state.CurrentAnalysis!);
         Invoke(component, "OnParametersSet");
         Assert.IsNull(Field(component, "_inspection"));
+        Assert.AreEqual("race", Property(component, "RaceDataSection"), "Another recording does not inherit the previous selection.");
+        Assert.IsNull(state.InvestigationSelection.ComparisonId);
     }
 
     [TestMethod]

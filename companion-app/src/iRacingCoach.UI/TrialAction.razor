@@ -1,0 +1,52 @@
+@using System.Globalization
+@using static iRacingCoach.UI.InvestigationPresentation
+
+<div class="ri-test @(Compact ? "compact" : null)" data-test-action="@Action.Priority">
+    <div class="ri-test-copy">
+        <span class="ri-label">Test</span>
+        <strong>@Action.Title</strong>
+        @if (!Compact) { <p>@Action.Instruction</p> }
+        @if (Action.Trial is { } trial)
+        {
+            <small>@trial.MetricLabel @Percent(trial.MetricStartPct)–@Percent(trial.MetricEndPct)% · @Window(trial) · success: @trial.MinimumLaps screened laps at least @Seconds(trial.ThresholdSeconds) s under @Seconds(trial.BaselineMedianSeconds) s</small>
+        }
+        else if (Eligibility != "eligible")
+        {
+            <small>@(Compact ? "Not saveable: these laps include traffic or other exclusions." : "These laps include traffic or other exclusions, so this cannot be saved as a test. Save one from a screened comparison.")</small>
+        }
+    </div>
+    <div class="ri-test-actions">
+        @if (OnInspect.HasDelegate) { <button type="button" class="ri-button secondary" @onclick="() => OnInspect.InvokeAsync()">@(Action.SectionId is null ? "Open in Traces" : "Inspect section")</button> }
+        @if (Action.Trial is not null && State is not null)
+        {
+            if (State.SavedTrialFor(AnalysisId, ComparisonId, Action.Title) is { } saved)
+            {
+                <span class="ri-saved" title="Saved @DateLabel(saved.CreatedAt)">@SavedStatus(saved)</span>
+            }
+            else
+            {
+                <button type="button" class="ri-button" disabled="@State.TrialBusy" @onclick="Save">@(State.TrialBusy ? "Saving…" : "Save test")</button>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RaceInvestigationAction Action { get; set; } = null!;
+    [Parameter, EditorRequired] public string ComparisonId { get; set; } = "";
+    [Parameter] public string Eligibility { get; set; } = "eligible";
+    [Parameter] public CompanionState? State { get; set; }
+    [Parameter] public string AnalysisId { get; set; } = "";
+    [Parameter] public bool Compact { get; set; }
+    [Parameter] public EventCallback OnInspect { get; set; }
+
+    private Task Save() => State?.SaveDrivingTrialAsync(ComparisonId, Action.Priority) ?? Task.CompletedTask;
+
+    private static string Window(RaceTrialSpec trial) => trial.ExposureStart is { } start && trial.ExposureEnd is { } end
+        ? $"{start.ToString("0.0", CultureInfo.CurrentCulture)}–{end.ToString("0.0", CultureInfo.CurrentCulture)} green laps into a run"
+        : "any run age";
+
+    private static string SavedStatus(DrivingTrial trial) => trial.LatestEvaluation is { } latest
+        ? $"Saved · last check: {Verdict(latest.Verdict)}"
+        : "Saved · waiting for a later recording";
+}

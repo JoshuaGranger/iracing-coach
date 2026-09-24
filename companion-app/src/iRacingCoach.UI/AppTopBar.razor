@@ -1,0 +1,61 @@
+<header class="app-topbar" aria-label="Primary navigation">
+    <button class="brand" aria-label="Sessions" @onclick='() => Go("home")'><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M6 25C10 8 25 5 30 18C25 12 17 13 13 25Z" /><path d="M12 27H29" /></svg>iRacing Coach</button>
+    <nav class="app-topnav">
+        @foreach (var item in Items.Where(item => item.Capability is null || State.IsCapabilityVisible(item.Capability.Value)))
+        {
+            var current = IsCurrent(item.Id);
+            <button aria-current="@(current ? "page" : null)" data-nav="@item.Id" @onclick="() => Go(item.Id)">@item.Label</button>
+        }
+    </nav>
+    <div class="app-topbar-status">
+        @if (RunningJob is { } job)
+        {
+            <button class="status-chip" title="@job.Title · @job.Stage" @onclick="State.ToggleJobTray"><i class="activity-dot" aria-hidden="true"></i>@job.Title</button>
+        }
+        else if (FailedJob is { } failed)
+        {
+            <button class="status-chip warning" title="@failed.Stage" @onclick="State.ToggleJobTray">@failed.Title needs attention</button>
+        }
+        @if (State.PendingRaceAnalysisCount > 0)
+        {
+            <button class="status-chip" title="Recordings are analyzed quietly in the background, newest first. Opening one takes priority." @onclick='() => Go("home")'>
+                <i class="activity-dot" aria-hidden="true"></i>@(State.LiveState.Snapshot.Connected ? $"Analysis paused while iRacing runs · {State.PendingRaceAnalysisCount} left" : $"Analyzing {State.PendingRaceAnalysisCount} recording{(State.PendingRaceAnalysisCount == 1 ? "" : "s")}")
+            </button>
+        }
+        else if (State.FailedRaceAnalysisCount is > 0 and var count)
+        {
+            <button class="status-chip warning" title="Open Sessions and select the recording to retry" @onclick='() => Go("home")'>@count analysis @(count == 1 ? "failure" : "failures") · Retry from Sessions</button>
+        }
+        @if (!string.IsNullOrWhiteSpace(State.HeaderAlert))
+        {
+            <button class="status-chip danger" title="Open troubleshooting" @onclick="State.OpenTroubleshooting">@State.HeaderAlert</button>
+        }
+        <button class="settings-button" aria-current="@(State.CurrentPage is "settings" or "connections" ? "page" : null)" data-nav="settings" @onclick='() => Go("settings")'><ProductIcon Name="settings" Size="16" />Settings</button>
+    </div>
+</header>
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+
+    private static readonly (string Id, string Label, ProductCapability? Capability)[] Items =
+    [
+        ("home", "Sessions", null),
+        ("planning", "Plan", ProductCapability.RacePlanning),
+        ("setup", "Setups", ProductCapability.SetupLibrary),
+        ("live", "Live", ProductCapability.LiveTelemetry)
+    ];
+
+    private JobItem? RunningJob => State.Jobs.FirstOrDefault(job => job.Status is "running" or "queued");
+    private JobItem? FailedJob => State.Jobs.FirstOrDefault(job => job.Status == "failed");
+
+    /// <summary>Race analysis and saved tests belong to Sessions; tuning belongs to Setups.</summary>
+    private bool IsCurrent(string id) => id switch
+    {
+        "home" => State.CurrentPage is "home" or "analysis",
+        "setup" => State.CurrentPage is "setup" or "tuning",
+        _ => State.CurrentPage == id
+    };
+
+    // Leaving an investigation keeps it loaded, so returning to the same session is instant.
+    private void Go(string id) => State.Navigate(id);
+}

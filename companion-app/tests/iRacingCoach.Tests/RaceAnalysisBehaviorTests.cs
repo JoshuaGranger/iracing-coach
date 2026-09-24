@@ -387,11 +387,10 @@ public sealed class RaceAnalysisBehaviorTests
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
         var iterationCss = File.ReadAllText(Path.Combine(ui, "wwwroot", "iteration-ux.css"));
 
-        StringAssert.Contains(page, ">Telemetry</button>");
-        StringAssert.Contains(page, ">Technical data</button>");
-        StringAssert.Contains(page, ">Race replay</button>");
+        StringAssert.Contains(page, "(\"details\", \"Details\")");
+        StringAssert.Contains(page, "(\"replay\", \"Replay\")");
         Assert.DoesNotContain(">Race review</button>", page);
-        StringAssert.Contains(page, "private string _raceDataSection = \"telemetry\";");
+        StringAssert.Contains(page, "private string RaceDataSection => Selection.View;");
         StringAssert.Contains(page, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" OnInspect=\"InspectFinding\"");
 
         StringAssert.Contains(technical, "data-analysis-section=\"technical\"");
@@ -870,17 +869,17 @@ public sealed class RaceAnalysisBehaviorTests
     public void RaceAnalysisUi_ExposesRealOverviewStatsConfigurableRowsAndDomDrivenFrameSyncedCursor()
     {
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
-        var analysis = File.ReadAllText(Path.Combine(ui, "AnalysisPage.razor"));
+        var analysis = File.ReadAllText(Path.Combine(ui, "SessionsPage.razor"));
         var workspace = File.ReadAllText(Path.Combine(ui, "AnalysisWorkspacePage.razor"));
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
         var cursor = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-telemetry-cursor.js"));
         var traceLayout = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-trace-layout.js"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
 
-        foreach (var hook in new[] { "race-analysis-row", "event-race-shape", "event-long-run", "event-pace", "event-tire" })
+        foreach (var hook in new[] { "session-row", "session-type", "session-status", "data-session" })
             StringAssert.Contains(analysis, hook);
-        StringAssert.Contains(analysis, "overview?.GreenLaps");
-        StringAssert.Contains(analysis, "overview?.PaceConsistencyPercent");
+        StringAssert.Contains(analysis, "overview.GreenLaps");
+        StringAssert.Contains(analysis, "overview.BestCleanLapSeconds");
         StringAssert.Contains(workspace, "race-analysis-toolbar");
         StringAssert.Contains(workspace, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" OnInspect=\"InspectFinding\"");
         StringAssert.Contains(workspace, "<RaceReplayWorkspace Workspace=\"Workspace\" />");
@@ -1129,29 +1128,24 @@ public sealed class RaceAnalysisBehaviorTests
     }
 
     [TestMethod]
-    public void RaceHeader_UsesOneCompactRowWithDataTabsIdentityAndSessionSwitch()
+    public void RaceHeader_UsesOneCompactRowWithBackIdentityViewsAndSessionSwitch()
     {
         var ui = Path.Combine(CompanionRoot(), "src", "iRacingCoach.UI");
         var workspace = File.ReadAllText(Path.Combine(ui, "AnalysisWorkspacePage.razor"));
-        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
+        var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "race-investigation.css"));
 
-        StringAssert.Contains(workspace, "<header class=\"analysis-context-bar race-analysis-toolbar\">");
-        var tabs = workspace.IndexOf("analysis-data-primary", StringComparison.Ordinal);
-        var identity = workspace.IndexOf("race-analysis-title", StringComparison.Ordinal);
+        StringAssert.Contains(workspace, "<header class=\"analysis-context-bar race-analysis-toolbar ri-toolbar\">");
+        var back = workspace.IndexOf("race-analysis-back", StringComparison.Ordinal);
+        var identity = workspace.IndexOf("class=\"ri-title\"", StringComparison.Ordinal);
+        var views = workspace.IndexOf("class=\"ri-tabs\"", StringComparison.Ordinal);
         var session = workspace.IndexOf("race-session-actions", StringComparison.Ordinal);
-        Assert.IsTrue(tabs >= 0 && tabs < identity && identity < session,
-            "Race data tabs, centered event identity/back, and session switch must occupy one left-to-right header row.");
-        StringAssert.Contains(workspace, "aria-label=\"Race analysis section\"");
-        StringAssert.Contains(workspace, "aria-label=\"Back to race history\"");
-        StringAssert.Contains(workspace, "class=\"race-analysis-title-cluster\"");
-        StringAssert.Contains(workspace, "<span>Back</span>");
+        Assert.IsTrue(back >= 0 && back < identity && identity < views && views < session,
+            "Back, event identity, the investigation views and the session switch share one left-to-right row.");
+        StringAssert.Contains(workspace, "aria-label=\"Race analysis view\"");
+        StringAssert.Contains(workspace, "aria-label=\"Back to sessions\"");
         StringAssert.Contains(workspace, "aria-label=\"Event session\"");
-        StringAssert.Contains(css, ".analysis-context-bar.race-analysis-toolbar {");
-        StringAssert.Contains(css, "grid-template-columns: minmax(188px,220px) minmax(260px,1fr) minmax(150px,220px);");
-        StringAssert.Contains(css, ".race-analysis-title {");
-        StringAssert.Contains(css, "justify-content: center;");
-        StringAssert.Contains(css, ".race-analysis-title-cluster {");
-        StringAssert.Contains(css, ".race-session-actions { justify-self: end; }");
+        StringAssert.Contains(css, ".analysis-context-bar.ri-toolbar { min-height: 40px; display: flex;");
+        StringAssert.Contains(css, ".ri-tab.selected");
     }
 
     [TestMethod]

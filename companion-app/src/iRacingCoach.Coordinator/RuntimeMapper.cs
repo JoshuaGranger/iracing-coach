@@ -158,6 +158,23 @@ public static class RuntimeMapper
             StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A cached response whose investigation predates the current projection is
+    /// reopened through the backend, which rebuilds it without decoding again. A
+    /// response without an investigation is governed by the analysis profile alone,
+    /// so a UI mapping change never costs a re-analysis.
+    /// </summary>
+    public static bool HasCurrentInvestigation(JsonElement report)
+    {
+        var view = Object(report, "analysis_view");
+        var analysis = view.ValueKind == JsonValueKind.Object ? view : report;
+        var investigation = Object(analysis, "race_investigation");
+        if (investigation.ValueKind != JsonValueKind.Object || !investigation.TryGetProperty("schema_version", out var schema)) return true;
+        return schema.ValueKind == JsonValueKind.Number && schema.TryGetInt32(out var version)
+            && version == RaceInvestigationMapper.CurrentSchemaVersion
+            && string.Equals(Text(investigation, "projection_version"), RaceInvestigationMapper.CurrentProjectionVersion, StringComparison.Ordinal);
+    }
+
     public static RaceCard ArchivedRaceCard(JsonElement report)
     {
         var signals = Array(report, "coaching_signals");

@@ -74,10 +74,9 @@
                 <span class="technical-investigation-summary">@InvestigationSummary</span>
             </header>
 
-            @if (ActiveInvestigation == "racecraft" && Workspace.Investigation is { } investigation)
+            @if (ActiveInvestigation == "racecraft")
             {
                 <div class="technical-investigation-content pace-investigation-content">
-                    <RacePaceInvestigation Investigation="investigation" OnInspect="OnInspect" />
                         @if (Garage61Laps.Count > 0)
                         {
                             <section class="technical-reference-laps" data-garage61-references>

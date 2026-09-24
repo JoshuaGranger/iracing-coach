@@ -191,7 +191,7 @@ internal static class RaceCoachPacketBuilder
     }
 
     private static RaceInvestigation? UsableInvestigation(AnalysisWorkspace analysis) =>
-        analysis.Investigation is { SchemaVersion: 1, UnavailableReason: null } investigation ? investigation : null;
+        analysis.Investigation is { SchemaVersion: >= 1 and <= RaceInvestigationMapper.CurrentSchemaVersion, UnavailableReason: null } investigation ? investigation : null;
 
     private static IReadOnlyList<RaceInvestigationComparison> InvestigationComparisons(RaceInvestigation investigation) =>
         investigation.Comparisons.OrderByDescending(comparison => comparison.Id == investigation.DefaultComparisonId).Take(MaximumComparisons).ToArray();

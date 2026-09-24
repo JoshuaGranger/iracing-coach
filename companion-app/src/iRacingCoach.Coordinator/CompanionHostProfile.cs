@@ -173,12 +173,16 @@ public sealed class LocalOnlyBackendClient : IBackendClient
         "catalog_iracing_setups",
         "copy_iracing_setup_to_coach",
         "discover_iracing_sessions",
+        "evaluate_driving_trial",
         "iracing_companion_dashboard",
         "iracing_strategy_history",
+        "list_driving_trials",
+        "load_driving_trial",
         "plan_iracing_race",
         "recommend_open_setup_tuning",
         "recommend_structured_open_setup_tuning",
-        "record_open_setup_feedback"
+        "record_open_setup_feedback",
+        "save_driving_trial"
     };
 
     private readonly IBackendClient _inner;

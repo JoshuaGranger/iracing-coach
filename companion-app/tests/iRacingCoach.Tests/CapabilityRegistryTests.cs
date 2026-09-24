@@ -186,7 +186,7 @@ public sealed class CapabilityRegistryTests
         foreach (var glyph in new[] { "⌂", "◉", "⌁", "◇", "↗", "⇄", "⊙", "×", "◎", "◐", "▣", "⋯" })
             Assert.IsFalse(primaryCopy.Contains(glyph, StringComparison.Ordinal), $"Primary UI contains a text glyph used as an icon: {glyph}");
 
-        StringAssert.Contains(razor["NavRail.razor"], "<ProductIcon");
+        StringAssert.Contains(razor["AppTopBar.razor"], "<ProductIcon");
         StringAssert.Contains(razor["TuningPage.razor"], "ProgressiveTuningFeedbackEditor");
         StringAssert.Contains(razor["DiagnosticsPage.razor"], "DiagnosticsExpanded");
         StringAssert.Contains(razor["SettingsPage.razor"], "<details class=\"settings-disclosure\"");
@@ -249,14 +249,14 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(analysis, "SelectedEventSession");
         StringAssert.Contains(analysis, "!session.IsQualifying");
         StringAssert.Contains(analysis, "RaceDataSection");
-        StringAssert.Contains(analysis, "analysis-data-switch");
-        StringAssert.Contains(analysis, ">Telemetry</button>");
-        StringAssert.Contains(analysis, ">Technical data</button>");
-        StringAssert.Contains(analysis, ">Race replay</button>");
+        StringAssert.Contains(analysis, "class=\"ri-tabs\"");
+        StringAssert.Contains(analysis, "[(\"race\", \"Race\"), (\"runs\", \"Runs\"), (\"sections\", \"Sections\")]");
+        StringAssert.Contains(analysis, "[(\"traces\", \"Traces\"), (\"replay\", \"Replay\"), (\"details\", \"Details\")]");
         Assert.DoesNotContain(">Race review</button>", analysis);
-        StringAssert.Contains(analysis, "RaceDataSection == \"telemetry\"");
-        StringAssert.Contains(analysis, "RaceDataSection == \"technical\"");
+        StringAssert.Contains(analysis, "RaceDataSection == \"traces\"");
+        StringAssert.Contains(analysis, "RaceDataSection == \"details\"");
         StringAssert.Contains(analysis, "RaceDataSection == \"replay\"");
+        StringAssert.Contains(analysis, "<RaceInvestigationView");
         StringAssert.Contains(analysis, "<RaceTechnicalData Workspace=\"Workspace\" Card=\"Card\" OnInspect=\"InspectFinding\"");
         StringAssert.Contains(analysis, "<RaceReplayWorkspace Workspace=\"Workspace\" />");
         StringAssert.Contains(technical, "data-technical-overview");
@@ -454,7 +454,7 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(appHost, "viewportSize");
         StringAssert.Contains(appHost, "elementSize");
 
-        var navigation = File.ReadAllText(Path.Combine(ui, "NavRail.razor"));
+        var navigation = File.ReadAllText(Path.Combine(ui, "AppTopBar.razor"));
         StringAssert.Contains(navigation, "\"Setups\"");
 
         var tuning = File.ReadAllText(Path.Combine(ui, "TuningPage.razor"));
@@ -487,13 +487,15 @@ public sealed class CapabilityRegistryTests
         StringAssert.Contains(liveGrid, "reading.NumericValue.HasValue");
         Assert.DoesNotContain("\"connections\", \"Connections\"", navigation);
         StringAssert.Contains(File.ReadAllText(Path.Combine(ui, "SettingsPage.razor")), "<ConnectionsPage State=\"State\" Embedded=\"true\"");
-        var home = File.ReadAllText(Path.Combine(ui, "HomePage.razor"));
-        StringAssert.Contains(home, "Compare setups");
-        StringAssert.Contains(home, "home-race-row");
-        StringAssert.Contains(home, "TireMetric");
+        var home = File.ReadAllText(Path.Combine(ui, "SessionsPage.razor"));
+        StringAssert.Contains(home, "Practice & tests");
+        StringAssert.Contains(home, "session-row");
+        StringAssert.Contains(home, "tests-panel");
+        Assert.DoesNotContain("workflow-card", home, "Sessions is the library, not a second dashboard of navigation cards.");
         Assert.DoesNotContain("Automatic discovery", home);
         Assert.DoesNotContain("Open Race Analysis", home);
-        Assert.DoesNotContain("Browse setups", home);
+        Assert.IsFalse(File.Exists(Path.Combine(ui, "HomePage.razor")), "Home and the race library are one Sessions surface.");
+        Assert.IsFalse(File.Exists(Path.Combine(ui, "NavRail.razor")), "The wide rail is replaced by the labeled top strip.");
         var monitor = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "LiveMonitorWindow.xaml"));
         StringAssert.Contains(monitor, "ShowInTaskbar=\"True\"");
 
@@ -752,7 +754,7 @@ public sealed class CapabilityRegistryTests
         var root = CompanionRoot();
         var ui = Path.Combine(root, "src", "iRacingCoach.UI");
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
-        var raceBrowser = File.ReadAllText(Path.Combine(ui, "AnalysisPage.razor"));
+        var raceBrowser = File.ReadAllText(Path.Combine(ui, "SessionsPage.razor"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
 
         StringAssert.Contains(telemetry, "Workspace.Traces.Where(IsClean).Where(HasUsableLapTime).OrderBy(trace => trace.LapTimeSeconds!.Value).ThenBy(trace => trace.Lap).Take(3)");
@@ -764,9 +766,8 @@ public sealed class CapabilityRegistryTests
         Assert.IsTrue(workspaceRule.Success);
         StringAssert.Contains(workspaceRule.Groups["body"].Value, "scrollbar-gutter: stable");
 
-        StringAssert.Contains(raceBrowser, "event-race-shape race-condition-stat");
-        StringAssert.Contains(raceBrowser, "metric-dot green");
-        StringAssert.Contains(raceBrowser, "metric-dot yellow");
+        StringAssert.Contains(raceBrowser, "{overview.GreenLaps} green · {overview.CautionLaps} caution");
+        StringAssert.Contains(raceBrowser, "Result(session)");
         StringAssert.Contains(css, ".race-analysis-row .event-race-shape strong { color: var(--text-primary); }");
         StringAssert.Contains(css, ".race-analysis-row .event-race-shape small { color: var(--text-muted); }");
     }

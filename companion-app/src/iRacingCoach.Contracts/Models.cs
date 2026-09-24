@@ -771,6 +771,8 @@ public sealed class CompanionSettings
     public LiveMonitorLayout LiveMonitor { get; set; } = new();
     public AnalysisTraceLayout RaceAnalysisTraces { get; set; } = new();
     public AnalysisTraceLayoutSet RaceAnalysisTraceLayouts { get; set; } = new();
+    /// <summary>The investigation to reopen when its recording and cached analysis are still usable.</summary>
+    public InvestigationBookmark? LastInvestigation { get; set; }
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     [JsonIgnore]
@@ -808,6 +810,17 @@ public sealed class CompanionSettings
         }
         return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
     }
+}
+
+public sealed class InvestigationBookmark
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string AnalysisId { get; set; } = string.Empty;
+    public string View { get; set; } = "race";
+    public string? ComparisonId { get; set; }
+    public string? SectionId { get; set; }
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 public sealed class AnalysisTraceLayout

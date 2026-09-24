@@ -21,7 +21,7 @@ public sealed record TuningFeedbackDraft(
 
 public sealed record LocalInventorySectionStatus(string Name, bool Current, string Message);
 
-public sealed class CompanionState : IDisposable
+public sealed partial class CompanionState : IDisposable
 {
     // The cache stores a backend response and a projection of it, and those two
     // things go stale for different reasons. Conflating them is what orphaned 75%
@@ -529,6 +529,8 @@ public sealed class CompanionState : IDisposable
             return;
         }
         await RefreshDataAsync(showToast: false, cancellationToken);
+        _ = RefreshDrivingTrialsAsync(cancellationToken);
+        await RestoreInvestigationAsync(cancellationToken);
         _liveTelemetry.Start();
         _ = InitializeCoachEngineAsync();
         if (Settings.LiveMonitor.Visible) LiveMonitorVisibilityRequested?.Invoke(true, false);
@@ -3665,7 +3667,8 @@ public sealed class CompanionState : IDisposable
                     var root = document.RootElement;
                     if (root.TryGetProperty("schemaVersion", out var schema) && schema.TryGetInt32(out var version) && version == UiAnalysisCacheEnvelopeVersion
                         && CacheMatchesSession(root, race) && root.TryGetProperty("response", out var response)
-                        && ResponseMatchesSession(response, race) && RuntimeMapper.HasCurrentAnalysisProfile(response))
+                        && ResponseMatchesSession(response, race) && RuntimeMapper.HasCurrentAnalysisProfile(response)
+                        && RuntimeMapper.HasCurrentInvestigation(response))
                     {
                         var stamp = root.TryGetProperty("sourceLastWriteUtc", out var saved) && saved.ValueKind == JsonValueKind.String ? saved.GetString() : null;
                         if (sourceAvailable && !string.Equals(File.GetLastWriteTimeUtc(race.SourcePath).ToString("O", CultureInfo.InvariantCulture), stamp, StringComparison.Ordinal)) return null;

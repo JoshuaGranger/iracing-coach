@@ -70,6 +70,9 @@ public static class DashboardMapper
             .OrderByDescending(group => group.Sessions.Max(SortTime))
             .ToArray();
 
+    private static string? RealIdentifier(string? value) =>
+        string.IsNullOrWhiteSpace(value) || value.Trim() is "0" or "-1" ? null : value.Trim();
+
     private static RecentRace MapSession(JsonElement session, JsonElement dashboardRace)
     {
         var analysis = dashboardRace.TryGetProperty("analysis", out var value) && value.ValueKind == JsonValueKind.Object
@@ -83,7 +86,9 @@ public static class DashboardMapper
         var selector = groupId ?? GroupSelector(session) ?? Text(session, "subsession_id") ?? Text(session, "source_path") ?? FirstFile(session) ?? string.Empty;
         var id = groupId ?? selector;
         if (string.IsNullOrWhiteSpace(id)) id = Guid.NewGuid().ToString("N");
-        var eventKey = Text(session, "subsession_id") ?? Text(session, "session_id") ?? id;
+        // Offline testing reports subsession 0; treating that as an event would merge
+        // unrelated sessions from different tracks and days into one group.
+        var eventKey = RealIdentifier(Text(session, "subsession_id")) ?? RealIdentifier(Text(session, "session_id")) ?? id;
         var track = RuntimeMapper.DisplayTrack(Text(session, "track_display_name") ?? Text(session, "track_name") ?? Text(session, "track_path")) ?? "Unknown track";
         var layout = RuntimeMapper.DisplayLayout(Text(session, "track_config_name") ?? Text(session, "track_config"));
         var car = RuntimeMapper.DisplayCar(Text(session, "car_name") ?? Text(session, "car_path")) ?? "Unknown car";

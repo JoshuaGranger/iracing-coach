@@ -1,0 +1,379 @@
+@implements IAsyncDisposable
+@using System.Globalization
+@using Microsoft.JSInterop
+@using static iRacingCoach.UI.InvestigationPresentation
+@inject IServiceProvider Services
+
+<div class="ri-sections @(Sections is null ? "ri-single" : null)" @ref="_root" data-ri-root data-rows="@RowsData"
+     data-start="@N(Pair?.ContextStartPct ?? 0)" data-end="@N(Pair?.EndPct ?? 1)" data-initial="@InitialRow">
+    <aside class="ri-side">
+        <div class="ri-map-panel">
+            <div class="ri-panel-label"><strong>Track</strong>@if (Geometry is null) { <span>not recorded</span> }</div>
+            @if (MapPoints.Count > 2)
+            {
+                <svg class="ri-map" data-ri-map tabindex="0" role="group" viewBox="@MapViewBox"
+                     aria-label="Track map with the selected section and its approach. Move over the highlighted part to inspect telemetry."
+                     data-points="@MapPointsData">
+                    <path d="@MapPath(MapPoints)" class="ri-map-track" />
+                    @if (Pair is not null)
+                    {
+                        <path d="@MapPath(Range(Pair.ContextStartPct, Pair.StartPct))" class="ri-map-approach" />
+                        <path d="@MapPath(Range(Pair.StartPct, Pair.EndPct))" class="ri-map-section" />
+                    }
+                    else if (HighlightStartPct is { } highlightStart && HighlightEndPct is { } highlightEnd)
+                    {
+                        <path d="@MapPath(Range(highlightStart, highlightEnd))" class="ri-map-section" />
+                    }
+                    @if (Geometry?.StartFinishLine is { } line)
+                    {
+                        <line x1="@N(line.A.X)" y1="@N(line.A.Y)" x2="@N(line.B.X)" y2="@N(line.B.Y)" class="ri-map-start" />
+                        <g><text x="@N(line.B.X + _mapSpan * .02)" y="@N(line.B.Y)" class="ri-map-text" font-size="@N(_mapSpan * .04)">S/F</text></g>
+                    }
+                    @foreach (var label in MapLabels)
+                    {
+                        var selected = label.Id == SelectedSectionId;
+                        <g class="ri-map-label @(selected ? "selected" : null)" role="button" tabindex="@(Sections is null ? -1 : 0)"
+                           aria-label="Section @label.Text" aria-pressed="@(selected ? "true" : "false")"
+                           @onclick="() => Select(label.Id)" @onkeydown="args => OnLabelKey(args, label.Id)">
+                            @if (label.Leader) { <line x1="@N(label.AnchorX)" y1="@N(label.AnchorY)" x2="@N(label.X)" y2="@N(label.Y)" class="ri-map-leader" /> }
+                            <circle cx="@N(label.X)" cy="@N(label.Y)" r="@N(_mapSpan * .045)" />
+                            <g><text x="@N(label.X)" y="@N(label.Y + _mapSpan * .016)" text-anchor="middle" font-size="@N(_mapSpan * .05)">@label.Text</text></g>
+                        </g>
+                    }
+                    <circle data-ri-map-cursor class="ri-map-cursor" r="@N(_mapSpan * .025)" style="display:none" />
+                </svg>
+            }
+            else
+            {
+                <div class="ri-unavailable">Track map not recorded for this layout.</div>
+            }
+            <div class="ri-map-legend"><span><i class="approach"></i>Approach</span><span><i class="section"></i>Section</span></div>
+        </div>
+        @if (Sections is not null)
+        {
+            <div class="ri-section-list" role="group" aria-label="Track sections">
+                <div class="ri-section-head"><span>Section</span><span title="Later group median minus earlier group median">@DeltaHeading</span></div>
+                @foreach (var section in Sections)
+                {
+                    var selected = section.Id == SelectedSectionId;
+                    <button type="button" class="ri-section @(selected ? "selected" : null)" aria-pressed="@(selected ? "true" : "false")"
+                            data-section="@section.Id" title="@section.Title" @onclick="() => Select(section.Id)">
+                        <span class="ri-section-id">@section.Label</span>
+                        <span class="ri-section-range">@Percent(section.StartPct)–@Percent(section.EndPct)%@if (section.Confirmed) { <em>grouped</em> }
+                            <span class="ri-meter" aria-hidden="true">@if (section.Delta is { } delta) { <i class="@(delta < 0 ? "gain" : null)" style="@Meter(delta)"></i> }</span>
+                        </span>
+                        <strong class="@(section.Delta < 0 ? "gain" : null)">@Signed(section.Delta)</strong>
+                    </button>
+                }
+            </div>
+        }
+    </aside>
+
+    <section class="ri-telemetry" aria-label="Section telemetry">
+        @if (Pair is null)
+        {
+            <div class="ri-empty"><strong>@(EmptyTitle ?? "No comparable passes in this section")</strong><span>@EmptyDetail</span></div>
+        }
+        else
+        {
+            <header class="ri-pass-head">
+                <h2>Section @SectionLabel <small>@Percent(Pair.StartPct)–@Percent(Pair.EndPct)%</small></h2>
+                <div class="ri-pass-keys">
+                    @foreach (var (pass, side) in new[] { (Pair.A, "a"), (Pair.B, "b") })
+                    {
+                        <span class="ri-key @side" data-pass="@pass.Lap">
+                            <i aria-hidden="true"></i>
+                            <span><b>@PassIdentity(pass)</b>@if (pass.FuelStartGallons is { } fuel) { <span> · @fuel.ToString("0.0", CultureInfo.CurrentCulture) gal</span> }
+                                <small>@PassRole(pass.Role) · @Seconds(pass.SectionSeconds) s in section @if (!pass.Eligible && pass.ExclusionReasons.Count > 0) { <em> · @Reasons(pass.ExclusionReasons)</em> }</small></span>
+                        </span>
+                    }
+                </div>
+            </header>
+            <div class="ri-timing">
+                @if (Pair.TimingComplete)
+                {
+                    <span>Entry<b>@Signed(Pair.EntryGapSeconds)</b></span>
+                    <span>Inside<b>@Signed(Pair.SectionDeltaSeconds)</b></span>
+                    <span>Exit<b>@Signed(Pair.ExitGapSeconds)</b></span>
+                }
+                else
+                {
+                    <span>Inside<b>@Signed(Pair.SectionDeltaSeconds)</b></span>
+                    <span class="ri-muted">Time gap withheld: approach samples are incomplete.</span>
+                }
+                <span class="ri-entry-speed">Entry speed<b>@Signed(Pair.EntrySpeedDifferenceMph, 1) mph</b></span>
+            </div>
+            <div class="ri-channels">
+                @for (var index = 0; index < Channels.Length; index++)
+                {
+                    var channel = Channels[index];
+                    var last = index == Channels.Length - 1;
+                    var plot = ChannelScale(channel);
+                    <div class="ri-channel @(last ? "last" : null)" data-channel="@channel.Key">
+                        <div class="ri-channel-label" title="@channel.Title">@channel.Label<small>@channel.Unit</small>
+                            <span class="ri-readings">
+                                @if (channel.Key == "gap") { <output data-ri-read="gap" data-digits="3">—</output> }
+                                else { <output class="a" data-ri-read="@channel.Key" data-side="a" data-digits="@channel.Digits">—</output><output class="b" data-ri-read="@channel.Key" data-side="b" data-digits="@channel.Digits">—</output> }
+                            </span>
+                        </div>
+                        @if (plot is { } scale)
+                        {
+                            <div class="ri-chart-wrap">
+                                <div class="ri-y-axis" aria-hidden="true"><span class="top">@Number(scale.YMax, channel.AxisDigits)</span><span class="bottom">@Number(scale.YMin, channel.AxisDigits)</span></div>
+                                <div class="ri-plot-area">
+                                @if (index == 0)
+                                {
+                                    <span class="ri-zone" style="left:0">Approach</span>
+                                    <span class="ri-zone" style="left:@N(Fraction(Pair.StartPct) * 100)%">Section @SectionLabel</span>
+                                }
+                                @if (!HasValues(channel.Key)) { <span class="ri-zone missing">Not recorded</span> }
+                                <svg class="ri-chart" data-ri-chart tabindex="0" role="group" viewBox="0 0 @N(ViewWidth) @N(ViewHeight)" preserveAspectRatio="none"
+                                     data-view-width="@N(ViewWidth)" data-left="0" data-width="@N(ViewWidth)"
+                                     aria-label="@channel.Label comparison. Move the pointer or use arrow keys to inspect.">
+                                    @foreach (var tick in new[] { scale.YMin, (scale.YMin + scale.YMax) / 2, scale.YMax })
+                                    {
+                                        <line x1="0" x2="@N(ViewWidth)" y1="@N(scale.Y(tick))" y2="@N(scale.Y(tick))" class="ri-grid" />
+                                    }
+                                    <line x1="@N(scale.X(Pair.StartPct))" x2="@N(scale.X(Pair.StartPct))" y1="0" y2="@N(ViewHeight)" class="ri-boundary" />
+                                    @if (channel.Key == "gap")
+                                    {
+                                        <path d="@Line(scale, row => row.Gap)" class="ri-line gap" />
+                                    }
+                                    else
+                                    {
+                                        <path d="@Line(scale, row => Value(row.A, channel.Key))" class="ri-line a" />
+                                        <path d="@Line(scale, row => Value(row.B, channel.Key))" class="ri-line b" />
+                                    }
+                                    <line data-ri-cursor x1="@N(scale.X(Pair.StartPct))" x2="@N(scale.X(Pair.StartPct))" y1="0" y2="@N(ViewHeight)" class="ri-cursor" />
+                                </svg>
+                                </div>
+                            </div>
+                            @if (last)
+                            {
+                                <div class="ri-x-axis">
+                                    @foreach (var (x, anchor) in new[] { (Pair.ContextStartPct, "start"), (Pair.StartPct, "middle"), (Pair.EndPct, "end") })
+                                    {
+                                        <span class="@anchor" style="left:@N(Fraction(x) * 100)%">@Percent(x)%</span>
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+            <footer class="ri-foot">
+                <span>Time gap is zero at @Percent(Pair.ContextStartPct)% · @Pair.ContextLabel</span>
+                @if (!string.IsNullOrWhiteSpace(ModeNote)) { <span>@ModeNote</span> }
+                <output data-ri-position>@Percent(Pair.StartPct)% lap</output>
+            </footer>
+            @if (Footer is not null) { <div class="ri-action-slot">@Footer</div> }
+        }
+    </section>
+</div>
+
+@code {
+    public sealed record SectionChoice(string Id, string Label, double StartPct, double EndPct, double? Delta, bool Confirmed, string Title);
+    private sealed record Channel(string Key, string Label, string Unit, int Digits, int AxisDigits, string Title, double? FixedMin = null, double? FixedMax = null);
+    private sealed record MapLabel(string Id, string Text, double X, double Y, double AnchorX, double AnchorY, bool Leader);
+
+    private static readonly Channel[] Channels =
+    [
+        new("speed", "Speed", "mph", 1, 0, "Recorded speed of each pass"),
+        new("gap", "Time gap", "s", 3, 2, "Second pass minus first pass, zero at the approach start. Positive means the second pass is behind."),
+        new("throttle", "Throttle", "%", 0, 0, "Recorded throttle", 0, 100),
+        new("brake", "Brake", "%", 0, 0, "Recorded brake (bin mean)", 0, 100),
+        new("steering", "Steering", "°", 1, 0, "Steering wheel angle, signed peak per distance bin"),
+        new("slip", "Body slip", "°", 2, 1, "Chassis sideslip: the car's velocity angle relative to its heading. Not individual tire slip or grip. Signed peak per distance bin.")
+    ];
+
+    [Parameter] public RacePassPair? Pair { get; set; }
+    [Parameter] public string SectionLabel { get; set; } = "";
+    [Parameter] public IReadOnlyList<SectionChoice>? Sections { get; set; }
+    [Parameter] public string? SelectedSectionId { get; set; }
+    [Parameter] public EventCallback<string> OnSelectSection { get; set; }
+    [Parameter] public AnalysisTrackGeometry? Geometry { get; set; }
+    [Parameter] public string? ModeNote { get; set; }
+    [Parameter] public string DeltaHeading { get; set; } = "Later − earlier · s";
+    [Parameter] public string? EmptyTitle { get; set; }
+    [Parameter] public string? EmptyDetail { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    /// <summary>Section to outline on the map when there is no pass pair yet.</summary>
+    [Parameter] public double? HighlightStartPct { get; set; }
+    [Parameter] public double? HighlightEndPct { get; set; }
+
+    private ElementReference _root;
+    private IJSRuntime? _js;
+    private string? _renderedKey;
+    private IReadOnlyList<AnalysisVectorPoint> _mapPoints = [];
+    private AnalysisTrackGeometry? _mapSource;
+    private double _mapSpan = 1;
+    private string _mapViewBox = "0 0 1 1";
+    private string _mapPointsData = "[]";
+    private RacePassPair? _rowsSource;
+    private string _rowsData = "[]";
+
+    private IReadOnlyList<AnalysisVectorPoint> MapPoints => _mapPoints;
+    private string MapViewBox => _mapViewBox;
+    private string MapPointsData => _mapPointsData;
+    private string RowsData => _rowsData;
+    private int InitialRow => Pair is null ? 0 : Math.Max(0, Pair.Rows.ToList().FindIndex(row => Math.Abs(row.X - Pair.StartPct) < 1e-9));
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_mapSource, Geometry))
+        {
+            _mapSource = Geometry;
+            var usable = Geometry is { Status: "usable" } geometry && AnalysisTrackMapGeometry.IsCanonicalMainLoop(geometry.MainPath)
+                && geometry.MainPath.All(point => point.LapPercent is not null);
+            _mapPoints = usable ? Geometry!.MainPath : [];
+            if (_mapPoints.Count > 2)
+            {
+                double minX = _mapPoints.Min(p => p.X), maxX = _mapPoints.Max(p => p.X), minY = _mapPoints.Min(p => p.Y), maxY = _mapPoints.Max(p => p.Y);
+                _mapSpan = Math.Max(maxX - minX, maxY - minY);
+                var pad = _mapSpan * .09;
+                _mapViewBox = $"{N(minX - pad)} {N(minY - pad)} {N(maxX - minX + 2 * pad)} {N(maxY - minY + 2 * pad)}";
+                _mapPointsData = MapPointsAttribute(_mapPoints);
+            }
+        }
+        if (!ReferenceEquals(_rowsSource, Pair))
+        {
+            _rowsSource = Pair;
+            _rowsData = RowsAttribute(Pair);
+        }
+    }
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        _js ??= Services.GetService(typeof(IJSRuntime)) as IJSRuntime;
+        if (_js is null) return;
+        try
+        {
+            var key = $"{Pair?.SectionId}|{Pair?.A.Lap}|{Pair?.B.Lap}|{Pair?.ContextStartPct}|{SelectedSectionId}|{_mapPoints.Count}";
+            if (key != _renderedKey)
+            {
+                _renderedKey = key;
+                await _js.InvokeVoidAsync("raceInspection.refresh", _root);
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    // Channels draw in a fixed coordinate space stretched to the panel; strokes do not
+    // scale and labels are HTML, so the charts need no measurement round trip.
+    private const double ViewWidth = 1000;
+    private const double ViewHeight = 100;
+
+    private double Fraction(double pct) => Pair is null ? 0 : (pct - Pair.ContextStartPct) / Math.Max(1e-9, Pair.EndPct - Pair.ContextStartPct);
+
+    private PlotScale? ChannelScale(Channel channel)
+    {
+        if (Pair is null) return null;
+        var values = Pair.Rows.SelectMany(row => channel.Key == "gap" ? new[] { row.Gap } : new[] { Value(row.A, channel.Key), Value(row.B, channel.Key) })
+            .Where(value => value is { } number && double.IsFinite(number)).Select(value => value!.Value).ToArray();
+        double min, max;
+        if (channel.FixedMin is { } low && channel.FixedMax is { } high) { min = low; max = high; }
+        else if (values.Length == 0) { min = 0; max = 1; }
+        else
+        {
+            min = values.Min(); max = values.Max();
+            var pad = Math.Max((max - min) * .12, channel.Key == "gap" ? .005 : channel.Key == "slip" ? .2 : 1);
+            min -= pad; max += pad;
+        }
+        return new PlotScale(0, 4, ViewWidth, ViewHeight - 8, Pair.ContextStartPct, Pair.EndPct, min, max);
+    }
+
+    private bool HasValues(string key) => Pair?.Rows.Any(row => key == "gap" ? row.Gap is not null : Value(row.A, key) is not null || Value(row.B, key) is not null) == true;
+
+    private static double? Value(RaceChannelValues values, string key) => key switch
+    {
+        "speed" => values.Speed,
+        "throttle" => values.Throttle,
+        "brake" => values.Brake,
+        "steering" => values.Steering,
+        "slip" => values.Slip,
+        _ => null
+    };
+
+    /// <summary>Polyline through recorded rows; a missing value or a wide spacing breaks the line.</summary>
+    private string Line(PlotScale plot, Func<RacePairRow, double?> read)
+    {
+        if (Pair is null) return "";
+        var builder = new System.Text.StringBuilder();
+        double? previous = null;
+        foreach (var row in Pair.Rows)
+        {
+            var value = read(row);
+            if (value is not { } number || !double.IsFinite(number)) { previous = null; continue; }
+            builder.Append(previous is null || row.X - previous > .0301 ? 'M' : 'L')
+                .Append(N(plot.X(row.X))).Append(',').Append(N(plot.Y(Math.Clamp(number, plot.YMin, plot.YMax)))).Append(' ');
+            previous = row.X;
+        }
+        return builder.ToString();
+    }
+
+    private IEnumerable<AnalysisVectorPoint> Range(double start, double end) =>
+        _mapPoints.Where(point => point.LapPercent is { } pct && pct >= start - 1e-9 && pct <= end + 1e-9);
+
+    private static string MapPath(IEnumerable<AnalysisVectorPoint> points)
+    {
+        var builder = new System.Text.StringBuilder();
+        var first = true;
+        foreach (var point in points)
+        {
+            builder.Append(first ? 'M' : 'L').Append(N(point.X)).Append(',').Append(N(point.Y)).Append(' ');
+            first = false;
+        }
+        return builder.ToString();
+    }
+
+    private IReadOnlyList<MapLabel> MapLabels
+    {
+        get
+        {
+            if (_mapPoints.Count < 3) return [];
+            var source = Sections?.Select(section => (section.Id, section.Label, section.StartPct, section.EndPct))
+                ?? (Pair is null ? [] : new[] { (Pair.SectionId, SectionLabel, Pair.StartPct, Pair.EndPct) });
+            var placed = new List<MapLabel>();
+            var offsets = new (double X, double Y)[] { (0, 0), (.09, 0), (-.09, 0), (0, .1), (0, -.1), (.1, .09), (-.1, -.09), (.1, -.1), (-.1, .1) };
+            foreach (var (id, label, start, end) in source)
+            {
+                var middle = (start + end) / 2;
+                var anchor = _mapPoints.MinBy(point => Math.Abs(point.LapPercent!.Value - middle))!;
+                var chosen = offsets.Select(offset => (X: anchor.X + offset.X * _mapSpan, Y: anchor.Y + offset.Y * _mapSpan))
+                    .FirstOrDefault(candidate => placed.All(other => Math.Sqrt(Math.Pow(other.X - candidate.X, 2) + Math.Pow(other.Y - candidate.Y, 2)) >= _mapSpan * .095),
+                        (anchor.X, anchor.Y));
+                placed.Add(new MapLabel(id, label, chosen.X, chosen.Y, anchor.X, anchor.Y, Math.Abs(chosen.X - anchor.X) + Math.Abs(chosen.Y - anchor.Y) > 1e-9));
+            }
+            return placed;
+        }
+    }
+
+    private string Meter(double delta)
+    {
+        var scale = Sections?.Where(section => section.Delta is not null).Select(section => Math.Abs(section.Delta!.Value)).DefaultIfEmpty(0).Max() ?? 0;
+        var width = scale <= 0 ? 0 : Math.Abs(delta) / scale * 48;
+        return delta < 0
+            ? $"width:{N(width)}%;left:{N(50 - width)}%"
+            : $"width:{N(width)}%;left:50%";
+    }
+
+    private Task Select(string id) => Sections is null || id == SelectedSectionId ? Task.CompletedTask : OnSelectSection.InvokeAsync(id);
+
+    private Task OnLabelKey(KeyboardEventArgs args, string id) => args.Key is "Enter" or " " ? Select(id) : Task.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_js is not null)
+        {
+            try
+            {
+                await _js.InvokeVoidAsync("raceInspection.detach", _root);
+            }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+            catch (TaskCanceledException) { }
+        }
+    }
+}

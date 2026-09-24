@@ -1,0 +1,73 @@
+@using System.Globalization
+@using static iRacingCoach.UI.InvestigationPresentation
+
+<div class="trial-detail" data-trial-detail="@Trial.TrialId">
+    <header class="trial-detail-head">
+        <button type="button" class="ri-button secondary" @onclick="State.CloseDrivingTrial">← Sessions</button>
+        <div>
+            <span class="ri-label">Test</span>
+            <h1>@Trial.Title</h1>
+            <p>@Trial.Instruction</p>
+            <small>
+                From @Trial.Source.Track @Trial.Source.Layout · @DateLabel(Trial.Source.RecordedAt) · @Trial.Source.Car ·
+                @Spec.MetricLabel @Percent(Spec.MetricStartPct)–@Percent(Spec.MetricEndPct)% (section @Spec.SectionLabel) ·
+                to beat: @Seconds(Spec.BaselineMedianSeconds) s median of laps @Laps(Spec.BaselineLaps) · earlier reference @Seconds(Spec.ReferenceMedianSeconds) s ·
+                success: @Spec.MinimumLaps screened laps at @Window at least @Seconds(Spec.ThresholdSeconds) s faster
+            </small>
+        </div>
+    </header>
+
+    <div class="trial-checks" role="group" aria-label="Checks on later recordings">
+        @foreach (var evaluation in Trial.Evaluations.Reverse())
+        {
+            var selected = evaluation.AnalysisId == SelectedEvaluation?.AnalysisId;
+            <button type="button" class="trial-check @(selected ? "selected" : null)" aria-pressed="@(selected ? "true" : "false")"
+                    @onclick="() => State.SelectTrialEvaluation(evaluation.AnalysisId)">
+                <span class="verdict @VerdictTone(evaluation.Verdict)">@Verdict(evaluation.Verdict)</span>
+                <b>@(evaluation.Recording.SessionType ?? "Recording") · @DateLabel(evaluation.Recording.RecordedAt)</b>
+                @if (evaluation.MedianSeconds is { } median)
+                {
+                    <span>@evaluation.Count lap@(evaluation.Count == 1 ? "" : "s") · median @Seconds(median) s (@Signed(-evaluation.ImprovementSeconds) s against the baseline)</span>
+                }
+                @foreach (var reason in evaluation.Reasons) { <small>@reason</small> }
+                @foreach (var confound in evaluation.Confounds) { <small>Different: @confound</small> }
+            </button>
+        }
+        <div class="trial-candidates">
+            @if (Unchecked.Count > 0)
+            {
+                <span>Later recordings:</span>
+                @foreach (var session in Unchecked.Take(4))
+                {
+                    <button type="button" class="ri-button" @onclick="() => State.CheckDrivingTrialAsync(Trial, session)">Check @session.SessionType.ToLowerInvariant() · @session.Date</button>
+                }
+            }
+            else if (Trial.Evaluations.Count == 0)
+            {
+                <span>Waiting for a later recording of the @Trial.Source.Car at @Trial.Source.Track @Trial.Source.Layout. Drive @Spec.MinimumLaps clear laps at @Window.</span>
+            }
+        </div>
+    </div>
+
+    <SectionInspectionPanel Pair="SelectedEvaluation?.Pair" SectionLabel="@Spec.SectionLabel" Geometry="@State.TrackGeometryFor(Trial.Source.ConfigurationKey)"
+                            ModeNote="Before: median pass of the source laps · After: median pass of the later laps"
+                            HighlightStartPct="Spec.SectionStartPct" HighlightEndPct="Spec.SectionEndPct"
+                            EmptyTitle="@(SelectedEvaluation is null ? "No later recording checked yet" : "No before/after traces for this check")"
+                            EmptyDetail="@(SelectedEvaluation?.Reasons.FirstOrDefault() ?? "Check a later recording to compare the same section before and after.")" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    [Parameter, EditorRequired] public DrivingTrial Trial { get; set; } = null!;
+
+    private RaceTrialSpec Spec => Trial.Spec;
+
+    private DrivingTrialEvaluation? SelectedEvaluation =>
+        Trial.Evaluations.FirstOrDefault(item => item.AnalysisId == State.OpenedTrialEvaluationId) ?? Trial.Evaluations.LastOrDefault();
+
+    private string Window => Spec.ExposureStart is { } start && Spec.ExposureEnd is { } end
+        ? $"{start.ToString("0.0", CultureInfo.CurrentCulture)}–{end.ToString("0.0", CultureInfo.CurrentCulture)} green laps into a run (±2)"
+        : "any run age";
+
+    private IReadOnlyList<RecentRace> Unchecked => State.UncheckedTrialCandidates(Trial);
+}
