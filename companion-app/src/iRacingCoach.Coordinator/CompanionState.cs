@@ -2941,6 +2941,8 @@ public sealed partial class CompanionState : IDisposable
         };
         CurrentPage = capability.HasValue && !IsCapabilityVisible(capability.Value) ? "home" : page;
         if (CurrentPage == "planning") CarryPlanContext();
+        // Sessions in the top bar always lands on the list, as it does from a race.
+        if (CurrentPage == "home") { OpenedTrial = null; OpenedTrialEvaluationId = null; }
         Toast = null;
         RaiseChanged();
     }

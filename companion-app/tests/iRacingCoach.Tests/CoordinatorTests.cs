@@ -3196,6 +3196,30 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task SessionsNavigationReturnsFromAnOpenTestToTheList()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-trial-nav", Guid.NewGuid().ToString("N"));
+        var loaded = JsonSerializer.SerializeToElement(JsonNode.Parse("""
+            {"ok":true,"trial":{"schema_version":1,"trial_id":"trial-0123456789abcdef0123","created_at":"2026-09-23T00:00:00Z","title":"Carry more speed into section D","instruction":"Test one change.","evidence":[],
+             "source":{"analysis_id":"source","recorded_at":"2026-09-20T20:09:09+00:00","track":"Bristol Motor Speedway","layout":"Single Pit Road","car":"Toyota Supra Class B"},
+             "comparison":{"id":"runs-1-2-age","title":"Runs 1 and 2"},
+             "metric":{"key":"section_s","label":"Section time","unit":"s","start_pct":0.625,"end_pct":0.77},"section":{"id":"D","label":"D","start_pct":0.625,"end_pct":0.77},
+             "baseline":{"laps":[130,131,132],"median_s":2.5},"reference":{"laps":[35,36,37],"median_s":2.4},"exposure_window":[21.8,23.8],
+             "success":{"threshold_s":0.05,"minimum_laps":3,"rule":"rule"},"evaluation_count":0,"latest_evaluation":null},"evaluations":[]}
+            """));
+        var backend = new FakeBackend(responseOverride: (tool, _, _) => tool == "load_driving_trial" ? loaded : null);
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        state.Navigate("home");
+        await state.OpenDrivingTrialAsync("trial-0123456789abcdef0123");
+        Assert.IsNotNull(state.OpenedTrial);
+        state.Navigate("planning");
+        state.Navigate("home");
+        Assert.IsNull(state.OpenedTrial, "Sessions in the top bar lands on the list, as it does from a race.");
+    }
+
+    [TestMethod]
     public async Task SavingATestSendsTheArchivedAnalysisAndComparisonNeverAppNumbers()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-save-trial", Guid.NewGuid().ToString("N"));
