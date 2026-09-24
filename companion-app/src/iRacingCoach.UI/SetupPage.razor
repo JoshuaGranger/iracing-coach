@@ -52,10 +52,9 @@ else
                         <div class="setup-detail-heading"><div><span class="eyebrow">@SourceLabel(selected)</span><h2>@selected.Name</h2><p>@selected.Car · @selected.Track</p></div><span class="status-label">@selected.Role</span></div>
                         <div class="button-row">
                             <button class="button primary" disabled="@(linked.Count == 0 || _tuning)" title="@(linked.Count == 0 ? "Analyze a recording made with this setup first" : "Use a linked recording to test a setup change")" @onclick="() => Tune(selected)">@(_tuning ? "Opening…" : "Tune this setup")</button>
-                            <button class="button secondary" @onclick="() => ShowSource(selected)">Open source location</button>
-                            @if (IsSetupFile(selected)) { <button class="button secondary" @onclick="() => SaveCopy(selected)">Save a copy</button> }
                         </div>
-                        <p class="setup-source-note">@selected.Note</p>
+                        <p class="setup-source-note">@selected.Note
+                            <span class="setup-file-actions"><button type="button" class="ri-link" @onclick="() => ShowSource(selected)">Open folder</button>@if (IsSetupFile(selected)) { <button type="button" class="ri-link" @onclick="() => SaveCopy(selected)">Save a copy</button> }</span></p>
                         @if (linked.Count > 0)
                         {
                             <div class="setup-linked-races"><h3>Recorded performance</h3><p>Values from each linked recording. Weather, fuel, traffic and driving can affect comparisons.</p>
@@ -76,9 +75,18 @@ else
                         }
                         else if (Comparison(selected) is { } comparison)
                         {
+                            var rows = Differences(selected, comparison).ToArray();
+                            var changed = rows.Where(row => row.Kind == RowKind.Changed).ToArray();
+                            var unknown = rows.Where(row => row.Kind == RowKind.Unknown).ToArray();
+                            var identical = rows.Where(row => row.Kind == RowKind.Identical).ToArray();
+                            <p class="setup-diff-summary" data-setup-diff><b>@changed.Length changed</b> · <b>@unknown.Length unknown</b> · @identical.Length identical
+                                <button type="button" class="ri-link" aria-pressed="@(_showIdentical ? "true" : "false")" @onclick="() => _showIdentical = !_showIdentical">@(_showIdentical ? "Hide identical" : "Show all values")</button></p>
                             <table class="setup-values-table"><thead><tr><th>Setting</th><th>Selected setup<br />@ComparisonLabel(selected)</th><th>Comparison setup<br />@ComparisonLabel(comparison)</th></tr></thead><tbody>
-                            @foreach (var row in Differences(selected, comparison)) { <tr class="@(row.Left == row.Right ? null : "changed")"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
+                            @foreach (var row in changed) { <tr class="changed" data-row="changed"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
+                            @foreach (var row in unknown) { <tr class="unknown" data-row="unknown" title="Missing or unreadable on one side; never treated as equal."><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
+                            @if (_showIdentical) { foreach (var row in identical) { <tr data-row="identical"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> } }
                             </tbody></table>
+                            @if (changed.Length == 0 && unknown.Length == 0) { <p class="setup-source-note">Every readable setting matches.</p> }
                         }
                         else
                         {
@@ -123,13 +131,30 @@ else
             .Where(date => !string.IsNullOrWhiteSpace(date)).Distinct().ToArray();
         return dates.Length > 0 ? $"{setup.Name} · {string.Join(" / ", dates)}" : $"{setup.Name} · {SourceLabel(setup)}";
     }
-    private static IEnumerable<(string Label, string Left, string Right)> Differences(LocalSetup left, LocalSetup right)
+    private bool _showIdentical;
+    public enum RowKind { Changed, Unknown, Identical }
+
+    /// <summary>
+    /// Changed and unknown settings lead; a value missing or unreadable on either side
+    /// is unknown, never equal. Values are compared as displayed, units included.
+    /// </summary>
+    public static IEnumerable<(string Label, string Left, string Right, RowKind Kind)> Differences(LocalSetup left, LocalSetup right)
     {
         var keys = left.Fields.Select(field => field.Key).Concat(right.Fields.Select(field => field.Key)).Distinct();
         foreach (var key in keys)
         {
             var a = left.Fields.FirstOrDefault(field => field.Key == key); var b = right.Fields.FirstOrDefault(field => field.Key == key);
-            yield return ($"{(a ?? b)!.Group} · {(a ?? b)!.Label}", a?.Value ?? "—", b?.Value ?? "—");
+            var leftValue = Normalized(a?.Value);
+            var rightValue = Normalized(b?.Value);
+            var kind = leftValue is null || rightValue is null ? RowKind.Unknown
+                : string.Equals(leftValue, rightValue, StringComparison.OrdinalIgnoreCase) ? RowKind.Identical : RowKind.Changed;
+            yield return ($"{(a ?? b)!.Group} · {(a ?? b)!.Label}", a?.Value is { Length: > 0 } shownLeft ? shownLeft : "—", b?.Value is { Length: > 0 } shownRight ? shownRight : "—", kind);
         }
+    }
+
+    private static string? Normalized(string? value)
+    {
+        var text = string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return text.Length == 0 || text is "—" or "-" or "n/a" or "N/A" ? null : text;
     }
 }
