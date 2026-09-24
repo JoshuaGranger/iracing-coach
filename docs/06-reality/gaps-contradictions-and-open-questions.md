@@ -37,6 +37,13 @@ The [0.17.0 testing feedback](testing-feedback-0.17.0.md) records two open insta
 
 `GAP-023`: the app does not yet connect a selected race's pace change, tire/service history, comparable lap windows, corner traces and competing explanations into a reproducible investigation. The [September 22 Bristol case study](bristol-pace-investigation-2026-09-22.md) defines the measured example and required changes by app section. In that race the last eligible reference lap is 132 although the largest observed slowdown continues through 159; a generic "late" summary hides this distinction. The chart Clean filter is also weaker than coaching eligibility, and the first corner metric masks proximity exclusion as insufficient samples. The numeric pace-slope correction alone does not close this workflow gap. Closure requires completing the case in the native app with saved window identities, explicit exclusions, trace links and evidence for and against each explanation, without unsupported cause or damage claims.
 
+## September 23 round-1 status
+
+- `GAP-023` is **partly closed in development source**: the Bristol case now runs inside the application (Race → Runs → Sections) with exact laps, exposure, fuel, exclusions, section traces and a saveable conditional test. Native acceptance of the whole loop and a real Improved/Worse check remain open.
+- `GAP-008` has new measurements (see the round-1 snapshot): cold analysis of a 203 MB race 21.9 s, cached open 0.31–0.36 s, view switches under 0.11 s in the browser preview. The largest remaining cost is per-sample Python work in lap traces, not decoding.
+- `GAP-024` (new, closed as an identity finding): Bristol "Fullpit" versus "Single Pit Road". The recording reports track ID 365, internal name "bristol fullpit" and configuration "Single Pit Road"; these are one configuration. Grouping, geometry and review sections key on ID plus configuration, and displays use the display name. Reopen only with a screen that shows the internal name as a track or layout label.
+- `INSTALL-FB-001` and `INSTALL-FB-002` remain in acceptance scope. Source already paints disabled installer text in the normal foreground and removes app-owned previous versions; no installer was rebuilt or visually checked this round.
+
 ## Open product questions
 
 1. What exact Windows versions, WebView2 versions, scaling factors, and minimum hardware define the support matrix?

@@ -74,4 +74,27 @@ New native note regression: type a distinctive final word and immediately switch
 
 Cold analysis remains open performance work: the fresh native-rate backend run measured 18.858 s overall and 17.678 s in a combined decoding/analysis stage, including loading, hashing, cache serialization and enrichment. There is no decoder-only duration. Decoded data is not reused across profile upgrades, and no seconds-at-most promise is established.
 
+## September 23 round-1 cases
+
+Executable: round-1 development build `companion-app/artifacts/dev/v0.18.0-dev-20260923-222439` (source through the round-1 snapshot commit). Interaction evidence below is **browser preview** of the same source (Blazor Server, isolated profile, 1280×720, Edge headless) unless marked native. Real data: archived v19 Bristol analysis (September 20, 3:09 PM) and copied New Hampshire/Iowa recordings.
+
+| Case | Action | Observed result | Evidence type |
+|---|---|---|---|
+| Find the correct Bristol | Sessions → Bristol, Sep 20 3:09 PM | Opens Race view for that recording; restores on restart | Browser |
+| Locate the fade | Race → "Run 2: earlier to final green laps" | 116–120 vs 155–159, +1.496 s/lap, 5 of 10 laps excluded (close traffic, not racing) | Browser |
+| Comparable laps, exposure, fuel | Race → "Runs 1 and 2: similar green exposure" | 35–37 vs 130–132, +0.270 s/lap, 21.7–23.7 vs 21.8–23.8 green, 15.2 vs 5.7 gal, 78 °F both | Browser |
+| Inspect the section with upstream | Sections → D | Lap 36 vs 132, entry +0.121, inside +0.096, exit +0.217, −6.0 mph; approach dashed on the map from C | Browser |
+| Merged section | Sections → E | Grouped 77.5–86.0%, median −0.008 s, laps 35 vs 36 | Browser |
+| Save one test | New Hampshire Aug 1 9:09 PM → clean comparison → Save test | Saved "Test a smoother steering arc"; listed under Tests | Browser |
+| Later-recording check | Tests → Check the Aug 2 1:30 PM offline test | Not comparable: no screened laps at 25.1–35.1 green laps into a run; check kept | Browser |
+| Return from a test | Top-bar Sessions while a test is open | Returns to the list (regression test added) | Browser + automated |
+| Plan from the reviewed race | Review Bristol → Plan → Build plan | 1 stop between laps 21 and 139, split lap 80, 139.4-lap range from 18.6 gal | Browser |
+| Setup comparison | Setups → compare two recorded NH setups | 41 changed, 0 unknown, 43 identical hidden until Show all values | Browser |
+| Empty setups folder | Isolated profile with no `setups` folder | Empty library, no failure (previously "Update failed") | Browser + automated |
+| Settings | Settings | "Local analysis is ready"; Connections row shows ChatGPT and Garage61 status | Browser + automated |
+| Cold click-to-result | Open a race with no cache | 24.1 s | Browser timing |
+| Native start | Development executable, isolated profile | Responsive window; only the expected isolated Garage61 log entry | **Native (no clicks)** |
+
+Not exercised this round: native clicks and screenshots (desktop control declined), 1920×1080, 150% scaling, reduced motion, cancel/retry of a trial check, active live telemetry, authenticated providers, installer.
+
 Do not mark this document complete from seven reachable pages, endpoint screenshots or aggregate unit-test counts. Update individual cases with the executable identity, real data selection, observed output and unresolved failures.

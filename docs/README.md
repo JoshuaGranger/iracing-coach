@@ -16,7 +16,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.18.0-development.md)
+7. [Current development implementation snapshot](06-reality/implementation-snapshot-0.18.0-development-round-1.md)
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -59,7 +59,8 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
-  - [Current development snapshot: 0.18.0](06-reality/implementation-snapshot-0.18.0-development.md)
+  - [Current development snapshot: 0.18.0 round 1](06-reality/implementation-snapshot-0.18.0-development-round-1.md)
+  - [Previous development snapshot: 0.18.0](06-reality/implementation-snapshot-0.18.0-development.md)
   - [Whole-app usefulness audit: September 22](06-reality/whole-app-usefulness-audit-2026-09-22.md)
   - [Full control-by-control rationale](06-reality/whole-app-control-audit-2026-09-22.md) and [declaration inventory](06-reality/whole-app-control-inventory-2026-09-22.md)
   - [Whole-app acceptance coverage: September 22](06-reality/whole-app-acceptance-coverage-2026-09-22.md)
@@ -110,13 +111,14 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 ## Current baseline
 
 - Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
-- Current source version: `0.18.0` development, analysis profile `post-race-foundations-v19`; race investigation, trace handoffs, follow-up questions, tuning-note persistence and workflow repairs are described in the [current snapshot](06-reality/implementation-snapshot-0.18.0-development.md). Development implementation remains pending Joshua's acceptance.
+- Current source version: `0.18.0` development round 1, analysis profile `post-race-foundations-v19`, race investigation schema 2. The compact Race/Runs/Sections investigation, saved driving tests with later-recording checks, the single Sessions library, race-linked planning, changed-first setup comparison and consolidated Settings are described in the [current snapshot](06-reality/implementation-snapshot-0.18.0-development-round-1.md). Development implementation remains pending Joshua's acceptance.
 - Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
 - Deterministic backend: Python, MCP/CLI contract version 1
-- Current source verification: **434/434 application tests passed, zero skipped**, and **1,067/1,067 backend tests, 21 contracts and 28 fixtures passed** final repository verification. The current snapshot separates these checks from bounded interaction evidence.
-- Current interaction evidence: the completed native 0.18 candidate-4 report records readable investigation styling and four-chart inspection at exactly 1280×720, trace-layout restoration, complete-race totals before/open/return/hard reload, compact/maximized Tuning, retained phase-specific notes and read-only Settings checks. The subsequent exact full portable passed native startup and Bristol smoke using its bundled runtimes. These are bounded passes; the [coverage document](06-reality/whole-app-acceptance-coverage-2026-09-22.md) separates source, automated, browser and native evidence. Authenticated AI and active live telemetry remain unverified; live testing is deferred at Joshua's request.
+- Current source verification: **453/453 application tests passed, zero skipped**, and **1,108/1,108 backend tests, 23 MCP tools, 21 contracts and 28 fixtures passed** repository verification. The current snapshot separates these checks from bounded interaction evidence.
+- Round 1 interaction evidence: browser-preview checks on an isolated profile reproduce the Bristol anchors, the save-and-check loop (a truthful Not comparable), race-linked planning, setup comparison and Settings. The round-1 development executable started natively on an isolated profile; no native click-through was performed. Measured cold analysis of a 203 MB race is 21.9 s; cached open 0.3 s.
+- Earlier interaction evidence: the completed native 0.18 candidate-4 report records readable investigation styling and four-chart inspection at exactly 1280×720, trace-layout restoration, complete-race totals before/open/return/hard reload, compact/maximized Tuning, retained phase-specific notes and read-only Settings checks. The subsequent exact full portable passed native startup and Bristol smoke using its bundled runtimes. These are bounded passes; the [coverage document](06-reality/whole-app-acceptance-coverage-2026-09-22.md) separates source, automated, browser and native evidence. Authenticated AI and active live telemetry remain unverified; live testing is deferred at Joshua's request.
 - Current package boundary: full 0.18 installer and portable packages were built from clean commit `a7153b8082598586d2d9c9bbccf47efcf122d862`, with all **9,333 manifest-listed payload hashes verified**. They include the self-contained win-x64 application, backend, Python and Coach Engine. Exact hashes, bundled versions and DESKTOP-SIM portable checks are recorded in the [snapshot](06-reality/implementation-snapshot-0.18.0-development.md). Earlier candidate transports reused installed runtimes; the full packages carry their own. The production installation and original racing files remained unchanged during testing.
 - Current installer lifecycle evidence: the exact 0.18 Setup executable passed guarded install, manifest validation/tamper rejection, rollback, running-app replacement, owned-legacy cleanup, fixture preservation, uninstall and reinstall checks. Replacement used the same payload plus an old-version marker, not migration from every prior release. Production Windows integration and visual installer progress/disabled-text contrast remain unverified; see the snapshot for exclusions.
 - Development focus: explain pace changes with the relevant laps, measured conditions and controls; connect findings to trace inspection and a useful next driving test; preserve exact recording/setup context and pending notes. The usefulness audit covers 257 baseline control declarations/gesture families, **not 257 accepted native controls**. Practice-baseline discovery, useful experiment history, a real setup A/B cycle and broader native/live acceptance remain open.
 
-The current source reality is summarized in `06-reality/implementation-snapshot-0.18.0-development.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Build binaries and private user data are not part of the source repository.
+The current source reality is summarized in `06-reality/implementation-snapshot-0.18.0-development-round-1.md`. The stable packaged reality remains `06-reality/implementation-snapshot-0.14.2.md`; earlier snapshots and release records are immutable historical evidence. Build binaries and private user data are not part of the source repository.
