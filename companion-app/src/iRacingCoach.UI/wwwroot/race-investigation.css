@@ -319,6 +319,9 @@
 .plan-strip-track i { position: absolute; top: 0; bottom: 0; }
 .plan-reach, .plan-strip-legend i.plan-reach { background: color-mix(in srgb, var(--telemetry-fuel) 45%, var(--surface-3)); }
 .plan-window, .plan-strip-legend i.plan-window { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, transparent) 0 6px, color-mix(in srgb, var(--accent) 30%, transparent) 6px 12px); outline: 1px solid var(--accent); }
+/* Reach runs in its own lane so the window never hides how far a full tank goes. */
+.plan-strip-track .plan-reach { top: auto; bottom: 0; height: 6px; }
+.plan-strip-track .plan-window { bottom: 9px; }
 .plan-strip-track .plan-split { width: 2px; background: var(--text-primary); }
 .plan-strip-track .plan-finish { width: 3px; background: var(--danger); }
 .plan-strip-labels { position: relative; height: 18px; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
