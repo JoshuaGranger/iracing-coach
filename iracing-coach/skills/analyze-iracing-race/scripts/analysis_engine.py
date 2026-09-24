@@ -17,7 +17,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
 
 try:  # Package import and direct script loading are both supported.
     from .groove_analysis import analyze_groove_evolution
@@ -191,7 +191,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+_isfinite = math.isfinite
+
+
 def _finite(value: Any) -> float | None:
+    # Decoded samples are plain floats; this path runs once per sample and
+    # returns exactly what the general conversion below would.
+    if value.__class__ is float:
+        return value if _isfinite(value) else None
     if value is None:
         return None
     try:
@@ -491,46 +498,63 @@ def _normalized_unit(value: str | None) -> str:
     return str(value or "").strip().lower().replace("°", "").replace(" ", "")
 
 
-def _convert_setup_value(value: Any, quantity: str, source_unit: str | None) -> float | None:
-    number = _finite(value)
-    if number is None:
-        return None
-    unit = _normalized_unit(source_unit)
+def _unit_scale(quantity: str, unit: str) -> Callable[[float], float] | None:
+    """The exact arithmetic for one quantity/unit pair; ``None`` means unchanged."""
+
     if quantity == "distance":
         if unit in {"in", "inch", "inches", '"'}:
-            return number
+            return None
         if unit in {"ft", "foot", "feet"}:
-            return number * 12.0
+            return lambda number: number * 12.0
         if unit in {"mm", "millimeter", "millimeters"}:
-            return number / 25.4
+            return lambda number: number / 25.4
         if unit in {"cm", "centimeter", "centimeters"}:
-            return number / 2.54
-        return number * METERS_TO_INCHES
+            return lambda number: number / 2.54
+        return lambda number: number * METERS_TO_INCHES
     if quantity == "velocity":
         if unit in {"in/s", "inch/s", "inches/s", "ips"}:
-            return number
+            return None
         if unit in {"ft/s", "fps"}:
-            return number * 12.0
+            return lambda number: number * 12.0
         if unit in {"mm/s"}:
-            return number / 25.4
+            return lambda number: number / 25.4
         if unit in {"cm/s"}:
-            return number / 2.54
-        return number * METERS_TO_INCHES
+            return lambda number: number / 2.54
+        return lambda number: number * METERS_TO_INCHES
     if quantity == "pressure":
         if unit in {"psi", "lb/in2", "lbf/in2"}:
-            return number
+            return None
         if unit in {"pa", "pascal", "pascals"}:
-            return number * KPA_TO_PSI / 1000.0
+            return lambda number: number * KPA_TO_PSI / 1000.0
         if unit in {"bar"}:
-            return number * 100.0 * KPA_TO_PSI
-        return number * KPA_TO_PSI
+            return lambda number: number * 100.0 * KPA_TO_PSI
+        return lambda number: number * KPA_TO_PSI
     if quantity == "temperature":
         if unit in {"f", "fahrenheit"}:
-            return number
+            return None
         if unit in {"k", "kelvin"}:
-            return (number - 273.15) * 9.0 / 5.0 + 32.0
-        return number * 9.0 / 5.0 + 32.0
-    return number
+            return lambda number: (number - 273.15) * 9.0 / 5.0 + 32.0
+        return lambda number: number * 9.0 / 5.0 + 32.0
+    return None
+
+
+@lru_cache(maxsize=256)
+def _setup_value_converter(quantity: str, source_unit: str | None) -> Callable[[Any], float | None]:
+    """Resolve a channel's unit once; convert each sample with the same arithmetic."""
+
+    scale = _unit_scale(quantity, _normalized_unit(source_unit))
+    if scale is None:
+        return _finite
+
+    def convert(value: Any) -> float | None:
+        number = _finite(value)
+        return None if number is None else scale(number)
+
+    return convert
+
+
+def _convert_setup_value(value: Any, quantity: str, source_unit: str | None) -> float | None:
+    return _setup_value_converter(quantity, source_unit)(value)
 
 
 def _resolved_setup_series(
@@ -547,13 +571,11 @@ def _resolved_setup_series(
         "pressure": "kPa",
         "temperature": "C",
     }.get(quantity)
+    convert = _setup_value_converter(quantity, source_unit)
     return {
         "channel": channel,
         "source_unit": source_unit,
-        "values": [
-            _convert_setup_value(value, quantity, source_unit)
-            for value in raw_values
-        ],
+        "values": [convert(value) for value in raw_values],
     }
 
 
@@ -1402,18 +1424,23 @@ def _additional_trace_sources(
     binary = lambda value, _channel: (
         None if value is None else (1.0 if _bool(value) else 0.0)
     )
-    temperature_f = lambda value, channel: _convert_setup_value(
-        value, "temperature", table.unit(channel)
-    )
-    pressure_psi = lambda value, channel: _convert_setup_value(
-        value, "pressure", table.unit(channel)
-    )
-    distance_in = lambda value, channel: _convert_setup_value(
-        value, "distance", table.unit(channel)
-    )
-    velocity_in_s = lambda value, channel: _convert_setup_value(
-        value, "velocity", table.unit(channel)
-    )
+
+    def unit_transform(quantity: str) -> Any:
+        # Resolve each channel's unit once instead of once per sample.
+        by_channel: dict[str, Any] = {}
+
+        def transform(value: Any, channel: str) -> float | None:
+            convert = by_channel.get(channel)
+            if convert is None:
+                convert = by_channel[channel] = _setup_value_converter(quantity, table.unit(channel))
+            return convert(value)
+
+        return transform
+
+    temperature_f = unit_transform("temperature")
+    pressure_psi = unit_transform("pressure")
+    distance_in = unit_transform("distance")
+    velocity_in_s = unit_transform("velocity")
 
     def degrees(value: Any, channel: str) -> float | None:
         number = _finite(value)
@@ -1588,6 +1615,9 @@ def _lap_trace_payload(
     })
 
     def values(indices: Sequence[int], series: Sequence[Any]) -> list[float]:
+        # Bucket indices ascend, so one bound check covers the whole bucket.
+        if indices and indices[-1] < len(series):
+            return [value for index in indices if (value := _finite(series[index])) is not None]
         return [
             value
             for index in indices
@@ -1644,12 +1674,16 @@ def _lap_trace_payload(
             for signal_id, signal_series in additional_series.items():
                 # register already guarantees finite floats or None. Keep
                 # gaps, but avoid converting every native sample again.
-                samples = [
-                    value
-                    for index in indices
-                    if index < len(signal_series)
-                    and (value := signal_series[index]) is not None
-                ]
+                samples = (
+                    [value for index in indices if (value := signal_series[index]) is not None]
+                    if indices[-1] < len(signal_series)
+                    else [
+                        value
+                        for index in indices
+                        if index < len(signal_series)
+                        and (value := signal_series[index]) is not None
+                    ]
+                )
                 if not samples:
                     continue
                 reducer = additional_reducers[signal_id]

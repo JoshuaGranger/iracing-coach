@@ -18,6 +18,7 @@ from analysis_engine import (  # noqa: E402
     _corner_tire_age_summary,
     _convert_setup_value,
     _duration_minutes,
+    _finite,
     _find_race_session,
     _lap_limit,
     _lap_summaries,
@@ -274,6 +275,83 @@ class AnalysisEngineTests(unittest.TestCase):
                 self.assertAlmostEqual(
                     _convert_setup_value(value, quantity, unit), expected, places=9
                 )
+
+    def test_per_channel_converters_are_bit_identical_to_the_reference_arithmetic(self) -> None:
+        """Performance regression: resolving units once per channel must not change a single bit."""
+
+        def reference(value, quantity, unit):
+            if value is None:
+                return None
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(number):
+                return None
+            unit = str(unit or "").strip().lower().replace("°", "").replace(" ", "")
+            table = {
+                "distance": ({"in", "inch", "inches", '"'}, {"ft", "foot", "feet"}, {"mm", "millimeter", "millimeters"}, {"cm", "centimeter", "centimeters"}),
+                "velocity": ({"in/s", "inch/s", "inches/s", "ips"}, {"ft/s", "fps"}, {"mm/s"}, {"cm/s"}),
+            }
+            if quantity in table:
+                same, feet, millimeters, centimeters = table[quantity]
+                if unit in same:
+                    return number
+                if unit in feet:
+                    return number * 12.0
+                if unit in millimeters:
+                    return number / 25.4
+                if unit in centimeters:
+                    return number / 2.54
+                return number * 39.37007874015748
+            if quantity == "pressure":
+                if unit in {"psi", "lb/in2", "lbf/in2"}:
+                    return number
+                if unit in {"pa", "pascal", "pascals"}:
+                    return number * 0.14503773773020923 / 1000.0
+                if unit == "bar":
+                    return number * 100.0 * 0.14503773773020923
+                return number * 0.14503773773020923
+            if quantity == "temperature":
+                if unit in {"f", "fahrenheit"}:
+                    return number
+                if unit in {"k", "kelvin"}:
+                    return (number - 273.15) * 9.0 / 5.0 + 32.0
+                return number * 9.0 / 5.0 + 32.0
+            return number
+
+        samples = (0.0, -0.0, 1.0, 0.1, 13.7, -412.25, 1e-9, 98765.4321, 7, True, "12.5", " 3 ", "x", None,
+                   float("nan"), float("inf"), float("-inf"))
+        units = {
+            "distance": ("m", "mm", "cm", "ft", "in", " IN ", None, ""),
+            "velocity": ("m/s", "mm/s", "cm/s", "ft/s", "ips", None),
+            "pressure": ("kPa", "Pa", "bar", "psi", None),
+            "temperature": ("C", "°C", "F", "K", None),
+            "angle": ("rad", None),
+        }
+        for quantity, unit_options in units.items():
+            for unit in unit_options:
+                for value in samples:
+                    with self.subTest(quantity=quantity, unit=unit, value=value):
+                        expected = reference(value, quantity, unit)
+                        actual = _convert_setup_value(value, quantity, unit)
+                        if expected is None:
+                            self.assertIsNone(actual)
+                        else:
+                            self.assertEqual(expected.hex(), actual.hex())
+
+    def test_finite_fast_path_keeps_the_general_conversion_semantics(self) -> None:
+        class Measured(float):
+            pass
+
+        for value, expected in ((1.5, 1.5), (-0.0, -0.0), (Measured(2.5), 2.5), (3, 3.0), (True, 1.0), ("4.25", 4.25)):
+            with self.subTest(value=value):
+                result = _finite(value)
+                self.assertIs(type(result), float)
+                self.assertEqual(expected.hex() if isinstance(expected, float) else expected, result.hex())
+        for value in (None, float("nan"), float("inf"), float("-inf"), "nan", "x", object()):
+            with self.subTest(value=value):
+                self.assertIsNone(_finite(value))
 
     def test_lap_completion_channel_is_scanned_once_without_changing_semantics(self) -> None:
         columns = {

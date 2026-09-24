@@ -1613,8 +1613,11 @@ def _analysis_pipeline_sha256() -> str:
 # saveable trials) and is rebuilt from the cached analysis whenever its
 # schema/projection version differs (refresh_race_investigation), so legacy
 # investigations are replaced without decoding the recording again.
+# Review 2026-09-23 (performance): per-sample finite checks take an exact-float
+# fast path and unit conversions resolve once per channel. A cold NH race
+# (203 MB) produced an identical analysis view; timing fell 24.8 s -> 21.9 s.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "79f3188603e3bdf2469c3f7a35437d562fada0433413a889c3eb2b822269e8de"
+    "8437019a8303207614831a9f245f103f0facfab7740f9ca8649adaaa582c6dc2"
 )
 
 
