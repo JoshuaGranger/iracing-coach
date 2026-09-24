@@ -786,63 +786,7 @@
           ],
           "start_pct": 0.1,
           "title": "Test a smoother brake release",
-          "trial": {
-            "annotation": {
-              "configuration_key": null,
-              "source": "detected_in_recording",
-              "version": "detected/7954afe534d4"
-            },
-            "baseline": {
-              "count": 4,
-              "laps": [
-                9,
-                10,
-                11,
-                12
-              ],
-              "median_s": 9.363,
-              "run_number": 1
-            },
-            "conditions": {
-              "fuel_start_gal": 10.012,
-              "track_temp_f": 80.0
-            },
-            "exposure_window": [
-              9.0,
-              12.0
-            ],
-            "metric": {
-              "direction": "decrease",
-              "end_pct": 0.4,
-              "key": "section_s",
-              "label": "Section time",
-              "start_pct": 0.1,
-              "unit": "s"
-            },
-            "reference": {
-              "count": 4,
-              "laps": [
-                1,
-                2,
-                3,
-                4
-              ],
-              "median_s": 9.015,
-              "run_number": 1
-            },
-            "section": {
-              "boundary_status": "detected_section",
-              "end_pct": 0.4,
-              "id": "A",
-              "label": "A",
-              "start_pct": 0.1
-            },
-            "success": {
-              "minimum_laps": 3,
-              "rule": "Improved when at least three screened laps inside the exposure window beat the baseline median by the threshold. Worse when they are slower by the threshold. Otherwise not established.",
-              "threshold_s": 0.174
-            }
-          }
+          "trial": null
         }
       ],
       "baseline": {

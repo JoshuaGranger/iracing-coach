@@ -18,7 +18,11 @@ from test_race_investigation import investigation_fixture  # noqa: E402
 
 
 def baseline_analysis() -> dict:
+    """The fixture's late fade, but with every lap screened so it can become a test."""
     analysis = investigation_fixture()
+    for lap in analysis["laps"]:
+        lap["clean_context"]["traffic_proximity_fraction"] = 0.0
+    analysis["damage_repair"]["incident_points"]["events"] = []
     analysis["analysis_id"] = "baseline"
     analysis["identity"] = {"session_start": "2026-09-20T20:09:09+00:00", "track_name": "Test Oval", "track_config": "Oval",
                             "track_id": 7, "car_id": 116, "car_name": "Test Car", "car_path": "testcar",
@@ -53,7 +57,7 @@ def later_analysis(section_gain: float = 0.0, *, clean: bool = True, fuel_l: flo
 class DrivingTrialTests(unittest.TestCase):
     def trial(self) -> dict:
         analysis = baseline_analysis()
-        comparison = next(item for item in analysis["race_investigation"]["comparisons"] if item["id"] == "run-2-finish")
+        comparison = next(item for item in analysis["race_investigation"]["comparisons"] if item["id"] == "run-2-clean")
         action = next(item for item in comparison["actions"] if item.get("trial"))
         return driving_trials.create_trial(analysis, analysis_path="a", comparison_id=comparison["id"],
                                            action_priority=action["priority"], created_at="2026-09-21T00:00:00Z")
@@ -71,11 +75,21 @@ class DrivingTrialTests(unittest.TestCase):
         self.assertEqual(trial["evaluations"], [])
         json.dumps(trial, allow_nan=False)
 
+    def test_a_comparison_with_excluded_laps_offers_no_saveable_test(self) -> None:
+        analysis = investigation_fixture()
+        analysis["race_investigation"] = build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
+        finish = next(item for item in analysis["race_investigation"]["comparisons"] if item["id"] == "run-2-finish")
+        self.assertEqual(finish["eligibility"], "mixed")
+        self.assertTrue(finish["actions"])
+        self.assertTrue(all(action["trial"] is None for action in finish["actions"]))
+        with self.assertRaisesRegex(driving_trials.TrialError, "no measurable section"):
+            driving_trials.create_trial(analysis, analysis_path=None, comparison_id="run-2-finish", action_priority=1)
+
     def test_trial_requires_a_current_investigation_and_a_measurable_action(self) -> None:
         analysis = baseline_analysis()
         analysis["race_investigation"]["schema_version"] = 1
         with self.assertRaisesRegex(driving_trials.TrialError, "predates"):
-            driving_trials.create_trial(analysis, analysis_path=None, comparison_id="run-2-finish", action_priority=1)
+            driving_trials.create_trial(analysis, analysis_path=None, comparison_id="run-2-clean", action_priority=1)
         analysis = baseline_analysis()
         with self.assertRaisesRegex(driving_trials.TrialError, "not in this recording"):
             driving_trials.create_trial(analysis, analysis_path=None, comparison_id="missing", action_priority=1)
@@ -131,13 +145,13 @@ class DrivingTrialTests(unittest.TestCase):
             reports.mkdir()
             base_path = reports / "base-analysis.json"
             base_path.write_text(json.dumps(baseline_analysis()), encoding="utf-8")
-            comparison = next(item for item in baseline_analysis()["race_investigation"]["comparisons"] if item["id"] == "run-2-finish")
+            comparison = next(item for item in baseline_analysis()["race_investigation"]["comparisons"] if item["id"] == "run-2-clean")
             priority = next(item for item in comparison["actions"] if item.get("trial"))["priority"]
-            saved = driving_trials.save_driving_trial_workflow(analysis_path=str(base_path), comparison_id="run-2-finish",
+            saved = driving_trials.save_driving_trial_workflow(analysis_path=str(base_path), comparison_id="run-2-clean",
                                                                action_priority=priority, archive_root=str(root))
             self.assertTrue(saved["created"])
             trial_id = saved["trial"]["trial_id"]
-            again = driving_trials.save_driving_trial_workflow(analysis_path=str(base_path), comparison_id="run-2-finish",
+            again = driving_trials.save_driving_trial_workflow(analysis_path=str(base_path), comparison_id="run-2-clean",
                                                                action_priority=priority, archive_root=str(root))
             self.assertFalse(again["created"])
             for name, gain in (("one", 0.0), ("two", 2.0)):

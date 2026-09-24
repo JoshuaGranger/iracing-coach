@@ -218,7 +218,15 @@ class InvestigationProjectionTests(unittest.TestCase):
         self.assertEqual(comparison["inspection"]["mode"], "cohort_median_passes")
         action = comparison["actions"][0]
         self.assertEqual(action["section_id"], comparison["corners"][0]["id"])
-        trial = action["trial"]
+        # Traffic-affected finish laps can be inspected but never become a test baseline.
+        self.assertIsNone(action["trial"])
+        analysis = investigation_fixture()
+        for lap in analysis["laps"]:
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.0
+        analysis["damage_repair"]["incident_points"]["events"] = []
+        comparison = next(item for item in self.build(analysis)["comparisons"] if item["id"] == "run-2-clean")
+        self.assertEqual(comparison["eligibility"], "eligible")
+        trial = comparison["actions"][0]["trial"]
         self.assertEqual(trial["baseline"]["laps"], [18, 19, 20])
         self.assertEqual(trial["reference"]["laps"], [11, 12, 13])
         self.assertGreater(trial["baseline"]["median_s"], trial["reference"]["median_s"])

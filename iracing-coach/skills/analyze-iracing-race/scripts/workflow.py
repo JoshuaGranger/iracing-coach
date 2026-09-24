@@ -1614,7 +1614,7 @@ def _analysis_pipeline_sha256() -> str:
 # schema/projection version differs (refresh_race_investigation), so legacy
 # investigations are replaced without decoding the recording again.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "68cb15ada200cb38d2a1a5e73370c815be4d1f3f773753d013d7169818492758"
+    "79f3188603e3bdf2469c3f7a35437d562fada0433413a889c3eb2b822269e8de"
 )
 
 

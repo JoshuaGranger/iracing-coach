@@ -337,6 +337,10 @@ def _trial(comparison: Mapping[str, Any], corner: Mapping[str, Any], section_set
     same exposure window to beat the baseline median by the stated threshold;
     anything else is reported as not comparable or not established.
     """
+    # A baseline with traffic, incident or other excluded laps could be "beaten"
+    # by clear running alone, so only fully screened comparisons become tests.
+    if comparison.get("eligibility") != "eligible":
+        return None
     start = approach_start if approach_start is not None else corner["start_pct"]
     end = corner["end_pct"]
     slow = _cohort_section_seconds(comparison["compared"]["lap_numbers"], traces, start, end)
