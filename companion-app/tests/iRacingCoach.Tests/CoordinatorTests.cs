@@ -1879,8 +1879,8 @@ public sealed class CoordinatorTests
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-refresh-root", Guid.NewGuid().ToString("N"));
         var oldRoot = Path.Combine(root, "old");
         var newRoot = Path.Combine(root, "new");
-        Directory.CreateDirectory(oldRoot);
-        Directory.CreateDirectory(newRoot);
+        Directory.CreateDirectory(Path.Combine(oldRoot, "setups"));
+        Directory.CreateDirectory(Path.Combine(newRoot, "setups"));
         var backend = new FakeBackend(
             callDelay: TimeSpan.FromMilliseconds(100),
             responseOverride: (tool, _, arguments) => tool == "iracing_companion_dashboard"

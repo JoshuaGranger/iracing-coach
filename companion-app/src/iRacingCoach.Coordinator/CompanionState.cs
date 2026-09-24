@@ -652,7 +652,9 @@ public sealed partial class CompanionState : IDisposable
                 var offset = 0;
                 string? revision = null;
                 var incomplete = false;
-                for (var page = 0; ; page++)
+                // A valid iRacing folder without a setups folder has nothing saved yet: an empty
+                // library, not a failure. A wrong iRacing folder still fails visibly.
+                for (var page = 0; !NoSetupsSaved(roots.IRacingRoot); page++)
                 {
                     if (page >= 4) throw new InvalidDataException("The setup catalog returned too many pages. Retry the refresh.");
                     var arguments = new Dictionary<string, object>
@@ -923,6 +925,11 @@ public sealed partial class CompanionState : IDisposable
             return RefreshSection<T>.Failed(new RefreshSectionError(name, ex));
         }
     }
+
+    internal static bool NoSetupsSaved(string iracingRoot) =>
+        Directory.Exists(iracingRoot)
+        && !Path.GetFileName(Path.TrimEndingDirectorySeparator(iracingRoot)).Equals("setups", StringComparison.OrdinalIgnoreCase)
+        && !Directory.Exists(Path.Combine(iracingRoot, "setups"));
 
     private static LocalInventorySectionStatus SectionStatus<T>(string name, RefreshSection<T> section) =>
         section.Success
@@ -3462,7 +3469,7 @@ public sealed partial class CompanionState : IDisposable
         new("Settings file", Settings.SettingsPath, File.Exists(Settings.SettingsPath) ? "ready" : "neutral"),
         new("Setup copies", Settings.SetupsRoot, "ready"),
         .. LocalInventorySections.Select(section => new DiagnosticFact(
-            $"Local {section.Name.ToLowerInvariant()}",
+            section.Name,
             section.Message,
             section.Current ? "ready" : "warning")),
         new("Garage61", Garage61.Available ? "Connected" : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),

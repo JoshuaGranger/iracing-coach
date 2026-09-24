@@ -6,6 +6,35 @@
     }
 </div>
 
+@{ var issues = State.SettingsIssues; }
+<section class="settings-status @(issues.Count == 0 ? "ok" : "attention")" data-settings-status aria-live="polite">
+    @if (issues.Count == 0)
+    {
+        <ProductIcon Name="check" Size="16" />
+        <span><strong>Local analysis is ready.</strong> It works without ChatGPT, Garage61 or the internet.</span>
+    }
+    else
+    {
+        <strong>Needs attention</strong>
+        <ul>
+            @foreach (var issue in issues)
+            {
+                <li data-issue="@issue.Recovery">
+                    <span><b>@issue.Label</b><small>@issue.Detail</small></span>
+                    @switch (issue.Recovery)
+                    {
+                        case SettingsRecovery.Repair: <button type="button" class="button secondary compact" @onclick="State.RepairInstallation">Repair installation</button> break;
+                        case SettingsRecovery.CheckAgain: <button type="button" class="button secondary compact" @onclick="CheckAgain">Check again</button> break;
+                        case SettingsRecovery.Folders: <button type="button" class="button secondary compact" @onclick="ShowFolders">Correct folder</button> break;
+                        case SettingsRecovery.Backup: <button type="button" class="button secondary compact" @onclick="OpenBackupGuide">Check copy</button> break;
+                        case SettingsRecovery.Logs: <button type="button" class="button secondary compact" @onclick="State.OpenLogs">Open logs</button> break;
+                    }
+                </li>
+            }
+        </ul>
+    }
+</section>
+
 <div class="settings-hub-grid">
     <section class="surface-card settings-hub-card" aria-labelledby="storage-heading">
         <div class="settings-hub-heading">
@@ -13,10 +42,10 @@
             <span class="status-label @(State.IRacingDetected ? "success" : "warning")">@(State.IRacingDetected ? "Ready" : "Check folders")</span>
         </div>
         <div class="settings-summary-list">
-            <div><span>Coach folder</span><strong>App home</strong></div>
+            <div><span>Coach folder</span><strong title="@State.Settings.CoachHome">@CoachFolderName</strong></div>
             <div><span>iRacing files</span><strong>@(State.IRacingDetected ? "Found" : "Not found")</strong></div>
         </div>
-        <details class="settings-disclosure">
+        <details class="settings-disclosure" open="@_foldersOpen">
             <summary>Folder locations</summary>
             <div class="settings-rows compact-paths">
                 <label><span>Coach folder<small>Preferences, analysis, history, and setup copies</small></span><input value="@State.Settings.CoachHome" readonly /></label>
@@ -113,7 +142,7 @@
 <section class="surface-card settings-accordion @(_connectionsOpen ? "open" : null)">
         <button class="settings-accordion-toggle" aria-expanded="@(_connectionsOpen ? "true" : "false")" @onclick="ToggleConnections">
         <span><ProductIcon Name="connections" Size="17" /><strong>Connections</strong></span>
-        <small>ChatGPT and Garage61</small>
+        <small>@State.ConnectionsSummary</small>
         <ProductIcon Name="chevron-down" Size="16" />
     </button>
         <div class="settings-accordion-body" aria-hidden="@(_connectionsOpen ? "false" : "true")" inert="@(_connectionsOpen ? null : string.Empty)">
@@ -167,6 +196,7 @@
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
 
     private bool _connectionsOpen;
+    private bool _foldersOpen;
     private bool _backupGuideOpen;
     private bool _backupPreparing;
     private int _backupStage = 1;
@@ -179,6 +209,9 @@
     }
 
     private void ToggleConnections() => _connectionsOpen = !_connectionsOpen;
+    private void ShowFolders() => _foldersOpen = true;
+    private Task CheckAgain() => State.RunHealthCheckAsync();
+    private string CoachFolderName => System.IO.Path.GetFileName(State.Settings.CoachHome.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar)) is { Length: > 0 } name ? name : State.Settings.CoachHome;
     private void OpenBackupGuide() { _backupStage = State.BackupPreparation?.SafeToCopy == true ? 3 : 1; _backupGuideOpen = true; }
     private void CloseBackupGuide() { if (!_backupPreparing) _backupGuideOpen = false; }
     private void HandleCustomThemeColor(ChangeEventArgs args) => State.SetCustomThemeColor(args.Value?.ToString() ?? ThemeColors.DefaultCustomHex);

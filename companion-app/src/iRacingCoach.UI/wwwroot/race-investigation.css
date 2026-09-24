@@ -336,6 +336,18 @@
 .setup-values-table tr.unknown td { color: var(--warning); }
 .setup-file-actions { display: inline-flex; gap: 4px; margin-left: 8px; }
 
+/* ---------- Settings: one status line, issues with their recovery ---------- */
+.settings-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--surface-2); color: var(--text-secondary); font-size: 13px; }
+.settings-status.ok { color: var(--text-secondary); }
+.settings-status.ok svg { color: var(--success); }
+.settings-status.attention { display: grid; gap: 8px; border-color: color-mix(in srgb, var(--warning) 55%, var(--border-subtle)); }
+.settings-status.attention > strong { color: var(--warning); }
+.settings-status ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.settings-status li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-status li span { display: grid; gap: 2px; min-width: 0; }
+.settings-status li b { color: var(--text-primary); font-weight: 600; }
+.settings-status li small { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+
 @media (max-width: 1100px) {
   .ri-tab { padding: 0 9px; }
   .ri-title p { display: none; }

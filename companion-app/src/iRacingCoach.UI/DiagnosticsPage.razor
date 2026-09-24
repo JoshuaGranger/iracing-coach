@@ -7,7 +7,7 @@
     <div class="settings-accordion-body" aria-hidden="@(State.DiagnosticsExpanded ? "false" : "true")" inert="@(State.DiagnosticsExpanded ? null : string.Empty)">
         <div>
             <div class="diagnostic-grid compact-diagnostics">
-                @foreach (var fact in State.Diagnostics)
+                @foreach (var fact in State.Diagnostics.OrderBy(item => item.State == "warning" ? 0 : 1))
                 {
                     <div class="diagnostic-fact @fact.State"><span>@fact.Label</span><strong>@fact.Value</strong></div>
                 }
@@ -22,6 +22,12 @@
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
-    private string TroubleshootingSummary => State.Diagnostics.Any(item => item.State is "warning" or "unavailable") ? "Review detected issues" : "Installation and data checks";
+    // Same count as the Settings status line; ChatGPT's Coach Engine is reported under Connections.
+    private string TroubleshootingSummary => State.SettingsIssues.Count switch
+    {
+        0 => "Installation and data checks",
+        1 => "1 check needs attention",
+        var count => $"{count} checks need attention"
+    };
     private Task CheckAgain() => State.RunHealthCheckAsync();
 }
