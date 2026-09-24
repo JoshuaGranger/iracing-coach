@@ -8,11 +8,11 @@
     {
       "actions": [
         {
-          "end_pct": null,
+          "end_pct": 0.4,
           "evidence": [
             "Laps 7–9 were 0.120 s/lap slower than laps 1–3 by median."
           ],
-          "instruction": "Inspect these exact laps in telemetry or replay to locate where time is lost. No specific input change is supported yet; first establish a repeatable difference on complete, clear laps at similar fuel and run age.",
+          "instruction": "Section A lost 0.036 s by group median without a supported input change. Drive three clear laps at the same run age and fuel with unchanged inputs. If the loss repeats, treat it as grip, tires or setup rather than technique; if it disappears, it was lap-to-lap variation.",
           "lap_numbers": [
             1,
             2,
@@ -23,15 +23,70 @@
           ],
           "limitation": "Change one input at a time on clear, complete green laps at similar run age and fuel. The observed association is not a proven cause.",
           "priority": 1,
+          "section_id": "A",
           "signal_keys": [
-            "delta",
             "speed",
-            "brake",
+            "delta",
             "throttle",
             "steering"
           ],
-          "start_pct": null,
-          "title": "Locate the repeatable pace loss"
+          "start_pct": 0.1,
+          "title": "Repeat section A at the same run age",
+          "trial": {
+            "annotation": {
+              "configuration_key": null,
+              "source": "detected_in_recording",
+              "version": "detected/7954afe534d4"
+            },
+            "baseline": {
+              "count": 3,
+              "laps": [
+                7,
+                8,
+                9
+              ],
+              "median_s": 9.048,
+              "run_number": 1
+            },
+            "conditions": {
+              "fuel_start_gal": 10.144,
+              "track_temp_f": 80.0
+            },
+            "exposure_window": [
+              7.0,
+              9.0
+            ],
+            "metric": {
+              "direction": "decrease",
+              "end_pct": 0.4,
+              "key": "section_s",
+              "label": "Section time",
+              "start_pct": 0.1,
+              "unit": "s"
+            },
+            "reference": {
+              "count": 3,
+              "laps": [
+                1,
+                2,
+                3
+              ],
+              "median_s": 9.012,
+              "run_number": 1
+            },
+            "section": {
+              "boundary_status": "detected_section",
+              "end_pct": 0.4,
+              "id": "A",
+              "label": "A",
+              "start_pct": 0.1
+            },
+            "success": {
+              "minimum_laps": 3,
+              "rule": "Improved when at least three screened laps inside the exposure window beat the baseline median by the threshold. Worse when they are slower by the threshold. Otherwise not established.",
+              "threshold_s": 0.02
+            }
+          }
         }
       ],
       "baseline": {
@@ -80,10 +135,13 @@
       },
       "corners": [
         {
+          "baseline_count": 3,
+          "boundary_status": "detected_section",
+          "compared_count": 3,
           "delta_s": 0.036,
           "end_pct": 0.4,
-          "id": "track-area-1",
-          "label": "Track area 1 (10–40% lap)",
+          "id": "A",
+          "label": "Section A (10.0–40.0% lap)",
           "metrics": [
             {
               "baseline": 9.012,
@@ -92,7 +150,7 @@
               "detail": "3 earlier and 3 later laps; distance-binned traces.",
               "evidence": "derived",
               "key": "elapsed",
-              "label": "Area time",
+              "label": "Section time",
               "unit": "s"
             },
             {
@@ -156,6 +214,7 @@
               "unit": "deg"
             }
           ],
+          "short_label": "A",
           "start_pct": 0.1
         }
       ],
@@ -247,6 +306,380 @@
         }
       ],
       "id": "run-1-clean",
+      "inspection": {
+        "mode": "cohort_median_passes",
+        "pool_exposure": [
+          1.0,
+          9.0
+        ],
+        "pool_laps": [
+          1,
+          2,
+          3,
+          7,
+          8,
+          9
+        ],
+        "sections": {
+          "A": {
+            "a": {
+              "eligible": true,
+              "exclusion_reasons": [],
+              "fuel_start_gal": 10.46,
+              "green_exposure": 2.0,
+              "lap": 2,
+              "role": "baseline_median",
+              "run_number": 1,
+              "section_s": 9.012,
+              "track_temp_f": 80.0
+            },
+            "b": {
+              "eligible": true,
+              "exclusion_reasons": [],
+              "fuel_start_gal": 10.14,
+              "green_exposure": 8.0,
+              "lap": 8,
+              "role": "compared_median",
+              "run_number": 1,
+              "section_s": 9.048,
+              "track_temp_f": 80.0
+            },
+            "candidate_count": 6,
+            "context_label": "From the recorded lap start",
+            "context_start_pct": 0.0,
+            "end_pct": 0.4,
+            "entry_gap_s": 0.012,
+            "entry_speed_difference_mph": 0.0,
+            "exit_gap_s": 0.048,
+            "rows": [
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.0,
+                "x": 0.0
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.003,
+                "x": 0.025
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.006,
+                "x": 0.05
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.009,
+                "x": 0.075
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.012,
+                "x": 0.1
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.015,
+                "x": 0.125
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.018,
+                "x": 0.15
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.021,
+                "x": 0.175
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.024,
+                "x": 0.2
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.027,
+                "x": 0.225
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.03,
+                "x": 0.25
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.033,
+                "x": 0.275
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.036,
+                "x": 0.3
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.039,
+                "x": 0.325
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.042,
+                "x": 0.35
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.045,
+                "x": 0.375
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "gap": 0.048,
+                "x": 0.4
+              }
+            ],
+            "section_delta_s": 0.036,
+            "section_id": "A",
+            "slip": {
+              "a": {
+                "coverage": 0.0,
+                "median_abs": null,
+                "peak_abs": null
+              },
+              "b": {
+                "coverage": 0.0,
+                "median_abs": null,
+                "peak_abs": null
+              },
+              "basis": "chassis_velocity_angle",
+              "unit": "deg"
+            },
+            "start_pct": 0.1,
+            "timing_complete": true
+          }
+        }
+      },
       "kind": "within_run",
       "metrics": [
         {
@@ -328,10 +761,10 @@
         {
           "end_pct": 0.4,
           "evidence": [
-            "Track area 1 (10–40% lap) took 0.348 s longer in the later window.",
+            "Section A (10.0–40.0% lap) took 0.348 s longer by group median.",
             "Brake demand rose 10.0 percentage points while minimum speed fell 5.0 mph."
           ],
-          "instruction": "At Track area 1 (10–40% lap), keep the entry controlled and release brake pressure progressively. Check whether minimum speed recovers without adding steering correction or sacrificing exit speed.",
+          "instruction": "At section A, keep the entry controlled and release brake pressure progressively. Check whether minimum speed recovers without adding steering correction or sacrificing exit speed.",
           "lap_numbers": [
             1,
             2,
@@ -344,6 +777,7 @@
           ],
           "limitation": "The later window includes excluded laps. Confirm the pattern on a clear lap before treating this as a driving correction. Change one input at a time on clear, complete green laps at similar run age and fuel. The observed association is not a proven cause.",
           "priority": 1,
+          "section_id": "A",
           "signal_keys": [
             "speed",
             "brake",
@@ -351,7 +785,64 @@
             "delta"
           ],
           "start_pct": 0.1,
-          "title": "Test a smoother brake release"
+          "title": "Test a smoother brake release",
+          "trial": {
+            "annotation": {
+              "configuration_key": null,
+              "source": "detected_in_recording",
+              "version": "detected/7954afe534d4"
+            },
+            "baseline": {
+              "count": 4,
+              "laps": [
+                9,
+                10,
+                11,
+                12
+              ],
+              "median_s": 9.363,
+              "run_number": 1
+            },
+            "conditions": {
+              "fuel_start_gal": 10.012,
+              "track_temp_f": 80.0
+            },
+            "exposure_window": [
+              9.0,
+              12.0
+            ],
+            "metric": {
+              "direction": "decrease",
+              "end_pct": 0.4,
+              "key": "section_s",
+              "label": "Section time",
+              "start_pct": 0.1,
+              "unit": "s"
+            },
+            "reference": {
+              "count": 4,
+              "laps": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "median_s": 9.015,
+              "run_number": 1
+            },
+            "section": {
+              "boundary_status": "detected_section",
+              "end_pct": 0.4,
+              "id": "A",
+              "label": "A",
+              "start_pct": 0.1
+            },
+            "success": {
+              "minimum_laps": 3,
+              "rule": "Improved when at least three screened laps inside the exposure window beat the baseline median by the threshold. Worse when they are slower by the threshold. Otherwise not established.",
+              "threshold_s": 0.174
+            }
+          }
         }
       ],
       "baseline": {
@@ -420,10 +911,13 @@
       },
       "corners": [
         {
+          "baseline_count": 4,
+          "boundary_status": "detected_section",
+          "compared_count": 4,
           "delta_s": 0.348,
           "end_pct": 0.4,
-          "id": "track-area-1",
-          "label": "Track area 1 (10–40% lap)",
+          "id": "A",
+          "label": "Section A (10.0–40.0% lap)",
           "metrics": [
             {
               "baseline": 9.015,
@@ -432,7 +926,7 @@
               "detail": "4 earlier and 4 later laps; distance-binned traces.",
               "evidence": "derived",
               "key": "elapsed",
-              "label": "Area time",
+              "label": "Section time",
               "unit": "s"
             },
             {
@@ -496,6 +990,7 @@
               "unit": "deg"
             }
           ],
+          "short_label": "A",
           "start_pct": 0.1
         }
       ],
@@ -590,6 +1085,384 @@
         }
       ],
       "id": "run-1-finish",
+      "inspection": {
+        "mode": "cohort_median_passes",
+        "pool_exposure": [
+          1.0,
+          12.0
+        ],
+        "pool_laps": [
+          1,
+          2,
+          3,
+          4,
+          9,
+          10,
+          11,
+          12
+        ],
+        "sections": {
+          "A": {
+            "a": {
+              "eligible": true,
+              "exclusion_reasons": [],
+              "fuel_start_gal": 10.46,
+              "green_exposure": 2.0,
+              "lap": 2,
+              "role": "baseline_median",
+              "run_number": 1,
+              "section_s": 9.012,
+              "track_temp_f": 80.0
+            },
+            "b": {
+              "eligible": false,
+              "exclusion_reasons": [
+                "close_traffic"
+              ],
+              "fuel_start_gal": 10.04,
+              "green_exposure": 10.0,
+              "lap": 10,
+              "role": "compared_median",
+              "run_number": 1,
+              "section_s": 9.36,
+              "track_temp_f": 80.0
+            },
+            "candidate_count": 8,
+            "context_label": "From the recorded lap start",
+            "context_start_pct": 0.0,
+            "end_pct": 0.4,
+            "entry_gap_s": 0.116,
+            "entry_speed_difference_mph": -5.0,
+            "exit_gap_s": 0.464,
+            "rows": [
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.0,
+                "x": 0.0
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.029,
+                "x": 0.025
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.058,
+                "x": 0.05
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.087,
+                "x": 0.075
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.116,
+                "x": 0.1
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.145,
+                "x": 0.125
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.174,
+                "x": 0.15
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.203,
+                "x": 0.175
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.232,
+                "x": 0.2
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.261,
+                "x": 0.225
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.29,
+                "x": 0.25
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.319,
+                "x": 0.275
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.348,
+                "x": 0.3
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.377,
+                "x": 0.325
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.406,
+                "x": 0.35
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.435,
+                "x": 0.375
+              },
+              {
+                "a": {
+                  "brake": 10.0,
+                  "slip": null,
+                  "speed": 100.0,
+                  "steering": 11.5,
+                  "throttle": 80.0
+                },
+                "b": {
+                  "brake": 20.0,
+                  "slip": null,
+                  "speed": 95.0,
+                  "steering": 17.2,
+                  "throttle": 60.0
+                },
+                "gap": 0.464,
+                "x": 0.4
+              }
+            ],
+            "section_delta_s": 0.348,
+            "section_id": "A",
+            "slip": {
+              "a": {
+                "coverage": 0.0,
+                "median_abs": null,
+                "peak_abs": null
+              },
+              "b": {
+                "coverage": 0.0,
+                "median_abs": null,
+                "peak_abs": null
+              },
+              "basis": "chassis_velocity_angle",
+              "unit": "deg"
+            },
+            "start_pct": 0.1,
+            "timing_complete": true
+          }
+        }
+      },
       "kind": "observed_finish",
       "metrics": [
         {
@@ -678,6 +1551,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 1.0,
       "lap": 1,
       "lap_time_s": 30.02,
       "plot_pace": true,
@@ -688,6 +1562,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 2.0,
       "lap": 2,
       "lap_time_s": 30.04,
       "plot_pace": true,
@@ -698,6 +1573,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 3.0,
       "lap": 3,
       "lap_time_s": 30.06,
       "plot_pace": true,
@@ -708,6 +1584,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 4.0,
       "lap": 4,
       "lap_time_s": 30.08,
       "plot_pace": true,
@@ -718,6 +1595,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 5.0,
       "lap": 5,
       "lap_time_s": 30.1,
       "plot_pace": true,
@@ -728,6 +1606,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 6.0,
       "lap": 6,
       "lap_time_s": 30.12,
       "plot_pace": true,
@@ -738,6 +1617,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 7.0,
       "lap": 7,
       "lap_time_s": 30.14,
       "plot_pace": true,
@@ -748,6 +1628,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 8.0,
       "lap": 8,
       "lap_time_s": 30.16,
       "plot_pace": true,
@@ -758,6 +1639,7 @@
       "eligible": true,
       "exclusion_reasons": [],
       "flag_state": "green",
+      "green_exposure": 9.0,
       "lap": 9,
       "lap_time_s": 30.18,
       "plot_pace": true,
@@ -770,6 +1652,7 @@
         "close_traffic"
       ],
       "flag_state": "green",
+      "green_exposure": 10.0,
       "lap": 10,
       "lap_time_s": 31.2,
       "plot_pace": true,
@@ -782,6 +1665,7 @@
         "close_traffic"
       ],
       "flag_state": "green",
+      "green_exposure": 11.0,
       "lap": 11,
       "lap_time_s": 31.22,
       "plot_pace": true,
@@ -794,6 +1678,7 @@
         "close_traffic"
       ],
       "flag_state": "green",
+      "green_exposure": 12.0,
       "lap": 12,
       "lap_time_s": 31.24,
       "plot_pace": true,
@@ -808,7 +1693,212 @@
     "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
     "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."
   ],
-  "schema_version": 1,
+  "projection_version": "sections-trials-v1",
+  "runs": [
+    {
+      "first_lap": 1,
+      "fit": {
+        "domain": [
+          1.0,
+          9.0
+        ],
+        "eligible_count": 9,
+        "laps": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "method": "ordinary_least_squares",
+        "points": [
+          {
+            "x": 1.0,
+            "y": 30.02
+          },
+          {
+            "x": 9.0,
+            "y": 30.18
+          }
+        ],
+        "slope_s_per_green_lap": 0.02
+      },
+      "fit_unavailable_reason": null,
+      "last_lap": 12,
+      "plotted_lap_count": 12,
+      "run_number": 1,
+      "trend": {
+        "covered_lap_count": 12,
+        "gaps": [],
+        "includes_reference_exclusions": true,
+        "method": "centered_five_observation_median",
+        "segments": [
+          [
+            {
+              "lap": 1,
+              "sample_laps": [
+                1,
+                2,
+                3
+              ],
+              "x": 1.0,
+              "y": 30.04
+            },
+            {
+              "lap": 2,
+              "sample_laps": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "x": 2.0,
+              "y": 30.05
+            },
+            {
+              "lap": 3,
+              "sample_laps": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "x": 3.0,
+              "y": 30.06
+            },
+            {
+              "lap": 4,
+              "sample_laps": [
+                2,
+                3,
+                4,
+                5,
+                6
+              ],
+              "x": 4.0,
+              "y": 30.08
+            },
+            {
+              "lap": 5,
+              "sample_laps": [
+                3,
+                4,
+                5,
+                6,
+                7
+              ],
+              "x": 5.0,
+              "y": 30.1
+            },
+            {
+              "lap": 6,
+              "sample_laps": [
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "x": 6.0,
+              "y": 30.12
+            },
+            {
+              "lap": 7,
+              "sample_laps": [
+                5,
+                6,
+                7,
+                8,
+                9
+              ],
+              "x": 7.0,
+              "y": 30.14
+            },
+            {
+              "lap": 8,
+              "sample_laps": [
+                6,
+                7,
+                8,
+                9,
+                10
+              ],
+              "x": 8.0,
+              "y": 30.16
+            },
+            {
+              "lap": 9,
+              "sample_laps": [
+                7,
+                8,
+                9,
+                10,
+                11
+              ],
+              "x": 9.0,
+              "y": 30.18
+            },
+            {
+              "lap": 10,
+              "sample_laps": [
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "x": 10.0,
+              "y": 31.2
+            },
+            {
+              "lap": 11,
+              "sample_laps": [
+                9,
+                10,
+                11,
+                12
+              ],
+              "x": 11.0,
+              "y": 31.21
+            },
+            {
+              "lap": 12,
+              "sample_laps": [
+                10,
+                11,
+                12
+              ],
+              "x": 12.0,
+              "y": 31.22
+            }
+          ]
+        ]
+      }
+    }
+  ],
+  "schema_version": 2,
+  "sections": {
+    "configuration_key": null,
+    "provenance": "Regions detected from steering and lateral load in this recording. Letters are analysis labels, not turn numbers.",
+    "sections": [
+      {
+        "boundary_status": "detected_section",
+        "end_pct": 0.4,
+        "id": "A",
+        "label": "A",
+        "provenance": "Detected region 1 in this recording; not a verified turn boundary.",
+        "start_pct": 0.1
+      }
+    ],
+    "source": "detected_in_recording",
+    "unavailable_reason": null,
+    "version": "detected/7954afe534d4"
+  },
   "status": "available",
   "summary": "Laps 9–12 were 1.160 s/lap slower than laps 1–4 by median. 3 of 8 selected laps are excluded from clean coaching.",
   "timeline": [],

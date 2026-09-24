@@ -945,6 +945,99 @@
       "name": "record_open_setup_feedback"
     },
     {
+      "description": "Save one measurable test from an archived race investigation: exact section bounds and annotation version, baseline laps, exposure window and success rule. Idempotent.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action_priority": {
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "analysis_path": {
+            "type": "string"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "comparison_id": {
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "required": [
+          "analysis_path",
+          "comparison_id",
+          "action_priority"
+        ],
+        "type": "object"
+      },
+      "name": "save_driving_trial"
+    },
+    {
+      "description": "List saved driving tests, newest first, with their latest later-recording check.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_driving_trials"
+    },
+    {
+      "description": "Load one saved driving test with every later-recording check, including unsuccessful ones.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "trial_id": {
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "trial_id"
+        ],
+        "type": "object"
+      },
+      "name": "load_driving_trial"
+    },
+    {
+      "description": "Measure a saved driving test on a later archived analysis. Reports improved, worse, not established or not comparable; never unchanged.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_path": {
+            "type": "string"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "trial_id": {
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "trial_id",
+          "analysis_path"
+        ],
+        "type": "object"
+      },
+      "name": "evaluate_driving_trial"
+    },
+    {
       "description": "Return season/car/track-scoped open-setup experiments and their recorded outcomes.",
       "inputSchema": {
         "additionalProperties": false,

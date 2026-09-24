@@ -11,7 +11,9 @@ import statistics
 from typing import Any, Mapping, Sequence
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+# Bump when any projection below changes; cached analyses rebuild it without decoding.
+PROJECTION_VERSION = "sections-trials-v1"
 MAX_COMPARISONS = 24
 TIRES = ("LF", "RF", "LR", "RR")
 RUBBER_REFERENCE = {
@@ -319,13 +321,66 @@ def _hypotheses(comparison: Mapping[str, Any], analysis: Mapping[str, Any], trac
     return result
 
 
-def _actions(comparison: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _cohort_section_seconds(numbers: Sequence[int], traces: Mapping[int, Mapping[str, Any]], start: float, end: float) -> list[float]:
+    try:
+        from .race_inspection import section_elapsed
+    except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+        from race_inspection import section_elapsed
+    return [seconds for lap in numbers if (seconds := section_elapsed(traces.get(lap), start, end)) is not None]
+
+
+def _trial(comparison: Mapping[str, Any], corner: Mapping[str, Any], section_set: Mapping[str, Any], traces: Mapping[int, Mapping[str, Any]], approach_start: float | None) -> dict[str, Any] | None:
+    """A saveable test: exact bounds, the slow condition to beat and the rule.
+
+    The baseline is the compared (slower) cohort because the test asks whether
+    a later recording repeats it. Success needs three screened laps inside the
+    same exposure window to beat the baseline median by the stated threshold;
+    anything else is reported as not comparable or not established.
+    """
+    start = approach_start if approach_start is not None else corner["start_pct"]
+    end = corner["end_pct"]
+    slow = _cohort_section_seconds(comparison["compared"]["lap_numbers"], traces, start, end)
+    fast = _cohort_section_seconds(comparison["baseline"]["lap_numbers"], traces, start, end)
+    if len(slow) < 2 or len(fast) < 2:
+        return None
+    slow_median, fast_median = statistics.median(slow), statistics.median(fast)
+    loss = slow_median - fast_median
+    if loss <= 0.02:
+        return None
+    compared = comparison["compared"]
+    window = [compared.get("green_age_start"), compared.get("green_age_end")]
+    return {
+        "metric": {"key": "approach_and_section_s" if approach_start is not None else "section_s",
+                   "label": "Approach and section time" if approach_start is not None else "Section time",
+                   "unit": "s", "direction": "decrease", "start_pct": start, "end_pct": end},
+        "section": {"id": corner["id"], "label": corner.get("short_label") or corner["id"],
+                    "start_pct": corner["start_pct"], "end_pct": end,
+                    "boundary_status": corner.get("boundary_status")},
+        "annotation": {"configuration_key": section_set.get("configuration_key"), "source": section_set.get("source"),
+                       "version": section_set.get("version")},
+        "baseline": {"laps": list(compared["lap_numbers"]), "run_number": compared.get("run_number"),
+                     "median_s": _round(slow_median), "count": len(slow)},
+        "reference": {"laps": list(comparison["baseline"]["lap_numbers"]), "run_number": comparison["baseline"].get("run_number"),
+                      "median_s": _round(fast_median), "count": len(fast)},
+        "exposure_window": window if None not in window else None,
+        "conditions": {"fuel_start_gal": compared.get("fuel_start_gal"), "track_temp_f": compared.get("track_temp_f")},
+        "success": {"threshold_s": _round(max(0.02, loss / 2)), "minimum_laps": 3,
+                    "rule": "Improved when at least three screened laps inside the exposure window beat the baseline median by the threshold. Worse when they are slower by the threshold. Otherwise not established."},
+    }
+
+
+def _actions(comparison: Mapping[str, Any], section_set: Mapping[str, Any] | None = None, traces: Mapping[int, Mapping[str, Any]] | None = None) -> list[dict[str, Any]]:
     result = []
+    section_set = section_set or {}
+    traces = traces or {}
     baseline, compared = comparison["baseline"], comparison["compared"]
     lap_numbers = sorted(set(baseline["lap_numbers"] + compared["lap_numbers"]))
     caveat = "Change one input at a time on clear, complete green laps at similar run age and fuel. The observed association is not a proven cause."
     if comparison["eligibility"] != "eligible":
         caveat = "The later window includes excluded laps. Confirm the pattern on a clear lap before treating this as a driving correction. " + caveat
+    inspection = comparison.get("inspection") or {}
+    ordered = sorted(section_set.get("sections") or (), key=lambda item: item["start_pct"])
+    labels = {item["id"]: item["label"] for item in ordered}
     for corner in comparison["corners"]:
         if len(result) >= 2:
             break
@@ -333,40 +388,78 @@ def _actions(comparison: Mapping[str, Any]) -> list[dict[str, Any]]:
         loss = corner.get("delta_s")
         if loss is None or loss < 0.03:
             continue
+        name = f"section {corner.get('short_label') or corner['id']}"
+        pair = (inspection.get("sections") or {}).get(corner["id"]) or {}
         brake = metrics.get("brake", {}).get("delta")
         steer = metrics.get("steering", {}).get("delta")
         throttle = metrics.get("throttle", {}).get("delta")
         minimum = metrics.get("minimum_speed", {}).get("delta")
-        evidence = [f"{corner['label']} took {loss:.3f} s longer in the later window."]
-        if brake is not None and brake > 1.0 and minimum is not None and minimum < -0.5:
+        entry = metrics.get("entry_speed", {}).get("delta")
+        evidence = [f"{corner['label']} took {loss:.3f} s longer by group median."]
+        approach = None
+        upstream_gap, upstream_speed = pair.get("entry_gap_s"), pair.get("entry_speed_difference_mph")
+        index = next((i for i, item in enumerate(ordered) if item["id"] == corner["id"]), None)
+        previous = ordered[index - 1] if index else None
+        if (previous is not None and inspection.get("mode") == "matched_pool_extremes" and pair.get("timing_complete")
+                and upstream_gap is not None and upstream_gap >= 0.05 and upstream_speed is not None and upstream_speed <= -2.0):
+            a, b = pair["a"], pair["b"]
+            before = labels.get(previous["id"], previous["id"])
+            title = f"Carry more speed into {name}"
+            instruction = (f"The slower pass (lap {b['lap']}) reached {name} {abs(upstream_speed):.1f} mph slower and already {upstream_gap:.3f} s behind lap {a['lap']}, measured from section {before}. "
+                           f"Test one change at the exit of section {before}: a tighter exit line with throttle added as the wheel unwinds. "
+                           "If entry speed recovers, the loss was built on that exit. If entry speed stays low with matching inputs, treat it as a grip or setup question rather than technique.")
+            evidence.append(f"Lap {b['lap']} entered {abs(upstream_speed):.1f} mph slower and {upstream_gap:.3f} s behind; it lost {pair.get('section_delta_s') or 0:.3f} s more inside.")
+            signals = ["speed", "delta", "throttle", "steering"]
+            approach = pair.get("context_start_pct")
+        elif brake is not None and brake > 1.0 and minimum is not None and minimum < -0.5:
             title = "Test a smoother brake release"
-            instruction = f"At {corner['label']}, keep the entry controlled and release brake pressure progressively. Check whether minimum speed recovers without adding steering correction or sacrificing exit speed."
+            instruction = f"At {name}, keep the entry controlled and release brake pressure progressively. Check whether minimum speed recovers without adding steering correction or sacrificing exit speed."
             evidence.append(f"Brake demand rose {brake:.1f} percentage points while minimum speed fell {abs(minimum):.1f} mph.")
             signals = ["speed", "brake", "steering", "delta"]
         elif steer is not None and steer > 2.0:
             title = "Test a smoother steering arc"
-            instruction = f"At {corner['label']}, test a small entry-speed margin and one smoother steering arc. Compare area time and exit speed; retain the change only if it reduces correction without worsening pace."
-            evidence.append(f"Steering demand increased {steer:.1f}° in the same area.")
+            instruction = f"At {name}, test a small entry-speed margin and one smoother steering arc. Compare section time and exit speed; retain the change only if it reduces correction without worsening pace."
+            evidence.append(f"Steering demand increased {steer:.1f}° in the same section.")
             signals = ["speed", "steering", "throttle", "delta"]
         elif throttle is not None and throttle < -2.0:
             title = "Test the exit-throttle transition"
-            instruction = f"At {corner['label']}, work throttle back in progressively as steering unwinds. Compare exit speed and area time against the earlier laps; do not add throttle solely to match a trace."
-            evidence.append(f"Throttle demand fell {abs(throttle):.1f} percentage points in this area.")
+            instruction = f"At {name}, work throttle back in progressively as steering unwinds. Compare exit speed and section time against the earlier laps; do not add throttle solely to match a trace."
+            evidence.append(f"Throttle demand fell {abs(throttle):.1f} percentage points in this section.")
             signals = ["speed", "throttle", "steering", "delta"]
+        elif entry is not None and entry < -1.0:
+            title = f"Find where {name} entry speed is lost"
+            instruction = (f"Entry speed at {name} fell {abs(entry):.1f} mph with similar inputs inside it. Repeat three clear laps at the same run age and fuel. "
+                           "If the entry deficit repeats with matching throttle and line on the approach, treat it as a grip or setup question rather than technique.")
+            evidence.append(f"Entry speed fell {abs(entry):.1f} mph by group median.")
+            signals = ["speed", "delta", "throttle", "steering"]
+            approach = pair.get("context_start_pct") if pair.get("timing_complete") else None
         else:
             continue
-        result.append({"priority": len(result) + 1, "title": title, "instruction": instruction,
-                       "evidence": evidence, "limitation": caveat, "lap_numbers": lap_numbers,
-                       "start_pct": corner["start_pct"], "end_pct": corner["end_pct"], "signal_keys": signals})
+        action = {"priority": len(result) + 1, "title": title, "instruction": instruction,
+                  "evidence": evidence, "limitation": caveat, "lap_numbers": lap_numbers,
+                  "start_pct": corner["start_pct"], "end_pct": corner["end_pct"], "signal_keys": signals,
+                  "section_id": corner["id"]}
+        action["trial"] = _trial(comparison, corner, section_set, traces, approach)
+        result.append(action)
     if not result:
-        result.append({"priority": 1, "title": "Locate the repeatable pace loss", "instruction": "Inspect these exact laps in telemetry or replay to locate where time is lost. No specific input change is supported yet; first establish a repeatable difference on complete, clear laps at similar fuel and run age.",
-                       "evidence": [comparison["summary"]], "limitation": caveat,
-                       "lap_numbers": lap_numbers, "start_pct": None, "end_pct": None,
-                       "signal_keys": ["delta", "speed", "brake", "throttle", "steering"]})
+        largest = next((corner for corner in comparison["corners"] if (corner.get("delta_s") or 0) >= 0.03), None)
+        if largest is not None:
+            label = largest.get("short_label") or largest["id"]
+            result.append({"priority": 1, "title": f"Repeat section {label} at the same run age",
+                           "instruction": f"Section {label} lost {largest['delta_s']:.3f} s by group median without a supported input change. Drive three clear laps at the same run age and fuel with unchanged inputs. If the loss repeats, treat it as grip, tires or setup rather than technique; if it disappears, it was lap-to-lap variation.",
+                           "evidence": [comparison["summary"]], "limitation": caveat,
+                           "lap_numbers": lap_numbers, "start_pct": largest["start_pct"], "end_pct": largest["end_pct"],
+                           "signal_keys": ["speed", "delta", "throttle", "steering"], "section_id": largest["id"],
+                           "trial": _trial(comparison, largest, section_set, traces, None)})
+        else:
+            result.append({"priority": 1, "title": "Locate the repeatable pace loss", "instruction": "No section shows a repeatable loss in these laps. Compare complete, clear laps at similar fuel and run age before changing technique.",
+                           "evidence": [comparison["summary"]], "limitation": caveat,
+                           "lap_numbers": lap_numbers, "start_pct": None, "end_pct": None,
+                           "signal_keys": ["delta", "speed", "brake", "throttle", "steering"], "section_id": None, "trial": None})
     return result
 
 
-def _comparison(identifier: str, kind: str, before: Sequence[Mapping[str, Any]], after: Sequence[Mapping[str, Any]], before_run: Mapping[str, Any], after_run: Mapping[str, Any], exclusions: Mapping[int, Sequence[str]], ages: Mapping[int, float | None], traces: Mapping[int, Mapping[str, Any]], analysis: Mapping[str, Any], track: Mapping[str, Any]) -> dict[str, Any]:
+def _comparison(identifier: str, kind: str, before: Sequence[Mapping[str, Any]], after: Sequence[Mapping[str, Any]], before_run: Mapping[str, Any], after_run: Mapping[str, Any], exclusions: Mapping[int, Sequence[str]], ages: Mapping[int, float | None], traces: Mapping[int, Mapping[str, Any]], analysis: Mapping[str, Any], track: Mapping[str, Any], sections: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
     baseline = _cohort(before, before_run, exclusions, ages)
     compared = _cohort(after, after_run, exclusions, ages)
     eligible_count = len(baseline["eligible_lap_numbers"]) + len(compared["eligible_lap_numbers"])
@@ -381,11 +474,18 @@ def _comparison(identifier: str, kind: str, before: Sequence[Mapping[str, Any]],
     result = {"id": identifier, "kind": kind, "title": title, "summary": summary,
               "baseline": baseline, "compared": compared, "delta_s": _round(delta), "eligibility": eligibility,
               "metrics": _cohort_metrics(before, after),
-              "corners": _corners(baseline["lap_numbers"], compared["lap_numbers"], traces, analysis.get("track_profile") or {}),
+              "corners": _section_metrics(baseline["lap_numbers"], compared["lap_numbers"], traces, sections),
               "hypotheses": [], "actions": []}
     result["hypotheses"] = _hypotheses(result, analysis, track)
-    result["actions"] = _actions(result)
     return result
+
+
+def _section_metrics(before: Sequence[int], after: Sequence[int], traces: Mapping[int, Mapping[str, Any]], sections: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    try:
+        from .race_inspection import comparison_sections
+    except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+        from race_inspection import comparison_sections
+    return comparison_sections(before, after, traces, sections)
 
 
 def _timeline(analysis: Mapping[str, Any], laps: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -476,22 +576,36 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
                 break
             retained.add(index)
         candidates = [candidate for i, candidate in enumerate(candidates) if i in retained]
+    try:
+        from .race_inspection import comparison_inspection, review_sections, run_views
+    except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+        from race_inspection import comparison_inspection, review_sections, run_views
+    section_set = review_sections(analysis)
+    sections = section_set["sections"]
+    by_number = {int(lap["lap"]): lap for lap in laps}
     comparisons = []
     for identifier, kind, before, after, before_run, after_run in candidates:
-        comparison = _comparison(identifier, kind, before, after, before_run, after_run, lap_exclusions, ages, traces, analysis, track)
+        comparison = _comparison(identifier, kind, before, after, before_run, after_run, lap_exclusions, ages, traces, analysis, track, sections)
         if kind == "cross_run":
             comparison["summary"] += " Pairs are within two sampled green-lap equivalents since their run starts; tire age, fuel, cautions and conditions are not controlled."
+        comparison["inspection"] = comparison_inspection(comparison, by_number, ages, run_for_lap, lap_exclusions, traces, sections)
+        comparison["actions"] = _actions(comparison, section_set, traces)
         comparisons.append(comparison)
     default = max(comparisons, key=lambda item: (max(item["compared"]["lap_numbers"]), item["kind"] == "observed_finish"), default=None)
+    lap_rows = [{"lap": int(lap["lap"]), "lap_time_s": _round(lap.get("lap_time_s")), "position": _number(_path(lap, "position", "end")),
+                 "flag_state": str(lap.get("flag_state") or "unknown"), "eligible": not bool(lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"])),
+                 "plot_pace": _plot_pace(lap),
+                 "exclusion_reasons": list(lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"])), "run_number": run_for_lap.get(int(lap["lap"])),
+                 "green_exposure": _round(ages.get(int(lap["lap"])), 3)} for lap in laps]
     return {
-        "schema_version": SCHEMA_VERSION, "status": "available" if comparisons else "insufficient_evidence",
+        "schema_version": SCHEMA_VERSION, "projection_version": PROJECTION_VERSION,
+        "status": "available" if comparisons else "insufficient_evidence",
         "summary": default["summary"] if default else "No two usable multi-lap windows are available yet; the recorded lap timeline remains inspectable.",
         "default_comparison_id": default["id"] if default else None,
         "comparisons": comparisons, "comparison_coverage": comparison_coverage,
-        "laps": [{"lap": int(lap["lap"]), "lap_time_s": _round(lap.get("lap_time_s")), "position": _number(_path(lap, "position", "end")),
-                  "flag_state": str(lap.get("flag_state") or "unknown"), "eligible": not bool(lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"])),
-                  "plot_pace": _plot_pace(lap),
-                  "exclusion_reasons": list(lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"])), "run_number": run_for_lap.get(int(lap["lap"]))} for lap in laps],
+        "laps": lap_rows,
+        "runs": run_views([row for row in lap_rows if row["plot_pace"]], laps),
+        "sections": {key: value for key, value in section_set.items()},
         "timeline": _timeline(analysis, laps), "track_evolution": track,
         "limitations": ([f"Showing {comparison_coverage['generated_count']} of {comparison_coverage['candidate_count']} candidate comparisons. " + comparison_coverage["selection_policy"]] if comparison_coverage["candidate_count"] > MAX_COMPARISONS else []) + ["Window medians are observed comparisons, not estimates of a single cause.",
                         "Clean windows use the existing recorded eligibility screen; observed finish windows retain excluded laps and their reasons.",

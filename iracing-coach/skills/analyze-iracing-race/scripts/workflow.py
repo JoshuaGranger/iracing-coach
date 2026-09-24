@@ -33,6 +33,12 @@ try:  # Support package imports and direct execution from the scripts folder.
         ANALYSIS_SCHEMA_VERSION,
         analyze_telemetry,
         build_technical_insights,
+        investigation_lap_exclusions,
+    )
+    from .race_investigation import (
+        PROJECTION_VERSION as RACE_INVESTIGATION_PROJECTION_VERSION,
+        SCHEMA_VERSION as RACE_INVESTIGATION_SCHEMA_VERSION,
+        build_race_investigation,
     )
     from .garage61_client import (
         Garage61AuthError,
@@ -65,6 +71,12 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
         ANALYSIS_SCHEMA_VERSION,
         analyze_telemetry,
         build_technical_insights,
+        investigation_lap_exclusions,
+    )
+    from race_investigation import (
+        PROJECTION_VERSION as RACE_INVESTIGATION_PROJECTION_VERSION,
+        SCHEMA_VERSION as RACE_INVESTIGATION_SCHEMA_VERSION,
+        build_race_investigation,
     )
     from garage61_client import (
         Garage61AuthError,
@@ -157,6 +169,24 @@ def build_analysis_view(analysis: Mapping[str, Any]) -> dict[str, Any]:
             value = default()
         view[name] = value
     return view
+
+
+def refresh_race_investigation(analysis: dict[str, Any]) -> bool:
+    """Rebuild a cached investigation whose projection predates this backend.
+
+    The investigation is derived from the analysis document alone, so a newer
+    projection never requires decoding the recording again. Returns True when
+    the stored projection was replaced.
+    """
+    current = analysis.get("race_investigation")
+    if (isinstance(current, Mapping)
+            and current.get("schema_version") == RACE_INVESTIGATION_SCHEMA_VERSION
+            and current.get("projection_version") == RACE_INVESTIGATION_PROJECTION_VERSION):
+        return False
+    analysis["race_investigation"] = build_race_investigation(
+        analysis, lap_exclusions=investigation_lap_exclusions(analysis)
+    )
+    return True
 
 
 class WorkflowError(RuntimeError):
@@ -1578,8 +1608,13 @@ def _analysis_pipeline_sha256() -> str:
 # exposure between eligible observations instead of compressing excluded laps.
 # Review 2026-09-22: v19 adds deterministic race investigations, exact lap
 # windows, conditional control trials and measured/initial track provenance.
+# Review 2026-09-23: v19 core answers are unchanged. The race investigation
+# moves to schema 2 (versioned review sections, run views, pass inspection and
+# saveable trials) and is rebuilt from the cached analysis whenever its
+# schema/projection version differs (refresh_race_investigation), so legacy
+# investigations are replaced without decoding the recording again.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "260b76154736ac7041d6bef5808e9f319f54451496e0daae6bbe5d0486317ef4"
+    "68cb15ada200cb38d2a1a5e73370c815be4d1f3f773753d013d7169818492758"
 )
 
 
@@ -1847,6 +1882,17 @@ def analyze_race_workflow(
     )
     if cache_valid:
         analysis = dict(cached_analysis)
+        if refresh_race_investigation(analysis):
+            _write_json_cache(
+                analysis_cache_path,
+                {
+                    "cache_schema": 4,
+                    "cache_key": analysis_cache_key,
+                    "created_at": utc_now(),
+                    "analysis_sha256": stable_hash(analysis, 64),
+                    "analysis": analysis,
+                },
+            )
         analysis["analyzed_at"] = utc_now()
         analysis_cache_hit = True
     else:

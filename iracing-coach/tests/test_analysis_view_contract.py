@@ -72,7 +72,7 @@ class AnalysisViewProducerContractTests(unittest.TestCase):
         self.assertTrue(self.view["identity"])
         self.assertTrue(self.view["race_summary"])
         self.assertTrue(self.view["laps"])
-        self.assertEqual(self.view["race_investigation"]["schema_version"], 1)
+        self.assertEqual(self.view["race_investigation"]["schema_version"], 2)
         self.assertEqual(
             [item["lap"] for item in self.view["race_investigation"]["laps"]],
             [item["lap"] for item in self.analysis["laps"] if item["lap"] > 0],

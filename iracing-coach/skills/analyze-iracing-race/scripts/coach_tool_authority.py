@@ -51,6 +51,7 @@ TOOL_CAPABILITIES: Mapping[str, str] = {
     "catalog_iracing_setups": CAPABILITY_READ_SETUP,
     "copy_iracing_setup_to_coach": CAPABILITY_WRITE,
     "discover_iracing_sessions": CAPABILITY_READ_ANALYSIS,
+    "evaluate_driving_trial": CAPABILITY_WRITE,
     "find_iracing_telemetry_events": CAPABILITY_READ_ANALYSIS,
     "garage61_auth_status": CAPABILITY_CREDENTIAL,
     "inventory_iracing_data": CAPABILITY_INVENTORY,
@@ -58,11 +59,14 @@ TOOL_CAPABILITIES: Mapping[str, str] = {
     "iracing_knowledge_cache_status": CAPABILITY_READ_ANALYSIS,
     "iracing_setup_history": CAPABILITY_READ_SETUP,
     "iracing_strategy_history": CAPABILITY_READ_ANALYSIS,
+    "list_driving_trials": CAPABILITY_READ_ANALYSIS,
+    "load_driving_trial": CAPABILITY_READ_ANALYSIS,
     "plan_iracing_race": CAPABILITY_READ_ANALYSIS,
     "query_iracing_telemetry": CAPABILITY_READ_ANALYSIS,
     "recommend_open_setup_tuning": CAPABILITY_READ_SETUP,
     "recommend_structured_open_setup_tuning": CAPABILITY_READ_SETUP,
     "record_open_setup_feedback": CAPABILITY_WRITE,
+    "save_driving_trial": CAPABILITY_WRITE,
     "sync_garage61_references": CAPABILITY_NETWORK,
 }
 

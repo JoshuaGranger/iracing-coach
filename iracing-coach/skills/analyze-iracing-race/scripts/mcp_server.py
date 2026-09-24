@@ -756,6 +756,60 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "save_driving_trial",
+        "description": "Save one measurable test from an archived race investigation: exact section bounds and annotation version, baseline laps, exposure window and success rule. Idempotent.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["analysis_path", "comparison_id", "action_priority"],
+            "properties": {
+                "analysis_path": {"type": "string"},
+                "comparison_id": {"type": "string", "maxLength": 128},
+                "action_priority": {"type": "integer", "minimum": 1, "maximum": 10},
+                "archive_root": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "list_driving_trials",
+        "description": "List saved driving tests, newest first, with their latest later-recording check.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
+                "archive_root": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "load_driving_trial",
+        "description": "Load one saved driving test with every later-recording check, including unsuccessful ones.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["trial_id"],
+            "properties": {
+                "trial_id": {"type": "string", "maxLength": 64},
+                "archive_root": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "evaluate_driving_trial",
+        "description": "Measure a saved driving test on a later archived analysis. Reports improved, worse, not established or not comparable; never unchanged.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["trial_id", "analysis_path"],
+            "properties": {
+                "trial_id": {"type": "string", "maxLength": 64},
+                "analysis_path": {"type": "string"},
+                "archive_root": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "iracing_setup_history",
         "description": "Return season/car/track-scoped open-setup experiments and their recorded outcomes.",
         "inputSchema": {
@@ -1008,6 +1062,24 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
             result_analysis_path=result_analysis,
             archive_root=str(archive_root),
         )
+    if name in ("save_driving_trial", "list_driving_trials", "load_driving_trial", "evaluate_driving_trial"):
+        import driving_trials
+        if name == "save_driving_trial":
+            priority = arguments.get("action_priority")
+            if isinstance(priority, bool) or not isinstance(priority, int) or not 1 <= priority <= 10:
+                raise ValueError("action_priority must be an integer from 1 to 10.")
+            return driving_trials.save_driving_trial_workflow(
+                analysis_path=str(_analysis_path(arguments.get("analysis_path"), archive_root)),
+                comparison_id=_bounded_identifier(arguments.get("comparison_id"), "comparison_id"),
+                action_priority=priority, archive_root=str(archive_root))
+        if name == "list_driving_trials":
+            return driving_trials.list_driving_trials_workflow(archive_root=str(archive_root), limit=int(arguments.get("limit", 100)))
+        trial_id = _bounded_identifier(arguments.get("trial_id"), "trial_id")
+        if name == "load_driving_trial":
+            return driving_trials.load_driving_trial_workflow(trial_id=trial_id, archive_root=str(archive_root))
+        return driving_trials.evaluate_driving_trial_workflow(
+            trial_id=trial_id, analysis_path=str(_analysis_path(arguments.get("analysis_path"), archive_root)),
+            archive_root=str(archive_root))
     if name == "iracing_setup_history":
         analysis_path = (
             str(_analysis_path(arguments["analysis_path"], archive_root))
