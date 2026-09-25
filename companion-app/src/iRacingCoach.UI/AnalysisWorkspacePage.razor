@@ -5,7 +5,7 @@
             <button class="back-button race-analysis-back" @onclick="State.CloseAnalysisWorkspace" aria-label="Back to sessions" title="Back to sessions"><span aria-hidden="true">←</span><span>Sessions</span></button>
             <div class="ri-title"><h1>@Workspace.Track <span>@Workspace.Layout</span></h1><p>@ContextSummary</p></div>
             <nav class="ri-tabs" role="tablist" aria-label="Race analysis view">
-                @foreach (var (id, label) in PrimaryViews)
+                @foreach (var (id, label) in TestDay is null ? PrimaryViews : TestDayViews)
                 {
                     <button class="ri-tab @(RaceDataSection == id ? "selected" : null)" role="tab" aria-selected="@(RaceDataSection == id ? "true" : "false")" data-view="@id" @onclick="() => ShowView(id)">@label</button>
                 }
@@ -84,7 +84,14 @@
     <div class="@(IsRaceWorkspace ? "race-data-workspace" : "analysis-one-screen")">
         @if (IsRaceWorkspace && RaceDataSection is "race" or "runs" or "sections")
         {
-            @if (Workspace.Investigation is { } investigation)
+            @if (RaceDataSection == "race" && TestDay is { } day)
+            {
+                var current = string.Equals(State.CurrentTestDayId, day.TestDayId, StringComparison.OrdinalIgnoreCase);
+                <TestDayView Group="day" Review="State.TestDayReviewFor(day)" State="State" OpenSessionId="@State.SelectedRaceSessionId"
+                             Loading="@(current && State.TestDayLoading)" Message="@(current ? State.TestDayMessage : "")"
+                             OnLoad="() => State.LoadTestDayAsync(day)" OnOpenRun="OpenTestDayRun" />
+            }
+            else if (Workspace.Investigation is { } investigation)
             {
                 <RaceInvestigationView Investigation="investigation" Geometry="Workspace.VectorGeometry" State="State" AnalysisId="@Workspace.AnalysisId"
                                        View="@RaceDataSection" ComparisonId="@Selection.ComparisonId" SectionId="@Selection.SectionId"
@@ -194,6 +201,8 @@
     [Parameter, EditorRequired] public AnalysisWorkspace Workspace { get; set; } = null!;
     [Parameter, EditorRequired] public RaceCard Card { get; set; } = null!;
     private static readonly (string Id, string Label)[] PrimaryViews = [("race", "Race"), ("runs", "Runs"), ("sections", "Sections")];
+    /// <summary>A stint of a test day keeps its own Runs and Sections; the first view compares the day's runs.</summary>
+    private static readonly (string Id, string Label)[] TestDayViews = [("race", "Test day"), ("runs", "Runs"), ("sections", "Sections")];
     private static readonly (string Id, string Label)[] SecondaryViews = [("traces", "Traces"), ("replay", "Replay"), ("details", "Details")];
     private bool _telemetryVisited;
     private bool _technicalVisited;
@@ -223,10 +232,14 @@
     private string? _analysisId;
     private IReadOnlyList<RaceReviewCornerSummary> _cornerAreas = [];
     private RecentRace? SelectedEventSession => EventSessions.FirstOrDefault(session => session.Id == State.SelectedRaceSessionId);
-    private bool IsRaceWorkspace => SelectedEventSession is { } session
+    /// <summary>The open stint's test day (two or more stints), or null.</summary>
+    private RaceEventGroup? TestDay => State.TestDayGroupFor(State.SelectedRaceSession);
+    private bool IsRaceWorkspace => TestDay is not null || (SelectedEventSession is { } session
         ? !session.IsQualifying
-        : string.Equals(Workspace.SessionType, "Race", StringComparison.OrdinalIgnoreCase);
-    private string ContextSummary => IsRaceWorkspace
+        : string.Equals(Workspace.SessionType, "Race", StringComparison.OrdinalIgnoreCase));
+    private string ContextSummary => TestDay is not null && State.SelectedRaceSession is { } stint
+        ? string.Join(" · ", new[] { Workspace.Car, string.IsNullOrWhiteSpace(Workspace.SetupType) ? null : $"{Workspace.SetupType} setup", stint.Date, stint.SessionType, stint.TestDayRunNumber is { } run ? $"run {run} of {TestDay.Sessions.Count}" : null }.Where(value => !string.IsNullOrWhiteSpace(value)))
+        : IsRaceWorkspace
         ? string.Join(" · ", new[] { Workspace.Car, string.IsNullOrWhiteSpace(Workspace.SetupType) ? null : $"{Workspace.SetupType} setup", SelectedEventSession?.Date, SelectedEventSession is { IsRace: false } practice ? practice.SessionType : null }.Where(value => !string.IsNullOrWhiteSpace(value)))
         : string.Join(" · ", new[] { Workspace.Car, Workspace.SetupType, $"{Workspace.RecordedLaps} laps" }.Where(value => !string.IsNullOrWhiteSpace(value)));
     protected override void OnParametersSet()
@@ -241,6 +254,7 @@
     }
     private IReadOnlyList<RecentRace> EventSessions => State.EventGroups.OfType<RaceEventGroup>().FirstOrDefault(group => group.Sessions?.OfType<RecentRace>().Any(session => session.Id == State.SelectedRaceSessionId) == true)?.Sessions?.OfType<RecentRace>().Where(session => session.IsRace || session.IsQualifying).GroupBy(session => session.IsQualifying ? "qualifying" : "race").Select(group => group.First()).OrderBy(session => session.IsQualifying ? 0 : 1).ToArray() ?? [];
     private Task ShowEventSession(RecentRace session) => session.Id == State.SelectedRaceSessionId ? Task.CompletedTask : State.AnalyzeRaceAsync(session);
+    private Task OpenTestDayRun(RecentRace session) => State.OpenTestDayRunAsync(session);
     private static string SessionName(RecentRace session) => session.IsQualifying ? "Qualifying" : "Race";
     private static string LapRange(IReadOnlyList<int> laps) => laps.Count == 0 ? "—" : laps.Count == 1 ? laps[0].ToString() : $"{laps.Min()}–{laps.Max()}";
     private string FastestCleanLap

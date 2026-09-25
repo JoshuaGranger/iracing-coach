@@ -52,9 +52,13 @@ public sealed record RaceInvestigationAction(int Priority, string Title, string 
     IReadOnlyList<string> Evidence, string? Limitation, IReadOnlyList<int> LapNumbers,
     double? StartPct, double? EndPct, IReadOnlyList<string> SignalKeys,
     string? SectionId = null, RaceTrialSpec? Trial = null);
+/// <summary>
+/// One lap on the investigation charts. <see cref="Label"/> is set by projections
+/// whose lap numbers repeat across runs (a test day's "Run 3 · lap 14").
+/// </summary>
 public sealed record RaceInvestigationLap(int Lap, double? LapTimeSeconds, int? Position,
     string FlagState, bool Eligible, IReadOnlyList<string> ExclusionReasons, int? RunNumber, bool PlotPace = false,
-    double? GreenExposure = null);
+    double? GreenExposure = null, string? Label = null);
 public sealed record RaceInvestigationEvent(int Lap, string Kind, string Label, string Detail,
     double? Value, string? Unit);
 public sealed record RaceTrackEvolution(string Status, string? Provenance, string? StartingUsage,
