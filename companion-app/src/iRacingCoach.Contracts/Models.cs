@@ -140,7 +140,11 @@ public sealed record LocalSetup(
     // known; setups compare only within one car.
     string CarKey = "",
     // The analysis whose recording supplied Fields, when they came from one.
-    string ValuesAnalysisPath = "");
+    string ValuesAnalysisPath = "",
+    // Tire readings from the last run (hot pressures, temperatures, tread) and the
+    // revision counter that iRacing stores beside the garage values. They describe a
+    // run, not the setup, so they are kept out of Fields and shown on their own.
+    IReadOnlyList<SetupField>? RunReadings = null);
 
 public sealed record EvidenceText(EvidenceKind Kind, string Text)
 {

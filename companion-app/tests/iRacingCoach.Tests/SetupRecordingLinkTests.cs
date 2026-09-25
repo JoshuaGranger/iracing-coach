@@ -269,6 +269,55 @@ public sealed class SetupRecordingLinkTests
     }
 
     [TestMethod]
+    public void RunReadingsFromRecordingsAndExportedSheets_AreListedApartFromSetupValues()
+    {
+        // The recorded telemetry row for the 9/23 IRP race listed "14 values", half of
+        // them last-run tire readings and a revision counter.
+        var recorded = RecordedRaceSetup();
+        CollectionAssert.AreEquivalent(new[]
+        {
+            "Tires.LeftFront.ColdPressure", "Tires.RightFront.ColdPressure", "Chassis.Front.CrossWeight", "Chassis.Front.FrontBrakeBias",
+            "Chassis.LeftFront.RideHeight", "Chassis.LeftFront.SpringPerchOffset", "Chassis.Rear.RearEndRatio"
+        }, recorded.Fields.Select(field => field.Key).ToArray(), "Setup values are the garage settings only.");
+        CollectionAssert.AreEquivalent(new[]
+        {
+            "UpdateCount", "Tires.LeftFront.LastHotPressure", "Tires.LeftFront.LastTempsOMI", "Tires.LeftFront.TreadRemaining",
+            "Tires.RightFront.LastHotPressure", "Tires.RightFront.LastTempsIMO", "Tires.RightFront.TreadRemaining"
+        }, recorded.RunReadings!.Select(field => field.Key).ToArray());
+        Assert.AreEqual("7 values", SetupPage.ValuesSummary(recorded));
+
+        var sheet = RuntimeMapper.Setups(JsonSerializer.SerializeToElement(new
+        {
+            entries = new[]
+            {
+                Entry("stockcars2 supra2019", "Sheet", new { schema_version = 1, status = "none" }, new { available = true, source = "setup_export" },
+                    new { fields = new Dictionary<string, object>
+                    {
+                        ["tires.left_front.cold_pressure"] = new { raw = "15.0 psi", label = "Cold pressure", section = "LEFT FRONT" },
+                        ["tires.left_front.last_hot_pressure"] = new { raw = "17.0 psi", label = "Last hot pressure", section = "LEFT FRONT" },
+                        ["tires.left_front.last_temps_omi"] = new { raw = "99F, 100F, 101F", label = "Last temps O M I", section = "LEFT FRONT" },
+                        ["tires.left_front.tread_remaining"] = new { raw = "100%, 100%, 100%", label = "Tread remaining", section = "LEFT FRONT" },
+                        ["chassis.rear.rear_end_ratio"] = new { raw = "4.57", label = "Rear end ratio", section = "REAR" }
+                    } })
+            }
+        })).Single();
+        CollectionAssert.AreEqual(new[] { "tires.left_front.cold_pressure", "chassis.rear.rear_end_ratio" }, sheet.Fields.Select(field => field.Key).ToArray());
+        CollectionAssert.AreEqual(new[] { "Last hot pressure", "Last temps O M I", "Tread remaining" }, sheet.RunReadings!.Select(field => field.Label).ToArray());
+        Assert.AreEqual("2 values", SetupPage.ValuesSummary(sheet));
+
+        // A setup built elsewhere with readings still inside Fields is split the same way.
+        var mixed = recorded with { Fields = [.. recorded.Fields, .. recorded.RunReadings!], RunReadings = null };
+        Assert.HasCount(7, SetupReadings.Values(mixed));
+        Assert.HasCount(7, SetupReadings.Readings(mixed));
+        Assert.AreEqual("7 values", SetupPage.ValuesSummary(mixed));
+
+        var page = File.ReadAllText(Path.Combine(TestRepositoryPaths.UiRoot, "SetupPage.razor"));
+        StringAssert.Contains(page, "data-run-readings");
+        StringAssert.Contains(page, "Run readings, not setup values");
+        Assert.DoesNotContain("selected.Fields.GroupBy", page, "The setup value list must not include run readings.");
+    }
+
+    [TestMethod]
     public void TuningALinkedSetupFileUsesTheRecordingItsValuesCameFrom_NotTheFirstListed()
     {
         // The IRP file's values come from the 9/23 race; the practice was listed first,

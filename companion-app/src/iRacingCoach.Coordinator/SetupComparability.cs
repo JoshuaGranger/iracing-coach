@@ -31,7 +31,8 @@ public static class SetupComparability
             : string.Equals(left.Car, right.Car, StringComparison.OrdinalIgnoreCase);
     }
 
-    public static bool HasValues(LocalSetup setup) => setup.Fields.Count > 0;
+    /// <summary>Known garage values; run readings alone do not make a setup's values known.</summary>
+    public static bool HasValues(LocalSetup setup) => SetupReadings.Values(setup).Count > 0;
 
     // Recorded values use iRacing's garage names and units; an exported setup
     // sheet uses its own names and display units, so the two never compare as equal.

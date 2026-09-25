@@ -11,7 +11,8 @@ internal sealed class ArchivedRaceCatalog
 {
     // 2: recorded setups carry the recording's car path (CarKey) for same-car comparison.
     // 3: and the report their values came from (ValuesAnalysisPath), which tuning starts from.
-    private const int ProjectionVersion = 3;
+    // 4: run readings (last hot pressures, temperatures, tread) are kept apart from Fields.
+    private const int ProjectionVersion = 4;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);

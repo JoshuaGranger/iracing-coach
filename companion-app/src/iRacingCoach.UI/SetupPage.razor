@@ -68,12 +68,13 @@ else
                         {
                             <div class="setup-evidence-empty"><strong>No recording uses this setup yet</strong><p>Record a run with this setup, then analyze it to compare handling and pace.</p><button class="button secondary compact" @onclick='() => State.Navigate("analysis")'>Review a recording</button></div>
                         }
-                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId" disabled="@(selected.Fields.Count == 0)" title="@(selected.Fields.Count == 0 ? "This setup's values are unknown, so it can't be compared." : null)"><option value="">No comparison</option>@foreach (var candidate in CompareCandidates(State.Setups, selected)) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</select></label></div>
-                        @if (selected.Fields.Count > 0 && selected.ValuesNote.Length > 0)
+                        @{ var values = SetupReadings.Values(selected); var readings = SetupReadings.Readings(selected); }
+                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId" disabled="@(values.Count == 0)" title="@(values.Count == 0 ? "This setup's values are unknown, so it can't be compared." : null)"><option value="">No comparison</option>@foreach (var candidate in CompareCandidates(State.Setups, selected)) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</select></label></div>
+                        @if (values.Count > 0 && selected.ValuesNote.Length > 0)
                         {
                             <p class="setup-source-note" data-values-source="@selected.ValuesSource">@selected.ValuesNote</p>
                         }
-                        @if (selected.Fields.Count == 0)
+                        @if (values.Count == 0)
                         {
                             <p class="setup-source-note" data-values-unknown>@(selected.ValuesNote.Length > 0 ? selected.ValuesNote : "Values unknown for this setup.")</p>
                         }
@@ -91,13 +92,19 @@ else
                             @if (_showIdentical) { foreach (var row in identical) { <tr data-row="identical"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> } }
                             </tbody></table>
                             @if (changed.Length == 0 && unknown.Length == 0) { <p class="setup-source-note">Every readable setting matches.</p> }
-                            @if (selected.Fields.Concat(comparison.Fields).Any(field => SetupReadings.IsRunReading(field.Key))) { <p class="setup-source-note">Tire readings from a recorded run are not setup values and are not compared.</p> }
+                            @if (readings.Count > 0 || SetupReadings.Readings(comparison).Count > 0) { <p class="setup-source-note">Tire readings from a recorded run are not setup values and are not compared.</p> }
                         }
                         else
                         {
-                            @foreach (var group in selected.Fields.GroupBy(field => field.Group))
+                            @foreach (var group in values.GroupBy(field => field.Group))
                             {
                                 <details class="setup-values-group" open><summary>@group.Key <span>@group.Count()</span></summary><dl>@foreach (var field in group) { <div><dt>@field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
+                            }
+                            @if (readings.Count > 0)
+                            {
+                                <details class="setup-values-group" data-run-readings><summary>Run readings, not setup values <span>@readings.Count</span></summary>
+                                    <p class="setup-source-note">Last-run tire readings saved with this setup. They change every run and are never compared.</p>
+                                    <dl>@foreach (var field in readings) { <div><dt>@field.Group · @field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
                             }
                         }
                         @if (CompareExclusions(State.Setups, selected) is { Count: > 0 } excluded)
@@ -150,8 +157,9 @@ else
         : setups.FirstOrDefault(item => item.Id != setup.Id && !IsSetupFile(item)
             && (item.AnalysisPaths ?? []).Any(path => string.Equals(path, analysisPath, StringComparison.OrdinalIgnoreCase))) ?? setup;
 
-    private static string ValuesSummary(LocalSetup setup) => setup.Fields.Count == 0 ? "Values unknown"
-        : setup.ValuesSource == "recording" ? $"{setup.Fields.Count} values from a recording" : $"{setup.Fields.Count} values";
+    // Run readings are not setup values, so they never count toward "N values".
+    public static string ValuesSummary(LocalSetup setup) => SetupReadings.Values(setup).Count is var count && count == 0 ? "Values unknown"
+        : setup.ValuesSource == "recording" ? $"{count} values from a recording" : $"{count} values";
 
     /// <summary>Other setups of the same car whose values are known and comparable with this one's.</summary>
     public static IReadOnlyList<LocalSetup> CompareCandidates(IEnumerable<LocalSetup> setups, LocalSetup setup) => SetupComparability.Candidates(setups, setup);
