@@ -366,6 +366,17 @@ class TestDayWindowTests(unittest.TestCase):
         self.assertIsNone(second["late"]["median_s"])
         self.assertEqual(second["comparison"]["basis"], "early_window")
 
+    def test_the_late_window_never_shares_a_lap_with_laps_two_to_five(self) -> None:
+        for laps, label, members in ((8, "Laps 6–8", [6, 7, 8]), (9, "Laps 6–9", [6, 7, 8, 9]), (10, "Laps 6–10", [6, 7, 8, 9, 10])):
+            with self.subTest(laps=laps):
+                result = review(stint_analysis("a", 9, laps=laps), stint_analysis("b", 10, laps=20))
+                self.assertEqual(result["windows"]["late"]["label"], label)
+                for row in result["runs"]:
+                    self.assertEqual(row["late"]["laps"], members)
+                    self.assertFalse(set(row["early"]["laps"]) & set(row["late"]["laps"]))
+        withheld = review(stint_analysis("a", 9, laps=7), stint_analysis("b", 10, laps=7))["windows"]["late"]
+        self.assertEqual(withheld["reason"], "No run reached 8 laps, so there are not 3 laps after laps 2–5 for a late window.")
+
     def test_a_short_run_does_not_shorten_the_late_window_for_everyone(self) -> None:
         result = review(stint_analysis("a", 9, laps=20), stint_analysis("b", 10, laps=6), stint_analysis("c", 11, laps=18))
         self.assertEqual(result["windows"]["late"]["label"], "Laps 14–18")
@@ -433,6 +444,35 @@ class TestDayVerdictTests(unittest.TestCase):
             stint_analysis("a", 9), stint_analysis("b", 10), stint_analysis("c", 11, base=23.8),
             stint_analysis("d", 12, base=24.2), stint_analysis("e", 13, fuel_l=40.0))["runs"][1:]}
         self.assertEqual(verdicts, {"within_scatter", "faster", "slower", "not_comparable"})
+
+    def test_medians_are_compared_at_the_same_laps_of_the_run(self) -> None:
+        # Identical pace with 0.05 s/lap fall-off; run 2 lost laps 16 and 17 to traffic.
+        second = stint_analysis("b", 10, slope=0.05, setup=wedge(car_setup()))
+        for lap in second["laps"][15:17]:
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.4
+        result = review(stint_analysis("a", 9, slope=0.05), second)
+        comparison = result["runs"][1]["comparison"]
+        self.assertEqual(result["runs"][0]["late"]["laps"], [16, 17, 18, 19, 20])  # each window still shows its own clean laps
+        self.assertEqual(result["runs"][1]["late"]["laps"], [18, 19, 20])
+        self.assertEqual((comparison["verdict"], comparison["delta_s"]), ("within_scatter", 0.0))
+        self.assertEqual((comparison["run_laps"], comparison["previous_laps"], comparison["current_laps"]),
+                         ([18, 19, 20], [18, 19, 20], [18, 19, 20]))
+        self.assertEqual((comparison["previous_median_s"], comparison["current_median_s"]), (24.95, 24.95))
+        self.assertIn("3 laps clean in both runs", comparison["summary"])
+        self.assertEqual(result["next_change"]["kind"], "repeat")
+        # Fewer than three shared clean ages in the late window falls back to laps 2-5.
+        first = stint_analysis("a", 9, slope=0.05)
+        for lap in first["laps"][18:20]:
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.4
+        fallback = review(first, second)["runs"][1]["comparison"]
+        self.assertEqual((fallback["basis"], fallback["run_laps"]), ("early_window", [2, 3, 4, 5]))
+        for lap in second["laps"][1:3]:
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.4
+        for lap in first["laps"][3:5]:
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.4
+        blocked = review(first, second)["runs"][1]["comparison"]
+        self.assertEqual((blocked["verdict"], blocked["blocked_by"]), ("not_comparable", "measurement"))
+        self.assertEqual(blocked["reasons"], ["Only 1 lap of laps 16–20 is clean in both runs; 3 are needed at the same laps of the run."])
 
     def test_scatter_widens_the_threshold(self) -> None:
         result = review(stint_analysis("a", 9, noise=0.1), stint_analysis("b", 10, base=23.9, noise=0.1))

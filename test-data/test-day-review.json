@@ -24,7 +24,7 @@
     "synthetic": true
   },
   "limitations": [
-    "Pace windows count laps from the start of each stint's measured run; they are equal run age, not measured tire wear.",
+    "Pace windows count laps from the start of each stint's measured run. A verdict compares the two runs on the laps of the run that are clean in both, so its medians are at equal run age; run age is not measured tire wear.",
     "Verdicts compare medians against a threshold of max(0.03 s, 2 × combined standard error); a difference inside it is within scatter, not unchanged.",
     "Track evolution, driver adaptation and traffic are not controlled between stints.",
     "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
@@ -44,7 +44,7 @@
       }
     ],
     "evidence": [
-      "Laps 12–16: median 24.068 s, 0.110 s faster than run 2 (24.178 s); threshold 0.030 s."
+      "Laps 12–16, 5 laps clean in both runs: median 24.068 s, 0.110 s faster than run 2 (24.178 s); threshold 0.030 s."
     ],
     "instruction": "Move front brake bias forward by one available garage step. Expected: Increase rear stability during brake application and release. Risk: Front locking, longer stopping distance, or a tighter center.",
     "kind": "keep_and_step",
@@ -859,6 +859,13 @@
         "basis": "late_window",
         "blocked_by": null,
         "compared_with_run": 1,
+        "current_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
         "current_median_s": 24.178,
         "delta_s": 0.01,
         "first_run_lap": 12,
@@ -866,10 +873,24 @@
           "Tire compound is not recorded for run 1 or run 2."
         ],
         "last_run_lap": 16,
+        "previous_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
         "previous_median_s": 24.168,
         "reasons": [],
+        "run_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
         "standard_error_s": 0.008,
-        "summary": "Laps 12–16: median 24.178 s, within the 0.030 s scatter threshold of run 1 (24.168 s).",
+        "summary": "Laps 12–16, 5 laps clean in both runs: median 24.178 s, within the 0.030 s scatter threshold of run 1 (24.168 s).",
         "threshold_s": 0.03,
         "verdict": "within_scatter",
         "window_label": "Laps 12–16"
@@ -1654,6 +1675,13 @@
         "basis": "late_window",
         "blocked_by": null,
         "compared_with_run": 2,
+        "current_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
         "current_median_s": 24.068,
         "delta_s": -0.11,
         "first_run_lap": 12,
@@ -1661,10 +1689,24 @@
           "Tire compound is not recorded for run 2 or run 3."
         ],
         "last_run_lap": 16,
+        "previous_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
         "previous_median_s": 24.178,
         "reasons": [],
+        "run_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
         "standard_error_s": 0.008,
-        "summary": "Laps 12–16: median 24.068 s, 0.110 s faster than run 2 (24.178 s); threshold 0.030 s.",
+        "summary": "Laps 12–16, 5 laps clean in both runs: median 24.068 s, 0.110 s faster than run 2 (24.178 s); threshold 0.030 s.",
         "threshold_s": 0.03,
         "verdict": "faster",
         "window_label": "Laps 12–16"
@@ -2321,7 +2363,7 @@
     "track_name": "Synthetic Speedway"
   },
   "verdict_rule": {
-    "comparison": "Late window when both runs have it, otherwise laps 2–5.",
+    "comparison": "Late window when both runs have 3+ of its laps clean at the same laps of the run, otherwise laps 2–5; medians over those shared laps only.",
     "median_standard_error_factor": 1.2533,
     "minimum_threshold_s": 0.03,
     "scatter": "Residual standard deviation of the fall-off fit over laps 2..N.",

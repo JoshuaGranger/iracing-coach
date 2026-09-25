@@ -3,7 +3,8 @@
 A test day is 2-12 archived stints of one car at one track configuration. Each
 stint is one recording with one garage setup. The review measures, for every
 stint, the median of clean laps in the same run-age windows (laps 2-5, and the
-last five laps up to the shortest stint of at least eight laps), a least-squares
+last five laps up to the shortest stint of at least eight laps, never overlapping
+laps 2-5), a least-squares
 fall-off over laps 2..N with its residual scatter, the garage-setup change from
 the previous stint (tire readings excluded), whether the two stints can be
 compared at all, and the tire readings at the stint's stop with their sources.
@@ -55,8 +56,9 @@ MINIMUM_RUNS = 2
 MAXIMUM_RUNS = 12
 EARLY_WINDOW = (2, 5)
 LATE_WINDOW_LAPS = 5
-MINIMUM_LATE_RUN_LAPS = 8
 MINIMUM_WINDOW_LAPS = 3
+# A late window needs MINIMUM_WINDOW_LAPS laps after laps 2-5, so it never overlaps them.
+MINIMUM_LATE_RUN_LAPS = EARLY_WINDOW[1] + MINIMUM_WINDOW_LAPS
 MINIMUM_THRESHOLD_S = 0.03
 STANDARD_ERROR_MULTIPLIER = 2.0
 # Standard error of a median of n normal observations is sqrt(pi/2) * sd / sqrt(n).
@@ -439,12 +441,17 @@ def _fall_off(stint: Mapping[str, Any], last: int) -> dict[str, Any]:
     return result
 
 
-def _standard_error(fall_off: Mapping[str, Any], window: Mapping[str, Any]) -> float | None:
+def _standard_error(fall_off: Mapping[str, Any], count: int) -> float | None:
     scatter = _number(fall_off.get("scatter_s"))
-    count = int(window.get("clean_lap_count") or 0)
     if scatter is None or count <= 0:
         return None
     return MEDIAN_STANDARD_ERROR_FACTOR * scatter / math.sqrt(count)
+
+
+def _clean_by_age(stint: Mapping[str, Any], window: Mapping[str, Any]) -> dict[int, Mapping[str, Any]]:
+    first, last = window["first_run_lap"], window["last_run_lap"]
+    return {row["run_lap"]: row for row in stint["rows"]
+            if row["eligible"] and row["run_lap"] is not None and first <= row["run_lap"] <= last}
 
 
 def _comparability(previous: Mapping[str, Any], current: Mapping[str, Any]) -> tuple[list[str], list[str]]:
@@ -493,26 +500,43 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
     reasons, flags = _comparability(previous, current)
     result: dict[str, Any] = {"compared_with_run": previous["number"], "verdict": "not_comparable", "blocked_by": None, "basis": None,
                               "window_label": None, "first_run_lap": None, "last_run_lap": None,
-                              "previous_median_s": None, "current_median_s": None, "delta_s": None,
+                              "run_laps": [], "previous_laps": [], "current_laps": [], "previous_median_s": None, "current_median_s": None, "delta_s": None,
                               "threshold_s": None, "standard_error_s": None, "reasons": reasons, "flags": flags,
                               "summary": None}
     if reasons:
         result.update(blocked_by="conditions", summary=f"Not comparable with run {previous['number']}: " + " ".join(reasons))
         return result
-    basis = next((key for key in ("late", "early")
-                  if previous[key]["status"] == "measured" and current[key]["status"] == "measured"), None)
+    # Both medians are taken on the same laps of the run, clean in both runs, so
+    # fall-off cannot turn a lap-age mismatch inside a window into a verdict.
+    basis, ages, shortfall = None, [], None
+    for key in ("late", "early"):
+        if previous[key]["status"] != "measured" or current[key]["status"] != "measured":
+            continue
+        before_rows, after_rows = _clean_by_age(previous, previous[key]), _clean_by_age(current, current[key])
+        shared = sorted(set(before_rows) & set(after_rows))
+        if len(shared) >= MINIMUM_WINDOW_LAPS:
+            basis, ages = key, shared
+            break
+        shortfall = shortfall or (key, shared)
     if basis is None:
-        reason = f"Neither pace window has {MINIMUM_WINDOW_LAPS}+ clean laps in both runs."
+        if shortfall is not None:
+            key, shared = shortfall
+            reason = (f"Only {len(shared)} lap{'s' if len(shared) != 1 else ''} of {previous[key]['label'].lower()} "
+                      f"{'is' if len(shared) == 1 else 'are'} clean in both runs; {MINIMUM_WINDOW_LAPS} are needed at the same laps of the run.")
+        else:
+            reason = f"Neither pace window has {MINIMUM_WINDOW_LAPS}+ clean laps in both runs."
         result.update(blocked_by="measurement", reasons=[reason], summary=f"Not comparable with run {previous['number']}: {reason}")
         return result
-    errors = [_standard_error(item["fall_off"], item[basis]) for item in (previous, current)]
+    errors = [_standard_error(item["fall_off"], len(ages)) for item in (previous, current)]
     combined = math.sqrt(sum(value * value for value in errors)) if all(value is not None for value in errors) else None
     if combined is None:
         reason = "The lap-time scatter needed for a threshold is not measured for both runs."
         result.update(blocked_by="measurement", reasons=[reason], summary=f"Not comparable with run {previous['number']}: {reason}")
         return result
     threshold = round(max(MINIMUM_THRESHOLD_S, STANDARD_ERROR_MULTIPLIER * combined), 3)
-    before, after = previous[basis]["median_s"], current[basis]["median_s"]
+    before_rows, after_rows = _clean_by_age(previous, previous[basis]), _clean_by_age(current, current[basis])
+    before = _round(statistics.median(before_rows[age]["lap_time_s"] for age in ages))
+    after = _round(statistics.median(after_rows[age]["lap_time_s"] for age in ages))
     delta = round(after - before, 3)
     verdict = "faster" if delta < -threshold else "slower" if delta > threshold else "within_scatter"
     window = current[basis]
@@ -520,9 +544,12 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
              "within_scatter": f"within the {threshold:.3f} s scatter threshold of"}[verdict]
     result.update(verdict=verdict, basis=f"{basis}_window", window_label=window["label"],
                   first_run_lap=window["first_run_lap"], last_run_lap=window["last_run_lap"],
+                  run_laps=ages, previous_laps=[before_rows[age]["lap"] for age in ages],
+                  current_laps=[after_rows[age]["lap"] for age in ages],
                   previous_median_s=before, current_median_s=after, delta_s=delta, threshold_s=threshold,
                   standard_error_s=_round(combined, 4), reasons=[],
-                  summary=(f"{window['label']}: median {after:.3f} s, {words} run {previous['number']} ({before:.3f} s)"
+                  summary=(f"{window['label']}, {len(ages)} laps clean in both runs: median {after:.3f} s, {words} "
+                           f"run {previous['number']} ({before:.3f} s)"
                            + ("." if verdict == "within_scatter" else f"; threshold {threshold:.3f} s.")))
     return result
 
@@ -898,13 +925,18 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
     if long_runs:
         shortest = min(long_runs, key=lambda item: (item["run_laps"], item["number"]))
         late_last = shortest["run_laps"]
-        late = {"status": "available", "first_run_lap": late_last - LATE_WINDOW_LAPS + 1, "last_run_lap": late_last,
-                "label": _window_label(late_last - LATE_WINDOW_LAPS + 1, late_last), "reason": None,
-                "basis": f"Shortest run of at least {MINIMUM_LATE_RUN_LAPS} laps: run {shortest['number']} ({late_last} laps)."}
+        # The late window never shares a lap with laps 2-5: an 8- or 9-lap run gives laps 6-8 or 6-9.
+        late_first = max(late_last - LATE_WINDOW_LAPS + 1, EARLY_WINDOW[1] + 1)
+        late = {"status": "available", "first_run_lap": late_first, "last_run_lap": late_last,
+                "label": _window_label(late_first, late_last), "reason": None,
+                "basis": f"Shortest run of at least {MINIMUM_LATE_RUN_LAPS} laps: run {shortest['number']} ({late_last} laps)."
+                         + (f" It starts after {_window_label(*EARLY_WINDOW).lower()} so the windows share no lap."
+                            if late_last - late_first + 1 < LATE_WINDOW_LAPS else "")}
         fall_last = late_last
     else:
         late = {"status": "withheld", "first_run_lap": None, "last_run_lap": None, "label": None,
-                "reason": f"No run reached {MINIMUM_LATE_RUN_LAPS} laps, so a late window would overlap laps 2–5.", "basis": None}
+                "reason": (f"No run reached {MINIMUM_LATE_RUN_LAPS} laps, so there are not {MINIMUM_WINDOW_LAPS} laps "
+                           f"after {_window_label(*EARLY_WINDOW).lower()} for a late window."), "basis": None}
         fall_last = EARLY_WINDOW[1]
     for stint in stints:
         stint["early"] = _window(stint, *EARLY_WINDOW)
@@ -923,7 +955,8 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
     rows = [_row(stint, stints[index - 1] if index else None) for index, stint in enumerate(stints)]
     offline_runs = [stint["number"] for stint in stints if stint["offline"]]
     limitations = [
-        "Pace windows count laps from the start of each stint's measured run; they are equal run age, not measured tire wear.",
+        "Pace windows count laps from the start of each stint's measured run. A verdict compares the two runs on the laps of "
+        "the run that are clean in both, so its medians are at equal run age; run age is not measured tire wear.",
         "Verdicts compare medians against a threshold of max(0.03 s, 2 × combined standard error); a difference inside it is within scatter, not unchanged.",
         "Track evolution, driver adaptation and traffic are not controlled between stints.",
         SHEET_TIMING_NOTE,
@@ -956,7 +989,8 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
         "verdict_rule": {"minimum_threshold_s": MINIMUM_THRESHOLD_S, "standard_error_multiplier": STANDARD_ERROR_MULTIPLIER,
                          "median_standard_error_factor": round(MEDIAN_STANDARD_ERROR_FACTOR, 4),
                          "scatter": "Residual standard deviation of the fall-off fit over laps 2..N.",
-                         "comparison": "Late window when both runs have it, otherwise laps 2–5."},
+                         "comparison": (f"Late window when both runs have {MINIMUM_WINDOW_LAPS}+ of its laps clean at the same "
+                                        "laps of the run, otherwise laps 2–5; medians over those shared laps only.")},
         "comparability_rule": {"track_temperature_f": MATERIAL_TEMPERATURE_F, "start_fuel_gal": MATERIAL_FUEL_GAL,
                                "used_tire_odometer_m": USED_TIRE_ODOMETER_M,
                                "requires": ["exact car path", "exact track configuration", "open setup",
