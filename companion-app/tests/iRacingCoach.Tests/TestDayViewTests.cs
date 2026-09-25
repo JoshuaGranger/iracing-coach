@@ -508,7 +508,7 @@ public sealed class TestDayViewTests
         StringAssert.Contains(css, ".td-table { width: 100%; table-layout: fixed;");
         Assert.DoesNotContain("max-height: 42vh", css);
         var index = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.App", "wwwroot", "index.html"));
-        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=15");
+        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=16");
     }
 
     private static string Row(string html, int run)
