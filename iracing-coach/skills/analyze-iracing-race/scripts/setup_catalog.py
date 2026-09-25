@@ -530,7 +530,12 @@ def _infer_filename_identity(stem: str) -> dict[str, Any]:
     }:
         vendor_end = 1
     vendor_tokens = identity_tokens[:vendor_end]
-    track_tokens = identity_tokens[vendor_end:]
+    # Only a shop-style name ("<vendor> <track> <season> <role>") says where its
+    # track words are. In a personal name such as "claude IRP test v2 LFcamber"
+    # every word would otherwise become the track ("Claude IRP Test V2
+    # Lfcamber"), so without a vendor or season the track stays unknown; a
+    # recording that loaded the file names its track instead.
+    track_tokens = identity_tokens[vendor_end:] if vendor_tokens or season_key else []
     variant_tokens = [
         token
         for token in track_tokens
@@ -544,6 +549,7 @@ def _infer_filename_identity(stem: str) -> dict[str, Any]:
         "vendor_tokens": vendor_tokens,
         "track_hint": " ".join(track_tokens) or None,
         "track_tokens": track_tokens,
+        "track_basis": "file_name_convention" if track_tokens else None,
         "variant": " ".join(dict.fromkeys(token.casefold() for token in variant_tokens)) or None,
         "variant_tokens": list(dict.fromkeys(variant_tokens)),
         "season_key": season_key,
@@ -1172,6 +1178,190 @@ def compare_setups(
     }
 
 
+#: The garage values a comparison is given are iRacing's own displayed strings
+#: ("-0 mm", "+6.0 deg", "4014 N", "12:1"). Two values shown in the same unit are
+#: equal exactly when the numbers are: every displayed difference is at least one
+#: display step, so a newton of corner weight is a real (if computed) change and
+#: "-0 mm" equals "0 mm". Only a value shown in another unit (a sheet in inches
+#: beside a recording in millimetres) is converted, and then two values are equal
+#: when they lie within half of the coarser display step of each other, the
+#: rounding the two displays themselves introduce. No other tolerance applies.
+DISPLAY_EQUALITY_RULE = (
+    "Values shown in the same unit are equal only when the displayed numbers are equal (-0 equals 0). "
+    "A value shown in another unit is converted and is equal within half of the coarser display step."
+)
+READOUT_RULE = (
+    "Computed garage readouts (setup_catalog.is_garage_readout_field, as in the Test day) are listed apart and never counted "
+    "as changed settings; the driver moves them only through an adjustment."
+)
+_UNREADABLE_DISPLAYS = {"", "-", "—", "n/a", "na", "unknown"}
+MAX_DISPLAYED_VALUE_CHARS = 200
+
+
+def _display_unit(raw: Any) -> str | None:
+    match = _VALUE_RE.fullmatch(str(raw or ""))
+    return re.sub(r"\s+", "", match.group(2)).casefold() if match else None
+
+
+def _display_step(raw: Any) -> float | None:
+    """One display step of a displayed number, in its canonical unit."""
+
+    match = _VALUE_RE.fullmatch(str(raw or ""))
+    if not match:
+        return None
+    token = match.group(1).lstrip("+-")
+    if "/" in token:
+        denominator = token.rsplit("/", 1)[-1]
+        try:
+            step_text = f"{1.0 / float(denominator):.9f}"
+        except (ValueError, ZeroDivisionError):
+            return None
+    else:
+        decimals = len(token.split(".", 1)[1]) if "." in token else 0
+        step_text = "0." + "0" * (decimals - 1) + "1" if decimals else "1"
+    unit_text = match.group(2)
+    stepped, zero = _numeric_record(f"{step_text} {unit_text}"), _numeric_record(f"0 {unit_text}")
+    if stepped is None or zero is None:
+        return None
+    return abs(float(stepped["value"]) - float(zero["value"]))
+
+
+def _displayed_equal(left: Mapping[str, Any], right: Mapping[str, Any]) -> tuple[bool, float | None, float | None]:
+    """(equal, left minus right, tolerance) for two canonical displayed records."""
+
+    kind = left.get("kind")
+    if kind != right.get("kind"):
+        return False, None, None
+    if kind in ("number", "number_list"):
+        if left.get("unit") != right.get("unit"):
+            return False, None, None
+        tolerance = 0.0
+        if _display_unit(left.get("raw")) != _display_unit(right.get("raw")):
+            steps = [_display_step(left.get("raw")), _display_step(right.get("raw"))]
+            tolerance = max(step for step in steps if step is not None) / 2.0 if any(step is not None for step in steps) else 0.0
+        if kind == "number":
+            a, b = float(left["value"]), float(right["value"])
+            return abs(a - b) <= tolerance + 1e-9 * max(1.0, abs(a), abs(b)), a - b, tolerance
+        a_values, b_values = list(left.get("value") or ()), list(right.get("value") or ())
+        if len(a_values) != len(b_values):
+            return False, None, tolerance
+        return all(abs(float(a) - float(b)) <= tolerance + 1e-9 * max(1.0, abs(float(a)), abs(float(b)))
+                   for a, b in zip(a_values, b_values)), None, tolerance
+    return left.get("value") == right.get("value"), None, None
+
+
+def _displayed_fields(
+    fields: Mapping[str, Any], scheme: str, field_limit: int
+) -> tuple[dict[str, tuple[str, Any, dict[str, Any] | None]], list[str], list[str]]:
+    """canonical key -> (caller's key, displayed value, record or None when unreadable)."""
+
+    result: dict[str, tuple[str, Any, dict[str, Any] | None]] = {}
+    excluded: list[str] = []
+    warnings: list[str] = []
+    for key, value in list(fields.items())[:field_limit]:
+        text_key = str(key)
+        if scheme == "recording":
+            canonical = _normalize_embedded_path([part for part in text_key.split(".") if part])
+        else:
+            canonical = text_key.strip()
+        if not canonical:
+            warnings.append(f"Unreadable field key ignored: {text_key}")
+            continue
+        if is_transient_setup_field(canonical):
+            excluded.append(canonical)
+            continue
+        if canonical in result:
+            warnings.append(f"Duplicate normalized field ignored: {text_key}")
+            continue
+        if isinstance(value, str) and len(value) > MAX_DISPLAYED_VALUE_CHARS:
+            raise SetupLimitError(f"Displayed value for {text_key} exceeds {MAX_DISPLAYED_VALUE_CHARS} characters.")
+        readable = not (value is None or (isinstance(value, str) and _clean_text(value).casefold() in _UNREADABLE_DISPLAYS))
+        result[canonical] = (text_key, value, _canonicalize(value, field_key=canonical) if readable else None)
+    return result, sorted(set(excluded)), warnings
+
+
+def compare_displayed_setups(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+    *,
+    scheme: str = "recording",
+    max_fields: int = HARD_MAX_FIELDS,
+) -> dict[str, Any]:
+    """Compare two setups as the garage displays them, for the Setups page.
+
+    ``left`` and ``right`` map each field's key to its displayed value: for a
+    recording (``scheme="recording"``) the dotted ``CarSetup`` path such as
+    ``Chassis.LeftFront.Camber``; for an exported sheet (``scheme="export"``)
+    the canonical key :func:`parse_setup_html` produced. Tire readings are left
+    out. Each row keeps the caller's key, so the caller keeps its own labels.
+
+    A setting is ``changed`` when both sides are readable and differ under
+    :data:`DISPLAY_EQUALITY_RULE`, ``unknown`` when it is missing or unreadable
+    on a side (never equal), and ``identical`` otherwise. Computed readouts carry
+    ``readout: true`` and are counted apart (:data:`READOUT_RULE`), using the
+    same :func:`is_garage_readout_field` set the Test day review uses.
+    """
+
+    if scheme not in ("recording", "export"):
+        raise SetupCatalogError("scheme must be 'recording' or 'export'.")
+    if not isinstance(left, Mapping) or not isinstance(right, Mapping):
+        raise SetupCatalogError("Both setups must map field keys to displayed values.")
+    field_limit = _bounded_int(max_fields, "max_fields", HARD_MAX_FIELDS, HARD_MAX_FIELDS)
+    if len(left) > field_limit or len(right) > field_limit:
+        raise SetupLimitError(f"A setup may list at most {field_limit} fields.")
+    left_fields, left_excluded, left_warnings = _displayed_fields(left, scheme, field_limit)
+    right_fields, right_excluded, right_warnings = _displayed_fields(right, scheme, field_limit)
+    order = list(left_fields) + [key for key in right_fields if key not in left_fields]
+    rows: list[dict[str, Any]] = []
+    for canonical in order:
+        a, b = left_fields.get(canonical), right_fields.get(canonical)
+        readout = is_garage_readout_field(canonical)
+        record_a, record_b = (a[2] if a else None), (b[2] if b else None)
+        delta: float | None = None
+        tolerance: float | None = None
+        if record_a is None or record_b is None:
+            status = "unknown"
+        else:
+            equal, delta, tolerance = _displayed_equal(record_a, record_b)
+            status = "identical" if equal else "changed"
+        unit = (record_a or record_b or {}).get("unit")
+        rows.append({
+            "key": (a or b)[0],
+            "field": canonical,
+            "readout": readout,
+            "status": status,
+            "left": a[1] if a else None,
+            "right": b[1] if b else None,
+            "unit": unit,
+            "delta_left_minus_right": round(delta, 6) if status == "changed" and delta is not None else None,
+            "tolerance": round(tolerance, 6) if tolerance is not None else None,
+        })
+    priority = {("changed", False): 0, ("unknown", False): 1, ("changed", True): 2, ("unknown", True): 3}
+    rows.sort(key=lambda row: priority.get((row["status"], row["readout"]), 4))
+
+    def count(status: str, readout: bool) -> int:
+        return sum(1 for row in rows if row["status"] == status and row["readout"] is readout)
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "scheme": scheme,
+        "counts": {
+            "changed": count("changed", False),
+            "unknown": count("unknown", False),
+            "identical": count("identical", False),
+            "readouts_changed": count("changed", True),
+            "readouts_unknown": count("unknown", True),
+            "readouts_identical": count("identical", True),
+            "readings_excluded": len(set(left_excluded) | set(right_excluded)),
+        },
+        "rows": rows,
+        "readout_rule": READOUT_RULE,
+        "equality_rule": DISPLAY_EQUALITY_RULE,
+        "delta_definition": "left minus right in the reported canonical unit",
+        "warnings": (left_warnings + right_warnings)[:MAX_ERRORS],
+    }
+
+
 def catalog_setups(
     setup_root: str | os.PathLike[str],
     *,
@@ -1328,7 +1518,10 @@ __all__ = [
     "SetupLimitError",
     "SetupParseError",
     "TRANSIENT_FIELD_TERMS",
+    "DISPLAY_EQUALITY_RULE",
+    "READOUT_RULE",
     "catalog_setups",
+    "compare_displayed_setups",
     "compare_setups",
     "garage_setup_fields",
     "garage_setup_fingerprint",

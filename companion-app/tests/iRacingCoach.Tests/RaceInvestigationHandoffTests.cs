@@ -257,7 +257,7 @@ public sealed class RaceInvestigationHandoffTests
             var payload = JsonSerializer.SerializeToElement(new {
                 ok = true, analysis_id = LastSelector, selector = LastSelector,
                 selection = new { sim_session_type = "Race", group_id = LastSelector },
-                analysis_view = new { schema_version = 1, analysis_profile_version = "post-race-foundations-v21", identity = new { event_type = "Race", track_name = "Track", car_name = "Car" }, race_summary = new { recorded_laps = 2 }, runs = Array.Empty<object>(), laps = Array.Empty<object>() },
+                analysis_view = new { schema_version = 1, analysis_profile_version = "post-race-foundations-v22", identity = new { event_type = "Race", track_name = "Track", car_name = "Car" }, race_summary = new { recorded_laps = 2 }, runs = Array.Empty<object>(), laps = Array.Empty<object>() },
                 race_card = new { title = "Recorded race", bottom_line = new { evidence_type = "measured", text = "Recorded race." }, actions = Array.Empty<object>(), corner_playbook = new { rows = Array.Empty<object>() }, race_triggers = Array.Empty<object>(), evidence_appendix = Array.Empty<object>() }
             });
             var root = JsonNode.Parse(payload.GetRawText())!.AsObject();

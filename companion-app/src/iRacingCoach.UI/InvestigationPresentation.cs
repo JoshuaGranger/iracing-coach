@@ -34,8 +34,12 @@ public static class InvestigationPresentation
     public static string PaceTone(RaceInvestigationComparison comparison) =>
         !HasPaceResult(comparison) ? "neutral" : comparison.DeltaSeconds > 0 ? "loss" : "gain";
 
+    /// <summary>
+    /// A comparison's result is a lap-time gap (later window's median lap minus the earlier's),
+    /// in seconds; "s/lap" is kept for slopes, the fall-off a run fit states per lap.
+    /// </summary>
     public static string PaceResult(RaceInvestigationComparison comparison) =>
-        HasPaceResult(comparison) ? $"{Signed(comparison.DeltaSeconds)} s/lap" : "No pace result";
+        HasPaceResult(comparison) ? $"{Signed(comparison.DeltaSeconds)} s median lap" : "No pace result";
 
     public static string LapTime(double? seconds) => seconds is not { } value || !double.IsFinite(value) ? "—"
         : value >= 60 ? TimeSpan.FromSeconds(value).ToString(@"m\:ss\.fff", CultureInfo.InvariantCulture) : value.ToString("0.000", CultureInfo.CurrentCulture);

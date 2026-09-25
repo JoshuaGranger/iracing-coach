@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +14,9 @@ sys.path.insert(0, str(SCRIPTS))
 from setup_catalog import (  # noqa: E402
     SetupLimitError,
     catalog_setups,
+    compare_displayed_setups,
     compare_setups,
+    is_garage_readout_field,
     normalize_embedded_setup,
     parse_setup_html,
 )
@@ -174,6 +177,126 @@ class SetupCatalogTests(unittest.TestCase):
             path.write_text(setup_html(path.stem), encoding="utf-8")
             with self.assertRaises(SetupLimitError):
                 parse_setup_html(path, max_file_bytes=16)
+
+
+# The IRP Supra test day of 2026-09-24, as the Setups page flattens each
+# recording's CarSetup (trimmed to the fields that moved plus neighbours).
+IRP_BASELINE = {
+    "Chassis.Front.CrossWeight": "50.9%",
+    "Chassis.Front.SteeringRatio": "12:1",
+    "Chassis.FrontArb.LinkSlack": "0 mm",
+    "Chassis.FrontArb.Preload": "0.0 Nm",
+    "Chassis.LeftFront.Camber": "+6.0 deg",
+    "Chassis.LeftFront.CornerWeight": "4014 N",
+    "Chassis.LeftFront.SpringPerchOffset": "-95 mm",
+    "Chassis.LeftRear.CornerWeight": "4126 N",
+    "Chassis.LeftRear.RideHeight": "146 mm",
+    "Chassis.RightRear.CornerWeight": "3844 N",
+    "Chassis.RightRear.TruckArmPreload": "-0.4 Nm",
+    "Chassis.Rear.RearEndRatio": "5.57",
+    "Tires.LeftFront.ColdPressure": "96 kPa",
+    "Tires.LeftFront.LastHotPressure": "115 kPa",
+    "Tires.LeftFront.TreadRemaining": "98%, 98%, 100%",
+}
+IRP_V2_LF_CAMBER = {
+    **IRP_BASELINE,
+    "Chassis.Front.CrossWeight": "51.1%",
+    "Chassis.FrontArb.LinkSlack": "-0 mm",
+    "Chassis.FrontArb.Preload": "-12.7 Nm",
+    "Chassis.LeftFront.Camber": "+5.2 deg",
+    "Chassis.LeftFront.CornerWeight": "3999 N",
+    "Chassis.LeftFront.SpringPerchOffset": "-98 mm",
+    "Chassis.LeftRear.CornerWeight": "4142 N",
+    "Chassis.LeftRear.RideHeight": "145 mm",
+    "Chassis.RightRear.CornerWeight": "3826 N",
+    "Chassis.RightRear.TruckArmPreload": "8.6 Nm",
+    "Tires.LeftFront.LastHotPressure": "117 kPa",
+}
+IRP_V3_STEER10 = {
+    **IRP_BASELINE,
+    "Chassis.Front.SteeringRatio": "10:1",
+    "Chassis.LeftRear.CornerWeight": "4127 N",
+    "Chassis.RightRear.CornerWeight": "3843 N",
+}
+
+
+class DisplayedSetupComparisonTests(unittest.TestCase):
+    """Setups › Compare counted garage readouts as changes: v3 against the baseline
+    showed "3 changed" (the steering ratio plus two corner weights a newton apart)
+    and v2 "13 changed" with two real changes, including "Front Arb · Link Slack
+    −0 mm vs 0 mm"."""
+
+    @staticmethod
+    def _rows(result: dict) -> dict[str, dict]:
+        return {row["key"]: row for row in result["rows"]}
+
+    def test_only_adjustments_count_as_changes_and_readouts_are_listed_apart(self) -> None:
+        result = compare_displayed_setups(IRP_V3_STEER10, IRP_BASELINE)
+        rows = self._rows(result)
+        self.assertEqual(result["counts"]["changed"], 1)
+        self.assertEqual(rows["Chassis.Front.SteeringRatio"]["status"], "changed")
+        self.assertEqual(result["counts"]["readouts_changed"], 2)
+        for key in ("Chassis.LeftRear.CornerWeight", "Chassis.RightRear.CornerWeight"):
+            self.assertTrue(rows[key]["readout"], key)
+            self.assertEqual(rows[key]["status"], "changed", "A newton is one display step: shown, not hidden.")
+        self.assertNotIn("Tires.LeftFront.LastHotPressure", rows, "Tire readings are not setup values.")
+        self.assertNotIn("Tires.LeftFront.TreadRemaining", rows)
+        self.assertEqual(result["counts"]["readings_excluded"], 2)
+        self.assertEqual([row["key"] for row in result["rows"][:1]], ["Chassis.Front.SteeringRatio"],
+                         "Changed settings lead, readouts follow.")
+
+    def test_negative_zero_equals_zero_and_the_camber_test_reads_as_its_adjustments(self) -> None:
+        result = compare_displayed_setups(IRP_V2_LF_CAMBER, IRP_BASELINE)
+        rows = self._rows(result)
+        self.assertEqual(rows["Chassis.FrontArb.LinkSlack"]["status"], "identical", "-0 mm is 0 mm.")
+        changed = {key for key, row in rows.items() if row["status"] == "changed" and not row["readout"]}
+        self.assertTrue({"Chassis.LeftFront.Camber", "Chassis.LeftFront.SpringPerchOffset"} <= changed)
+        for key in ("Chassis.Front.CrossWeight", "Chassis.LeftFront.CornerWeight", "Chassis.LeftRear.RideHeight",
+                    "Chassis.RightRear.TruckArmPreload"):
+            self.assertTrue(rows[key]["readout"] and rows[key]["status"] == "changed", key)
+        # The front anti-roll-bar preload moved with the perch; whether it is a
+        # readout is the shared classification's call, never a copy of it.
+        preload = rows["Chassis.FrontArb.Preload"]
+        self.assertEqual(preload["readout"], is_garage_readout_field("chassis.front_arb.preload"))
+        self.assertEqual(result["counts"]["changed"], 2 + (0 if preload["readout"] else 1))
+        self.assertEqual(rows["Chassis.LeftFront.Camber"]["delta_left_minus_right"], -0.8)
+
+    def test_readout_classification_is_the_shared_set_not_a_copy(self) -> None:
+        import setup_catalog
+        with mock.patch.object(setup_catalog, "GARAGE_READOUT_LEAVES",
+                               setup_catalog.GARAGE_READOUT_LEAVES | {"steering_ratio"}):
+            result = compare_displayed_setups(IRP_V3_STEER10, IRP_BASELINE)
+        self.assertEqual(result["counts"]["changed"], 0)
+        self.assertEqual(result["counts"]["readouts_changed"], 3)
+
+    def test_tolerance_only_bridges_display_units_and_missing_values_stay_unknown(self) -> None:
+        sheet = {"chassis.left_front.ride_height": "4.252 in", "chassis.left_front.cold_pressure": "14.0 psi",
+                 "chassis.front.cross_weight": "50.9%", "chassis.rear.rear_end_ratio": "5.57"}
+        recording = {"chassis.left_front.ride_height": "108 mm", "chassis.left_front.cold_pressure": "97 kPa",
+                     "chassis.front.cross_weight": "51.0%"}
+        rows = self._rows(compare_displayed_setups(sheet, recording, scheme="export"))
+        # 4.252 in is 108.0 mm; 14.0 psi is 96.5 kPa, within half a 1 kPa step.
+        self.assertEqual(rows["chassis.left_front.ride_height"]["status"], "identical")
+        self.assertEqual(rows["chassis.left_front.cold_pressure"]["status"], "identical")
+        self.assertEqual(rows["chassis.front.cross_weight"]["status"], "changed", "Same unit: no tolerance.")
+        self.assertEqual(rows["chassis.rear.rear_end_ratio"]["status"], "unknown", "Missing is never equal.")
+        same_unit = self._rows(compare_displayed_setups({"Chassis.LeftFront.RideHeight": "108 mm"},
+                                                        {"Chassis.LeftFront.RideHeight": "109 mm"}))
+        self.assertEqual(same_unit["Chassis.LeftFront.RideHeight"]["status"], "changed")
+        converted = self._rows(compare_displayed_setups({"Chassis.LeftFront.RideHeight": "4.29 in"},
+                                                        {"Chassis.LeftFront.RideHeight": "108 mm"}))
+        self.assertEqual(converted["Chassis.LeftFront.RideHeight"]["status"], "changed", "109.0 mm is a step away.")
+        unreadable = self._rows(compare_displayed_setups({"Chassis.Front.CrossWeight": "—"}, {"Chassis.Front.CrossWeight": "—"}))
+        self.assertEqual(unreadable["Chassis.Front.CrossWeight"]["status"], "unknown")
+
+    def test_personal_file_names_name_no_track(self) -> None:
+        from setup_catalog import _infer_filename_identity
+        self.assertIsNone(_infer_filename_identity("claude IRP test v2 LFcamber")["track_hint"],
+                          "The Setups page showed the track as 'Claude IRP Test V2 Lfcamber'.")
+        self.assertIsNone(_infer_filename_identity("josh test")["track_hint"])
+        shop = _infer_filename_identity("NOAPS_MaconiSetupShop IRP 26S4 R")
+        self.assertEqual((shop["track_hint"], shop["track_basis"]), ("IRP", "file_name_convention"))
+        self.assertEqual(_infer_filename_identity("Bristol 26S4 Q")["track_hint"], "Bristol")
 
 
 if __name__ == "__main__":

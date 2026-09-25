@@ -73,7 +73,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v21"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v22"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -6175,6 +6175,32 @@ def _strategy(runs: list[dict[str, Any]], race: Mapping[str, Any]) -> dict[str, 
     }
 
 
+def _run_clean_early_late(
+    race_investigation: Mapping[str, Any] | None, run_number: int | None
+) -> dict[str, Any] | None:
+    """The race investigation's usable "clean early versus late" comparison of a run.
+
+    Runs shows it as the run's early-versus-late pace: the median lap of the run's
+    last clean laps minus the median lap of its first clean laps.
+    """
+
+    if not isinstance(race_investigation, Mapping) or not run_number:
+        return None
+    for comparison in race_investigation.get("comparisons") or ():
+        if not isinstance(comparison, Mapping) or comparison.get("kind") != "within_run":
+            continue
+        compared = comparison.get("compared") if isinstance(comparison.get("compared"), Mapping) else {}
+        baseline = comparison.get("baseline") if isinstance(comparison.get("baseline"), Mapping) else {}
+        delta = _finite(comparison.get("delta_s"))
+        if comparison.get("pace_comparable") is False or delta is None:
+            continue
+        if int(_finite(compared.get("run_number")) or 0) != int(run_number):
+            continue
+        return {"delta_s": delta, "compared_label": str(compared.get("label") or "late laps"),
+                "baseline_label": str(baseline.get("label") or "early laps")}
+    return None
+
+
 def build_technical_insights(
     laps: Sequence[Mapping[str, Any]],
     runs: Sequence[Mapping[str, Any]],
@@ -6182,8 +6208,14 @@ def build_technical_insights(
     strategy: Mapping[str, Any],
     damage: Mapping[str, Any],
     tire_learning: Mapping[str, Any],
+    race_investigation: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Build compact, event-specific findings from recorded or bounded evidence."""
+    """Build compact, event-specific findings from recorded or bounded evidence.
+
+    With the race investigation, a run's early-versus-late pace is the one Runs
+    shows (median of the run's last clean laps minus its first); without it, the
+    run's average late minus average early clean pace, labelled as an average.
+    """
 
     def metric(
         label: str,
@@ -6196,8 +6228,13 @@ def build_technical_insights(
         action: str = "",
         tone: str = "neutral",
         group: str = "",
+        decimals: int | None = None,
     ) -> dict[str, Any]:
-        if isinstance(value, float):
+        if isinstance(value, float) and decimals is not None:
+            rendered = f"{value:.{decimals}f}"
+            if signed and value > 0:
+                rendered = f"+{rendered}"
+        elif isinstance(value, float):
             rendered = f"{value:.3f}".rstrip("0").rstrip(".")
             if signed and value > 0:
                 rendered = f"+{rendered}"
@@ -6682,6 +6719,20 @@ def build_technical_insights(
         int(_finite(representative_run.get("run_number")) or 0)
         if representative_run is not None else None
     )
+    # Details and Runs answer one question with one number: IRP 9/24 run D read
+    # "+0.18 s" (average) in Details beside "+0.211" (median) on Runs.
+    clean_early_late = _run_clean_early_late(race_investigation, representative_run_number)
+    if clean_early_late is not None:
+        pace_delta = clean_early_late["delta_s"]
+        pace_label = f"Run {representative_run_number} late vs early"
+        pace_detail = (
+            f"Median lap of {clean_early_late['compared_label'].lower()} minus median lap of "
+            f"{clean_early_late['baseline_label'].lower()}, the clean early-versus-late comparison Runs shows."
+        )
+    else:
+        pace_label = (f"Run {representative_run_number} late vs early (average)" if representative_run_number
+                      else "Late vs early pace (average)")
+        pace_detail = "Average late clean pace minus average early clean pace in the longest comparable run."
     dynamics_run = max(
         (
             run
@@ -6758,12 +6809,13 @@ def build_technical_insights(
     if pace_delta is not None:
         tire_metrics.append(
             metric(
-                f"Run {representative_run_number} early-to-late" if representative_run_number else "Early-to-late pace",
+                pace_label,
                 round(pace_delta, 3),
                 "s",
                 "derived",
                 signed=True,
-                detail="Average late clean pace minus average early clean pace in the longest comparable run.",
+                decimals=3,
+                detail=pace_detail,
                 action="A positive value is falloff; compare the same run's tire condition and driving load.",
                 tone="attention" if pace_delta > 0.0 else "positive" if pace_delta < 0.0 else "neutral",
                 group="pace",
@@ -7444,10 +7496,8 @@ def build_technical_insights(
                 group="driver execution",
             )
         )
-    long_run_delta = (
-        _finite((representative_run.get("pace") or {}).get("early_to_late_delta_s"))
-        if representative_run is not None else None
-    )
+    # The same run and figure as the tire card's late-vs-early pace (and Runs).
+    long_run_delta = pace_delta
     if long_run_delta is not None:
         racecraft_metrics.append(
             metric(
@@ -7456,7 +7506,8 @@ def build_technical_insights(
                 "s",
                 "derived",
                 signed=True,
-                detail=f"Early-to-late pace change in run {representative_run_number}, the longest comparable run.",
+                decimals=3,
+                detail=f"Run {representative_run_number}, the longest comparable run: {pace_detail[0].lower()}{pace_detail[1:]}",
                 action="Use with tire and driving-load findings before attributing the change to technique.",
                 tone="attention" if long_run_delta > 0.0 else "positive" if long_run_delta < 0.0 else "neutral",
                 group="pace",
@@ -8822,6 +8873,11 @@ def analyze_telemetry(
     }
     analysis["race_investigation"] = build_race_investigation(
         analysis, lap_exclusions=investigation_lap_exclusions(analysis)
+    )
+    # A run's early-versus-late pace is the investigation's (the one Runs shows).
+    analysis["technical_insights"] = build_technical_insights(
+        laps, runs, race_summary, strategy, damage_repair, tire_learning,
+        race_investigation=analysis["race_investigation"],
     )
     return analysis
 

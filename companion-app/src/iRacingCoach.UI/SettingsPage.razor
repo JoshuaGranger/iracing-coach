@@ -129,7 +129,7 @@
     <section class="surface-card settings-hub-card" aria-labelledby="live-monitor-heading">
         <div class="settings-hub-heading">
             <div><ProductIcon Name="monitor" Size="18" /><h2 id="live-monitor-heading">Telemetry popout</h2></div>
-            <strong class="settings-layout-name">@LiveMonitorLayouts.Active(State.Settings.LiveMonitor).Layout.Name</strong>
+            <span class="settings-layout-name" data-popout-dashboard title="The dashboard the popout shows; choose or edit it on the Live page."><small>Dashboard</small>@LiveMonitorLayouts.Active(State.Settings.LiveMonitor).Layout.Name</span>
         </div>
         <label class="settings-inline-field"><span>Show / hide hotkey</span><input placeholder="Ctrl+Shift+L" @bind="State.Settings.LiveMonitor.GlobalHotkey" @bind:event="oninput" /></label>
         <div class="settings-toggle-stack compact">

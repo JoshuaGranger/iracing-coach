@@ -663,7 +663,8 @@ label.theme-color-custom.active { border-color:var(--focus);box-shadow:inset 0 0
 .settings-toggle-stack .toggle-row:first-child { border-top: 0; }
 .settings-toggle-stack .toggle-row small { color: var(--text-muted); font-size: var(--font-size-min); line-height: 15px; }
 .settings-toggle-stack.compact .toggle-row { min-height: 45px; padding-block: 6px; }
-.settings-layout-name { max-width: 170px; overflow: hidden; color: var(--telemetry-steering); font: 600 12px var(--metric-font,Consolas,monospace); text-overflow: ellipsis; white-space: nowrap; }
+.settings-layout-name { max-width: 220px; overflow: hidden; color: var(--text-secondary); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.settings-layout-name small { margin-right: 6px; color: var(--text-muted); font-weight: 400; }
 .settings-inline-field { display: grid; grid-template-columns: minmax(130px,.7fr) minmax(160px,1fr); align-items: center; gap: 10px; margin-top: 10px; }
 .settings-inline-field input { min-height: 34px; padding-block: 5px; }
 .settings-result { display: grid; grid-template-columns: 20px minmax(0,1fr); align-items: start; gap: 8px; margin-top: 9px; padding: 8px 9px; border-radius: 5px; background: var(--surface-2); }
@@ -3235,6 +3236,9 @@ label.theme-color-custom.active { border-color:var(--focus);box-shadow:inset 0 0
 .setup-values-table { border-collapse:collapse; width:100%; font-size:12px; }
 .setup-values-table th,.setup-values-table td { padding:9px; text-align:left; border-bottom:1px solid var(--border-subtle); overflow-wrap:anywhere; }
 .setup-values-table .changed { background:var(--accent-subtle); color:var(--text-primary); }
+.setup-values-table .readout-heading th { padding-top:14px; color:var(--text-secondary); font-weight:600; }
+.setup-values-table .readout-heading small { margin-left:8px; color:var(--text-muted); font-weight:400; }
+.setup-values-table .readout th,.setup-values-table .readout td { color:var(--text-muted); }
 .setup-tuning-origin { display:flex; align-items:center; gap:16px; padding:0 0 12px; flex-wrap:wrap; }
 .setup-tuning-origin span { color:var(--text-muted); font-size:12px; }
 @media(max-width:1100px) { .setup-library-workspace { grid-template-columns:240px minmax(0,1fr); } .setup-library-toolbar { grid-template-columns:repeat(2,minmax(0,1fr)); } .setup-values-group dl { grid-template-columns:1fr; } }

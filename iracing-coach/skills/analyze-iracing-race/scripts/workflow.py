@@ -1711,8 +1711,29 @@ def _analysis_pipeline_sha256() -> str:
 # adjustment), so identity.garage_setup_fingerprint changes for stock cars. The
 # Iowa 8/03 race differs only in analysis_id, profile version, pipeline digest,
 # that optional fingerprint and the tire-learning ids derived from analysis_id.
+# Review 2026-09-25 (Setups page): v20 answers are unchanged. setup_catalog.py
+# gains compare_displayed_setups (the Setups page comparison, outside the
+# analyzer) and a setup file's name yields a track hint only in the shop
+# convention (vendor or season present); the analyzer uses neither. The one
+# function the analyzer calls, garage_setup_fingerprint, is byte-identical, and
+# the ten IRP 9/24 test-day recordings keep their stored garage fingerprints.
+# Review 2026-09-25 (Details and Runs, one figure): v21 retires v20 because
+# a run's early-versus-late pace in technical_insights ("Run N late vs early",
+# "Long-run change" and the tire takeaway) is now the race investigation's
+# clean early-versus-late comparison, the figure Runs shows (median of the
+# run's last clean laps minus its first), stated to three decimals; only
+# without a usable comparison is the run's average shown, labelled as one.
+# IRP 9/24 run D read +0.18 s in Details beside +0.211 on Runs. The
+# investigation projection moves to sections-trials-v6: a comparison summary
+# names a median lap-time gap in seconds ("Laps 38-42: median lap 0.211 s
+# slower than laps 24-28."), keeping "s/lap" for slopes (fall-off).
+# Review 2026-09-25 (merge of the test-day and Setups/Details lines): both
+# lines retired v20 as v21 for different reasons, so a v21 analysis cached by
+# either lacks the other's change (main's v21 still sends the IRP 9/24 19-lap
+# run after an Offline Testing reset to manual review). v22 retires both v21
+# lines; the combined answers are exactly the two v21 changes together.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "69ce5b4ca3860ec2a5eeb8d9a63936d610d118c00747ce4b3e5e885ecd087751"
+    "7e7d84e9043a7923e2d88162f4bfc1d3a901f783554713fb6c1996a305597dc1"
 )
 
 
@@ -2195,6 +2216,7 @@ def _analyze_race_workflow(
             analysis.get("strategy") or {},
             analysis.get("damage_repair") or {},
             tire_learning,
+            race_investigation=analysis.get("race_investigation"),
         )
     analysis_finished = time.perf_counter()
     context = store.context_from_analysis(analysis)

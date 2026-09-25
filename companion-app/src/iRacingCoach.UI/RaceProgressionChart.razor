@@ -161,7 +161,7 @@
         : "Pit";
 
     private string Readout => _hover is { } lap ? LapLabel(lap) : Selected is { } selected
-        ? $"{selected.Title}: {(HasPaceResult(selected) ? Signed(selected.DeltaSeconds) + " s/lap by median" : "no pace result")}"
+        ? $"{selected.Title}: {(HasPaceResult(selected) ? Signed(selected.DeltaSeconds) + " s median lap" : "no pace result")}"
         : "Point to a lap for its time, position and screening";
 
     private static string LapLabel(RaceInvestigationLap lap)

@@ -169,16 +169,16 @@ public sealed class SetupRecordingLinkTests
             SetupPage.CompareExclusions(setups, irp).Select(item => $"{item.Setup.Name}: {item.Reason}").ToArray(),
             "Each excluded same-car setup is named with its reason; the other car's file of the same name is not this car's.");
 
-        var bristol = setups.Single(setup => setup.Name == "NOAPS_MaconiSetupShop Bristol 26S4 R");
-        var rows = SetupPage.Differences(irp, bristol).ToArray();
-        Assert.HasCount(7, rows);
-        Assert.AreEqual("Chassis · Front · Cross Weight", rows.Single(row => row.Kind == SetupPage.RowKind.Changed).Label);
-
+        // The backend compares what the page sends: each side's garage values under the
+        // same CarSetup keys, never the run readings stored beside them.
         var recorded = setups.Single(setup => setup.Name == "NOAPS_MaconiSetupShop IRP 26S4 R.sto");
-        var againstRecording = SetupPage.Differences(irp, recorded).ToArray();
-        Assert.HasCount(7, againstRecording);
-        Assert.IsTrue(againstRecording.All(row => row.Kind == SetupPage.RowKind.Identical),
+        var fileValues = CompanionState.DisplayedValues(irp);
+        var recordingValues = CompanionState.DisplayedValues(recorded);
+        Assert.HasCount(7, fileValues);
+        CollectionAssert.AreEquivalent(fileValues.Keys.ToArray(), recordingValues.Keys.ToArray(),
             "The file's recorded values and the recording's own setup share every garage field; run readings are not compared.");
+        Assert.IsFalse(recordingValues.Keys.Any(SetupReadings.IsRunReading));
+        Assert.AreEqual("50.9%", recordingValues["Chassis.Front.CrossWeight"]);
     }
 
     [TestMethod]
@@ -248,9 +248,10 @@ public sealed class SetupRecordingLinkTests
         var practice = Recording("ca84ebf3344710e6", "152 kPa", "42C, 42C, 42C", "100%, 100%, 100%");
         var race = Recording("560bc40e77bc5a53-race", "128 kPa", "61C, 52C, 45C", "99%, 100%, 100%");
 
-        var rows = SetupPage.Differences(race, practice).ToArray();
-        Assert.HasCount(2, rows);
-        Assert.IsTrue(rows.All(row => row.Kind == SetupPage.RowKind.Identical));
+        var sent = CompanionState.DisplayedValues(race);
+        CollectionAssert.AreEquivalent(new[] { "Tires.LeftFront.ColdPressure", "Chassis.Front.CrossWeight" }, sent.Keys.ToArray());
+        CollectionAssert.AreEquivalent(sent.ToArray(), CompanionState.DisplayedValues(practice).ToArray(),
+            "Only run readings differ, and they are not sent for comparison.");
         Assert.IsTrue(SetupReadings.IsRunReading("Tires.RightFront.LastTempsIMO"));
         Assert.IsTrue(SetupReadings.IsRunReading("UpdateCount"));
         Assert.IsFalse(SetupReadings.IsRunReading("Tires.LeftFront.ColdPressure"));
