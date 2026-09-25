@@ -66,7 +66,6 @@ class RaceInvestigationTests(unittest.TestCase):
     def test_observed_finish_retains_fade_laps_and_exact_exclusion_reasons(self) -> None:
         result = self.build(investigation_fixture())
         comparison = next(item for item in result["comparisons"] if item["id"] == "run-2-finish")
-        self.assertEqual(result["default_comparison_id"], comparison["id"])
         self.assertEqual(comparison["baseline"]["lap_numbers"], [11, 12, 13])
         self.assertEqual(comparison["compared"]["lap_numbers"], [18, 19, 20])
         self.assertEqual(comparison["delta_s"], 1.64)
@@ -223,7 +222,7 @@ class RaceInvestigationTests(unittest.TestCase):
         for lap in analysis["laps"][-3:]:
             lap["damage_repair_context"] = {"automatic_coaching_reference_eligible": False, "exclusion_reason_codes": ["recorded_repair_disruption"]}
         result = self.build(analysis)
-        comparison = next(item for item in result["comparisons"] if item["id"] == result["default_comparison_id"])
+        comparison = next(item for item in result["comparisons"] if item["id"] == "run-2-finish")
         self.assertEqual(comparison["compared"]["lap_numbers"], [18, 19, 20])
         self.assertFalse(comparison["compared"]["eligible_lap_numbers"])
         self.assertTrue(all("recorded_repair_disruption" in lap["reasons"] for lap in comparison["compared"]["excluded_laps"]))
@@ -360,6 +359,84 @@ class UnusablePaceComparisonTests(unittest.TestCase):
         finish = next(item for item in result["comparisons"] if item["id"] == "run-2-finish")
         self.assertEqual(finish["delta_s"], 1.64)
         self.assertIn("s/lap slower", finish["summary"])
+
+
+class DefaultComparisonTests(unittest.TestCase):
+    """IRP 9/23 opened on "Run 1: earlier to final green laps" (laps 106-110,
+    mixed, nothing to save) while "Run 1: clean early versus late" (laps
+    105-109, the same +0.730 s/lap, two saveable tests) sat one row above."""
+
+    def build(self, analysis: dict) -> dict:
+        return build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
+
+    @staticmethod
+    def saveable(comparison: dict) -> bool:
+        return any(action["trial"] for action in comparison["actions"])
+
+    def test_saveable_clean_comparison_leads_a_later_finish_with_nothing_to_save(self) -> None:
+        result = self.build(investigation_fixture())
+        comparisons = {item["id"]: item for item in result["comparisons"]}
+        clean, finish = comparisons["run-2-clean"], comparisons["run-2-finish"]
+        # The IRP shape: both usable, the finish window ends later but keeps
+        # excluded laps and offers no test; the screened window offers one.
+        self.assertTrue(clean["pace_comparable"] and finish["pace_comparable"])
+        self.assertGreater(max(finish["compared"]["lap_numbers"]), max(clean["compared"]["lap_numbers"]))
+        self.assertEqual((clean["eligibility"], finish["eligibility"]), ("eligible", "mixed"))
+        self.assertTrue(self.saveable(clean))
+        self.assertFalse(self.saveable(finish))
+        self.assertEqual(result["default_comparison_id"], "run-2-clean")
+        self.assertEqual(result["summary"], clean["summary"])
+
+    def test_latest_usable_comparison_leads_when_none_is_saveable(self) -> None:
+        analysis = investigation_fixture()
+        analysis["lap_traces"] = {"traces": []}
+        result = self.build(analysis)
+        self.assertFalse(any(self.saveable(item) for item in result["comparisons"]))
+        self.assertEqual(result["default_comparison_id"], "run-2-finish")
+
+    def test_a_saveable_test_never_lifts_an_unusable_comparison(self) -> None:
+        cautions = {6, 7, 8, *range(11, 18), 19, 20, 21}
+        result = self.build(caution_run_fixture(cautions, 22, traffic=0.3))
+        self.assertFalse(any(self.saveable(item) for item in result["comparisons"] if not item["pace_comparable"]))
+
+
+class TireServiceExplanationTests(unittest.TestCase):
+    """Kansas 9/21 run 2 (laps 19-42) started on four tires changed at the lap-17
+    stop, but its comparison read "Tires and service: Unresolved": only run 2's
+    own end-of-run service, which never happened, was consulted."""
+
+    def build(self, analysis: dict) -> dict:
+        return build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
+
+    @staticmethod
+    def tires(result: dict, comparison_id: str) -> dict:
+        comparison = next(item for item in result["comparisons"] if item["id"] == comparison_id)
+        return next(item for item in comparison["hypotheses"] if item["key"] == "tires")
+
+    def test_a_run_that_started_on_a_confirmed_four_tire_change_is_not_unresolved(self) -> None:
+        tires = self.tires(self.build(investigation_fixture()), "run-2-clean")
+        self.assertEqual(tires["status"], "possible")
+        self.assertEqual(tires["supporting"], ["Run 2 started on four tires fitted at the lap 10 stop (confirmed: LF, RF, LR, RR)."])
+        # A known fresh set removes the unknown initial tire age.
+        self.assertNotIn("Initial tire age", " ".join(tires["unknown"]))
+
+    def test_a_stop_after_the_windows_is_not_evidence_about_their_tires(self) -> None:
+        tires = self.tires(self.build(investigation_fixture()), "run-1-clean")
+        self.assertEqual(tires["supporting"], ["Run 1 ended with a lowest measured tire reading of 75.0% remaining."])
+        self.assertIn("Initial tire age", " ".join(tires["unknown"]))
+        cross = self.tires(self.build(investigation_fixture()), "runs-1-2-age")
+        self.assertEqual(cross["supporting"], ["Run 1 ended with a lowest measured tire reading of 75.0% remaining.",
+                                               "Run 2 started on four tires fitted at the lap 10 stop (confirmed: LF, RF, LR, RR)."])
+
+    def test_unresolved_remains_when_no_service_or_reading_was_recorded(self) -> None:
+        analysis = investigation_fixture()
+        for run in analysis["runs"]:
+            run.pop("pit_service", None)
+            run.pop("tire_observation", None)
+        tires = self.tires(self.build(analysis), "run-2-clean")
+        self.assertEqual((tires["status"], tires["supporting"]), ("unresolved", []))
+        analysis["runs"][0]["pit_service"] = {"tires_changed_observed": []}
+        self.assertEqual(self.tires(self.build(analysis), "run-2-clean")["status"], "unresolved")
 
 
 def multi_run_fixture(caution_runs: Sequence[bool]) -> dict:

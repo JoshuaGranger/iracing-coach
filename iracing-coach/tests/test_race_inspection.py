@@ -239,9 +239,10 @@ class SectionAndPairTests(unittest.TestCase):
         self.assertEqual(inspection["mode"], "matched_pool_extremes")
         pair = inspection["sections"]["B"]
         self.assertEqual((pair["a"]["role"], pair["b"]["role"]), ("fastest", "slowest"))
-        self.assertEqual(pair["context_start_pct"], 0.1)
+        # A 20% section gets the maximum 8% lead-in, inside the 0.3-0.4 straight.
+        self.assertEqual(pair["context_start_pct"], 0.32)
         self.assertTrue(any(abs(row["x"] - 0.4) < 1e-9 for row in pair["rows"]))
-        self.assertAlmostEqual(pair["entry_gap_s"], 0.3 * (0.4 - 0.1) / 0.4, places=3)
+        self.assertAlmostEqual(pair["entry_gap_s"], 0.3 * (0.4 - 0.32) / 0.4, places=3)
         self.assertAlmostEqual(pair["section_delta_s"], 0.2, places=3)
         self.assertEqual(pair["entry_speed_difference_mph"], -6.0)
         self.assertEqual(pair["b"]["run_number"], 2)
@@ -263,7 +264,7 @@ class SectionAndPairTests(unittest.TestCase):
 
     def test_missing_approach_withholds_gap_but_keeps_channels(self) -> None:
         traces = self.traces()
-        traces[4]["points"] = [p for p in traces[4]["points"] if not 0.2 < p["lap_pct"] < 0.3]
+        traces[4]["points"] = [p for p in traces[4]["points"] if not 0.33 < p["lap_pct"] < 0.39]
         traces[3] = copy.deepcopy(traces[4]); traces[3]["lap"] = 3
         exposure = {1: 20.0, 2: 21.0, 3: 21.5, 4: 22.0}
         pair = comparison_inspection(self.comparison(), {}, exposure, {}, CLEAN, traces, self.sections())["sections"]["B"]
@@ -271,6 +272,54 @@ class SectionAndPairTests(unittest.TestCase):
         self.assertIsNone(pair["entry_gap_s"])
         self.assertTrue(all(row["gap"] is None for row in pair["rows"]))
         self.assertTrue(any(row["b"]["speed"] is not None for row in pair["rows"]))
+
+    def test_approach_is_a_bounded_lead_in_not_the_straight_before_it(self) -> None:
+        # IRP's detected sections once had E at 30.5-40% and F at 64.5-72.5%;
+        # F was timed from E's start, so "Entry" covered 34% of the lap and F
+        # filled only the right fifth of every chart.
+        sections = [{"id": "E", "label": "E", "start_pct": 0.305, "end_pct": 0.40, "boundary_status": "detected_section"},
+                    {"id": "F", "label": "F", "start_pct": 0.645, "end_pct": 0.725, "boundary_status": "detected_section"}]
+        traces = {lap: trace(lap, loss_before=0.3 if lap > 2 else 0.0, loss_inside=0.2 if lap > 2 else 0.0,
+                             start=0.645, end=0.725) for lap in (1, 2, 3, 4)}
+        exposure = {1: 20.0, 2: 21.0, 3: 21.5, 4: 22.0}
+        pair = comparison_inspection(self.comparison(), {}, exposure, {}, CLEAN, traces, sections)["sections"]["F"]
+        self.assertAlmostEqual(pair["context_start_pct"], 0.565)
+        self.assertEqual(pair["context_label"], "Lead-in: 8.0% lap before the section")
+        # The section fills at least half of the charted range.
+        self.assertGreaterEqual((pair["end_pct"] - pair["start_pct"]) / (pair["end_pct"] - pair["context_start_pct"]), 0.5 - 1e-9)
+        self.assertEqual(pair["rows"][0]["x"], 0.565)
+        self.assertEqual(pair["rows"][-1]["x"], 0.725)
+        # Only the loss accrued inside the lead-in counts as entry time (1% bins
+        # blur the boundary by half a bin); from E's start it was about 0.158 s.
+        self.assertAlmostEqual(pair["entry_gap_s"], 0.3 * 0.08 / 0.645, delta=0.01)
+        # Tiled catalog sections (IRP 232-irp/2026-09-24.1): F's approach is the
+        # last 8% of E, not all of E.
+        tiled = review_sections({"track_geometry": {"track_configuration_key": "232-irp"}})["sections"]
+        traces = {lap: trace(lap, loss_inside=0.2 if lap > 2 else 0.0, start=0.75, end=0.955) for lap in (1, 2, 3, 4)}
+        pairs = comparison_inspection(self.comparison(), {}, exposure, {}, CLEAN, traces, tiled)["sections"]
+        self.assertAlmostEqual(pairs["F"]["context_start_pct"], 0.67)
+        self.assertEqual(pairs["F"]["context_label"], "Lead-in: 8.0% lap before the section")
+        # A short previous section bounds the lead-in and names it.
+        short = [{"id": "A", "label": "A", "start_pct": 0.35, "end_pct": 0.37, "boundary_status": "detected_section"},
+                 {"id": "B", "label": "B", "start_pct": 0.4, "end_pct": 0.6, "boundary_status": "detected_section"}]
+        pair = comparison_inspection(self.comparison(), {}, exposure, {}, CLEAN, self.traces(), short)["sections"]["B"]
+        self.assertEqual((pair["context_start_pct"], pair["context_label"]), (0.35, "From section A"))
+
+    def test_bounded_approach_sets_the_trial_metric_start(self) -> None:
+        # A "carry more speed" trial times approach and section together; the
+        # approach it saves is the bounded lead-in, not the previous section.
+        sections = [{"id": "A", "label": "A", "start_pct": 0.1, "end_pct": 0.2, "boundary_status": "detected_section"},
+                    {"id": "B", "label": "B", "start_pct": 0.5, "end_pct": 0.7, "boundary_status": "detected_section"}]
+        traces = {lap: trace(lap, loss_before=0.4 if lap > 2 else 0.0, loss_inside=0.2 if lap > 2 else 0.0,
+                             speed=94.0 if lap > 2 else 100.0, start=0.5, end=0.7) for lap in (1, 2, 3, 4)}
+        comparison = {"baseline": {"lap_numbers": [1, 2], "run_number": 1}, "compared": {"lap_numbers": [3, 4], "run_number": 1},
+                      "eligibility": "eligible", "pace_comparable": True, "summary": "", "corners": comparison_sections([1, 2], [3, 4], traces, sections)}
+        comparison["inspection"] = comparison_inspection(comparison, {}, {1: 20.0, 2: 21.0, 3: 21.5, 4: 22.0}, {}, CLEAN, traces, sections)
+        from race_investigation import _actions
+        action = next(item for item in _actions(comparison, {"sections": sections}, traces) if item["section_id"] == "B")
+        self.assertEqual(action["title"], "Carry more speed into section B")
+        self.assertIn("measured from 42.0% lap", action["instruction"])
+        self.assertEqual((action["trial"]["metric"]["key"], action["trial"]["metric"]["start_pct"]), ("approach_and_section_s", 0.42))
 
     def test_body_slip_is_never_inferred_and_sparse_slip_is_not_summarized(self) -> None:
         exposure = {1: 20.0, 2: 21.0, 3: 21.5, 4: 22.0}

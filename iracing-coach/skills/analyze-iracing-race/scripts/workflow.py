@@ -1676,8 +1676,24 @@ def _analysis_pipeline_sha256() -> str:
 # it from identity.setup. Discovery also tags standalone hosted/official
 # practice with the optional test_day_* fields; group keys, member files and
 # every analysis input are unchanged, so cached analyses remain valid.
+# Review 2026-09-25 (investigation and Details fixes): v20 core answers are
+# unchanged. The race investigation projection moves to sections-trials-v4: the
+# default comparison is the most useful usable one, preferring one that offers
+# a saveable test (IRP 9/23 opened on a mixed finish window with nothing to
+# save); a pass pair's approach is a bounded lead-in (the section's length,
+# clamped to 3-8% of a lap, never past the previous section's start) instead of
+# everything since the previous section's start; and a run's tire explanation
+# includes the confirmed tire change that started it (Kansas 9/21 run 2). Cached
+# analyses rebuild the projection through refresh_race_investigation.
+# Review 2026-09-25 (Details tire convention): v20 core answers are unchanged.
+# Technical insights state tire condition as tread remaining ("Lowest
+# remaining", "Front minus rear remaining", "2 vs 4 outgoing remaining")
+# instead of wear, matching the takeaway and every tire reading (Kansas 9/21
+# showed "9.8 %" wear beside "90.2 % remaining"). The workflow rebuilds
+# technical_insights from the cached analysis on every analysis request, after
+# tire learning, so cached analyses remain valid.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "0b1a14fca8cf4abdcca8bc400c13bc04f708d1141a7f44063da1ff9d222ad478"
+    "1ee2bfd0076c1ed734b2a2ab955f495c433b323eca9fe5a3e08820f4260d5110"
 )
 
 

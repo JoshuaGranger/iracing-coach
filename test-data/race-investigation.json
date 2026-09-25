@@ -2,7 +2,7 @@
   "comparison_coverage": {
     "candidate_count": 2,
     "generated_count": 2,
-    "selection_policy": "At most 24 comparisons: retain the latest usable window, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."
+    "selection_policy": "At most 24 comparisons: retain the latest usable window and the latest fully screened usable window, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."
   },
   "comparisons": [
     {
@@ -345,12 +345,12 @@
               "track_temp_f": 80.0
             },
             "candidate_count": 6,
-            "context_label": "From the recorded lap start",
-            "context_start_pct": 0.0,
+            "context_label": "Lead-in: 8.0% lap before the section",
+            "context_start_pct": 0.02,
             "end_pct": 0.4,
-            "entry_gap_s": 0.012,
+            "entry_gap_s": 0.01,
             "entry_speed_difference_mph": 0.0,
-            "exit_gap_s": 0.048,
+            "exit_gap_s": 0.046,
             "rows": [
               {
                 "a": {
@@ -368,7 +368,7 @@
                   "throttle": 80.0
                 },
                 "gap": 0.0,
-                "x": 0.0
+                "x": 0.02
               },
               {
                 "a": {
@@ -385,7 +385,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.003,
+                "gap": 0.0006,
                 "x": 0.025
               },
               {
@@ -403,7 +403,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.006,
+                "gap": 0.0036,
                 "x": 0.05
               },
               {
@@ -421,7 +421,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.009,
+                "gap": 0.0066,
                 "x": 0.075
               },
               {
@@ -439,7 +439,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.012,
+                "gap": 0.0096,
                 "x": 0.1
               },
               {
@@ -457,7 +457,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.015,
+                "gap": 0.0126,
                 "x": 0.125
               },
               {
@@ -475,7 +475,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.018,
+                "gap": 0.0156,
                 "x": 0.15
               },
               {
@@ -493,7 +493,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.021,
+                "gap": 0.0186,
                 "x": 0.175
               },
               {
@@ -511,7 +511,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.024,
+                "gap": 0.0216,
                 "x": 0.2
               },
               {
@@ -529,7 +529,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.027,
+                "gap": 0.0246,
                 "x": 0.225
               },
               {
@@ -547,7 +547,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.03,
+                "gap": 0.0276,
                 "x": 0.25
               },
               {
@@ -565,7 +565,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.033,
+                "gap": 0.0306,
                 "x": 0.275
               },
               {
@@ -583,7 +583,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.036,
+                "gap": 0.0336,
                 "x": 0.3
               },
               {
@@ -601,7 +601,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.039,
+                "gap": 0.0366,
                 "x": 0.325
               },
               {
@@ -619,7 +619,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.042,
+                "gap": 0.0396,
                 "x": 0.35
               },
               {
@@ -637,7 +637,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.045,
+                "gap": 0.0426,
                 "x": 0.375
               },
               {
@@ -655,7 +655,7 @@
                   "steering": 11.5,
                   "throttle": 80.0
                 },
-                "gap": 0.048,
+                "gap": 0.0456,
                 "x": 0.4
               }
             ],
@@ -1074,12 +1074,12 @@
               "track_temp_f": 80.0
             },
             "candidate_count": 8,
-            "context_label": "From the recorded lap start",
-            "context_start_pct": 0.0,
+            "context_label": "Lead-in: 8.0% lap before the section",
+            "context_start_pct": 0.02,
             "end_pct": 0.4,
-            "entry_gap_s": 0.116,
+            "entry_gap_s": 0.093,
             "entry_speed_difference_mph": -5.0,
-            "exit_gap_s": 0.464,
+            "exit_gap_s": 0.441,
             "rows": [
               {
                 "a": {
@@ -1097,7 +1097,7 @@
                   "throttle": 60.0
                 },
                 "gap": 0.0,
-                "x": 0.0
+                "x": 0.02
               },
               {
                 "a": {
@@ -1114,7 +1114,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.029,
+                "gap": 0.0058,
                 "x": 0.025
               },
               {
@@ -1132,7 +1132,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.058,
+                "gap": 0.0348,
                 "x": 0.05
               },
               {
@@ -1150,7 +1150,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.087,
+                "gap": 0.0638,
                 "x": 0.075
               },
               {
@@ -1168,7 +1168,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.116,
+                "gap": 0.0928,
                 "x": 0.1
               },
               {
@@ -1186,7 +1186,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.145,
+                "gap": 0.1218,
                 "x": 0.125
               },
               {
@@ -1204,7 +1204,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.174,
+                "gap": 0.1508,
                 "x": 0.15
               },
               {
@@ -1222,7 +1222,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.203,
+                "gap": 0.1798,
                 "x": 0.175
               },
               {
@@ -1240,7 +1240,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.232,
+                "gap": 0.2088,
                 "x": 0.2
               },
               {
@@ -1258,7 +1258,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.261,
+                "gap": 0.2378,
                 "x": 0.225
               },
               {
@@ -1276,7 +1276,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.29,
+                "gap": 0.2668,
                 "x": 0.25
               },
               {
@@ -1294,7 +1294,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.319,
+                "gap": 0.2958,
                 "x": 0.275
               },
               {
@@ -1312,7 +1312,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.348,
+                "gap": 0.3248,
                 "x": 0.3
               },
               {
@@ -1330,7 +1330,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.377,
+                "gap": 0.3538,
                 "x": 0.325
               },
               {
@@ -1348,7 +1348,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.406,
+                "gap": 0.3828,
                 "x": 0.35
               },
               {
@@ -1366,7 +1366,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.435,
+                "gap": 0.4118,
                 "x": 0.375
               },
               {
@@ -1384,7 +1384,7 @@
                   "steering": 17.2,
                   "throttle": 60.0
                 },
-                "gap": 0.464,
+                "gap": 0.4408,
                 "x": 0.4
               }
             ],
@@ -1488,7 +1488,7 @@
       "title": "Run 1: earlier to final green laps"
     }
   ],
-  "default_comparison_id": "run-1-finish",
+  "default_comparison_id": "run-1-clean",
   "fixture_metadata": {
     "production_use_allowed": false,
     "real_driver_or_setup_data": false,
@@ -1642,7 +1642,7 @@
     "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
     "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."
   ],
-  "projection_version": "sections-trials-v3",
+  "projection_version": "sections-trials-v4",
   "runs": [
     {
       "first_lap": 1,
@@ -1849,7 +1849,7 @@
     "version": "detected/7954afe534d4"
   },
   "status": "available",
-  "summary": "Laps 9–12 were 1.160 s/lap slower than laps 1–4 by median. 3 of 8 selected laps are excluded from clean coaching.",
+  "summary": "Laps 7–9 were 0.120 s/lap slower than laps 1–3 by median.",
   "timeline": [],
   "track_evolution": {
     "limitations": [
