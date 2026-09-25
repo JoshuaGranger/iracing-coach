@@ -744,6 +744,7 @@ public sealed partial class CompanionState : IDisposable
             }
 
             PublishLocalInventory(next, dashboard.Success);
+            RefreshUnreadableAnalysisNotice(roots.ArchiveRoot);
             if (setups.Success) SetupCatalogWarning = setupCatalogWarning;
             ConfigureWatchers(roots.IRacingRoot);
             if (health.Success)
@@ -3740,7 +3741,7 @@ public sealed partial class CompanionState : IDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
             {
-                ReportUnhandledException("archived race catalog", ex);
+                RecordUnreadableAnalysis("archived race catalog", reports, path, ex);
             }
         }
         return result;
@@ -3748,7 +3749,61 @@ public sealed partial class CompanionState : IDisposable
 
     private ArchivedRaceCatalog.Entry? ReadArchivedCatalog(string path) =>
         _archivedRaceCatalog.Read(path, Path.Combine(Settings.ArchiveRoot, "ui-catalog-cache"),
-            () => _archive.MarkActive(Settings.CoachHome));
+            () => _archive.MarkActive(Settings.CoachHome), UnreadableAnalysisLedgerPath);
+
+    // App-owned local state, never the archive: the driver's saved reports stay untouched.
+    private string UnreadableAnalysisLedgerPath => Path.Combine(Settings.LocalStateRoot, "catalog", "unreadable-analyses.json");
+
+    /// <summary>
+    /// A saved analysis that cannot be read is logged once per file revision, without a
+    /// generic failure toast. The library then shows one specific notice for all of them.
+    /// </summary>
+    private void RecordUnreadableAnalysis(string scope, string reportsRoot, string path, Exception exception)
+    {
+        var relative = Path.GetRelativePath(reportsRoot, path);
+        _ = StructuredAppLog.Record(scope,
+            new InvalidDataException($"Saved analysis reports\\{relative} could not be read and was left unchanged. {exception.Message}", exception),
+            AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
+    }
+
+    private void RefreshUnreadableAnalysisNotice(string archiveRoot)
+    {
+        var reports = Path.Combine(archiveRoot, "reports");
+        try
+        {
+            UnreadableAnalysisCount = Directory.Exists(reports)
+                ? _archivedRaceCatalog.UnreadableReports(reports, UnreadableAnalysisLedgerPath).Count(report => !report.Acknowledged)
+                : 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            UnreadableAnalysisCount = 0;
+        }
+    }
+
+    public int UnreadableAnalysisCount { get; private set; }
+
+    public string? UnreadableAnalysisNotice => UnreadableAnalysisCount switch
+    {
+        <= 0 => null,
+        1 => "1 saved analysis could not be read",
+        var count => $"{count} saved analyses could not be read"
+    };
+
+    public void DismissUnreadableAnalysisNotice()
+    {
+        var reports = Path.Combine(Settings.ArchiveRoot, "reports");
+        try
+        {
+            if (Directory.Exists(reports))
+                _archivedRaceCatalog.AcknowledgeUnreadable(
+                    _archivedRaceCatalog.UnreadableReports(reports, UnreadableAnalysisLedgerPath).Select(report => report.Path),
+                    UnreadableAnalysisLedgerPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
+        UnreadableAnalysisCount = 0;
+        RaiseChanged();
+    }
 
     private RecentRace EnrichRaceOverview(RecentRace race)
     {
@@ -3779,6 +3834,9 @@ public sealed partial class CompanionState : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
         {
+            // The catalog throws once per unreadable revision; keep that one log entry.
+            if (ex is JsonException or InvalidDataException or InvalidOperationException)
+                RecordUnreadableAnalysis("archived race overview", Path.Combine(Settings.ArchiveRoot, "reports"), race.AnalysisPath, ex);
             return false;
         }
     }
@@ -4275,7 +4333,7 @@ public sealed partial class CompanionState : IDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
             {
-                ReportUnhandledException("archived setup catalog", ex);
+                RecordUnreadableAnalysis("archived setup catalog", reports, path, ex);
             }
         }
         return result;
