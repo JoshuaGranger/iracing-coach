@@ -86,7 +86,7 @@
         {
             @if (RaceDataSection == "race" && TestDay is { } day)
             {
-                var current = string.Equals(State.CurrentTestDayId, day.TestDayId, StringComparison.OrdinalIgnoreCase);
+                var current = string.Equals(State.CurrentTestDayId, day.TestDayKey, StringComparison.OrdinalIgnoreCase);
                 <TestDayView Group="day" Review="State.TestDayReviewFor(day)" State="State" OpenSessionId="@State.SelectedRaceSessionId"
                              Loading="@(current && State.TestDayLoading)" Message="@(current ? State.TestDayMessage : "")"
                              OnLoad="() => State.LoadTestDayAsync(day)" OnOpenRun="OpenTestDayRun"
@@ -236,11 +236,13 @@
     private RecentRace? SelectedEventSession => EventSessions.FirstOrDefault(session => session.Id == State.SelectedRaceSessionId);
     /// <summary>The open stint's test day (two or more stints), or null.</summary>
     private RaceEventGroup? TestDay => State.TestDayGroupFor(State.SelectedRaceSession);
+    // Races, practice and test sessions open the Race/Runs/Sections investigation; only
+    // qualifying keeps its one-screen review.
     private bool IsRaceWorkspace => TestDay is not null || (SelectedEventSession is { } session
         ? !session.IsQualifying
-        : string.Equals(Workspace.SessionType, "Race", StringComparison.OrdinalIgnoreCase));
+        : Workspace.SessionType?.Contains("Qual", StringComparison.OrdinalIgnoreCase) != true);
     private string ContextSummary => TestDay is not null && State.SelectedRaceSession is { } stint
-        ? string.Join(" · ", new[] { Workspace.Car, string.IsNullOrWhiteSpace(Workspace.SetupType) ? null : $"{Workspace.SetupType} setup", stint.Date, stint.SessionType, stint.TestDayRunNumber is { } run ? $"run {run} of {TestDay.Sessions.Count}" : null }.Where(value => !string.IsNullOrWhiteSpace(value)))
+        ? string.Join(" · ", new[] { Workspace.Car, string.IsNullOrWhiteSpace(Workspace.SetupType) ? null : $"{Workspace.SetupType} setup", stint.Date, stint.SessionType, TestDay.IsTestDay && stint.TestDayRunNumber is { } recording ? $"recording {recording} of {TestDay.Sessions.Count}" : null }.Where(value => !string.IsNullOrWhiteSpace(value)))
         : IsRaceWorkspace
         ? string.Join(" · ", new[] { Workspace.Car, string.IsNullOrWhiteSpace(Workspace.SetupType) ? null : $"{Workspace.SetupType} setup", SelectedEventSession?.Date, SelectedEventSession is { IsRace: false } practice ? practice.SessionType : null }.Where(value => !string.IsNullOrWhiteSpace(value)))
         : string.Join(" · ", new[] { Workspace.Car, Workspace.SetupType, $"{Workspace.RecordedLaps} laps" }.Where(value => !string.IsNullOrWhiteSpace(value)));

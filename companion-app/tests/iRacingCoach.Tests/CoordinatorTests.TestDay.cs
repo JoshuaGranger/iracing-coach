@@ -317,6 +317,57 @@ public sealed partial class CoordinatorTests
         Assert.IsFalse(state.Jobs.Any(job => job.Status == "failed"));
     }
 
+    [TestMethod]
+    public async Task APracticeRecordingWithSeveralRunsIsReviewedRunByRun()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-practice", Guid.NewGuid().ToString("N"));
+        var analysisPath = Path.Combine(root, "data", "reports", "practice", "analysis.json");
+        string[]? reviewed = null;
+        var practice = new
+        {
+            group_id = "subsession:77001:0", subsession_id = 77001, session_id = 0, sim_session_num = 0, sim_session_type = "Practice",
+            event_type = "Practice", is_race = false, valid = true, is_fixed_setup = false, track_display_name = "Indianapolis Raceway Park",
+            track_config_name = "Oval", car_name = "Toyota Supra Class B", car_path = "stockcars2 supra2019", start_time_utc = "2026-09-23T20:34:00Z",
+            file_count = 2, files = new[] { "irp-1.ibt", "irp-2.ibt" }
+        };
+        var backend = new FakeBackend(
+            discovery: TestDayDiscovery(practice),
+            responseOverride: (tool, _, arguments) =>
+            {
+                var args = JsonSerializer.SerializeToElement(arguments);
+                if (tool == "analyze_iracing_race")
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(analysisPath)!);
+                    File.WriteAllText(analysisPath, "{}");
+                    // One recording, split into two runs by a pit visit.
+                    var response = JsonNode.Parse(HomeAnalysisResponse(analysisPath, "Practice", "subsession:77001:0").GetRawText())!.AsObject();
+                    var runs = response["analysis_view"]!["runs"]!.AsArray();
+                    runs.Add(runs[0]!.DeepClone());
+                    return JsonSerializer.SerializeToElement(response);
+                }
+                if (tool != "review_test_day") return null;
+                reviewed = args.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()!).ToArray();
+                var review = JsonNode.Parse(TestDayReviewFor([analysisPath, analysisPath]).GetRawText())!;
+                return JsonSerializer.SerializeToElement(review);
+            });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        await state.RefreshDashboardAsync();
+        var session = state.EventSessions.Single();
+        Assert.IsFalse(session.IsTestDayStint, "A lone practice is not tagged by discovery.");
+
+        await state.OpenRaceFromHomeAsync(session);
+
+        var day = state.TestDayGroupFor(session);
+        Assert.IsNotNull(day, "A practice recording with two runs opens a Test day of its runs.");
+        Assert.AreEqual("session:subsession:77001:0", day.TestDayKey);
+        Assert.IsFalse(day.IsTestDay, "It is one recording, not a day of several.");
+        CollectionAssert.AreEqual(new[] { analysisPath }, reviewed, "The one recording is reviewed; its runs are the rows.");
+        Assert.AreEqual(day.TestDayKey, state.CurrentTestDayId);
+        Assert.IsNotNull(state.TestDayReviewFor(day), state.TestDayMessage);
+        Assert.AreEqual(session.Id, state.TestDaySession(day, state.CurrentTestDay!.Runs[1])?.Id, "Every run of the recording belongs to it.");
+    }
+
     private static string ArchivedStintReport(string analysisId, string groupId, string start, int subsession = 0) => $$$"""
         {
           "analysis_id":"{{{analysisId}}}",

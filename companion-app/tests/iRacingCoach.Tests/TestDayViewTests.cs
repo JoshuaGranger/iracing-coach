@@ -240,6 +240,40 @@ public sealed class TestDayViewTests
         StringAssert.Contains(await Render("runs", offline: false), "Runs need complete green laps", "A race keeps its own wording.");
     }
 
+    [TestMethod]
+    public async Task RunsInsideOneRecordingSayWhereTheyAreAndThatTheirSetupChangeIsNotRecorded()
+    {
+        var fixture = Fixture();
+        foreach (var (run, place) in new[] { (1, 1), (2, 2) })
+        {
+            fixture["runs"]![run]!["recording"]!["number"] = 2;
+            fixture["runs"]![run]!["recording"]!["run_in_recording"] = place;
+            fixture["runs"]![run]!["recording"]!["runs_in_recording"] = 2;
+        }
+        var change = fixture["runs"]![2]!["setup_change"]!.AsObject();
+        change["status"] = "not_recorded";
+        change["changes"] = new JsonArray();
+        change["change_count"] = 0;
+
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(fixture)
+        });
+
+        StringAssert.Contains(Row(html, 3), "2 of 2 in recording");
+        StringAssert.Contains(Row(html, 3), "Not recorded · same recording");
+        Assert.DoesNotContain("in recording", Row(html, 1), "A run alone in its recording needs no place.");
+    }
+
+    [TestMethod]
+    public void PracticeAndTestingOpenTheInvestigationAndOnlyQualifyingKeepsTheOldPage()
+    {
+        var workspace = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.UI", "AnalysisWorkspacePage.razor"));
+        StringAssert.Contains(workspace, """: Workspace.SessionType?.Contains("Qual", StringComparison.OrdinalIgnoreCase) != true);""");
+        Assert.DoesNotContain(""": string.Equals(Workspace.SessionType, "Race", StringComparison.OrdinalIgnoreCase));""", workspace);
+    }
+
     private static string Row(string html, int run)
     {
         var start = html.IndexOf($"data-run=\"{run}\" tabindex=", StringComparison.Ordinal);

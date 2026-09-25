@@ -57,7 +57,14 @@ public sealed record TestDayRun(
     TestDayComparison? Comparison,
     TestDayTires Tires,
     IReadOnlyList<TestDayLap> Laps,
-    RaceRunView? Trend);
+    RaceRunView? Trend)
+{
+    /// <summary>The recording this run is in and its place there; null from an older backend.</summary>
+    public TestDayRecording? Recording { get; init; }
+}
+
+/// <summary>A run's recording: several runs, split by pit visits, can share one.</summary>
+public sealed record TestDayRecording(int Number, string? AnalysisId, string? AnalysisPath, string? RecordedAt, int? RunInRecording, int RunsInRecording);
 
 public sealed record TestDaySetup(string? Name, bool? Fixed, bool Embedded, string? GarageFingerprint);
 public sealed record TestDayMeasuredRun(int? AnalysisRun, int FirstLap, int LastLap, int RunLaps, int OtherRunCount);

@@ -1,7 +1,7 @@
 @using System.Globalization
 @using static iRacingCoach.UI.InvestigationPresentation
 
-<section class="ri-view td-view" data-test-day="@Group.TestDayId" aria-label="Test day">
+<section class="ri-view td-view" data-test-day="@Group.TestDayKey" aria-label="Test day">
     @if (Review is null)
     {
         <div class="ri-empty ri-panel td-empty" data-test-day-state="@(Loading ? "loading" : "idle")">
@@ -12,7 +12,7 @@
             }
             else
             {
-                <strong>@Group.Sessions.Count runs · @Group.Car</strong>
+                <strong>@(Group.IsTestDay ? $"{Group.Sessions.Count} recordings" : "One recording") · @Group.Car</strong>
                 <span>@(Message.Length > 0 ? Message : "Compare every run of this test day at the same laps into the run.")</span>
                 @if (OnLoad.HasDelegate) { <button type="button" class="ri-button" @onclick="() => OnLoad.InvokeAsync()">Compare runs</button> }
             }
@@ -316,8 +316,13 @@
     }
 
     private string RunCaption(RaceRunView view) => _runs.GetValueOrDefault(view.RunNumber) is { } run
-        ? $"{Time(run.RecordedAt)} · {run.MeasuredRun?.RunLaps.ToString(CultureInfo.CurrentCulture) ?? "?"} laps"
+        ? $"{Time(run.RecordedAt)} · {run.MeasuredRun?.RunLaps.ToString(CultureInfo.CurrentCulture) ?? "?"} laps{InRecording(run)}"
         : $"{view.PlottedLapCount} plotted";
+
+    /// <summary>" · 2 of 3 in recording" when the run shares its recording with others.</summary>
+    private static string InRecording(TestDayRun run) => run.Recording is { RunsInRecording: > 1, RunInRecording: { } place } recording
+        ? $" · {place} of {recording.RunsInRecording} in recording"
+        : "";
 
     /// <summary>The same figure as the table's Fall-off column, over the same laps.</summary>
     private static string FitCaption(RaceRunFit fit) =>
@@ -351,7 +356,7 @@
             : "time unknown";
 
     private static string RunDetail(TestDayRun run) => run.MeasuredRun is { } measured
-        ? $"{Time(run.RecordedAt)} · {measured.RunLaps} laps{(measured.OtherRunCount > 0 ? $" · +{measured.OtherRunCount} run{(measured.OtherRunCount == 1 ? "" : "s")}" : "")}"
+        ? $"{Time(run.RecordedAt)} · {measured.RunLaps} laps{InRecording(run)}"
         : $"{Time(run.RecordedAt)} · no timed run";
 
     private static string MeasuredTitle(TestDayRun run)
@@ -360,9 +365,9 @@
         if (run.Setup.Name is { Length: > 0 } name) parts.Add($"Setup {name}");
         if (run.MeasuredRun is { } measured)
         {
-            parts.Add($"Measured laps {measured.FirstLap}–{measured.LastLap} of the recording");
-            if (measured.OtherRunCount > 0)
-                parts.Add($"{measured.OtherRunCount} other run{(measured.OtherRunCount == 1 ? "" : "s")} in this recording, split by pit stops, are not in the windows");
+            parts.Add($"Laps {measured.FirstLap}–{measured.LastLap} of the recording");
+            if (run.Recording is { RunsInRecording: > 1, RunInRecording: { } place } recording)
+                parts.Add($"Run {place} of {recording.RunsInRecording} in this recording, split by pit visits");
         }
         if (run.Conditions.TrackTemperatureF is { } track) parts.Add($"Track {track.ToString("0", CultureInfo.CurrentCulture)} °F");
         if (run.Conditions.StartFuelGallons is { } fuel) parts.Add($"Start fuel {fuel.ToString("0.0", CultureInfo.CurrentCulture)} gal");
@@ -375,6 +380,7 @@
         "first_run" => "First run",
         "unchanged" => "No change",
         "changed" when change.Changes.FirstOrDefault() is { } first => Setting(first),
+        "not_recorded" => "Not recorded · same recording",
         "unknown" => "Not recorded",
         _ => "Not recorded"
     };

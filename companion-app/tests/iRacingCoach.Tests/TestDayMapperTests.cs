@@ -37,6 +37,7 @@ public sealed class TestDayMapperTests
         StringAssert.StartsWith(review.NextChange.SuccessRule.Text, "Beat 24.068 s median on laps 12–16");
         Assert.AreEqual(3, review.Runs[2].Trend!.RunNumber, "The chart trend belongs to the day's run, not the recording's run.");
         Assert.AreEqual("Run 3 · lap 14", review.Runs[2].Laps.Single(lap => lap.Lap == 14).Label);
+        Assert.AreEqual(new TestDayRecording(3, "fixture-stint-3", review.Runs[2].AnalysisPath, "2026-08-04T19:25:00+00:00", 1, 1), review.Runs[2].Recording);
 
         var lastStop = review.Runs[2].Tires;
         Assert.IsFalse(lastStop.StopReading.Measured);

@@ -10,8 +10,8 @@ namespace iRacingCoach.Coordinator;
 /// </summary>
 public sealed partial class CompanionState
 {
-    /// <summary>The backend reviews 2–12 stints; a longer day reviews its latest twelve.</summary>
-    public const int MaximumTestDayRuns = 12;
+    /// <summary>The backend reviews 1–12 recordings; a longer day reviews its latest twelve.</summary>
+    public const int MaximumTestDayRecordings = 12;
 
     private long _testDayEpoch;
     private string _testDaySignature = string.Empty;
@@ -22,32 +22,47 @@ public sealed partial class CompanionState
     public string TestDayMessage { get; private set; } = string.Empty;
     public RecoverableAppError? TestDayError { get; private set; }
 
-    /// <summary>The day this stint belongs to when discovery grouped two or more stints; otherwise null.</summary>
+    /// <summary>
+    /// What a Test day view reviews for this session: the day discovery grouped it into
+    /// (two or more recordings), or, for a practice or test recording on its own whose open
+    /// analysis holds two or more runs, that one recording run by run. Otherwise null.
+    /// </summary>
     public RaceEventGroup? TestDayGroupFor(RecentRace? session)
     {
-        if (session is not { IsTestDayStint: true }) return null;
-        lock (_inventoryGate)
+        if (session is null) return null;
+        if (session.IsTestDayStint)
         {
-            return EventGroups.OfType<RaceEventGroup>().FirstOrDefault(group =>
-                group.IsTestDay && string.Equals(group.TestDayId, session.TestDayId, StringComparison.OrdinalIgnoreCase));
+            lock (_inventoryGate)
+            {
+                var day = EventGroups.OfType<RaceEventGroup>().FirstOrDefault(group =>
+                    group.IsTestDay && string.Equals(group.TestDayId, session.TestDayId, StringComparison.OrdinalIgnoreCase));
+                if (day is not null) return day;
+            }
         }
+        if (session.IsRace || session.IsQualifying) return null;
+        if (CurrentAnalysis is not { Runs.Count: >= 2 } || !string.Equals(SelectedRaceSessionId, session.Id, StringComparison.Ordinal)) return null;
+        return new RaceEventGroup($"session:{session.Id}", session.Track, session.Layout, session.Car, session.Date, session.SetupType,
+            session.EventScope, [session with { TestDayId = null, TestDayRunNumber = null, TestDayRunCount = null }])
+        {
+            SingleRecordingKey = $"session:{session.Id}"
+        };
     }
 
     private (string DayId, int? Run) _testDaySelection;
 
     /// <summary>The Test day row the driver selected on this day; it survives opening another run's recording.</summary>
     public int? TestDaySelectedRun(RaceEventGroup? group) =>
-        group?.TestDayId is { } id && string.Equals(_testDaySelection.DayId, id, StringComparison.OrdinalIgnoreCase) ? _testDaySelection.Run : null;
+        group?.TestDayKey is { } id && string.Equals(_testDaySelection.DayId, id, StringComparison.OrdinalIgnoreCase) ? _testDaySelection.Run : null;
 
     public void SelectTestDayRun(RaceEventGroup group, int? run)
     {
         ArgumentNullException.ThrowIfNull(group);
-        _testDaySelection = (group.TestDayId ?? string.Empty, run);
+        _testDaySelection = (group.TestDayKey ?? string.Empty, run);
     }
 
     /// <summary>The loaded review for this day, or null while it has not been read.</summary>
     public TestDayReview? TestDayReviewFor(RaceEventGroup? group) =>
-        group?.TestDayId is { } id && CurrentTestDay is { } review && string.Equals(CurrentTestDayId, id, StringComparison.OrdinalIgnoreCase)
+        group?.TestDayKey is { } id && CurrentTestDay is { } review && string.Equals(CurrentTestDayId, id, StringComparison.OrdinalIgnoreCase)
             ? review
             : null;
 
@@ -90,12 +105,12 @@ public sealed partial class CompanionState
     public async Task LoadTestDayAsync(RaceEventGroup group, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(group);
-        if (group.TestDayId is not { } testDayId) return;
+        if (group.TestDayKey is not { } testDayId) return;
         var stints = group.Sessions.OfType<RecentRace>()
             .OrderBy(session => session.TestDayRunNumber ?? int.MaxValue)
             .ThenBy(session => session.StartTimeUtc, StringComparer.Ordinal)
             .ToArray();
-        if (stints.Length > MaximumTestDayRuns) stints = stints[^MaximumTestDayRuns..];
+        if (stints.Length > MaximumTestDayRecordings) stints = stints[^MaximumTestDayRecordings..];
         var signature = string.Join("|", stints.Select(session => session.Id));
         if (CurrentTestDay is not null && string.Equals(CurrentTestDayId, testDayId, StringComparison.OrdinalIgnoreCase)
             && string.Equals(_testDaySignature, signature, StringComparison.Ordinal)) return;
@@ -146,7 +161,7 @@ public sealed partial class CompanionState
                     CurrentTestDay = review;
                     _testDaySignature = signature;
                     TestDayMessage = stints.Length < group.Sessions.Count
-                        ? $"Showing the latest {stints.Length} of {group.Sessions.Count} runs."
+                        ? $"Showing the latest {stints.Length} of {group.Sessions.Count} recordings."
                         : string.Empty;
                 }
                 else
@@ -200,10 +215,10 @@ public sealed partial class CompanionState
             var paths = new List<string>(stints.Count);
             for (var index = 0; index < stints.Count; index++)
             {
-                Stage($"Reading run {index + 1} of {stints.Count}…");
+                Stage(stints.Count == 1 ? "Reading the recording…" : $"Reading recording {index + 1} of {stints.Count}…");
                 var path = await EnsureAnalyzedAsync(stints[index], token);
                 if (string.IsNullOrWhiteSpace(path))
-                    throw new InvalidOperationException($"Run {index + 1} has no saved analysis to compare.");
+                    throw new InvalidOperationException($"Recording {index + 1} has no saved analysis to compare.");
                 paths.Add(path);
             }
             Stage("Comparing the runs…");
@@ -233,7 +248,8 @@ public sealed partial class CompanionState
     /// <summary>A forced re-analysis of a stint makes the loaded day stale; the next open re-reads it.</summary>
     private void InvalidateTestDay(RecentRace race)
     {
-        if (race.IsTestDayStint && string.Equals(race.TestDayId, CurrentTestDayId, StringComparison.OrdinalIgnoreCase))
+        if ((race.IsTestDayStint && string.Equals(race.TestDayId, CurrentTestDayId, StringComparison.OrdinalIgnoreCase))
+            || string.Equals($"session:{race.Id}", CurrentTestDayId, StringComparison.OrdinalIgnoreCase))
             _testDaySignature = string.Empty;
     }
 

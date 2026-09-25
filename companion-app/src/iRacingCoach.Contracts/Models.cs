@@ -116,6 +116,13 @@ public sealed record RaceEventGroup(
             ? id
             : null;
     public bool IsTestDay => TestDayId is not null;
+    /// <summary>
+    /// Set on the one-recording group of a practice or test session reviewed run by run
+    /// (a run is the laps between pit visits); null otherwise.
+    /// </summary>
+    public string? SingleRecordingKey { get; init; }
+    /// <summary>The key a test-day review is kept under: the day's tag, or the single recording's key.</summary>
+    public string? TestDayKey => TestDayId ?? SingleRecordingKey;
 }
 
 public enum RaceBrowserFilter

@@ -76,6 +76,7 @@ public static class TestDayMapper
         var conditions = RequiredObject(item, "conditions", path);
         var tireStart = RequiredObject(conditions, "tire_start", $"{path}.conditions");
         var trend = NullableObject(item, "trend", path);
+        var recording = item.TryGetProperty("recording", out _) ? RequiredObject(item, "recording", path) : default;
         RaceRunView? trendView;
         try { trendView = trend.ValueKind == JsonValueKind.Object ? RaceInvestigationMapper.RunView(trend) : null; }
         catch (JsonException exception) { throw new JsonException($"Invalid test-day trend at {path}.trend: {exception.Message}", exception); }
@@ -108,7 +109,13 @@ public static class TestDayMapper
             Comparison(NullableObject(item, "comparison", path), $"{path}.comparison"),
             Tires(RequiredObject(item, "tires", path), $"{path}.tires"),
             Array(item, "laps", path).Select((lap, index) => Lap(lap, $"{path}.laps[{index}]")).ToArray(),
-            trendView);
+            trendView)
+        {
+            Recording = recording.ValueKind != JsonValueKind.Object ? null : new TestDayRecording(
+                RequiredInt(recording, "number", $"{path}.recording"), OptionalText(recording, "analysis_id", $"{path}.recording"),
+                OptionalText(recording, "analysis_path", $"{path}.recording"), OptionalText(recording, "recorded_at", $"{path}.recording"),
+                OptionalInt(recording, "run_in_recording", $"{path}.recording"), RequiredInt(recording, "runs_in_recording", $"{path}.recording"))
+        };
     }
 
     private static TestDayWindow Window(JsonElement item, string path) => new(

@@ -87,8 +87,9 @@ else
                         <button type="button" class="session-row @(first ? null : "sub") @(selected ? "selected" : null)" data-session="@session.Id" @onclick="() => Open(session)"
                                 title="Open @session.SessionType.ToLowerInvariant() analysis">
                             <span class="session-main">
-                                @if (first) { <b>@group.Track <span class="ri-muted">@group.Layout@(group.TestDay ? $" · test day, {group.Sessions.Count} runs" : "")</span></b> }
-                                <small>@(group.TestDay && session.TestDayRunNumber is { } run ? $"Run {run} · " : "")@SessionWhen(session) · @group.Car@(string.IsNullOrWhiteSpace(group.SetupType) ? "" : $" · {group.SetupType} setup")</small>
+                                @if (first) { <b>@group.Track <span class="ri-muted">@group.Layout@(group.TestDay ? $" · test day, {group.Sessions.Count} recordings" : "")</span></b> }
+                                @* "Run N" names a row of the Test day table (the laps between pit visits); a recording can hold several. *@
+                                <small>@(group.TestDay && session.TestDayRunNumber is { } recording ? $"Recording {recording} · " : "")@SessionWhen(session) · @group.Car@(string.IsNullOrWhiteSpace(group.SetupType) ? "" : $" · {group.SetupType} setup")</small>
                             </span>
                             <span class="session-type @TypeClass(session)">@TypeLabel(session)</span>
                             <span>@Result(session)</span>
