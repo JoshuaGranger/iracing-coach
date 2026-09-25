@@ -30,6 +30,20 @@ public sealed class NonFiniteJsonTests
         Assert.AreEqual(JsonValueKind.Null, root.GetProperty("after").ValueKind);
     }
 
+    // Two of the report reads moved from File.ReadAllText, which drops a UTF-8 byte order
+    // mark, to file bytes. A report saved with one must still parse.
+    [TestMethod]
+    public void ByteOrderMarkIsAcceptedLikeReadAllText()
+    {
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes("{\"total_time_s\": Infinity, \"lap\": 3}")).ToArray();
+        using var document = NonFiniteJson.Parse(bytes);
+        Assert.AreEqual(JsonValueKind.Null, document.RootElement.GetProperty("total_time_s").ValueKind);
+        Assert.AreEqual(3, document.RootElement.GetProperty("lap").GetInt32());
+
+        using var standard = NonFiniteJson.Parse(Encoding.UTF8.GetPreamble().Concat("{\"lap\":4}"u8.ToArray()).ToArray());
+        Assert.AreEqual(4, standard.RootElement.GetProperty("lap").GetInt32());
+    }
+
     [TestMethod]
     public void StandardJsonIsReturnedWithoutCopying()
     {

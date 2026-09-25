@@ -116,6 +116,75 @@ public sealed class SavedAnalysisLibraryTests
         }
     }
 
+    // The library listed an older report with a bare Infinity, but opening it without its
+    // recording parsed it strictly, failed, and fell back to asking the backend to
+    // reanalyze a recording that is not on this PC.
+    [TestMethod]
+    public async Task SavedAnalysisWithBareInfinityOpensFromTheSavedReportWithoutItsRecording()
+    {
+        using var library = new Library();
+        var report = library.AddReport("2026-09-21t00-07-38-00-00",
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "archived-analysis-nonfinite-v16.json")));
+        var original = File.ReadAllBytes(report);
+
+        using (var state = await library.LaunchAsync())
+        {
+            var race = state.Races.Single(item => item.AnalysisPath == report);
+            await state.OpenRaceAsync(race);
+
+            Assert.IsNotNull(state.CurrentAnalysis, state.AnalysisError?.ToString() ?? state.AnalysisMessage);
+            Assert.IsFalse(state.AnalysisLoading);
+            Assert.DoesNotContain("analyze_iracing_race", library.Backend.Tools,
+                "The saved report is readable; the missing recording must not be reanalyzed.");
+            StringAssert.Contains(state.AnalysisMessage, "older analysis format");
+        }
+        CollectionAssert.AreEqual(original, File.ReadAllBytes(report), "The user's archive file must not be rewritten.");
+    }
+
+    // The archive's missing-recording scan parsed reports strictly and skipped one with a
+    // bare Infinity, so its missing recording was never offered for locating.
+    [TestMethod]
+    public void ArchiveScanNamesTheMissingRecordingOfAReportWithBareInfinity()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-tests", Guid.NewGuid().ToString("N"), "iRacing Coach");
+        var report = Path.Combine(root, "data", "reports", "race-3", "analysis.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(report)!);
+        File.WriteAllText(report, "{\"source\":\"Z:\\\\departed-user\\\\Documents\\\\iRacing\\\\telemetry\\\\race-3.ibt\",\"strategy\":{\"total_time_s\": Infinity}}");
+        var original = File.ReadAllBytes(report);
+        try
+        {
+            var service = new DurableArchiveService();
+            _ = service.PrepareForCopy(root, "0.18.0", "test");
+            var status = service.Initialize(root, "0.18.0", "test");
+
+            Assert.AreEqual(1, status.Restored.UnresolvedSources);
+            StringAssert.Contains(File.ReadAllText(Path.Combine(root, DurableArchiveService.ManifestFileName)), "race-3.ibt");
+            CollectionAssert.AreEqual(original, File.ReadAllBytes(report));
+        }
+        finally
+        {
+            try { Directory.Delete(Path.GetDirectoryName(root)!, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    [TestMethod]
+    public void EverySavedReportReadUsesTheTolerantReader()
+    {
+        var coordinator = Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.Coordinator");
+        foreach (var file in Directory.EnumerateFiles(coordinator, "*.cs"))
+        {
+            var source = File.ReadAllText(file);
+            Assert.DoesNotMatchRegex(new System.Text.RegularExpressions.Regex(@"JsonDocument\.Parse\([^;]*AnalysisPath"), source,
+                $"{Path.GetFileName(file)} parses a saved report strictly; use NonFiniteJson.Parse.");
+        }
+        var archive = File.ReadAllText(Path.Combine(coordinator, "DurableArchive.cs"));
+        var scan = archive[archive.IndexOf("private static List<UnresolvedSourceReference> FindUnresolvedSources", StringComparison.Ordinal)..];
+        scan = scan[..scan.IndexOf("\n    }", StringComparison.Ordinal)];
+        StringAssert.Contains(scan, "NonFiniteJson.Parse(");
+        Assert.DoesNotContain("JsonDocument.Parse(", scan);
+    }
+
     private sealed class Library : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "iracing-coach-saved-library", Guid.NewGuid().ToString("N"));
@@ -131,6 +200,7 @@ public sealed class SavedAnalysisLibraryTests
 
         public IsolatedCompanionPathProvider Paths { get; }
         public CompanionSettings Settings { get; }
+        public LibraryBackend Backend { get; } = new();
         private string Reports => Path.Combine(Settings.ArchiveRoot, "reports", "season-1", "subsession-1000001-2");
 
         public string AddReport(string name, string contents)
@@ -143,7 +213,7 @@ public sealed class SavedAnalysisLibraryTests
 
         public async Task<CompanionState> LaunchAsync()
         {
-            var state = new CompanionState(new LibraryBackend(), new FixedSettingsStore(Settings), new DisconnectedLiveTelemetrySource(),
+            var state = new CompanionState(Backend, new FixedSettingsStore(Settings), new DisconnectedLiveTelemetrySource(),
                 new DisabledCoachEngineSupervisor(), new NoCredentials(Path.Combine(_root, "credentials")), new ReadyArchive(), Paths,
                 allowExternalHostActions: false);
             await state.InitializeAsync();
@@ -191,11 +261,16 @@ public sealed class SavedAnalysisLibraryTests
 
     private sealed class LibraryBackend : IBackendClient
     {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _tools = new();
+        public IReadOnlyCollection<string> Tools => _tools.ToArray();
+
         public Task<BackendHealthResult> CheckHealthAsync(BackendConfiguration configuration, CancellationToken cancellationToken = default) =>
             Task.FromResult(new BackendHealthResult(true, "test", "test", "test", 1, TimeSpan.Zero));
 
-        public Task<JsonElement> CallToolAsync(BackendConfiguration configuration, string toolName, object arguments, CancellationToken cancellationToken = default) =>
-            Task.FromResult(JsonSerializer.SerializeToElement(toolName switch
+        public Task<JsonElement> CallToolAsync(BackendConfiguration configuration, string toolName, object arguments, CancellationToken cancellationToken = default)
+        {
+            _tools.Enqueue(toolName);
+            return Task.FromResult(JsonSerializer.SerializeToElement(toolName switch
             {
                 "iracing_companion_dashboard" => (object)new { ok = true, races = Array.Empty<object>() },
                 "discover_iracing_sessions" => new { sessions = Array.Empty<object>() },
@@ -204,5 +279,6 @@ public sealed class SavedAnalysisLibraryTests
                 "list_driving_trials" => new { ok = true, trials = Array.Empty<object>() },
                 _ => new { ok = true }
             }));
+        }
     }
 }

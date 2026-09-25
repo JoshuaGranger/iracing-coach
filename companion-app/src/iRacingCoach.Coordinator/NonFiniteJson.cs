@@ -7,12 +7,24 @@ namespace iRacingCoach.Coordinator;
 // rejects the whole report because of one unknown value. Catalog and metadata
 // reads replace only those bare tokens, never text inside strings, with null:
 // the value is unknown, never zero. The user's report file is not rewritten.
+// Every read of a saved analysis report (library, setups, reopening a race without its
+// recording, tuning, and the archive's missing-recording scan) goes through Parse.
 internal static class NonFiniteJson
 {
     private static readonly byte[] Null = "null"u8.ToArray();
     private static readonly byte[][] Tokens = ["-Infinity"u8.ToArray(), "Infinity"u8.ToArray(), "NaN"u8.ToArray()];
 
-    public static JsonDocument Parse(byte[] utf8) => JsonDocument.Parse(NullBareNonFiniteNumbers(utf8, out _));
+    /// <summary>
+    /// Parses a report's file bytes. Like <c>File.ReadAllText</c>, which some of these
+    /// reads used before, a leading UTF-8 byte order mark is accepted.
+    /// </summary>
+    public static JsonDocument Parse(byte[] utf8)
+    {
+        var sanitized = NullBareNonFiniteNumbers(utf8, out _);
+        return sanitized.AsSpan().StartsWith("﻿"u8)
+            ? JsonDocument.Parse(sanitized.AsMemory(3))
+            : JsonDocument.Parse(sanitized);
+    }
 
     /// <summary>
     /// Returns <paramref name="utf8"/> itself when it has no bare non-finite number,

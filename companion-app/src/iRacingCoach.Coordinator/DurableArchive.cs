@@ -430,7 +430,9 @@ public sealed class DurableArchiveService : IDurableArchiveService
                 try
                 {
                     if (new FileInfo(file).Length > 16 * 1024 * 1024) continue;
-                    using var document = JsonDocument.Parse(File.ReadAllText(file));
+                    // Older reports can hold bare NaN/Infinity; one unknown number must not
+                    // hide the recording the report names.
+                    using var document = NonFiniteJson.Parse(File.ReadAllBytes(file));
                     VisitStrings(document.RootElement, value =>
                     {
                         if (!value.EndsWith(".ibt", StringComparison.OrdinalIgnoreCase) || File.Exists(value)) return;

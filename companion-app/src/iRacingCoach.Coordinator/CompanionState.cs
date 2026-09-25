@@ -2097,7 +2097,7 @@ public sealed partial class CompanionState : IDisposable
             return CurrentAnalysis;
         if (!string.IsNullOrWhiteSpace(race.AnalysisPath) && File.Exists(race.AnalysisPath))
         {
-            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(race.AnalysisPath, cancellationToken));
+            using var document = NonFiniteJson.Parse(await File.ReadAllBytesAsync(race.AnalysisPath, cancellationToken));
             var archived = RuntimeMapper.ArchivedAnalysis(document.RootElement);
             EnsureAnalysisMatchesSession(race, archived);
             archived = archived with
@@ -3719,7 +3719,9 @@ public sealed partial class CompanionState : IDisposable
         if (sourceAvailable || string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return null;
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
+            // The saved report is read as the library reads it: bare NaN/Infinity from an
+            // older analyzer is unknown, not a reason to fall back to reanalysis.
+            using var document = NonFiniteJson.Parse(File.ReadAllBytes(race.AnalysisPath));
             var analysis = RuntimeMapper.ArchivedAnalysis(document.RootElement);
             if (!AnalysisMatchesSession(race, analysis)) return null;
             var current = RuntimeMapper.HasCurrentAnalysisProfile(document.RootElement);
