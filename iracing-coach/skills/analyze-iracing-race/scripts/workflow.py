@@ -1652,8 +1652,16 @@ def _analysis_pipeline_sha256() -> str:
 # Review 2026-09-24 (merge): the v20 session-flag rule and sections-trials-v2
 # are re-applied on the column-wise engine; _caution_flag_series now reads the
 # cached flag_bits column. Race and synthetic parity outputs are unchanged.
+# Review 2026-09-24: v20 core answers are unchanged. The race investigation
+# projection moves to sections-trials-v3: earlier and later laps of one run
+# that a caution separates are not a pace result (Iowa 8/03 run 3 compared
+# laps 23-24 with 32-33 across caution laps 25-30), an unusable comparison
+# carries no explanation statuses, and when more than 24 candidates exist the
+# retained default and ranked slots prefer usable comparisons. Cross-run
+# windows stay exposure-matched across a stop. Cached analyses rebuild it
+# through refresh_race_investigation.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "59dddee3383033e197b8a137ac00ff081359a302384108aba4957a14f8c6b4fc"
+    "be04555772f7fdfda2d8601aec330fdc34b01b09defa1b85a77dc3cdf793b6a3"
 )
 
 

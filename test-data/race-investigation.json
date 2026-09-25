@@ -2,7 +2,7 @@
   "comparison_coverage": {
     "candidate_count": 2,
     "generated_count": 2,
-    "selection_policy": "At most 24 comparisons: retain the latest/default window, the first and last four candidates, then the largest absolute median pace changes. All recorded laps remain in the timeline."
+    "selection_policy": "At most 24 comparisons: retain the latest usable window, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."
   },
   "comparisons": [
     {
@@ -1637,12 +1637,12 @@
   "limitations": [
     "Window medians are observed comparisons, not estimates of a single cause.",
     "Clean windows use the existing recorded eligibility screen; observed finish windows retain excluded laps and their reasons.",
-    "A comparison whose selected laps are all excluded, or whose window spans a caution, carries no pace delta and states why.",
+    "A comparison whose selected laps are all excluded, whose window spans a caution, or whose earlier and later laps a caution separates carries no pace delta or explanations and states why. Cross-run windows are matched by green exposure across a stop.",
     "Cross-run exposure uses sampled green-time fractions from complete laps, not measured tire wear or exact physical green distance.",
     "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
     "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."
   ],
-  "projection_version": "sections-trials-v2",
+  "projection_version": "sections-trials-v3",
   "runs": [
     {
       "first_lap": 1,
