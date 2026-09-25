@@ -42,13 +42,31 @@ def car_setup(*, cross_weight: str = "50.0%", brake_bias: str = "56.0%", update_
                           "LastTempsIMO": "74C, 72C, 69C", "TreadRemaining": "99%, 99%, 99%"},
         },
         "Chassis": {
-            "Front": {"CrossWeight": cross_weight, "FrontBrakeBias": brake_bias, "NoseWeight": "51.0%"},
-            "LeftFront": {"Packer": "0.25 in", "RideHeight": "4.25 in"},
-            "RightFront": {"Packer": "0.25 in", "RideHeight": "4.30 in"},
-            "LeftRear": {"TrackBarHeight": "10.00 in"},
-            "RightRear": {"TrackBarHeight": "10.00 in"},
+            "Front": {"BallastForward": "711 mm", "CrossWeight": cross_weight, "FrontBrakeBias": brake_bias, "NoseWeight": "51.0%"},
+            "LeftFront": {"CornerWeight": "3928 N", "Packer": "0.25 in", "RideHeight": "4.25 in"},
+            "RightFront": {"CornerWeight": "4109 N", "Packer": "0.25 in", "RideHeight": "4.30 in"},
+            "LeftRear": {"CornerWeight": "4224 N", "RideHeight": "141 mm", "SpringPerchOffset": "-72 mm", "TrackBarHeight": "10.00 in"},
+            "RightRear": {"CornerWeight": "3747 N", "TrackBarHeight": "10.00 in", "TruckArmPreload": "5.6 Nm"},
         },
     }
+
+
+def wedge(setup: dict, *, lr_perch: str = "-70 mm", cross_weight: str = "50.4%") -> dict:
+    """One left-rear spring-perch adjustment and the readouts iRacing recomputes from it.
+
+    Cross weight, the four corner weights and the left-rear ride height are
+    garage readouts: a real sheet changes them together with the perch offset.
+    """
+
+    chassis = setup["Chassis"]
+    chassis["LeftRear"]["SpringPerchOffset"] = lr_perch
+    chassis["Front"]["CrossWeight"] = cross_weight
+    chassis["LeftFront"]["CornerWeight"] = "3916 N"
+    chassis["RightFront"]["CornerWeight"] = "4121 N"
+    chassis["LeftRear"]["CornerWeight"] = "4236 N"
+    chassis["RightRear"]["CornerWeight"] = "3735 N"
+    chassis["LeftRear"]["RideHeight"] = "142 mm"
+    return setup
 
 
 class GarageSetupIdentityTests(unittest.TestCase):
@@ -104,6 +122,24 @@ class GarageSetupIdentityTests(unittest.TestCase):
         self.assertEqual(first["garage_setup_fingerprint"], setup_catalog.garage_setup_fingerprint(car_setup())[:16])
         self.assertEqual(len(first["setup_fingerprint"]), 16)
         self.assertIsNone(identity({})["garage_setup_fingerprint"])
+
+    def test_computed_readouts_are_named_and_left_out_of_the_fingerprint(self) -> None:
+        fields = setup_catalog.garage_setup_fields(car_setup())
+        self.assertEqual(fields["readout_fields"], [
+            "chassis.front.cross_weight", "chassis.front.nose_weight",
+            "chassis.left_front.corner_weight", "chassis.left_front.ride_height",
+            "chassis.left_rear.corner_weight", "chassis.left_rear.ride_height",
+            "chassis.right_front.corner_weight", "chassis.right_front.ride_height",
+            "chassis.right_rear.corner_weight", "chassis.right_rear.truck_arm_preload"])
+        self.assertIn("chassis.front.cross_weight", fields["fields"])  # still shown, never counted
+        self.assertFalse(setup_catalog.is_garage_readout_field("chassis.left_rear.spring_perch_offset"))
+        # One .sto loaded on two days reads a unit apart (recorded New Hampshire sessions).
+        drifted = car_setup()
+        drifted["Chassis"]["LeftFront"]["CornerWeight"] = "3929 N"
+        drifted["Chassis"]["RightRear"]["TruckArmPreload"] = "5.5 Nm"
+        self.assertEqual(setup_catalog.garage_setup_fingerprint(car_setup()), setup_catalog.garage_setup_fingerprint(drifted))
+        self.assertNotEqual(setup_catalog.garage_setup_fingerprint(car_setup()),
+                            setup_catalog.garage_setup_fingerprint(wedge(car_setup())))
 
     def test_tuning_comparison_uses_the_shared_transient_list(self) -> None:
         snapshot = tuning_workflow._comparable_snapshot(setup_catalog.normalize_embedded_setup(car_setup()))
@@ -464,13 +500,38 @@ class TestDaySetupChangeTests(unittest.TestCase):
         self.assertEqual(change["changes"], [])
 
     def test_a_changed_setting_is_listed_with_both_values(self) -> None:
-        change = review(stint_analysis("a", 9), stint_analysis("b", 10, setup=car_setup(cross_weight="50.4%")))["runs"][1]["setup_change"]
+        change = review(stint_analysis("a", 9), stint_analysis("b", 10, setup=car_setup(brake_bias="56.5%")))["runs"][1]["setup_change"]
         self.assertEqual(change["status"], "changed")
         self.assertEqual(change["change_count"], 1)
         item = change["changes"][0]
-        self.assertEqual((item["field"], item["previous"], item["current"]), ("chassis.front.cross_weight", "50.0%", "50.4%"))
-        self.assertAlmostEqual(item["delta"], 0.4, places=4)
-        self.assertEqual(item["label"], "Front cross weight")
+        self.assertEqual((item["field"], item["previous"], item["current"]), ("chassis.front.front_brake_bias", "56.0%", "56.5%"))
+        self.assertAlmostEqual(item["delta"], 0.5, places=4)
+        self.assertEqual(item["label"], "Front brake bias")
+        self.assertEqual((change["readout_count"], change["readouts"]), (0, []))
+
+    def test_one_wedge_adjustment_is_one_change_with_its_readouts_listed_apart(self) -> None:
+        change = review(stint_analysis("a", 9), stint_analysis("b", 10, setup=wedge(car_setup())))["runs"][1]["setup_change"]
+        self.assertEqual(change["status"], "changed")
+        self.assertEqual(change["change_count"], 1)
+        self.assertEqual([(item["field"], item["previous"], item["current"]) for item in change["changes"]],
+                         [("chassis.left_rear.spring_perch_offset", "-72 mm", "-70 mm")])
+        self.assertEqual(change["readout_count"], 6)
+        self.assertEqual({item["field"] for item in change["readouts"]}, {
+            "chassis.front.cross_weight", "chassis.left_front.corner_weight", "chassis.right_front.corner_weight",
+            "chassis.left_rear.corner_weight", "chassis.right_rear.corner_weight", "chassis.left_rear.ride_height"})
+
+    def test_readouts_that_move_without_an_adjustment_are_no_change(self) -> None:
+        drifted = car_setup()
+        drifted["Chassis"]["LeftFront"]["CornerWeight"] = "3929 N"
+        drifted["Chassis"]["RightRear"]["TruckArmPreload"] = "5.5 Nm"
+        drifted["Chassis"]["LeftRear"]["RideHeight"] = "145 mm"
+        result = review(stint_analysis("a", 9), stint_analysis("b", 10, base=23.99, setup=drifted))
+        change = result["runs"][1]["setup_change"]
+        self.assertEqual((change["status"], change["change_count"], change["readout_count"]), ("unchanged", 0, 1))
+        self.assertEqual(change["reason"], "No adjustment changed; only computed garage readouts differ (left rear ride height 141 mm → 145 mm).")
+        self.assertEqual(result["runs"][0]["setup"]["garage_fingerprint"], result["runs"][1]["setup"]["garage_fingerprint"])
+        self.assertEqual(result["next_change"]["kind"], "repeat")
+        self.assertIn(change["reason"], result["next_change"]["evidence"])
 
     def test_a_setting_in_only_one_run_is_unknown_not_a_change(self) -> None:
         setup = car_setup()
@@ -531,20 +592,23 @@ class TestDayNextChangeTests(unittest.TestCase):
         return result["next_change"]
 
     def test_a_slower_change_is_reverted_to_the_exact_previous_value(self) -> None:
-        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=24.2, setup=car_setup(cross_weight="50.4%")))
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=24.2, setup=wedge(car_setup())))
         self.assertEqual(card["kind"], "revert")
-        self.assertEqual(card["changes"], [{"field": "chassis.front.cross_weight", "label": "Front cross weight", "from": "50.4%", "to": "50.0%"}])
-        self.assertEqual(card["title"], "Revert front cross weight to 50.0%")
+        # The adjustment is reverted; the readouts it moved follow it and are never listed as targets.
+        self.assertEqual(card["changes"], [{"field": "chassis.left_rear.spring_perch_offset", "label": "Left rear spring perch offset",
+                                            "from": "-70 mm", "to": "-72 mm"}])
+        self.assertEqual(card["title"], "Revert left rear spring perch offset to -72 mm")
+        self.assertIn("Left rear spring perch offset -72 mm → -70 mm moved front cross weight 50.0% → 50.4%.", card["evidence"])
         self.assertEqual(card["success_rule"]["text"], "Beat 24.380 s median on laps 16–20 by at least 0.030 s with 3+ clean laps.")
 
     def test_an_earlier_best_setup_is_returned_to(self) -> None:
         card = self.card(stint_analysis("a", 9),
-                         stint_analysis("b", 10, base=24.3, setup=car_setup(cross_weight="50.4%")),
-                         stint_analysis("c", 11, base=24.2, setup=car_setup(cross_weight="50.4%", brake_bias="56.5%")))
+                         stint_analysis("b", 10, base=24.3, setup=wedge(car_setup())),
+                         stint_analysis("c", 11, base=24.2, setup=wedge(car_setup(brake_bias="56.5%"))))
         self.assertEqual(card["kind"], "return_to_setup")
         self.assertEqual(card["based_on_runs"], [1, 3])
         self.assertEqual({item["field"]: item["to"] for item in card["changes"]},
-                         {"chassis.front.cross_weight": "50.0%", "chassis.front.front_brake_bias": "56.0%"})
+                         {"chassis.left_rear.spring_perch_offset": "-72 mm", "chassis.front.front_brake_bias": "56.0%"})
         self.assertIn("Run 1 still has the best late pace", card["evidence"][0])
 
     def test_one_faster_ruleset_change_is_kept_with_one_more_quoted_step(self) -> None:
@@ -556,12 +620,13 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertEqual((step["instruction"], step["expected_effect"], step["risk"]),
                          (rule["instruction"], rule["expected_effect"], rule["risk"]))
         self.assertFalse(step["step_verified"])
-        self.assertEqual(card["title"], "Keep front brake bias; try one more step")
+        self.assertEqual(card["title"], "Keep front brake bias at 56.5%; try one more step")
         self.assertEqual(card["success_rule"]["direction"], "faster")
 
     def test_a_faster_change_outside_the_ruleset_is_kept_without_a_step(self) -> None:
-        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=nose_weight(car_setup(), "51.5%")))
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=ballast(car_setup(), "700 mm")))
         self.assertEqual(card["kind"], "keep")
+        self.assertEqual(card["title"], "Keep front ballast forward at 700 mm")
         self.assertIsNone(card["ruleset_step"])
         self.assertEqual(card["success_rule"]["direction"], "within")
         # A rear track-bar pair raised together is one setting; the ruleset has no raise direction.
@@ -577,12 +642,44 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertEqual((step["kind"], step["ruleset_step"]["direction"]), ("keep_and_step", "lower-equal"))
 
     def test_several_changes_are_isolated_one_at_a_time(self) -> None:
-        both = nose_weight(car_setup(cross_weight="50.4%"), "51.5%")
+        both = ballast(wedge(car_setup()), "700 mm")
         card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=both))
         self.assertEqual(card["kind"], "isolate")
-        self.assertEqual(card["title"], "Test front cross weight alone")
-        self.assertEqual(card["changes"], [{"field": "chassis.front.nose_weight", "label": "Front nose weight", "from": "51.5%", "to": "51.0%"}])
+        # The wedge adjustment ranks as the ruleset's cross weight; its readouts are not settings.
+        self.assertEqual(card["title"], "Test left rear spring perch offset alone")
+        self.assertIn("run 2 changed 2 settings at once", card["instruction"])
+        self.assertEqual(card["changes"], [{"field": "chassis.front.ballast_forward", "label": "Front ballast forward", "from": "700 mm", "to": "711 mm"}])
         self.assertEqual(card["success_rule"]["reference_run"], 1)
+
+    def test_a_ruleset_pair_is_isolated_whole_and_counted_once(self) -> None:
+        paired = car_setup(brake_bias="56.5%")
+        paired["Chassis"]["LeftRear"]["TrackBarHeight"] = "9.75 in"
+        paired["Chassis"]["RightRear"]["TrackBarHeight"] = "9.75 in"
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=paired))
+        self.assertEqual(card["kind"], "isolate")
+        self.assertIn("run 2 changed 2 settings at once", card["instruction"])
+        # Brake bias ranks first in the ruleset, so it is kept; both track-bar ends go back together.
+        self.assertEqual(card["title"], "Test front brake bias alone")
+        self.assertEqual({item["field"]: item["to"] for item in card["changes"]},
+                         {"chassis.left_rear.track_bar_height": "10.00 in", "chassis.right_rear.track_bar_height": "10.00 in"})
+        both_pairs = copy.deepcopy(paired)
+        both_pairs["Chassis"]["Front"]["FrontBrakeBias"] = "56.0%"
+        both_pairs["Chassis"]["LeftFront"]["Packer"] = "0.50 in"
+        both_pairs["Chassis"]["RightFront"]["Packer"] = "0.50 in"
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=both_pairs))
+        self.assertEqual(card["title"], "Test rear track bar pair alone")
+        self.assertIn("with only rear track bar pair at 9.75 in; run 2 changed 2 settings at once", card["instruction"])
+        self.assertEqual({item["field"] for item in card["changes"]},
+                         {"chassis.left_front.packer", "chassis.right_front.packer"})
+
+    def test_a_faster_wedge_keeps_cross_weight_with_the_rulesets_step(self) -> None:
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=wedge(car_setup())))
+        self.assertEqual(card["kind"], "keep_and_step")
+        self.assertEqual(card["title"], "Keep front cross weight at 50.4%; try one more step")
+        self.assertEqual((card["ruleset_step"]["setting_id"], card["ruleset_step"]["direction"]), ("cross-weight", "raise"))
+        self.assertEqual(card["changes"], [{"field": "chassis.left_rear.spring_perch_offset", "label": "Left rear spring perch offset",
+                                            "from": "-70 mm", "to": None}])
+        self.assertIn("Left rear spring perch offset -72 mm → -70 mm moved front cross weight 50.0% → 50.4%.", card["evidence"])
 
     def test_within_scatter_repeats_unchanged(self) -> None:
         card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.99))
@@ -591,7 +688,7 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertTrue(any("No garage setting changed" in item for item in card["evidence"]))
 
     def test_not_comparable_asks_for_a_comparable_repeat(self) -> None:
-        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, fuel_l=45.0, setup=car_setup(cross_weight="50.4%")))
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, fuel_l=45.0, setup=wedge(car_setup())))
         self.assertEqual(card["kind"], "repeat_comparable")
         self.assertEqual(card["success_rule"]["direction"], "measure")
         self.assertIn("within 2 gal", card["success_rule"]["text"])
@@ -605,8 +702,8 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertIn("No setup direction is inferred from tire temperatures", card["note"])
 
 
-def nose_weight(setup: dict, value: str) -> dict:
-    setup["Chassis"]["Front"]["NoseWeight"] = value
+def ballast(setup: dict, value: str) -> dict:
+    setup["Chassis"]["Front"]["BallastForward"] = value
     return setup
 
 

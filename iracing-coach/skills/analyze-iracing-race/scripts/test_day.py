@@ -35,8 +35,8 @@ try:  # Package import and direct script loading are both supported.
     from .race_inspection import configuration_key, run_views
     from .race_investigation import _number, _path, _plot_pace, _round, _run_exposure
     from .setup_catalog import (
-        _normalize_embedded_path, compare_setups, garage_setup_fields, garage_setup_fingerprint,
-        tire_readings_from_setup,
+        READOUT_ADJUSTER_LEAVES, _normalize_embedded_path, compare_setups, garage_setup_fields,
+        garage_setup_fingerprint, is_garage_readout_field, tire_readings_from_setup,
     )
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from driving_trials import MATERIAL_FUEL_GAL, MATERIAL_TEMPERATURE_F
@@ -44,8 +44,8 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from race_inspection import configuration_key, run_views
     from race_investigation import _number, _path, _plot_pace, _round, _run_exposure
     from setup_catalog import (
-        _normalize_embedded_path, compare_setups, garage_setup_fields, garage_setup_fingerprint,
-        tire_readings_from_setup,
+        READOUT_ADJUSTER_LEAVES, _normalize_embedded_path, compare_setups, garage_setup_fields,
+        garage_setup_fingerprint, is_garage_readout_field, tire_readings_from_setup,
     )
 
 
@@ -532,32 +532,51 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
 # --------------------------------------------------------------------------
 
 
+def _setting_entry(item: Mapping[str, Any]) -> dict[str, Any]:
+    delta = item.get("delta_left_minus_right")
+    return {"field": item["field"], "label": _field_label(item["field"]),
+            "previous": _display(item["left"]), "current": _display(item["right"]),
+            "delta": _round(-delta, 4) if _number(delta) is not None else None,
+            "unit": item["right"].get("unit") if isinstance(item.get("right"), Mapping) else None}
+
+
 def _setup_change(previous: Mapping[str, Any] | None, current: Mapping[str, Any]) -> dict[str, Any]:
+    """Garage adjustments changed since the previous stint, and the readouts they moved.
+
+    Computed readouts (corner, cross and nose weight, ride heights, ...) are
+    listed separately and never counted: the driver sets them only through an
+    adjustment, and they drift by a unit between loads of one setup.
+    """
+
+    empty = {"change_count": 0, "changes": [], "readout_count": 0, "readouts": [],
+             "unknown_count": 0, "unknown_fields": []}
     if previous is None:
-        return {"status": "first_run", "compared_with_run": None, "change_count": 0, "changes": [],
-                "unknown_count": 0, "unknown_fields": [], "complete": True, "reason": None}
-    result = {"status": "unknown", "compared_with_run": previous["number"], "change_count": 0, "changes": [],
-              "unknown_count": 0, "unknown_fields": [], "complete": False, "reason": None}
+        return {"status": "first_run", "compared_with_run": None, **empty, "complete": True, "reason": None}
+    result = {"status": "unknown", "compared_with_run": previous["number"], **empty, "complete": False, "reason": None}
     missing = [item["number"] for item in (previous, current) if item["garage_fields"] is None]
     if missing:
         result["reason"] = "No embedded garage setup was recorded for run " + " or ".join(str(number) for number in missing) + "."
         return result
     comparison = compare_setups({"fields": previous["garage_fields"]}, {"fields": current["garage_fields"]}, max_output=2000)
-    changes = []
+    changes: list[dict[str, Any]] = []
+    readouts: list[dict[str, Any]] = []
     for item in comparison["differences"]:
-        delta = item.get("delta_left_minus_right")
-        changes.append({"field": item["field"], "label": _field_label(item["field"]),
-                        "previous": _display(item["left"]), "current": _display(item["right"]),
-                        "delta": _round(-delta, 4) if _number(delta) is not None else None,
-                        "unit": item["right"].get("unit") if isinstance(item.get("right"), Mapping) else None})
-    unknown = sorted(set(comparison["only_left"]) | set(comparison["only_right"]))
-    unknown_count = comparison["summary"]["only_left_fields"] + comparison["summary"]["only_right_fields"]
-    complete = not comparison["output_truncated"]
+        (readouts if is_garage_readout_field(item["field"]) else changes).append(_setting_entry(item))
+    one_sided = set(comparison["only_left"]) | set(comparison["only_right"])
+    unknown = sorted(field for field in one_sided if not is_garage_readout_field(field))
+    unknown_count = (comparison["summary"]["only_left_fields"] + comparison["summary"]["only_right_fields"]
+                     - (len(one_sided) - len(unknown)))
     status = "changed" if changes else "unknown" if unknown_count else "unchanged"
-    result.update(status=status, change_count=comparison["summary"]["different_fields"], changes=changes,
-                  unknown_count=unknown_count, unknown_fields=unknown, complete=complete,
-                  reason=(f"{unknown_count} setting{'s' if unknown_count != 1 else ''} recorded in only one of the two runs."
-                          if unknown_count else None))
+    reason = None
+    if unknown_count:
+        reason = f"{unknown_count} setting{'s' if unknown_count != 1 else ''} recorded in only one of the two runs."
+    elif not changes and readouts:
+        shown = ", ".join(f"{item['label'].lower()} {item['previous']} → {item['current']}" for item in readouts[:3])
+        reason = (f"No adjustment changed; only computed garage readouts differ ({shown}"
+                  + (", …" if len(readouts) > 3 else "") + ").")
+    result.update(status=status, change_count=len(changes), changes=changes, readout_count=len(readouts),
+                  readouts=readouts, unknown_count=unknown_count, unknown_fields=unknown,
+                  complete=not comparison["output_truncated"], reason=reason)
     return result
 
 
@@ -580,44 +599,93 @@ def _ruleset_settings(rules: Mapping[str, Any] | None, car_path: str | None) -> 
     return settings
 
 
-def _step_suggestion(rules: Mapping[str, Any] | None, car_path: str | None, changes: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+def _adjusts(field: str, readout: str) -> bool:
+    return field.rsplit(".", 1)[-1] in READOUT_ADJUSTER_LEAVES.get(readout.rsplit(".", 1)[-1], ())
+
+
+def _values(changes: Sequence[Mapping[str, Any]], key: str) -> str:
+    return ", ".join(dict.fromkeys(str(item.get(key) or "?") for item in changes))
+
+
+def _setting_units(rules: Mapping[str, Any] | None, car_path: str | None, change: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The settings the driver changed, in the ruleset's order.
+
+    A ruleset pair changed at both ends (the rear track bars, the front
+    packers) is one setting and is never split. An adjustment that set a
+    readout the ruleset names (a spring perch offset that moved cross weight)
+    carries that readout and ranks as that setting.
+    """
+
+    settings = _ruleset_settings(rules, car_path)
+    changes = [item for item in change.get("changes") or () if isinstance(item, Mapping)]
+    readouts = {item["field"]: item for item in change.get("readouts") or () if isinstance(item, Mapping)}
+    by_field = {item["field"]: item for item in changes}
+    units: list[dict[str, Any]] = []
+    used: set[str] = set()
+    for rank, setting in enumerate(settings):
+        paths = setting["normalized_paths"]
+        if len(paths) > 1 and all(path in by_field for path in paths):
+            members = [by_field[path] for path in paths]
+            units.append({"rank": rank, "setting": setting, "readout": None, "changes": members,
+                          "label": str(setting.get("setting_id") or members[0]["label"]).replace("-", " ").capitalize()})
+            used.update(paths)
+    for item in changes:
+        if item["field"] in used:
+            continue
+        unit = {"rank": len(settings), "setting": None, "readout": None, "changes": [item], "label": item["label"]}
+        for rank, setting in enumerate(settings):
+            paths = setting["normalized_paths"]
+            if paths == [item["field"]]:
+                unit.update(rank=rank, setting=setting)
+                break
+            if len(paths) == 1 and paths[0] in readouts and _adjusts(item["field"], paths[0]):
+                unit.update(rank=rank, setting=setting, readout=readouts[paths[0]])
+                break
+        units.append(unit)
+    units.sort(key=lambda unit: (unit["rank"], unit["changes"][0]["field"]))
+    return units
+
+
+def _step_suggestion(rules: Mapping[str, Any] | None, unit: Mapping[str, Any]) -> dict[str, Any] | None:
     """One more garage step in the same direction, only when the ruleset names it."""
 
-    fields = {change["field"] for change in changes}
-    deltas = [_number(change.get("delta")) for change in changes]
-    if not changes or len(fields) != len(changes) or any(delta in (None, 0.0) for delta in deltas):
+    setting = unit.get("setting")
+    if not isinstance(setting, Mapping):
+        return None
+    if unit.get("readout") is not None:
+        deltas = [_number(unit["readout"].get("delta"))]
+    elif {item["field"] for item in unit["changes"]} == set(setting["normalized_paths"]):
+        deltas = [_number(item.get("delta")) for item in unit["changes"]]
+    else:
+        return None
+    if any(delta in (None, 0.0) for delta in deltas):
         return None
     signs = {1 if delta > 0 else -1 for delta in deltas}
     if len(signs) != 1:
         return None
     sign = signs.pop()
-    for setting in _ruleset_settings(rules, car_path):
-        if set(setting["normalized_paths"]) != fields:
-            continue
-        for direction, text in (setting.get("directions") or {}).items():
-            if _DIRECTION_SIGNS.get(direction) == sign and isinstance(text, Mapping):
-                return {"ruleset_id": rules.get("ruleset_id"), "setting_id": setting.get("setting_id"),
-                        "direction": direction, "instruction": text.get("instruction"),
-                        "expected_effect": text.get("expected_effect"), "risk": text.get("risk"),
-                        "step_verified": setting.get("verified_step") is not None}
+    for direction, text in (setting.get("directions") or {}).items():
+        if _DIRECTION_SIGNS.get(direction) == sign and isinstance(text, Mapping):
+            return {"ruleset_id": (rules or {}).get("ruleset_id"), "setting_id": setting.get("setting_id"),
+                    "direction": direction, "instruction": text.get("instruction"),
+                    "expected_effect": text.get("expected_effect"), "risk": text.get("risk"),
+                    "step_verified": setting.get("verified_step") is not None}
     return None
 
 
-def _logical_change_count(rules: Mapping[str, Any] | None, car_path: str | None, changes: Sequence[Mapping[str, Any]]) -> int:
-    """Changed settings, counting a ruleset pair changed together (both ends) as one."""
+def _moved(unit: Mapping[str, Any]) -> str | None:
+    """'Left rear spring perch offset -72 mm → -70 mm moved front cross weight 52.1% → 52.4%.'"""
 
-    fields = {change["field"] for change in changes}
-    for setting in _ruleset_settings(rules, car_path):
-        paths = set(setting["normalized_paths"])
-        if len(paths) > 1 and paths == fields:
-            return 1
-    return len(fields)
+    readout = unit.get("readout")
+    if readout is None:
+        return None
+    item = unit["changes"][0]
+    return (f"{item['label']} {item['previous']} → {item['current']} moved "
+            f"{readout['label'].lower()} {readout['previous']} → {readout['current']}.")
 
 
-def _isolation_order(rules: Mapping[str, Any] | None, car_path: str | None, changes: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    ranked = {path: index for index, setting in enumerate(_ruleset_settings(rules, car_path))
-              for path in setting["normalized_paths"]}
-    return sorted(changes, key=lambda change: (ranked.get(change["field"], len(ranked)), change["field"]))
+def _revert(item: Mapping[str, Any]) -> dict[str, Any]:
+    return {"field": item["field"], "label": item["label"], "from": item["current"], "to": item["previous"]}
 
 
 def _success(reference: Mapping[str, Any], window_key: str | None, threshold: float | None, direction: str) -> dict[str, Any]:
@@ -671,13 +739,14 @@ def _next_change(stints: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] |
                      f"Drive run {number}'s setup again with conditions matching run {before}, so the change can be measured.",
                      [before, number], _success(previous, None, None, "measure"), comparison["reasons"])
 
-    if comparison["verdict"] == "slower" and change["status"] == "changed" and change["changes"]:
-        reverts = [{"field": item["field"], "label": item["label"], "from": item["current"], "to": item["previous"]}
-                   for item in change["changes"]]
-        title = (f"Revert {reverts[0]['label'].lower()} to {reverts[0]['to']}" if len(reverts) == 1
-                 else f"Revert the {len(reverts)} changes to run {before}'s values")
+    units = _setting_units(rules, latest["car_path"], change) if change["status"] == "changed" else []
+    if comparison["verdict"] == "slower" and units:
+        reverts = [_revert(item) for unit in units for item in unit["changes"]]
+        title = (f"Revert {units[0]['label'].lower()} to {_values(units[0]['changes'], 'previous')}" if len(units) == 1
+                 else f"Revert the {len(units)} changes to run {before}'s values")
         return _card("revert", title, f"Return exactly to run {before}'s values; run {number} was slower.",
-                     [before, number], _success(latest, basis, threshold, "faster"), [comparison["summary"]], reverts)
+                     [before, number], _success(latest, basis, threshold, "faster"),
+                     [comparison["summary"], *filter(None, (_moved(unit) for unit in units))], reverts)
 
     best = None
     if latest["late"]["status"] == "measured":
@@ -692,8 +761,7 @@ def _next_change(stints: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] |
         earlier, pair = best
         target = _setup_change(earlier, latest)
         if target["status"] != "unchanged":
-            returns = [{"field": item["field"], "label": item["label"], "from": item["current"], "to": item["previous"]}
-                       for item in target["changes"]]
+            returns = [_revert(item) for item in target["changes"]]
             detail = (f"Load run {earlier['number']}'s setup ({earlier['setup_name']})." if earlier["setup_name"]
                       else f"Load run {earlier['number']}'s setup.")
             if target["status"] == "unknown":
@@ -702,34 +770,39 @@ def _next_change(stints: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] |
                          [earlier["number"], number], _success(latest, "late", pair["threshold_s"], "faster"),
                          [f"Run {earlier['number']} still has the best late pace. " + (pair["summary"] or "")], returns)
 
-    logical = _logical_change_count(rules, latest["car_path"], change["changes"]) if known else None
+    logical = len(units) if known else None
     if comparison["verdict"] == "faster" and logical == 1:
-        kept = change["changes"]
-        step = _step_suggestion(rules, latest["car_path"], kept)
-        label = kept[0]["label"].lower() if len(kept) == 1 else "the " + " and ".join(item["label"].lower() for item in kept)
-        values = ", ".join(item["current"] or "?" for item in kept)
+        unit = units[0]
+        kept = unit["changes"]
+        step = _step_suggestion(rules, unit)
+        moved = _moved(unit)
+        # A kept wedge adjustment is named by the ruleset setting it moved (front cross weight).
+        label = (unit["readout"]["label"] if unit["readout"] is not None and step is not None else unit["label"]).lower()
+        values = unit["readout"]["current"] if unit["readout"] is not None and step is not None else _values(kept, "current")
+        evidence = [comparison["summary"], *([moved] if moved else [])]
         if step is not None:
-            return _card("keep_and_step", f"Keep {label}; try one more step",
+            return _card("keep_and_step", f"Keep {label} at {values}; try one more step",
                          f"{step['instruction']} Expected: {step['expected_effect']} Risk: {step['risk']}",
-                         [before, number], _success(latest, basis, threshold, "faster"), [comparison["summary"]],
+                         [before, number], _success(latest, basis, threshold, "faster"), evidence,
                          [{"field": item["field"], "label": item["label"], "from": item["current"], "to": None} for item in kept],
                          step)
         return _card("keep", f"Keep {label} at {values}", f"Keep run {number}'s setup and repeat it to confirm the gain.",
-                     [before, number], _success(latest, basis, threshold, "within"), [comparison["summary"]])
+                     [before, number], _success(latest, basis, threshold, "within"), evidence)
 
     if known and (logical or 0) >= 2:
-        ordered = _isolation_order(rules, latest["car_path"], change["changes"])
-        keep = ordered[0]
-        reverts = [{"field": item["field"], "label": item["label"], "from": item["current"], "to": item["previous"]}
-                   for item in ordered[1:]]
+        keep, rest = units[0], units[1:]
+        reverts = [_revert(item) for unit in rest for item in unit["changes"]]
         return _card("isolate", f"Test {keep['label'].lower()} alone",
-                     f"Return to run {before}'s setup with only {keep['label'].lower()} at {keep['current']}; "
-                     f"run {number} changed {len(ordered)} settings at once.",
-                     [before, number], _success(previous, basis, threshold, "faster"), [comparison["summary"]], reverts)
+                     f"Return to run {before}'s setup with only {keep['label'].lower()} at {_values(keep['changes'], 'current')}; "
+                     f"run {number} changed {len(units)} settings at once.",
+                     [before, number], _success(previous, basis, threshold, "faster"),
+                     [comparison["summary"], *filter(None, (_moved(unit) for unit in units))], reverts)
 
     evidence = [comparison["summary"]]
     if change["status"] == "unchanged":
         evidence.append(f"No garage setting changed between runs {before} and {number}; the difference is not attributed to setup.")
+        if change.get("reason"):
+            evidence.append(change["reason"])
     elif change["status"] == "unknown":
         evidence.append(change["reason"] or "The setup comparison is incomplete.")
     return _card("repeat", f"Repeat run {number} unchanged", f"Drive run {number}'s setup again, unchanged, to measure its repeatability.",

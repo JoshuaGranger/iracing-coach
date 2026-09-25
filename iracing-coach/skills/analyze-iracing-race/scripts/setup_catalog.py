@@ -853,6 +853,35 @@ def is_transient_setup_field(key: Any) -> bool:
     return any(term in text for term in TRANSIENT_FIELD_TERMS)
 
 
+#: Values the garage computes and shows read-only: corner weights, cross and
+#: nose weight, ride heights, truck-arm preload and travel to coil bind. The
+#: driver sets them only through adjustments (a spring-perch click moves cross
+#: weight, all four corner weights and a ride height together), and one .sto
+#: loaded on different days reads a unit apart (New Hampshire, July 2026:
+#: LF/RR corner weight 3862/3654 N against 3863/3655 N with truck-arm preload
+#: 5.5 against 5.6 Nm and every adjustment equal). A field is a readout when
+#: its canonical key ends in one of these leaves.
+GARAGE_READOUT_LEAVES = frozenset(
+    {
+        "corner_weight",
+        "cross_weight",
+        "nose_weight",
+        "ride_height",
+        "travel_to_coil_bind",
+        "truck_arm_preload",
+    }
+)
+#: The adjustments that set a readout the tuning ruleset names as a setting.
+#: Cross weight on these stock cars is set with the spring perch offsets.
+READOUT_ADJUSTER_LEAVES = {"cross_weight": frozenset({"spring_perch_offset"})}
+
+
+def is_garage_readout_field(key: Any) -> bool:
+    """Whether a canonical setup key is a computed garage readout, not an adjustment."""
+
+    return str(key).rsplit(".", 1)[-1] in GARAGE_READOUT_LEAVES
+
+
 def garage_setup_fields(
     car_setup: Mapping[str, Any], *, max_fields: int = DEFAULT_MAX_FIELDS
 ) -> dict[str, Any]:
@@ -860,7 +889,9 @@ def garage_setup_fields(
 
     The result has the same shape as :func:`normalize_embedded_setup`, so it can
     be passed straight to :func:`compare_setups`. Excluded keys are listed so a
-    caller can say what was left out.
+    caller can say what was left out. Computed readouts stay in ``fields`` so a
+    caller can show what an adjustment produced; ``readout_fields`` names them
+    so they are never counted as settings the driver changed.
     """
 
     normalized = normalize_embedded_setup(car_setup, max_fields=max_fields)
@@ -872,11 +903,12 @@ def garage_setup_fields(
         "fields": kept,
         "field_count": len(kept),
         "excluded_fields": sorted(key for key in fields if is_transient_setup_field(key)),
+        "readout_fields": sorted(key for key in kept if is_garage_readout_field(key)),
     }
 
 
 def _garage_setup_mapping(car_setup: Mapping[str, Any]) -> dict[str, Any]:
-    """The raw ``CarSetup`` mapping with every transient leaf removed."""
+    """The raw ``CarSetup`` mapping with every transient leaf and computed readout removed."""
 
     def strip(value: Any, path: tuple[str, ...]) -> Any:
         if isinstance(value, Mapping):
@@ -887,7 +919,7 @@ def _garage_setup_mapping(car_setup: Mapping[str, Any]) -> dict[str, Any]:
                     kept[str(key)] = child
             return kept if kept or not path else _DROPPED
         key = _normalize_embedded_path(path)
-        if not key or is_transient_setup_field(key):
+        if not key or is_transient_setup_field(key) or is_garage_readout_field(key):
             return _DROPPED
         return value
 
@@ -901,7 +933,9 @@ def garage_setup_fingerprint(car_setup: Mapping[str, Any] | None) -> str | None:
     ``setup_fingerprint`` hashes the whole embedded ``CarSetup``, including the
     last-stop temperatures, tread and hot pressures, so the same garage setup
     run twice gets two fingerprints. This one hashes the same raw mapping with
-    those readings removed, serialized exactly like ``setup_fingerprint``.
+    those readings and the computed readouts (:data:`GARAGE_READOUT_LEAVES`)
+    removed, serialized exactly like ``setup_fingerprint``, so it identifies the
+    adjustments alone.
     """
 
     if not isinstance(car_setup, Mapping) or not car_setup:
@@ -1271,6 +1305,8 @@ def catalog_setups(
 
 
 __all__ = [
+    "GARAGE_READOUT_LEAVES",
+    "READOUT_ADJUSTER_LEAVES",
     "SetupCatalogError",
     "SetupLimitError",
     "SetupParseError",
@@ -1279,6 +1315,7 @@ __all__ = [
     "compare_setups",
     "garage_setup_fields",
     "garage_setup_fingerprint",
+    "is_garage_readout_field",
     "is_transient_setup_field",
     "normalize_embedded_setup",
     "parse_setup_html",

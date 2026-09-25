@@ -69,7 +69,7 @@
       "threshold_s": 0.03,
       "window_label": "Laps 12–16"
     },
-    "title": "Keep front brake bias; try one more step"
+    "title": "Keep front brake bias at 56.5%; try one more step"
   },
   "ok": true,
   "read_only": true,
@@ -346,7 +346,7 @@
       "setup": {
         "embedded": true,
         "fixed": false,
-        "garage_fingerprint": "d34c163b2c018e74",
+        "garage_fingerprint": "cca1f11aebe7872e",
         "name": "fixture-stint-1.sto"
       },
       "setup_change": {
@@ -354,6 +354,8 @@
         "changes": [],
         "compared_with_run": null,
         "complete": true,
+        "readout_count": 0,
+        "readouts": [],
         "reason": null,
         "status": "first_run",
         "unknown_count": 0,
@@ -1121,7 +1123,7 @@
       "setup": {
         "embedded": true,
         "fixed": false,
-        "garage_fingerprint": "d34c163b2c018e74",
+        "garage_fingerprint": "cca1f11aebe7872e",
         "name": "fixture-stint-2.sto"
       },
       "setup_change": {
@@ -1129,6 +1131,8 @@
         "changes": [],
         "compared_with_run": 1,
         "complete": true,
+        "readout_count": 0,
+        "readouts": [],
         "reason": null,
         "status": "unchanged",
         "unknown_count": 0,
@@ -1896,7 +1900,7 @@
       "setup": {
         "embedded": true,
         "fixed": false,
-        "garage_fingerprint": "a71acc93d7754831",
+        "garage_fingerprint": "1794f593423d9f73",
         "name": "fixture-stint-3.sto"
       },
       "setup_change": {
@@ -1913,6 +1917,8 @@
         ],
         "compared_with_run": 2,
         "complete": true,
+        "readout_count": 0,
+        "readouts": [],
         "reason": null,
         "status": "changed",
         "unknown_count": 0,

@@ -133,9 +133,10 @@
       "properties": {
         "status": { "enum": ["first_run", "unchanged", "changed", "unknown"] },
         "compared_with_run": { "type": ["integer", "null"] },
-        "change_count": { "type": "integer" },
+        "change_count": { "type": "integer", "description": "Garage adjustments changed; computed readouts are not counted." },
         "changes": {
           "type": "array",
+          "description": "Garage adjustments that differ, as recorded.",
           "items": {
             "type": "object",
             "required": ["field", "label", "previous", "current", "delta", "unit"],
@@ -145,6 +146,24 @@
               "previous": { "type": ["string", "null"], "description": "As recorded in the garage sheet." },
               "current": { "type": ["string", "null"] },
               "delta": { "type": ["number", "null"], "description": "Current minus previous in the canonical unit." },
+              "unit": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        },
+        "readout_count": { "type": "integer", "description": "Computed garage readouts that differ; never counted in change_count." },
+        "readouts": {
+          "type": "array",
+          "description": "Computed garage readouts (corner, cross and nose weight, ride heights, truck-arm preload, travel to coil bind) that differ. They follow the adjustments in changes and are never settings to revert or keep.",
+          "items": {
+            "type": "object",
+            "required": ["field", "label", "previous", "current", "delta", "unit"],
+            "properties": {
+              "field": { "type": "string" },
+              "label": { "type": "string" },
+              "previous": { "type": ["string", "null"] },
+              "current": { "type": ["string", "null"] },
+              "delta": { "type": ["number", "null"] },
               "unit": { "type": ["string", "null"] }
             },
             "additionalProperties": true
