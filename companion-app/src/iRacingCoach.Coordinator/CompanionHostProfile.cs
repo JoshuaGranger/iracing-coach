@@ -207,10 +207,12 @@ public sealed class LocalOnlyBackendClient : IBackendClient
         CancellationToken cancellationToken = default)
     {
         Validate(configuration);
-        if (!AllowedTools.Contains(toolName))
+        if (!SupportsTool(toolName))
             throw new InvalidOperationException($"Backend tool '{toolName}' is disabled in the isolated host profile.");
         return _inner.CallToolAsync(configuration, toolName, arguments, cancellationToken);
     }
+
+    public bool SupportsTool(string toolName) => AllowedTools.Contains(toolName);
 
     private void Validate(BackendConfiguration configuration)
     {

@@ -694,13 +694,17 @@ public sealed partial class CompanionState : IDisposable
                 return (IReadOnlyList<LocalSetup>)localSetups.ToArray();
             }, cancellationToken);
             var garageBeforeProbe = Garage61;
-            var garageTask = ReadRefreshSectionAsync("Garage61", async () =>
-            {
-                var response = await CallBackendAsync("garage61_auth_status", new { archive_root = roots.ArchiveRoot }, cancellationToken);
-                if (response.ValueKind != JsonValueKind.Object)
-                    throw new InvalidDataException("The Garage61 response was not an object.");
-                return RuntimeMapper.Garage61(response, garageBeforeProbe);
-            }, cancellationToken);
+            // A client that refuses the tool (the isolated host profile) is not asked:
+            // the refusal is policy, not a failure to log on every refresh.
+            var garageTask = Garage61ToolsEnabled
+                ? ReadRefreshSectionAsync("Garage61", async () =>
+                {
+                    var response = await CallBackendAsync("garage61_auth_status", new { archive_root = roots.ArchiveRoot }, cancellationToken);
+                    if (response.ValueKind != JsonValueKind.Object)
+                        throw new InvalidDataException("The Garage61 response was not an object.");
+                    return RuntimeMapper.Garage61(response, garageBeforeProbe);
+                }, cancellationToken)
+                : Task.FromResult(RefreshSection<Garage61Connection>.Succeeded(Garage61StatusReducer.Disabled()));
 
             await Task.WhenAll(healthTask, dashboardTask, discoveryTask, setupTask);
             var health = await healthTask;
@@ -2614,8 +2618,16 @@ public sealed partial class CompanionState : IDisposable
         RaiseChanged();
     }
 
+    private bool Garage61ToolsEnabled => _backend.SupportsTool("garage61_auth_status");
+
     public async Task ConnectGarage61Async(CancellationToken cancellationToken = default)
     {
+        if (!Garage61ToolsEnabled)
+        {
+            Garage61KeyInput = string.Empty;
+            Notify("Garage61 is disabled in the isolated host profile.");
+            return;
+        }
         var prior = Garage61;
         try
         {
