@@ -824,6 +824,35 @@ class RaceFoundationTests(unittest.TestCase):
         self.assertLess(metrics["Right minus left remaining"]["numeric_value"], 0, "the right side wore more")
         self.assertFalse([label for label in metrics if "wear" in label.lower()])
 
+    def test_details_state_the_early_versus_late_pace_runs_shows(self) -> None:
+        # IRP 9/24 run D (Offline Testing): Runs read "clean early versus late +0.211"
+        # (median of laps 38-42 minus laps 24-28) while Details read "+0.18 s" (the run's
+        # average late minus average early), beside a Details takeaway quoting 0.211.
+        runs = [{"run_number": 1, "start_lap": 24, "end_lap": 42, "ended_with_pit_stop": False, "green_laps": 19,
+                 "pace": {"green_laps_used": 19, "early_to_late_delta_s": 0.18}}]
+        investigation = {"comparisons": [
+            {"id": "run-1-clean", "kind": "within_run", "pace_comparable": True, "delta_s": 0.211,
+             "baseline": {"label": "Laps 24–28", "run_number": 1}, "compared": {"label": "Laps 38–42", "run_number": 1}},
+            {"id": "run-1-early", "kind": "early_run", "pace_comparable": True, "delta_s": 0.05,
+             "baseline": {"label": "Laps 24–28", "run_number": 1}, "compared": {"label": "Laps 29–33", "run_number": 1}},
+        ]}
+        insights = {item["key"]: item for item in build_technical_insights(
+            [], runs, {}, {"forecast": {}}, {}, {}, race_investigation=investigation)}
+        tires = {item["label"]: item for item in insights["tires"]["metrics"]}
+        racecraft = {item["label"]: item for item in insights["racecraft"]["metrics"]}
+        self.assertEqual(tires["Run 1 late vs early"]["value"], "+0.211 s")
+        self.assertIn("Median lap of laps 38–42 minus median lap of laps 24–28", tires["Run 1 late vs early"]["detail"])
+        self.assertEqual(racecraft["Long-run change"]["value"], "+0.211 s", "One figure for one question on every screen.")
+        self.assertTrue(insights["tires"]["takeaway"].startswith("Run 1 was 0.211 s slower late"))
+
+        # Without a usable investigation comparison the average is shown, named as one, at the same rounding.
+        investigation["comparisons"][0]["pace_comparable"] = False
+        average = {item["key"]: item for item in build_technical_insights(
+            [], runs, {}, {"forecast": {}}, {}, {}, race_investigation=investigation)}
+        tires = {item["label"]: item for item in average["tires"]["metrics"]}
+        self.assertEqual(tires["Run 1 late vs early (average)"]["value"], "+0.180 s")
+        self.assertEqual({item["label"]: item for item in average["racecraft"]["metrics"]}["Long-run change"]["value"], "+0.180 s")
+
     def test_raw_archive_is_verified_deduplicated_and_non_destructive(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

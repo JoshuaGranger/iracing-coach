@@ -11,7 +11,7 @@
           "early_run_version": null,
           "end_pct": 0.4,
           "evidence": [
-            "Laps 7–9 were 0.120 s/lap slower than laps 1–3 by median."
+            "Laps 7–9: median lap 0.120 s slower than laps 1–3."
           ],
           "instruction": "Section A lost 0.036 s by group median without a supported input change. Drive three clear laps at the same run age and fuel with unchanged inputs. If the loss repeats, treat it as grip, tires or setup rather than technique; if it disappears, it was lap-to-lap variation.",
           "lap_numbers": [
@@ -761,7 +761,7 @@
       ],
       "pace_comparable": true,
       "pace_unusable_reasons": [],
-      "summary": "Laps 7–9 were 0.120 s/lap slower than laps 1–3 by median.",
+      "summary": "Laps 7–9: median lap 0.120 s slower than laps 1–3.",
       "title": "Run 1: clean early versus late"
     },
     {
@@ -1491,7 +1491,7 @@
       ],
       "pace_comparable": true,
       "pace_unusable_reasons": [],
-      "summary": "Laps 9–12 were 1.160 s/lap slower than laps 1–4 by median. 3 of 8 selected laps are excluded from clean coaching.",
+      "summary": "Laps 9–12: median lap 1.160 s slower than laps 1–4. 3 of 8 selected laps are excluded from clean coaching.",
       "title": "Run 1: earlier to final green laps"
     }
   ],
@@ -1650,7 +1650,7 @@
     "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
     "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."
   ],
-  "projection_version": "sections-trials-v5",
+  "projection_version": "sections-trials-v6",
   "runs": [
     {
       "first_lap": 1,
@@ -1857,7 +1857,7 @@
     "version": "detected/7954afe534d4"
   },
   "status": "available",
-  "summary": "Laps 7–9 were 0.120 s/lap slower than laps 1–3 by median.",
+  "summary": "Laps 7–9: median lap 0.120 s slower than laps 1–3.",
   "timeline": [],
   "track_evolution": {
     "limitations": [

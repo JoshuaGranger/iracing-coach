@@ -13,7 +13,7 @@ from typing import Any, Mapping, Sequence
 
 SCHEMA_VERSION = 2
 # Bump when any projection below changes; cached analyses rebuild it without decoding.
-PROJECTION_VERSION = "sections-trials-v5"
+PROJECTION_VERSION = "sections-trials-v6"
 MAX_COMPARISONS = 24
 # A saved test is checked on screened laps within this many green laps of its
 # exposure window, and needs this many of them (driving_trials.evaluate_trial).
@@ -603,7 +603,10 @@ def _comparison(identifier: str, kind: str, before: Sequence[Mapping[str, Any]],
     eligibility = _eligibility(baseline["lap_numbers"], compared["lap_numbers"], exclusions)
     delta = compared["median_lap_s"] - baseline["median_lap_s"] if baseline["median_lap_s"] is not None and compared["median_lap_s"] is not None else None
     label = "slower" if delta is not None and delta > 0 else "faster" if delta is not None and delta < 0 else "unchanged"
-    summary = f"{compared['label']} were {abs(delta):.3f} s/lap {label} than {baseline['label'].lower()} by median." if delta is not None else "Both windows need usable recorded lap times."
+    # A lap-time gap between two windows, in seconds; "s/lap" is kept for a slope (fall-off).
+    summary = ((f"{compared['label']}: median lap {abs(delta):.3f} s {label} than {baseline['label'].lower()}." if label != "unchanged"
+                else f"{compared['label']}: median lap equal to {baseline['label'].lower()}.")
+               if delta is not None else "Both windows need usable recorded lap times.")
     if eligibility != "eligible":
         summary += f" {count - eligible_count} of {count} selected laps are excluded from clean coaching."
     unusable, reasons = _pace_usability(kind, baseline["lap_numbers"], compared["lap_numbers"], eligibility, _lap_flags(analysis))

@@ -398,7 +398,7 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(technical, "data-technical-overview");
         foreach (var card in new[] { "pit", "tires", "fuel", "racecraft" })
             StringAssert.Contains(technical, $"data-technical-card=\"{card}\"");
-        foreach (var label in new[] { "Pit strategy", "Tire management", "Fuel management", "Racecraft &amp; pace" })
+        foreach (var label in new[] { "Pit strategy", "Tire management", "Fuel management", "Racecraft & pace" })
             StringAssert.Contains(technical, label);
         StringAssert.Contains(technical, "data-technical-investigation=\"@ActiveInvestigation\"");
         StringAssert.Contains(technical, "data-technical-back @onclick=\"CloseInvestigation\"");
@@ -520,7 +520,7 @@ public sealed class RaceAnalysisBehaviorTests
 
         StringAssert.Contains(unavailableComparisonBranch, "Clean-run pace comparison unavailable");
         StringAssert.Contains(technical, "private AnalysisTechnicalInsight? ActiveInsight");
-        StringAssert.Contains(technical, "private IReadOnlyList<AnalysisTechnicalMetric> ActiveMetrics => ActiveInsight?.Metrics ?? [];");
+        StringAssert.Contains(technical, "private IReadOnlyList<AnalysisTechnicalMetric> ActiveMetrics => (ActiveInsight?.Metrics ?? []).Where(metric => !RaceOnly(metric.Label)).ToArray();");
         StringAssert.Contains(technical, "@foreach (var metric in ActiveMetrics)");
         Assert.DoesNotContain("technical-metric-evidence", technical,
             "Primary Technical data UI should not expose provenance tags as visual copy.");

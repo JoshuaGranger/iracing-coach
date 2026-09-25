@@ -1707,8 +1707,18 @@ def _analysis_pipeline_sha256() -> str:
 # convention (vendor or season present); the analyzer uses neither. The one
 # function the analyzer calls, garage_setup_fingerprint, is byte-identical, and
 # the ten IRP 9/24 test-day recordings keep their stored garage fingerprints.
+# Review 2026-09-25 (Details and Runs, one figure): v21 retires v20 because
+# a run's early-versus-late pace in technical_insights ("Run N late vs early",
+# "Long-run change" and the tire takeaway) is now the race investigation's
+# clean early-versus-late comparison, the figure Runs shows (median of the
+# run's last clean laps minus its first), stated to three decimals; only
+# without a usable comparison is the run's average shown, labelled as one.
+# IRP 9/24 run D read +0.18 s in Details beside +0.211 on Runs. The
+# investigation projection moves to sections-trials-v6: a comparison summary
+# names a median lap-time gap in seconds ("Laps 38-42: median lap 0.211 s
+# slower than laps 24-28."), keeping "s/lap" for slopes (fall-off).
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "f5a94631a86358ebcf295a7eada3b32d6fcf7b3c245b20e3056ff7cb4ff4ef3c"
+    "210f7f8be1851623c344592703bc5fc2a5f1282308bcf19d43791951c1e6d487"
 )
 
 
@@ -2191,6 +2201,7 @@ def _analyze_race_workflow(
             analysis.get("strategy") or {},
             analysis.get("damage_repair") or {},
             tire_learning,
+            race_investigation=analysis.get("race_investigation"),
         )
     analysis_finished = time.perf_counter()
     context = store.context_from_analysis(analysis)

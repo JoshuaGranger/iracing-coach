@@ -50,6 +50,9 @@ body {
   overflow: hidden;
 }
 
+/* Offline testing and practice have no pit-strategy card: pace takes the second row. */
+.race-technical-data .technical-overview.without-pit .technical-overview-card.racecraft { grid-column: 1 / -1; }
+
 .race-technical-data .technical-overview-card {
   position: relative;
   min-height: 0;
