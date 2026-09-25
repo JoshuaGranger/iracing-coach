@@ -104,10 +104,15 @@ def review_sections(analysis: Mapping[str, Any], *, catalog_path: Path = SECTION
             bounds = _valid_bounds(item.get("start_pct"), item.get("end_pct"))
             if bounds is None or not item.get("id"):
                 continue
-            sections.append({"id": str(item["id"]), "label": str(item.get("label") or item["id"]),
-                             "start_pct": bounds[0], "end_pct": bounds[1],
-                             "boundary_status": str(item.get("boundary_status") or "detected_section"),
-                             "provenance": str(item.get("provenance") or "")})
+            section = {"id": str(item["id"]), "label": str(item.get("label") or item["id"]),
+                       "start_pct": bounds[0], "end_pct": bounds[1],
+                       "boundary_status": str(item.get("boundary_status") or "detected_section"),
+                       "provenance": str(item.get("provenance") or "")}
+            # A driver-readable name ("Turns 1-2 entry") travels beside the
+            # short label; it is descriptive, never an official turn number.
+            if isinstance(item.get("name"), str) and item["name"].strip():
+                section["name"] = item["name"].strip()
+            sections.append(section)
         source, version = "configuration_catalog", str(record.get("version") or "unversioned")
         provenance = str(record.get("provenance") or "")
     else:
@@ -314,13 +319,18 @@ def comparison_sections(baseline: Sequence[int], compared: Sequence[int], traces
             metrics.append(_metric(key, label, unit, statistics.median(one) * multiplier, statistics.median(two) * multiplier,
                                    f"{len(one)} earlier and {len(two)} later laps; distance-binned traces."))
         elapsed = next((metric for metric in metrics if metric["key"] == "elapsed"), {})
-        result.append({
+        name = section.get("name")
+        title = f"Section {section['label']} · {name}" if name else f"Section {section['label']}"
+        item = {
             "id": section["id"],
-            "label": f"Section {section['label']} ({start * 100:.1f}–{end * 100:.1f}% lap)",
+            "label": f"{title} ({start * 100:.1f}–{end * 100:.1f}% lap)",
             "short_label": section["label"], "start_pct": start, "end_pct": end,
             "boundary_status": section["boundary_status"], "delta_s": elapsed.get("delta"),
             "baseline_count": len(first), "compared_count": len(second), "metrics": metrics,
-        })
+        }
+        if name:
+            item["name"] = name
+        result.append(item)
     return sorted(result, key=lambda item: item["delta_s"] if item["delta_s"] is not None else -math.inf, reverse=True)
 
 

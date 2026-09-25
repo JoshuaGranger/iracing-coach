@@ -12,8 +12,10 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from analysis_engine import investigation_lap_exclusions  # noqa: E402
+from race_foundations import track_configuration_key  # noqa: E402
 from race_inspection import (  # noqa: E402
-    comparison_inspection, comparison_sections, configuration_key, review_sections, run_views,
+    MAX_SECTIONS, SECTION_CATALOG, comparison_inspection, comparison_sections, configuration_key, review_sections,
+    run_views, section_elapsed,
 )
 from race_investigation import PROJECTION_VERSION, SCHEMA_VERSION, build_race_investigation  # noqa: E402
 from test_race_investigation import investigation_fixture  # noqa: E402
@@ -81,6 +83,98 @@ class ReviewSectionTests(unittest.TestCase):
         merged = result["sections"][-1]
         self.assertEqual((merged["start_pct"], merged["end_pct"], merged["boundary_status"]), (0.775, 0.86, "driver_confirmed_grouping"))
         self.assertIn("No official Bristol turn boundary", result["provenance"])
+
+    def test_every_shipped_catalog_record_validates_and_loads_whole(self) -> None:
+        catalog = json.loads(SECTION_CATALOG.read_text(encoding="utf-8"))
+        self.assertEqual(catalog["schema_version"], 1)
+        keys = [record["track_configuration_key"] for record in catalog["records"]]
+        self.assertEqual(len(keys), len(set(keys)), "one record per exact configuration")
+        self.assertIn("232-irp", keys)
+        for record in catalog["records"]:
+            key = record["track_configuration_key"]
+            with self.subTest(key=key):
+                self.assertTrue(record["version"].startswith(f"{key}/"))
+                self.assertTrue(record["provenance"].strip())
+                sections = record["sections"]
+                self.assertTrue(0 < len(sections) <= MAX_SECTIONS)
+                self.assertEqual(len({s["id"] for s in sections}), len(sections))
+                for section in sections:
+                    self.assertTrue(section["label"].strip() and section["provenance"].strip() and section["boundary_status"].strip())
+                    self.assertTrue(0 <= section["start_pct"] < section["end_pct"] <= 1, section)
+                ordered = sorted(sections, key=lambda s: s["start_pct"])
+                self.assertEqual(ordered, sections, "records list sections in lap order")
+                for left, right in zip(ordered, ordered[1:]):
+                    self.assertLessEqual(left["end_pct"], right["start_pct"], f"{left['id']} overlaps {right['id']}")
+                # Nothing is silently dropped when the record is served.
+                served = review_sections({"track_geometry": {"track_configuration_key": key}})
+                self.assertEqual((served["source"], served["version"]), ("configuration_catalog", record["version"]))
+                self.assertEqual([(s["id"], s["start_pct"], s["end_pct"]) for s in served["sections"]],
+                                 [(s["id"], s["start_pct"], s["end_pct"]) for s in sections])
+                self.assertIsNone(served["unavailable_reason"])
+
+    def test_irp_loads_by_track_id_and_short_name_configuration(self) -> None:
+        # IRP recordings carry TrackID 232 and no TrackConfigName; the engine
+        # falls back to TrackDisplayShortName "IRP" for the configuration.
+        identity = {"track_id": 232, "track_config": "IRP"}
+        self.assertEqual(track_configuration_key(identity), "232-irp")
+        from_identity = review_sections({"identity": identity})
+        from_geometry = review_sections({"track_geometry": {"track_configuration_key": "232-irp"}, "identity": identity})
+        for result in (from_identity, from_geometry):
+            self.assertEqual(result["configuration_key"], "232-irp")
+            self.assertEqual(result["source"], "configuration_catalog")
+            self.assertEqual(result["version"], "232-irp/2026-09-24.1")
+        # A detected region in this recording never replaces the catalog bounds.
+        detected = review_sections({"track_geometry": {"track_configuration_key": "232-irp"},
+                                    "track_profile": {"detected_corner_segments": [{"start_pct": 0.235, "end_pct": 0.245}]}})
+        self.assertEqual(len(detected["sections"]), 7)
+        # Another configuration of the same track is not IRP's oval.
+        self.assertEqual(review_sections({"identity": {"track_id": 232, "track_config": "Road Course"}})["source"], "detected_in_recording")
+
+    def test_irp_sections_tile_the_lap_in_named_review_sections(self) -> None:
+        result = review_sections({"track_geometry": {"track_configuration_key": "232-irp"}})
+        sections = result["sections"]
+        self.assertEqual([(s["id"], s["name"], s["start_pct"], s["end_pct"]) for s in sections], [
+            ("A", "Frontstretch, from the line", 0.005, 0.045),
+            ("B", "Turns 1-2 entry", 0.045, 0.25),
+            ("C", "Turns 1-2 exit", 0.25, 0.455),
+            ("D", "Backstretch", 0.455, 0.535),
+            ("E", "Turns 3-4 entry", 0.535, 0.75),
+            ("F", "Turns 3-4 exit", 0.75, 0.955),
+            ("G", "Frontstretch, to the line", 0.955, 0.995),
+        ])
+        # Contiguous: no gap and no overlap between neighbours.
+        for left, right in zip(sections, sections[1:]):
+            self.assertEqual(left["end_pct"], right["start_pct"])
+        covered = sum(s["end_pct"] - s["start_pct"] for s in sections)
+        self.assertAlmostEqual(covered, 0.99, places=9)
+        for section in sections:
+            self.assertEqual(section["label"], section["id"], "the short label stays a single letter for map markers")
+            self.assertEqual(section["boundary_status"], "geometry_derived_section")
+            self.assertTrue(section["provenance"].startswith(section["name"] + ":"))
+            self.assertIn("not an official turn boundary", section["provenance"])
+        self.assertIn("not an official turn boundary", result["provenance"])
+
+    def test_irp_bounds_are_measurable_on_distance_binned_traces(self) -> None:
+        # Traces carry bin centres, (i + 0.5) / bins. A section may not touch 0
+        # or 1, which is why the catalog leaves 0.5% either side of the line.
+        sections = review_sections({"track_geometry": {"track_configuration_key": "232-irp"}})["sections"]
+        for bins in (100, 160, 400):
+            lap_trace = {"lap": 1, "points": [{"lap_pct": (i + 0.5) / bins, "session_time_s": 22.5 * (i + 0.5) / bins}
+                                              for i in range(bins)]}
+            times = [section_elapsed(lap_trace, s["start_pct"], s["end_pct"]) for s in sections]
+            self.assertTrue(all(t is not None for t in times), (bins, times))
+            self.assertAlmostEqual(sum(times), 22.5 * 0.99, places=6)
+            self.assertIsNone(section_elapsed(lap_trace, 0.0, 0.045))
+
+    def test_named_sections_carry_their_name_into_comparison_text(self) -> None:
+        named = [{"id": "B", "label": "B", "name": "Turns 1-2 entry", "start_pct": 0.4, "end_pct": 0.6, "boundary_status": "geometry_derived_section"}]
+        traces = {1: trace(1), 2: trace(2), 3: trace(3, loss_inside=0.2), 4: trace(4, loss_inside=0.2)}
+        corner = comparison_sections([1, 2], [3, 4], traces, named)[0]
+        self.assertEqual(corner["label"], "Section B · Turns 1-2 entry (40.0–60.0% lap)")
+        self.assertEqual((corner["short_label"], corner["name"]), ("B", "Turns 1-2 entry"))
+        unnamed = comparison_sections([1, 2], [3, 4], traces, [{k: v for k, v in named[0].items() if k != "name"}])[0]
+        self.assertEqual(unnamed["label"], "Section B (40.0–60.0% lap)")
+        self.assertNotIn("name", unnamed)
 
 
 class RunViewTests(unittest.TestCase):
@@ -253,6 +347,31 @@ class InvestigationProjectionTests(unittest.TestCase):
         self.assertFalse(refresh_race_investigation(analysis))
         analysis["race_investigation"]["projection_version"] = "older"
         self.assertTrue(refresh_race_investigation(analysis))
+
+    def test_cached_investigation_adopts_a_catalog_record_added_after_caching(self) -> None:
+        # An IRP analysis cached before the IRP record existed holds this
+        # recording's detected regions under a current projection version.
+        analysis = investigation_fixture()
+        analysis["race_investigation"] = self.build(analysis)
+        self.assertEqual(analysis["race_investigation"]["sections"]["source"], "detected_in_recording")
+        analysis["track_geometry"] = {"track_configuration_key": "232-irp"}
+        self.assertTrue(refresh_race_investigation(analysis))
+        sections = analysis["race_investigation"]["sections"]
+        self.assertEqual((sections["source"], sections["version"]), ("configuration_catalog", "232-irp/2026-09-24.1"))
+        self.assertFalse(refresh_race_investigation(analysis))
+        # Named sections reach the comparison text the driver reads.
+        comparison = next(item for item in analysis["race_investigation"]["comparisons"] if item["id"] == "run-2-finish")
+        self.assertTrue(comparison["corners"])
+        self.assertTrue(all(" · " in corner["label"] and corner["name"] for corner in comparison["corners"]))
+        named = [action for action in comparison["actions"] if action.get("section_id")]
+        self.assertTrue(named)
+        for action in named:
+            corner = next(item for item in comparison["corners"] if item["id"] == action["section_id"])
+            self.assertIn(f"({corner['name']})", action["title"] + action["instruction"])
+        # A re-versioned record is stale too.
+        analysis["race_investigation"]["sections"]["version"] = "232-irp/2026-09-01.1"
+        self.assertTrue(refresh_race_investigation(analysis))
+        json.dumps(analysis["race_investigation"], allow_nan=False)
 
 
 if __name__ == "__main__":

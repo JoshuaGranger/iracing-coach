@@ -58,18 +58,50 @@ def _finite(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _finite_column(values: Sequence[Any]) -> list[float | None]:
+    """Exactly ``[_finite(value) for value in values]``.
+
+    ``_finite`` is ``float()`` plus a finite check, so a column that converts
+    without an error and has a finite float sum needs no per-sample pass (a
+    NaN or infinity makes the sum non-finite; an overflowing finite sum only
+    costs the per-sample path).
+    """
+
+    try:
+        converted = list(map(float, values))
+    except (TypeError, ValueError, OverflowError):
+        return [_finite(value) for value in values]
+    if math.isfinite(sum(converted, 0.0)):
+        return converted
+    return [number if math.isfinite(number) else None for number in converted]
+
+
+def _finite_numbers(values: Iterable[Any]) -> list[float]:
+    """Exactly ``[n for v in values if (n := _finite(v)) is not None]``."""
+
+    if not isinstance(values, list):
+        values = list(values)
+    try:
+        converted = list(map(float, values))
+    except (TypeError, ValueError, OverflowError):
+        return [number for value in values if (number := _finite(value)) is not None]
+    if math.isfinite(sum(converted, 0.0)):
+        return converted
+    return [number for number in converted if math.isfinite(number)]
+
+
 def _integer(value: Any) -> int | None:
     number = _finite(value)
     return int(round(number)) if number is not None else None
 
 
 def _median(values: Iterable[Any]) -> float | None:
-    numbers = [number for value in values if (number := _finite(value)) is not None]
+    numbers = _finite_numbers(values)
     return statistics.median(numbers) if numbers else None
 
 
 def _percentile(values: Iterable[Any], fraction: float) -> float | None:
-    numbers = sorted(number for value in values if (number := _finite(value)) is not None)
+    numbers = sorted(_finite_numbers(values))
     if not numbers:
         return None
     if len(numbers) == 1:
@@ -528,8 +560,12 @@ def build_track_geometry(
     valid: list[dict[str, Any] | None] = [None] * count
     candidates: list[tuple[int, float, float, float]] = []
     rejected_gps_samples = 0
+    # _finite of each sample, a column at a time.
+    finite_pct, finite_lat, finite_lon = (
+        _finite_column(pct), _finite_column(lat), _finite_column(lon)
+    )
     for index in range(count):
-        lap_pct, y, x = _finite(pct[index]), _finite(lat[index]), _finite(lon[index])
+        lap_pct, y, x = finite_pct[index], finite_lat[index], finite_lon[index]
         if (
             lap_pct is None
             or x is None
