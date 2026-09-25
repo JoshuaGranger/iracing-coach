@@ -217,6 +217,60 @@ def _read_exact_at(
     return data
 
 
+# Scalar formats the typed-view decoder below handles, with their sizes.
+_CAST_FORMATS = {"?": 1, "i": 4, "I": 4, "f": 4, "d": 8}
+
+
+def _strided_scalar_column(
+    records: memoryview,
+    record_length: int,
+    offset: int,
+    format_code: str,
+    step: int,
+) -> list[Any] | None:
+    """Decode one scalar channel from every ``step``-th record, or return ``None``.
+
+    Returns exactly the first element of each row that
+    ``struct.Struct(f"<{offset}x{format_code}...").iter_unpack(records)`` would
+    yield (every ``step``-th row), converted in C instead of one Python tuple
+    per record. Records are ``record_length`` bytes, which need not be a
+    multiple of the value size: every ``phases``-th decoded record starts at a
+    whole number of values from the first, so the column is ``phases`` strided
+    typed views of the buffer, interleaved. Standard-size little-endian
+    ``struct`` fields and native ``memoryview`` items are identical on a
+    little-endian host, which is required. ``?`` is True for any nonzero byte,
+    as ``struct`` decodes it. A float column holding NaN or infinity is left to
+    ``struct`` (``None``) so special values never depend on the cast path.
+    """
+
+    size = _CAST_FORMATS.get(format_code)
+    if (
+        size is None
+        or sys.byteorder != "little"
+        or struct.calcsize(format_code) != size
+        or record_length <= 0
+        or step <= 0
+    ):
+        return None
+    record_stride = record_length * step
+    if size == 1:
+        return list(map(bool, records[offset::record_stride].tolist()))
+    count = len(range(0, len(records) // record_length, step))
+    phases = size // math.gcd(record_stride, size)
+    phase_stride = record_stride * phases // size
+    values: list[Any] = [None] * count
+    for phase in range(min(phases, count)):
+        begin = offset + phase * record_stride
+        usable = (len(records) - begin) // size * size
+        lane = records[begin : begin + usable].cast(format_code)[::phase_stride].tolist()
+        if len(lane) != len(range(phase, count, phases)):
+            return None
+        values[phase::phases] = lane
+    if format_code in "fd" and not math.isfinite(sum(values, 0.0)):
+        return None
+    return values
+
+
 def _decode_c_string(value: bytes) -> str:
     value = value.split(b"\x00", 1)[0]
     try:
@@ -1196,10 +1250,21 @@ def load_telemetry(
                 with memoryview(mapped)[start:end] as records:
                     for variable in selected:
                         type_name, _, format_code = _TYPE_INFO[variable.type_code]
+                        step, _ = _sampling_plan(layout.header["tick_rate"], target_hz)
+                        if step.is_integer() and variable.count == 1 and type_name != "char":
+                            column = _strided_scalar_column(
+                                records,
+                                layout.buffer_length,
+                                variable.offset,
+                                format_code,
+                                int(step),
+                            )
+                            if column is not None:
+                                samples[variable.name] = column
+                                continue
                         field = f"{variable.count}s" if type_name == "char" else f"{variable.count}{format_code}"
                         trailing = layout.buffer_length - variable.offset - variable.byte_size
                         decoder = struct.Struct(f"<{variable.offset}x{field}{trailing}x")
-                        step, _ = _sampling_plan(layout.header["tick_rate"], target_hz)
                         rows = (
                             itertools.islice(decoder.iter_unpack(records), 0, None, int(step))
                             if step.is_integer()
