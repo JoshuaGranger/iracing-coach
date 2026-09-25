@@ -454,36 +454,36 @@ def _clean_by_age(stint: Mapping[str, Any], window: Mapping[str, Any]) -> dict[i
             if row["eligible"] and row["run_lap"] is not None and first <= row["run_lap"] <= last}
 
 
-def _comparability(previous: Mapping[str, Any], current: Mapping[str, Any]) -> tuple[list[str], list[str]]:
-    """Blocking reasons, then non-blocking flags, for comparing two stints."""
+def _comparability(previous: Mapping[str, Any], current: Mapping[str, Any]) -> tuple[list[tuple[str, str]], list[str]]:
+    """Blocking (code, reason) pairs, then non-blocking flags, for comparing two stints."""
 
     before, after = previous["number"], current["number"]
-    reasons: list[str] = []
+    reasons: list[tuple[str, str]] = []
     flags: list[str] = []
     if previous["car_path"] != current["car_path"] or not current["car_path"]:
-        reasons.append(f"Run {after} used a different car ({current['car_path'] or 'not recorded'}) than run {before} ({previous['car_path'] or 'not recorded'}).")
+        reasons.append(("car", f"Run {after} used a different car ({current['car_path'] or 'not recorded'}) than run {before} ({previous['car_path'] or 'not recorded'})."))
     if not previous["configuration_key"] or not current["configuration_key"]:
-        reasons.append("The track configuration was not recorded for both runs.")
+        reasons.append(("configuration_missing", "The track configuration was not recorded for both runs."))
     elif previous["configuration_key"] != current["configuration_key"]:
-        reasons.append(f"Run {after} was recorded on another track configuration than run {before}.")
+        reasons.append(("configuration", f"Run {after} was recorded on another track configuration than run {before}."))
     for item in (previous, current):
         if item["fixed"] is not False:
-            reasons.append(f"Run {item['number']} was not recorded on an open setup." if item["fixed"] else
-                           f"Run {item['number']} does not record whether its setup was open.")
+            reasons.append(("fixed_setup", f"Run {item['number']} was not recorded on an open setup.") if item["fixed"] else
+                           ("setup_type_missing", f"Run {item['number']} does not record whether its setup was open."))
     if previous["track_temp_f"] is None or current["track_temp_f"] is None:
         missing = before if previous["track_temp_f"] is None else after
-        reasons.append(f"Track temperature was not recorded for run {missing}.")
+        reasons.append(("track_temperature_missing", f"Track temperature was not recorded for run {missing}."))
     elif abs(current["track_temp_f"] - previous["track_temp_f"]) >= MATERIAL_TEMPERATURE_F:
-        reasons.append(f"Track temperature {previous['track_temp_f']:.0f} → {current['track_temp_f']:.0f} °F "
-                       f"({MATERIAL_TEMPERATURE_F:.0f} °F or more apart).")
+        reasons.append(("track_temperature", f"Track temperature {previous['track_temp_f']:.0f} → {current['track_temp_f']:.0f} °F "
+                                             f"({MATERIAL_TEMPERATURE_F:.0f} °F or more apart)."))
     if previous["start_fuel_gal"] is None or current["start_fuel_gal"] is None:
         missing = before if previous["start_fuel_gal"] is None else after
-        reasons.append(f"Starting fuel was not recorded for run {missing}.")
+        reasons.append(("fuel_missing", f"Starting fuel was not recorded for run {missing}."))
     elif abs(current["start_fuel_gal"] - previous["start_fuel_gal"]) >= MATERIAL_FUEL_GAL:
-        reasons.append(f"Starting fuel {previous['start_fuel_gal']:.1f} → {current['start_fuel_gal']:.1f} gal "
-                       f"({MATERIAL_FUEL_GAL:.0f} gal or more apart).")
+        reasons.append(("fuel", f"Starting fuel {previous['start_fuel_gal']:.1f} → {current['start_fuel_gal']:.1f} gal "
+                                f"({MATERIAL_FUEL_GAL:.0f} gal or more apart)."))
     if previous["compound"] and current["compound"] and previous["compound"] != current["compound"]:
-        reasons.append(f"Tire compound {previous['compound']} → {current['compound']}.")
+        reasons.append(("compound", f"Tire compound {previous['compound']} → {current['compound']}."))
     elif not previous["compound"] or not current["compound"]:
         flags.append(f"Tire compound is not recorded for run {before if not previous['compound'] else after}"
                      + (f" or run {after}." if not previous["compound"] and not current["compound"] else "."))
@@ -497,12 +497,13 @@ def _comparability(previous: Mapping[str, Any], current: Mapping[str, Any]) -> t
 
 
 def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, Any]:
-    reasons, flags = _comparability(previous, current)
+    blocking, flags = _comparability(previous, current)
+    reasons = [text for _, text in blocking]
     result: dict[str, Any] = {"compared_with_run": previous["number"], "verdict": "not_comparable", "blocked_by": None, "basis": None,
                               "window_label": None, "first_run_lap": None, "last_run_lap": None,
                               "run_laps": [], "previous_laps": [], "current_laps": [], "previous_median_s": None, "current_median_s": None, "delta_s": None,
-                              "threshold_s": None, "standard_error_s": None, "reasons": reasons, "flags": flags,
-                              "summary": None}
+                              "threshold_s": None, "standard_error_s": None, "reasons": reasons,
+                              "reason_codes": [code for code, _ in blocking], "flags": flags, "summary": None}
     if reasons:
         result.update(blocked_by="conditions", summary=f"Not comparable with run {previous['number']}: " + " ".join(reasons))
         return result
@@ -525,13 +526,15 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
                       f"{'is' if len(shared) == 1 else 'are'} clean in both runs; {MINIMUM_WINDOW_LAPS} are needed at the same laps of the run.")
         else:
             reason = f"Neither pace window has {MINIMUM_WINDOW_LAPS}+ clean laps in both runs."
-        result.update(blocked_by="measurement", reasons=[reason], summary=f"Not comparable with run {previous['number']}: {reason}")
+        result.update(blocked_by="measurement", reasons=[reason], reason_codes=["measurement"],
+                      summary=f"Not comparable with run {previous['number']}: {reason}")
         return result
     errors = [_standard_error(item["fall_off"], len(ages)) for item in (previous, current)]
     combined = math.sqrt(sum(value * value for value in errors)) if all(value is not None for value in errors) else None
     if combined is None:
         reason = "The lap-time scatter needed for a threshold is not measured for both runs."
-        result.update(blocked_by="measurement", reasons=[reason], summary=f"Not comparable with run {previous['number']}: {reason}")
+        result.update(blocked_by="measurement", reasons=[reason], reason_codes=["scatter"],
+                      summary=f"Not comparable with run {previous['number']}: {reason}")
         return result
     threshold = round(max(MINIMUM_THRESHOLD_S, STANDARD_ERROR_MULTIPLIER * combined), 3)
     before_rows, after_rows = _clean_by_age(previous, previous[basis]), _clean_by_age(current, current[basis])
@@ -744,6 +747,93 @@ def _card(kind: str, title: str, instruction: str, runs: Sequence[int], success:
             "note": "No setup direction is inferred from tire temperatures or wear."}
 
 
+def _measured_windows(stint: Mapping[str, Any]) -> list[str]:
+    return [key for key in ("early", "late") if stint[key]["status"] == "measured"]
+
+
+def _measurement_card(previous: Mapping[str, Any], latest: Mapping[str, Any], comparison: Mapping[str, Any]) -> dict[str, Any]:
+    """Too few clean laps: ask for the run that can meet the card's own success rule."""
+
+    number, before = latest["number"], previous["number"]
+    earlier_windows, latest_windows = _measured_windows(previous), _measured_windows(latest)
+    if earlier_windows:
+        # The shortest window the earlier run measured is the quickest way to a verdict.
+        success = _success(previous, earlier_windows[0], None, "measure")
+        title = f"Repeat run {number} with more clean laps"
+        instruction = (f"Drive run {number}'s setup again, unchanged, for at least {success['last_run_lap']} laps "
+                       f"so {success['window_label'].lower()} can be compared with run {before}.")
+    elif latest_windows:
+        success = _success(latest, latest_windows[0], None, "measure")
+        title = f"Run {before} has too few clean laps; make run {number} the baseline"
+        instruction = (f"Run {before} has no pace window with {MINIMUM_WINDOW_LAPS}+ clean laps, so run {number}'s change "
+                       f"cannot be measured. Drive run {number}'s setup again, unchanged, for at least "
+                       f"{success['last_run_lap']} laps; it becomes the baseline for the next change.")
+    else:
+        success = _success(latest, "early", None, "measure")
+        title = f"Runs {before} and {number} have too few clean laps"
+        instruction = (f"Neither run has a pace window with {MINIMUM_WINDOW_LAPS}+ clean laps. Drive run {number}'s setup "
+                       f"again, unchanged, for at least {success['last_run_lap']} laps.")
+    return _card("repeat_comparable", title, instruction, [before, number], success, comparison["reasons"])
+
+
+def _conditions_card(previous: Mapping[str, Any], latest: Mapping[str, Any], comparison: Mapping[str, Any]) -> dict[str, Any]:
+    """Conditions differ: ask for the repeat the driver can actually make."""
+
+    number, before = latest["number"], previous["number"]
+    codes = set(comparison.get("reason_codes") or ())
+    if "track_temperature" in codes and codes <= {"track_temperature", "fuel"}:
+        # The track does not return to an earlier temperature; re-run the earlier setup under today's conditions.
+        fuel = latest["start_fuel_gal"]
+        back = latest["setup_change"]  # run {before} -> run {number}; reverting it loads run {before}'s setup
+        instruction = (f"Track temperature moved {previous['track_temp_f']:.0f} → {latest['track_temp_f']:.0f} °F since run "
+                       f"{before} and will not come back. Drive run {before}'s setup again now"
+                       + (f", starting with {fuel:.1f} gal," if fuel is not None else "")
+                       + f" so it can be compared with run {number} under the same conditions.")
+        return _card("rebaseline", f"Re-run run {before}'s setup now", instruction, [before, number],
+                     _success(latest, None, None, "measure"), comparison["reasons"],
+                     [_revert(item) for item in back["changes"]] if back["status"] == "changed" else ())
+    if codes == {"fuel"} and previous["start_fuel_gal"] is not None:
+        return _card("repeat_comparable", f"Repeat run {number} with run {before}'s fuel",
+                     f"Drive run {number}'s setup again, unchanged, starting with {previous['start_fuel_gal']:.1f} gal "
+                     f"(within {MATERIAL_FUEL_GAL:.0f} gal of run {before}) so the change can be measured.",
+                     [before, number], _success(previous, None, None, "measure"), comparison["reasons"])
+    return _card("repeat_comparable", f"Repeat run {number} under comparable conditions",
+                 f"Drive run {number}'s setup again with conditions matching run {before}, so the change can be measured.",
+                 [before, number], _success(previous, None, None, "measure"), comparison["reasons"])
+
+
+def _return_card(stints: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """Return to the earlier run with the best late pace among runs comparable with the latest."""
+
+    latest = stints[-1]
+    number = latest["number"]
+    if latest["late"]["status"] != "measured":
+        return None
+    pairs = [(earlier, _compare(earlier, latest)) for earlier in stints[:-1] if earlier["late"]["status"] == "measured"]
+    comparable = [(earlier, pair) for earlier, pair in pairs if pair["verdict"] != "not_comparable" and pair["basis"] == "late_window"]
+    if not comparable:
+        return None
+    earlier, pair = min(comparable, key=lambda item: (item[0]["late"]["median_s"], item[0]["number"]))
+    if pair["verdict"] != "slower":
+        return None
+    target = _setup_change(earlier, latest)
+    if target["status"] == "unchanged":
+        return None
+    detail = (f"Load run {earlier['number']}'s setup ({earlier['setup_name']})." if earlier["setup_name"]
+              else f"Load run {earlier['number']}'s setup.")
+    if target["status"] == "unknown":
+        detail += " Its differences from run " + str(number) + " are not fully recorded."
+    evidence = [f"Run {earlier['number']} has the best late pace of the runs comparable with run {number}. " + (pair["summary"] or "")]
+    for other, other_pair in pairs:
+        # A faster run that cannot be compared is named, never silently skipped.
+        if other_pair["verdict"] == "not_comparable" and other["late"]["median_s"] < earlier["late"]["median_s"]:
+            evidence.append(f"Run {other['number']} was faster late ({other['late']['median_s']:.3f} s) but is not comparable "
+                            f"with run {number}: " + " ".join(other_pair["reasons"]))
+    return _card("return_to_setup", f"Return to run {earlier['number']}'s setup", detail,
+                 [earlier["number"], number], _success(latest, "late", pair["threshold_s"], "faster"), evidence,
+                 [_revert(item) for item in target["changes"]])
+
+
 def _next_change(stints: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] | None) -> dict[str, Any]:
     latest, previous = stints[-1], stints[-2]
     comparison = latest["comparison"]
@@ -755,16 +845,8 @@ def _next_change(stints: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] |
 
     if comparison["verdict"] == "not_comparable":
         if comparison["blocked_by"] == "measurement":
-            reference = previous if any(previous[key]["status"] == "measured" for key in ("late", "early")) else latest
-            instruction = (f"Drive run {number}'s setup again, unchanged, for at least {EARLY_WINDOW[1]} laps so it can be "
-                           f"compared with run {before}." if reference is previous else
-                           f"Run {before} has too few clean laps to compare. Drive run {number}'s setup again, unchanged, "
-                           f"for at least {EARLY_WINDOW[1]} laps to confirm its pace.")
-            return _card("repeat_comparable", f"Repeat run {number} with more clean laps", instruction,
-                         [before, number], _success(reference, None, None, "measure"), comparison["reasons"])
-        return _card("repeat_comparable", f"Repeat run {number} under comparable conditions",
-                     f"Drive run {number}'s setup again with conditions matching run {before}, so the change can be measured.",
-                     [before, number], _success(previous, None, None, "measure"), comparison["reasons"])
+            return _measurement_card(previous, latest, comparison)
+        return _conditions_card(previous, latest, comparison)
 
     units = _setting_units(rules, latest["car_path"], change) if change["status"] == "changed" else []
     if comparison["verdict"] == "slower" and units:
@@ -775,27 +857,9 @@ def _next_change(stints: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] |
                      [before, number], _success(latest, basis, threshold, "faster"),
                      [comparison["summary"], *filter(None, (_moved(unit) for unit in units))], reverts)
 
-    best = None
-    if latest["late"]["status"] == "measured":
-        for earlier in stints[:-1]:
-            if earlier["late"]["status"] != "measured":
-                continue
-            pair = _compare(earlier, latest)
-            if pair["verdict"] == "slower" and pair["basis"] == "late_window" and (
-                    best is None or earlier["late"]["median_s"] < best[0]["late"]["median_s"]):
-                best = (earlier, pair)
-    if best is not None:
-        earlier, pair = best
-        target = _setup_change(earlier, latest)
-        if target["status"] != "unchanged":
-            returns = [_revert(item) for item in target["changes"]]
-            detail = (f"Load run {earlier['number']}'s setup ({earlier['setup_name']})." if earlier["setup_name"]
-                      else f"Load run {earlier['number']}'s setup.")
-            if target["status"] == "unknown":
-                detail += " Its differences from run " + str(number) + " are not fully recorded."
-            return _card("return_to_setup", f"Return to run {earlier['number']}'s setup", detail,
-                         [earlier["number"], number], _success(latest, "late", pair["threshold_s"], "faster"),
-                         [f"Run {earlier['number']} still has the best late pace. " + (pair["summary"] or "")], returns)
+    returned = _return_card(stints)
+    if returned is not None:
+        return returned
 
     logical = len(units) if known else None
     if comparison["verdict"] == "faster" and logical == 1:

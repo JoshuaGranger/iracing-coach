@@ -649,7 +649,7 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertEqual(card["based_on_runs"], [1, 3])
         self.assertEqual({item["field"]: item["to"] for item in card["changes"]},
                          {"chassis.left_rear.spring_perch_offset": "-72 mm", "chassis.front.front_brake_bias": "56.0%"})
-        self.assertIn("Run 1 still has the best late pace", card["evidence"][0])
+        self.assertIn("Run 1 has the best late pace of the runs comparable with run 3", card["evidence"][0])
 
     def test_one_faster_ruleset_change_is_kept_with_one_more_quoted_step(self) -> None:
         card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=car_setup(brake_bias="56.5%")))
@@ -730,10 +730,59 @@ class TestDayNextChangeTests(unittest.TestCase):
     def test_not_comparable_asks_for_a_comparable_repeat(self) -> None:
         card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, fuel_l=45.0, setup=wedge(car_setup())))
         self.assertEqual(card["kind"], "repeat_comparable")
+        self.assertEqual(card["title"], "Repeat run 2 with run 1's fuel")
+        self.assertIn("starting with 15.8 gal (within 2 gal of run 1)", card["instruction"])
         self.assertEqual(card["success_rule"]["direction"], "measure")
         self.assertIn("within 2 gal", card["success_rule"]["text"])
         short = self.card(stint_analysis("a", 9, laps=3), stint_analysis("b", 10))
         self.assertEqual((short["kind"], short["success_rule"]["reference_run"]), ("repeat_comparable", 2))
+        other = self.card(stint_analysis("a", 9), stint_analysis("b", 10, fixed=True))
+        self.assertEqual(other["title"], "Repeat run 2 under comparable conditions")
+
+    def test_a_track_that_moved_asks_to_rerun_the_earlier_setup_now(self) -> None:
+        result = review(stint_analysis("a", 9, track_temp=95.0), stint_analysis("b", 10, track_temp=86.0, fuel_l=50.0,
+                                                                                setup=car_setup(brake_bias="56.5%")))
+        self.assertEqual(result["runs"][1]["comparison"]["reason_codes"], ["track_temperature", "fuel"])
+        card = result["next_change"]
+        self.assertEqual(card["kind"], "rebaseline")
+        self.assertEqual(card["title"], "Re-run run 1's setup now")
+        self.assertEqual(card["instruction"], "Track temperature moved 95 → 86 °F since run 1 and will not come back. Drive run 1's "
+                                              "setup again now, starting with 13.2 gal, so it can be compared with run 2 under the same conditions.")
+        # The comparison it asks for is against run 2's conditions, which the driver can still meet.
+        self.assertEqual((card["success_rule"]["reference_run"], card["success_rule"]["direction"]), (2, "measure"))
+        self.assertIn("within 5 °F of run 2", card["success_rule"]["text"])
+        self.assertEqual(card["changes"], [{"field": "chassis.front.front_brake_bias", "label": "Front brake bias", "from": "56.5%", "to": "56.0%"}])
+
+    def test_a_blocked_measurement_asks_for_the_laps_its_own_rule_needs(self) -> None:
+        # Run 2 stopped after 4 laps: laps 2-5 are the quickest window to compare, and the rule checks exactly them.
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, laps=4))
+        self.assertEqual(card["instruction"], "Drive run 2's setup again, unchanged, for at least 5 laps so laps 2–5 can be compared with run 1.")
+        self.assertEqual((card["success_rule"]["window_label"], card["success_rule"]["last_run_lap"]), ("Laps 2–5", 5))
+        # Run 1 measured only its late window, so the repeat must reach it.
+        first = stint_analysis("a", 9)
+        for lap in first["laps"][1:4]:
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.4
+        card = self.card(first, stint_analysis("b", 10, laps=6))
+        self.assertEqual(card["instruction"], "Drive run 2's setup again, unchanged, for at least 20 laps so laps 16–20 can be compared with run 1.")
+        self.assertEqual((card["success_rule"]["window_label"], card["success_rule"]["last_run_lap"]), ("Laps 16–20", 20))
+
+    def test_a_blocked_measurement_names_the_run_that_lacked_laps(self) -> None:
+        card = self.card(stint_analysis("a", 9, laps=2), stint_analysis("b", 10, laps=6))
+        self.assertEqual(card["title"], "Run 1 has too few clean laps; make run 2 the baseline")
+        self.assertIn("Run 1 has no pace window with 3+ clean laps", card["instruction"])
+        self.assertEqual(card["success_rule"]["reference_run"], 2)
+        neither = self.card(stint_analysis("a", 9, laps=2), stint_analysis("b", 10, laps=2))
+        self.assertEqual(neither["title"], "Runs 1 and 2 have too few clean laps")
+
+    def test_a_faster_run_that_is_not_comparable_is_named_not_skipped(self) -> None:
+        card = self.card(stint_analysis("a", 9, base=23.8, fuel_l=60.0),
+                         stint_analysis("b", 10, base=24.0, fuel_l=53.0, setup=car_setup(brake_bias="56.5%")),
+                         stint_analysis("c", 11, base=24.25, fuel_l=52.0, setup=ballast(car_setup(brake_bias="56.5%"), "700 mm")),
+                         stint_analysis("d", 12, base=24.25, fuel_l=52.0, setup=ballast(car_setup(brake_bias="56.5%"), "700 mm")))
+        self.assertEqual((card["kind"], card["based_on_runs"]), ("return_to_setup", [2, 4]))
+        self.assertTrue(card["evidence"][0].startswith("Run 2 has the best late pace of the runs comparable with run 4."))
+        self.assertEqual(card["evidence"][1], "Run 1 was faster late (23.980 s) but is not comparable with run 4: "
+                                              "Starting fuel 15.8 → 13.7 gal (2 gal or more apart).")
 
     def test_no_card_is_derived_from_tire_temperatures(self) -> None:
         hot = stall_observation(lf_outside=260.0)

@@ -200,6 +200,11 @@
         "threshold_s": { "type": ["number", "null"] },
         "standard_error_s": { "type": ["number", "null"] },
         "reasons": { "type": "array", "items": { "type": "string" } },
+        "reason_codes": {
+          "type": "array",
+          "items": { "enum": ["car", "configuration", "configuration_missing", "fixed_setup", "setup_type_missing", "track_temperature", "track_temperature_missing", "fuel", "fuel_missing", "compound", "measurement", "scatter"] },
+          "description": "One code per blocking reason, in the same order."
+        },
         "flags": { "type": "array", "items": { "type": "string" } },
         "summary": { "type": ["string", "null"] }
       },
@@ -389,7 +394,7 @@
       "type": "object",
       "required": ["kind", "title", "instruction", "based_on_runs", "changes", "ruleset_step", "success_rule", "evidence", "note"],
       "properties": {
-        "kind": { "enum": ["revert", "return_to_setup", "keep", "keep_and_step", "isolate", "repeat", "repeat_comparable"] },
+        "kind": { "enum": ["revert", "return_to_setup", "keep", "keep_and_step", "isolate", "repeat", "repeat_comparable", "rebaseline"], "description": "rebaseline: the track temperature moved, so re-run the earlier setup under the latest run's conditions." },
         "title": { "type": "string" },
         "instruction": { "type": "string" },
         "based_on_runs": { "type": "array", "items": { "type": "integer" } },
