@@ -1396,7 +1396,11 @@ def _test_day_fixture() -> dict[str, Any]:
     from test_day import build_test_day_review
     from tuning_engine import load_structured_tuning_rules
 
+    untimed = _test_day_stint("fixture-garage-only", "2026-08-04T17:50:00+00:00", laps=0, base=24.0,
+                              setup=_test_day_setup("56.0%", 1, "40C, 40C, 40C"), ends_on_track=True)
+    untimed["runs"] = []  # A recording made in the garage: no timed lap, listed apart from the runs.
     stints = [
+        untimed,
         _test_day_stint("fixture-stint-1", "2026-08-04T18:00:00+00:00", laps=20, base=24.0,
                         setup=_test_day_setup("56.0%", 2, "40C, 40C, 40C")),
         _test_day_stint("fixture-stint-2", "2026-08-04T18:40:00+00:00", laps=18, base=24.01,

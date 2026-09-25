@@ -174,6 +174,72 @@ class DamageRepairAnalysisTests(unittest.TestCase):
         self.assertTrue(following_impact["automatic_coaching_reference_eligible"])
         self.assertIn("never certifies", following_impact["scope_note"])
 
+    def test_offline_testing_reset_without_incident_or_repair_keeps_the_next_run(self) -> None:
+        """IRP 9/24 22:43: a car stopped on track and reset to its stall raised only the
+        repair-required flag. With no incident, repair timer or fast repair, the 19-lap run
+        that followed was excluded on every lap; Offline Testing now keeps it, a Race does not."""
+
+        def damage(session_type: str | None, *, incident: bool = False, repair: bool = False) -> dict:
+            telemetry = synthetic_telemetry(lap_count=8)
+            channels = telemetry["channels"]
+            count = len(channels["SessionTime"])
+            for name in ("PlayerCarTowTime", "PitRepairLeft", "PitOptRepairLeft"):
+                channels[name] = [0.0] * count
+            channels["PlayerFastRepairsUsed"] = [0] * count
+            channels["FastRepairAvailable"] = [1] * count
+            channels["PlayerCarMyIncidentCount"] = [0] * count
+            stop_start, stop_end = 80 * 4 - 8, 80 * 4 + 12
+            for index in range(stop_start, stop_end + 1):
+                channels["SessionFlags"][index] |= 0x00100000
+                if repair:
+                    channels["PitRepairLeft"][index] = max(0.0, 2.0 - (index - stop_start) / 20.0)
+            if incident:
+                for index in range(stop_start - 40, count):
+                    channels["PlayerCarMyIncidentCount"][index] = 2
+            telemetry["variables"].extend(
+                {"name": name, "unit": "s"} for name in ("PlayerCarTowTime", "PitRepairLeft", "PitOptRepairLeft")
+            )
+            if session_type is not None:
+                telemetry["metadata"]["sim_session_type"] = session_type
+            return analyze_telemetry(telemetry)["damage_repair"]
+
+        def following(result: dict) -> tuple[dict, dict]:
+            episode = next(item for item in result["episodes"]
+                           if item["damage_evidence"]["status"] == "recorded_repair_required_flag_active")
+            number = episode["run_context"]["following_run_number"]
+            return episode, next(item for item in result["run_impacts"] if item["run_number"] == number)
+
+        episode, impact = following(damage("Offline Testing"))
+        self.assertEqual(episode["offline_testing_reset"]["status"], "reset_without_incident_or_repair")
+        self.assertTrue(impact["automatic_coaching_reference_eligible"])
+        self.assertEqual(impact["status"], "no_recorded_damage_disruption_exclusion")
+        self.assertNotIn("manual_review_after_tow_or_repair", impact["reason_codes"])
+        self.assertTrue(impact["coaching_reference_lap_numbers"])
+        self.assertTrue(impact["post_stop_context"]["offline_testing_reset_before_run"])
+        # The recorded evidence is kept, and the episode itself is still classified as recorded.
+        self.assertEqual(episode["classification"], "recorded_repair_required_state")
+
+        # A Race, or a session of unknown type, keeps the manual review and carries no new key.
+        for session_type in ("Race", None):
+            with self.subTest(session_type=session_type):
+                race_episode, race_impact = following(damage(session_type))
+                self.assertNotIn("offline_testing_reset", race_episode)
+                self.assertNotIn("offline_testing_reset_before_run", race_impact["post_stop_context"])
+                self.assertFalse(race_impact["automatic_coaching_reference_eligible"])
+                self.assertEqual(race_impact["status"], "manual_review_required_after_recorded_disruption")
+                self.assertIn("manual_review_after_tow_or_repair", race_impact["reason_codes"])
+
+        # In Offline Testing an incident or a recorded repair still sends the next run to review.
+        for label, options in (("incident", {"incident": True}), ("repair", {"repair": True})):
+            with self.subTest(label):
+                result = damage("Offline Testing", **options)
+                reset_episode = next(item for item in result["episodes"]
+                                     if item["repair_required_state"]["status"] == "recorded_active")
+                number = reset_episode["run_context"]["following_run_number"]
+                reset_impact = next(item for item in result["run_impacts"] if item["run_number"] == number)
+                self.assertEqual(reset_episode["offline_testing_reset"]["status"], "not_a_plain_reset")
+                self.assertFalse(reset_impact["automatic_coaching_reference_eligible"])
+
     def test_incident_points_and_pace_loss_do_not_create_damage_episode(self) -> None:
         telemetry = synthetic_telemetry(lap_count=8)
         channels = telemetry["channels"]

@@ -1701,8 +1701,18 @@ def _analysis_pipeline_sha256() -> str:
 # comparison's test of the same section only when it exists. IRP 9/23's test
 # needed 77.5-81.5 green laps into a run and waited on 20-lap test runs.
 # Cached analyses rebuild the projection through refresh_race_investigation.
+# Review 2026-09-25 (test-day review): v21 retires v20 because an Offline
+# Testing reset (tow timer or repair-required flag with the incident count
+# unchanged, no repair timer and no fast repair) no longer sends the next run to
+# manual review; the IRP 9/24 test's 19-lap run after a reset was excluded on
+# every lap. Offline Testing episodes and run impacts gain optional
+# offline_testing_reset keys; no other session carries them. The front
+# anti-roll-bar Preload joins the computed garage readouts (LinkSlack is the
+# adjustment), so identity.garage_setup_fingerprint changes for stock cars. The
+# Iowa 8/03 race differs only in analysis_id, profile version, pipeline digest,
+# that optional fingerprint and the tire-learning ids derived from analysis_id.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "3ae93d0342793c93cd52f1ef285c20a35f414a3ae8ca5821e247e4c1c088ce94"
+    "69ce5b4ca3860ec2a5eeb8d9a63936d610d118c00747ce4b3e5e885ecd087751"
 )
 
 

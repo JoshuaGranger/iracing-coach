@@ -73,7 +73,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v20"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v21"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -2561,6 +2561,13 @@ def _disrupted_sample_indices(
     ]
 
 
+def _plain_offline_reset(episode: Mapping[str, Any]) -> bool:
+    """An Offline Testing reset with no incident, repair timer or fast repair."""
+
+    reset = episode.get("offline_testing_reset")
+    return isinstance(reset, Mapping) and reset.get("status") == "reset_without_incident_or_repair"
+
+
 def _damage_repair_summary(
     table: TelemetryTable,
     laps: Sequence[dict[str, Any]],
@@ -2579,6 +2586,13 @@ def _damage_repair_summary(
     sample_rate = (
         _finite(table.metadata.get("sample_rate") or table.metadata.get("tick_rate"))
         or 20.0
+    )
+    # Offline Testing has no stewards, no repair clock and no race to rejoin: a
+    # car stopped on track is reset (towed) to its stall, which can raise the
+    # tow timer or the repair-required flag with no incident and no repair.
+    offline_testing = (
+        str(table.metadata.get("sim_session_type") or "").strip().lower()
+        == "offline testing"
     )
     dts = _dt_series(times, sample_rate)
     sampling_resolution_s = 1.0 / max(sample_rate, 1.0)
@@ -3207,6 +3221,23 @@ def _damage_repair_summary(
             if candidate_boundary_lap is not None and correlated_end_lap is not None
             else []
         )
+        # An Offline Testing reset: tow timer or repair-required flag only, with
+        # the incident count recorded and unchanged since the previous evidence
+        # episode, no repair timer and no fast-repair use. It is kept as recorded
+        # evidence but does not send the following run to manual review. Race and
+        # every other session keep the ordinary rule.
+        offline_reset_without_repair = bool(
+            offline_testing
+            and (has_tow or has_repair_required_flag)
+            and not has_repair
+            and not fast_confirmed
+            and incident_channel
+            and repair_correlated_incident is None
+            and not any(
+                (_finite(event.get("points_added")) or 0.0) > 0.0
+                for event in nearby_incidents
+            )
+        )
 
         observed_pit_status_values: list[int] = []
         if pit_status_channel:
@@ -3404,6 +3435,24 @@ def _damage_repair_summary(
                 }
             ),
         }
+        if offline_testing:
+            # Only Offline Testing episodes carry the key, so every other
+            # session's episodes are byte-identical to the previous profile.
+            episode["offline_testing_reset"] = {
+                "status": (
+                    "reset_without_incident_or_repair"
+                    if offline_reset_without_repair
+                    else "not_a_plain_reset"
+                ),
+                "note": (
+                    "Offline Testing reset or tow with the incident count unchanged and no "
+                    "repair timer or fast repair; the following run is not held for manual review."
+                    if offline_reset_without_repair
+                    else "Not treated as a plain Offline Testing reset: an incident, repair timer or "
+                    "fast repair was recorded, the incident count was not recorded, or no tow or "
+                    "repair-required state was recorded."
+                ),
+            }
         episodes.append(episode)
         if is_repair_or_tow_evidence:
             previous_evidence_episode_end_index = end_index
@@ -3505,6 +3554,10 @@ def _damage_repair_summary(
             ),
             default=0.0,
         )
+        # A plain Offline Testing reset is recorded but is not repair or tow
+        # evidence for the run that follows or overlaps it.
+        prior_resets = [episode for episode in prior_episodes if _plain_offline_reset(episode)]
+        prior_evidence = [episode for episode in prior_episodes if not _plain_offline_reset(episode)]
         prior_recorded_repair = any(
             episode["damage_evidence"]["status"]
             in {
@@ -3512,15 +3565,18 @@ def _damage_repair_summary(
                 "recorded_repair_required_flag_active",
                 "confirmed_fast_repair_counter_increment",
             }
-            for episode in prior_episodes
+            for episode in prior_evidence
         )
-        prior_tow = any("tow" in str(episode["classification"]) for episode in prior_episodes)
+        prior_tow = any("tow" in str(episode["classification"]) for episode in prior_evidence)
         overlapping_evidence_episodes = [
             episode
             for episode in overlapping_episodes
-            if episode["damage_evidence"]["status"]
-            != "no_recorded_damage_evidence_in_episode"
-            or "tow" in str(episode["classification"])
+            if not _plain_offline_reset(episode)
+            and (
+                episode["damage_evidence"]["status"]
+                != "no_recorded_damage_evidence_in_episode"
+                or "tow" in str(episode["classification"])
+            )
         ]
         overlap_without_candidate_boundary = any(
             episode["incident_points_context"]["repair_correlated_candidate"].get(
@@ -3588,6 +3644,11 @@ def _damage_repair_summary(
                 "that the car was fully undamaged; all normal clean-lap filters still apply."
             ),
         }
+        if offline_testing:
+            impact["post_stop_context"]["offline_testing_reset_before_run"] = bool(prior_resets)
+            impact["post_stop_context"]["offline_testing_reset_episode_ids"] = [
+                episode["episode_id"] for episode in prior_resets
+            ]
         run_impacts.append(impact)
         run["damage_repair_context"] = impact
         run["coaching_reference_lap_numbers"] = retained_candidates

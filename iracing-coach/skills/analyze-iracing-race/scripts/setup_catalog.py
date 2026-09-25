@@ -854,7 +854,7 @@ def is_transient_setup_field(key: Any) -> bool:
 
 
 #: Values the garage computes and shows read-only: corner weights, cross and
-#: nose weight, ride heights, truck-arm preload and travel to coil bind. The
+#: nose weight, ride heights, truck-arm and anti-roll-bar preload and travel to coil bind. The
 #: driver sets them only through adjustments (a spring-perch click moves cross
 #: weight, all four corner weights and a ride height together), and one .sto
 #: loaded on different days reads a unit apart (New Hampshire, July 2026:
@@ -871,6 +871,19 @@ GARAGE_READOUT_LEAVES = frozenset(
         "truck_arm_preload",
     }
 )
+#: Readouts whose leaf alone is ambiguous, named by the section that holds them.
+#: The stock-car front anti-roll bar section lists ``LinkSlack`` as the
+#: adjustment and ``Preload`` as the torque the garage computes from it and the
+#: chassis loads. The IRP Supra test of September 2026 moved only the left-front
+#: camber and spring perch (v2 against the baseline sheet): ``LinkSlack`` stayed
+#: 0 mm while ``Preload`` read 0.0 Nm, then -12.7 Nm, then 0.0 Nm again when v3
+#: restored the perch. A ``preload`` leaf elsewhere (a differential) is left alone.
+GARAGE_READOUT_SECTION_LEAVES = frozenset(
+    {
+        ("front_arb", "preload"),
+        ("rear_arb", "preload"),
+    }
+)
 #: The adjustments that set a readout the tuning ruleset names as a setting.
 #: Cross weight on these stock cars is set with the spring perch offsets.
 READOUT_ADJUSTER_LEAVES = {"cross_weight": frozenset({"spring_perch_offset"})}
@@ -879,7 +892,10 @@ READOUT_ADJUSTER_LEAVES = {"cross_weight": frozenset({"spring_perch_offset"})}
 def is_garage_readout_field(key: Any) -> bool:
     """Whether a canonical setup key is a computed garage readout, not an adjustment."""
 
-    return str(key).rsplit(".", 1)[-1] in GARAGE_READOUT_LEAVES
+    parts = str(key).split(".")
+    if parts[-1] in GARAGE_READOUT_LEAVES:
+        return True
+    return len(parts) >= 2 and (parts[-2], parts[-1]) in GARAGE_READOUT_SECTION_LEAVES
 
 
 def garage_setup_fields(
@@ -1306,6 +1322,7 @@ def catalog_setups(
 
 __all__ = [
     "GARAGE_READOUT_LEAVES",
+    "GARAGE_READOUT_SECTION_LEAVES",
     "READOUT_ADJUSTER_LEAVES",
     "SetupCatalogError",
     "SetupLimitError",
