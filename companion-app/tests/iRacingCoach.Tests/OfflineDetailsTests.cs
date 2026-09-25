@@ -114,6 +114,36 @@ public sealed class OfflineDetailsTests
     }
 
     [TestMethod]
+    public void OfflineDetailsTooltipsSayTheSessionNotTheRace()
+    {
+        // Details tooltips of an Offline Testing recording read "during the race" and "for this race".
+        AnalysisTechnicalInsight[] insights =
+        [
+            new("racecraft", "Racecraft", "available", "stable", "",
+                [new("Incident points", "0", EvidenceKind.Measured, "Total positive incident-count change during the race.",
+                    "Use this lap as the personal execution reference for this race.", "neutral", "pace")], [], []),
+            new("pit", "Pit", "available", "stable", "",
+                [new("2 vs 4 service", "—", EvidenceKind.Measured, "Average two-tire service minus average four-tire service in this race; negative is shorter.",
+                    "Range if this race's measured mix repeated.", "neutral", "service")], [], [])
+        ];
+        var test = Component(Workspace("Offline Testing") with { TechnicalInsights = insights });
+        var pace = Read<AnalysisTechnicalInsight>(test, "RacecraftInsight").Metrics[0];
+        Assert.AreEqual("Total positive incident-count change during the session.", pace.Detail);
+        Assert.AreEqual("Use this lap as the personal execution reference for this session.", pace.Action);
+        var pit = Read<AnalysisTechnicalInsight>(test, "PitInsight").Metrics[0];
+        Assert.AreEqual("Average two-tire service minus average four-tire service in this session; negative is shorter.", pit.Detail);
+        Assert.AreEqual("Range if this session's measured mix repeated.", pit.Action);
+        Assert.AreEqual("Race-pace lap", RaceTechnicalData.SessionWording("Race-pace lap"), "Only phrases naming this race change.");
+        Assert.AreEqual("No stint consumption or per-lap fuel estimate is available for this session.",
+            RaceTechnicalData.SessionWording("No stint consumption or per-lap fuel estimate is available for this race."));
+        StringAssert.Contains(Source("RaceTechnicalData.razor"), "Detail=\"@Wording(\"No stint consumption or per-lap fuel estimate is available for this race.\")\"");
+
+        var race = Component(Workspace("Race") with { TechnicalInsights = insights });
+        Assert.AreEqual("Total positive incident-count change during the race.", Read<AnalysisTechnicalInsight>(race, "RacecraftInsight").Metrics[0].Detail,
+            "A race keeps its wording.");
+    }
+
+    [TestMethod]
     public void SettingsNameThePopoutDashboardInBodyText()
     {
         // The card showed the dashboard name "Default Copy" alone in purple monospace.
