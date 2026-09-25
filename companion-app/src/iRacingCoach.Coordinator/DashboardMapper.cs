@@ -82,7 +82,8 @@ public static class DashboardMapper
         : string.IsNullOrWhiteSpace(session.EventKey) ? session.Id
         : session.EventKey;
 
-    private static string? RealIdentifier(string? value) =>
+    /// <summary>A subsession or session id that names a real event; offline recordings report 0 (or -1).</summary>
+    internal static string? RealIdentifier(string? value) =>
         string.IsNullOrWhiteSpace(value) || value.Trim() is "0" or "-1" ? null : value.Trim();
 
     private static RecentRace MapSession(JsonElement session, JsonElement dashboardRace)

@@ -15,11 +15,11 @@ public sealed partial class CoordinatorTests
 {
     private const string TestDayTag = "test-day-0123456789abcdef";
 
-    private static object OfflineStint(string id, string start, int? run, int? count, string track = "New Hampshire Motor Speedway") => new
+    private static object OfflineStint(string id, string start, int? run, int? count, string track = "New Hampshire Motor Speedway", string? file = null) => new
     {
         group_id = id, subsession_id = 0, session_id = 0, sim_session_type = "Offline Testing", event_type = "Test", is_race = false,
         valid = true, is_fixed_setup = false, track_display_name = track, track_config_name = "Oval", car_name = "Toyota Supra Class B",
-        car_path = "stockcars2 supra2019", start_time_utc = start, file_count = 1, files = new[] { id + ".ibt" },
+        car_path = "stockcars2 supra2019", start_time_utc = start, file_count = 1, files = new[] { file ?? id + ".ibt" },
         test_day_id = run is null ? null : TestDayTag, test_day_run = run, test_day_run_count = count
     };
 
@@ -203,6 +203,89 @@ public sealed partial class CoordinatorTests
         Assert.IsFalse(state.TestDayLoading);
         Assert.IsNotNull(state.CurrentTestDay);
         await WaitUntilAsync(() => backend.AnalyzeCalls == analyzeCalls + 1, TimeSpan.FromSeconds(3));
+    }
+
+    private static string ArchivedStintReport(string analysisId, string groupId, string start, int subsession = 0) => $$$"""
+        {
+          "analysis_id":"{{{analysisId}}}",
+          "identity":{"event_type":"Test","subsession_id":{{{subsession}}},"session_start":"{{{start}}}","track_name":"New Hampshire Motor Speedway",
+                      "track_config":"Oval","car_name":"Toyota Supra Class B","car_path":"stockcars2 supra2019","is_fixed_setup":false},
+          "source":{"selection":{"group_id":"{{{groupId}}}","subsession_id":{{{subsession}}},"session_id":0,"sim_session_type":"Offline Testing"}},
+          "race_summary":{"recorded_laps":12},
+          "laps":[],"runs":[],
+          "lap_traces":{"traces":[]},
+          "track_profile":{"shape":[],"detected_corner_segments":[]},
+          "strategy":{},"damage_repair":{},"data_quality":{}
+        }
+        """;
+
+    [TestMethod]
+    public void ArchivedOfflineRecordingsNeverShareAnEventKey()
+    {
+        using var first = JsonDocument.Parse(ArchivedStintReport("stint-a", "local:run-1", "2026-08-06T23:00:00Z"));
+        using var second = JsonDocument.Parse(ArchivedStintReport("stint-b", "local:run-2", "2026-08-06T23:50:00Z"));
+        using var hosted = JsonDocument.Parse(ArchivedStintReport("hosted", "subsession:9001:0", "2026-08-06T21:00:00Z", subsession: 9001));
+
+        var a = RuntimeMapper.ArchivedRace(first.RootElement, @"C:\Coach\reports\a\analysis.json");
+        var b = RuntimeMapper.ArchivedRace(second.RootElement, @"C:\Coach\reports\b\analysis.json");
+
+        Assert.AreEqual("local:run-1", a.EventKey, "Subsession 0 is not an event; the recording is its own key.");
+        Assert.AreEqual("local:run-2", b.EventKey);
+        Assert.AreEqual("9001", RuntimeMapper.ArchivedRace(hosted.RootElement, @"C:\Coach\reports\h\analysis.json").EventKey);
+        var groups = DashboardMapper.GroupEvents([a, b]);
+        Assert.HasCount(2, groups, "Two orphaned offline analyses are two rows, not one event keyed \"0\".");
+    }
+
+    [TestMethod]
+    public async Task ArchivedOfflineStintsKeepTheirOwnAnalysisAcrossRefreshes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-archived", Guid.NewGuid().ToString("N"));
+        var reports = Path.Combine(root, "data", "reports", "season-unknown");
+        var pathA = Path.Combine(reports, "stint-a", "analysis.json");
+        var pathB = Path.Combine(reports, "stint-b", "analysis.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(pathA)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(pathB)!);
+        File.WriteAllText(pathA, ArchivedStintReport("stint-a", "local:run-1", "2026-08-06T23:00:00Z"));
+        File.WriteAllText(pathB, ArchivedStintReport("stint-b", "local:run-2", "2026-08-06T23:50:00Z"));
+        // Stint B was written last, so the archived catalog lists it first.
+        File.SetLastWriteTimeUtc(pathA, DateTime.UtcNow.AddMinutes(-10));
+        File.SetLastWriteTimeUtc(pathB, DateTime.UtcNow.AddMinutes(-5));
+        // Both recordings are still in the telemetry folder, so their archived summaries are not re-read;
+        // they wait for background maintenance, which waits while the driver is in the sim.
+        var ibtA = Path.Combine(root, "telemetry", "a.ibt");
+        var ibtB = Path.Combine(root, "telemetry", "b.ibt");
+        Directory.CreateDirectory(Path.GetDirectoryName(ibtA)!);
+        File.WriteAllText(ibtA, "ibt");
+        File.WriteAllText(ibtB, "ibt");
+        string[]? reviewed = null;
+        var source = new SwitchableLiveTelemetrySource { Connected = true };
+        var backend = new FakeBackend(
+            discovery: TestDayDiscovery(
+                OfflineStint("local:run-2", "2026-08-06T23:50:00Z", 2, 2, file: ibtB),
+                OfflineStint("local:run-1", "2026-08-06T23:00:00Z", 1, 2, file: ibtA)),
+            responseOverride: (tool, _, arguments) =>
+            {
+                if (tool != "review_test_day") return null;
+                reviewed = JsonSerializer.SerializeToElement(arguments).GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()!).ToArray();
+                return TestDayReviewFor(reviewed);
+            });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")), source,
+            new DisabledCoachEngineSupervisor(), new FakeGarage61CredentialStore(Path.Combine(root, "garage61.credential")));
+        state.Settings.CoachHome = root;
+        await state.InitializeAsync();
+        await WaitUntilAsync(() => state.LiveState.Snapshot.Connected, TimeSpan.FromSeconds(2));
+
+        for (var refresh = 0; refresh < 3; refresh++) { await state.RefreshDashboardAsync(); foreach (var r in state.Races) Console.WriteLine($"R {r.Id} key={r.EventKey} type={r.SessionType} ov={r.Overview is not null} an={r.Analyzed} path={r.AnalysisPath}"); foreach (var r in state.EventSessions) Console.WriteLine($"E {r.Id} key={r.EventKey} path={r.AnalysisPath}"); }
+
+        foreach (var (id, path) in new[] { ("local:run-1", pathA), ("local:run-2", pathB) })
+        {
+            Assert.AreEqual(path, state.EventSessions.Single(session => session.Id == id).AnalysisPath, $"{id} must keep its own analysis.");
+            Assert.AreEqual(path, state.Races.Single(race => race.Id == id).AnalysisPath, $"The archived entry for {id} must keep its own analysis.");
+        }
+        var day = state.TestDayGroupFor(state.EventSessions.First(session => session.IsTestDayStint))!;
+        await state.LoadTestDayAsync(day);
+        CollectionAssert.AreEqual(new[] { pathA, pathB }, reviewed, "Each run is reviewed from its own analysis.");
+        Assert.AreEqual(0, backend.AnalyzeCalls);
     }
 
     /// <summary>The backend fixture cut to one row per requested stint, pointing at those stints' analyses.</summary>

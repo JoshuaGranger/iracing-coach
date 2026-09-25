@@ -9,7 +9,8 @@ namespace iRacingCoach.Coordinator;
 // projection separate from the immutable report and invalidate it on changes.
 internal sealed class ArchivedRaceCatalog
 {
-    private const int ProjectionVersion = 1;
+    // 2: an offline recording's EventKey is its own id, never the shared subsession "0".
+    private const int ProjectionVersion = 2;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
