@@ -15,7 +15,9 @@ import re
 import statistics
 from collections import defaultdict
 from datetime import datetime, timezone
-from functools import lru_cache
+from functools import lru_cache, reduce
+from itertools import compress, repeat
+from operator import add, mul, not_, or_, sub, truediv
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
 
@@ -208,6 +210,280 @@ def _finite(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+# ---------------------------------------------------------------------------
+# Column primitives.
+#
+# The per-sample helpers above were applied to the same recorded columns by
+# many stages (Speed alone was normalised a dozen times over). The helpers
+# below return exactly what those per-sample formulations return, but once per
+# column, with the per-element work done by C builtins wherever the data
+# allows. Exactness rules they rely on, each pinned by
+# tests/test_analysis_columns.py against the original formulation:
+#
+# * ``_finite`` converts with ``float()``, which returns an exact float
+#   unchanged. A column that converts without an error and whose float sum is
+#   finite therefore holds only finite numbers (a NaN or an infinity makes the
+#   sum non-finite); anything else - a gap, text, NaN, infinity, or a finite
+#   column whose sum merely overflowed - takes the exact per-sample path.
+# * Running totals stay sequential left folds (``reduce(add, ...)``), never
+#   ``sum``/``fsum``, wherever the original accumulated with ``+=``, so every
+#   rounding step is the same; ``sum`` stays ``sum`` where the original used it.
+# * ``statistics.median`` is ``sorted`` plus a middle pick and
+#   ``statistics.fmean(list)`` is ``fsum(list) / len(list)``, so one stable sort
+#   can serve a median and several percentiles of the same numbers.
+# * Selection order is kept wherever a tie could surface (``max(key=abs)``,
+#   ``max``/``min`` of signed zeros), so values arrive in index order.
+#
+# Recorded telemetry values are decoded IBT scalars (None, bool, int, float or
+# text), for which ``_finite`` never raises; whole-column evaluation therefore
+# cannot raise where the original's evaluation of a subset would not.
+# ---------------------------------------------------------------------------
+
+_fsum = math.fsum
+
+
+def _normalize_column(values: Sequence[Any]) -> tuple[list[float | None], bool]:
+    """Return ``[_finite(value) for value in values]`` and whether it has no ``None``."""
+
+    try:
+        converted = list(map(float, values))
+    except (TypeError, ValueError):
+        # The sample float() rejected normalises to None: the column has a gap.
+        return [_finite(value) for value in values], False
+    if _isfinite(sum(converted, 0.0)):
+        return converted, True
+    normalized = [value if _isfinite(value) else None for value in converted]
+    return normalized, None not in normalized
+
+
+def _finite_values(values: Iterable[Any]) -> list[float]:
+    """Exactly ``[n for v in values if (n := _finite(v)) is not None]``."""
+
+    if not isinstance(values, list):
+        values = list(values)
+    try:
+        converted = list(map(float, values))
+    except (TypeError, ValueError):
+        return [number for value in values if (number := _finite(value)) is not None]
+    if _isfinite(sum(converted, 0.0)):
+        return converted
+    return [value for value in converted if _isfinite(value)]
+
+
+def _finite_after_transform(values: list[Any], complete: bool) -> tuple[list[float | None], bool]:
+    """``_normalize_column`` for values that are already ``None`` or floats.
+
+    A transform of finite numbers stays finite unless it overflows, which one C
+    sum detects; only then is the per-sample check needed.
+    """
+
+    if complete and _isfinite(sum(values, 0.0)):
+        return values, True
+    return _normalize_column(values)
+
+
+def _fraction_column(normalized: Sequence[float | None]) -> list[float | None]:
+    """Exactly ``[_fraction(number) for number in normalized]``.
+
+    ``min(1.0, n)`` keeps 1.0 unless ``n < 1.0`` and ``max(0.0, n)`` keeps 0.0
+    unless ``n > 0.0``; the comparisons below are those two builtins spelled
+    out, so -0.0 still becomes 0.0 and 1.0 stays the constant 1.0.
+    """
+
+    result: list[float | None] = []
+    append = result.append
+    for number in normalized:
+        if number is None:
+            append(None)
+            continue
+        if abs(number) > 1.5:
+            number /= 100.0
+        number = number if number < 1.0 else 1.0
+        append(number if number > 0.0 else 0.0)
+    return result
+
+
+def _bool_column(values: Sequence[Any]) -> list[bool]:
+    """Exactly ``[_bool(value) for value in values]``."""
+
+    if any(issubclass(kind, str) for kind in set(map(type, values))):
+        return [_bool(value) for value in values]
+    return list(map(bool, values))
+
+
+def _distinct_map(function: Callable[[Any], Any], normalized: Sequence[float | None]) -> list[Any]:
+    """``[function(n) for n in normalized]``, evaluating each distinct value once.
+
+    Only for functions that return the same result for every pair of equal
+    keys. After normalisation the keys are None or floats, and the only equal
+    floats that differ are 0.0 and -0.0, so ``function`` must not distinguish
+    signed zeros.
+    """
+
+    lookup = {value: function(value) for value in set(normalized)}
+    return list(map(lookup.__getitem__, normalized))
+
+
+def _flag_bits(number: float | None) -> int:
+    # int(_finite(raw) or 0): a missing, zero or signed-zero sample is 0.
+    return int(number or 0)
+
+
+def _apply_steps(
+    values: list[float | None],
+    complete: bool,
+    steps: Sequence[tuple[Callable[[Any, Any], Any], float]] | None,
+) -> list[float | None]:
+    """``[None if n is None else scale(n) for n in values]``; no finite check.
+
+    ``steps`` are binary operations applied in order, e.g. ``n * 9.0 / 5.0 +
+    32.0`` is ``((mul, 9.0), (truediv, 5.0), (add, 32.0))``: the same
+    operations on the same operands in the same order as the infix form.
+    """
+
+    if not steps:
+        return values
+    if complete:
+        # The step shapes in use, as the infix expressions they stand for.
+        shape = tuple(operation for operation, _operand in steps)
+        operands = [operand for _operation, operand in steps]
+        if shape == (mul,):
+            (first,) = operands
+            return [number * first for number in values]
+        if shape == (truediv,):
+            (first,) = operands
+            return [number / first for number in values]
+        if shape == (mul, truediv):
+            first, second = operands
+            return [number * first / second for number in values]
+        if shape == (mul, mul):
+            first, second = operands
+            return [number * first * second for number in values]
+        if shape == (mul, truediv, add):
+            first, second, third = operands
+            return [number * first / second + third for number in values]
+        if shape == (sub, mul, truediv, add):
+            first, second, third, fourth = operands
+            return [(number - first) * second / third + fourth for number in values]
+        result: Iterable[Any] = values
+        for operation, operand in steps:
+            result = map(operation, result, repeat(operand))
+        return list(result)
+    return [None if number is None else _apply_unit_steps(number, steps) for number in values]
+
+
+def _row_means(columns: Sequence[tuple[list[float | None], bool]]) -> tuple[list[float | None], bool]:
+    """Per-sample ``_mean`` of the non-missing values across equal-index columns.
+
+    Exactly ``[_mean([v for v in row if v is not None]) for row in rows]`` where
+    a shorter column contributes nothing past its end: ``_mean`` keeps the
+    finite values and ``statistics.fmean`` of a list is ``fsum(list) / len``.
+    """
+
+    length = max((len(values) for values, _complete in columns), default=0)
+    lists = [
+        values if len(values) == length else list(values) + [None] * (length - len(values))
+        for values, _complete in columns
+    ]
+    if all(
+        complete and len(values) == length and _isfinite(sum(values, 0.0))
+        for values, complete in columns
+    ):
+        return list(map(truediv, map(_fsum, zip(*lists)), repeat(len(lists)))), True
+    means: list[float | None] = []
+    append = means.append
+    for row in zip(*lists):
+        numbers = [value for value in row if value is not None and _isfinite(value)]
+        append(_fsum(numbers) / len(numbers) if numbers else None)
+    return means, None not in means
+
+
+def _ascending_taker(indices: Sequence[int]) -> Callable[[Sequence[Any]], list[Any]]:
+    """Return ``column -> [column[i] for i in indices]`` for strictly ascending indices.
+
+    Strictly ascending indices spanning exactly ``len(indices)`` positions are
+    one run, so the gather is a slice.
+    """
+
+    if not indices:
+        return lambda column: []
+    start, stop = indices[0], indices[-1] + 1
+    if stop - start == len(indices):
+        return lambda column: column[start:stop]
+    return lambda column: list(map(column.__getitem__, indices))
+
+
+def _median_of_sorted(numbers: Sequence[float]) -> float:
+    """``statistics.median`` of a non-empty sequence that is already sorted."""
+
+    count = len(numbers)
+    if count % 2 == 1:
+        return numbers[count // 2]
+    middle = count // 2
+    return (numbers[middle - 1] + numbers[middle]) / 2
+
+
+def _percentile_of_sorted(numbers: Sequence[float], percentile: float) -> float | None:
+    """``_percentile`` of finite numbers that are already sorted."""
+
+    if not numbers:
+        return None
+    if len(numbers) == 1:
+        return numbers[0]
+    position = max(0.0, min(1.0, percentile)) * (len(numbers) - 1)
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return numbers[lower]
+    fraction = position - lower
+    return numbers[lower] * (1.0 - fraction) + numbers[upper] * fraction
+
+
+def _positive_increase(numbers: Sequence[float]) -> float | None:
+    """``_positive_distance_delta`` over finite numbers already in sample order."""
+
+    increases = [
+        current - previous
+        for previous, current in zip(numbers, numbers[1:])
+        if current >= previous
+    ]
+    return reduce(add, increases, 0.0) if increases else None
+
+
+def _sideslip_column(
+    longitudinal: Sequence[float | None], lateral: Sequence[float | None]
+) -> list[float | None]:
+    """``_vehicle_sideslip_degrees`` per sample of two normalised columns."""
+
+    hypot, degrees, atan2 = math.hypot, math.degrees, math.atan2
+    result: list[float | None] = []
+    append = result.append
+    for forward, sideways in zip(longitudinal, lateral):
+        if forward is None or sideways is None or hypot(forward, sideways) < 5.0 or forward <= 0.5:
+            append(None)
+            continue
+        angle = degrees(atan2(sideways, forward))
+        append(angle if _isfinite(angle) else None)
+    return result
+
+
+def _wheel_ratio_column(
+    vehicle_speed: Sequence[float | None], wheel_speed: Sequence[float | None]
+) -> list[float | None]:
+    """Per-sample wheel/vehicle speed ratio shared by wheel slip and lock proxies.
+
+    ``None`` below 10 m/s, for a missing sample, or beyond +/-200 %. The
+    original divides by ``max(car, 1e-9)``; with ``car >= 10.0`` that is ``car``.
+    """
+
+    return [
+        None
+        if car is None or wheel is None or car < 10.0
+        else (ratio if abs(ratio := (wheel - car) / car) <= 2.0 else None)
+        for car, wheel in zip(vehicle_speed, wheel_speed)
+    ]
+
+
 def _vehicle_sideslip_degrees(
     longitudinal_velocity_m_s: Any,
     lateral_velocity_m_s: Any,
@@ -235,28 +511,17 @@ def _vehicle_sideslip_degrees(
 
 
 def _mean(values: Iterable[Any]) -> float | None:
-    numbers = [number for value in values if (number := _finite(value)) is not None]
+    numbers = _finite_values(values)
     return statistics.fmean(numbers) if numbers else None
 
 
 def _median(values: Iterable[Any]) -> float | None:
-    numbers = [number for value in values if (number := _finite(value)) is not None]
+    numbers = _finite_values(values)
     return statistics.median(numbers) if numbers else None
 
 
 def _percentile(values: Iterable[Any], percentile: float) -> float | None:
-    numbers = sorted(number for value in values if (number := _finite(value)) is not None)
-    if not numbers:
-        return None
-    if len(numbers) == 1:
-        return numbers[0]
-    position = max(0.0, min(1.0, percentile)) * (len(numbers) - 1)
-    lower = math.floor(position)
-    upper = math.ceil(position)
-    if lower == upper:
-        return numbers[lower]
-    fraction = position - lower
-    return numbers[lower] * (1.0 - fraction) + numbers[upper] * fraction
+    return _percentile_of_sorted(sorted(_finite_values(values)), percentile)
 
 
 def _round(value: Any, digits: int = 3) -> float | None:
@@ -440,6 +705,97 @@ class TelemetryTable:
         for values in self.channels.values():
             if len(values) < self.length:
                 values.extend([None] * (self.length - len(values)))
+        self._columns: dict[Any, Any] = {}
+
+    # Cached column views. Stages read the same recorded columns many times;
+    # these return exactly a per-sample helper applied to ``get(*aliases,
+    # default=default)``, computed once per column. The public accessors record
+    # channel access exactly as ``get`` does, so ``accessed_channels`` (an
+    # emitted field) is unchanged; the underscored helpers record nothing.
+    # Returned lists are shared: callers must not mutate them.
+
+    def _column_key(self, aliases: Sequence[str], default: Any) -> Any:
+        for alias in aliases:
+            if alias in self.channels:
+                return alias
+        return ("<default>", default.__class__, default)
+
+    def _record_access(self, aliases: Sequence[str]) -> None:
+        for alias in aliases:
+            if alias in self.channels:
+                self.accessed_channels.add(alias)
+                return
+
+    def _raw_column(self, key: Any) -> list[Any]:
+        if isinstance(key, str):
+            values = self.channels[key]
+            if len(values) < self.length:
+                values = values + [None] * (self.length - len(values))
+            return values
+        return [key[2]] * self.length
+
+    def _cached(self, kind: Any, key: Any, build: Callable[[], Any]) -> Any:
+        entry = self._columns.get((kind, key))
+        if entry is None:
+            entry = self._columns[(kind, key)] = build()
+        return entry
+
+    def _finite_for(self, key: Any) -> tuple[list[float | None], bool]:
+        def build() -> tuple[list[float | None], bool]:
+            if isinstance(key, str):
+                return _normalize_column(self._raw_column(key))
+            number = _finite(key[2])
+            return [number] * self.length, number is not None or self.length == 0
+
+        return self._cached("finite", key, build)
+
+    def _fractions_for(self, key: Any) -> tuple[list[float | None], bool]:
+        def build() -> tuple[list[float | None], bool]:
+            values, complete = self._finite_for(key)
+            return _fraction_column(values), complete
+
+        return self._cached("fraction", key, build)
+
+    def _wheel_ratios(self, speed_key: Any, wheel_key: Any) -> list[float | None]:
+        return self._cached(
+            ("wheel-ratio", speed_key),
+            wheel_key,
+            lambda: _wheel_ratio_column(
+                self._finite_for(speed_key)[0], self._finite_for(wheel_key)[0]
+            ),
+        )
+
+    def normalized(self, *aliases: str, default: Any = None) -> tuple[list[float | None], bool]:
+        """``[_finite(v) for v in get(*aliases, default=default)]`` and whether it has no ``None``."""
+
+        self._record_access(aliases)
+        return self._finite_for(self._column_key(aliases, default))
+
+    def fractions(self, *aliases: str, default: Any = None) -> tuple[list[float | None], bool]:
+        """``[_fraction(v) for v in get(*aliases, default=default)]`` and whether it has no ``None``."""
+
+        self._record_access(aliases)
+        return self._fractions_for(self._column_key(aliases, default))
+
+    def _booleans_for(self, key: Any) -> list[bool]:
+        return self._cached("bool", key, lambda: _bool_column(self._raw_column(key)))
+
+    def _flag_bits_for(self, key: Any) -> list[int]:
+        return self._cached(
+            "flags", key, lambda: _distinct_map(_flag_bits, self._finite_for(key)[0])
+        )
+
+    def booleans(self, *aliases: str, default: Any = None) -> list[bool]:
+        """``[_bool(v) for v in get(*aliases, default=default)]``."""
+
+        self._record_access(aliases)
+        return self._booleans_for(self._column_key(aliases, default))
+
+    def flag_bits(self, *aliases: str, default: Any = 0) -> list[int]:
+        """``[int(_finite(v) or 0) for v in get(*aliases, default=default)]``."""
+
+        self._record_access(aliases)
+        return self._flag_bits_for(self._column_key(aliases, default))
 
     def available_catalog(self) -> list[dict[str, Any]]:
         """Return the complete available-channel catalogue when supplied."""
@@ -498,44 +854,68 @@ def _normalized_unit(value: str | None) -> str:
     return str(value or "").strip().lower().replace("°", "").replace(" ", "")
 
 
-def _unit_scale(quantity: str, unit: str) -> Callable[[float], float] | None:
-    """The exact arithmetic for one quantity/unit pair; ``None`` means unchanged."""
+UnitSteps = tuple[tuple[Callable[[Any, Any], Any], float], ...]
+
+
+@lru_cache(maxsize=256)
+def _unit_steps(quantity: str, unit: str) -> UnitSteps | None:
+    """The exact arithmetic for one quantity/unit pair; ``None`` means unchanged.
+
+    Each conversion is its infix expression as ordered binary operations, e.g.
+    ``(number - 273.15) * 9.0 / 5.0 + 32.0`` is sub, mul, truediv, add. One
+    definition serves per-value conversion and whole-column conversion.
+    """
 
     if quantity == "distance":
         if unit in {"in", "inch", "inches", '"'}:
             return None
         if unit in {"ft", "foot", "feet"}:
-            return lambda number: number * 12.0
+            return ((mul, 12.0),)
         if unit in {"mm", "millimeter", "millimeters"}:
-            return lambda number: number / 25.4
+            return ((truediv, 25.4),)
         if unit in {"cm", "centimeter", "centimeters"}:
-            return lambda number: number / 2.54
-        return lambda number: number * METERS_TO_INCHES
+            return ((truediv, 2.54),)
+        return ((mul, METERS_TO_INCHES),)
     if quantity == "velocity":
         if unit in {"in/s", "inch/s", "inches/s", "ips"}:
             return None
         if unit in {"ft/s", "fps"}:
-            return lambda number: number * 12.0
+            return ((mul, 12.0),)
         if unit in {"mm/s"}:
-            return lambda number: number / 25.4
+            return ((truediv, 25.4),)
         if unit in {"cm/s"}:
-            return lambda number: number / 2.54
-        return lambda number: number * METERS_TO_INCHES
+            return ((truediv, 2.54),)
+        return ((mul, METERS_TO_INCHES),)
     if quantity == "pressure":
         if unit in {"psi", "lb/in2", "lbf/in2"}:
             return None
         if unit in {"pa", "pascal", "pascals"}:
-            return lambda number: number * KPA_TO_PSI / 1000.0
+            return ((mul, KPA_TO_PSI), (truediv, 1000.0))
         if unit in {"bar"}:
-            return lambda number: number * 100.0 * KPA_TO_PSI
-        return lambda number: number * KPA_TO_PSI
+            return ((mul, 100.0), (mul, KPA_TO_PSI))
+        return ((mul, KPA_TO_PSI),)
     if quantity == "temperature":
         if unit in {"f", "fahrenheit"}:
             return None
         if unit in {"k", "kelvin"}:
-            return lambda number: (number - 273.15) * 9.0 / 5.0 + 32.0
-        return lambda number: number * 9.0 / 5.0 + 32.0
+            return ((sub, 273.15), (mul, 9.0), (truediv, 5.0), (add, 32.0))
+        return ((mul, 9.0), (truediv, 5.0), (add, 32.0))
     return None
+
+
+def _apply_unit_steps(number: Any, steps: UnitSteps) -> Any:
+    for operation, operand in steps:
+        number = operation(number, operand)
+    return number
+
+
+def _unit_scale(quantity: str, unit: str) -> Callable[[float], float] | None:
+    """The exact arithmetic for one quantity/unit pair; ``None`` means unchanged."""
+
+    steps = _unit_steps(quantity, unit)
+    if steps is None:
+        return None
+    return lambda number: _apply_unit_steps(number, steps)
 
 
 @lru_cache(maxsize=256)
@@ -571,22 +951,32 @@ def _resolved_setup_series(
         "pressure": "kPa",
         "temperature": "C",
     }.get(quantity)
-    convert = _setup_value_converter(quantity, source_unit)
+    # [_setup_value_converter(quantity, source_unit)(v) for v in raw_values]:
+    # finite samples converted, gaps kept, no second finite check.
+    values, complete = table._finite_for(channel)
     return {
         "channel": channel,
         "source_unit": source_unit,
-        "values": [convert(value) for value in raw_values],
+        "values": _apply_steps(
+            values, complete, _unit_steps(quantity, _normalized_unit(source_unit))
+        ),
     }
 
 
 def _dt_series(times: Sequence[Any], fallback_hz: float) -> list[float]:
     fallback = 1.0 / max(fallback_hz, 1.0)
-    result = [fallback] * len(times)
-    for index in range(1, len(times)):
-        previous = _finite(times[index - 1])
-        current = _finite(times[index])
-        if previous is not None and current is not None and 0 < current - previous < 2.0:
-            result[index] = current - previous
+    if not len(times):
+        return []
+    values, _complete = _normalize_column(times)
+    result = [fallback]
+    result.extend(
+        delta
+        if previous is not None
+        and current is not None
+        and 0 < (delta := current - previous) < 2.0
+        else fallback
+        for previous, current in zip(values, values[1:])
+    )
     return result
 
 
@@ -619,18 +1009,31 @@ def _count_corrections(values: Sequence[Any], threshold: float = 0.025) -> int:
 
 
 def _positive_distance_delta(values: Sequence[Any], indices: Sequence[int]) -> float | None:
-    total = 0.0
-    previous: float | None = None
-    observed = False
-    for index in indices:
-        current = _finite(values[index]) if index < len(values) else None
-        if current is None:
-            continue
-        if previous is not None and current >= previous:
-            total += current - previous
-            observed = True
-        previous = current
-    return total if observed else None
+    return _positive_increase(
+        [
+            number
+            for index in indices
+            if index < len(values) and (number := _finite(values[index])) is not None
+        ]
+    )
+
+
+def _absolute_summary(
+    finite_numbers: Sequence[float],
+    *,
+    scale: float = 1.0,
+    digits: int = 3,
+) -> dict[str, Any] | None:
+    """``_absolute_series_summary`` of finite samples already in index order."""
+
+    numbers = list(map(mul, map(abs, finite_numbers), repeat(scale)))
+    if not numbers:
+        return None
+    return {
+        "abs_mean": _round(_mean(numbers), digits),
+        "abs_p95": _round(_percentile(numbers, 0.95), digits),
+        "abs_max": _round(max(numbers), digits),
+    }
 
 
 def _absolute_series_summary(
@@ -640,17 +1043,65 @@ def _absolute_series_summary(
     scale: float = 1.0,
     digits: int = 3,
 ) -> dict[str, Any] | None:
-    numbers = [
-        abs(number) * scale
-        for index in indices
-        if index < len(values) and (number := _finite(values[index])) is not None
-    ]
-    if not numbers:
-        return None
+    return _absolute_summary(
+        [
+            number
+            for index in indices
+            if index < len(values) and (number := _finite(values[index])) is not None
+        ],
+        scale=scale,
+        digits=digits,
+    )
+
+
+def _dynamics_samples(
+    ratios: Mapping[str, Sequence[float | None]],
+    brake_fractions: Sequence[float | None],
+    throttle_fractions: Sequence[float | None],
+) -> dict[str, Any]:
+    """Per-sample wheel-speed evidence for ``_vehicle_dynamics_summary``.
+
+    For every sample: whether any wheel ratio was valid and whether the
+    braking-lock, front-lock and rear-wheelspin proxies fired - the conditions
+    the per-lap loop evaluated sample by sample, evaluated once per table.
+    """
+
+    tires = list(ratios)
+    columns = [ratios[tire] for tire in tires]
+    front = [position for position, tire in enumerate(tires) if tire in ("LF", "RF")]
+    rear = [position for position, tire in enumerate(tires) if tire in ("LR", "RR")]
+    valid: list[bool] = []
+    lock: list[bool] = []
+    front_lock: list[bool] = []
+    rear_spin: list[bool] = []
+    for brake_value, throttle_value, row in zip(
+        brake_fractions, throttle_fractions, zip(*columns)
+    ):
+        present = [ratio for ratio in row if ratio is not None]
+        if not present:
+            valid.append(False)
+            lock.append(False)
+            front_lock.append(False)
+            rear_spin.append(False)
+            continue
+        braking = (brake_value or 0.0) >= 0.15
+        front_ratios = [row[position] for position in front if row[position] is not None]
+        rear_ratios = [row[position] for position in rear if row[position] is not None]
+        valid.append(True)
+        lock.append(braking and min(present) <= -0.08)
+        front_lock.append(braking and bool(front_ratios) and min(front_ratios) <= -0.08)
+        # _mean of finite ratios: statistics.fmean(list) is fsum(list) / len(list).
+        rear_spin.append(
+            (throttle_value or 0.0) >= 0.35
+            and bool(rear_ratios)
+            and _fsum(rear_ratios) / len(rear_ratios) >= 0.08
+        )
     return {
-        "abs_mean": _round(_mean(numbers), digits),
-        "abs_p95": _round(_percentile(numbers, 0.95), digits),
-        "abs_max": _round(max(numbers), digits),
+        "ratios": dict(ratios),
+        "valid": valid,
+        "lock": lock,
+        "front_lock": front_lock,
+        "rear_spin": rear_spin,
     }
 
 
@@ -661,8 +1112,14 @@ def _vehicle_dynamics_summary(
     speed: Sequence[Any],
     throttle: Sequence[Any],
     brake: Sequence[Any],
+    *,
+    _samples: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Summarize measured motion plus conservative tire-load proxies."""
+    """Summarize measured motion plus conservative tire-load proxies.
+
+    ``indices`` ascend. ``_samples`` is ``_dynamics_samples`` for these
+    columns, precomputed once per table by the caller.
+    """
 
     result: dict[str, Any] = {}
     wheel_speeds = {
@@ -671,72 +1128,57 @@ def _vehicle_dynamics_summary(
         if table.has(f"{tire}speed")
     }
     wheel_odometers = {
-        tire: table.get(f"{tire}odometer", default=None)
+        tire: table.normalized(f"{tire}odometer")[0]
         for tire in TIRES
         if table.has(f"{tire}odometer")
     }
-    ratio_samples: dict[str, list[float]] = {tire: [] for tire in wheel_speeds}
-    lock_time = 0.0
-    front_lock_time = 0.0
-    rear_spin_time = 0.0
-    valid_ratio_samples = 0
-    for index in indices:
-        vehicle_speed = _finite(speed[index]) if index < len(speed) else None
-        if vehicle_speed is None or vehicle_speed < 10.0:
-            continue
-        ratios: dict[str, float] = {}
-        for tire, values in wheel_speeds.items():
-            wheel_speed = _finite(values[index]) if index < len(values) else None
-            if wheel_speed is None:
-                continue
-            ratio = (wheel_speed - vehicle_speed) / max(vehicle_speed, 1e-9)
-            # Reject corrupt/transient values while retaining meaningful lock
-            # and spin divergence.
-            if abs(ratio) <= 2.0:
-                ratios[tire] = ratio
-                ratio_samples[tire].append(ratio)
-        if not ratios:
-            continue
-        valid_ratio_samples += 1
-        dt = dts[index] if index < len(dts) else 0.0
-        brake_value = _fraction(brake[index]) if index < len(brake) else None
-        throttle_value = _fraction(throttle[index]) if index < len(throttle) else None
-        if (brake_value or 0.0) >= 0.15 and min(ratios.values()) <= -0.08:
-            lock_time += dt
-        front_ratios = [ratios[tire] for tire in ("LF", "RF") if tire in ratios]
-        if (brake_value or 0.0) >= 0.15 and front_ratios and min(front_ratios) <= -0.08:
-            front_lock_time += dt
-        rear_ratios = [ratios[tire] for tire in ("LR", "RR") if tire in ratios]
-        if (
-            (throttle_value or 0.0) >= 0.35
-            and rear_ratios
-            and _mean(rear_ratios) is not None
-            and (_mean(rear_ratios) or 0.0) >= 0.08
-        ):
-            rear_spin_time += dt
+    take = _ascending_taker(indices)
 
     if wheel_speeds:
+        samples = _samples
+        if samples is None:
+            vehicle = _normalize_column(speed)[0]
+            samples = _dynamics_samples(
+                {
+                    tire: _wheel_ratio_column(vehicle, _normalize_column(values)[0])
+                    for tire, values in wheel_speeds.items()
+                },
+                _fraction_column(_normalize_column(brake)[0]),
+                _fraction_column(_normalize_column(throttle)[0]),
+            )
+        lap_dts = take(dts)
         ratio_summary: dict[str, Any] = {}
-        for tire, values in ratio_samples.items():
+        for tire in wheel_speeds:
+            values = [ratio for ratio in take(samples["ratios"][tire]) if ratio is not None]
             if not values:
                 continue
+            ordered = sorted(values)
             ratio_summary[tire] = {
-                "p05": _round(_percentile(values, 0.05), 4),
-                "median": _round(_median(values), 4),
-                "p95": _round(_percentile(values, 0.95), 4),
+                "p05": _round(_percentile_of_sorted(ordered, 0.05), 4),
+                "median": _round(_median_of_sorted(ordered), 4),
+                "p95": _round(_percentile_of_sorted(ordered, 0.95), 4),
             }
         distance = {
-            tire: _round(_positive_distance_delta(values, indices), 1)
+            tire: _round(
+                _positive_increase([value for value in take(values) if value is not None]),
+                1,
+            )
             for tire, values in wheel_odometers.items()
         }
         result["wheel_speed"] = {
             "channels": sorted(f"{tire}speed" for tire in wheel_speeds),
-            "valid_ratio_samples": valid_ratio_samples,
+            "valid_ratio_samples": sum(take(samples["valid"])),
             "ratio_vs_vehicle_speed": ratio_summary,
             "tire_distance_m": {key: value for key, value in distance.items() if value is not None},
-            "braking_wheel_lock_proxy_s": _round(lock_time),
-            "front_wheel_lock_proxy_s": _round(front_lock_time),
-            "rear_wheelspin_proxy_s": _round(rear_spin_time),
+            "braking_wheel_lock_proxy_s": _round(
+                reduce(add, compress(lap_dts, take(samples["lock"])), 0.0)
+            ),
+            "front_wheel_lock_proxy_s": _round(
+                reduce(add, compress(lap_dts, take(samples["front_lock"])), 0.0)
+            ),
+            "rear_wheelspin_proxy_s": _round(
+                reduce(add, compress(lap_dts, take(samples["rear_spin"])), 0.0)
+            ),
         }
 
     angular_specs = (
@@ -748,32 +1190,30 @@ def _vehicle_dynamics_summary(
     for channel, label in angular_specs:
         if not table.has(channel):
             continue
-        summary = _absolute_series_summary(
-            table.get(channel, default=None), indices, scale=180.0 / math.pi
+        summary = _absolute_summary(
+            [value for value in take(table.normalized(channel)[0]) if value is not None],
+            scale=180.0 / math.pi,
         )
         if summary:
             motion[label] = summary
     if table.has("SteeringWheelTorque"):
-        torque = _absolute_series_summary(
-            table.get("SteeringWheelTorque", default=None), indices
+        torque = _absolute_summary(
+            [
+                value
+                for value in take(table.normalized("SteeringWheelTorque")[0])
+                if value is not None
+            ]
         )
         if torque:
             motion["steering_torque_nm"] = torque
     if motion:
         result["motion"] = motion
 
-    abs_active = table.get("BrakeABSactive", default=False)
-    abs_cut = table.get("BrakeABScutPct", default=None)
-    abs_time = sum(
-        dts[index]
-        for index in indices
-        if index < len(abs_active) and _bool(abs_active[index])
-    )
-    cut_values = [
-        value
-        for index in indices
-        if index < len(abs_cut) and (value := _fraction(abs_cut[index])) is not None
-    ]
+    abs_active = table.booleans("BrakeABSactive", default=False)
+    abs_cut = table.fractions("BrakeABScutPct")[0]
+    # The original summed with the builtin sum(); so does this.
+    abs_time = sum(compress(take(dts), take(abs_active)))
+    cut_values = [value for value in take(abs_cut) if value is not None]
     if table.has("BrakeABSactive", "BrakeABScutPct"):
         result["abs"] = {
             "active_s": _round(abs_time),
@@ -782,12 +1222,10 @@ def _vehicle_dynamics_summary(
         }
 
     if table.has("dcBrakeBias"):
-        brake_bias_values = table.get("dcBrakeBias", default=None)
         values = [
             value
-            for index in indices
-            if index < table.length
-            and (value := _finite(brake_bias_values[index])) is not None
+            for value in take(table.normalized("dcBrakeBias")[0])
+            if value is not None
         ]
         if values:
             result["brake_bias_setting"] = {
@@ -960,13 +1398,12 @@ def _track_usage_context(table: TelemetryTable, race_session: Mapping[str, Any])
 
 
 def _lap_conditions(table: TelemetryTable, indices: Sequence[int]) -> dict[str, Any]:
+    """Lap weather and track conditions; ``indices`` ascend."""
+
+    take = _ascending_taker(indices)
+
     def lap_values(*aliases: str) -> list[float]:
-        series = table.get(*aliases, default=None)
-        return [
-            value
-            for index in indices
-            if index < len(series) and (value := _finite(series[index])) is not None
-        ]
+        return [value for value in take(table.normalized(*aliases)[0]) if value is not None]
 
     def median(*aliases: str) -> float | None:
         return _median(lap_values(*aliases))
@@ -990,9 +1427,9 @@ def _lap_conditions(table: TelemetryTable, indices: Sequence[int]) -> dict[str, 
     air_density_kg_m3 = median("AirDensity")
     usage = median("TrackUsage")
     usage_percent = _fraction(usage) * 100.0 if usage is not None else None
-    declared_wet_values = table.get("WeatherDeclaredWet", default=None)
+    declared_wet_values = table.booleans("WeatherDeclaredWet")
     declared_wet = (
-        any(_bool(declared_wet_values[index]) for index in indices if index < len(declared_wet_values))
+        any(take(declared_wet_values))
         if table.has("WeatherDeclaredWet")
         else None
     )
@@ -1014,31 +1451,44 @@ def _lap_conditions(table: TelemetryTable, indices: Sequence[int]) -> dict[str, 
     }
 
 
+def _racing_state(number: float | None) -> bool:
+    # int(_finite(raw) or -1) == 4 (irsdk_SessionState::Racing).
+    return int(number or -1) == 4
+
+
+def _on_track(location: float | None) -> bool:
+    return location is not None and int(location) == 3  # irsdk_TrkLoc::OnTrack
+
+
 def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
+    # Every channel is read through a cached column view that records access
+    # exactly as the get()/has() calls it replaces. Per-sample predicates are
+    # evaluated once per table; each lap then folds its own slice of them in
+    # sample order (see "Column primitives").
     n = table.length
     times = table.get("SessionTime", "SessionTimeOfDay", default=None)
-    laps = table.get("Lap", default=None)
+    session_times = table.normalized("SessionTime", "SessionTimeOfDay")[0]
+    laps = table.normalized("Lap")[0]
     has_completed_laps = table.has("LapCompleted")
-    completed_laps = table.get("LapCompleted", default=None) if has_completed_laps else ()
+    completed_laps = table.normalized("LapCompleted")[0] if has_completed_laps else ()
     max_completed_lap = max(
-        (
-            number
-            for value in completed_laps
-            if (number := _finite(value)) is not None
-        ),
+        (number for number in completed_laps if number is not None),
         default=None,
     )
-    lap_pct = table.get("LapDistPct", default=None)
-    speed = table.get("Speed", default=None)
-    throttle = table.get("Throttle", "ThrottleRaw", default=None)
-    brake = table.get("Brake", "BrakeRaw", default=None)
+    lap_pct = table.normalized("LapDistPct")[0]
+    speed_raw = table.get("Speed", default=None)
+    speed = table.normalized("Speed")[0]
+    throttle_raw = table.get("Throttle", "ThrottleRaw", default=None)
+    throttle = table.fractions("Throttle", "ThrottleRaw")[0]
+    brake_raw = table.get("Brake", "BrakeRaw", default=None)
+    brake = table.fractions("Brake", "BrakeRaw")[0]
     # SteeringWheelAngleMax is the configured range/limit, not a measured
     # steering trace, so it must never stand in for SteeringWheelAngle.
-    steering = table.get("SteeringWheelAngle", default=None)
-    lat_accel = table.get("LatAccel", default=None)
-    long_accel = table.get("LongAccel", default=None)
-    fuel = table.get("FuelLevel", default=None)
-    flags = table.get("SessionFlags", default=0)
+    steering = table.normalized("SteeringWheelAngle")[0]
+    lat_accel = table.normalized("LatAccel")[0]
+    long_accel = table.normalized("LongAccel")[0]
+    fuel = table.normalized("FuelLevel")[0]
+    flags = table.flag_bits("SessionFlags", default=0)
     # iRacing publishes the finished lap's own scored time in LapLastLapTime.
     # Deriving a lap time from sample timestamps is short by one sample interval
     # by construction (the last sample of a lap precedes the start/finish
@@ -1047,21 +1497,20 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     # authoritative timing; only the player's lap was guessed. Read it here and
     # prefer it, falling back to the derived duration when it is absent.
     last_lap_time = table.get("LapLastLapTime", default=None)
-    session_state = table.get("SessionState", default=None)
+    session_state = table.normalized("SessionState")[0]
     has_session_state = table.has("SessionState")
-    pit = table.get("OnPitRoad", default=False)
-    track_location = table.get("PlayerTrackSurface", default=None)
+    pit = table.booleans("OnPitRoad", default=False)
+    track_location = table.normalized("PlayerTrackSurface")[0]
     has_track_location = table.has("PlayerTrackSurface")
-    car_distance_ahead = table.get("CarDistAhead", default=None)
-    car_distance_behind = table.get("CarDistBehind", default=None)
+    car_distance_ahead = table.normalized("CarDistAhead")[0]
+    car_distance_behind = table.normalized("CarDistBehind")[0]
     has_traffic_distance = table.has("CarDistAhead", "CarDistBehind")
-    overall_position = table.get("PlayerCarPosition", default=None)
-    class_position = table.get("PlayerCarClassPosition", default=None)
+    overall_position = table.normalized("PlayerCarPosition")[0]
+    class_position = table.normalized("PlayerCarClassPosition")[0]
     sample_rate = _finite(table.metadata.get("sample_rate") or table.metadata.get("tick_rate")) or 20.0
     dts = _dt_series(times, sample_rate)
     groups: MutableMapping[int, list[int]] = defaultdict(list)
-    for index, raw_lap in enumerate(laps):
-        lap_value = _finite(raw_lap)
+    for index, lap_value in enumerate(laps):
         if lap_value is not None and lap_value >= 0:
             groups[int(lap_value)].append(index)
     def _sdk_lap_time(lap_number: int, derived: float) -> float | None:
@@ -1085,71 +1534,100 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
             return None
         return scored
 
+    if not any(len(indices) >= 2 for indices in groups.values()):
+        return []
+
+    # Per-sample predicates and terms, each exactly the expression the per-lap
+    # loop evaluated for one sample.
+    caution = list(map(CAUTION_FLAGS.__and__, flags))
+    # SessionFlags does not keep the short-lived green flag bit asserted for an
+    # entire green run. In a Race, samples with no yellow/caution state are
+    # green-running samples.
+    green = list(map(not_, caution))
+    racing = _distinct_map(_racing_state, session_state) if has_session_state else None
+    located = [location is not None for location in track_location] if has_track_location else None
+    on_track = _distinct_map(_on_track, track_location) if has_track_location else None
+    # max(0.0, _finite(v) or 0.0) and max(_finite(v) or 0.0, 0.0) both equal:
+    positive_speed = [value if value is not None and value > 0.0 else 0.0 for value in speed]
+    traffic_near = (
+        [
+            (
+                ahead is not None
+                and ahead > 0.0
+                and ahead <= max(25.0, speed_mps * 0.75)
+            )
+            or (
+                behind is not None
+                and behind > 0.0
+                and behind <= max(15.0, speed_mps * 0.40)
+            )
+            for ahead, behind, speed_mps in zip(
+                car_distance_ahead, car_distance_behind, positive_speed
+            )
+        ]
+        if has_traffic_distance
+        else None
+    )
+    pit_entries = [pit[0]] + [
+        current and not previous for previous, current in zip(pit, pit[1:])
+    ]
+    pit_exits = [False] + [
+        previous and not current for previous, current in zip(pit, pit[1:])
+    ]
+    brake_or_zero = [value if value else 0.0 for value in brake]  # _fraction(v) or 0.0
+    steering_abs = [abs(value) if value else 0.0 for value in steering]  # abs(_finite(v) or 0.0)
+    lateral_abs = [abs(value) if value else 0.0 for value in lat_accel]
+    overlap = [b >= 0.08 and s >= 0.08 for b, s in zip(brake_or_zero, steering_abs)]
+    wheel_tires = [tire for tire in TIRES if f"{tire}speed" in table.channels]
+    speed_key = table._column_key(("Speed",), None)
+    dynamics_samples = (
+        _dynamics_samples(
+            {tire: table._wheel_ratios(speed_key, f"{tire}speed") for tire in wheel_tires},
+            brake,
+            throttle,
+        )
+        if wheel_tires
+        else None
+    )
+
     summaries: list[dict[str, Any]] = []
     for lap_number in sorted(groups):
         indices = groups[lap_number]
         if len(indices) < 2:
             continue
+        take = _ascending_taker(indices)
         start, end = indices[0], indices[-1]
-        start_time, end_time = _finite(times[start]), _finite(times[end])
-        duration = end_time - start_time if start_time is not None and end_time is not None else sum(dts[i] for i in indices)
+        start_time, end_time = session_times[start], session_times[end]
+        lap_dts = take(dts)
+        duration = end_time - start_time if start_time is not None and end_time is not None else sum(lap_dts)
         scored_lap_time = _sdk_lap_time(lap_number, duration)
         lap_time_value = scored_lap_time if scored_lap_time is not None else duration
         lap_time_source = "sdk_scored" if scored_lap_time is not None else "sample_derived"
-        caution_time = 0.0
-        green_time = 0.0
-        pit_time = 0.0
-        observed_flags = 0
-        racing_state_time = 0.0
+        # Sequential left folds in sample order: the same additions as `+=`.
+        caution_time = reduce(add, compress(lap_dts, take(caution)), 0.0)
+        green_time = reduce(add, compress(lap_dts, take(green)), 0.0)
+        observed_flags = reduce(or_, take(flags), 0)
+        pit_time = reduce(add, compress(lap_dts, take(pit)), 0.0)
+        racing_state_time = (
+            reduce(add, compress(lap_dts, take(racing)), 0.0) if racing is not None else 0.0
+        )
         on_track_time = 0.0
         track_location_time = 0.0
+        if located is not None and on_track is not None:
+            track_location_time = reduce(add, compress(lap_dts, take(located)), 0.0)
+            on_track_time = reduce(add, compress(lap_dts, take(on_track)), 0.0)
         traffic_proximity_time = 0.0
         traffic_observed_time = 0.0
-        for index in indices:
-            flag_value = int(_finite(flags[index]) or 0)
-            observed_flags |= flag_value
-            if flag_value & CAUTION_FLAGS:
-                caution_time += dts[index]
-            else:
-                # SessionFlags does not keep the short-lived green flag bit
-                # asserted for an entire green run.  In a Race, samples with
-                # no yellow/caution state are green-running samples.
-                green_time += dts[index]
-            if _bool(pit[index]):
-                pit_time += dts[index]
-            if has_session_state and int(_finite(session_state[index]) or -1) == 4:
-                racing_state_time += dts[index]
-            if has_track_location:
-                location = _finite(track_location[index])
-                if location is not None:
-                    track_location_time += dts[index]
-                    if int(location) == 3:  # irsdk_TrkLoc::OnTrack
-                        on_track_time += dts[index]
-            if has_traffic_distance:
-                ahead = _finite(car_distance_ahead[index])
-                behind = _finite(car_distance_behind[index])
-                traffic_observed_time += dts[index]
-                speed_mps = max(0.0, _finite(speed[index]) or 0.0)
-                ahead_near = (
-                    ahead is not None
-                    and ahead > 0.0
-                    and ahead <= max(25.0, speed_mps * 0.75)
-                )
-                behind_near = (
-                    behind is not None
-                    and behind > 0.0
-                    and behind <= max(15.0, speed_mps * 0.40)
-                )
-                if ahead_near or behind_near:
-                    traffic_proximity_time += dts[index]
+        if traffic_near is not None:
+            traffic_observed_time = reduce(add, lap_dts, 0.0)
+            traffic_proximity_time = reduce(add, compress(lap_dts, take(traffic_near)), 0.0)
         classified = "mixed"
         running_time = max(caution_time + green_time, 1e-9)
         if caution_time / running_time >= 0.5:
             classified = "caution"
         elif green_time / running_time >= 0.5:
             classified = "green"
-        pct_values = [_finite(lap_pct[index]) for index in indices]
-        pct_values = [value for value in pct_values if value is not None]
+        pct_values = [value for value in take(lap_pct) if value is not None]
         distance_complete = bool(
             pct_values and min(pct_values) <= 0.15 and max(pct_values) >= 0.85
         )
@@ -1161,44 +1639,33 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
             )
         else:
             complete = distance_complete
-        speed_values = [_finite(speed[index]) for index in indices]
-        speed_values = [value for value in speed_values if value is not None]
-        brake_values = [_fraction(brake[index]) for index in indices]
-        brake_values = [value for value in brake_values if value is not None]
-        throttle_values = [_fraction(throttle[index]) for index in indices]
-        throttle_values = [value for value in throttle_values if value is not None]
-        steering_values = [_finite(steering[index]) for index in indices]
-        steering_values = [value for value in steering_values if value is not None]
-        fuel_start, fuel_end = _finite(fuel[start]), _finite(fuel[end])
+        speed_values = [value for value in take(speed) if value is not None]
+        brake_values = [value for value in take(brake) if value is not None]
+        throttle_values = [value for value in take(throttle) if value is not None]
+        steering_values = [value for value in take(steering) if value is not None]
+        fuel_start, fuel_end = fuel[start], fuel[end]
         position_values = [
             int(value)
-            for index in indices
-            if (value := _finite(overall_position[index])) is not None and value > 0
+            for value in take(overall_position)
+            if value is not None and value > 0
         ]
         class_position_values = [
             int(value)
-            for index in indices
-            if (value := _finite(class_position[index])) is not None and value > 0
+            for value in take(class_position)
+            if value is not None and value > 0
         ]
         fuel_used = None
         if fuel_start is not None and fuel_end is not None:
             negative_drops = 0.0
             previous = fuel_start
-            for index in indices[1:]:
-                current = _finite(fuel[index])
+            for current in take(fuel)[1:]:
                 if current is not None and previous is not None and current < previous:
                     negative_drops += previous - current
                 if current is not None:
                     previous = current
             fuel_used = negative_drops
-        pit_entry = any(
-            _bool(pit[index]) and (index == 0 or not _bool(pit[index - 1]))
-            for index in indices
-        )
-        pit_exit = any(
-            not _bool(pit[index]) and index > 0 and _bool(pit[index - 1])
-            for index in indices
-        )
+        pit_entry = any(take(pit_entries))
+        pit_exit = any(take(pit_exits))
         flag_states: list[str] = []
         if green_time > 0.0:
             flag_states.append("green")
@@ -1210,22 +1677,14 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
             flag_states.append("white")
         if observed_flags & CHECKERED_FLAG:
             flag_states.append("checkered")
-        brake_energy = 0.0
-        steering_work = 0.0
-        overlap_time = 0.0
-        lateral_exposure = 0.0
-        for index in indices:
-            v = max(_finite(speed[index]) or 0.0, 0.0)
-            b = _fraction(brake[index]) or 0.0
-            s = abs(_finite(steering[index]) or 0.0)
-            la = abs(_finite(lat_accel[index]) or 0.0)
-            brake_energy += b * v * dts[index]
-            steering_work += s * v * dts[index]
-            lateral_exposure += la * dts[index]
-            if b >= 0.08 and s >= 0.08:
-                overlap_time += dts[index]
+        lap_speed = take(positive_speed)
+        # Per sample: b * v * dt, s * v * dt and la * dt, folded in order.
+        brake_energy = reduce(add, map(mul, map(mul, take(brake_or_zero), lap_speed), lap_dts), 0.0)
+        steering_work = reduce(add, map(mul, map(mul, take(steering_abs), lap_speed), lap_dts), 0.0)
+        lateral_exposure = reduce(add, map(mul, take(lateral_abs), lap_dts), 0.0)
+        overlap_time = reduce(add, compress(lap_dts, take(overlap)), 0.0)
         dynamics = _vehicle_dynamics_summary(
-            table, indices, dts, speed, throttle, brake
+            table, indices, dts, speed_raw, throttle_raw, brake_raw, _samples=dynamics_samples
         )
         summaries.append(
             {
@@ -1280,7 +1739,9 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
                     "brake_steer_overlap_s": _round(overlap_time),
                     "steering_corrections": _count_corrections(steering_values),
                     "lateral_g_exposure_proxy": _round(lateral_exposure / 9.80665),
-                    "long_accel_mean_mps2": _round(_mean(long_accel[index] for index in indices)),
+                    "long_accel_mean_mps2": _round(
+                        _mean([value for value in take(long_accel) if value is not None])
+                    ),
                 },
                 "vehicle_dynamics": dynamics,
                 "fuel": {
@@ -1303,14 +1764,33 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     return summaries
 
 
+_BINARY_LEVELS = {False: 0.0, True: 1.0}
+
+
+def _binary_column(values: Sequence[Any]) -> tuple[list[float | None], bool]:
+    """``[None if v is None else (1.0 if _bool(v) else 0.0) for v in values]`` and whether it has no ``None``."""
+
+    kinds = set(map(type, values))
+    if type(None) in kinds or any(issubclass(kind, str) for kind in kinds):
+        result = [None if value is None else (1.0 if _bool(value) else 0.0) for value in values]
+        return result, None not in result
+    return list(map(_BINARY_LEVELS.__getitem__, map(bool, values))), True
+
+
 def _additional_trace_sources(
     table: TelemetryTable,
+    *,
+    completeness: dict[str, bool] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[float | None]], dict[str, str], dict[str, int]]:
     """Resolve optional distance-domain signals without manufacturing gaps.
 
     The catalog contains only channels that are actually present and contain at
     least one finite value. Derived wheel slip is published only when both the
     individual wheel-speed channel and vehicle speed were recorded.
+
+    Each series is exactly ``[_finite(transform(value)) for value in raw]`` of
+    its recorded channel, built a column at a time. ``completeness``, when
+    given, receives for each series whether it is known to have no gap.
     """
 
     catalog: list[dict[str, Any]] = []
@@ -1330,11 +1810,17 @@ def _additional_trace_sources(
         *,
         reducer: str = "median",
         precision: int = 3,
+        complete: bool | None = None,
     ) -> None:
-        normalized = [_finite(value) for value in values]
-        if not any(value is not None for value in normalized):
+        # ``complete`` is given only for values that already are their own
+        # _finite normalisation (None or finite floats); True means no None.
+        if complete is None:
+            values, complete = _normalize_column(values)
+        if not values or (not complete and all(value is None for value in values)):
             return
-        series[signal_id] = normalized
+        series[signal_id] = values
+        if completeness is not None:
+            completeness[signal_id] = complete
         reducers[signal_id] = reducer
         digits[signal_id] = precision
         catalog.append(
@@ -1364,12 +1850,10 @@ def _additional_trace_sources(
         channel, raw = table.resolve(*aliases, default=None)
         if channel is None:
             return None, raw
-        # register is the normalization boundary; untransformed channels do
-        # not need a second complete conversion pass before reaching it.
-        converted = (
-            [transform(value, channel) for value in raw]
-            if transform is not None else raw
-        )
+        # A transform maps the channel to its normalised converted column and
+        # whether that has no gap; untransformed channels are their normalised
+        # recorded column.
+        values, complete = transform(channel) if transform is not None else table._finite_for(channel)
         register(
             signal_id,
             name,
@@ -1378,11 +1862,18 @@ def _additional_trace_sources(
             "measured",
             description,
             [channel],
-            converted,
+            values,
             reducer=reducer,
             precision=precision,
+            complete=complete,
         )
         return channel, raw
+
+    def converted(channel: str, steps: UnitSteps | None) -> tuple[list[float | None], bool]:
+        values, complete = table._finite_for(channel)
+        if steps is None:
+            return values, complete
+        return _finite_after_transform(_apply_steps(values, complete, steps), complete)
 
     def average_channels(
         signal_id: str,
@@ -1390,22 +1881,19 @@ def _additional_trace_sources(
         unit: str,
         category: str,
         alias_groups: Sequence[Sequence[str]],
-        transform: Any,
+        quantity: str,
         description: str,
     ) -> None:
         resolved = [table.resolve(*aliases, default=None) for aliases in alias_groups]
         available = [(channel, values) for channel, values in resolved if channel is not None]
         if not available:
             return
-        values: list[float | None] = []
-        for index in range(table.length):
-            samples = [
-                converted
-                for channel, raw in available
-                if index < len(raw)
-                and (converted := transform(raw[index], channel)) is not None
-            ]
-            values.append(_mean(samples))
+        columns = []
+        for channel, _values in available:
+            values, complete = table._finite_for(channel)
+            steps = _unit_steps(quantity, _normalized_unit(table.unit(channel)))
+            columns.append((_apply_steps(values, complete, steps), complete))
+        means, complete = _row_means(columns)
         register(
             signal_id,
             name,
@@ -1414,62 +1902,69 @@ def _additional_trace_sources(
             "measured",
             description,
             [channel for channel, _ in available],
-            values,
+            means,
             precision=2,
+            complete=complete,
         )
 
-    percent = lambda value, _channel: (
-        fraction * 100.0 if (fraction := _fraction(value)) is not None else None
-    )
-    binary = lambda value, _channel: (
-        None if value is None else (1.0 if _bool(value) else 0.0)
-    )
+    def percent(channel: str) -> tuple[list[float | None], bool]:
+        # fraction * 100.0 when _fraction(value) is not None.
+        fractions, complete = table._fractions_for(channel)
+        return _apply_steps(fractions, complete, ((mul, 100.0),)), complete
+
+    def binary(channel: str) -> tuple[list[float | None], bool]:
+        return _binary_column(table._raw_column(channel))
 
     def unit_transform(quantity: str) -> Any:
-        # Resolve each channel's unit once instead of once per sample.
-        by_channel: dict[str, Any] = {}
-
-        def transform(value: Any, channel: str) -> float | None:
-            convert = by_channel.get(channel)
-            if convert is None:
-                convert = by_channel[channel] = _setup_value_converter(quantity, table.unit(channel))
-            return convert(value)
-
-        return transform
+        return lambda channel: converted(
+            channel, _unit_steps(quantity, _normalized_unit(table.unit(channel)))
+        )
 
     temperature_f = unit_transform("temperature")
     pressure_psi = unit_transform("pressure")
     distance_in = unit_transform("distance")
     velocity_in_s = unit_transform("velocity")
 
-    def degrees(value: Any, channel: str) -> float | None:
-        number = _finite(value)
-        if number is None:
-            return None
-        return number if "deg" in _normalized_unit(table.unit(channel)) else math.degrees(number)
+    def degrees(channel: str) -> tuple[list[float | None], bool]:
+        values, complete = table._finite_for(channel)
+        if "deg" in _normalized_unit(table.unit(channel)):
+            return values, complete
+        result = (
+            list(map(math.degrees, values))
+            if complete
+            else [None if number is None else math.degrees(number) for number in values]
+        )
+        return _finite_after_transform(result, complete)
 
-    def speed_mph(value: Any, channel: str) -> float | None:
-        number = _finite(value)
-        if number is None:
-            return None
+    def speed_mph(channel: str) -> tuple[list[float | None], bool]:
         unit = _normalized_unit(table.unit(channel))
         if unit in {"mph", "mi/h"}:
-            return number
+            return converted(channel, None)
         if unit in {"km/h", "kph"}:
-            return number / 1.609344
-        return number * 2.236936
+            return converted(channel, ((truediv, 1.609344),))
+        return converted(channel, ((mul, 2.236936),))
 
-    def gallons(value: Any, channel: str) -> float | None:
-        number = _finite(value)
-        if number is None:
-            return None
-        return number if "gal" in _normalized_unit(table.unit(channel)) else number / 3.785411784
+    def gallons(channel: str) -> tuple[list[float | None], bool]:
+        if "gal" in _normalized_unit(table.unit(channel)):
+            return converted(channel, None)
+        return converted(channel, ((truediv, 3.785411784),))
 
-    def acceleration_g(value: Any, channel: str) -> float | None:
-        number = _finite(value)
-        if number is None:
-            return None
-        return number if _normalized_unit(table.unit(channel)) == "g" else number / 9.80665
+    def acceleration_g(channel: str) -> tuple[list[float | None], bool]:
+        if _normalized_unit(table.unit(channel)) == "g":
+            return converted(channel, None)
+        return converted(channel, ((truediv, 9.80665),))
+
+    def zero_folded(factor: float) -> Any:
+        # (_finite(value) or 0.0) * factor when _finite(value) is not None:
+        # a signed zero becomes +0.0 before the multiplication.
+        def transform(channel: str) -> tuple[list[float | None], bool]:
+            values, complete = table._finite_for(channel)
+            return _finite_after_transform(
+                [None if number is None else (number or 0.0) * factor for number in values],
+                complete,
+            )
+
+        return transform
 
     add("clutch", "Clutch", "%", "Controls", ("Clutch",), percent, description="Recorded clutch position.")
     add("abs-active", "ABS active", "on / off", "Controls", ("BrakeABSactive",), binary, reducer="max", precision=0, description="Recorded ABS-active state.")
@@ -1495,15 +1990,11 @@ def _additional_trace_sources(
             description="Recorded individual wheel speed.",
         )
         if wheel_channel is not None and speed_channel is not None:
-            slip: list[float | None] = []
-            for index in range(table.length):
-                car = _finite(vehicle_speed[index]) if index < len(vehicle_speed) else None
-                wheel = _finite(wheel_speed[index]) if index < len(wheel_speed) else None
-                if car is None or wheel is None or car < 10.0:
-                    slip.append(None)
-                    continue
-                ratio = (wheel - car) / max(car, 1e-9)
-                slip.append(ratio * 100.0 if abs(ratio) <= 2.0 else None)
+            # ratio * 100.0 within +/-200 %, else a gap (see _wheel_ratio_column).
+            slip = [
+                None if ratio is None else ratio * 100.0
+                for ratio in table._wheel_ratios(speed_channel, wheel_channel)
+            ]
             register(
                 f"{tire.lower()}-wheel-slip",
                 f"{tire} wheel slip",
@@ -1515,6 +2006,7 @@ def _additional_trace_sources(
                 slip,
                 reducer="signed_peak",
                 precision=2,
+                complete=False,
             )
         add(
             f"{tire.lower()}-pressure",
@@ -1532,7 +2024,7 @@ def _additional_trace_sources(
             "deg F",
             "Tires",
             [_tire_temperature_aliases(tire, position) for position in ("CL", "CM", "CR")],
-            temperature_f,
+            "temperature",
             "Average of the recorded inner, middle, and outer carcass temperatures.",
         )
         average_channels(
@@ -1541,7 +2033,7 @@ def _additional_trace_sources(
             "deg F",
             "Tires",
             [_tire_temperature_aliases(tire, position) for position in POSITIONS],
-            temperature_f,
+            "temperature",
             "Average of the recorded inner, middle, and outer surface temperatures.",
         )
 
@@ -1560,20 +2052,38 @@ def _additional_trace_sources(
     add("humidity", "Relative humidity", "%", "Conditions", ("RelativeHumidity",), percent, precision=1, description="Recorded relative humidity.")
     add("fog", "Fog", "%", "Conditions", ("FogLevel",), percent, precision=1, description="Recorded fog level.")
     add("precipitation", "Precipitation", "%", "Conditions", ("Precipitation",), percent, precision=2, description="Recorded precipitation level.")
-    add("air-pressure", "Air pressure", "inHg", "Conditions", ("AirPressure",), lambda value, _channel: ((_finite(value) or 0.0) * 0.00029529983071445 if _finite(value) is not None else None), precision=2, description="Recorded ambient air pressure.")
-    add("air-density", "Air density", "lb/ft3", "Conditions", ("AirDensity",), lambda value, _channel: ((_finite(value) or 0.0) * 0.0624279606 if _finite(value) is not None else None), precision=4, description="Recorded ambient air density.")
+    add("air-pressure", "Air pressure", "inHg", "Conditions", ("AirPressure",), zero_folded(0.00029529983071445), precision=2, description="Recorded ambient air pressure.")
+    add("air-density", "Air density", "lb/ft3", "Conditions", ("AirDensity",), zero_folded(0.0624279606), precision=4, description="Recorded ambient air density.")
     add("track-wetness", "Track wetness", "state", "Conditions", ("TrackWetness",), precision=0, reducer="last", description="Recorded iRacing categorical track-wetness state.")
     add("track-usage", "Track usage", "%", "Conditions", ("TrackUsage",), percent, precision=1, description="Recorded track-usage percentage.")
     add("weather-wet", "Wet declared", "on / off", "Conditions", ("WeatherDeclaredWet",), binary, precision=0, reducer="max", description="Recorded weather-declared-wet state.")
 
     add("overall-position", "Overall position", "position", "Race", ("PlayerCarPosition",), precision=0, reducer="last", description="Recorded overall race position.")
     add("class-position", "Class position", "position", "Race", ("PlayerCarClassPosition",), precision=0, reducer="last", description="Recorded class position.")
-    add("distance-ahead", "Distance ahead", "ft", "Race", ("CarDistAhead",), lambda value, _channel: ((_finite(value) or 0.0) * 3.280839895 if _finite(value) is not None else None), precision=1, description="Recorded distance to the car ahead.")
-    add("distance-behind", "Distance behind", "ft", "Race", ("CarDistBehind",), lambda value, _channel: ((_finite(value) or 0.0) * 3.280839895 if _finite(value) is not None else None), precision=1, description="Recorded distance to the car behind.")
+    add("distance-ahead", "Distance ahead", "ft", "Race", ("CarDistAhead",), zero_folded(3.280839895), precision=1, description="Recorded distance to the car ahead.")
+    add("distance-behind", "Distance behind", "ft", "Race", ("CarDistBehind",), zero_folded(3.280839895), precision=1, description="Recorded distance to the car behind.")
     add("on-pit-road", "On pit road", "on / off", "Race", ("OnPitRoad",), binary, precision=0, reducer="max", description="Recorded pit-road state.")
     add("track-surface", "Track surface", "state", "Race", ("PlayerTrackSurface",), precision=0, reducer="last", description="Recorded iRacing player track-location state.")
 
     return catalog, series, reducers, digits
+
+
+def _present_values(
+    column: Sequence[float | None],
+    complete: bool,
+    indices: Sequence[int],
+    run: tuple[int, int] | None,
+) -> list[float]:
+    """The non-missing values of a normalised column at ascending ``indices``.
+
+    ``run`` is ``(first, stop)`` when the indices are exactly that range; a
+    column known to have no gap then needs only a slice.
+    """
+
+    if run is not None:
+        values = column[run[0]:run[1]]
+        return values if complete else [value for value in values if value is not None]
+    return [value for index in indices if (value := column[index]) is not None]
 
 
 def _lap_trace_payload(
@@ -1590,21 +2100,23 @@ def _lap_trace_payload(
     full recorded source remains available for bounded native-rate queries.
     """
 
-    lap_distance = table.get("LapDistPct", default=None)
-    speed = table.get("Speed", default=None)
-    throttle = table.get("Throttle", "ThrottleRaw", default=None)
-    brake = table.get("Brake", "BrakeRaw", default=None)
-    steering = table.get("SteeringWheelAngle", default=None)
-    gear = table.get("Gear", default=None)
-    rpm = table.get("RPM", default=None)
-    yaw_rate = table.get("YawRate", default=None)
-    velocity_x = table.get("VelocityX", default=None)
-    velocity_y = table.get("VelocityY", default=None)
-    lateral_accel = table.get("LatAccel", default=None)
-    longitudinal_accel = table.get("LongAccel", default=None)
-    latitude = table.get("Lat", default=None)
-    longitude = table.get("Lon", default=None)
-    session_time = table.get("SessionTime", "SessionTimeOfDay", default=None)
+    # Normalised column views (recording access exactly as get() did); each
+    # bin reads the finite values of its samples in sample order.
+    lap_distance = table.normalized("LapDistPct")[0]
+    speed = table.normalized("Speed")
+    throttle = table.fractions("Throttle", "ThrottleRaw")
+    brake = table.fractions("Brake", "BrakeRaw")
+    steering = table.normalized("SteeringWheelAngle")
+    gear = table.normalized("Gear")
+    rpm = table.normalized("RPM")
+    yaw_rate = table.normalized("YawRate")
+    velocity_x = table.normalized("VelocityX")[0]
+    velocity_y = table.normalized("VelocityY")[0]
+    lateral_accel = table.normalized("LatAccel")
+    longitudinal_accel = table.normalized("LongAccel")
+    latitude = table.normalized("Lat")
+    longitude = table.normalized("Lon")
+    session_time = table.normalized("SessionTime", "SessionTimeOfDay")
     raw_sectors = _path_get(table.session_info, "SplitTimeInfo", "Sectors") or []
     sector_start_pcts = sorted({
         value
@@ -1614,21 +2126,37 @@ def _lap_trace_payload(
         and 0.0 <= value < 1.0
     })
 
-    def values(indices: Sequence[int], series: Sequence[Any]) -> list[float]:
-        # Bucket indices ascend, so one bound check covers the whole bucket.
-        if indices and indices[-1] < len(series):
-            return [value for index in indices if (value := _finite(series[index])) is not None]
-        return [
-            value
-            for index in indices
-            if index < len(series) and (value := _finite(series[index])) is not None
-        ]
-
     def signed_peak(items: Sequence[float]) -> float | None:
         return max(items, key=abs) if items else None
 
+    def median(items: Sequence[float]) -> float | None:
+        # _median of values that are already finite floats.
+        return statistics.median(items) if items else None
+
+    completeness: dict[str, bool] = {}
     additional_catalog, additional_series, additional_reducers, additional_digits = (
-        _additional_trace_sources(table)
+        _additional_trace_sources(table, completeness=completeness)
+    )
+    additional = [
+        (
+            signal_id,
+            signal_series,
+            completeness.get(signal_id, False),
+            additional_reducers[signal_id],
+            additional_digits[signal_id],
+        )
+        for signal_id, signal_series in additional_series.items()
+    ]
+    # Per-sample derived values, each exactly the per-bin expression.
+    yaw_degrees = (
+        _apply_steps(yaw_rate[0], yaw_rate[1], ((mul, 180.0), (truediv, math.pi))),
+        yaw_rate[1],
+    )
+    sideslip = (_sideslip_column(velocity_x, velocity_y), False)
+    lateral_g = (_apply_steps(lateral_accel[0], lateral_accel[1], ((truediv, 9.80665),)), lateral_accel[1])
+    longitudinal_g = (
+        _apply_steps(longitudinal_accel[0], longitudinal_accel[1], ((truediv, 9.80665),)),
+        longitudinal_accel[1],
     )
     traces: list[dict[str, Any]] = []
     for lap in laps:
@@ -1638,70 +2166,42 @@ def _lap_trace_payload(
             continue
         buckets: MutableMapping[int, list[int]] = defaultdict(list)
         for index in range(start, min(end + 1, table.length)):
-            pct = _finite(lap_distance[index])
+            pct = lap_distance[index]
             if pct is None or pct < -0.01 or pct > 1.01:
                 continue
             pct = pct % 1.0
             bucket = min(maximum_bins - 1, max(0, int(pct * maximum_bins)))
             buckets[bucket].append(index)
         points: list[dict[str, Any]] = []
+        bins: list[tuple[list[int], tuple[int, int] | None, dict[str, float]]] = []
         for bucket in sorted(buckets):
             indices = buckets[bucket]
-            speeds = values(indices, speed)
-            throttles = [_fraction(value) for value in values(indices, throttle)]
-            throttles = [value for value in throttles if value is not None]
-            brakes = [_fraction(value) for value in values(indices, brake)]
-            brakes = [value for value in brakes if value is not None]
-            steerings = values(indices, steering)
-            gears = values(indices, gear)
-            rpms = values(indices, rpm)
-            yaws = [value * 180.0 / math.pi for value in values(indices, yaw_rate)]
-            sideslips: list[float] = []
-            for index in indices:
-                if index >= len(velocity_x) or index >= len(velocity_y):
-                    continue
-                sideslip = _vehicle_sideslip_degrees(
-                    velocity_x[index], velocity_y[index]
-                )
-                if sideslip is not None:
-                    sideslips.append(sideslip)
-            lateral_g = [value / 9.80665 for value in values(indices, lateral_accel)]
-            longitudinal_g = [value / 9.80665 for value in values(indices, longitudinal_accel)]
-            latitudes = values(indices, latitude)
-            longitudes = values(indices, longitude)
-            session_times = values(indices, session_time)
+            run = (
+                (indices[0], indices[-1] + 1)
+                if indices[-1] + 1 - indices[0] == len(indices)
+                else None
+            )
+            # Filled below, signal by signal, in catalog order - the order
+            # each bin's dict received its keys when bins were filled first.
             additional_signals: dict[str, float] = {}
-            for signal_id, signal_series in additional_series.items():
-                # register already guarantees finite floats or None. Keep
-                # gaps, but avoid converting every native sample again.
-                samples = (
-                    [value for index in indices if (value := signal_series[index]) is not None]
-                    if indices[-1] < len(signal_series)
-                    else [
-                        value
-                        for index in indices
-                        if index < len(signal_series)
-                        and (value := signal_series[index]) is not None
-                    ]
-                )
-                if not samples:
-                    continue
-                reducer = additional_reducers[signal_id]
-                if reducer == "max":
-                    representative = max(samples)
-                elif reducer == "signed_peak":
-                    representative = signed_peak(samples)
-                elif reducer == "last":
-                    representative = samples[-1]
-                else:
-                    representative = statistics.median(samples)
-                rounded = _round(representative, additional_digits[signal_id])
-                if rounded is not None:
-                    additional_signals[signal_id] = rounded
+            bins.append((indices, run, additional_signals))
+            speeds = _present_values(speed[0], speed[1], indices, run)
+            throttles = _present_values(throttle[0], throttle[1], indices, run)
+            brakes = _present_values(brake[0], brake[1], indices, run)
+            steerings = _present_values(steering[0], steering[1], indices, run)
+            gears = _present_values(gear[0], gear[1], indices, run)
+            rpms = _present_values(rpm[0], rpm[1], indices, run)
+            yaws = _present_values(yaw_degrees[0], yaw_degrees[1], indices, run)
+            sideslips = _present_values(sideslip[0], sideslip[1], indices, run)
+            lateral_gs = _present_values(lateral_g[0], lateral_g[1], indices, run)
+            longitudinal_gs = _present_values(longitudinal_g[0], longitudinal_g[1], indices, run)
+            latitudes = _present_values(latitude[0], latitude[1], indices, run)
+            longitudes = _present_values(longitude[0], longitude[1], indices, run)
+            session_times = _present_values(session_time[0], session_time[1], indices, run)
 
-            representative_speed = _median(speeds)
+            representative_speed = median(speeds)
             representative_steering = signed_peak(steerings)
-            representative_lateral_g = signed_peak(lateral_g)
+            representative_lateral_g = signed_peak(lateral_gs)
             brake_peak = max(brakes) if brakes else None
             throttle_minimum = min(throttles) if throttles else None
             speed_scale = min(1.5, max(0.0, (representative_speed or 0.0) / 80.0))
@@ -1713,26 +2213,24 @@ def _lap_trace_payload(
             points.append(
                 {
                     "lap_pct": round((bucket + 0.5) / maximum_bins, 6),
-                    "session_time_s": _round(_median(session_times), 6),
+                    "session_time_s": _round(median(session_times), 6),
                     "speed_mph": _round((representative_speed or 0.0) * 2.236936, 3),
                     "speed_min_mph": _round(min(speeds) * 2.236936 if speeds else None, 3),
                     "speed_max_mph": _round(max(speeds) * 2.236936 if speeds else None, 3),
-                    "throttle": _round(_median(throttles), 4),
+                    "throttle": _round(median(throttles), 4),
                     "throttle_min": _round(throttle_minimum, 4),
                     "brake": _round(brake_peak, 4),
-                    "brake_mean": _round(_mean(brakes), 4),
+                    "brake_mean": _round(statistics.fmean(brakes) if brakes else None, 4),
                     "steering_rad": _round(representative_steering, 5),
-                    "steering_abs_peak_rad": _round(
-                        max((abs(value) for value in steerings), default=None), 5
-                    ),
-                    "gear": int(round(_median(gears))) if gears else None,
-                    "rpm": _round(_median(rpms), 0),
+                    "steering_abs_peak_rad": _round(max(map(abs, steerings), default=None), 5),
+                    "gear": int(round(statistics.median(gears))) if gears else None,
+                    "rpm": _round(median(rpms), 0),
                     "slip_angle_deg": _round(signed_peak(sideslips), 3),
                     "yaw_rate_deg_s": _round(signed_peak(yaws), 3),
                     "lateral_g": _round(representative_lateral_g, 4),
-                    "longitudinal_g": _round(signed_peak(longitudinal_g), 4),
-                    "latitude": _round(_median(latitudes), 8),
-                    "longitude": _round(_median(longitudes), 8),
+                    "longitudinal_g": _round(signed_peak(longitudinal_gs), 4),
+                    "latitude": _round(median(latitudes), 8),
+                    "longitude": _round(median(longitudes), 8),
                     "tire_stress_proxy": _round(
                         0.35 * stress_terms[0]
                         + 0.35 * stress_terms[1]
@@ -1743,6 +2241,39 @@ def _lap_trace_payload(
                     "samples": len(indices),
                 }
             )
+        # Each optional signal's representative per bin: its present samples
+        # in sample order, reduced, then _round(representative, precision).
+        for signal_id, signal_series, complete, reducer, precision in additional:
+            for indices, run, signals in bins:
+                if run is not None:
+                    samples = signal_series[run[0] : run[1]]
+                    if not complete:
+                        samples = [value for value in samples if value is not None]
+                else:
+                    samples = [
+                        value for index in indices if (value := signal_series[index]) is not None
+                    ]
+                if not samples:
+                    continue
+                if reducer == "max":
+                    representative = max(samples)
+                elif reducer == "signed_peak":
+                    representative = max(samples, key=abs)
+                elif reducer == "last":
+                    representative = samples[-1]
+                else:
+                    # statistics.median: a stable sort of this fresh list, then
+                    # the middle value or the mean of the middle two.
+                    samples.sort()
+                    count = len(samples)
+                    middle = count // 2
+                    representative = (
+                        samples[middle]
+                        if count % 2 == 1
+                        else (samples[middle - 1] + samples[middle]) / 2
+                    )
+                if _isfinite(representative):
+                    signals[signal_id] = round(representative, precision)
         if points:
             traces.append(
                 {
@@ -1801,18 +2332,27 @@ def _service_events(table: TelemetryTable) -> list[dict[str, Any]]:
         for tire in TIRES
         if table.has(f"{tire}odometer")
     }
-    evidence: list[bool] = []
-    for index in range(table.length):
-        fuel_jump = False
-        if index:
-            before, current = _finite(fuel[index - 1]), _finite(fuel[index])
-            fuel_jump = before is not None and current is not None and current - before > 0.10
-        evidence.append(
-            _bool(in_stall[index]) or _bool(active[index]) or (fuel_jump and _bool(on_pit[index]))
-        )
+    # Per sample: in stall, or service active, or a >0.10 fuel rise from the
+    # previous sample while on pit road (see "Column primitives").
+    fuel_levels = table._finite_for(table._column_key(("FuelLevel",), None))[0]
+    fuel_jumps = [False] + [
+        before is not None and current is not None and current - before > 0.10
+        for before, current in zip(fuel_levels, fuel_levels[1:])
+    ]
     sample_rate = _finite(table.metadata.get("sample_rate") or table.metadata.get("tick_rate")) or 20.0
     bridge = max(1, int(sample_rate * 2.5))
-    hit_indices = [index for index, value in enumerate(evidence) if value]
+    hit_indices = [
+        index
+        for index, (stalled, servicing, fuel_jump, pitting) in enumerate(
+            zip(
+                table._booleans_for(table._column_key(("PlayerCarInPitStall",), False)),
+                table._booleans_for(table._column_key(("PitstopActive",), False)),
+                fuel_jumps,
+                table._booleans_for(table._column_key(("OnPitRoad",), False)),
+            )
+        )
+        if stalled or servicing or (fuel_jump and pitting)
+    ]
     if not hit_indices:
         return []
     groups: list[list[int]] = [[hit_indices[0]]]
@@ -1899,6 +2439,66 @@ def _service_events(table: TelemetryTable) -> list[dict[str, Any]]:
             }
         )
     return events
+
+
+def _increase_indices(normalized: Sequence[float | None]) -> list[int]:
+    """Indices ``i >= 1`` whose finite sample exceeds the finite sample before it.
+
+    Exactly the samples the per-sample loop ``previous = _finite(v[i - 1]);
+    current = _finite(v[i]); skip unless both exist and current > previous``
+    kept, over a normalised column.
+    """
+
+    return [
+        index
+        for index, (previous, current) in enumerate(zip(normalized, normalized[1:]), 1)
+        if previous is not None and current is not None and current > previous
+    ]
+
+
+def _disrupted_sample_indices(
+    table: TelemetryTable,
+    timer_epsilon_s: float,
+    *,
+    mandatory_recorded: bool,
+    optional_recorded: bool,
+    session_flags_channel: str | None,
+    fast_increment_indices: set[int],
+) -> list[int]:
+    """Samples with any recorded pit, tow, repair or fast-repair state.
+
+    Per sample, each term the damage/repair analyzer evaluated one sample at a
+    time: on pit road, in the stall, service active, a positive tow timer, a
+    positive mandatory or optional repair timer (when recorded), the
+    repair-required flag (when SessionFlags is recorded), or a fast-repair
+    counter increment. A sample is disrupted when any term holds.
+    """
+
+    def positive_timer(aliases: Sequence[str]) -> list[bool]:
+        # (_finite(value) or 0.0) > timer_epsilon_s over resolve(*aliases, default=None).
+        values = table._finite_for(table._column_key(aliases, None))[0]
+        return [(value or 0.0) > timer_epsilon_s for value in values]
+
+    terms: list[Sequence[Any]] = [
+        table._booleans_for(table._column_key(("OnPitRoad",), False)),
+        table._booleans_for(table._column_key(("PlayerCarInPitStall",), False)),
+        table._booleans_for(table._column_key(("PitstopActive",), False)),
+        positive_timer(DAMAGE_REPAIR_CHANNEL_ALIASES["tow_timer"]),
+    ]
+    if mandatory_recorded:
+        terms.append(positive_timer(DAMAGE_REPAIR_CHANNEL_ALIASES["mandatory_repair_timer"]))
+    if optional_recorded:
+        terms.append(positive_timer(DAMAGE_REPAIR_CHANNEL_ALIASES["optional_repair_timer"]))
+    if session_flags_channel:
+        # int(_finite(flags) or 0) & REPAIR_REQUIRED_FLAG
+        terms.append(
+            list(map(REPAIR_REQUIRED_FLAG.__and__, table._flag_bits_for(session_flags_channel)))
+        )
+    return [
+        index
+        for index, sample_terms in enumerate(zip(*terms))
+        if any(sample_terms) or index in fast_increment_indices
+    ]
 
 
 def _damage_repair_summary(
@@ -2039,11 +2639,10 @@ def _damage_repair_summary(
 
     incident_events: list[dict[str, Any]] = []
     if incident_channel:
-        for index in range(1, table.length):
-            previous = _finite(incident_points[index - 1])
-            current = _finite(incident_points[index])
-            if previous is None or current is None or current <= previous:
-                continue
+        incident_counts = table._finite_for(incident_channel)[0]
+        for index in _increase_indices(incident_counts):
+            previous = incident_counts[index - 1]
+            current = incident_counts[index]
             lap_number = _finite(lap_trace[index])
             event = {
                 "event_id": f"incident-points-{len(incident_events) + 1:03d}",
@@ -2085,41 +2684,18 @@ def _damage_repair_summary(
 
     fast_increment_indices: set[int] = set()
     if fast_used_channel:
-        for index in range(1, table.length):
-            before = _finite(fast_used[index - 1])
-            after = _finite(fast_used[index])
-            if before is not None and after is not None and after > before:
-                fast_increment_indices.add(index)
-
-    state = []
-    for index in range(table.length):
-        tow_active = (_finite(tow[index]) or 0.0) > timer_epsilon_s
-        mandatory_active = (
-            (_finite(mandatory[index]) or 0.0) > timer_epsilon_s
-            if mandatory_channel
-            else False
-        )
-        optional_active = (
-            (_finite(optional[index]) or 0.0) > timer_epsilon_s
-            if optional_channel
-            else False
-        )
-        repair_required_active = bool(
-            session_flags_channel
-            and int(_finite(session_flags[index]) or 0) & REPAIR_REQUIRED_FLAG
-        )
-        state.append(
-            _bool(on_pit[index])
-            or _bool(in_stall[index])
-            or _bool(service_active[index])
-            or tow_active
-            or mandatory_active
-            or optional_active
-            or repair_required_active
-            or index in fast_increment_indices
+        fast_increment_indices = set(
+            _increase_indices(table._finite_for(fast_used_channel)[0])
         )
 
-    hit_indices = [index for index, active_state in enumerate(state) if active_state]
+    hit_indices = _disrupted_sample_indices(
+        table,
+        timer_epsilon_s,
+        mandatory_recorded=bool(mandatory_channel),
+        optional_recorded=bool(optional_channel),
+        session_flags_channel=session_flags_channel,
+        fast_increment_indices=fast_increment_indices,
+    )
     bridge_samples = max(1, int(round(sample_rate * 1.5)))
     groups: list[list[int]] = []
     for index in hit_indices:
@@ -3683,16 +4259,10 @@ def _derived_mean_series(series: Sequence[Mapping[str, Any]], unit: str) -> dict
     sources = [item for item in series if item]
     if not sources:
         return None
-    length = max((len(item.get("values") or ()) for item in sources), default=0)
-    values: list[float | None] = []
-    for index in range(length):
-        sample = [
-            number
-            for item in sources
-            if index < len(item.get("values") or ())
-            and (number := _finite(item["values"][index])) is not None
-        ]
-        values.append(statistics.fmean(sample) if sample else None)
+    # Per sample: statistics.fmean of the sources' finite values at that index.
+    values, _complete = _row_means(
+        [_normalize_column(item.get("values") or ()) for item in sources]
+    )
     return {
         "channels": [str(item["channel"]) for item in sources if item.get("channel")],
         "source_unit": unit,
@@ -3760,25 +4330,23 @@ def _setup_channel_series(table: TelemetryTable) -> dict[str, Any]:
 
 
 def _setup_sample_indices(table: TelemetryTable) -> list[int]:
-    pit = table.get("OnPitRoad", "PlayerCarInPitStall", "PitstopActive", default=False)
-    flags = table.get("SessionFlags", default=0)
+    pit = table.booleans("OnPitRoad", "PlayerCarInPitStall", "PitstopActive", default=False)
+    flags = table.flag_bits("SessionFlags", default=0)
     has_distance = table.has("LapDistPct")
-    distance = table.get("LapDistPct", default=None)
-    result = []
-    for index in range(table.length):
-        if _bool(pit[index]):
-            continue
-        if int(_finite(flags[index]) or 0) & CAUTION_FLAGS:
-            continue
-        position = _finite(distance[index])
-        if has_distance and (position is None or position < 0.0):
-            continue
-        result.append(index)
-    return result
+    distance = table.normalized("LapDistPct")[0]
+    return [
+        index
+        for index, (in_pit, flag, position) in enumerate(zip(pit, flags, distance))
+        if not in_pit
+        and not flag & CAUTION_FLAGS
+        and not (has_distance and (position is None or position < 0.0))
+    ]
 
 
 def _series_values(series: Mapping[str, Any], indices: Sequence[int]) -> list[float]:
     raw_values = series.get("values") or ()
+    if indices and max(indices) < len(raw_values):
+        return _finite_values(list(map(raw_values.__getitem__, indices)))
     return [
         number
         for index in indices
@@ -3809,12 +4377,13 @@ def _range_summary(
     values = _series_values(series, indices)
     if not values:
         return None
+    ordered = sorted(values)  # one sort serves the percentile and the median
     return {
         **_series_metadata(series),
         "sample_count": len(values),
         f"min_{unit_suffix}": _round(min(values), digits),
-        f"p05_{unit_suffix}": _round(_percentile(values, 0.05), digits),
-        f"median_{unit_suffix}": _round(_median(values), digits),
+        f"p05_{unit_suffix}": _round(_percentile_of_sorted(ordered, 0.05), digits),
+        f"median_{unit_suffix}": _round(_median_of_sorted(ordered), digits),
         f"max_{unit_suffix}": _round(max(values), digits),
     }
 
@@ -3836,11 +4405,12 @@ def _shock_summary(
     if isinstance(velocity, Mapping):
         values = [abs(value) for value in _series_values(velocity, indices)]
         if values:
+            ordered = sorted(values)
             summary = {
                 **_series_metadata(velocity),
                 "sample_count": len(values),
-                "abs_velocity_p90_in_s": _round(_percentile(values, 0.90), 3),
-                "abs_velocity_p99_in_s": _round(_percentile(values, 0.99), 3),
+                "abs_velocity_p90_in_s": _round(_percentile_of_sorted(ordered, 0.90), 3),
+                "abs_velocity_p99_in_s": _round(_percentile_of_sorted(ordered, 0.99), 3),
             }
             result["velocity"] = summary
             result["abs_velocity_p90_in_s"] = summary["abs_velocity_p90_in_s"]
@@ -3958,16 +4528,16 @@ def _track_profile(
 ) -> dict[str, Any] | None:
     if not table.has("LapDistPct") or table.length == 0:
         return None
-    pct = table.get("LapDistPct", default=None)
-    speed = table.get("Speed", default=None)
-    brake = table.get("Brake", "BrakeRaw", default=None)
-    throttle = table.get("Throttle", "ThrottleRaw", default=None)
-    steering = table.get("SteeringWheelAngle", default=None)
-    lat_accel = table.get("LatAccel", default=None)
-    flags = table.get("SessionFlags", default=0)
-    pit = table.get("OnPitRoad", default=False)
-    latitude = table.get("Lat", default=None)
-    longitude = table.get("Lon", default=None)
+    pct = table.normalized("LapDistPct")[0]
+    speed = table.normalized("Speed")[0]
+    brake = table.fractions("Brake", "BrakeRaw")[0]
+    throttle = table.fractions("Throttle", "ThrottleRaw")[0]
+    steering = table.normalized("SteeringWheelAngle")[0]
+    lat_accel = table.normalized("LatAccel")[0]
+    flags = table.flag_bits("SessionFlags", default=0)
+    pit = table.booleans("OnPitRoad", default=False)
+    latitude = table.normalized("Lat")[0]
+    longitude = table.normalized("Lon")[0]
     fields: dict[str, list[list[float]]] = {
         "speed": [[] for _ in range(bins)],
         "brake": [[] for _ in range(bins)],
@@ -4013,32 +4583,39 @@ def _track_profile(
                 f"{prefix}_tire_temp_{str(position).lower()}",
                 item,
             )
+    # The samples of each bin, in sample order: non-pit, non-caution samples
+    # with a valid lap distance.
+    bin_samples: list[list[int]] = [[] for _ in range(bins)]
     for index in range(table.length):
-        position = _finite(pct[index])
-        if position is None or position < 0 or _bool(pit[index]):
+        position = pct[index]
+        if position is None or position < 0 or pit[index]:
             continue
-        flag = int(_finite(flags[index]) or 0)
-        if flag & CAUTION_FLAGS:
+        if flags[index] & CAUTION_FLAGS:
             continue
-        bin_index = min(bins - 1, max(0, int((position % 1.0) * bins)))
-        values = {
-            "speed": (_finite(speed[index]) or 0.0) * 2.236936,
-            "brake": _fraction(brake[index]),
-            "throttle": _fraction(throttle[index]),
-            "steering": abs(_finite(steering[index]) or 0.0),
-            "lat_accel": abs(_finite(lat_accel[index]) or 0.0) / 9.80665,
-            "lat": _finite(latitude[index]),
-            "lon": _finite(longitude[index]),
-        }
-        for name, value in values.items():
-            if value is not None:
-                fields[name][bin_index].append(value)
-        for storage_key, _kind, _prefix, setup_values in setup_trace_specs:
-            if index >= len(setup_values):
+        bin_samples[min(bins - 1, max(0, int((position % 1.0) * bins)))].append(index)
+    # Per-sample values, each exactly its per-sample expression.
+    columns: dict[str, Sequence[float | None]] = {
+        "speed": [(value or 0.0) * 2.236936 for value in speed],  # (_finite(v) or 0.0) * 2.236936
+        "brake": brake,  # _fraction(v)
+        "throttle": throttle,
+        "steering": [abs(value or 0.0) for value in steering],  # abs(_finite(v) or 0.0)
+        "lat_accel": [abs(value or 0.0) / 9.80665 for value in lat_accel],
+        "lat": latitude,
+        "lon": longitude,
+    }
+    for storage_key, _kind, _prefix, setup_values in setup_trace_specs:
+        columns[storage_key] = _normalize_column(setup_values)[0]
+    for name, column in columns.items():
+        per_bin = fields[name]
+        limit = len(column)
+        for bin_index, indices in enumerate(bin_samples):
+            if not indices:
                 continue
-            value = _finite(setup_values[index])
-            if value is not None:
-                fields[storage_key][bin_index].append(value)
+            if indices[-1] >= limit:  # a setup trace shorter than the table
+                indices = [index for index in indices if index < limit]
+            per_bin[bin_index] = [
+                value for value in map(column.__getitem__, indices) if value is not None
+            ]
     profile = []
     setup_trace_fields: set[str] = set()
     for index in range(bins):
@@ -4060,11 +4637,13 @@ def _track_profile(
             values_in_bin = fields[storage_key][index]
             if not values_in_bin:
                 continue
+            # Bin values are finite; one sort serves percentiles and median.
             if kind == "height":
+                ordered = sorted(values_in_bin)
                 additions = {
                     f"{prefix}_min_in": _round(min(values_in_bin), 4),
-                    f"{prefix}_p05_in": _round(_percentile(values_in_bin, 0.05), 4),
-                    f"{prefix}_median_in": _round(_median(values_in_bin), 4),
+                    f"{prefix}_p05_in": _round(_percentile_of_sorted(ordered, 0.05), 4),
+                    f"{prefix}_median_in": _round(_median_of_sorted(ordered), 4),
                     f"{prefix}_max_in": _round(max(values_in_bin), 4),
                 }
             elif kind == "shock_deflection":
@@ -4076,24 +4655,25 @@ def _track_profile(
                     ),
                 }
             elif kind == "shock_velocity":
-                absolute = [abs(value) for value in values_in_bin]
+                absolute = sorted(map(abs, values_in_bin))
                 additions = {
                     f"{prefix}_abs_velocity_p90_in_s": _round(
-                        _percentile(absolute, 0.90), 3
+                        _percentile_of_sorted(absolute, 0.90), 3
                     ),
                     f"{prefix}_abs_velocity_p99_in_s": _round(
-                        _percentile(absolute, 0.99), 3
+                        _percentile_of_sorted(absolute, 0.99), 3
                     ),
                 }
             else:
                 unit = "psi" if kind == "pressure" else "f"
                 digits = 2 if kind == "pressure" else 1
+                ordered = sorted(values_in_bin)
                 additions = {
                     f"{prefix}_min_{unit}": _round(min(values_in_bin), digits),
                     f"{prefix}_p05_{unit}": _round(
-                        _percentile(values_in_bin, 0.05), digits
+                        _percentile_of_sorted(ordered, 0.05), digits
                     ),
-                    f"{prefix}_median_{unit}": _round(_median(values_in_bin), digits),
+                    f"{prefix}_median_{unit}": _round(_median_of_sorted(ordered), digits),
                     f"{prefix}_max_{unit}": _round(max(values_in_bin), digits),
                 }
             record.update(additions)
@@ -5187,17 +5767,20 @@ def _channel_range(
     table: TelemetryTable,
     aliases: Sequence[str],
     *,
-    transform: Any = None,
+    column: Callable[[str], Sequence[float | None]] | None = None,
     digits: int = 3,
 ) -> dict[str, Any] | None:
-    channel, raw_values = table.resolve(*aliases, default=None)
+    """Range of one recorded channel.
+
+    ``column`` maps the resolved channel to its per-sample converted values
+    (``None`` for a gap); by default those are the channel's finite samples.
+    """
+
+    channel, _raw_values = table.resolve(*aliases, default=None)
     if channel is None:
         return None
-    values: list[float] = []
-    for raw in raw_values:
-        value = transform(raw) if transform is not None else _finite(raw)
-        if value is not None:
-            values.append(float(value))
+    converted = column(channel) if column is not None else table._finite_for(channel)[0]
+    values = [value for value in converted if value is not None]
     if not values:
         return None
     return {
@@ -5213,41 +5796,49 @@ def _channel_range(
 
 
 def _conditions_summary(table: TelemetryTable) -> dict[str, Any]:
-    temperature = lambda value: _convert_setup_value(value, "temperature", "C")
-    percent = lambda value: (
-        fraction * 100.0 if (fraction := _fraction(value)) is not None else None
-    )
+    def scaled(steps: UnitSteps | None) -> Callable[[str], list[float | None]]:
+        def column(channel: str) -> list[float | None]:
+            values, complete = table._finite_for(channel)
+            return _apply_steps(values, complete, steps)
+
+        return column
+
+    def percent(channel: str) -> list[float | None]:
+        # fraction * 100.0 when _fraction(value) is not None.
+        fractions, complete = table._fractions_for(channel)
+        return _apply_steps(fractions, complete, ((mul, 100.0),))
+
+    # _convert_setup_value(value, "temperature", "C"): Celsius to Fahrenheit.
+    temperature = scaled(_unit_steps("temperature", _normalized_unit("C")))
     fields: tuple[tuple[str, tuple[str, ...], Any, int], ...] = (
         ("track_temperature_f", ("TrackTempCrew", "TrackTemp"), temperature, 1),
         ("air_temperature_f", ("AirTemp",), temperature, 1),
         # TrackWetness is an SDK categorical enum, not a percentage.
         ("track_wetness_state", ("TrackWetness",), None, 0),
         ("relative_humidity_percent", ("RelativeHumidity",), percent, 1),
-        ("wind_speed_mph", ("WindVel",), lambda value: (_finite(value) * 2.236936 if _finite(value) is not None else None), 1),
+        ("wind_speed_mph", ("WindVel",), scaled(((mul, 2.236936),)), 1),
         ("air_density_kg_m3", ("AirDensity",), None, 4),
         ("air_pressure_pa", ("AirPressure",), None, 0),
         ("precipitation_percent", ("Precipitation",), percent, 2),
     )
     result: dict[str, Any] = {}
-    for name, aliases, transform, digits in fields:
+    for name, aliases, column, digits in fields:
         summary = _channel_range(
-            table, aliases, transform=transform, digits=digits
+            table, aliases, column=column, digits=digits
         )
         if summary:
             if name == "track_wetness_state":
                 summary["semantics"] = "iRacing TrackWetness categorical state"
             result[name] = summary
     if table.has("WeatherDeclaredWet"):
-        declared = table.get("WeatherDeclaredWet", default=False)
-        result["weather_declared_wet"] = any(_bool(value) for value in declared)
+        declared = table.booleans("WeatherDeclaredWet", default=False)
+        result["weather_declared_wet"] = any(declared)
     if table.has("PlayerTireCompound"):
-        compounds = [
-            int(value)
-            for raw in table.get("PlayerTireCompound", default=None)
-            if (value := _finite(raw)) is not None
-        ]
-        if compounds:
-            result["player_tire_compound"] = compounds[-1]
+        # int() of the last finite sample, as compounds[-1] was.
+        compounds = table.normalized("PlayerTireCompound")[0]
+        last = next((value for value in reversed(compounds) if value is not None), None)
+        if last is not None:
+            result["player_tire_compound"] = int(last)
     return result
 
 

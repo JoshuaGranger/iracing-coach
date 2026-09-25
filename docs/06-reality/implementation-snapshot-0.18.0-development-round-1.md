@@ -71,6 +71,21 @@ The development machine, Python 3.12, and a copied 203 MB New Hampshire race rec
 
 The interaction figures are browser-preview measurements (Blazor Server over a local socket), not native WebView2. Ordinary work (open, reopen, switch, inspect) meets "seconds". A cold analysis of a long race does not; it still runs in the background after a session ends. Decoding is 2.2 s of the 21.9 s, so avoiding re-decode is not the main opportunity; per-sample Python work in the trace payload and lap summaries is. The historical Bristol figure (18.858 s) cannot be re-measured because the Bristol recording is not on this machine.
 
+### Cold analysis follow-up (September 24, 2026)
+
+Cold backend analysis now reads each recorded column once through cached column views and does its per-sample work a column at a time; the IBT reader decodes scalar columns through typed memory views; and automatic garbage collection is paused for the duration of one workflow call (separate commit). No analysis result changed: `tools/analysis_parity.py` captured the complete cold outputs (engine result in key order, cached analysis, workflow result, every persisted artifact) of four recordings before and after, and all are byte-identical after normalising only timestamps, elapsed milliseconds and the analyzer source digest. `iracing-coach/tests/test_analysis_columns.py` pins every rewritten helper and stage against verbatim copies of the pre-change functions on adversarial synthetic telemetry.
+
+Median of three interleaved cold runs, each in a fresh process and archive, on the same machine as above. The two races were re-measured while the machine was quiet (medians and minima agree within 1%); an earlier interleaved set under background load gave slower, more scattered baselines (New Hampshire 23.3–28.8 s, Iowa 15.5–24.5 s) and the same after-change figures within about 1 s.
+
+| Recording | Before | After | Change |
+|---|---|---|---|
+| New Hampshire race, 203 MB | 23.7 s | **10.3 s** | −56% |
+| Iowa race, 146 MB | 15.3 s | **7.1 s** | −54% |
+| New Hampshire practice, 9.9 MB | 1.58 s | 0.99 s | −37% |
+| New Hampshire test, 1.4 MB | 0.27 s | 0.20 s | −27% |
+
+New Hampshire race stages after the change: IBT load 1.3 s, lap trace payload 2.3 s (additional channels 1.0 s), lap summaries 1.4 s, track profile 0.7 s, setup series and telemetry 1.2 s, track geometry 0.4 s. The collector pause is worth about 1.6 s of that race (12.5 s without it in the earlier set). JSON serialisation in the workflow and archive layers (about 1.2 s) is unchanged. Peak working set for the race rises from 2,065 MiB to 2,332 MiB (+13%) because column views are cached for the duration of one analysis.
+
 ## Verification
 
 | Check | Result |
@@ -96,7 +111,7 @@ Browser-preview screenshots at 1280×720, all labeled `browser-…`, are kept ou
 
 1. **Native acceptance of the loop** on the development executable: Sessions → Bristol → matched comparison → Section D → Save test → later practice → Check, at 1280×720 and 1920×1080, maximized and restored, 100% and 150%.
 2. **A real Improved/Worse check.** Drive three clean laps at the saved exposure window after a Bristol or New Hampshire test and confirm the verdict and before/after view.
-3. **Cold analysis time.** Profile `_lap_trace_payload` and `_lap_summaries`; the per-bucket Python loops over 50+ additional channels dominate. Consider building additional-channel traces on demand rather than for every lap.
+3. **Cold analysis time.** Done without changing results (see "Cold analysis follow-up"): the 203 MB New Hampshire race is about 10 s. What remains is mostly creating Python floats for decoded and converted columns, per-bin trace reductions, and the workflow's JSON serialisation. Building additional-channel traces on demand would change the analysis payload and was not attempted.
 4. **Offer saveable tests more often.** When a race has only finish comparisons, find an earlier-run pair at similar exposure automatically rather than offering none.
 5. **Verified turn labels** for Bristol and New Hampshire from a sourced track map, versioned in `review_sections.v1.json`.
 6. **Live** priorities once active simulator testing is authorized.
