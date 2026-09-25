@@ -167,7 +167,30 @@ public sealed record LocalSetup(
     // Tire readings from the last run (hot pressures, temperatures, tread) and the
     // revision counter that iRacing stores beside the garage values. They describe a
     // run, not the setup, so they are kept out of Fields and shown on their own.
-    IReadOnlyList<SetupField>? RunReadings = null);
+    IReadOnlyList<SetupField>? RunReadings = null,
+    // The backend's fingerprint of the garage adjustments alone (no tire readings,
+    // no computed readouts), when the values came from a recording; two setups with
+    // the same one drove the same adjustments.
+    string GarageFingerprint = "",
+    // When the recording that supplied Fields started (ISO 8601), when known.
+    string RecordedUtc = "");
+
+/// <summary>One setting of a backend setup comparison (compare_iracing_setups).</summary>
+/// <param name="Key">The field key both setups list it under, so the page keeps its own label.</param>
+/// <param name="Readout">A computed garage readout, never counted as a changed setting.</param>
+/// <param name="Status">"changed", "unknown" (missing or unreadable on a side, never equal) or "identical".</param>
+public sealed record SetupComparisonRow(string Key, string Field, bool Readout, string Status, string? Left, string? Right);
+
+public sealed record SetupValueComparison(
+    string LeftId,
+    string RightId,
+    int Changed,
+    int Unknown,
+    int Identical,
+    int ReadoutsChanged,
+    IReadOnlyList<SetupComparisonRow> Rows,
+    string EqualityRule,
+    string ReadoutRule);
 
 public sealed record EvidenceText(EvidenceKind Kind, string Text)
 {

@@ -49,6 +49,7 @@ TOOL_CAPABILITIES: Mapping[str, str] = {
     "archive_iracing_knowledge": CAPABILITY_WRITE,
     "build_open_setup_package": CAPABILITY_WRITE,
     "catalog_iracing_setups": CAPABILITY_READ_SETUP,
+    "compare_iracing_setups": CAPABILITY_READ_SETUP,
     "copy_iracing_setup_to_coach": CAPABILITY_WRITE,
     "discover_iracing_sessions": CAPABILITY_READ_ANALYSIS,
     "evaluate_driving_trial": CAPABILITY_WRITE,

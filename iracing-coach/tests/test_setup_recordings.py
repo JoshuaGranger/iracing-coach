@@ -28,6 +28,8 @@ import tuning_workflow  # noqa: E402
 from storage import ArchiveStore  # noqa: E402
 
 IRP_R = "NOAPS_MaconiSetupShop IRP 26S4 R.sto"
+# How an analysis selected by file path records an Offline Testing recording.
+OFFLINE_FILE_SELECTION = {"group_id": None, "subsession_id": 0, "sim_session_num": 0, "sim_session_type": "Offline Testing", "selector_type": "file"}
 
 
 def _session_info_yaml(
@@ -98,12 +100,12 @@ def _build_ibt(path: Path, yaml_text: str) -> None:
         test_ibt_reader.build_ibt(path)
 
 
-def _analysis(source: Path, *, subsession: int, start: str, phase: str = "Race") -> dict:
+def _analysis(source: Path, *, subsession: int, start: str, phase: str = "Race", selection: dict | None = None) -> dict:
     return {
         "schema_version": 1,
         "analysis_id": f"analysis-{subsession}",
         "analyzed_at": "2026-09-25T03:01:30+00:00",
-        "source": {"telemetry_files": [str(source)]},
+        "source": {"telemetry_files": [str(source)], **({"selection": selection} if selection else {})},
         "identity": {
             "season_year": 2026,
             "season_quarter": 4,
@@ -159,11 +161,13 @@ class SetupRecordingLinkTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def _record(self, name: str, yaml_text: str, *, subsession: int, start: str, phase: str = "Race") -> str:
+    def _record(self, name: str, yaml_text: str, *, subsession: int, start: str, phase: str = "Race", selection: dict | None = None) -> str:
         source = self.telemetry / name
         _build_ibt(source, yaml_text)
         store = ArchiveStore(self.archive)
-        analysis = _analysis(source, subsession=subsession, start=start, phase=phase)
+        analysis = _analysis(source, subsession=subsession, start=start, phase=phase, selection=selection)
+        if selection is not None:  # Offline recordings share SubSessionID 0; each analysis is its own.
+            analysis["analysis_id"] = f"analysis-{Path(name).stem}"
         artifacts = store.save_report_artifacts(analysis, "# report")
         store.record_analysis(analysis, artifacts["report"])
         return artifacts["analysis"]
@@ -210,6 +214,32 @@ class SetupRecordingLinkTests(unittest.TestCase):
         self.assertFalse(other_car["values_status"]["available"])
         self.assertEqual(other_car["values_status"]["reason_code"], "sto_not_readable")
         self.assertIn("encrypted", other_car["values_status"]["reason"])
+
+    def test_a_linked_file_carries_the_recorded_track_and_agrees_across_readout_drift(self) -> None:
+        # The 9/24 IRP test day loaded one Maconi file seven times; its computed
+        # readouts (cross weight here) read a unit apart between loads while every
+        # adjustment was equal. The recording also names the track the file's own
+        # free-text name cannot.
+        newest = self._record("offline-2.ibt", _session_info_yaml(subsession_id=0, event_type="Test"),
+                              subsession=0, start="2026-09-25T05:19:25+00:00", phase="Offline Testing", selection=OFFLINE_FILE_SELECTION)
+        self._record("offline-1.ibt", _session_info_yaml(subsession_id=0, event_type="Test").replace("CrossWeight: 50.9%", "CrossWeight: 51.0%"),
+                     subsession=0, start="2026-09-25T03:19:28+00:00", phase="Offline Testing", selection=OFFLINE_FILE_SELECTION)
+        catalog = self._catalog()
+        entry = self._entry(catalog, "stockcars2 supra2019", IRP_R[:-4])
+        linked = entry["recorded_setup"]
+        self.assertEqual(linked["status"], "linked")
+        self.assertEqual(len(linked["uses"]), 2, "Both offline recordings stay in the index and link.")
+        values = linked["values"]
+        self.assertEqual(values["analysis_path"], newest)
+        self.assertTrue(values["recordings_agree"], "A readout a unit apart is not a different setup.")
+        self.assertEqual(values["track_name"], "Lucas Oil Indianapolis Raceway Park")
+        self.assertEqual(linked["uses"][0]["track_name"], "Lucas Oil Indianapolis Raceway Park")
+        import setup_catalog
+        parsed = test_ibt_reader.ibt_reader._parse_session_info(
+            _session_info_yaml(subsession_id=0, event_type="Test").encode("utf-8"), self.root / "x.ibt")
+        self.assertEqual(values["garage_fingerprint"], setup_catalog.garage_setup_fingerprint(parsed["CarSetup"])[:16],
+                         "The same 16 characters an analysis identity carries.")
+        self.assertEqual(values["session_type"], "Offline Testing")
 
     def test_iracing_and_fixed_loads_never_link_to_a_library_file_with_the_same_name(self) -> None:
         self._record("fixed.ibt", _session_info_yaml("bristol.sto", load_type="fixed"),

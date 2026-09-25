@@ -308,7 +308,7 @@ class UnusablePaceComparisonTests(unittest.TestCase):
             "caution laps 6–8 separate laps 1–3 from laps 10, 18 and 22; "
             "all 6 selected laps are excluded from clean coaching.",
         )
-        self.assertNotIn("s/lap", comparison["summary"])
+        self.assertNotIn("median lap", comparison["summary"])
         self.assertEqual(result["default_comparison_id"], comparison["id"])
         self.assertEqual(result["summary"], comparison["summary"])
         # Section losses inherit the same confound and are not turned into corrections.
@@ -350,7 +350,7 @@ class UnusablePaceComparisonTests(unittest.TestCase):
         self.assertTrue(default["pace_comparable"])
         self.assertIsNotNone(default["delta_s"])
         self.assertEqual(result["summary"], default["summary"])
-        self.assertIn("s/lap", result["summary"])
+        self.assertIn("median lap", result["summary"])
 
     def test_usable_comparisons_keep_their_pace_headline(self) -> None:
         result = self.build(investigation_fixture())
@@ -358,7 +358,7 @@ class UnusablePaceComparisonTests(unittest.TestCase):
         self.assertTrue(all(item["pace_unusable_reasons"] == [] for item in result["comparisons"]))
         finish = next(item for item in result["comparisons"] if item["id"] == "run-2-finish")
         self.assertEqual(finish["delta_s"], 1.64)
-        self.assertIn("s/lap slower", finish["summary"])
+        self.assertIn("s slower than", finish["summary"])
 
 
 class DefaultComparisonTests(unittest.TestCase):
@@ -482,7 +482,7 @@ class GreenRunComparisonTests(unittest.TestCase):
                          "Not a usable pace comparison: caution laps 11–13 separate laps 1–5 from laps 21–25.")
         self.assertEqual(result["default_comparison_id"], comparison["id"])
         self.assertEqual(result["summary"], comparison["summary"])
-        self.assertNotIn("s/lap", result["summary"])
+        self.assertNotIn("median lap", result["summary"])
         self.assertIsNone(comparison["actions"][0]["trial"])
         self.assertEqual(comparison["actions"][0]["title"], "Compare laps from one green run")
 
@@ -499,7 +499,7 @@ class GreenRunComparisonTests(unittest.TestCase):
         self.assertEqual(comparison["pace_unusable_reasons"], ["separated_by_caution"])
         self.assertEqual(comparison["summary"],
                          "Not a usable pace comparison: caution laps 25–30 separate laps 23–24 from laps 32–33.")
-        self.assertNotIn("s/lap", result["summary"])
+        self.assertNotIn("median lap", result["summary"])
 
     def test_one_green_run_keeps_its_pace_headline(self) -> None:
         # The lap-1 caution precedes both windows, so they share one green run.
@@ -507,7 +507,7 @@ class GreenRunComparisonTests(unittest.TestCase):
         comparison = next(item for item in result["comparisons"] if item["id"] == "run-1-clean")
         self.assertTrue(comparison["pace_comparable"])
         self.assertIsNotNone(comparison["delta_s"])
-        self.assertIn("s/lap slower", comparison["summary"])
+        self.assertIn("s slower than", comparison["summary"])
 
     def test_cross_run_exposure_match_is_not_a_single_green_run_claim(self) -> None:
         # Runs are compared at matched green exposure across the stop by

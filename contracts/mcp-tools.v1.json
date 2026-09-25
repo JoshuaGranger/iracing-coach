@@ -521,6 +521,55 @@
       "name": "catalog_iracing_setups"
     },
     {
+      "description": "Read-only comparison of two setups of one car as the garage displays them: changed, unknown and identical settings, with computed garage readouts (corner/cross/nose weight, ride heights, preloads) listed apart and never counted as changes. Values shown in the same unit are equal only when the displayed numbers are (-0 equals 0); tire readings are left out. Writes nothing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "left": {
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Field key to displayed value for the selected setup.",
+            "maxProperties": 4096,
+            "type": "object"
+          },
+          "right": {
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Field key to displayed value for the comparison setup.",
+            "maxProperties": 4096,
+            "type": "object"
+          },
+          "scheme": {
+            "default": "recording",
+            "description": "recording: keys are CarSetup paths such as Chassis.LeftFront.Camber; export: keys are setup-sheet canonical keys.",
+            "enum": [
+              "recording",
+              "export"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "left",
+          "right"
+        ],
+        "type": "object"
+      },
+      "name": "compare_iracing_setups"
+    },
+    {
       "description": "Save an exact, verified STO copy in the configured Coach archive without modifying source setups or overwriting changed copies.",
       "inputSchema": {
         "additionalProperties": false,

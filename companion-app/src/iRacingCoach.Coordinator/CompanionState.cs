@@ -276,11 +276,7 @@ public sealed partial class CompanionState : IDisposable
         (SetupCarFilter.Length == 0 || item.Car == SetupCarFilter)
         && (SetupTrackFilter.Length == 0 || item.Track == SetupTrackFilter)
         && (SetupSeasonFilter.Length == 0 || (item.Season.Length == 0 ? "Unknown" : item.Season) == SetupSeasonFilter)
-        && (SetupSearch.Trim().Length == 0 || $"{item.Name} {item.Car} {item.Track} {item.Role}".Contains(SetupSearch.Trim(), StringComparison.CurrentCultureIgnoreCase)));
-
-    public IReadOnlyList<RecentRace> SetupEvidenceRaces(LocalSetup setup) => Races.Where(race =>
-        !string.IsNullOrWhiteSpace(race.AnalysisPath) && (setup.AnalysisPaths ?? []).Append(setup.StoPath)
-            .Any(path => string.Equals(path, race.AnalysisPath, StringComparison.OrdinalIgnoreCase))).ToArray();
+        && MatchesSetupSearch(item, SetupSearch));
 
     /// <summary>
     /// The linked recording that tuning a setup starts from: the one whose values the
@@ -4255,6 +4251,7 @@ public sealed partial class CompanionState : IDisposable
                 _homeAnalysisActiveKeys.Remove(key);
                 _homeAnalysisCurrentKey = null;
             }
+            RefreshSetupLibraryIfIdle();
             RaiseChanged();
         }
     }
@@ -4449,14 +4446,16 @@ public sealed partial class CompanionState : IDisposable
         // A new analysis can have a new report path while retaining the same setup.
         // Update the catalog immediately so tuning is not gated on the next inventory refresh.
         if (response.TryGetProperty("analysis_view", out var view)
-            && RuntimeMapper.ArchivedSetup(view, AnalysisPathFromResponse(response)) is { } setup)
+            && RuntimeMapper.ArchivedSetup(view, AnalysisPathFromResponse(response), race.SessionType) is { } setup)
         {
             var index = Setups.FindIndex(item => string.Equals(item.Id, setup.Id, StringComparison.OrdinalIgnoreCase));
+            var newEvidence = index < 0 || (setup.AnalysisPaths ?? []).Except(Setups[index].AnalysisPaths ?? [], StringComparer.OrdinalIgnoreCase).Any();
             if (index < 0) Setups.Add(setup);
             else Setups[index] = setup with
             {
                 AnalysisPaths = (Setups[index].AnalysisPaths ?? []).Concat(setup.AnalysisPaths ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
             };
+            if (newEvidence) NoteNewSetupEvidence();
         }
     }
 
