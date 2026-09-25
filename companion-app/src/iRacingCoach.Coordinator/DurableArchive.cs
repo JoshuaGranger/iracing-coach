@@ -103,6 +103,12 @@ public interface IDurableArchiveService
     ArchiveStatus Initialize(string root, string appVersion, string backendVersion = "unknown");
     BackupPreparationResult PrepareForCopy(string root, string appVersion, string backendVersion, IReadOnlyList<string>? blockingActivity = null);
     void MarkActive(string root);
+
+    /// <summary>
+    /// Counts the Coach items now in the folder without writing anything, for Settings
+    /// after work moved items out of it. Null when the folder has no manifest yet.
+    /// </summary>
+    ArchiveRestoreSummary? CountItems(string root) => null;
 }
 
 /// <summary>
@@ -147,6 +153,13 @@ public sealed class DurableArchiveService : IDurableArchiveService
         WriteIndented = true
     };
     private static readonly ConcurrentDictionary<string, object> AtomicWriteGates = new(StringComparer.OrdinalIgnoreCase);
+
+    public ArchiveRestoreSummary? CountItems(string root)
+    {
+        var canonicalRoot = CanonicalRoot(root);
+        var manifest = ReadManifest(Path.Combine(canonicalRoot, ManifestFileName));
+        return manifest is null ? null : BuildRestoreSummary(canonicalRoot, manifest);
+    }
 
     public ArchiveStatus Initialize(string root, string appVersion, string backendVersion = "unknown")
     {
