@@ -50,11 +50,8 @@
     {
         <JobTray State="State" />
     }
-    @* Every other page shows notifications docked in the top bar. *@
-    @if (State.CurrentPage == "first-run")
-    {
-        <AppToast State="State" />
-    }
+    @* One notification, below the top bar and clear of navigation (at the top on first run). *@
+    <AppToast State="State" />
 </div>
 
 @code {
@@ -90,7 +87,7 @@
     {
         var details = State.LastRecoverableError?.SupportDetails ?? $"Area: user interface\nType: {error.GetType().Name}\nApp: iRacing Coach";
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", details);
-        State.Notify("Support details copied.");
+        State.Notify("Support details copied.", ToastTone.Info);
     }
     private void OnStateChanged() => InvokeAsync(() =>
     {

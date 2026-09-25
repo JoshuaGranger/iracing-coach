@@ -22,7 +22,7 @@ public sealed partial class UiPolishRegressionTests
     {
         using var state = NewState();
 
-        state.Notify("Test saved. It will be checked against your next compatible recording.");
+        state.Notify("Test saved. It will be checked against your next compatible recording.", ToastTone.Info);
         Assert.AreEqual(ToastTone.Info, state.CurrentToast!.Tone);
         Assert.IsTrue(state.CurrentToast.AutoDismisses, "Success must not stay on screen until dismissed.");
         Assert.AreEqual(ToastAction.None, state.CurrentToast.Action);
@@ -38,12 +38,15 @@ public sealed partial class UiPolishRegressionTests
         Assert.AreEqual("Local analysis failed: The recording ended before the green flag.", error.Message);
         Assert.DoesNotContain("Something went wrong", state.Toast!);
 
-        state.Notify("Garage61 could not be connected: the token was rejected.");
+        // The caller states the tone; the wording is never parsed for it.
+        state.Notify("Garage61 could not be connected: the token was rejected.", ToastTone.Error);
         Assert.AreEqual(ToastTone.Error, state.CurrentToast!.Tone);
         Assert.AreEqual(ToastAction.Troubleshooting, state.CurrentToast.Action);
-        state.Notify("A safe tuning change could not be recommended from this race.");
-        Assert.AreEqual(ToastTone.Info, state.CurrentToast!.Tone, "A missing recommendation is an answer, not a failure.");
-        state.Notify("Settings saved.");
+        Assert.IsFalse(state.CurrentToast.AutoDismisses);
+        state.Notify("Choose a local setup file first.", ToastTone.Warning);
+        Assert.AreEqual(ToastAction.None, state.CurrentToast!.Action, "A warning names its own next step.");
+        Assert.IsFalse(state.CurrentToast.AutoDismisses, "A warning stays until dismissed.");
+        state.Notify("Settings saved.", ToastTone.Info);
         Assert.AreEqual(ToastTone.Info, state.CurrentToast!.Tone);
     }
 
@@ -62,9 +65,9 @@ public sealed partial class UiPolishRegressionTests
     public void DismissingAnOlderNotificationNeverClearsANewerOne()
     {
         using var state = NewState();
-        state.Notify("First");
+        state.Notify("First", ToastTone.Info);
         var first = state.CurrentToast!.Revision;
-        state.Notify("Second");
+        state.Notify("Second", ToastTone.Info);
         state.DismissToast(first);
         Assert.AreEqual("Second", state.Toast, "A countdown for an earlier toast must not dismiss the one now showing.");
         state.DismissToast(state.CurrentToast!.Revision);
@@ -113,34 +116,37 @@ public sealed partial class UiPolishRegressionTests
     }
 
     [TestMethod]
-    public async Task NotificationsDockInTheTopBarInsteadOfCoveringPageControls()
+    public async Task NotificationsRenderOutsideTheTopBarWithTheirToneAndRecovery()
     {
         using var state = NewState();
-        state.Notify("Test saved. It will be checked against your next compatible recording.");
-        var html = await Render<AppTopBar>(state, new() { [nameof(AppTopBar.State)] = state });
-        var header = Regex.Match(html, "<header class=\"app-topbar\".*?</header>", RegexOptions.Singleline).Value;
-        StringAssert.Contains(header, "class=\"toast info docked\"");
-        StringAssert.Contains(header, "role=\"status\"");
-        StringAssert.Contains(header, "Test saved.");
-        Assert.DoesNotContain("toast-action", header, "Information has no recovery button.");
+        state.Notify("Test saved. It will be checked against your next compatible recording.", ToastTone.Info);
+        var topBar = await Render<AppTopBar>(state, new() { [nameof(AppTopBar.State)] = state });
+        Assert.DoesNotContain("toast", topBar, "Navigation never shares its row with a notification.");
+
+        var html = await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state });
+        StringAssert.Contains(html, "class=\"toast info\"");
+        StringAssert.Contains(html, "role=\"status\"");
+        StringAssert.Contains(html, "Test saved.");
+        Assert.DoesNotContain("toast-action", html, "Information has no recovery button.");
+
+        state.Notify("That recording is no longer available. Refresh your races and try again.", ToastTone.Warning);
+        html = await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state });
+        StringAssert.Contains(html, "class=\"toast warning\"");
+        StringAssert.Contains(html, "role=\"alert\"");
+        Assert.DoesNotContain("toast-action", html);
 
         state.ReportUnhandledException("backend tool analyze_iracing_race", new InvalidOperationException("The recording ended before the green flag."));
-        html = await Render<AppTopBar>(state, new() { [nameof(AppTopBar.State)] = state });
-        StringAssert.Contains(html, "class=\"toast error docked\"");
+        html = await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state });
+        StringAssert.Contains(html, "class=\"toast error\"");
         StringAssert.Contains(html, "role=\"alert\"");
         StringAssert.Contains(html, ">Open logs</button>");
         StringAssert.Contains(html, $"Ref {state.LastRecoverableError!.Id}");
         StringAssert.Contains(html, "aria-label=\"Dismiss notification\"");
 
         var css = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "coach.css"));
-        var toastRule = Regex.Match(css, @"^\.toast \{[^}]*\}", RegexOptions.Multiline).Value;
-        Assert.DoesNotContain("position: fixed", toastRule, "The base toast is laid out in the top bar, not over the page.");
-        Assert.DoesNotContain("bottom:", toastRule);
-        StringAssert.Contains(css, ".toast.docked {");
+        StringAssert.Contains(css, ".toast.warning {");
         StringAssert.Contains(css, ".reduced-motion .toast { animation: none; }");
         StringAssert.Contains(css, "@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }");
-        var shell = File.ReadAllText(Path.Combine(UiRoot(), "CompanionShell.razor"));
-        Assert.DoesNotContain("<div class=\"toast\"", shell, "The shell no longer floats a toast over every page.");
     }
 
     private sealed class ManualTime : TimeProvider

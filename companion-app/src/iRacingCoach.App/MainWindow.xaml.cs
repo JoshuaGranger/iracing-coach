@@ -96,9 +96,9 @@ public partial class MainWindow : Window
         _state.SettingsSaved += settings =>
         {
             if (hostProfile.AllowMachineIntegration && !StartupRegistration.Apply(settings.LaunchAtSignIn))
-                _state.Notify("Settings saved, but Windows sign-in startup could not be updated.");
+                _state.Notify("Settings saved, but Windows sign-in startup could not be updated.", ToastTone.Error);
             if (hostProfile.AllowMachineIntegration && !RegisterGlobalHotkey())
-                _state.Notify("Settings saved, but that telemetry-popout hotkey is invalid or already in use.");
+                _state.Notify("Settings saved, but that telemetry-popout hotkey is invalid or already in use.", ToastTone.Warning);
         };
         if (hostProfile.AllowMachineIntegration) _ = StartupRegistration.Apply(_state.Settings.LaunchAtSignIn);
 
@@ -157,7 +157,7 @@ public partial class MainWindow : Window
     {
         if (_hostProfile.IsIsolated)
         {
-            _state.Notify("Locating external telemetry is disabled in the isolated host profile.");
+            _state.Notify("Locating external telemetry is disabled in the isolated host profile.", ToastTone.Warning);
             return;
         }
         var dialog = new Microsoft.Win32.OpenFileDialog

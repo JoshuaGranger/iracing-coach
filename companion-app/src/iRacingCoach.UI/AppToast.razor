@@ -2,13 +2,14 @@
 
 @if (State.CurrentToast is { } toast)
 {
-    var error = toast.Tone == ToastTone.Error;
-    @* Docked in the top bar so it never sits over page controls; errors stay until dismissed. *@
-    <div class="toast @(error ? "error" : "info") @(Docked ? "docked" : "floating")"
-         role="@(error ? "alert" : "status")" data-toast="@(error ? "error" : "info")" data-toast-revision="@toast.Revision"
+    var tone = ToneClass(toast.Tone);
+    @* Below the top bar, right-aligned: it never covers navigation, and only its own buttons take clicks.
+       Warnings and errors stay until dismissed. *@
+    <div class="toast @tone"
+         role="@(toast.AutoDismisses ? "status" : "alert")" data-toast="@tone" data-toast-revision="@toast.Revision"
          @onmouseenter="() => Hover(true)" @onmouseleave="() => Hover(false)"
          @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
-        <ProductIcon Name="@(error ? "info" : "check")" Size="15" />
+        <ProductIcon Name="@(toast.Tone == ToastTone.Info ? "check" : "info")" Size="15" />
         <span class="toast-message" title="@toast.Message">@toast.Message</span>
         @if (toast.Reference is { } reference)
         {
@@ -24,10 +25,16 @@
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
-    [Parameter] public bool Docked { get; set; }
 
     private readonly ToastDismissTimer _timer = new(TimeProvider.System);
     private CancellationTokenSource? _countdown;
+
+    public static string ToneClass(ToastTone tone) => tone switch
+    {
+        ToastTone.Error => "error",
+        ToastTone.Warning => "warning",
+        _ => "info"
+    };
 
     protected override void OnParametersSet()
     {

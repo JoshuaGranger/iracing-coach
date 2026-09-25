@@ -100,7 +100,7 @@ public sealed partial class CompanionState
         if (TrialBusy) return;
         if (!TryGetAnalysisPath(SelectedRaceSession, out var analysisPath))
         {
-            Notify("This recording's saved analysis is not available yet. Refresh the analysis, then save the test.");
+            Notify("This recording's saved analysis is not available yet. Refresh the analysis, then save the test.", ToastTone.Warning);
             return;
         }
         TrialBusy = true;
@@ -118,12 +118,12 @@ public sealed partial class CompanionState
             DrivingTrials = [trial, .. DrivingTrials.Where(item => item.TrialId != trial.TrialId)];
             Notify(result.TryGetProperty("created", out var created) && created.ValueKind == JsonValueKind.False
                 ? "This test was already saved."
-                : "Test saved. It will be checked against your next compatible recording.");
+                : "Test saved. It will be checked against your next compatible recording.", ToastTone.Info);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is BackendDomainException or JsonException or KeyNotFoundException or InvalidOperationException)
         {
-            Notify(ex is BackendDomainException ? Bound(BackendMessage(ex.Message)) : "The test could not be saved. Refresh the analysis and try again.");
+            Notify(ex is BackendDomainException ? Bound(BackendMessage(ex.Message)) : "The test could not be saved. Refresh the analysis and try again.", ToastTone.Error);
         }
         finally
         {
@@ -226,7 +226,7 @@ public sealed partial class CompanionState
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is BackendDomainException or JsonException or KeyNotFoundException or InvalidOperationException)
         {
-            Notify(ex is BackendDomainException ? Bound(BackendMessage(ex.Message)) : "That test could not be opened.");
+            Notify(ex is BackendDomainException ? Bound(BackendMessage(ex.Message)) : "That test could not be opened.", ToastTone.Error);
         }
     }
 

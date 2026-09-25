@@ -141,15 +141,27 @@ public sealed class IterationUxTests
     public void ToastStatus_DoesNotBlockControlsBehindIt()
     {
         var css = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "coach.css"));
-        var topBar = File.ReadAllText(Path.Combine(UiRoot(), "AppTopBar.razor"));
 
-        // Notifications dock in the top bar beside navigation instead of floating over page
-        // controls; only first run, which has no top bar, floats one, at the top of the page.
-        StringAssert.Contains(topBar, "<AppToast State=\"State\" Docked=\"true\" />");
-        StringAssert.Contains(css, ".toast.docked {");
-        StringAssert.Contains(css, ".toast.floating { position: fixed; z-index: 40; left: 50%; top: var(--space-4);");
-        Assert.DoesNotContain("bottom: var(--space-6); transform: translateX(-50%)", css);
+        // The toast body never takes a click; only its own buttons do.
+        StringAssert.Contains(css, ".toast { position: fixed;");
+        StringAssert.Contains(css, "box-shadow: 0 10px 32px var(--shadow); pointer-events: none;");
         StringAssert.Contains(css, ".toast button {");
+        StringAssert.Contains(css, "cursor: pointer; pointer-events: auto;");
+
+        // It never overlaps primary navigation: it is not laid out inside the top bar (where a
+        // crowded bar at 900-1280 px let it cover Live), and it floats below the bar's row.
+        var topBar = File.ReadAllText(Path.Combine(UiRoot(), "AppTopBar.razor"));
+        Assert.DoesNotContain("<AppToast", topBar);
+        var shell = File.ReadAllText(Path.Combine(UiRoot(), "CompanionShell.razor"));
+        Assert.IsTrue(Regex.IsMatch(shell, @"^    <AppToast State=""State"" />\s*$", RegexOptions.Multiline),
+            "One notification for every page, in the shell rather than the top bar or a first-run branch.");
+        var shellCss = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "race-investigation.css"));
+        var topBarRow = int.Parse(Regex.Match(shellCss, @"\.app-shell\.top-nav \{[^}]*grid-template-rows: (?<height>\d+)px").Groups["height"].Value);
+        var toastRule = Regex.Match(css, @"^\.toast \{[^}]*\}", RegexOptions.Multiline).Value;
+        var top = Regex.Match(toastRule, @"top: calc\((?<bar>\d+)px \+ var\(--space-\d\)\);");
+        Assert.IsTrue(top.Success, "The toast is placed a gap below the top bar.");
+        Assert.IsGreaterThanOrEqualTo(topBarRow, int.Parse(top.Groups["bar"].Value), "The toast starts below the top bar row.");
+        Assert.DoesNotContain("bottom:", toastRule, "Bottom-center covered the Sections test strip.");
     }
 
     [TestMethod]

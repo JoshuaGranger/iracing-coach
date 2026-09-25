@@ -536,7 +536,7 @@
         if (!LiveMonitorLayouts.ResetActive(Preferences))
         {
             _editorMessage = "Factory dashboards are already at their default layout.";
-            State.Notify(_editorMessage);
+            State.Notify(_editorMessage, ToastTone.Info);
             return;
         }
         CompleteMutation(before, "Dashboard reset.");
@@ -726,7 +726,7 @@
         {
             Restore(before);
             _editorMessage = failureMessage;
-            State.Notify(failureMessage);
+            State.Notify(failureMessage, ToastTone.Info);
             return false;
         }
         CompleteMutation(before, successMessage);

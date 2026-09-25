@@ -1003,6 +1003,53 @@ public sealed class CoordinatorTests
     }
 
     [TestMethod]
+    public async Task FailedAnalysisJob_ErrorStaysUntilASuccessfulRetryAnswersIt()
+    {
+        var (state, race) = RetryToastState("iracing-coach-retry-toast");
+        using (state)
+        {
+            await state.AnalyzeRaceAsync(race, force: true);
+            StringAssert.StartsWith(state.Toast, "Analyze Kentucky Speedway failed:");
+            Assert.IsFalse(state.CurrentToast!.AutoDismisses, "A failed job stays until dismissed.");
+            state.Navigate("home");
+            StringAssert.StartsWith(state.Toast, "Analyze Kentucky Speedway failed:", "Changing page does not clear the failure.");
+
+            await state.RetryJobAsync(state.Jobs.Single(job => job.Status == "failed"));
+
+            Assert.AreEqual("complete", state.Jobs[0].Status);
+            Assert.IsNull(state.CurrentToast, "The successful retry answers the failure it showed.");
+        }
+    }
+
+    [TestMethod]
+    public async Task SuccessfulJob_DoesNotClearAnotherAreasError()
+    {
+        var (state, race) = RetryToastState("iracing-coach-retry-other-toast");
+        using (state)
+        {
+            await state.AnalyzeRaceAsync(race, force: true);
+            state.ReportUnhandledException("archived setup catalog", new InvalidDataException("setups.json is truncated"));
+
+            await state.RetryJobAsync(state.Jobs.Single(job => job.Status == "failed"));
+
+            Assert.AreEqual("complete", state.Jobs[0].Status);
+            Assert.AreEqual("Saved setups could not be listed: setups.json is truncated.", state.Toast);
+        }
+    }
+
+    private static (CompanionState State, RecentRace Race) RetryToastState(string name)
+    {
+        var root = Path.Combine(Path.GetTempPath(), name, Guid.NewGuid().ToString("N"));
+        var state = new CompanionState(new FakeBackend(analysis: HomeAnalysisResponse(), analysisFailuresBeforeSuccess: 1), new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        var race = new RecentRace(
+            "retry-toast-race", "Kentucky Speedway", "Oval", "Toyota Tundra TRD Pro", "Today",
+            "Fixed", "Needs analysis", "15 laps", false, false, 8, 6, Selector: "87624987");
+        state.Races.Add(race);
+        return (state, race);
+    }
+
+    [TestMethod]
     public async Task FailedAnalysisJob_RetryDoesNotRunWhenTheRecordingIsStale()
     {
         var backend = new FakeBackend(analysis: HomeAnalysisResponse());

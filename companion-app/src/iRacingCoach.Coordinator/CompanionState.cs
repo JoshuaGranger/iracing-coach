@@ -194,7 +194,6 @@ public sealed partial class CompanionState : IDisposable
     public bool PlanGenerated { get; private set; }
     public bool ExperimentGenerated { get; private set; }
     public bool DiagnosticsExpanded { get; private set; }
-    public string? Toast { get => _toast?.Message; private set => SetToast(value); }
     public string SettingsMessage { get; private set; } = "Preferences and race history are saved in the Coach folder.";
     public bool SettingsWritable => Settings.Compatibility.Writable;
     public string DataMessage { get; private set; } = "Looking for finalized iRacing recordings…";
@@ -277,7 +276,7 @@ public sealed partial class CompanionState : IDisposable
         if (setup is null) return;
         var evidence = SetupEvidenceRaces(setup);
         var race = raceId is null ? evidence.FirstOrDefault() : evidence.FirstOrDefault(item => item.Id == raceId);
-        if (race is null) { Notify("Record and analyze a run with this setup to attach driving evidence."); return; }
+        if (race is null) { Notify("Record and analyze a run with this setup to attach driving evidence.", ToastTone.Warning); return; }
         SelectedSetupId = setup.Id;
         TuningSourceSetupId = setup.Id;
         await SelectTuningRaceAsync(race.Id, cancellationToken);
@@ -285,7 +284,7 @@ public sealed partial class CompanionState : IDisposable
         if (CurrentAnalysis?.SetupFingerprint != setup.Fingerprint)
         {
             TuningSourceSetupId = string.Empty;
-            Notify("The race setup fingerprint changed. Refresh the setup library before tuning.");
+            Notify("The race setup fingerprint changed. Refresh the setup library before tuning.", ToastTone.Warning);
             return;
         }
         Navigate("tuning");
@@ -307,7 +306,7 @@ public sealed partial class CompanionState : IDisposable
     {
         if (StartingTuneSourceSetup is { } setup && SetupEvidenceRaces(setup).Count > 0)
             return BeginSetupTuningAsync(setup.Id, cancellationToken: cancellationToken);
-        Notify("Analyze a recording made with the selected starting setup before tuning it.");
+        Notify("Analyze a recording made with the selected starting setup before tuning it.", ToastTone.Warning);
         return Task.CompletedTask;
     }
 
@@ -762,9 +761,11 @@ public sealed partial class CompanionState : IDisposable
             Diagnostics = BuildDiagnostics(_lastBackendHealth);
             LastUpdated = DateTimeOffset.Now;
             HomeDataReady = true;
-            if (showToast) Toast = next.Sections.All(section => section.Current)
-                ? "Your local racing data is up to date."
-                : "Some local data could not be updated. The last complete values are still shown.";
+            if (showToast)
+            {
+                if (next.Sections.All(section => section.Current)) ShowToast("Your local racing data is up to date.", ToastTone.Info);
+                else ShowToast("Some local data could not be updated. The last complete values are still shown.", ToastTone.Error);
+            }
             RaiseChanged();
             QueueMissingHomeRaceAnalysis();
 
@@ -1051,7 +1052,7 @@ public sealed partial class CompanionState : IDisposable
     {
         if (AnalysisLoading && string.Equals(SelectedRaceSessionId, race.Id, StringComparison.Ordinal))
         {
-            Notify("That race is already being analyzed.");
+            Notify("That race is already being analyzed.", ToastTone.Info);
             return;
         }
         SelectRaceSession(race);
@@ -1302,12 +1303,12 @@ public sealed partial class CompanionState : IDisposable
             {
                 _ = StructuredAppLog.Record("race planning", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
                 PlanMessage = "The race data could not be read. Open the reference race in Race Analysis and retry its analysis, then build the plan again.";
-                Notify("The plan could not be built.");
+                Notify("The plan could not be built.", ToastTone.Error);
             }
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException or IOException)
         {
-            if (StillCurrent()) { PlanMessage = Bound(BackendMessage(ex.Message)); Notify("The plan could not be built."); }
+            if (StillCurrent()) { PlanMessage = Bound(BackendMessage(ex.Message)); Notify("The plan could not be built.", ToastTone.Error); }
         }
         finally { PlanBusy = false; RaiseChanged(); }
     }
@@ -1317,13 +1318,13 @@ public sealed partial class CompanionState : IDisposable
         var race = SelectedTuningRace;
         if (race is null)
         {
-            Notify("Choose an analyzed open-setup race first.");
+            Notify("Choose an analyzed open-setup race first.", ToastTone.Warning);
             return;
         }
         var symptom = BuildTuningSymptom();
         if (string.IsNullOrWhiteSpace(symptom))
         {
-            Notify("Choose the handling balance before asking for a change.");
+            Notify("Choose the handling balance before asking for a change.", ToastTone.Warning);
             return;
         }
         SymptomText = symptom;
@@ -1349,13 +1350,16 @@ public sealed partial class CompanionState : IDisposable
             TuningExperiment = staged;
             ExperimentGenerated = true;
             TuningMessage = "The recommendation is tied to this race's embedded setup and telemetry.";
-            Notify("One controlled setup test is ready.");
+            Notify("One controlled setup test is ready.", ToastTone.Info);
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
         {
             if (!ExperimentRequestStillCurrent(request)) return;
             TuningMessage = Bound(ex.Message);
-            Notify("A safe tuning change could not be recommended from this race.");
+            // The evidence refusing a change is an answer (the reason stays on the page); a
+            // broken backend response is a failure.
+            if (ex is BackendDomainException) Notify("A safe tuning change could not be recommended from this race.", ToastTone.Info);
+            else Notify("The tuning recommendation could not be read.", ToastTone.Error);
         }
         RaiseChanged();
     }
@@ -1883,7 +1887,8 @@ public sealed partial class CompanionState : IDisposable
         {
             if (!IsCurrentTuningRaceSelection(selectionEpoch, race.Id) || !IsCurrentTuningDraft(draft)) return;
             TuningMessage = Bound(ex.Message);
-            Notify("A safe tuning change could not be recommended from this evidence.");
+            if (ex is BackendDomainException) Notify("A safe tuning change could not be recommended from this evidence.", ToastTone.Info);
+            else Notify("The tuning recommendation could not be read.", ToastTone.Error);
         }
         RaiseChanged();
     }
@@ -2357,12 +2362,12 @@ public sealed partial class CompanionState : IDisposable
                 && string.Equals(TuningExperiment.ExperimentId, experiment.ExperimentId, StringComparison.Ordinal))
             {
                 TuningExperiment = TuningExperiment with { Outcome = Humanize(outcome) };
-                Notify("Outcome saved with the experiment.");
+                Notify("Outcome saved with the experiment.", ToastTone.Info);
             }
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException)
         {
-            Notify($"The outcome was not saved: {Bound(ex.Message)}");
+            Notify($"The outcome was not saved: {Bound(ex.Message)}", ToastTone.Error);
             RaiseChanged();
             throw;
         }
@@ -2374,7 +2379,7 @@ public sealed partial class CompanionState : IDisposable
         var setup = SelectedSetup;
         if (setup is null)
         {
-            Notify("Choose a local setup file first.");
+            Notify("Choose a local setup file first.", ToastTone.Warning);
             return;
         }
         try
@@ -2394,13 +2399,13 @@ public sealed partial class CompanionState : IDisposable
                 ? "An exact copy was saved in your Coach setup library."
                 : "That exact setup is already in your Coach setup library.";
             SetupCopyMessage = SetupMessage;
-            Notify(SetupMessage);
+            Notify(SetupMessage, ToastTone.Info);
         }
         catch (Exception ex) when (ex is BackendProtocolException or BackendDomainException or InvalidDataException)
         {
             SetupMessage = Bound(ex.Message);
             SetupCopyMessage = SetupMessage;
-            Notify($"The setup was not copied: {SetupMessage}");
+            Notify($"The setup was not copied: {SetupMessage}", ToastTone.Error);
         }
         RaiseChanged();
     }
@@ -2411,7 +2416,7 @@ public sealed partial class CompanionState : IDisposable
         if (setup is null) return;
         if (!_allowExternalHostActions)
         {
-            Notify("Opening folders is disabled in the isolated host profile.");
+            Notify("Opening folders is disabled in the isolated host profile.", ToastTone.Warning);
             return;
         }
         _ = Process.Start(new ProcessStartInfo("explorer.exe")
@@ -2517,7 +2522,7 @@ public sealed partial class CompanionState : IDisposable
         if (!SettingsWritable)
         {
             SettingsMessage = Settings.Compatibility.Message;
-            Toast = "Settings were not changed.";
+            ShowToast("Settings were not changed.", ToastTone.Error);
             RaiseChanged();
             return;
         }
@@ -2550,7 +2555,7 @@ public sealed partial class CompanionState : IDisposable
                 EnsureRepository();
             SaveSettingsToStore();
             SettingsMessage = "Settings saved.";
-            Toast = "Settings saved.";
+            ShowToast("Settings saved.", ToastTone.Info);
             SettingsSaved?.Invoke(Settings);
             var dataRoots = new RefreshRoots(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
             if (dataRoots != _settingsDataRoots || _garageCredentialRefreshPending)
@@ -2563,7 +2568,7 @@ public sealed partial class CompanionState : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or TimeoutException)
         {
             SettingsMessage = "Windows could not save the settings file. Check access to the Coach folder.";
-            Toast = "Settings were not saved.";
+            ShowToast("Settings were not saved.", ToastTone.Error);
         }
         RaiseChanged();
     }
@@ -2587,7 +2592,7 @@ public sealed partial class CompanionState : IDisposable
     {
         if (!_allowExternalHostActions)
         {
-            Notify("ChatGPT sign-in is disabled in the isolated host profile.");
+            Notify("ChatGPT sign-in is disabled in the isolated host profile.", ToastTone.Warning);
             return;
         }
         try
@@ -2604,13 +2609,13 @@ public sealed partial class CompanionState : IDisposable
             {
                 _ = Process.Start(new ProcessStartInfo(login.Url) { UseShellExecute = true });
             }
-            Toast = deviceCode && !string.IsNullOrWhiteSpace(login.VerificationCode)
+            ShowToast(deviceCode && !string.IsNullOrWhiteSpace(login.VerificationCode)
                 ? "Enter the verification code shown here in your browser."
-                : "Finish signing in to ChatGPT in your browser.";
+                : "Finish signing in to ChatGPT in your browser.", ToastTone.Info);
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or TimeoutException)
         {
-            Toast = $"ChatGPT connection could not start: {Bound(ex.Message)}";
+            ShowToast($"ChatGPT connection could not start: {Bound(ex.Message)}", ToastTone.Error);
         }
         RaiseChanged();
     }
@@ -2631,7 +2636,7 @@ public sealed partial class CompanionState : IDisposable
             {
                 replacement.Rollback();
                 Garage61 = prior.Configured ? prior : Garage61StatusReducer.Unprobed(false);
-                Toast = $"Garage61 connection was not replaced. {candidate.Message}";
+                ShowToast($"Garage61 connection was not replaced. {candidate.Message}", ToastTone.Error);
                 return;
             }
 
@@ -2639,12 +2644,12 @@ public sealed partial class CompanionState : IDisposable
             SaveSettingsToStore();
             replacement.Commit();
             SetupStep = Math.Max(SetupStep, 4);
-            Toast = "Garage61 is connected for this Windows user.";
+            ShowToast("Garage61 is connected for this Windows user.", ToastTone.Info);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException or ArgumentException or JsonException or TimeoutException)
         {
             Garage61 = prior;
-            Toast = $"Garage61 could not be connected: {Bound(ex.Message)}";
+            ShowToast($"Garage61 could not be connected: {Bound(ex.Message)}", ToastTone.Error);
         }
         finally
         {
@@ -2659,11 +2664,11 @@ public sealed partial class CompanionState : IDisposable
             _garage61Credentials.Remove();
             SaveSettingsToStore();
             await RefreshDataAsync(false, cancellationToken);
-            Toast = "Garage61 was disconnected from this PC.";
+            ShowToast("Garage61 was disconnected from this PC.", ToastTone.Info);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Toast = $"Garage61 could not be disconnected: {Bound(ex.Message)}";
+            ShowToast($"Garage61 could not be disconnected: {Bound(ex.Message)}", ToastTone.Error);
         }
         RaiseChanged();
     }
@@ -2722,11 +2727,11 @@ public sealed partial class CompanionState : IDisposable
         if (localReady && CoachEngine.Installed)
         {
             SetupStep = 5;
-            Toast = "Installation verified. Local features are ready even when services are offline.";
+            ShowToast("Installation verified. Local features are ready even when services are offline.", ToastTone.Info);
         }
         else
         {
-            Toast = "Installation needs attention. Open Diagnostics or run Repair installation.";
+            ShowToast("Installation needs attention. Open Diagnostics or run Repair installation.", ToastTone.Error);
         }
         RaiseChanged();
     }
@@ -2734,22 +2739,22 @@ public sealed partial class CompanionState : IDisposable
     public async Task AskRaceCoachAsync(CancellationToken cancellationToken = default)
     {
         var question = CoachQuestion.Trim();
-        if (question.Length == 0) { Notify("Enter a question about this race."); return; }
+        if (question.Length == 0) { Notify("Enter a question about this race.", ToastTone.Warning); return; }
         if (CurrentRaceCard is null)
         {
-            Toast = "Analyze a recorded race before asking the Coach.";
+            ShowToast("Analyze a recorded race before asking the Coach.", ToastTone.Warning);
             RaiseChanged();
             return;
         }
         if (!CoachEngine.ChatGptConnected)
         {
-            Toast = "Connect ChatGPT from Connections before asking the Coach.";
+            ShowToast("Connect ChatGPT from Connections before asking the Coach.", ToastTone.Warning);
             RaiseChanged();
             return;
         }
         if (CurrentAnalysis is null)
         {
-            Toast = "The Coach needs numeric deterministic analysis before it can answer.";
+            ShowToast("The Coach needs numeric deterministic analysis before it can answer.", ToastTone.Warning);
             RaiseChanged();
             return;
         }
@@ -2757,7 +2762,7 @@ public sealed partial class CompanionState : IDisposable
         var packet = RaceCoachPacketBuilder.Build(CurrentAnalysis);
         if (!packet.HasNumericEvidence)
         {
-            Toast = "The Coach cannot answer from prose alone. This race has no supported numeric evidence.";
+            ShowToast("The Coach cannot answer from prose alone. This race has no supported numeric evidence.", ToastTone.Warning);
             RaiseChanged();
             return;
         }
@@ -2841,7 +2846,7 @@ public sealed partial class CompanionState : IDisposable
         Settings.SettingsSchemaVersion = Math.Max(Settings.SettingsSchemaVersion, 2);
         SaveSettingsToStore();
         CurrentPage = "home";
-        Toast = "iRacing Coach is ready.";
+        ShowToast("iRacing Coach is ready.", ToastTone.Info);
         RaiseChanged();
     }
 
@@ -2849,7 +2854,7 @@ public sealed partial class CompanionState : IDisposable
     {
         if (!_allowExternalHostActions)
         {
-            Toast = "Repair launch is disabled in the isolated host profile.";
+            ShowToast("Repair launch is disabled in the isolated host profile.", ToastTone.Warning);
             RaiseChanged();
             return;
         }
@@ -2860,7 +2865,7 @@ public sealed partial class CompanionState : IDisposable
             $"iRacingCoach-{AppVersion}-Setup.exe");
         if (!File.Exists(setup))
         {
-            Toast = "The repair package could not be found. Run the latest iRacing Coach installer again.";
+            ShowToast("The repair package could not be found. Run the latest iRacing Coach installer again.", ToastTone.Error);
             RaiseChanged();
             return;
         }
@@ -2869,11 +2874,11 @@ public sealed partial class CompanionState : IDisposable
             var start = new ProcessStartInfo(setup) { UseShellExecute = true, Verb = "runas" };
             start.ArgumentList.Add("--repair");
             _ = Process.Start(start);
-            Toast = "Windows is opening iRacing Coach Repair.";
+            ShowToast("Windows is opening iRacing Coach Repair.", ToastTone.Info);
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            Toast = "Repair was cancelled or could not start.";
+            ShowToast("Repair was cancelled or could not start.", ToastTone.Warning);
         }
         RaiseChanged();
     }
@@ -2945,7 +2950,8 @@ public sealed partial class CompanionState : IDisposable
         if (CurrentPage == "planning") CarryPlanContext();
         // Sessions in the top bar always lands on the list, as it does from a race.
         if (CurrentPage == "home") { OpenedTrial = null; OpenedTrialEvaluationId = null; }
-        Toast = null;
+        // Leaving a page clears passing information; a warning or error stays until dismissed.
+        ClearPassingToast();
         RaiseChanged();
     }
 
@@ -3000,7 +3006,7 @@ public sealed partial class CompanionState : IDisposable
     public void ToggleLiveCoaching()
     {
         _liveTelemetry.SetCoachingPaused(!_liveTelemetry.CoachingPaused);
-        Notify(_liveTelemetry.CoachingPaused ? "Live coaching paused." : "Live coaching resumed.");
+        Notify(_liveTelemetry.CoachingPaused ? "Live coaching paused." : "Live coaching resumed.", ToastTone.Info);
     }
     public void SaveLiveMonitorPreferences()
     {
@@ -3020,7 +3026,7 @@ public sealed partial class CompanionState : IDisposable
     public void ToggleRail() { RailCollapsed = !RailCollapsed; RaiseChanged(); }
     public void ToggleJobTray() { JobTrayOpen = !JobTrayOpen; RaiseChanged(); }
     public void ToggleDiagnostics() { DiagnosticsExpanded = !DiagnosticsExpanded; RaiseChanged(); }
-    public void OpenTroubleshooting() { DiagnosticsExpanded = true; CurrentPage = "settings"; Toast = null; RaiseChanged(); }
+    public void OpenTroubleshooting() { DiagnosticsExpanded = true; CurrentPage = "settings"; ClearPassingToast(); RaiseChanged(); }
     public void ResetPlan() { PlanGenerated = false; PlanBriefing = null; StrategyScenarios.Clear(); PlanMessage = "Choose one of your recorded races to use its exact context."; RaiseChanged(); }
 
     public void SelectPlanCar(string? carId)
@@ -3050,15 +3056,13 @@ public sealed partial class CompanionState : IDisposable
 
     private bool PlanCarMatches(RecentRace race) => string.Equals(SelectedPlanCarId, race.CarPath.Length > 0 ? race.CarPath : race.Car, StringComparison.OrdinalIgnoreCase);
 
-    public void DismissToast() { Toast = null; RaiseChanged(); }
-    public void Notify(string message) { Toast = message; RaiseChanged(); }
     public void OpenLogs()
     {
         var logs = Settings.LogsRoot;
         Directory.CreateDirectory(logs);
         if (!_allowExternalHostActions)
         {
-            Notify("Opening folders is disabled in the isolated host profile.");
+            Notify("Opening folders is disabled in the isolated host profile.", ToastTone.Warning);
             return;
         }
         _ = Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = true, ArgumentList = { logs } });
@@ -3088,12 +3092,12 @@ public sealed partial class CompanionState : IDisposable
                         Restored = Archive.Restored with { UnresolvedSources = BackupPreparation.UnresolvedSources }
                     };
                 SettingsMessage = $"Safe to copy: {BackupPreparation.FileCount:N0} files checked. Copy {BackupPreparation.Root}.";
-                Toast = "Your Coach folder is ready to copy.";
+                ShowToast("Your Coach folder is ready to copy.", ToastTone.Info);
             }
             else
             {
                 SettingsMessage = BackupPreparation.Message;
-                Toast = "The Coach folder is still in use. Finish the listed work and try again.";
+                ShowToast("The Coach folder is still in use. Finish the listed work and try again.", ToastTone.Warning);
             }
             Diagnostics = BuildDiagnostics(_lastBackendHealth);
         }
@@ -3101,7 +3105,7 @@ public sealed partial class CompanionState : IDisposable
         {
             LastRecoverableError = StructuredAppLog.Record("prepare portable copy", ex, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
             SettingsMessage = $"The backup check could not finish: {Bound(ex.Message)}";
-            Toast = "The Coach folder is not ready to copy.";
+            ShowToast("The Coach folder is not ready to copy.", ToastTone.Error);
         }
         finally
         {
@@ -3120,7 +3124,7 @@ public sealed partial class CompanionState : IDisposable
         if (job.Status is not ("cancelled" or "failed")) return;
         if (!job.CanonicalKey.StartsWith("session:", StringComparison.Ordinal))
         {
-            Notify("Open the original page to retry this work.");
+            Notify("Open the original page to retry this work.", ToastTone.Warning);
             return;
         }
 
@@ -3129,14 +3133,14 @@ public sealed partial class CompanionState : IDisposable
             candidate is not null && string.Equals(candidate.Id, raceId, StringComparison.Ordinal));
         if (race is null)
         {
-            Notify("That recording is no longer available. Refresh your races and try again.");
+            Notify("That recording is no longer available. Refresh your races and try again.", ToastTone.Warning);
             return;
         }
         if (Jobs.Any(candidate =>
                 string.Equals(candidate.CanonicalKey, job.CanonicalKey, StringComparison.Ordinal)
                 && candidate.Status is "queued" or "running"))
         {
-            Notify("That work is already in progress.");
+            Notify("That work is already in progress.", ToastTone.Info);
             return;
         }
 
@@ -3149,7 +3153,7 @@ public sealed partial class CompanionState : IDisposable
         if (job.Status != "complete" || !job.CanonicalKey.StartsWith("session:", StringComparison.Ordinal)) return;
         var raceId = job.CanonicalKey["session:".Length..];
         var race = Races.Concat(EventSessions).FirstOrDefault(candidate => candidate?.Id == raceId);
-        if (race is null) { Notify("That recording is no longer in the race list. Refresh recordings to find it."); return; }
+        if (race is null) { Notify("That recording is no longer in the race list. Refresh recordings to find it.", ToastTone.Warning); return; }
         Navigate("analysis");
         await AnalyzeRaceAsync(race, cancellationToken);
     }
@@ -3159,7 +3163,7 @@ public sealed partial class CompanionState : IDisposable
     {
         if (!File.Exists(path) || !string.Equals(Path.GetExtension(path), ".ibt", StringComparison.OrdinalIgnoreCase))
         {
-            Notify("Choose an existing iRacing .ibt telemetry file.");
+            Notify("Choose an existing iRacing .ibt telemetry file.", ToastTone.Warning);
             return;
         }
         try
@@ -3183,11 +3187,11 @@ public sealed partial class CompanionState : IDisposable
                 currentPath = Path.GetFullPath(path),
                 mappedUtc = DateTimeOffset.UtcNow
             });
-            Toast = "The telemetry file was found. Run the copy check again to refresh its status.";
+            ShowToast("The telemetry file was found. Run the copy check again to refresh its status.", ToastTone.Info);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Toast = "That telemetry file could not be read.";
+            ShowToast("That telemetry file could not be read.", ToastTone.Error);
         }
         RaiseChanged();
     }
@@ -3196,7 +3200,7 @@ public sealed partial class CompanionState : IDisposable
     {
         if (Jobs.Any(job => job.CanonicalKey == canonicalKey && job.Status is "queued" or "running"))
         {
-            Notify("That work is already in progress.");
+            Notify("That work is already in progress.", ToastTone.Info);
             return;
         }
         var job = new JobItem { Id = $"job-{Guid.NewGuid():N}"[..12], Title = title, CanonicalKey = canonicalKey, Stage = stage, Status = "running", Progress = 20 };
@@ -3213,13 +3217,14 @@ public sealed partial class CompanionState : IDisposable
             job.Status = "complete"; job.Stage = "Complete"; job.Progress = 100; job.Cancellable = false; job.Elapsed = timer.Elapsed;
             job.ArtifactLabel = canonicalKey.StartsWith("session:", StringComparison.Ordinal) ? "race" : null;
             JobTrayOpen = false;
-            Toast = null;
+            // Success answers an earlier failure of the same work.
+            ClearPassingToast($"job {title}");
         }
         catch (OperationCanceledException)
         {
             job.Status = "cancelled"; job.Stage = "Cancelled safely"; job.Cancellable = false; job.Elapsed = timer.Elapsed;
             JobTrayOpen = false;
-            Toast = null;
+            ClearPassingToast();
         }
         catch (Exception ex)
         {
@@ -4424,7 +4429,7 @@ public sealed partial class CompanionState : IDisposable
         if (status.HasFailure && status.FirstFailedAt != _lastReplayFailureNotifiedAt)
         {
             _lastReplayFailureNotifiedAt = status.FirstFailedAt;
-            Toast = "Replay capture is incomplete; live telemetry continues. Open Diagnostics for details.";
+            ShowToast("Replay capture is incomplete; live telemetry continues. Open Diagnostics for details.", ToastTone.Error);
         }
         Diagnostics = BuildDiagnostics(_lastBackendHealth);
         RaiseChanged();
