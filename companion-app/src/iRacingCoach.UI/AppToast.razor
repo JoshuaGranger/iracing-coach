@@ -1,0 +1,67 @@
+@implements IDisposable
+
+@if (State.CurrentToast is { } toast)
+{
+    var error = toast.Tone == ToastTone.Error;
+    @* Docked in the top bar so it never sits over page controls; errors stay until dismissed. *@
+    <div class="toast @(error ? "error" : "info") @(Docked ? "docked" : "floating")"
+         role="@(error ? "alert" : "status")" data-toast="@(error ? "error" : "info")" data-toast-revision="@toast.Revision"
+         @onmouseenter="() => Hover(true)" @onmouseleave="() => Hover(false)"
+         @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
+        <ProductIcon Name="@(error ? "info" : "check")" Size="15" />
+        <span class="toast-message" title="@toast.Message">@toast.Message</span>
+        @if (toast.Reference is { } reference)
+        {
+            <small class="toast-reference">Ref @reference</small>
+        }
+        @if (toast.Action != ToastAction.None)
+        {
+            <button type="button" class="toast-action" @onclick="State.RunToastAction">@toast.ActionLabel</button>
+        }
+        <button type="button" class="toast-dismiss" aria-label="Dismiss notification" @onclick="() => State.DismissToast(toast.Revision)"><ProductIcon Name="close" Size="15" /></button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
+    [Parameter] public bool Docked { get; set; }
+
+    private readonly ToastDismissTimer _timer = new(TimeProvider.System);
+    private CancellationTokenSource? _countdown;
+
+    protected override void OnParametersSet()
+    {
+        if (_timer.Track(State.CurrentToast)) Schedule();
+    }
+
+    private void Hover(bool hovered) { if (_timer.SetHovered(hovered)) Schedule(); }
+    private void Focus(bool focused) { if (_timer.SetFocused(focused)) Schedule(); }
+
+    private void Schedule()
+    {
+        _countdown?.Cancel();
+        _countdown?.Dispose();
+        _countdown = null;
+        if (_timer.Remaining is not { } delay || _timer.Revision is not { } revision) return;
+        _countdown = new CancellationTokenSource();
+        _ = DismissWhenDueAsync(delay, revision, _countdown.Token);
+    }
+
+    private async Task DismissWhenDueAsync(TimeSpan delay, long revision, CancellationToken cancellationToken)
+    {
+        try { await Task.Delay(delay, cancellationToken); }
+        catch (OperationCanceledException) { return; }
+        await InvokeAsync(() =>
+        {
+            if (cancellationToken.IsCancellationRequested || _timer.Revision != revision) return;
+            if (_timer.IsDue(revision)) State.DismissToast(revision);
+            else Schedule(); // The delay can wake a few milliseconds early.
+        });
+    }
+
+    public void Dispose()
+    {
+        _countdown?.Cancel();
+        _countdown?.Dispose();
+    }
+}

@@ -50,9 +50,10 @@
     {
         <JobTray State="State" />
     }
-    @if (!string.IsNullOrWhiteSpace(State.Toast))
+    @* Every other page shows notifications docked in the top bar. *@
+    @if (State.CurrentPage == "first-run")
     {
-        <div class="toast" role="status"><span>@State.Toast</span><button aria-label="Dismiss notification" @onclick="State.DismissToast"><ProductIcon Name="close" Size="16" /></button></div>
+        <AppToast State="State" />
     }
 </div>
 

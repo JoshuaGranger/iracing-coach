@@ -141,11 +141,15 @@ public sealed class IterationUxTests
     public void ToastStatus_DoesNotBlockControlsBehindIt()
     {
         var css = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "coach.css"));
+        var topBar = File.ReadAllText(Path.Combine(UiRoot(), "AppTopBar.razor"));
 
-        StringAssert.Contains(css, ".toast { position: fixed;");
-        StringAssert.Contains(css, "box-shadow: 0 10px 32px var(--shadow); pointer-events: none;");
+        // Notifications dock in the top bar beside navigation instead of floating over page
+        // controls; only first run, which has no top bar, floats one, at the top of the page.
+        StringAssert.Contains(topBar, "<AppToast State=\"State\" Docked=\"true\" />");
+        StringAssert.Contains(css, ".toast.docked {");
+        StringAssert.Contains(css, ".toast.floating { position: fixed; z-index: 40; left: 50%; top: var(--space-4);");
+        Assert.DoesNotContain("bottom: var(--space-6); transform: translateX(-50%)", css);
         StringAssert.Contains(css, ".toast button {");
-        StringAssert.Contains(css, "cursor: pointer; pointer-events: auto;");
     }
 
     [TestMethod]

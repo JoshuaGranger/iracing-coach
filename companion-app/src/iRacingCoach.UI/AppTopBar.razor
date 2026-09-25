@@ -7,6 +7,7 @@
             <button aria-current="@(current ? "page" : null)" data-nav="@item.Id" @onclick="() => Go(item.Id)">@item.Label</button>
         }
     </nav>
+    <AppToast State="State" Docked="true" />
     <div class="app-topbar-status">
         @if (RunningJob is { } job)
         {

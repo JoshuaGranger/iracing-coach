@@ -194,7 +194,7 @@ public sealed partial class CompanionState : IDisposable
     public bool PlanGenerated { get; private set; }
     public bool ExperimentGenerated { get; private set; }
     public bool DiagnosticsExpanded { get; private set; }
-    public string? Toast { get; private set; }
+    public string? Toast { get => _toast?.Message; private set => SetToast(value); }
     public string SettingsMessage { get; private set; } = "Preferences and race history are saved in the Coach folder.";
     public bool SettingsWritable => Settings.Compatibility.Writable;
     public string DataMessage { get; private set; } = "Looking for finalized iRacing recordings…";
@@ -394,7 +394,7 @@ public sealed partial class CompanionState : IDisposable
     {
         LastRecoverableError = StructuredAppLog.Record(scope, exception, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
         ServiceFailureCount++;
-        Toast = "Something went wrong, but the app is still running.";
+        ShowContainedError(LastRecoverableError);
         RaiseChanged();
     }
 
@@ -3226,7 +3226,6 @@ public sealed partial class CompanionState : IDisposable
             ReportUnhandledException($"job {title}", ex);
             if (LastRecoverableError is { } error) onError?.Invoke(error);
             job.Status = "failed"; job.Stage = Bound(ex.Message); job.Cancellable = false; job.Elapsed = timer.Elapsed;
-            Toast = $"{title} needs attention.";
         }
         finally
         {
