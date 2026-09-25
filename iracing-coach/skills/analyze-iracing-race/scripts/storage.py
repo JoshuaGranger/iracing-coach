@@ -626,13 +626,25 @@ def _atomic_write_text(
     sleeper=time.sleep,
     jitter_ms=_atomic_jitter_ms,
 ) -> None:
+    _atomic_write_bytes(
+        path, text.encode("utf-8"), sleeper=sleeper, jitter_ms=jitter_ms
+    )
+
+
+def _atomic_write_bytes(
+    path: Path,
+    data: bytes,
+    *,
+    sleeper=time.sleep,
+    jitter_ms=_atomic_jitter_ms,
+) -> None:
     target = _extended_path(path)
     parent = os.path.dirname(target)
     os.makedirs(parent, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=".write-", dir=parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
         _atomic_replace_with_retry(
@@ -857,6 +869,50 @@ def _referenced_report_directories(value: Any, found: set[str]) -> None:
             found.update(_report_directory_keys(os.path.dirname(value)))
         except (OSError, ValueError):
             pass
+
+
+# The app reads analysis.json (up to about 80 MB) with File.OpenRead,
+# ReadAllBytes and ReadAllTextAsync. None of them shares delete access, so
+# while one runs the file can be neither replaced nor deleted (WinError 5 or
+# 32). A report save waits this long for such reads to end; a read that
+# outlasts it gets a complete new copy beside the report instead of a failure.
+_REPORT_REPLACE_WAIT_S = 5.0
+_REPORT_REPLACE_DELAYS_MS = (10, 20, 40, 80, 160, 250)
+_REPORT_CONTENTION_WINERRORS = (5, 32, 33)
+
+
+def _replace_before_deadline(
+    source: str,
+    destination: str,
+    deadline: float,
+    *,
+    clock=time.monotonic,
+    sleeper=time.sleep,
+) -> bool:
+    """Replace ``destination``; False when a reader still holds it at ``deadline``.
+
+    Every failure other than reader contention is raised.
+    """
+
+    attempt = 0
+    while True:
+        try:
+            os.replace(source, destination)
+            return True
+        except OSError as exc:
+            winerror = getattr(exc, "winerror", None)
+            if (
+                isinstance(winerror, bool)
+                or not isinstance(winerror, int)
+                or winerror not in _REPORT_CONTENTION_WINERRORS
+            ):
+                raise
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return False
+        delay_ms = _REPORT_REPLACE_DELAYS_MS[min(attempt, len(_REPORT_REPLACE_DELAYS_MS) - 1)]
+        sleeper(min(delay_ms / 1000.0, remaining))
+        attempt += 1
 
 
 def _json_text(value: Any) -> str:
@@ -1629,27 +1685,182 @@ class ArchiveStore:
         report_markdown: str,
         extra_files: Mapping[str, str | bytes] | None = None,
     ) -> dict[str, str]:
+        """Write one analysis's report, replacing that recording's copy in place.
+
+        The app may be reading the previous copy through a handle that forbids
+        replacing it. The save waits up to ``_REPORT_REPLACE_WAIT_S`` for such
+        reads to end. A read that outlasts the wait gets the complete report
+        in a new sibling directory (``<analysis_id>.<stamp>``) instead, and
+        record_analysis points the history index there; the stable directory
+        returns on the next save, which also removes the superseded sibling
+        once nothing reads or names it. A save never fails because a report is
+        being read.
+        """
+
         self.initialize()
         report_dir = self.report_directory(analysis)
-        report_dir.mkdir(parents=True, exist_ok=True)
-        analysis_path = report_dir / "analysis.json"
-        report_path = report_dir / "report.md"
-        _atomic_write_text(analysis_path, _json_text(dict(analysis)))
-        _atomic_write_text(report_path, report_markdown.rstrip() + "\n")
-        artifacts = {"analysis": str(analysis_path), "report": str(report_path)}
+        payloads: list[tuple[str, Path, bytes]] = [
+            ("analysis", Path("analysis.json"), _json_text(dict(analysis)).encode("utf-8")),
+            ("report", Path("report.md"), (report_markdown.rstrip() + "\n").encode("utf-8")),
+        ]
         for relative, payload in (extra_files or {}).items():
             target = (report_dir / relative).resolve()
             if report_dir not in target.parents:
                 raise ValueError(f"Unsafe report artifact path: {relative}")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if isinstance(payload, bytes):
-                target.write_bytes(payload)
-            else:
-                _atomic_write_text(target, payload)
-            artifacts[relative] = str(target)
-        return artifacts
+            payloads.append(
+                (
+                    relative,
+                    target.relative_to(report_dir),
+                    payload if isinstance(payload, bytes) else str(payload).encode("utf-8"),
+                )
+            )
+        directory = report_dir
+        if not self._replace_report_files(report_dir, payloads):
+            directory = self._new_report_generation(report_dir)
+            for _key, relative, data in payloads:
+                _atomic_write_bytes(directory / relative, data)
+        return {
+            key: str(
+                directory / relative
+                if key in ("analysis", "report")
+                else (directory / relative).resolve()
+            )
+            for key, relative, _data in payloads
+        }
+
+    @staticmethod
+    def _replace_report_files(
+        report_dir: Path, payloads: Sequence[tuple[str, Path, bytes]]
+    ) -> bool:
+        """Replace a report's files in place; False when a read outlasts the wait.
+
+        Every new file is complete on disk before any target is replaced.
+        analysis.json goes first because it is the file the app reads, so a
+        read of it that outlasts the wait leaves the previous report whole.
+        """
+
+        base = _extended_path(report_dir)
+        staged: list[tuple[str, str]] = []
+        try:
+            for _key, relative, data in payloads:
+                target = os.path.join(base, *relative.parts)
+                parent = os.path.dirname(target)
+                os.makedirs(parent, exist_ok=True)
+                fd, temp_name = tempfile.mkstemp(prefix=".write-", dir=parent)
+                staged.append((temp_name, target))
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(data)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            deadline = time.monotonic() + _REPORT_REPLACE_WAIT_S
+            return all(
+                _replace_before_deadline(temp_name, target, deadline)
+                for temp_name, target in staged
+            )
+        finally:
+            for temp_name, _target in staged:
+                try:
+                    os.unlink(temp_name)
+                except FileNotFoundError:
+                    pass
+
+    @staticmethod
+    def _new_report_generation(report_dir: Path) -> Path:
+        # safe_slug never emits ".", so "<leaf>." names only this analysis's
+        # own siblings.
+        stamp = safe_slug(utc_now())
+        for _attempt in range(100):
+            candidate = report_dir.with_name(
+                f"{report_dir.name}.{stamp}-{os.urandom(3).hex()}"
+            )
+            try:
+                os.makedirs(_extended_path(candidate))
+            except FileExistsError:
+                continue
+            return candidate
+        raise StorageCommitError("no free report directory name")
+
+    def _report_references(self) -> dict[str, str]:
+        """Report directory keys named by saved trial and tuning records."""
+
+        referenced: dict[str, str] = {}
+        for label, base in (("trials", self.root / "trials"), ("tuning", self.tuning_dir)):
+            base_io = _extended_path(base)
+            if not os.path.isdir(base_io):
+                continue
+            for current, _subdirectories, names in os.walk(base_io):
+                for name in names:
+                    if not name.casefold().endswith(".json"):
+                        continue
+                    record_path = os.path.join(current, name)
+                    try:
+                        if os.path.getsize(record_path) > _REFERENCE_RECORD_MAX_BYTES:
+                            continue
+                        with open(record_path, encoding="utf-8") as handle:
+                            record = json.load(handle)
+                    except (OSError, ValueError):
+                        continue
+                    found: set[str] = set()
+                    _referenced_report_directories(record, found)
+                    for key in found:
+                        referenced.setdefault(key, label)
+        return referenced
+
+    def _discard_superseded_report_copies(
+        self, analysis: Mapping[str, Any], report_path: str
+    ) -> None:
+        """Remove this analysis's sibling copies that the index no longer names.
+
+        Only ``<analysis_id>.<stamp>`` directories written by
+        save_report_artifacts are candidates; the stable directory and every
+        copy a trial or tuning record names are kept. analysis.json is removed
+        first: while the app still reads it the removal fails and the whole
+        copy is left for a later save. Nothing here can fail the save.
+        """
+
+        try:
+            analysis_id = str(analysis.get("analysis_id") or "")
+            stable = self.report_directory(analysis)
+            if not analysis_id or safe_slug(analysis_id, "") != stable.name:
+                return
+            current = _report_directory_keys(os.path.dirname(os.fspath(report_path)))
+            prefix = stable.name + "."
+            with os.scandir(_extended_path(stable.parent)) as iterator:
+                candidates = [
+                    entry.path
+                    for entry in iterator
+                    if entry.name.startswith(prefix)
+                    and entry.is_dir(follow_symlinks=False)
+                    and not entry.is_symlink()
+                    and not getattr(entry, "is_junction", lambda: False)()
+                    and not (_report_directory_keys(entry.path) & current)
+                ]
+            if not candidates:
+                return
+            references = self._report_references()
+            for candidate in candidates:
+                if _report_directory_keys(candidate) & references.keys():
+                    continue
+                analysis_file = os.path.join(candidate, "analysis.json")
+                if os.path.isfile(analysis_file):
+                    if _report_analysis_id(
+                        analysis_file, os.path.getsize(analysis_file)
+                    ) != analysis_id:
+                        continue
+                    try:
+                        os.unlink(analysis_file)
+                    except OSError:
+                        continue
+                shutil.rmtree(candidate, ignore_errors=True)
+        except (OSError, ValueError):
+            return
 
     def record_analysis(self, analysis: Mapping[str, Any], report_path: str) -> None:
+        self._record_analysis_row(analysis, report_path)
+        # The index now names report_path, so copies it superseded can go.
+        self._discard_superseded_report_copies(analysis, report_path)
+
+    def _record_analysis_row(self, analysis: Mapping[str, Any], report_path: str) -> None:
         self.initialize()
         context = self.context_from_analysis(analysis)
         identity = analysis.get("identity", {})
@@ -1884,26 +2095,8 @@ class ArchiveStore:
                 index_status = "unreadable"
 
         referenced: dict[str, str] = {key: "history-index" for key in indexed}
-        for label, base in (("trials", self.root / "trials"), ("tuning", self.tuning_dir)):
-            base_io = _extended_path(base)
-            if not os.path.isdir(base_io):
-                continue
-            for current, _subdirectories, names in os.walk(base_io):
-                for name in names:
-                    if not name.casefold().endswith(".json"):
-                        continue
-                    record_path = os.path.join(current, name)
-                    try:
-                        if os.path.getsize(record_path) > _REFERENCE_RECORD_MAX_BYTES:
-                            continue
-                        with open(record_path, encoding="utf-8") as handle:
-                            record = json.load(handle)
-                    except (OSError, ValueError):
-                        continue
-                    found: set[str] = set()
-                    _referenced_report_directories(record, found)
-                    for key in found:
-                        referenced.setdefault(key, label)
+        for key, label in self._report_references().items():
+            referenced.setdefault(key, label)
 
         groups: dict[str, list[dict[str, Any]]] = {}
         for directory in directories.values():

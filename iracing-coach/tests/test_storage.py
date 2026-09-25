@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 from concurrent.futures import ThreadPoolExecutor
@@ -843,6 +844,172 @@ class StorageReportUsageTests(unittest.TestCase):
             self.assertEqual(usage["status"], "empty")
             self.assertEqual(usage["reclaimable_bytes"], 0)
             self.assertFalse(root.exists())
+
+
+def _hold_open(path: Path, opened: threading.Event, release: threading.Event,
+               seconds: float | None) -> None:
+    # CPython opens files on Windows without FILE_SHARE_DELETE, exactly like
+    # .NET File.OpenRead/ReadAllBytes/ReadAllTextAsync in the app: while this
+    # handle is open the file can be neither replaced nor deleted.
+    with open(path, "rb") as handle:
+        handle.read(1)
+        opened.set()
+        release.wait(60 if seconds is None else seconds)
+
+
+@unittest.skipUnless(os.name == "nt", "Windows file-sharing semantics")
+class StorageReportSaveUnderReaderContentionTests(unittest.TestCase):
+    """A save must never fail because the app is reading the previous report."""
+
+    RECORDING = "ae7b1748175fa9e9f5c6ae52"
+
+    def _reader(self, path: Path, seconds: float | None = None) -> tuple[threading.Thread, threading.Event]:
+        opened, release = threading.Event(), threading.Event()
+        thread = threading.Thread(
+            target=_hold_open, args=(path, opened, release, seconds), daemon=True
+        )
+        thread.start()
+        self.assertTrue(opened.wait(10))
+        return thread, release
+
+    def _save(self, store: ArchiveStore, stamp: str, label: str) -> dict[str, str]:
+        analysis = _report_analysis(self.RECORDING, stamp)
+        artifacts = store.save_report_artifacts(
+            analysis, f"# {label}", {"race-card.md": f"card {label}", "visuals/lap.svg": f"<svg>{label}</svg>"}
+        )
+        store.record_analysis(analysis, artifacts["report"])
+        return artifacts
+
+    def _assert_report(self, artifacts: dict[str, str], stamp: str, label: str) -> None:
+        saved = json.loads(Path(artifacts["analysis"]).read_text(encoding="utf-8"))
+        self.assertEqual(saved["analyzed_at"], stamp)
+        self.assertEqual(Path(artifacts["report"]).read_text(encoding="utf-8"), f"# {label}\n")
+        self.assertEqual(Path(artifacts["race-card.md"]).read_text(encoding="utf-8"), f"card {label}")
+        self.assertEqual(Path(artifacts["visuals/lap.svg"]).read_text(encoding="utf-8"), f"<svg>{label}</svg>")
+
+    def test_a_read_of_the_previous_report_is_waited_out_and_replaced_in_place(self) -> None:
+        # Verifier probe: the save failed with AtomicReplaceExhausted after
+        # about 0.2-0.27 s whenever the app held analysis.json that long.
+        for hold in (0.1, 0.4, 2.0):
+            with self.subTest(hold_s=hold), tempfile.TemporaryDirectory() as directory:
+                store = ArchiveStore(directory)
+                one = self._save(store, "2026-09-21T00:07:38+00:00", "first")
+                reader, _release = self._reader(Path(one["analysis"]), hold)
+                started = time.monotonic()
+                two = self._save(store, "2026-09-21T00:07:43+00:00", "second")
+                elapsed = time.monotonic() - started
+                reader.join(10)
+
+                self.assertEqual(two, one)
+                self._assert_report(two, "2026-09-21T00:07:43+00:00", "second")
+                session_dir = Path(one["analysis"]).parent.parent
+                self.assertEqual([item.name for item in session_dir.iterdir()], [self.RECORDING])
+                self.assertEqual([item.name for item in session_dir.rglob(".*")], [])
+                self.assertLess(elapsed, hold + 2.0)
+                self.assertEqual(store.recent_analyses()[0]["report_path"], one["report"])
+
+    def test_a_read_that_outlasts_the_wait_gets_a_complete_new_copy(self) -> None:
+        # A reader that never lets go during the save stands in for the 30 s
+        # probe; the bounded wait is shortened so the test stays quick.
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(storage, "_REPORT_REPLACE_WAIT_S", 0.5):
+            store = ArchiveStore(directory)
+            one = self._save(store, "2026-09-21T00:07:38+00:00", "first")
+            canonical = Path(one["analysis"]).parent
+            reader, release = self._reader(Path(one["analysis"]))
+            try:
+                started = time.monotonic()
+                two = self._save(store, "2026-09-21T00:07:43+00:00", "second")
+                elapsed = time.monotonic() - started
+
+                self.assertLess(elapsed, 5.0)
+                fallback = Path(two["analysis"]).parent
+                self.assertEqual(fallback.parent, canonical.parent)
+                self.assertTrue(fallback.name.startswith(canonical.name + "."))
+                self._assert_report(two, "2026-09-21T00:07:43+00:00", "second")
+                # The copy being read is complete and untouched.
+                self._assert_report(one, "2026-09-21T00:07:38+00:00", "first")
+                row = store.recent_analyses()[0]
+                self.assertEqual(row["report_path"], two["report"])
+                self.assertTrue(row["report_available"])
+                self.assertEqual([item.name for item in canonical.parent.rglob(".*")], [])
+            finally:
+                release.set()
+                reader.join(10)
+
+            # Once the read ends, the next save returns to the stable path and
+            # removes the copy it superseded.
+            three = self._save(store, "2026-09-21T00:07:50+00:00", "third")
+            self.assertEqual(three, one)
+            self._assert_report(three, "2026-09-21T00:07:50+00:00", "third")
+            self.assertEqual([item.name for item in canonical.parent.iterdir()], [canonical.name])
+            self.assertEqual(store.recent_analyses()[0]["report_path"], one["report"])
+
+    def test_a_superseded_copy_still_being_read_is_removed_on_a_later_save(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(storage, "_REPORT_REPLACE_WAIT_S", 0.3):
+            store = ArchiveStore(directory)
+            one = self._save(store, "2026-09-21T00:07:38+00:00", "first")
+            canonical = Path(one["analysis"]).parent
+            reader, release = self._reader(Path(one["analysis"]))
+            try:
+                two = self._save(store, "2026-09-21T00:07:43+00:00", "second")
+            finally:
+                release.set()
+                reader.join(10)
+            fallback = Path(two["analysis"]).parent
+            self.assertNotEqual(fallback, canonical)
+
+            reader, release = self._reader(Path(two["analysis"]))
+            try:
+                three = self._save(store, "2026-09-21T00:07:50+00:00", "third")
+                self.assertEqual(three, one)
+                # Nothing was removed from under the reader.
+                self._assert_report(two, "2026-09-21T00:07:43+00:00", "second")
+            finally:
+                release.set()
+                reader.join(10)
+
+            four = self._save(store, "2026-09-21T00:07:55+00:00", "fourth")
+            self.assertEqual(four, one)
+            self.assertFalse(fallback.exists())
+            self.assertEqual([item.name for item in canonical.parent.iterdir()], [canonical.name])
+
+    def test_a_superseded_copy_named_by_a_trial_is_kept(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(storage, "_REPORT_REPLACE_WAIT_S", 0.3):
+            store = ArchiveStore(directory)
+            one = self._save(store, "2026-09-21T00:07:38+00:00", "first")
+            reader, release = self._reader(Path(one["analysis"]))
+            try:
+                two = self._save(store, "2026-09-21T00:07:43+00:00", "second")
+            finally:
+                release.set()
+                reader.join(10)
+            trials = Path(directory) / "trials"
+            trials.mkdir()
+            (trials / "trial-1.json").write_text(
+                json.dumps({"source": {"analysis_path": two["analysis"]}}), encoding="utf-8"
+            )
+
+            three = self._save(store, "2026-09-21T00:07:50+00:00", "third")
+
+            self.assertEqual(three, one)
+            self._assert_report(two, "2026-09-21T00:07:43+00:00", "second")
+
+    def test_a_read_of_another_report_file_also_never_fails_the_save(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(storage, "_REPORT_REPLACE_WAIT_S", 0.3):
+            store = ArchiveStore(directory)
+            one = self._save(store, "2026-09-21T00:07:38+00:00", "first")
+            reader, release = self._reader(Path(one["visuals/lap.svg"]))
+            try:
+                two = self._save(store, "2026-09-21T00:07:43+00:00", "second")
+                self._assert_report(two, "2026-09-21T00:07:43+00:00", "second")
+                self.assertEqual(store.recent_analyses()[0]["report_path"], two["report"])
+            finally:
+                release.set()
+                reader.join(10)
 
 
 if __name__ == "__main__":
