@@ -33,6 +33,18 @@ public sealed partial class CompanionState
         }
     }
 
+    private (string DayId, int? Run) _testDaySelection;
+
+    /// <summary>The Test day row the driver selected on this day; it survives opening another run's recording.</summary>
+    public int? TestDaySelectedRun(RaceEventGroup? group) =>
+        group?.TestDayId is { } id && string.Equals(_testDaySelection.DayId, id, StringComparison.OrdinalIgnoreCase) ? _testDaySelection.Run : null;
+
+    public void SelectTestDayRun(RaceEventGroup group, int? run)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        _testDaySelection = (group.TestDayId ?? string.Empty, run);
+    }
+
     /// <summary>The loaded review for this day, or null while it has not been read.</summary>
     public TestDayReview? TestDayReviewFor(RaceEventGroup? group) =>
         group?.TestDayId is { } id && CurrentTestDay is { } review && string.Equals(CurrentTestDayId, id, StringComparison.OrdinalIgnoreCase)

@@ -10,17 +10,17 @@
                 <span class="ri-run-key" data-run="@run.RunNumber" title="@RunTitle(run)">
                     <svg width="20" height="8" aria-hidden="true"><line x1="0" y1="4" x2="20" y2="4" stroke="@RunColor(run.RunNumber)" stroke-width="2.5" stroke-dasharray="@RunDash(run.RunNumber)" /></svg>
                     <b>Run @run.RunNumber</b><small>@(RunCaption?.Invoke(run) ?? $"laps {run.FirstLap}–{run.LastLap} · {run.PlottedLapCount} plotted")</small>
-                    @if (_showFit && run.Fit is { } fit) { <small class="ri-fit-text">fit @Signed(fit.SlopeSecondsPerGreenLap * 10, 2) s / 10 green · @fit.EligibleCount screened laps · @Number(fit.DomainStart)–@Number(fit.DomainEnd)</small> }
+                    @if (_showFit && run.Fit is { } fit) { <small class="ri-fit-text">@(FitCaption?.Invoke(fit) ?? $"fit {Signed(fit.SlopeSecondsPerGreenLap * 10, 2)} s / 10 green · {fit.EligibleCount} screened laps · {Number(fit.DomainStart)}–{Number(fit.DomainEnd)}")</small> }
                 </span>
             }
         </div>
-        <button type="button" class="ri-toggle" aria-pressed="@(_showFit ? "true" : "false")" title="Least-squares line through screened laps only, drawn across their exposure range" @onclick="() => _showFit = !_showFit">Screened fit</button>
+        <button type="button" class="ri-toggle" aria-pressed="@(_showFit ? "true" : "false")" title="@FitToggleTitle" @onclick="() => _showFit = !_showFit">@FitToggleLabel</button>
         <output class="ri-readout" aria-live="polite">@Readout</output>
     </div>
     <div class="ri-plot" @ref="Target">
         @if (Points.Count == 0)
         {
-            <div class="ri-empty"><strong>No plotted laps with known run exposure</strong><span>Runs need complete green laps to place them on a shared axis.</span></div>
+            <div class="ri-empty"><strong>@EmptyTitle</strong><span>@EmptyDetail</span></div>
         }
         else
         {
@@ -66,7 +66,7 @@
                     var y = plot.Y(Math.Clamp(point.LapTimeSeconds!.Value, plot.YMin, plot.YMax));
                     if (chosen) { <circle cx="@N(x)" cy="@N(y)" r="7" class="ri-ring" stroke="@color" /> }
                     <circle cx="@N(x)" cy="@N(y)" r="@(chosen ? "4" : "2.8")" fill="@(point.Eligible ? color : "var(--surface-1)")" stroke="@color"
-                            class="ri-dot @(point.Eligible ? null : "excluded")" tabindex="0" data-lap="@point.Lap"
+                            class="ri-dot @(point.Eligible ? null : "excluded")" tabindex="@(FocusableLaps ? "0" : "-1")" data-lap="@point.Lap"
                             @onmouseenter="() => _hover = point" @onfocus="() => _hover = point"
                             aria-label="@LapLabel(point)"><title>@LapLabel(point)</title></circle>
                 }
@@ -104,6 +104,15 @@
     [Parameter] public string Hint { get; set; } = "Point to a lap for its time and exposure";
     /// <summary>When set, the footer shows only this note instead of the selected comparison.</summary>
     [Parameter] public string? FootNote { get; set; }
+    /// <summary>The fit toggle's label and hover text; a test day draws its fall-off rather than a screened race fit.</summary>
+    [Parameter] public string FitToggleLabel { get; set; } = "Screened fit";
+    [Parameter] public string FitToggleTitle { get; set; } = "Least-squares line through screened laps only, drawn across their exposure range";
+    /// <summary>Replaces the legend's "fit … s / 10 green" text for a run's fit.</summary>
+    [Parameter] public Func<RaceRunFit, string>? FitCaption { get; set; }
+    /// <summary>False when another control (a test day's run table) is the keyboard path, so each lap is not a tab stop.</summary>
+    [Parameter] public bool FocusableLaps { get; set; } = true;
+    [Parameter] public string EmptyTitle { get; set; } = "No plotted laps with known run exposure";
+    [Parameter] public string EmptyDetail { get; set; } = "Runs need complete green laps to place them on a shared axis.";
 
     private bool _showFit;
     private RaceInvestigationLap? _hover;

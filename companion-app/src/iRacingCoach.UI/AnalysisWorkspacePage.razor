@@ -89,12 +89,14 @@
                 var current = string.Equals(State.CurrentTestDayId, day.TestDayId, StringComparison.OrdinalIgnoreCase);
                 <TestDayView Group="day" Review="State.TestDayReviewFor(day)" State="State" OpenSessionId="@State.SelectedRaceSessionId"
                              Loading="@(current && State.TestDayLoading)" Message="@(current ? State.TestDayMessage : "")"
-                             OnLoad="() => State.LoadTestDayAsync(day)" OnOpenRun="OpenTestDayRun" />
+                             OnLoad="() => State.LoadTestDayAsync(day)" OnOpenRun="OpenTestDayRun"
+                             SelectedRunNumber="TestDaySelectedRun(day)" SelectedRunNumberChanged="run => SelectTestDayRun(day, run)" />
             }
             else if (Workspace.Investigation is { } investigation)
             {
                 <RaceInvestigationView Investigation="investigation" Geometry="Workspace.VectorGeometry" State="State" AnalysisId="@Workspace.AnalysisId"
                                        View="@RaceDataSection" ComparisonId="@Selection.ComparisonId" SectionId="@Selection.SectionId"
+                                       OfflineTesting="OfflineTestingSession" TestDayAvailable="@(TestDay is not null)"
                                        OnSelectionChanged="ChangeSelection" OnOpenTraces="InspectFinding" OnRefresh="RefreshAnalysis" />
             }
             else
@@ -254,7 +256,18 @@
     }
     private IReadOnlyList<RecentRace> EventSessions => State.EventGroups.OfType<RaceEventGroup>().FirstOrDefault(group => group.Sessions?.OfType<RecentRace>().Any(session => session.Id == State.SelectedRaceSessionId) == true)?.Sessions?.OfType<RecentRace>().Where(session => session.IsRace || session.IsQualifying).GroupBy(session => session.IsQualifying ? "qualifying" : "race").Select(group => group.First()).OrderBy(session => session.IsQualifying ? 0 : 1).ToArray() ?? [];
     private Task ShowEventSession(RecentRace session) => session.Id == State.SelectedRaceSessionId ? Task.CompletedTask : State.AnalyzeRaceAsync(session);
-    private Task OpenTestDayRun(RecentRace session) => State.OpenTestDayRunAsync(session);
+    /// <summary>"Show run N's laps in Runs": open that run's recording, then show its laps.</summary>
+    private async Task OpenTestDayRun(RecentRace session)
+    {
+        await State.OpenTestDayRunAsync(session);
+        if (string.Equals(State.SelectedRaceSessionId, session.Id, StringComparison.Ordinal)) ShowView("runs");
+    }
+    // The selected Test day row lives in the state, so it survives opening another run's recording.
+    private int? TestDaySelectedRun(RaceEventGroup day) => State.TestDaySelectedRun(day);
+    private void SelectTestDayRun(RaceEventGroup day, int? run) => State.SelectTestDayRun(day, run);
+    /// <summary>Offline Testing laps read as caution in the recording analysis, which leaves Runs and Sections empty.</summary>
+    private bool OfflineTestingSession =>
+        (State.SelectedRaceSession?.SessionType ?? Workspace.SessionType)?.Contains("Offline Testing", StringComparison.OrdinalIgnoreCase) == true;
     private static string SessionName(RecentRace session) => session.IsQualifying ? "Qualifying" : "Race";
     private static string LapRange(IReadOnlyList<int> laps) => laps.Count == 0 ? "—" : laps.Count == 1 ? laps[0].ToString() : $"{laps.Min()}–{laps.Max()}";
     private string FastestCleanLap
