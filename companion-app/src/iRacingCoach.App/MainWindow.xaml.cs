@@ -37,6 +37,9 @@ public partial class MainWindow : Window
     private bool _restoringPrimaryUi;
     private HwndSource? _windowSource;
     private DateTimeOffset _lastTrayLiveUpdate = DateTimeOffset.MinValue;
+    private readonly MainWindowPlacementStore _placementStore;
+    private SavedWindowPlacement? _lastNormalBounds;
+    private bool _lastShownMaximized;
 
     public MainWindow() : this(CompanionHostProfile.FromArguments(Array.Empty<string>())) { }
 
@@ -54,6 +57,8 @@ public partial class MainWindow : Window
 #endif
         _services = services.BuildServiceProvider();
         InitializeComponent();
+        _placementStore = new MainWindowPlacementStore(Path.Combine(_state.Settings.LocalStateRoot, "main-window-placement.json"));
+        ApplyStartupPlacement();
         if (!hostProfile.AllowEmbeddedBrowser) Content = BuildIsolatedEvidenceSurface();
         else if (!IsWebView2Available()) Content = BuildRuntimeNotice();
         else InitializeBrowser();
@@ -87,7 +92,15 @@ public partial class MainWindow : Window
                 _ = RegisterGlobalHotkey();
             }
         };
-        StateChanged += (_, _) => { if (WindowState == WindowState.Minimized) HideToTray(false); };
+        LocationChanged += (_, _) => RememberNormalBounds();
+        SizeChanged += (_, _) => RememberNormalBounds();
+        ContentRendered += OnFirstContentRendered;
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized) { HideToTray(false); return; }
+            _lastShownMaximized = WindowState == WindowState.Maximized;
+            RememberNormalBounds();
+        };
         Closing += OnClosing;
         _state.Changed += OnStateChanged;
         _state.LiveTelemetryChanged += OnLiveTelemetryChanged;
@@ -104,6 +117,64 @@ public partial class MainWindow : Window
 
         if (Environment.GetCommandLineArgs().Any(argument => string.Equals(argument, "--minimized", StringComparison.OrdinalIgnoreCase)))
             Loaded += (_, _) => HideToTray(false);
+    }
+
+    // The window opens inside a current monitor's work area: the remembered placement
+    // while it is still on a monitor, otherwise the design size capped by the work area.
+    private void ApplyStartupPlacement()
+    {
+        var plan = ResolvePlacement(_placementStore.Load());
+        var scale = plan.Display.Scale;
+        MinWidth = plan.MinWidth;
+        MinHeight = plan.MinHeight;
+        Left = plan.Left / scale;
+        Top = plan.Top / scale;
+        Width = plan.Width / scale;
+        Height = plan.Height / scale;
+        _lastNormalBounds = new SavedWindowPlacement(plan.Left, plan.Top, plan.Width, plan.Height);
+        _lastShownMaximized = plan.Maximized;
+        if (plan.Maximized) WindowState = WindowState.Maximized;
+    }
+
+    private WindowPlacementPlan ResolvePlacement(SavedWindowPlacement? saved) =>
+        MainWindowPlacement.Resolve(DisplayWorkAreas.Current(VisualTreeHelper.GetDpi(this).DpiScaleX), saved);
+
+    private void OnFirstContentRendered(object? sender, EventArgs e)
+    {
+        ContentRendered -= OnFirstContentRendered;
+        if (_disposed || _exitRequested || !IsVisible) return;
+        KeepOnCurrentMonitor();
+        // A newly started process is not always granted the foreground. Bring the
+        // window above other applications on first show instead of opening behind them.
+        Activate();
+        Topmost = true; Topmost = false;
+        Focus();
+    }
+
+    // Device-pixel check after Windows has applied DPI and monitor changes: the title
+    // bar and navigation must remain on a current monitor.
+    private void KeepOnCurrentMonitor()
+    {
+        if (WindowState != WindowState.Normal) return;
+        var handle = new WindowInteropHelper(this).Handle;
+        if (!DisplayWorkAreas.TryGetWindowBounds(handle, out var current)) return;
+        var plan = ResolvePlacement(current);
+        MinWidth = plan.MinWidth;
+        MinHeight = plan.MinHeight;
+        if (Math.Abs(plan.Left - current.Left) > 1 || Math.Abs(plan.Top - current.Top) > 1
+            || Math.Abs(plan.Width - current.Width) > 1 || Math.Abs(plan.Height - current.Height) > 1)
+            DisplayWorkAreas.MoveWindow(handle, plan);
+    }
+
+    private void RememberNormalBounds()
+    {
+        if (WindowState != WindowState.Normal || !IsVisible) return;
+        if (DisplayWorkAreas.TryGetWindowBounds(new WindowInteropHelper(this).Handle, out var bounds)) _lastNormalBounds = bounds;
+    }
+
+    private void SavePlacement()
+    {
+        if (_lastNormalBounds is { } bounds) _placementStore.Save(bounds with { Maximized = _lastShownMaximized });
     }
 
     private void InitializeBrowser()
@@ -140,6 +211,8 @@ public partial class MainWindow : Window
             _state.SetPrimaryUiVisible(true);
             Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            // Monitors can change while the window is in the tray (for example a remote session).
+            KeepOnCurrentMonitor();
             Activate();
             Topmost = true; Topmost = false;
             Focus();
@@ -204,6 +277,7 @@ public partial class MainWindow : Window
 
     private void HideToTray(bool explain)
     {
+        SavePlacement();
         _state.SetPrimaryUiVisible(false);
         Hide();
         if (explain && !_trayNoticeShown)
@@ -290,6 +364,7 @@ public partial class MainWindow : Window
         if (_disposed) return;
         _disposed = true;
         _exitRequested = true;
+        TryCleanup(SavePlacement, "remember main window placement");
         HideForApplicationExit();
         _state.Changed -= OnStateChanged;
         _state.LiveTelemetryChanged -= OnLiveTelemetryChanged;

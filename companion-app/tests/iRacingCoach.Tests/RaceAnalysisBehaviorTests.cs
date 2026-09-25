@@ -1382,12 +1382,17 @@ public sealed class RaceAnalysisBehaviorTests
     {
         var root = CompanionRoot();
         var ui = Path.Combine(root, "src", "iRacingCoach.UI");
-        var mainWindow = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "MainWindow.xaml"));
+        var mainWindow = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "MainWindow.xaml.cs"));
         var telemetry = File.ReadAllText(Path.Combine(ui, "TelemetryWorkspace.razor"));
         var cursor = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-telemetry-cursor.js"));
         var css = File.ReadAllText(Path.Combine(ui, "wwwroot", "coach.css"));
 
-        StringAssert.Contains(mainWindow, "MinWidth=\"900\"");
+        // The 900-DIP minimum now comes from the placement plan, which lowers it only
+        // when a monitor's work area is narrower than that.
+        var placement = iRacingCoach.Coordinator.MainWindowPlacement.Resolve(
+            [new iRacingCoach.Coordinator.DisplayWorkArea(0, 0, 1920, 1032, 1, IsPrimary: true)], null);
+        Assert.AreEqual(900, placement.MinWidth);
+        StringAssert.Contains(mainWindow, "MinWidth = plan.MinWidth;");
         StringAssert.Contains(css, "@container (max-width: 1060px)");
         StringAssert.Contains(css, ".telemetry-workstation-grid { grid-template-columns: minmax(410px,40%) minmax(0,1fr); }");
         StringAssert.Contains(css, ".telemetry-grid { grid-template-columns: minmax(0,1fr); }");
