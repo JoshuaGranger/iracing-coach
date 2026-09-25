@@ -1,0 +1,60 @@
+{
+  "batch_directory": "%ARCHIVE_ROOT%\\removed-reports\\20260824T172000Z-fixture",
+  "confirmed_plan_id": "78dd8976d07ef4e2e40cb3eb2809d1ff",
+  "contract": "report-storage-reclaim-v1",
+  "fixture_metadata": {
+    "production_use_allowed": false,
+    "real_driver_or_setup_data": false,
+    "synthetic": true
+  },
+  "mode": "execute",
+  "moved": {
+    "bytes": 191768,
+    "count": 4,
+    "directories": [
+      {
+        "analysis_id": "fixture-bristol-v21",
+        "bytes": 40445,
+        "directory": "season-fixture\\bristol\\copy-1",
+        "kept_copy": "season-fixture\\bristol\\copy-2",
+        "kind": "duplicate"
+      },
+      {
+        "analysis_id": "fixture-bristol-v21",
+        "bytes": 40445,
+        "directory": "season-fixture\\bristol\\copy-3",
+        "kept_copy": "season-fixture\\bristol\\copy-2",
+        "kind": "duplicate"
+      },
+      {
+        "analysis_id": "fixture-iowa-v19",
+        "bytes": 55439,
+        "directory": "season-fixture\\iowa\\copy-1",
+        "kept_copy": "season-fixture\\iowa\\fixture-iowa-v21",
+        "kind": "superseded"
+      },
+      {
+        "analysis_id": "fixture-iowa-v19",
+        "bytes": 55439,
+        "directory": "season-fixture\\iowa\\copy-2",
+        "kept_copy": "season-fixture\\iowa\\fixture-iowa-v21",
+        "kind": "superseded"
+      }
+    ]
+  },
+  "plan_id": "78dd8976d07ef4e2e40cb3eb2809d1ff",
+  "read_only": false,
+  "recovery": {
+    "batch_count": 1,
+    "bytes": 192804,
+    "path": "%ARCHIVE_ROOT%\\removed-reports"
+  },
+  "recovery_root": "%ARCHIVE_ROOT%\\removed-reports",
+  "reports_root": "%ARCHIVE_ROOT%\\reports",
+  "schema_version": 1,
+  "skipped": {
+    "count": 0,
+    "directories": []
+  },
+  "status": "complete"
+}

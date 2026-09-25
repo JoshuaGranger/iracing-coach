@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iRacing Coach report storage reclaim v1",
+  "description": "Result of the reclaim_report_storage tool (GAP-025, PORT-007). mode 'plan' is read-only: which older copies of saved analyses a confirmation would move (remove) and how many report directories stay (kept). mode 'execute' is the confirmed move of one reviewed plan: each listed directory was re-checked under the history-index write lock immediately before it moved, and moved whole by one rename into recovery_root/<batch>, or was skipped with a reason. The backend decides every eligibility; a consumer only displays these values. Directories are relative to reports_root. Sizes are bytes and counts are non-negative integers; numeric domains are stated here because the repository's bounded validator supports no numeric keywords. Objects may gain optional fields; consumers must preserve unknown fields and fail on a missing required field or another contract/schema_version.",
+  "type": "object",
+  "required": ["contract", "schema_version", "mode", "status", "read_only", "reports_root", "recovery_root", "plan_id", "recovery"],
+  "properties": {
+    "contract": { "const": "report-storage-reclaim-v1" },
+    "schema_version": { "const": 1 },
+    "mode": { "enum": ["plan", "execute"] },
+    "status": {
+      "enum": ["ready", "nothing", "empty", "index-unreadable", "complete", "partial"],
+      "description": "plan: ready (something can be removed), nothing, empty (no reports) or index-unreadable (nothing is offered while the history index cannot be read). execute: complete (every listed directory moved), partial (some moved, some skipped) or nothing (none moved)."
+    },
+    "read_only": { "type": "boolean", "description": "true exactly when mode is plan." },
+    "reports_root": { "type": "string" },
+    "recovery_root": { "type": "string", "description": "The removed-reports folder beside reports. Moved copies stay there, recoverable, until the driver deletes it." },
+    "plan_id": { "type": "string", "description": "32 lowercase hex characters naming the plan's directory list. In execute mode, the plan rebuilt when the confirmation arrived." },
+    "confirmed_plan_id": { "type": "string", "description": "execute only: the plan_id the driver confirmed." },
+    "remove": {
+      "type": "object",
+      "description": "plan only.",
+      "required": ["count", "bytes", "duplicate_count", "duplicate_bytes", "superseded_count", "superseded_bytes", "oldest_utc", "newest_utc", "directories"],
+      "properties": {
+        "count": { "type": "integer" },
+        "bytes": { "type": "integer" },
+        "duplicate_count": { "type": "integer", "description": "Repeats of an analysis another kept copy holds." },
+        "duplicate_bytes": { "type": "integer" },
+        "superseded_count": { "type": "integer", "description": "Copies from an older analyzer revision of a session whose newer analysis is kept." },
+        "superseded_bytes": { "type": "integer" },
+        "oldest_utc": { "type": ["string", "null"], "description": "Oldest listed copy's analysis.json write time; null when nothing is listed." },
+        "newest_utc": { "type": ["string", "null"] },
+        "directories": { "type": "array", "items": { "$ref": "#/$defs/planned" } }
+      },
+      "additionalProperties": true
+    },
+    "kept": {
+      "type": "object",
+      "description": "plan only. by_reason sums to count.",
+      "required": ["count", "bytes", "by_reason"],
+      "properties": {
+        "count": { "type": "integer" },
+        "bytes": { "type": "integer" },
+        "by_reason": {
+          "type": "object",
+          "required": ["history-index", "saved-test", "tuning", "open-in-app", "latest-analysis", "only-copy", "recent", "unverified", "deferred"],
+          "properties": {
+            "history-index": { "type": "integer" },
+            "saved-test": { "type": "integer" },
+            "tuning": { "type": "integer" },
+            "open-in-app": { "type": "integer" },
+            "latest-analysis": { "type": "integer" },
+            "only-copy": { "type": "integer" },
+            "recent": { "type": "integer" },
+            "unverified": { "type": "integer" },
+            "deferred": { "type": "integer", "description": "Eligible copies beyond the 5,000 one confirmation may list; the next review offers them." }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "batch_directory": { "type": ["string", "null"], "description": "execute only: the recovery_root subfolder this confirmation moved copies into; null when none moved." },
+    "moved": {
+      "type": "object",
+      "description": "execute only.",
+      "required": ["count", "bytes", "directories"],
+      "properties": {
+        "count": { "type": "integer" },
+        "bytes": { "type": "integer" },
+        "directories": { "type": "array", "items": { "$ref": "#/$defs/moved" } }
+      },
+      "additionalProperties": true
+    },
+    "skipped": {
+      "type": "object",
+      "description": "execute only.",
+      "required": ["count", "directories"],
+      "properties": {
+        "count": { "type": "integer" },
+        "directories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["directory", "reason"],
+            "properties": {
+              "directory": { "type": "string" },
+              "reason": {
+                "enum": ["referenced", "in-use", "changed", "missing", "not-eligible", "index-unavailable", "move-failed"],
+                "description": "referenced: the index, a saved test, a tuning record or the app now names it. in-use: a file inside is open. changed: it or the copy it repeats changed since review. missing: already gone. not-eligible: never offered. index-unavailable: the history index could not be locked. move-failed: the rename failed for another reason."
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "recovery": {
+      "type": "object",
+      "required": ["path", "bytes", "batch_count"],
+      "properties": {
+        "path": { "type": "string" },
+        "bytes": { "type": "integer", "description": "Bytes waiting in recovery_root for the driver to delete." },
+        "batch_count": { "type": "integer" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "planned": {
+      "type": "object",
+      "required": ["directory", "bytes", "kind", "analysis_id", "modified_utc", "kept_copy"],
+      "properties": {
+        "directory": { "type": "string" },
+        "bytes": { "type": "integer" },
+        "kind": { "enum": ["duplicate", "superseded"] },
+        "analysis_id": { "type": "string" },
+        "modified_utc": { "type": "string" },
+        "kept_copy": { "type": ["string", "null"], "description": "The directory that stays: the identical copy, or the newer analysis of the same session and recording." }
+      },
+      "additionalProperties": true
+    },
+    "moved": {
+      "type": "object",
+      "required": ["directory", "bytes", "kind", "analysis_id", "kept_copy"],
+      "properties": {
+        "directory": { "type": "string" },
+        "bytes": { "type": "integer" },
+        "kind": { "enum": ["duplicate", "superseded"] },
+        "analysis_id": { "type": "string" },
+        "kept_copy": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}

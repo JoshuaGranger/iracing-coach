@@ -180,6 +180,8 @@ public sealed class LocalOnlyBackendClient : IBackendClient
         "list_driving_trials",
         "load_driving_trial",
         "plan_iracing_race",
+        // Moves report copies only inside the profile's own archive (Validate confines every root).
+        "reclaim_report_storage",
         "recommend_open_setup_tuning",
         "recommend_structured_open_setup_tuning",
         "record_open_setup_feedback",

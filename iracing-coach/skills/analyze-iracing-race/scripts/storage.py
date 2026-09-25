@@ -911,13 +911,28 @@ def _report_session_identity(path: str) -> dict[str, str | None] | None:
     ``telemetry_files`` names the same session.
     """
 
+    found = {
+        tuple(sorted(_analysis_session_identity({"source": value}).items()))
+        for value in _report_source_objects(path)
+    }
+    return dict(next(iter(found))) if len(found) == 1 else None
+
+
+def _report_source_objects(path: str) -> list[Mapping[str, Any]]:
+    """Every ``"source"`` object in a stored report that names its recording.
+
+    Only objects carrying both ``selection`` and ``telemetry_files`` count;
+    an unreadable report yields none. See _report_session_identity for why
+    the rest of the report is not parsed.
+    """
+
     try:
         with open(path, "rb") as handle:
             data = handle.read()
     except OSError:
-        return None
+        return []
     decoder = json.JSONDecoder()
-    found: set[tuple[tuple[str, str | None], ...]] = set()
+    found: list[Mapping[str, Any]] = []
     for match in _REPORT_SOURCE_MEMBER.finditer(data):
         start = match.end() - 1
         value: Any = None
@@ -937,8 +952,8 @@ def _report_session_identity(path: str) -> dict[str, str | None] | None:
             or not isinstance(value.get("telemetry_files"), list)
         ):
             continue
-        found.add(tuple(sorted(_analysis_session_identity({"source": value}).items())))
-    return dict(next(iter(found))) if len(found) == 1 else None
+        found.append(value)
+    return found
 
 
 def _session_match_keys(
@@ -983,18 +998,24 @@ _HISTORY_INDEX_COLUMNS = (
 def _query_history_index(uri: str) -> list[dict[str, Any]]:
     connection = sqlite3.connect(uri, uri=True, timeout=5)
     try:
-        available = {
-            str(row[1]) for row in connection.execute("PRAGMA table_info(sessions)")
-        }
-        if "report_path" not in available:
-            raise sqlite3.DatabaseError("history index has no report paths")
-        selected = ", ".join(
-            name if name in available else f"NULL AS {name}"
-            for name in _HISTORY_INDEX_COLUMNS
-        )
-        rows = connection.execute(f"SELECT {selected} FROM sessions").fetchall()
+        return _history_index_rows(connection)
     finally:
         connection.close()
+
+
+def _history_index_rows(connection: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Every sessions row's report path and session keys, through ``connection``."""
+
+    available = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(sessions)")
+    }
+    if "report_path" not in available:
+        raise sqlite3.DatabaseError("history index has no report paths")
+    selected = ", ".join(
+        name if name in available else f"NULL AS {name}"
+        for name in _HISTORY_INDEX_COLUMNS
+    )
+    rows = connection.execute(f"SELECT {selected} FROM sessions").fetchall()
     return [dict(zip(_HISTORY_INDEX_COLUMNS, row)) for row in rows]
 
 

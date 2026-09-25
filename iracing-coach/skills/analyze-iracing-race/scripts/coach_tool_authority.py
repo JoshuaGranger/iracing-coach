@@ -64,6 +64,9 @@ TOOL_CAPABILITIES: Mapping[str, str] = {
     "load_driving_trial": CAPABILITY_READ_ANALYSIS,
     "plan_iracing_race": CAPABILITY_READ_ANALYSIS,
     "query_iracing_telemetry": CAPABILITY_READ_ANALYSIS,
+    # Moves report directories out of reports once the driver confirms; its
+    # read-only plan mode does not change the class of the tool.
+    "reclaim_report_storage": CAPABILITY_WRITE,
     "recommend_open_setup_tuning": CAPABILITY_READ_SETUP,
     "recommend_structured_open_setup_tuning": CAPABILITY_READ_SETUP,
     "record_open_setup_feedback": CAPABILITY_WRITE,
