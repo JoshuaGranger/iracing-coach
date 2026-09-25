@@ -115,6 +115,128 @@ public sealed partial class CoordinatorTests
         Assert.AreEqual(reviews, backend.CallsFor("review_test_day"), "Switching stints of an unchanged day keeps the loaded review.");
     }
 
+    private static RecentRace CappedStint(int run, int? laps) => new(
+        $"local:run-{run}", "New Hampshire Motor Speedway", "Oval", "Toyota Supra Class B", "2026-09-24", "Open", "Analyzed", "", false, laps is not null, 0, 0,
+        StartTimeUtc: new DateTimeOffset(2026, 9, 25, 2, 19, 0, TimeSpan.Zero).AddMinutes(5 * (run - 1)).ToString("O"),
+        SessionType: "Offline Testing", Overview: laps is { } count ? new RaceOverview(RecordedLaps: count) : null,
+        TestDayId: TestDayTag, TestDayRunNumber: run, TestDayRunCount: 13);
+
+    [TestMethod]
+    public void ThirteenRecordingDayDropsAStubBeforeTheRecordingItWasOpenedFrom()
+    {
+        // Joshua's 13-recording day: run 1 is the untimed 10:19 PM stub the day was opened from,
+        // run 3 another stub. Keeping "the latest twelve" dropped run 1 from its own Test day.
+        var day = Enumerable.Range(1, 13).Select(run => CappedStint(run, run is 1 or 3 ? 0 : 20)).ToArray();
+
+        var (kept, leftOut) = CompanionState.ChooseTestDayRecordings(day, "local:run-1");
+
+        Assert.HasCount(CompanionState.MaximumTestDayRecordings, kept);
+        Assert.IsTrue(kept.Any(session => session.Id == "local:run-1"), "The recording the day was opened from always stays.");
+        CollectionAssert.AreEqual(new[] { "local:run-3" }, leftOut.Select(session => session.Id).ToArray(), "A stub leaves before any timed recording.");
+        CollectionAssert.AreEqual(day.Where(session => session.Id != "local:run-3").Select(session => session.Id).ToArray(),
+            kept.Select(session => session.Id).ToArray(), "Kept recordings stay in driving order.");
+        var message = CompanionState.TestDayLeftOutMessage(kept.Count, leftOut);
+        StringAssert.StartsWith(message, "Showing 12 of 13 recordings");
+        StringAssert.Contains(message, "(no timed lap)", "The message names what was left out and why.");
+
+        var noStubs = Enumerable.Range(1, 13).Select(run => CappedStint(run, 20)).ToArray();
+        var (keptTimed, leftTimed) = CompanionState.ChooseTestDayRecordings(noStubs, "local:run-1");
+        CollectionAssert.AreEqual(new[] { "local:run-2" }, leftTimed.Select(session => session.Id).ToArray(),
+            "Without stubs the oldest recording other than the opened one leaves.");
+        Assert.IsTrue(keptTimed.Any(session => session.Id == "local:run-1"));
+        Assert.AreEqual(string.Empty, CompanionState.TestDayLeftOutMessage(12, []), "Nothing left out, nothing said.");
+    }
+
+    [TestMethod]
+    public async Task OpeningTheOldestRecordingOfAThirteenRecordingDayReviewsIt()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-cap", Guid.NewGuid().ToString("N"));
+        string PathFor(string selector) => Path.Combine(root, "data", "reports", selector.Replace(':', '-'), "analysis.json");
+        JsonElement? reviewArguments = null;
+        var stints = Enumerable.Range(1, 13)
+            .Select(run => OfflineStint($"local:run-{run}", new DateTimeOffset(2026, 9, 25, 2, 19, 0, TimeSpan.Zero).AddMinutes(5 * (run - 1)).ToString("O"), run, 13))
+            .ToArray();
+        var backend = new FakeBackend(
+            discovery: TestDayDiscovery(stints),
+            responseOverride: (tool, _, arguments) =>
+            {
+                var args = JsonSerializer.SerializeToElement(arguments);
+                if (tool == "analyze_iracing_race")
+                {
+                    var selector = args.GetProperty("selector").GetString()!;
+                    Directory.CreateDirectory(Path.GetDirectoryName(PathFor(selector))!);
+                    File.WriteAllText(PathFor(selector), "{}");
+                    return HomeAnalysisResponse(PathFor(selector), "Offline Testing", selector);
+                }
+                if (tool == "review_test_day")
+                {
+                    reviewArguments = args;
+                    return TestDayReviewFor(args.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()!).ToArray());
+                }
+                return null;
+            });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        await state.RefreshDashboardAsync();
+
+        await state.OpenRaceFromHomeAsync(state.EventSessions.Single(session => session.Id == "local:run-1"));
+
+        Assert.IsNotNull(reviewArguments, state.TestDayMessage);
+        var paths = reviewArguments!.Value.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()).ToArray();
+        Assert.HasCount(12, paths);
+        Assert.AreEqual(PathFor("local:run-1"), paths[0], "The recording the day was opened from is in its own Test day.");
+        CollectionAssert.DoesNotContain(paths, PathFor("local:run-2"));
+        StringAssert.Contains(state.TestDayMessage, "Left out:", "The day says which recording it left out.");
+    }
+
+    [TestMethod]
+    public async Task TheSelectedTestDayRowLinksToItsRecording()
+    {
+        // Clicking a row only selected it for the chart; the recording's link sat below the table.
+        var fixture = TestDayMapperTests.Fixture();
+        var runs = fixture["runs"]!.AsArray();
+        var sessions = new List<RecentRace>();
+        for (var index = 0; index < runs.Count; index++)
+        {
+            var path = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-row", $"run-{index + 1}", "analysis.json");
+            runs[index]!["analysis_path"] = path;
+            sessions.Add(new RecentRace($"local:row-{index + 1}", "Synthetic Speedway", "Oval", "Synthetic car", "Aug 4", "Open", "Analyzed", "", false, true, 0, 0,
+                AnalysisPath: path, SessionType: "Offline Testing", EventKey: $"local:row-{index + 1}", TestDayId: TestDayTag,
+                TestDayRunNumber: index + 1, TestDayRunCount: runs.Count));
+        }
+        using var state = new CompanionState(new FakeBackend());
+        state.EventSessions.AddRange(sessions);
+        var day = new RaceEventGroup(TestDayTag, "Synthetic Speedway", "Oval", "Synthetic car", "Aug 4", "Open", string.Empty, sessions);
+        var opened = new List<string>();
+        async Task<string> RenderWith(int? selected, string openSession) => await RaceInvestigationPerformanceTests.Render<iRacingCoach.UI.TestDayView>(new()
+        {
+            [nameof(iRacingCoach.UI.TestDayView.Group)] = day,
+            [nameof(iRacingCoach.UI.TestDayView.Review)] = TestDayMapperTests.Map(fixture),
+            [nameof(iRacingCoach.UI.TestDayView.State)] = state,
+            [nameof(iRacingCoach.UI.TestDayView.OpenSessionId)] = openSession,
+            [nameof(iRacingCoach.UI.TestDayView.SelectedRunNumber)] = selected,
+            [nameof(iRacingCoach.UI.TestDayView.OnOpenRun)] = Microsoft.AspNetCore.Components.EventCallback.Factory.Create<RecentRace>(this, (RecentRace race) => opened.Add(race.Id))
+        });
+
+        var html = await RenderWith(2, "local:row-1");
+        Assert.AreEqual(1, Count(html, "data-open-run="), "Only the selected row carries the link.");
+        var row = html[html.IndexOf("data-run=\"2\" tabindex=", StringComparison.Ordinal)..];
+        row = row[..row.IndexOf("</tr>", StringComparison.Ordinal)];
+        StringAssert.Contains(row, "data-open-run=\"2\"");
+        StringAssert.Contains(row, ">Open recording</button>");
+        StringAssert.Contains(row, "double-click, or press Enter on the selected row, to open its recording", "The row names its keyboard and double-click path.");
+
+        var alreadyOpen = await RenderWith(1, "local:row-1");
+        Assert.AreEqual(0, Count(alreadyOpen, "data-open-run="), "The open recording's row says open instead of linking to itself.");
+    }
+
+    private static int Count(string text, string value)
+    {
+        var count = 0;
+        for (var index = text.IndexOf(value, StringComparison.Ordinal); index >= 0; index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal)) count++;
+        return count;
+    }
+
     [TestMethod]
     public async Task BackgroundAnalysisPreparesTestDayStintsButNotLonePractice()
     {

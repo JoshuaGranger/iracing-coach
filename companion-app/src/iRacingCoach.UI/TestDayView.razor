@@ -26,8 +26,8 @@
                 @* Lap dots are not tab stops here: the run table below is the keyboard path. *@
                 <RunOverlayChart Investigation="Projection" Selected="SelectedComparison" XAxisTitle="Lap of run" RunCaption="RunCaption" Hint="Point to a lap for its time"
                                  FitToggleLabel="Fall-off fit" FitToggleTitle="The table's fall-off: least-squares line through each run's clean laps from lap 6, after laps 2–5 where the tires come in, to its last clean lap"
-                                 FitCaption="FitCaption" FocusableLaps="false" ScaleToEligible="true"
-                                 FootNote="Rings mark the laps compared for the selected run. Lines are a five-lap median of recorded laps; hollow dots are excluded from clean laps. The time axis covers the runs' clean laps; a lap far outside them sits on the edge." />
+                                 FitCaption="FitCaption" FocusableLaps="false" ScaleToEligible="true" UnscaledRuns="InconsistentRuns"
+                                 FootNote="@ChartFootNote(InconsistentRuns)" />
             </div>
             <aside class="ri-panel td-next" data-next-change="@review.NextChange.Kind" aria-label="Next change">
                 <span class="ri-label">Next change</span>
@@ -88,12 +88,14 @@
                         var session = Session(run);
                         var open = session is not null && session.Id == OpenSessionId;
                         var excluded = ExcludedSummary(run);
+                        @* Click selects the run for the chart; double-click, or Enter on the selected row, opens its recording. *@
                         <tr @ref="_rows[number]" class="@(selected ? "selected" : null)" data-run="@number" tabindex="0" aria-selected="@(selected ? "true" : "false")"
-                            @onclick="() => Select(number)" @onkeydown="args => RowKey(args, number)">
+                            title="@(session is not null && OnOpenRun.HasDelegate ? RowOpenHint : null)"
+                            @onclick="() => Select(number)" @ondblclick="() => OpenRow(number, session)" @onkeydown="args => RowKey(args, number, session)">
                             <th scope="row" class="td-run"><div class="td-run-box">
                                 <svg width="18" height="8" aria-hidden="true"><line x1="0" y1="4" x2="18" y2="4" stroke="@RunColor(number)" stroke-width="2.5" stroke-dasharray="@RunDash(number)" /></svg>
                                 <span>
-                                    <span class="td-run-name"><b>Run @number</b>@if (SetupName(run) is { } setupName) { <span class="td-run-setup" title="@run.Setup.Name">@setupName</span> }@if (open) { <em class="td-open" title="This run's recording is open in Runs, Sections and Traces">open</em> }</span>
+                                    <span class="td-run-name"><b>Run @number</b>@if (SetupName(run) is { } setupName) { <span class="td-run-setup" title="@run.Setup.Name">@setupName</span> }@if (open) { <em class="td-open" title="This run's recording is open in Runs, Sections and Traces">open</em> }@if (selected && !open && session is not null && OnOpenRun.HasDelegate) { <button type="button" class="ri-link td-row-open" data-open-run="@number" title="Open run @number's recording in Runs, Sections and Traces" @onclick="() => OnOpenRun.InvokeAsync(session)" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true" @onkeydown:stopPropagation="true">Open recording</button> }</span>
                                     <small title="@MeasuredTitle(run)">@RunDetail(run)</small>
                                     @if (run.Consistency is { Inconsistent: true } odd) { <small class="td-inconsistent" data-inconsistent-repeat title="@odd.Reason">Inconsistent repeat · pace changed</small> }
                                     @if (excluded is { } summary) { <small class="td-excluded" data-excluded title="@summary.Title">@summary.Text</small> }
@@ -349,8 +351,9 @@
     {
         if (ReferenceEquals(_projected, Review)) return;
         _projected = Review;
-        if (Review is null) { Projection = EmptyProjection; _runs = new Dictionary<int, TestDayRun>(); return; }
+        if (Review is null) { Projection = EmptyProjection; _runs = new Dictionary<int, TestDayRun>(); InconsistentRuns = []; return; }
         _runs = Review.Runs.ToDictionary(run => run.Run);
+        InconsistentRuns = Review.Runs.Where(run => run.Consistency is { Inconsistent: true }).Select(run => run.Run).ToArray();
         // Lap of run is the shared axis; each lap keeps its own run so repeated lap numbers stay distinct.
         Projection = EmptyProjection with
         {
@@ -369,6 +372,21 @@
         // Closing the detail returns the keyboard to the row it belongs to.
         try { await row.FocusAsync(); }
         catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException or TaskCanceledException) { }
+    }
+
+    /// <summary>Runs flagged as an inconsistent repeat: drawn, but they do not set the chart's time axis.</summary>
+    private IReadOnlyCollection<int> InconsistentRuns { get; set; } = [];
+
+    /// <summary>The chart's note; it names the runs that do not set the time axis.</summary>
+    public static string ChartFootNote(IReadOnlyCollection<int> inconsistentRuns)
+    {
+        const string lead = "Rings mark the laps compared for the selected run. Lines are a five-lap median of recorded laps; hollow dots are excluded from clean laps. ";
+        if (inconsistentRuns.Count == 0)
+            return lead + "The time axis covers the runs' clean laps; a lap far outside them sits on the edge under a triangle.";
+        var runs = inconsistentRuns.Order().ToArray();
+        var named = runs.Length == 1 ? $"run {runs[0]}" : $"runs {string.Join(", ", runs[..^1])} and {runs[^1]}";
+        return lead + $"The time axis covers the clean laps of every run except {named}, flagged as an inconsistent repeat; "
+            + "a lap outside it sits on the edge under a triangle.";
     }
 
     private TestDayRun? SelectedRun => SelectedRunNumber is { } number ? _runs.GetValueOrDefault(number) : null;
@@ -423,7 +441,37 @@
         if (SelectedRunNumberChanged.HasDelegate) await SelectedRunNumberChanged.InvokeAsync(run);
     }
 
-    private Task RowKey(KeyboardEventArgs args, int run) => args.Key is "Enter" or " " ? Select(run) : Task.CompletedTask;
+    private const string RowOpenHint = "Click to show this run on the chart; double-click, or press Enter on the selected row, to open its recording";
+
+    /// <summary>
+    /// What a key does on a run row: Space toggles the row's selection; Enter selects it, and
+    /// Enter on the selected row opens its recording (as a double-click does) when it has one.
+    /// </summary>
+    public static string RowKeyAction(string key, bool selected, bool openable) => key switch
+    {
+        "Enter" when selected && openable => "open",
+        "Enter" or " " => "select",
+        _ => "none"
+    };
+
+    private Task RowKey(KeyboardEventArgs args, int run, RecentRace? session) =>
+        RowKeyAction(args.Key, SelectedRunNumber == run, session is not null && OnOpenRun.HasDelegate) switch
+        {
+            "open" => OpenRow(run, session),
+            "select" => Select(run),
+            _ => Task.CompletedTask
+        };
+
+    /// <summary>
+    /// Opens the run's recording in its per-recording investigation. The double-click's two
+    /// clicks toggled the row's selection; the run stays selected, as its row does after opening.
+    /// </summary>
+    private async Task OpenRow(int run, RecentRace? session)
+    {
+        if (session is null || !OnOpenRun.HasDelegate) return;
+        if (SelectedRunNumber != run) await SetSelection(run);
+        await OnOpenRun.InvokeAsync(session);
+    }
 
     private RecentRace? Session(TestDayRun run) => State?.TestDaySession(Group, run);
 

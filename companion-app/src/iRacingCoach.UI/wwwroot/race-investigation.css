@@ -412,6 +412,7 @@
 .td-chart .ri-readout { max-width: 260px; }
 .td-chart .ri-plot { min-height: 150px; }
 .ri-dot.off-scale { stroke-dasharray: 2 2; }
+.ri-off-scale-mark { stroke: none; pointer-events: none; }
 .td-next { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; overflow: auto; }
 .td-untimed { margin: 0; padding: 0 2px; color: var(--text-muted); font-size: 12px; }
 .td-next h2 { margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 650; line-height: 1.3; }
@@ -457,6 +458,7 @@
 .td-run-setup { min-width: 0; overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; }
 .td-run small.td-excluded { color: var(--warning); }
 .td-open { margin-left: 6px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--text-secondary); font-size: 12px; font-style: normal; }
+.td-row-open { flex: none; padding: 0 4px; }
 .td-setup { color: var(--text-primary); }
 .td-setup-first { display: block; overflow: hidden; text-overflow: ellipsis; }
 /* The headline change: its short label, then both values on their own line, wrapping rather than cut. */

@@ -372,6 +372,44 @@ public sealed class TestDayViewTests
     }
 
     [TestMethod]
+    public async Task AnInconsistentRepeatIsDrawnButDoesNotSetTheTimeAxis()
+    {
+        // A flagged run 1.5 s off the day's pace stretched the axis so the consistent runs' clean laps
+        // flattened, while the caption promised the axis covered "the runs' clean laps".
+        var fixture = Fixture();
+        var flagged = fixture["runs"]![2]!.AsObject();
+        flagged["consistency"] = new JsonObject
+        {
+            ["status"] = "inconsistent_repeat", ["setup_runs"] = new JsonArray(1, 3), ["reason"] = "Run 3 repeated run 1's setup 1.5 s slower."
+        };
+        foreach (var lap in flagged["laps"]!.AsArray()) lap!["lap_time_s"] = lap["lap_time_s"]!.GetValue<double>() + 1.5;
+        var plotted = flagged["laps"]!.AsArray().Count;
+
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(fixture)
+        });
+
+        Assert.AreEqual(plotted, Count(html, "data-off-scale=\"high\" data-run=\"3\""), "Every lap of the flagged run is drawn, on the edge under an off-scale mark.");
+        Assert.AreEqual(plotted, Count(html, "data-off-scale="), "No lap of a consistent run leaves the axis.");
+        StringAssert.Contains(html, "The time axis covers the clean laps of every run except run 3, flagged as an inconsistent repeat;");
+        Assert.DoesNotContain("The time axis covers the runs' clean laps", TestDayView.ChartFootNote([3]));
+        StringAssert.Contains(TestDayView.ChartFootNote([4, 2]), "except runs 2 and 4,");
+        StringAssert.Contains(TestDayView.ChartFootNote([]), "The time axis covers the runs' clean laps;");
+    }
+
+    [TestMethod]
+    public void EnterOnTheSelectedRowOpensItsRecordingAndSpaceOnlySelects()
+    {
+        Assert.AreEqual("select", TestDayView.RowKeyAction("Enter", selected: false, openable: true), "The first Enter selects the run for the chart.");
+        Assert.AreEqual("open", TestDayView.RowKeyAction("Enter", selected: true, openable: true), "Enter on the selected row opens its recording, as a double-click does.");
+        Assert.AreEqual("select", TestDayView.RowKeyAction("Enter", selected: true, openable: false), "Without a recording to open, Enter still toggles the row.");
+        Assert.AreEqual("select", TestDayView.RowKeyAction(" ", selected: true, openable: true), "Space only toggles the selection.");
+        Assert.AreEqual("none", TestDayView.RowKeyAction("ArrowDown", selected: true, openable: true));
+    }
+
+    [TestMethod]
     public void TheNoiseLineNamesBothEstimatesAndLapsThatWanderTogether()
     {
         var noise = new TestDayNoise("measured", 0.1304, 18, "these_runs", null)
@@ -557,7 +595,7 @@ public sealed class TestDayViewTests
         StringAssert.Contains(css, ".td-table { width: 100%; table-layout: fixed;");
         Assert.DoesNotContain("max-height: 42vh", css);
         var index = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.App", "wwwroot", "index.html"));
-        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=17");
+        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=18");
     }
 
     private static string Row(string html, int run)

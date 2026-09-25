@@ -110,11 +110,24 @@ public sealed partial class CompanionState
     {
         ArgumentNullException.ThrowIfNull(group);
         if (group.TestDayKey is not { } testDayId) return;
-        var stints = group.Sessions.OfType<RecentRace>()
-            .OrderBy(session => session.TestDayRunNumber ?? int.MaxValue)
-            .ThenBy(session => session.StartTimeUtc, StringComparer.Ordinal)
-            .ToArray();
-        if (stints.Length > MaximumTestDayRecordings) stints = stints[^MaximumTestDayRecordings..];
+        RecentRace[] ordered;
+        lock (_inventoryGate)
+        {
+            // The inventory's copy carries the overview a background or earlier analysis added.
+            ordered = group.Sessions.OfType<RecentRace>()
+                .Select(session => EventSessions.FirstOrDefault(current => string.Equals(current.Id, session.Id, StringComparison.Ordinal)) ?? session)
+                .OrderBy(session => session.TestDayRunNumber ?? int.MaxValue)
+                .ThenBy(session => session.StartTimeUtc, StringComparer.Ordinal)
+                .ToArray();
+        }
+        // A day longer than twelve keeps the recording it was opened from; opening another run
+        // the day already reviews keeps that choice, so switching runs does not re-read the day.
+        var opened = SelectedRaceSessionId;
+        if (string.Equals(_testDayAnchor.DayId, testDayId, StringComparison.OrdinalIgnoreCase)
+            && ChooseTestDayRecordings(ordered, _testDayAnchor.SessionId).Kept.Any(session => string.Equals(session.Id, opened, StringComparison.Ordinal)))
+            opened = _testDayAnchor.SessionId;
+        _testDayAnchor = (testDayId, opened);
+        var (stints, leftOut) = ChooseTestDayRecordings(ordered, opened);
         var signature = string.Join("|", stints.Select(session => session.Id));
         if (CurrentTestDay is not null && string.Equals(CurrentTestDayId, testDayId, StringComparison.OrdinalIgnoreCase)
             && string.Equals(_testDaySignature, signature, StringComparison.Ordinal)) return;
@@ -125,7 +138,7 @@ public sealed partial class CompanionState
         CurrentTestDayId = testDayId;
         TestDayLoading = true;
         TestDayError = null;
-        TestDayMessage = $"Reading {stints.Length} runs…";
+        TestDayMessage = $"Reading {stints.Count} runs…";
         RaiseChanged();
         // One read per day: returning to a day whose review is still running waits for
         // that review instead of starting a second job that the tray would refuse.
@@ -164,9 +177,7 @@ public sealed partial class CompanionState
                 {
                     CurrentTestDay = review;
                     _testDaySignature = signature;
-                    TestDayMessage = stints.Length < group.Sessions.Count
-                        ? $"Showing the latest {stints.Length} of {group.Sessions.Count} recordings."
-                        : string.Empty;
+                    TestDayMessage = TestDayLeftOutMessage(stints.Count, leftOut);
                 }
                 else
                 {
@@ -178,6 +189,47 @@ public sealed partial class CompanionState
             }
         }
     }
+
+    /// <summary>
+    /// The recordings a day longer than the backend's twelve reviews. Recordings with at most
+    /// one lap leave first, oldest first: lap 1 of every run is excluded, so they have no lap
+    /// to compare. Then the oldest others leave. The recording the day was opened from always
+    /// stays, so its own Test day never omits it. Kept recordings stay in driving order.
+    /// </summary>
+    public static (IReadOnlyList<RecentRace> Kept, IReadOnlyList<RecentRace> LeftOut) ChooseTestDayRecordings(
+        IReadOnlyList<RecentRace> ordered, string? openedId, int maximum = MaximumTestDayRecordings)
+    {
+        ArgumentNullException.ThrowIfNull(ordered);
+        if (ordered.Count <= maximum) return (ordered, []);
+        var candidates = ordered.Where(session => !string.Equals(session.Id, openedId, StringComparison.Ordinal)).ToArray();
+        var leaving = candidates.Where(IsTestDayStub).Concat(candidates.Where(session => !IsTestDayStub(session)))
+            .Take(ordered.Count - maximum)
+            .Select(session => session.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        return (ordered.Where(session => !leaving.Contains(session.Id)).ToArray(),
+            ordered.Where(session => leaving.Contains(session.Id)).ToArray());
+    }
+
+    /// <summary>An analyzed recording with at most one lap: nothing in it can be compared.</summary>
+    public static bool IsTestDayStub(RecentRace session) => session.Overview is { RecordedLaps: <= 1 };
+
+    /// <summary>"Showing 12 of 13 recordings. Left out: 10:28 PM (no timed lap)." Empty when none was left out.</summary>
+    public static string TestDayLeftOutMessage(int kept, IReadOnlyList<RecentRace> leftOut)
+    {
+        if (leftOut.Count == 0) return string.Empty;
+        static string Describe(RecentRace session)
+        {
+            var at = DateTimeOffset.TryParse(session.StartTimeUtc, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var start)
+                ? start.ToLocalTime().ToString("h:mm tt", System.Globalization.CultureInfo.CurrentCulture)
+                : "time unknown";
+            return IsTestDayStub(session) ? $"{at} (no timed lap)" : at;
+        }
+        return $"Showing {kept} of {kept + leftOut.Count} recordings, the most one review compares. "
+            + $"Left out: {string.Join(", ", leftOut.Select(Describe))}.";
+    }
+
+    private (string DayId, string SessionId) _testDayAnchor = (string.Empty, string.Empty);
 
     private readonly object _testDayReadGate = new();
     private readonly Dictionary<string, TestDayRead> _testDayReads = new(StringComparer.OrdinalIgnoreCase);

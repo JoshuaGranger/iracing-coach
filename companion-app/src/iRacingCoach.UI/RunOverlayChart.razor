@@ -66,6 +66,12 @@
                     var offScale = point.LapTimeSeconds!.Value > plot.YMax || point.LapTimeSeconds!.Value < plot.YMin;
                     var y = plot.Y(Math.Clamp(point.LapTimeSeconds!.Value, plot.YMin, plot.YMax));
                     if (chosen) { <circle cx="@N(x)" cy="@N(y)" r="7" class="ri-ring" stroke="@color" /> }
+                    @* A lap beyond the time axis sits on its edge with a triangle pointing the way it went. *@
+                    if (offScale)
+                    {
+                        var high = point.LapTimeSeconds!.Value > plot.YMax;
+                        <path d="@OffScaleMark(x, y, high)" class="ri-off-scale-mark" fill="@color" data-off-scale="@(high ? "high" : "low")" data-run="@point.RunNumber" aria-hidden="true" />
+                    }
                     <circle cx="@N(x)" cy="@N(y)" r="@(chosen ? "4" : "2.8")" fill="@(point.Eligible ? color : "var(--surface-1)")" stroke="@color"
                             class="ri-dot @(point.Eligible ? null : "excluded") @(offScale ? "off-scale" : null)" tabindex="@(FocusableLaps ? "0" : "-1")" data-lap="@point.Lap"
                             @onmouseenter="() => _hover = point" @onfocus="() => _hover = point"
@@ -119,6 +125,11 @@
     /// sits on the edge like an excluded one.
     /// </summary>
     [Parameter] public bool ScaleToEligible { get; set; }
+    /// <summary>
+    /// Runs whose laps are drawn but do not set the time axis (a test day's inconsistent repeats):
+    /// their laps outside it sit on the edge with an off-scale mark. Used with ScaleToEligible.
+    /// </summary>
+    [Parameter] public IReadOnlyCollection<int> UnscaledRuns { get; set; } = [];
     [Parameter] public string EmptyTitle { get; set; } = "No plotted laps with known run exposure";
     [Parameter] public string EmptyDetail { get; set; } = "Runs need complete green laps to place them on a shared axis.";
 
@@ -139,7 +150,8 @@
     {
         get
         {
-            var eligible = ScaleToEligible ? Points.Where(point => point.Eligible).ToArray() : [];
+            var eligible = ScaleToEligible ? Points.Where(point => point.Eligible && !UnscaledRuns.Contains(point.RunNumber ?? 0)).ToArray() : [];
+            if (ScaleToEligible && eligible.Length == 0) eligible = Points.Where(point => point.Eligible).ToArray();
             var times = (eligible.Length > 0 ? eligible : Points).Select(point => point.LapTimeSeconds!.Value).ToArray();
             var (min, max) = ScaleToEligible ? RobustRange(times) : (times.Min(), times.Max());
             var pad = Math.Max(.08, (max - min) * .06);
@@ -168,6 +180,11 @@
         var inside = sorted.Where(time => time >= q1 - fence && time <= q3 + fence).ToArray();
         return (inside[0], inside[^1]);
     }
+
+    /// <summary>A small triangle just outside the plot edge, pointing up for a slower lap and down for a faster one.</summary>
+    private static string OffScaleMark(double x, double y, bool high) => high
+        ? $"M{N(x - 3.5)},{N(y - 5)}L{N(x + 3.5)},{N(y - 5)}L{N(x)},{N(y - 10)}Z"
+        : $"M{N(x - 3.5)},{N(y + 5)}L{N(x + 3.5)},{N(y + 5)}L{N(x)},{N(y + 10)}Z";
 
     private static string TrendPath(PlotScale plot, IReadOnlyList<RaceTrendPoint> segment) =>
         string.Concat(segment.Select((point, index) => $"{(index == 0 ? 'M' : 'L')}{N(plot.X(point.X))},{N(plot.Y(Math.Clamp(point.Y, plot.YMin, plot.YMax)))} "));
