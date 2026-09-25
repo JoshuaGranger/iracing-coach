@@ -130,7 +130,14 @@ public sealed record LocalSetup(
     string Note,
     IReadOnlyList<SetupField> Fields,
     string Season = "",
-    IReadOnlyList<string>? AnalysisPaths = null);
+    IReadOnlyList<string>? AnalysisPaths = null,
+    // Where Fields came from for a setup file: "export" (its setup sheet),
+    // "recording" (an unmodified recording that loaded it) or "" (unknown).
+    string ValuesSource = "",
+    // The source label for known values, or the plain reason none are known.
+    string ValuesNote = "",
+    // The iRacing car folder, when known; setups compare only within one car.
+    string CarKey = "");
 
 public sealed record EvidenceText(EvidenceKind Kind, string Text)
 {
