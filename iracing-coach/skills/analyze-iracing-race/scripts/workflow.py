@@ -1692,8 +1692,17 @@ def _analysis_pipeline_sha256() -> str:
 # showed "9.8 %" wear beside "90.2 % remaining"). The workflow rebuilds
 # technical_insights from the cached analysis on every analysis request, after
 # tire learning, so cached analyses remain valid.
+# Review 2026-09-25 (test-day reachability): v20 core answers are unchanged. The
+# race investigation projection moves to sections-trials-v5: every saveable
+# test states the run length without a pit stop its exposure window needs and
+# whether a test-day run (assumed up to 20 laps) reaches it; a run whose clean
+# late window needs a longer run adds a "first 20 green laps" comparison of its
+# own clean laps under the same screens, and a late-run action points at that
+# comparison's test of the same section only when it exists. IRP 9/23's test
+# needed 77.5-81.5 green laps into a run and waited on 20-lap test runs.
+# Cached analyses rebuild the projection through refresh_race_investigation.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "1ee2bfd0076c1ed734b2a2ab955f495c433b323eca9fe5a3e08820f4260d5110"
+    "3ae93d0342793c93cd52f1ef285c20a35f414a3ae8ca5821e247e4c1c088ce94"
 )
 
 

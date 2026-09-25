@@ -5,13 +5,13 @@ import json
 import sys
 import unittest
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "analyze-iracing-race" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from analysis_engine import TelemetryTable, _track_usage_context, investigation_lap_exclusions  # noqa: E402
-from race_investigation import build_race_investigation  # noqa: E402
+from race_investigation import TEST_DAY_RUN_LAPS, build_race_investigation, trial_reachability  # noqa: E402
 
 
 def investigation_fixture() -> dict:
@@ -541,6 +541,149 @@ class GreenRunComparisonTests(unittest.TestCase):
         self.assertTrue(all(item["pace_comparable"] for item in ranked), [item["id"] for item in ranked])
         self.assertEqual(result["default_comparison_id"], "run-16-clean")
         self.assertIn("usable", coverage["selection_policy"])
+
+
+def long_run_fixture(extra_a: Callable[[int], float] = lambda age: 0.0,
+                     extra_b: Callable[[int], float] = lambda age: 0.02 * age,
+                     lap_count: int = 90) -> dict:
+    """One clean green run shaped like IRP 9/23 run 1: every lap screened.
+
+    Sections A (10-40%) and B (60-90%) take extra_a(age) and extra_b(age)
+    seconds more than the base 30 s pace, where age is the lap of the run; the
+    rest of the lap never changes. The default fades section B by 0.02 s a lap.
+    """
+    laps, traces = [], []
+    for number in range(1, lap_count + 1):
+        a, b = extra_a(number), extra_b(number)
+        lap_time = 30.0 + a + b
+        laps.append({
+            "lap": number, "complete": True, "flag_state": "green", "green_fraction": 1.0,
+            "pit_time_s": 0.0, "racing_state_fraction": 1.0, "lap_time_s": lap_time,
+            "clean_context": {"on_track_fraction": 1.0, "traffic_proximity_fraction": 0.0},
+            "conditions": {"track_temperature_f": 80.0},
+            "fuel": {"start_l": 80.0 - number * 0.4},
+        })
+        def elapsed(pct: float, a: float = a, b: float = b) -> float:
+            return 30.0 * pct + a * min(1.0, max(0.0, (pct - 0.1) / 0.3)) + b * min(1.0, max(0.0, (pct - 0.6) / 0.3))
+        traces.append({"lap": number, "points": [
+            {"lap_pct": index / 40, "session_time_s": number * 50 + elapsed(index / 40),
+             "speed_mph": 100.0, "brake": 0.1, "throttle": 0.85, "steering_rad": 0.2}
+            for index in range(41)
+        ]})
+    return {
+        "laps": laps, "lap_traces": {"traces": traces},
+        "runs": [{"run_number": 1, "start_lap": 1, "end_lap": lap_count}],
+        "track_profile": {"detected_corner_segments": [{"start_pct": 0.1, "end_pct": 0.4}, {"start_pct": 0.6, "end_pct": 0.9}]},
+        "damage_repair": {"status": "available", "summary": {"recorded_repair_episodes": 0}, "incident_points": {"events": []}},
+    }
+
+
+class TestDayReachabilityTests(unittest.TestCase):
+    """IRP 9/23: a test saved from the race needed three clear laps at 77.5-81.5
+    green laps into a run, so only an 80-lap run could check it; the 20-lap
+    runs of a test day waited on it with no explanation."""
+
+    def build(self, analysis: dict) -> dict:
+        return build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
+
+    @staticmethod
+    def comparison(result: dict, identifier: str) -> dict:
+        return next(item for item in result["comparisons"] if item["id"] == identifier)
+
+    def test_reachability_is_the_run_length_the_window_needs(self) -> None:
+        late = trial_reachability([77.5, 81.5])
+        self.assertEqual(late, {"run_laps_needed": 78, "test_day_run_laps": TEST_DAY_RUN_LAPS, "test_day_reachable": False})
+        self.assertEqual(TEST_DAY_RUN_LAPS, 20)
+        self.assertEqual(trial_reachability([16.0, 20.0])["run_laps_needed"], 16)
+        self.assertEqual(trial_reachability([1.0, 5.0])["run_laps_needed"], 3)
+        # Boundaries: laps 18-20 reach a window from 20.0; one from 20.01 needs lap 21.
+        self.assertTrue(trial_reachability([20.0, 22.0])["test_day_reachable"])
+        self.assertFalse(trial_reachability([20.01, 22.0])["test_day_reachable"])
+        self.assertEqual(trial_reachability(None)["run_laps_needed"], 3, "Any run age needs only the laps themselves.")
+        self.assertEqual(trial_reachability([30.0, 34.0], minimum_laps=5)["run_laps_needed"], 32)
+
+    def test_every_offered_test_states_how_long_a_run_it_needs(self) -> None:
+        result = self.build(long_run_fixture())
+        late = self.comparison(result, "run-1-clean")
+        self.assertEqual(late["compared"]["lap_numbers"], [86, 87, 88, 89, 90])
+        trial = late["actions"][0]["trial"]
+        self.assertEqual(trial["exposure_window"], [86.0, 90.0])
+        self.assertEqual(trial["reachability"], {"run_laps_needed": 86, "test_day_run_laps": 20, "test_day_reachable": False})
+
+    def test_a_late_run_fade_offers_its_saveable_early_run_version(self) -> None:
+        result = self.build(long_run_fixture())
+        early = self.comparison(result, "run-1-early")
+        self.assertEqual(early["kind"], "early_run")
+        self.assertEqual(early["title"], "Run 1: first 20 green laps")
+        self.assertEqual(early["baseline"]["lap_numbers"], [1, 2, 3, 4, 5])
+        self.assertEqual(early["compared"]["lap_numbers"], [16, 17, 18, 19, 20])
+        self.assertEqual(early["eligibility"], "eligible")
+        self.assertTrue(early["pace_comparable"])
+        early_action = next(item for item in early["actions"] if item["section_id"] == "B")
+        self.assertEqual(early_action["trial"]["exposure_window"], [16.0, 20.0])
+        self.assertTrue(early_action["trial"]["reachability"]["test_day_reachable"])
+        # The early test carries its own loss and threshold, not the late window's.
+        self.assertAlmostEqual(early_action["trial"]["baseline"]["median_s"] - early_action["trial"]["reference"]["median_s"], 0.3, places=3)
+        self.assertIsNone(early_action["early_run_version"])
+        late = self.comparison(result, "run-1-clean")
+        self.assertEqual(late["actions"][0]["section_id"], "B")
+        self.assertEqual(late["actions"][0]["early_run_version"], {"comparison_id": "run-1-early", "action_priority": early_action["priority"]})
+        # The late window stays the investigation's lead finding.
+        self.assertEqual(result["default_comparison_id"], "run-1-clean")
+
+    def test_no_early_run_version_when_the_early_laps_show_no_loss(self) -> None:
+        # The fade starts after lap 30, so laps 16-20 are no slower than laps 1-5.
+        result = self.build(long_run_fixture(extra_b=lambda age: 0.03 * max(0, age - 30)))
+        early = self.comparison(result, "run-1-early")
+        self.assertFalse(any(action["trial"] for action in early["actions"]), "No test is invented without an early loss.")
+        late = self.comparison(result, "run-1-clean")
+        self.assertIsNotNone(late["actions"][0]["trial"], "The late window keeps its own test.")
+        self.assertIsNone(late["actions"][0]["early_run_version"])
+
+    def test_no_early_run_version_for_a_different_section(self) -> None:
+        # Early laps lose time in section A; the late fade is in section B.
+        result = self.build(long_run_fixture(extra_a=lambda age: 0.01 * min(age, 20),
+                                             extra_b=lambda age: 0.03 * max(0, age - 30)))
+        early = self.comparison(result, "run-1-early")
+        self.assertEqual([action["section_id"] for action in early["actions"] if action["trial"]], ["A"])
+        late = self.comparison(result, "run-1-clean")
+        self.assertEqual(late["actions"][0]["section_id"], "B")
+        self.assertIsNone(late["actions"][0]["early_run_version"])
+
+    def test_early_runs_change_nothing_when_the_late_window_is_already_reachable(self) -> None:
+        # Ten- and twenty-lap runs: every late window is inside a test-day run.
+        for analysis in (investigation_fixture(), long_run_fixture(lap_count=20)):
+            result = self.build(analysis)
+            self.assertFalse(any(item["kind"] == "early_run" for item in result["comparisons"]))
+            actions = [action for item in result["comparisons"] for action in item["actions"]]
+            self.assertTrue(all(action["early_run_version"] is None for action in actions))
+            trials = [action["trial"] for action in actions if action["trial"]]
+            self.assertTrue(trials)
+            self.assertTrue(all(trial["reachability"]["test_day_reachable"] for trial in trials))
+        ids = [item["id"] for item in self.build(investigation_fixture())["comparisons"]]
+        self.assertEqual(ids, ["run-1-clean", "run-2-clean", "run-2-finish", "runs-1-2-age"])
+
+    def test_a_retained_late_window_keeps_its_early_run_window(self) -> None:
+        # Over 24 candidates: fifteen short runs, then one long faded run.
+        analysis = multi_run_fixture([False] * 15)
+        long = long_run_fixture()
+        offset = len(analysis["laps"])
+        for lap, trace in zip(long["laps"], long["lap_traces"]["traces"]):
+            lap["lap"] += offset
+            trace["lap"] += offset
+            for point in trace["points"]:
+                point["session_time_s"] += offset * 50
+        analysis["laps"] += long["laps"]
+        analysis["runs"].append({"run_number": 16, "start_lap": offset + 1, "end_lap": offset + 90})
+        analysis["lap_traces"] = long["lap_traces"]
+        analysis["track_profile"] = long["track_profile"]
+        result = self.build(analysis)
+        self.assertGreater(result["comparison_coverage"]["candidate_count"], 24)
+        ids = {item["id"] for item in result["comparisons"]}
+        self.assertIn("run-16-clean", ids)
+        self.assertIn("run-16-early", ids)
+        late = self.comparison(result, "run-16-clean")
+        self.assertEqual(late["actions"][0]["early_run_version"]["comparison_id"], "run-16-early")
 
 
 if __name__ == "__main__":

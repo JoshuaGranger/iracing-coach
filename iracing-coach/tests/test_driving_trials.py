@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import driving_trials  # noqa: E402
 from analysis_engine import investigation_lap_exclusions  # noqa: E402
 from race_investigation import build_race_investigation  # noqa: E402
-from test_race_investigation import investigation_fixture  # noqa: E402
+from test_race_investigation import investigation_fixture, long_run_fixture  # noqa: E402
 
 
 def baseline_analysis() -> dict:
@@ -109,7 +109,8 @@ class DrivingTrialTests(unittest.TestCase):
         short["laps"] = short["laps"][:5]
         result = driving_trials.evaluate_trial(trial, short)
         self.assertEqual(result["verdict"], "not_comparable")
-        self.assertIn("green laps into a run", result["reasons"][0])
+        # The window is 8-10 green laps into a run; a five-lap run never got there.
+        self.assertEqual(result["reasons"], ["Not reachable in this recording (longest clean run 5 laps; needs ~8)."])
 
     def test_improved_worse_and_within_threshold_verdicts(self) -> None:
         trial = self.trial()
@@ -178,6 +179,106 @@ class DrivingTrialTests(unittest.TestCase):
         driving_trials.evaluate_trial(trial, analysis)
         self.assertEqual(trial, before_trial)
         self.assertEqual(analysis, before_analysis)
+
+
+IDENTITY = {"track_name": "Test Oval", "track_config": "Oval", "track_id": 7, "car_id": 116, "car_name": "Test Car",
+            "car_path": "testcar", "setup_fingerprint": "abc"}
+
+
+def long_race(**kwargs) -> dict:
+    """IRP-shaped source race: one 90-lap run whose section B fades 0.02 s a lap."""
+    analysis = long_run_fixture(**kwargs)
+    analysis["analysis_id"] = "long-race"
+    analysis["identity"] = dict(IDENTITY, session_start="2026-09-23T20:00:00+00:00", subsession_id=20, event_type="Race")
+    analysis["race_investigation"] = build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
+    return analysis
+
+
+def later_test_day(section_b_gain: float = 0.0, lap_count: int = 20, **kwargs) -> dict:
+    """A later offline test: one run of `lap_count` clear laps; section B is `section_b_gain` s faster than the race's at each age."""
+    analysis = long_run_fixture(extra_b=lambda age: 0.02 * age - section_b_gain, lap_count=lap_count, **kwargs)
+    analysis["analysis_id"] = f"test-day-{lap_count}-{section_b_gain}"
+    analysis["identity"] = dict(IDENTITY, session_start="2026-09-24T18:00:00+00:00", subsession_id=0, event_type="Test")
+    analysis["race_investigation"] = build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
+    return analysis
+
+
+class TestDayReachabilityTrialTests(unittest.TestCase):
+    """IRP 9/23: the saved test needed three clear laps at 77.5-81.5 green laps
+    into a run; a test day's 20-lap runs could never check it and said only
+    that no laps matched."""
+
+    @staticmethod
+    def save(analysis: dict, comparison_id: str) -> dict:
+        comparison = next(item for item in analysis["race_investigation"]["comparisons"] if item["id"] == comparison_id)
+        action = next(item for item in comparison["actions"] if item.get("trial"))
+        return driving_trials.create_trial(analysis, analysis_path="race.json", comparison_id=comparison_id,
+                                           action_priority=action["priority"], created_at="2026-09-23T23:00:00Z")
+
+    def test_a_saved_test_stores_how_long_a_run_it_needs(self) -> None:
+        late = self.save(long_race(), "run-1-clean")
+        self.assertEqual(late["exposure_window"], [86.0, 90.0])
+        self.assertEqual(late["reachability"], {"run_laps_needed": 86, "test_day_run_laps": 20, "test_day_reachable": False})
+        early = self.save(long_race(), "run-1-early")
+        self.assertEqual(early["reachability"], {"run_laps_needed": 16, "test_day_run_laps": 20, "test_day_reachable": True})
+        self.assertNotEqual(late["trial_id"], early["trial_id"])
+
+    def test_a_test_day_run_that_cannot_reach_the_window_says_so(self) -> None:
+        late = self.save(long_race(), "run-1-clean")
+        result = driving_trials.evaluate_trial(late, later_test_day(section_b_gain=1.0))
+        self.assertEqual(result["verdict"], "not_comparable")
+        self.assertEqual(result["reasons"], ["Not reachable in this recording (longest clean run 20 laps; needs ~86)."])
+        self.assertEqual(result["reachability"], {"reachable": False, "longest_clean_run_laps": 20, "run_laps_needed": 86})
+
+    def test_a_recording_that_reached_the_window_without_clear_laps_is_not_called_unreachable(self) -> None:
+        late = self.save(long_race(), "run-1-clean")
+        long_practice = later_test_day(lap_count=90)
+        for lap in long_practice["laps"]:
+            if lap["lap"] >= 80:
+                lap["clean_context"]["traffic_proximity_fraction"] = 0.4
+        long_practice["race_investigation"] = build_race_investigation(long_practice, lap_exclusions=investigation_lap_exclusions(long_practice))
+        result = driving_trials.evaluate_trial(late, long_practice)
+        self.assertEqual(result["verdict"], "not_comparable")
+        self.assertIn("No screened laps between 84.0 and 92.0 green laps into a run", result["reasons"][0])
+        self.assertNotIn("reachability", result)
+
+    def test_an_unknown_run_age_never_becomes_a_reachability_claim(self) -> None:
+        late = self.save(long_race(), "run-1-clean")
+        broken = later_test_day()
+        broken["laps"][9]["complete"] = False  # Every later lap's run age becomes unknown.
+        broken["race_investigation"] = build_race_investigation(broken, lap_exclusions=investigation_lap_exclusions(broken))
+        result = driving_trials.evaluate_trial(late, broken)
+        self.assertEqual(result["verdict"], "not_comparable")
+        self.assertNotIn("Not reachable", result["reasons"][0])
+        self.assertNotIn("reachability", result)
+
+    def test_the_early_run_version_closes_the_loop_on_a_test_day(self) -> None:
+        early = self.save(long_race(), "run-1-early")
+        threshold = early["success"]["threshold_s"]
+        self.assertAlmostEqual(threshold, 0.15, places=3)
+        improved = driving_trials.evaluate_trial(early, later_test_day(section_b_gain=0.2))
+        self.assertEqual(improved["verdict"], "improved", improved["reasons"])
+        self.assertEqual([lap["lap"] for lap in improved["laps"]], list(range(14, 21)))
+        not_yet = driving_trials.evaluate_trial(early, later_test_day(section_b_gain=0.0))
+        self.assertEqual(not_yet["verdict"], "not_established")
+
+    def test_tests_saved_before_reachability_read_it_from_their_window(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = self.save(long_race(), "run-1-clean")
+            legacy.pop("reachability")
+            (root / "trials").mkdir()
+            (root / "trials" / f"{legacy['trial_id']}.json").write_text(json.dumps(legacy), encoding="utf-8")
+            listed = driving_trials.list_driving_trials_workflow(archive_root=str(root))["trials"][0]
+            self.assertEqual(listed["reachability"]["run_laps_needed"], 86)
+            self.assertFalse(listed["reachability"]["test_day_reachable"])
+            path = root / "reports" / "test.json"
+            path.parent.mkdir()
+            path.write_text(json.dumps(later_test_day()), encoding="utf-8")
+            checked = driving_trials.evaluate_driving_trial_workflow(trial_id=legacy["trial_id"], analysis_path=str(path), archive_root=str(root))
+            self.assertEqual(checked["evaluation"]["reasons"], ["Not reachable in this recording (longest clean run 20 laps; needs ~86)."])
+            stored = json.loads((root / "trials" / f"{legacy['trial_id']}.json").read_text(encoding="utf-8"))
+            self.assertEqual(stored["reachability"]["run_laps_needed"], 86, "The next check writes it back.")
 
 
 if __name__ == "__main__":

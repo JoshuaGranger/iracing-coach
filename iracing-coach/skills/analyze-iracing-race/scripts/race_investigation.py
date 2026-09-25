@@ -13,8 +13,16 @@ from typing import Any, Mapping, Sequence
 
 SCHEMA_VERSION = 2
 # Bump when any projection below changes; cached analyses rebuild it without decoding.
-PROJECTION_VERSION = "sections-trials-v4"
+PROJECTION_VERSION = "sections-trials-v5"
 MAX_COMPARISONS = 24
+# A saved test is checked on screened laps within this many green laps of its
+# exposure window, and needs this many of them (driving_trials.evaluate_trial).
+TRIAL_EXPOSURE_TOLERANCE = 2.0
+TRIAL_MINIMUM_LAPS = 3
+# The longest run a test day is assumed to give between pit visits. Joshua's
+# test days run about 20 laps per run; a test whose window needs a longer run
+# can only be checked by a race or a long practice run.
+TEST_DAY_RUN_LAPS = 20
 TIRES = ("LF", "RF", "LR", "RR")
 RUBBER_REFERENCE = {
     "title": "iRacing 2026 Season 1: oval track and tire interaction",
@@ -423,6 +431,24 @@ def _cohort_section_seconds(numbers: Sequence[int], traces: Mapping[int, Mapping
     return [seconds for lap in numbers if (seconds := section_elapsed(traces.get(lap), start, end)) is not None]
 
 
+def trial_reachability(window: Sequence[Any] | None, minimum_laps: Any = TRIAL_MINIMUM_LAPS) -> dict[str, Any]:
+    """How long one run must be before a later recording can check a test.
+
+    Exposure counts sampled green laps since the run started, and a run starts
+    at every pit visit, so this is a run length without pitting, not tire age.
+    On a clear green run lap n sits near n green laps. A check needs
+    `minimum_laps` screened laps no earlier than the window start less the
+    tolerance, so the run must reach that lap and continue for the rest. A
+    test-day run is assumed to last up to TEST_DAY_RUN_LAPS laps.
+    """
+    low = _number(window[0]) if isinstance(window, (list, tuple)) and len(window) == 2 else None
+    first = max(1, math.ceil(round(low - TRIAL_EXPOSURE_TOLERANCE, 6))) if low is not None else 1
+    count = int(_number(minimum_laps) or TRIAL_MINIMUM_LAPS)
+    needed = first + max(1, count) - 1
+    return {"run_laps_needed": needed, "test_day_run_laps": TEST_DAY_RUN_LAPS,
+            "test_day_reachable": needed <= TEST_DAY_RUN_LAPS}
+
+
 def _trial(comparison: Mapping[str, Any], corner: Mapping[str, Any], section_set: Mapping[str, Any], traces: Mapping[int, Mapping[str, Any]], approach_start: float | None) -> dict[str, Any] | None:
     """A saveable test: exact bounds, the slow condition to beat and the rule.
 
@@ -447,6 +473,7 @@ def _trial(comparison: Mapping[str, Any], corner: Mapping[str, Any], section_set
         return None
     compared = comparison["compared"]
     window = [compared.get("green_age_start"), compared.get("green_age_end")]
+    window = window if None not in window else None
     return {
         "metric": {"key": "approach_and_section_s" if approach_start is not None else "section_s",
                    "label": "Approach and section time" if approach_start is not None else "Section time",
@@ -461,9 +488,10 @@ def _trial(comparison: Mapping[str, Any], corner: Mapping[str, Any], section_set
                      "median_s": _round(slow_median), "count": len(slow)},
         "reference": {"laps": list(comparison["baseline"]["lap_numbers"]), "run_number": comparison["baseline"].get("run_number"),
                       "median_s": _round(fast_median), "count": len(fast)},
-        "exposure_window": window if None not in window else None,
+        "exposure_window": window,
+        "reachability": trial_reachability(window, TRIAL_MINIMUM_LAPS),
         "conditions": {"fuel_start_gal": compared.get("fuel_start_gal"), "track_temp_f": compared.get("track_temp_f")},
-        "success": {"threshold_s": _round(max(0.02, loss / 2)), "minimum_laps": 3,
+        "success": {"threshold_s": _round(max(0.02, loss / 2)), "minimum_laps": TRIAL_MINIMUM_LAPS,
                     "rule": "Improved when at least three screened laps inside the exposure window beat the baseline median by the threshold. Worse when they are slower by the threshold. Otherwise not established."},
     }
 
@@ -583,7 +611,10 @@ def _comparison(identifier: str, kind: str, before: Sequence[Mapping[str, Any]],
         # Cohort medians stay visible as observations; no pace change is claimed.
         delta = None
         summary = "Not a usable pace comparison: " + "; ".join(reasons) + "."
-    title = f"Run {after_run.get('run_number')}: earlier to final green laps" if kind == "observed_finish" else f"Run {after_run.get('run_number')}: clean early versus late" if kind == "within_run" else f"Runs {before_run.get('run_number')} and {after_run.get('run_number')}: similar green exposure"
+    title = {"observed_finish": f"Run {after_run.get('run_number')}: earlier to final green laps",
+             "within_run": f"Run {after_run.get('run_number')}: clean early versus late",
+             "early_run": f"Run {after_run.get('run_number')}: first {TEST_DAY_RUN_LAPS} green laps",
+             }.get(kind, f"Runs {before_run.get('run_number')} and {after_run.get('run_number')}: similar green exposure")
     result = {"id": identifier, "kind": kind, "title": title, "summary": summary,
               "pace_comparable": not unusable, "pace_unusable_reasons": unusable,
               "baseline": baseline, "compared": compared, "delta_s": _round(delta), "eligibility": eligibility,
@@ -637,6 +668,42 @@ def _timeline(analysis: Mapping[str, Any], laps: Sequence[Mapping[str, Any]]) ->
     return sorted(result, key=lambda item: (item["lap"], item["kind"]))
 
 
+def _early_run_window(clean: Sequence[Mapping[str, Any]], size: int, ages: Mapping[int, float | None]) -> list[Mapping[str, Any]] | None:
+    """The latest clean laps of a run that a test-day run reaches.
+
+    Only for a run whose clean early-versus-late window needs a longer run than
+    a test day gives (IRP 9/23: laps at 77.5-81.5 green laps into an 80-lap
+    run). The earlier window stays the run's first clean laps; the later one is
+    the last `size` clean laps after them within TEST_DAY_RUN_LAPS green laps,
+    so a loss already present by then can be checked on a test day. The run's
+    later laps are not used and nothing is extrapolated to them.
+    """
+    late = [ages.get(int(lap["lap"])) for lap in clean[-size:]]
+    if None in late or trial_reachability([min(late), max(late)])["test_day_reachable"]:
+        return None
+    reachable = [lap for lap in clean[size:]
+                 if (age := ages.get(int(lap["lap"]))) is not None and age <= TEST_DAY_RUN_LAPS]
+    return reachable[-size:] if len(reachable) >= size else None
+
+
+def _early_run_version(action: Mapping[str, Any], early: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The early-run comparison's test for the same section, when it should be offered instead.
+
+    Offered only when this action's own test is absent or needs a longer run
+    than a test day gives, and the early-run comparison passed every screen and
+    produced its own test for the same section that a test-day run reaches. The
+    early test keeps its own evidence, title and success rule; it never
+    inherits this window's loss.
+    """
+    own = action.get("trial")
+    if action.get("section_id") is None or (own is not None and own["reachability"]["test_day_reachable"]):
+        return None
+    match = next((item for item in early.get("actions") or ()
+                  if item.get("section_id") == action["section_id"] and isinstance(item.get("trial"), Mapping)
+                  and item["trial"]["reachability"]["test_day_reachable"]), None)
+    return {"comparison_id": early["id"], "action_priority": match["priority"]} if match is not None else None
+
+
 def _default_rank(comparison: Mapping[str, Any]) -> tuple[bool, bool, int, bool, bool]:
     """Order comparisons by usefulness as the one the investigation opens on.
 
@@ -675,15 +742,22 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
         run_for_lap.update({int(lap["lap"]): number for lap in current})
         clean = [lap for lap in current if not lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"]) and (_number(lap.get("lap_time_s")) or 0) > 0]
         observed = [lap for lap in current if _plot_pace(lap)]
+        early_candidate = None
         if len(clean) >= 4:
             size = min(5, max(2, len(clean) // 3))
             candidates.append((f"run-{number}-clean", "within_run", clean[:size], clean[-size:], run, run))
+            early = _early_run_window(clean, size, ages)
+            if early is not None:
+                early_candidate = (f"run-{number}-early", "early_run", clean[:size], early, run, run)
         if len(observed) >= 4:
             size = min(5, max(2, len(observed) // 3))
             before = clean[:size] if len(clean) >= size else observed[:size]
             after = observed[-size:]
             if max(lap["lap"] for lap in before) < min(lap["lap"] for lap in after) and (not candidates or _lap_numbers(after) != _lap_numbers(candidates[-1][3])):
                 candidates.append((f"run-{number}-finish", "observed_finish", before, after, run, run))
+        # After the run's late windows, so the finish window's duplicate check is unchanged.
+        if early_candidate is not None:
+            candidates.append(early_candidate)
     for before_run, after_run in zip(runs, runs[1:]):
         before = [lap for lap in by_run[int(before_run.get("run_number") or 0)] if not lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"]) and ages.get(int(lap["lap"])) is not None and (_number(lap.get("lap_time_s")) or 0) > 0]
         after = [lap for lap in by_run[int(after_run.get("run_number") or 0)] if not lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"]) and ages.get(int(lap["lap"])) is not None and (_number(lap.get("lap_time_s")) or 0) > 0]
@@ -701,7 +775,7 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
             compared = sorted((pair[1] for pair in pairs), key=lambda lap: lap["lap"])
             candidates.append((f"runs-{before_run['run_number']}-{after_run['run_number']}-age", "cross_run", baseline, compared, before_run, after_run))
     comparison_coverage = {"candidate_count": len(candidates), "generated_count": min(len(candidates), MAX_COMPARISONS),
-                           "selection_policy": "At most 24 comparisons: retain the latest usable window and the latest fully screened usable window, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."}
+                           "selection_policy": "At most 24 comparisons: retain the latest usable window and the latest fully screened usable window with their runs' early-run windows, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."}
     if len(candidates) > MAX_COMPARISONS:
         flags = _lap_flags(analysis)
         usable, screened = [], []
@@ -717,7 +791,12 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
             return max(indices, key=lambda i: (max(lap["lap"] for lap in candidates[i][3]), candidates[i][1] == "observed_finish"), default=None)
         pool = [i for i in range(len(candidates)) if usable[i]] or list(range(len(candidates)))
         retained = set(range(4)) | set(range(len(candidates) - 4, len(candidates)))
-        retained |= {index for index in (latest(pool), latest([i for i in range(len(candidates)) if screened[i]])) if index is not None}
+        leads = {index for index in (latest(pool), latest([i for i in range(len(candidates)) if screened[i]])) if index is not None}
+        # A retained late window keeps its run's early-run window, whose test it may offer instead.
+        early_by_run = {candidates[i][5].get("run_number"): i for i in range(len(candidates)) if candidates[i][1] == "early_run"}
+        retained |= leads | {early_by_run[run] for i in leads
+                             if candidates[i][1] in ("within_run", "observed_finish")
+                             and (run := candidates[i][5].get("run_number")) in early_by_run}
         ranked = sorted(range(len(candidates)), key=lambda i: (usable[i], abs(_median([lap["lap_time_s"] for lap in candidates[i][3]]) - _median([lap["lap_time_s"] for lap in candidates[i][2]]))), reverse=True)
         for index in ranked:
             if len(retained) >= MAX_COMPARISONS:
@@ -739,6 +818,11 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
         comparison["inspection"] = comparison_inspection(comparison, by_number, ages, run_for_lap, lap_exclusions, traces, sections)
         comparison["actions"] = _actions(comparison, section_set, traces)
         comparisons.append(comparison)
+    early_runs = {item["compared"]["run_number"]: item for item in comparisons if item["kind"] == "early_run"}
+    for comparison in comparisons:
+        early = early_runs.get(comparison["compared"]["run_number"]) if comparison["kind"] in ("within_run", "observed_finish") else None
+        for action in comparison["actions"]:
+            action["early_run_version"] = _early_run_version(action, early) if early is not None else None
     default = max(comparisons, key=_default_rank, default=None)
     lap_rows = [{"lap": int(lap["lap"]), "lap_time_s": _round(lap.get("lap_time_s")), "position": _number(_path(lap, "position", "end")),
                  "flag_state": str(lap.get("flag_state") or "unknown"), "eligible": not bool(lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"])),
@@ -759,6 +843,7 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
                         "Clean windows use the existing recorded eligibility screen; observed finish windows retain excluded laps and their reasons.",
                         "A comparison whose selected laps are all excluded, whose window spans a caution, or whose earlier and later laps a caution separates carries no pace delta or explanations and states why. Cross-run windows are matched by green exposure across a stop.",
                         "Cross-run exposure uses sampled green-time fractions from complete laps, not measured tire wear or exact physical green distance.",
+                        f"A saved test needs one run long enough to reach its exposure window; a test day is assumed to give runs of up to {TEST_DAY_RUN_LAPS} laps. A run whose late laps need a longer run adds a first-{TEST_DAY_RUN_LAPS}-green-lap window of its own clean laps, which offers a test only when it passes the same screens.",
                         "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
                         "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."],
     }

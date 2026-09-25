@@ -11,6 +11,12 @@ threshold; otherwise the result is Not established. A recording that cannot be
 compared (another car or configuration, the trial's own recording, no laps at
 the required run age, missing section timing) is Not comparable. Every check is
 kept, including unsuccessful ones.
+
+A trial also stores how it can be checked (race_investigation.trial_reachability):
+the run length without pitting its window needs, and whether a test-day run
+reaches it. A later recording whose every screened lap sits before the window
+says it could not reach the window, with its longest clean run, rather than
+only that no laps matched.
 """
 
 from __future__ import annotations
@@ -25,18 +31,18 @@ try:  # Package import and direct script loading are both supported.
     from .race_inspection import (
         _covered, _pair_rows, _points, _slip_summary, configuration_key, run_exposure, section_elapsed,
     )
-    from .race_investigation import _number, _path, _round
+    from .race_investigation import TRIAL_EXPOSURE_TOLERANCE, _number, _path, _round, trial_reachability
     from .storage import _atomic_write_text, stable_hash, utc_now
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from race_inspection import (
         _covered, _pair_rows, _points, _slip_summary, configuration_key, run_exposure, section_elapsed,
     )
-    from race_investigation import _number, _path, _round
+    from race_investigation import TRIAL_EXPOSURE_TOLERANCE, _number, _path, _round, trial_reachability
     from storage import _atomic_write_text, stable_hash, utc_now
 
 
 SCHEMA_VERSION = 1
-EXPOSURE_TOLERANCE = 2.0
+EXPOSURE_TOLERANCE = TRIAL_EXPOSURE_TOLERANCE
 MATERIAL_FUEL_GAL = 2.0
 MATERIAL_TEMPERATURE_F = 5.0
 MAX_EVALUATIONS = 50
@@ -81,6 +87,11 @@ def _investigation(analysis: Mapping[str, Any]) -> Mapping[str, Any]:
     return investigation
 
 
+def _reachability(spec: Mapping[str, Any]) -> dict[str, Any]:
+    """The run length a test's window needs, from its own window and lap count."""
+    return trial_reachability(spec.get("exposure_window"), (spec.get("success") or {}).get("minimum_laps"))
+
+
 def _pass_points(trace: Mapping[str, Any] | None, start: float, end: float) -> list[dict[str, Any]]:
     return [{key: point.get(key) for key in POINT_FIELDS if key in point}
             for point in _points(trace) if start - 0.01 <= point["lap_pct"] <= end + 0.01]
@@ -119,7 +130,9 @@ def create_trial(analysis: Mapping[str, Any], *, analysis_path: str | None, comp
                        "compared_laps": list(comparison["compared"]["lap_numbers"])},
         "section": dict(spec["section"]), "annotation": dict(spec.get("annotation") or {}), "metric": dict(metric),
         "baseline": dict(spec["baseline"]), "reference": dict(spec["reference"]),
-        "exposure_window": spec.get("exposure_window"), "conditions": dict(spec.get("conditions") or {}),
+        "exposure_window": spec.get("exposure_window"),
+        "reachability": _reachability(spec),
+        "conditions": dict(spec.get("conditions") or {}),
         "success": dict(spec["success"]),
         "baseline_pass": {"lap": lap, "section_s": _round(seconds), "green_exposure": exposure.get(lap),
                           "points": _pass_points(traces.get(lap), metric["start_pct"], metric["end_pct"])},
@@ -173,6 +186,18 @@ def evaluate_trial(trial: Mapping[str, Any], analysis: Mapping[str, Any], *, ana
                   and (low is None or ((age := exposure.get(int(lap["lap"]))) is not None and low <= age <= high))]
     by_lap = {int(lap["lap"]): lap for lap in laps}
     result["window"] = [_round(low, 2), _round(high, 2)] if low is not None else None
+    # No lap of this recording reached the window: it never ran long enough.
+    # Claimed only when each screened lap's run age is known, since an unknown
+    # age could hide a lap inside the window. A recording that reached the
+    # window without a screened lap there keeps the message below.
+    screened_ages = [exposure.get(int(lap["lap"])) for lap in laps if int(lap["lap"]) in eligible]
+    reached = max((age for age in exposure.values() if age is not None), default=None)
+    if (not candidates and low is not None and screened_ages and None not in screened_ages
+            and reached is not None and reached < low):
+        needed = _reachability(trial)["run_laps_needed"]
+        longest = int(round(max(screened_ages)))
+        result["reachability"] = {"reachable": False, "longest_clean_run_laps": longest, "run_laps_needed": needed}
+        return finish(_not("not_comparable", f"Not reachable in this recording (longest clean run {longest} laps; needs ~{needed})."))
     if not candidates:
         where = f" between {low:.1f} and {high:.1f} green laps into a run" if low is not None else ""
         return finish(_not("not_comparable", f"No screened laps{where}. Drive at least {success['minimum_laps']} clear laps at that run age."))
@@ -239,6 +264,10 @@ def load_trial(archive_root: Path, trial_id: str) -> dict[str, Any]:
         raise TrialError(f"That test could not be read: {exc}") from exc
     if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION or payload.get("trial_id") != trial_id:
         raise TrialError("That test uses an unsupported format.")
+    # Tests saved before reachability was stored get it from their own window;
+    # the next check writes it back with the record.
+    if not isinstance(payload.get("reachability"), Mapping):
+        payload["reachability"] = _reachability(payload)
     return payload
 
 
