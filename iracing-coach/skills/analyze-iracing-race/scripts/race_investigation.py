@@ -13,7 +13,7 @@ from typing import Any, Mapping, Sequence
 
 SCHEMA_VERSION = 2
 # Bump when any projection below changes; cached analyses rebuild it without decoding.
-PROJECTION_VERSION = "sections-trials-v3"
+PROJECTION_VERSION = "sections-trials-v4"
 MAX_COMPARISONS = 24
 TIRES = ("LF", "RF", "LR", "RR")
 RUBBER_REFERENCE = {
@@ -338,6 +338,39 @@ def _hypothesis(key: str, label: str, status: str, supporting: list[str], contra
     return {"key": key, "label": label, "status": status, "supporting": supporting, "contradicting": contradicting, "unknown": unknown, "general_context": "", "references": []}
 
 
+def _tire_service_evidence(comparison: Mapping[str, Any], analysis: Mapping[str, Any]) -> tuple[list[str], bool]:
+    """Recorded tire service and readings that bear on the selected windows.
+
+    A run's own pit_service is the stop that ENDED it, so the tires a window ran
+    on were fitted at the stop that ended the previous run. Kansas 9/21 run 2
+    (laps 19-42) started on four tires changed at the lap-17 stop, yet its
+    comparisons read "Tires and service: Unresolved" because only run 2's own,
+    absent, end-of-run service was consulted. Returns the supporting lines and
+    whether every selected run started on a confirmed four-tire change.
+    """
+    runs = sorted((run for run in analysis.get("runs", ()) if isinstance(run, Mapping)),
+                  key=lambda run: _number(run.get("run_number")) or 0)
+    selected = {comparison["baseline"]["run_number"], comparison["compared"]["run_number"]}
+    support: list[str] = []
+    fresh = []
+    for index, run in enumerate(runs):
+        number = run.get("run_number")
+        if number not in selected:
+            continue
+        previous = runs[index - 1] if index else None
+        fitted = [str(tire) for tire in (_path(previous, "pit_service", "tires_changed_observed") or ()) if tire] if previous else []
+        if fitted:
+            stop_lap = _number(previous.get("end_lap"))
+            at = f" at the lap {int(stop_lap)} stop" if stop_lap is not None else " at the previous stop"
+            count = "four tires" if len(set(fitted)) == 4 else f"{len(fitted)} changed tire{'s' if len(fitted) != 1 else ''}"
+            support.append(f"Run {number} started on {count} fitted{at} (confirmed: {', '.join(fitted)}).")
+        fresh.append(len(set(fitted)) == 4)
+        measured = _number(_path(run, "tire_observation", "lowest_remaining_percent"))
+        if measured is not None:
+            support.append(f"Run {number} ended with a lowest measured tire reading of {measured:.1f}% remaining.")
+    return support, bool(fresh) and all(fresh)
+
+
 def _hypotheses(comparison: Mapping[str, Any], analysis: Mapping[str, Any], track: Mapping[str, Any]) -> list[dict[str, Any]]:
     metrics = {item["key"]: item for item in comparison["metrics"]}
     def changed(key: str, threshold: float) -> bool:
@@ -369,18 +402,9 @@ def _hypotheses(comparison: Mapping[str, Any], analysis: Mapping[str, Any], trac
     result.append(surface)
     result.append(_hypothesis("fuel", "Fuel load", "possible" if changed("fuel", 0.5) else "unresolved", [text("fuel")] if changed("fuel", 0.5) else [], [],
                              ["The comparison is not fuel-corrected; a measured fuel difference does not quantify its lap-time effect."]))
-    run_numbers = {comparison["baseline"]["run_number"], comparison["compared"]["run_number"]}
-    selected_runs = [run for run in analysis.get("runs", ()) if run.get("run_number") in run_numbers]
-    tire_support = []
-    for run in selected_runs:
-        measured = _number(_path(run, "tire_observation", "lowest_remaining_percent"))
-        changed_tires = _path(run, "pit_service", "tires_changed_observed") or []
-        if measured is not None:
-            tire_support.append(f"Run {run.get('run_number')} ended with a lowest measured tire reading of {measured:.1f}% remaining.")
-        if changed_tires:
-            tire_support.append(f"After run {run.get('run_number')}, confirmed changes: {', '.join(changed_tires)}.")
+    tire_support, fresh_sets = _tire_service_evidence(comparison, analysis)
     result.append(_hypothesis("tires", "Tires and service", "possible" if tire_support else "unresolved", tire_support, [],
-                             ["Run-relative green exposure is not exact tire wear. Initial tire age and mixed sets can prevent a like-for-like comparison.",
+                             ["Run-relative green exposure is not exact tire wear." + ("" if fresh_sets else " Initial tire age and mixed sets can prevent a like-for-like comparison."),
                               "A stop reading belongs to the preceding run; absent final-run readings cannot establish final tire wear."]))
     damage = analysis.get("damage_repair") or {}
     repair_count = _number(_path(damage, "summary", "recorded_repair_episodes"))
@@ -489,7 +513,7 @@ def _actions(comparison: Mapping[str, Any], section_set: Mapping[str, Any] | Non
             a, b = pair["a"], pair["b"]
             before = labels.get(previous["id"], previous["id"])
             title = f"Carry more speed into {name}"
-            instruction = (f"The slower pass (lap {b['lap']}) reached {name} {abs(upstream_speed):.1f} mph slower and already {upstream_gap:.3f} s behind lap {a['lap']}, measured from section {before}. "
+            instruction = (f"The slower pass (lap {b['lap']}) reached {name} {abs(upstream_speed):.1f} mph slower and already {upstream_gap:.3f} s behind lap {a['lap']}, measured from {pair['context_start_pct'] * 100:.1f}% lap. "
                            f"Test one change at the exit of section {before}: a tighter exit line with throttle added as the wheel unwinds. "
                            "If entry speed recovers, the loss was built on that exit. If entry speed stays low with matching inputs, treat it as a grip or setup question rather than technique.")
             evidence.append(f"Lap {b['lap']} entered {abs(upstream_speed):.1f} mph slower and {upstream_gap:.3f} s behind; it lost {pair.get('section_delta_s') or 0:.3f} s more inside.")
@@ -613,6 +637,25 @@ def _timeline(analysis: Mapping[str, Any], laps: Sequence[Mapping[str, Any]]) ->
     return sorted(result, key=lambda item: (item["lap"], item["kind"]))
 
 
+def _default_rank(comparison: Mapping[str, Any]) -> tuple[bool, bool, int, bool, bool]:
+    """Order comparisons by usefulness as the one the investigation opens on.
+
+    A usable pace result comes first; an unusable one leads only when nothing
+    else exists, and then its summary states why. Among usable comparisons one
+    that offers a saveable test wins, because only it turns the finding into
+    something the driver can check in a later recording. Then the latest
+    compared lap, then a fully screened window over one that keeps excluded
+    laps. IRP 9/23 opened on "earlier to final green laps" (laps 106-110,
+    mixed, nothing to save) one row below "clean early versus late" (laps
+    105-109, the same +0.730 s/lap, two saveable tests).
+    """
+    return (bool(comparison["pace_comparable"]),
+            any(action.get("trial") for action in comparison["actions"]),
+            max(comparison["compared"]["lap_numbers"]),
+            comparison["eligibility"] == "eligible",
+            comparison["kind"] == "observed_finish")
+
+
 def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Mapping[int, Sequence[str]]) -> dict[str, Any]:
     """Build compact, auditable findings; caller supplies authoritative eligibility."""
     laps = sorted((lap for lap in analysis.get("laps", ()) if isinstance(lap, Mapping) and (_number(lap.get("lap")) or 0) > 0), key=lambda lap: lap["lap"])
@@ -658,17 +701,23 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
             compared = sorted((pair[1] for pair in pairs), key=lambda lap: lap["lap"])
             candidates.append((f"runs-{before_run['run_number']}-{after_run['run_number']}-age", "cross_run", baseline, compared, before_run, after_run))
     comparison_coverage = {"candidate_count": len(candidates), "generated_count": min(len(candidates), MAX_COMPARISONS),
-                           "selection_policy": "At most 24 comparisons: retain the latest usable window, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."}
+                           "selection_policy": "At most 24 comparisons: retain the latest usable window and the latest fully screened usable window, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."}
     if len(candidates) > MAX_COMPARISONS:
         flags = _lap_flags(analysis)
-        usable = []
+        usable, screened = [], []
         for _identifier, kind, before, after, _before_run, _after_run in candidates:
             numbers = (_lap_numbers(before), _lap_numbers(after))
-            usable.append(not _pace_usability(kind, *numbers, _eligibility(*numbers, lap_exclusions), flags)[0])
-        # The headline's key over the same pool, so the retained default is the one shown.
-        pool = [i for i in range(len(candidates)) if usable[i]] or range(len(candidates))
-        default_index = max(pool, key=lambda i: (max(lap["lap"] for lap in candidates[i][3]), candidates[i][1] == "observed_finish"))
-        retained = set(range(4)) | set(range(len(candidates) - 4, len(candidates))) | {default_index}
+            eligibility = _eligibility(*numbers, lap_exclusions)
+            usable.append(not _pace_usability(kind, *numbers, eligibility, flags)[0])
+            screened.append(usable[-1] and eligibility == "eligible")
+        # Only a fully screened usable window can offer a saveable test, so the
+        # latest one is retained beside the latest usable window; the default
+        # is then chosen from what is shown (see _default_rank).
+        def latest(indices: Sequence[int]) -> int | None:
+            return max(indices, key=lambda i: (max(lap["lap"] for lap in candidates[i][3]), candidates[i][1] == "observed_finish"), default=None)
+        pool = [i for i in range(len(candidates)) if usable[i]] or list(range(len(candidates)))
+        retained = set(range(4)) | set(range(len(candidates) - 4, len(candidates)))
+        retained |= {index for index in (latest(pool), latest([i for i in range(len(candidates)) if screened[i]])) if index is not None}
         ranked = sorted(range(len(candidates)), key=lambda i: (usable[i], abs(_median([lap["lap_time_s"] for lap in candidates[i][3]]) - _median([lap["lap_time_s"] for lap in candidates[i][2]]))), reverse=True)
         for index in ranked:
             if len(retained) >= MAX_COMPARISONS:
@@ -690,10 +739,7 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
         comparison["inspection"] = comparison_inspection(comparison, by_number, ages, run_for_lap, lap_exclusions, traces, sections)
         comparison["actions"] = _actions(comparison, section_set, traces)
         comparisons.append(comparison)
-    # The headline follows the latest usable comparison; an unusable one leads
-    # only when nothing else exists, and then its summary states why.
-    comparable = [item for item in comparisons if item["pace_comparable"]]
-    default = max(comparable or comparisons, key=lambda item: (max(item["compared"]["lap_numbers"]), item["kind"] == "observed_finish"), default=None)
+    default = max(comparisons, key=_default_rank, default=None)
     lap_rows = [{"lap": int(lap["lap"]), "lap_time_s": _round(lap.get("lap_time_s")), "position": _number(_path(lap, "position", "end")),
                  "flag_state": str(lap.get("flag_state") or "unknown"), "eligible": not bool(lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"])),
                  "plot_pace": _plot_pace(lap),

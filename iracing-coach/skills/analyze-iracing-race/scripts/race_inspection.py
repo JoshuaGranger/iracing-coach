@@ -33,6 +33,13 @@ MATCHED_POOL_SPAN = 3.0
 MAX_SECTIONS = 12
 # Trace bins are about 0.6% lap; a larger step is missing coverage, not a straight.
 MAX_POINT_STEP = 0.03
+# A pass pair's approach is the lead-in to its section, not the rest of the lap:
+# as long as the section itself, clamped to 3-8% of a lap, and never reaching
+# back past the previous section's start. IRP's detected section F (64.5-72.5%)
+# was once timed from 30.5%, so "Entry" covered a third of the lap and the
+# section filled only the right fifth of every chart.
+APPROACH_MIN_FRACTION = 0.03
+APPROACH_MAX_FRACTION = 0.08
 MAX_POINT_SECONDS = 2.0
 CHANNELS = (
     ("speed", ("speed_mph",), 1.0, 1),
@@ -376,11 +383,30 @@ def _slip_summary(points: Sequence[Mapping[str, Any]], start: float, end: float)
             "peak_abs": _round(max(values), 3) if summarized else None}
 
 
+def approach_start(ordered: Sequence[Mapping[str, Any]], index: int, recorded_start: float) -> tuple[float, str]:
+    """Where a section's approach begins, and how the application names it.
+
+    The lead-in is the section's own length clamped to 3-8% of a lap. It never
+    reaches back past the previous section's start, or before the first
+    recorded sample of either pass for the first section.
+    """
+    section = ordered[index]
+    start = float(section["start_pct"])
+    lead = min(APPROACH_MAX_FRACTION, max(APPROACH_MIN_FRACTION, float(section["end_pct"]) - start))
+    floor = float(ordered[index - 1]["start_pct"]) if index else recorded_start
+    context = round(max(floor, start - lead), 6)
+    if context <= floor:
+        label = f"From section {ordered[index - 1]['label']}" if index else "From the recorded lap start"
+    else:
+        label = f"Lead-in: {(start - context) * 100:.1f}% lap before the section"
+    return context, label
+
+
 def comparison_inspection(comparison: Mapping[str, Any], laps: Mapping[int, Mapping[str, Any]],
                           exposure: Mapping[int, float | None], run_for_lap: Mapping[int, int],
                           exclusions: Mapping[int, Sequence[str]], traces: Mapping[int, Mapping[str, Any]],
                           sections: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Two actual passes per section, with their upstream approach.
+    """Two actual passes per section, with their bounded approach (approach_start).
 
     A matched pool (all laps screened and within three green-lap equivalents)
     compares its fastest and slowest actual section passes; both may come from
@@ -429,7 +455,7 @@ def comparison_inspection(comparison: Mapping[str, Any], laps: Mapping[int, Mapp
             roles = ("baseline_median", "compared_median")
             candidate_count = len(one) + len(two)
         first_points, second_points = _points(traces.get(first_lap)), _points(traces.get(second_lap))
-        context_start = ordered[index - 1]["start_pct"] if index else max(first_points[0]["lap_pct"], second_points[0]["lap_pct"])
+        context_start, context_label = approach_start(ordered, index, max(first_points[0]["lap_pct"], second_points[0]["lap_pct"]))
         if context_start >= start:
             continue
         timing_valid = _covered(first_points, context_start, end) and _covered(second_points, context_start, end)
@@ -442,7 +468,7 @@ def comparison_inspection(comparison: Mapping[str, Any], laps: Mapping[int, Mapp
         result["sections"][section["id"]] = {
             "section_id": section["id"], "start_pct": start, "end_pct": end,
             "context_start_pct": context_start,
-            "context_label": f"From section {ordered[index - 1]['label']}" if index else "From the recorded lap start",
+            "context_label": context_label,
             "timing_complete": timing_valid, "candidate_count": candidate_count,
             "a": first_pass, "b": second_pass,
             "section_delta_s": _round(second_s - first_s, 3),

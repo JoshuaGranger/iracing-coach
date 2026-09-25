@@ -8,7 +8,7 @@ public static class RaceInvestigationMapper
 {
     public const int CurrentSchemaVersion = 2;
     /// <summary>Must equal race_investigation.PROJECTION_VERSION in the backend.</summary>
-    public const string CurrentProjectionVersion = "sections-trials-v3";
+    public const string CurrentProjectionVersion = "sections-trials-v4";
 
     public static RaceInvestigation? Map(JsonElement source)
     {
