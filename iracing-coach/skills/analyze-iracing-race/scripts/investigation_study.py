@@ -11,6 +11,7 @@ from bisect import bisect_left
 
 from analysis_engine import _linear_slope
 from race_investigation import _corner_lap, _corners, _crossing, _number
+from steering_basis import SteeringBasis, pair_descriptor
 
 
 def observed_trends(points: list[dict]) -> list[dict]:
@@ -118,12 +119,17 @@ def _sample(points: list[dict], x: float, key: str) -> float | None:
     return a + (b-a)*(x-left['lap_pct'])/(right['lap_pct']-left['lap_pct'])
 
 
-def segment_context(traces: list[dict], candidates: list[dict], areas: list[dict]) -> dict:
+def segment_context(traces: list[dict], candidates: list[dict], areas: list[dict], *,
+                    steering: SteeringBasis | dict | None = None) -> dict:
     """Fastest/slowest actual segments within the caller's comparable lap pool.
 
     Cumulative delta is relative to context_start, not race start. It describes
     where separation accumulated; it does not apportion the physical cause.
+    ``steering`` is the analysis's steering declaration (``basis_of``); the
+    rows' steering is in that basis, and without one it is the steering-wheel
+    angle of an analysis that predates the declaration.
     """
+    basis = steering if isinstance(steering, SteeringBasis) else SteeringBasis.from_descriptor(steering)
     by_lap = {t['lap']: t for t in traces}
     eligible = {p['lap']: p for p in candidates if p.get('eligible') is True
                 and _number(p.get('green_age')) is not None}
@@ -181,6 +187,9 @@ def segment_context(traces: list[dict], candidates: list[dict], areas: list[dict
             'segment_delta': slow[0]-fast[0], 'entry_delta': entry['delta'], 'exit_delta': exit_row['delta'],
             'entry_speed_difference': (entry['slow']['speed']-entry['fast']['speed'])
                 if None not in (entry['slow']['speed'], entry['fast']['speed']) else None,
+            # Both passes are laps of this one recording, so their steering
+            # shares the analysis's basis and label.
+            'steering': pair_descriptor(basis),
             'rows': rows,
         }
         # Signed chassis sideslip from the existing backend trace, not tire slip

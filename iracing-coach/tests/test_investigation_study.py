@@ -134,6 +134,29 @@ class InvestigationStudyTests(unittest.TestCase):
         self.assertEqual(value['slip']['fast']['coverage'], 0)
         self.assertTrue(all(row['fast']['slip'] is None for row in value['rows']))
 
+    def test_steering_rows_declare_the_analysis_steering(self):
+        from steering_basis import SteeringBasis, resolve_steering_basis
+        road = resolve_steering_basis({'CarSetup': {'Chassis': {'Front': {'SteeringRatio': '12:1'}}}})
+        value = segment_context(self.traces()[:2], self.points()[:2], self.areas(), steering=road)['selected']
+        self.assertEqual((value['steering']['basis'], value['steering']['label'], value['steering']['degree_digits']),
+                         ('road_wheel', 'Steering (road wheel)', 2))
+        described = segment_context(self.traces()[:2], self.points()[:2], self.areas(),
+                                    steering=road.describe())['selected']
+        self.assertEqual(described['steering'], value['steering'])
+        # An analysis without a declaration predates it: its steering_rad is
+        # steering-wheel angle, and the study says so instead of calling it steering.
+        legacy = segment_context(self.traces()[:2], self.points()[:2], self.areas())['selected']
+        self.assertEqual((legacy['steering']['basis'], legacy['steering']['label']),
+                         ('steering_wheel', SteeringBasis.from_descriptor(None).label))
+        self.assertTrue(all(row['fast']['steering'] is not None for row in legacy['rows']))
+
+    def test_study_page_names_steering_from_the_declaration(self):
+        template = (Path(__file__).resolve().parents[2] / 'tools/design-studies/compact-investigation.html').read_text(encoding='utf-8')
+        builder = (Path(__file__).resolve().parents[2] / 'tools/design-studies/build_investigation_study.py').read_text(encoding='utf-8')
+        self.assertIn('steering=basis_of(analysis)', builder)
+        self.assertIn('c.steering.short_label', template)
+        self.assertIn('c.steering.degree_digits', template)
+
     def test_sparse_slip_does_not_describe_the_whole_selected_area(self):
         traces = self.traces()[:2]
         traces[0]['points'][25]['slip_angle_deg'] = -4

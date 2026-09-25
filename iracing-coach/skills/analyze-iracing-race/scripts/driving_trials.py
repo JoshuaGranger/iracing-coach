@@ -240,7 +240,8 @@ def evaluate_trial(trial: Mapping[str, Any], analysis: Mapping[str, Any], *, ana
     timing = _covered(base_points, context_start, section["end_pct"]) and _covered(later_points, context_start, section["end_pct"])
     rows = _pair_rows(base_points, later_points, context_start, section["start_pct"], section["end_pct"], timing)
     # The two passes come from different recordings. Their steering is drawn
-    # together only as road-wheel angle; otherwise it is withheld, not mixed.
+    # together only as road-wheel angle from setups with the same steering
+    # offset; otherwise it is withheld, not mixed.
     saved_steering = SteeringBasis.from_descriptor(trial["baseline_pass"].get("steering"))
     later_steering = basis_of(analysis)
     if comparable_across_recordings(saved_steering, later_steering):
@@ -248,13 +249,14 @@ def evaluate_trial(trial: Mapping[str, Any], analysis: Mapping[str, Any], *, ana
     else:
         for row in rows:
             row["a"]["steering"] = row["b"]["steering"] = None
-        steering_pair = pair_descriptor(
-            later_steering, comparable=False,
-            reason=("Steering is not compared: "
-                    + ("the saved test's steering is steering-wheel angle without a recorded steering ratio."
-                       if not saved_steering.road_wheel
-                       else "this recording's steering ratio is not recorded, so its steering-wheel angle cannot be matched to road-wheel steering.")),
-        )
+        if not saved_steering.road_wheel:
+            why = "the saved test's steering is steering-wheel angle without a recorded steering ratio."
+        elif not later_steering.road_wheel:
+            why = "this recording's steering ratio is not recorded, so its steering-wheel angle cannot be matched to road-wheel steering."
+        else:
+            why = (f"the setup's steering offset changed ({saved_steering.offset_text or 'none stated'} → "
+                   f"{later_steering.offset_text or 'none stated'}), and the offset shifts every steering reading.")
+        steering_pair = pair_descriptor(later_steering, comparable=False, reason="Steering is not compared: " + why)
     result["pair"] = {
         "section_id": section["id"], "start_pct": section["start_pct"], "end_pct": section["end_pct"],
         "context_start_pct": context_start, "timing_complete": timing,

@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import driving_trials  # noqa: E402
 import race_foundations  # noqa: E402
+import steering_basis  # noqa: E402
+import tuning_engine  # noqa: E402
 import workflow  # noqa: E402
 from analysis_engine import (  # noqa: E402
     TelemetryTable,
@@ -42,6 +44,7 @@ from steering_basis import (  # noqa: E402
     resolve_steering_basis,
 )
 from test_analysis_engine import synthetic_telemetry  # noqa: E402
+from test_structured_tuning import _analysis as tuning_analysis, _feedback as tuning_feedback, _map as tuning_map  # noqa: E402
 
 # The O'Reilly Supra's recorded lock is 72.7 deg of road wheel: its
 # SteeringWheelAngleMax reads 872.4 deg at 12:1 and 727.0 deg at 10:1.
@@ -96,7 +99,8 @@ def _quantized(radians: float) -> float:
     return round(radians * 4096) / 4096
 
 
-def oval_run(wheel_scale: int, stated_ratio: str | None, *, laps: int = 18, hz: float = 20.0) -> dict:
+def oval_run(wheel_scale: int, stated_ratio: str | None, *, laps: int = 18, hz: float = 20.0,
+             offset: str = "+6 deg") -> dict:
     """One green run on a 1 km two-corner oval, sampled like a recording.
 
     Laps from the middle of the run on lose time in the second corner while
@@ -104,6 +108,7 @@ def oval_run(wheel_scale: int, stated_ratio: str | None, *, laps: int = 18, hz: 
     detected sections, a steering comparison and a steering action, and the
     corner phases have steering metrics. Steering applied is the same for
     every ratio; the recorded wheel angle is that times ``wheel_scale``.
+    ``offset`` is the setup's stated SteeringOffset.
     """
 
     names = ("SessionTime", "Lap", "LapDistPct", "Speed", "Throttle", "Brake", "SteeringWheelAngle",
@@ -159,7 +164,7 @@ def oval_run(wheel_scale: int, stated_ratio: str | None, *, laps: int = 18, hz: 
             "DriverInfo": {"DriverCarIdx": 0, "DriverSetupName": "synthetic.sto",
                            "Drivers": [{"CarIdx": 0, "CarID": 190, "CarScreenName": "Synthetic Stock Car", "CarPath": "synthetic"}]},
             "SessionInfo": {"Sessions": [{"SessionNum": 0, "SessionType": "Race", "SessionLaps": str(laps)}]},
-            "CarSetup": supra_session(stated_ratio)["CarSetup"],
+            "CarSetup": supra_session(stated_ratio, offset)["CarSetup"],
         },
     }
 
@@ -301,6 +306,46 @@ class SteeringBasisTests(unittest.TestCase):
         self.assertFalse(comparable_across_recordings(unknown, unknown))
 
 
+class SteeringOffsetTests(unittest.TestCase):
+    """The setup's steering offset turns the front wheels against the wheel.
+
+    It is recorded but not applied, so steering from setups whose offsets
+    differ is never compared across recordings: Joshua's own Supra setups use
+    +0, +4 and +6 deg, worth 0.33-0.5 deg of road wheel at 12:1.
+    """
+
+    @staticmethod
+    def basis(ratio: str, offset: str | None) -> SteeringBasis:
+        front = {"SteeringRatio": ratio}
+        if offset is not None:
+            front["SteeringOffset"] = offset
+        return resolve_steering_basis({"CarSetup": {"Chassis": {"Front": front}}})
+
+    def test_offsets_are_read_in_degrees(self) -> None:
+        parse = steering_basis.parse_steering_offset
+        for value, expected in (("+6 deg", 6.0), ("-2 deg", -2.0), ("+0 deg", 0.0), ("0 deg", 0.0), ("6°", 6.0),
+                                (" +4 DEG ", 4.0), ("4.5 deg", 4.5), (6, 6.0), (-1.5, -1.5)):
+            with self.subTest(value=value):
+                self.assertEqual(parse(value), expected)
+        for value in (None, "", "left", "6 mm", "+6 deg deg", True, float("nan"), float("inf"), [6]):
+            with self.subTest(value=value):
+                self.assertIsNone(parse(value))
+
+    def test_setups_with_different_offsets_are_not_compared_across_recordings(self) -> None:
+        plus_six = self.basis("12:1", "+6 deg")
+        self.assertTrue(comparable_across_recordings(plus_six, self.basis("10:1", "+6 deg")))
+        self.assertTrue(comparable_across_recordings(self.basis("12:1", "+0 deg"), self.basis("10:1", "0 deg")))
+        self.assertFalse(comparable_across_recordings(plus_six, self.basis("12:1", "+0 deg")))
+        self.assertFalse(comparable_across_recordings(self.basis("12:1", "+4 deg"), plus_six))
+        # A setup without an offset matches only another without one.
+        self.assertTrue(comparable_across_recordings(self.basis("12:1", None), self.basis("10:1", None)))
+        self.assertFalse(comparable_across_recordings(self.basis("12:1", None), self.basis("12:1", "+0 deg")))
+        # A saved declaration keeps the offset it was recorded with.
+        saved = SteeringBasis.from_descriptor(plus_six.describe())
+        self.assertTrue(comparable_across_recordings(saved, self.basis("10:1", "+6 deg")))
+        self.assertFalse(comparable_across_recordings(saved, self.basis("12:1", "+0 deg")))
+
+
 class DerivedChannelTests(unittest.TestCase):
     def test_road_wheel_channel_is_wheel_angle_divided_by_the_ratio(self) -> None:
         telemetry = recording(12, wheel_scale=12)
@@ -434,6 +479,60 @@ class CrossRecordingTests(unittest.TestCase):
                 self.assertTrue(all(row["a"]["steering"] is None and row["b"]["steering"] is None for row in withheld["rows"]))
                 self.assertTrue(any(row["a"]["speed"] is not None for row in withheld["rows"]))
 
+    def test_saved_test_steering_is_withheld_when_the_steering_offset_changed(self) -> None:
+        source = analyze_telemetry(oval_run(12, "12:1", offset="+6 deg"))
+        comparison, action = next((comparison, action) for comparison in source["race_investigation"]["comparisons"]
+                                  for action in comparison["actions"] if action.get("trial"))
+        trial = driving_trials.create_trial(source, analysis_path=None, comparison_id=comparison["id"],
+                                            action_priority=action["priority"], created_at="2026-09-25T00:00:00Z")
+        self.assertEqual(trial["baseline_pass"]["steering"]["setup_steering_offset"], "+6 deg")
+
+        def pair(offset: str) -> dict:
+            later = analyze_telemetry(oval_run(12, "12:1", offset=offset))
+            later["identity"]["subsession_id"] = 93
+            later["analysis_id"] = f"later-{offset}"
+            result = driving_trials.evaluate_trial(trial, later, evaluated_at="2026-09-26T00:00:00Z")
+            self.assertIn("pair", result, result.get("reasons"))
+            return result["pair"]
+
+        self.assertTrue(pair("+6 deg")["steering"]["comparable"])
+        changed = pair("+0 deg")
+        self.assertEqual((changed["steering"]["basis"], changed["steering"]["comparable"]), (None, False))
+        self.assertIn("steering offset changed (+6 deg → +0 deg)", changed["steering"]["reason"])
+        self.assertTrue(all(row["a"]["steering"] is None and row["b"]["steering"] is None for row in changed["rows"]))
+        self.assertTrue(any(row["a"]["speed"] is not None for row in changed["rows"]))
+
+    def test_tire_learning_matches_steering_work_only_between_equal_steering_offsets(self) -> None:
+        self.assertEqual(analyze_telemetry(oval_run(12, "12:1"))["runs"][0]["driving_load"]["steering_offset"], "+6 deg")
+        corners = ("LF", "RF", "LR", "RR")
+        conditions = {"track_temp_c": 32.0, "air_temp_c": 22.0, "caution_fraction": 0.1, "tire_compound": 0}
+
+        def load(offset: str | None, work: float) -> dict:
+            value = {"early_brake_energy_proxy": 10.0 + work / 100, "late_brake_energy_proxy": 12.0,
+                     "early_steering_work_proxy": work, "late_steering_work_proxy": work,
+                     "steering_basis": "road_wheel", "steering_offset": offset}
+            if offset == "missing":  # persisted before the offset was stored
+                del value["steering_offset"]
+            return value
+
+        def observations(offset: str | None) -> list[dict]:
+            return [{"observation_id": f"{offset}-{index}", "analysis_id": f"{offset}-{index}", "eligible_for_rate_model": True,
+                     "tires": {corner: {"green_laps_on_set": 20,
+                                        "remaining_percent_omi": {"outer": 80, "middle": 82, "inner": 84}} for corner in corners},
+                     "pace": {}, "conditions": dict(conditions), "load": load(offset, 40.0 + index),
+                     "vehicle_dynamics": {}} for index in range(3)]
+
+        age = {corner: {"green_laps": 10} for corner in corners}
+        context = {"conditions": dict(conditions), "load": load("+0 deg", 41.0), "vehicle_dynamics": {}}
+        same = race_foundations.build_tire_prediction(observations("0 deg"), age, context)
+        self.assertIn("steering_work", same["matched_features"])
+        for offset in ("+6 deg", None, "missing"):
+            with self.subTest(observation_offset=offset):
+                other = race_foundations.build_tire_prediction(observations(offset), age, context)
+                self.assertEqual(other["status"], "predicted")
+                self.assertNotIn("steering_work", other["matched_features"])
+                self.assertIn("brake_energy", other["matched_features"])
+
     def test_tire_learning_matches_steering_work_only_on_road_wheel(self) -> None:
         def observation(basis: str | None, work: float) -> dict:
             load = {"early_brake_energy_proxy": 10.0, "late_brake_energy_proxy": 12.0,
@@ -506,6 +605,28 @@ class PresentationTests(unittest.TestCase):
         labels = {metric["label"] for comparison in investigation["comparisons"] for metric in comparison["metrics"]
                   if metric["key"] == "steering"}
         self.assertEqual(labels, {"Average steering (road wheel)"})
+
+
+class TuningFeedbackTests(unittest.TestCase):
+    def test_every_observation_with_a_steering_metric_names_its_basis(self) -> None:
+        analysis = tuning_analysis()
+        analysis["steering"] = resolve_steering_basis(supra_session("12:1")).describe()
+        runs = [{"run_number": 1, "run_id": "run-1"}]
+        observed = {}
+        for phase in ("whole", "center", "entry"):
+            report = dict(tuning_feedback()[0], feedback_id=f"feedback-{phase}", corner_label="Turn 1", corner_phases=[phase])
+            observations, _limitations = tuning_engine.build_feedback_observations(analysis, [report], runs, tuning_map())
+            observed[phase] = observations[0]
+        # The whole-corner summary carries road-wheel steering work but no
+        # average steering; it is labelled all the same.
+        self.assertIn("steering_work_proxy", observed["whole"]["metrics"])
+        self.assertNotIn("steering_average_abs_rad", observed["whole"]["metrics"])
+        self.assertEqual(observed["whole"]["steering_label"], "Steering (road wheel)")
+        self.assertEqual(observed["center"]["steering_label"], "Steering (road wheel)")
+        self.assertNotIn("steering_label", observed["entry"])
+        legacy = dict(tuning_feedback()[0], corner_label="Turn 1", corner_phases=["whole"])
+        observations, _limitations = tuning_engine.build_feedback_observations(tuning_analysis(), [legacy], runs, tuning_map())
+        self.assertEqual(observations[0]["steering_label"], "Steering wheel angle — ratio not recorded")
 
 
 class LapSummaryThresholdTests(unittest.TestCase):

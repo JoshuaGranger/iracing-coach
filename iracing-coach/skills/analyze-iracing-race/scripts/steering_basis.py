@@ -16,8 +16,12 @@ angle, labelled as such, and a road-wheel value and a steering-wheel value are
 never compared, averaged or drawn on one axis.
 
 The setup's ``SteeringOffset`` (a fixed rotation of the wheel against the
-front wheels) is recorded for provenance but not applied: the SDK does not
-document how it enters ``SteeringWheelAngle``.
+front wheels) is recorded but not applied: the SDK does not document how it
+enters ``SteeringWheelAngle``. On the one matched pair recorded, the IRP Supra
+Q setup (+6 deg) at 12:1 and at 10:1 with nothing else changed, road wheel =
+(wheel angle + offset) / ratio is what makes the two ratios agree. Because it
+is not applied, steering from setups whose offsets differ is never compared
+across recordings (``comparable_across_recordings``).
 """
 
 from __future__ import annotations
@@ -60,6 +64,7 @@ THRESHOLD_REFERENCE_RATIO = 12.0
 
 _RATIO_TEXT = re.compile(r"\s*(\d+(?:\.\d+)?)\s*:\s*1(?:\.0+)?\s*")
 _NUMBER_TEXT = re.compile(r"\s*(\d+(?:\.\d+)?)\s*")
+_OFFSET_TEXT = re.compile(r"\s*([+-]?\d+(?:\.\d+)?)\s*(?:deg|degrees?|°)?\s*", re.IGNORECASE)
 
 
 def parse_steering_ratio(value: Any) -> float | None:
@@ -84,6 +89,47 @@ def parse_steering_ratio(value: Any) -> float | None:
     if not math.isfinite(number) or not MINIMUM_RATIO <= number <= MAXIMUM_RATIO:
         return None
     return number
+
+
+def parse_steering_offset(value: Any) -> float | None:
+    """The steering offset in degrees a setup value states, or None.
+
+    iRacing writes ``"+6 deg"``; ``"-2 deg"``, ``"6°"`` and a bare number are
+    accepted. Anything else is not read as an offset.
+    """
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        match = _OFFSET_TEXT.fullmatch(value)
+        if match is None:
+            return None
+        number = float(match.group(1))
+    else:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _offset_identity(text: Any) -> tuple[Any, ...]:
+    """What two setups must share for their unapplied offsets to be equal."""
+
+    if text is None or not str(text).strip():
+        return ("none",)
+    degrees = parse_steering_offset(text)
+    if degrees is not None:
+        return ("deg", degrees)
+    return ("text", " ".join(str(text).split()).casefold())
+
+
+def same_steering_offset(first: Any, second: Any) -> bool:
+    """Whether two setups state the same steering offset ("+0 deg" == "0 deg").
+
+    A setup that states no offset matches only another that states none.
+    """
+
+    return _offset_identity(first) == _offset_identity(second)
 
 
 def _normalized_key(key: Any) -> str:
@@ -130,8 +176,12 @@ def recorded_steering_ratio(session_info: Any) -> SteeringRatio:
         return SteeringRatio("not_recorded", reason="The recording has no garage setup (CarSetup) to state a steering ratio.")
     leaves = list(_leaves(setup, ("CarSetup",)))
     found = [(path, value) for path, value in leaves if path and _normalized_key(path[-1]) == RATIO_KEY]
-    offsets = [value for path, value in leaves if path and _normalized_key(path[-1]) == OFFSET_KEY]
-    offset_text = str(offsets[0]).strip() if len(offsets) == 1 and str(offsets[0]).strip() else None
+    offsets = [str(value).strip() for path, value in leaves
+               if path and _normalized_key(path[-1]) == OFFSET_KEY and str(value).strip()]
+    # One stated offset, or every statement the same; two different offsets
+    # stay as stated, so they never match a setup with either one.
+    offset_text = (offsets[0] if all(same_steering_offset(offsets[0], other) for other in offsets)
+                   else ", ".join(offsets)) if offsets else None
     if not found:
         return SteeringRatio("not_recorded", offset_text=offset_text,
                              reason="The garage setup does not state a steering ratio.")
@@ -310,13 +360,18 @@ def basis_of(analysis: Any) -> SteeringBasis:
 
 
 def comparable_across_recordings(first: SteeringBasis, second: SteeringBasis) -> bool:
-    """Steering from two recordings is comparable only as road-wheel angle.
+    """Steering from two recordings compares only as road-wheel angle from
+    setups with the same steering offset.
 
     Two steering-wheel angles with unknown ratios may come from different
-    ratios, which is exactly the bias road-wheel angle removes.
+    ratios, which is exactly the bias road-wheel angle removes. The setup's
+    steering offset is not applied, so two setups whose offsets differ read
+    steering apart by the offset over the ratio (6 deg at 12:1 is 0.5 deg of
+    road wheel).
     """
 
-    return first.road_wheel and second.road_wheel
+    return (first.road_wheel and second.road_wheel
+            and same_steering_offset(first.offset_text, second.offset_text))
 
 
 def pair_descriptor(basis: SteeringBasis, *, comparable: bool = True, reason: str | None = None) -> dict[str, Any]:

@@ -15,6 +15,11 @@ import statistics
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+try:  # Package import and direct script loading are both supported.
+    from .steering_basis import same_steering_offset
+except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+    from steering_basis import same_steering_offset
+
 
 TIRES = ("LF", "RF", "LR", "RR")
 CHECKERED_FLAG = 0x0001
@@ -38,7 +43,8 @@ TRACK_SURFACES = {
     2: "approaching_pits",
     3: "on_track",
 }
-# v2: steering work enters the load match only as road-wheel work (steering_basis).
+# v2: steering work enters the load match only as road-wheel work (steering_basis)
+# from a setup stating the same steering offset as the run being predicted.
 TIRE_MODEL_VERSION = "nascar-tire-condition-load-match-v2"
 MIN_MAIN_LOOP_LAP_PERCENT_COVERAGE = 0.95
 MAX_MAIN_LOOP_LAP_PERCENT_GAP = 0.05
@@ -1096,8 +1102,26 @@ def build_tire_learning(
     return result
 
 
-def tire_feature_values(value: Mapping[str, Any]) -> dict[str, float]:
-    """Recorded conditions, dynamics and controls/load a tire observation is matched on."""
+def _same_steering_offset(load: Mapping[str, Any], target_load: Mapping[str, Any]) -> bool:
+    """Both loads state their setup's steering offset, and it is the same.
+
+    A load saved before the offset was stored is not assumed to match.
+    """
+
+    return ("steering_offset" in load and "steering_offset" in target_load
+            and same_steering_offset(load["steering_offset"], target_load["steering_offset"]))
+
+
+def tire_feature_values(
+    value: Mapping[str, Any], target: Mapping[str, Any] | None = None
+) -> dict[str, float]:
+    """Recorded conditions, dynamics and controls/load a tire observation is matched on.
+
+    With ``target`` (the prediction context it is matched against), steering
+    work is kept only from a setup with the target's steering offset: the
+    offset is not applied to steering, so work recorded with another offset
+    differs by it.
+    """
 
     conditions = value.get("conditions") or {}
     load = value.get("load") or {}
@@ -1124,7 +1148,10 @@ def tire_feature_values(value: Mapping[str, Any]) -> dict[str, float]:
         # Steering work matches another recording only as road-wheel work:
         # steering-wheel work (an unknown or older basis) scales with the
         # car's steering ratio, so it never enters the distance.
-        if name == "steering_work" and load.get("steering_basis") != "road_wheel":
+        if name == "steering_work" and (
+            load.get("steering_basis") != "road_wheel"
+            or (target is not None and not _same_steering_offset(load, target.get("load") or {}))
+        ):
             continue
         values = [_finite(load.get(early_key)), _finite(load.get(late_key))]
         finite = [number for number in values if number is not None]
@@ -1195,7 +1222,7 @@ def build_tire_prediction(
         }
 
     target_features = tire_feature_values(prediction_context)
-    observation_features = [tire_feature_values(item) for item in eligible]
+    observation_features = [tire_feature_values(item, prediction_context) for item in eligible]
     scales: dict[str, float] = {}
     for name in sorted(target_features):
         values = [features[name] for features in observation_features if name in features] + [target_features[name]]

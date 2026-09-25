@@ -4153,7 +4153,7 @@ def _runs(table: TelemetryTable, laps: list[dict[str, Any]]) -> list[dict[str, A
         race_laps = [lap for lap in laps if (_finite(lap.get("lap")) or 0.0) > 0.0]
     if not race_laps:
         return []
-    steering_kind = _steering_basis(table).kind
+    steering = _steering_basis(table)
     events = _service_events(table)
     first_index = race_laps[0]["start_index"]
     last_index = race_laps[-1]["end_index"]
@@ -4386,8 +4386,11 @@ def _runs(table: TelemetryTable, laps: list[dict[str, Any]]) -> list[dict[str, A
                     ),
                     # The steering-work proxies above are in this basis; a
                     # persisted tire observation keeps it so another
-                    # recording's work is compared only on road-wheel angle.
-                    "steering_basis": steering_kind,
+                    # recording's work is compared only on road-wheel angle,
+                    # and only from a setup with the same (unapplied)
+                    # steering offset.
+                    "steering_basis": steering.kind,
+                    "steering_offset": steering.offset_text,
                 },
                 "vehicle_dynamics": {
                     "scope": "green complete laps when available",

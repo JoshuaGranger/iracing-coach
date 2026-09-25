@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'iracing-coach/skills/analyze-iracing-race/scripts'))
 from investigation_study import observed_trends, review_areas, run_fits, segment_context
 from race_investigation import _run_exposure
+from steering_basis import basis_of
 
 
 def main():
@@ -35,7 +36,8 @@ def main():
     comparison['corners'] = review_areas(analysis['lap_traces']['traces'],
         comparison['baseline']['lap_numbers'], comparison['compared']['lap_numbers'], regions['regions'])
     data = {'points': points, 'fits': run_fits(points), 'trends': observed_trends(points), 'comparison': comparison,
-            'segments': segment_context(analysis['lap_traces']['traces'], candidates, comparison['corners'])}
+            'segments': segment_context(analysis['lap_traces']['traces'], candidates, comparison['corners'],
+                                        steering=basis_of(analysis))}
     geometry = analysis.get('track_geometry', {})
     quality = geometry.get('quality', {})
     if (geometry.get('status') == 'usable' and geometry.get('coordinate_system') == 'normalized_local_vector'

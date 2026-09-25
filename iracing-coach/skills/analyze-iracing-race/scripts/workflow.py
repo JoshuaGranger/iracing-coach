@@ -1750,8 +1750,19 @@ def _analysis_pipeline_sha256() -> str:
 # investigation, insights and the tire-learning load match state the basis;
 # the raw wheel angle stays as the steering-wheel-angle trace. Real IRP peaks:
 # Joshua 12:1 71.53 deg wheel -> 5.96 deg road; bot 10:1 53.92 -> 5.39.
+# Review 2026-09-25 (steering offset, v23 kept): the setup SteeringOffset is
+# still not applied, so steering is never compared across recordings whose
+# setups state different offsets (steering_basis.comparable_across_recordings;
+# Joshua's Supra setups use +0, +4 and +6 deg). Each run's driving_load gains
+# steering_offset (the stated text) and the tire-learning match, outside the
+# cached analysis, keeps steering work only between equal offsets. No existing
+# value changes: a setup that states its offset twice now keeps it when the
+# statements agree (none do in the recorded Supra, Truck or Taurus setups).
+# v23 has not left this branch; a v23 analysis cached before this review lacks
+# steering_offset and fails closed (its steering work never matches), so the
+# profile is kept rather than retiring caches that give no wrong answer.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "8147a52f23c4a376b16d6f14b469d6c8387a43bcc1b4a7e44b4d5eb261a01b1b"
+    "dba2fd5e7a0e17812f5f3bda7445d3b0ffacc9d4406206436e96c172a9bd1fea"
 )
 
 

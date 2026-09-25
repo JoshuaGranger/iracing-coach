@@ -1432,9 +1432,10 @@ def build_feedback_observations(
                 "causal_claim": False,
                 "limitation": "These measurements locate and describe the reported symptom; they do not prove a setup cause.",
             }
-            if "steering_average_abs_rad" in compact:
-                # Steering metrics are road-wheel angle only when the recording
-                # stated its steering ratio; say which, so they are not mixed.
+            if any(name.startswith("steering_") for name in compact):
+                # Steering metrics (average, work, corrections) are road-wheel
+                # angle only when the recording stated its steering ratio; say
+                # which, so they are not mixed.
                 observation["steering_label"] = _steering_label(analysis)
             observations.append(observation)
     return observations, list(dict.fromkeys(limitations))
