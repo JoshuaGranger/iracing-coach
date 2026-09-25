@@ -213,7 +213,7 @@ public static class RuntimeMapper
             // The recording's CarPath names the same car as a setups folder; its screen
             // name ("NASCAR Xfinity Chevrolet Camaro") and the folder's display name
             // ("Camaro 2019") do not match.
-            CarKey: Text(identity, "car_path") ?? string.Empty);
+            CarKey: Text(identity, "car_path") ?? string.Empty, ValuesAnalysisPath: analysisPath);
     }
 
     private static void FlattenSetup(JsonElement element, string prefix, List<SetupField> fields)
@@ -268,12 +268,12 @@ public static class RuntimeMapper
                     ? "The filename and exported setup details disagree. Verify it in iRacing before use."
                     : "Local setup file; the original remains unchanged.",
                 values.Fields, Text(identity, "season_key") ?? string.Empty, values.AnalysisPaths,
-                values.Source, values.Note, Text(entry, "car_folder") ?? string.Empty));
+                values.Source, values.Note, Text(entry, "car_folder") ?? string.Empty, values.AnalysisPath));
         }
         return result;
     }
 
-    private sealed record SetupFileValueSet(IReadOnlyList<SetupField> Fields, IReadOnlyList<string> AnalysisPaths, string Source, string Note);
+    private sealed record SetupFileValueSet(IReadOnlyList<SetupField> Fields, IReadOnlyList<string> AnalysisPaths, string Source, string Note, string AnalysisPath = "");
 
     /// <summary>
     /// A .sto is encrypted, so its values come from its exported setup sheet or,
@@ -305,7 +305,8 @@ public static class RuntimeMapper
         {
             var fields = new List<SetupField>();
             FlattenSetup(setup, string.Empty, fields);
-            if (fields.Count > 0) return new(fields, analysisPaths, "recording", RecordedValuesNote(values));
+            // The backend takes these values from the newest unmodified recording.
+            if (fields.Count > 0) return new(fields, analysisPaths, "recording", RecordedValuesNote(values), Text(values, "analysis_path") ?? string.Empty);
         }
         return new([], analysisPaths, string.Empty, Text(Object(entry, "values_status"), "reason")
             ?? "Values unknown: .sto files are encrypted. Analyze a recording that loaded this file unchanged, or export its setup sheet from iRacing.");

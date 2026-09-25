@@ -268,6 +268,38 @@ public sealed class SetupRecordingLinkTests
         Assert.AreEqual(irp.Id, SetupPage.TuningSetup(setups, irp, Path.Combine(Root, "unknown.json")).Id);
     }
 
+    [TestMethod]
+    public void TuningALinkedSetupFileUsesTheRecordingItsValuesCameFrom_NotTheFirstListed()
+    {
+        // The IRP file's values come from the 9/23 race; the practice was listed first,
+        // so Tune started from the practice while the page showed the race's values.
+        var recordedRace = RecordedRaceSetup();
+        var setups = RuntimeMapper.Setups(Catalog()).Append(recordedRace).ToArray();
+        var irp = setups.Single(setup => setup.Name == "NOAPS_MaconiSetupShop IRP 26S4 R" && setup.CarKey == "stockcars2 supra2019");
+        Assert.AreEqual(RacePath, irp.ValuesAnalysisPath);
+        Assert.AreEqual(RacePath, recordedRace.ValuesAnalysisPath);
+
+        using var state = new CompanionState(new NoBackend(), new JsonSettingsStore(Path.Combine(Root, Guid.NewGuid().ToString("N"), "settings.json")));
+        foreach (var setup in setups) state.Setups.Add(setup);
+        state.Races.Add(new("practice", "Lucas Oil Indianapolis Raceway Park", "IRP", "Toyota Supra Class B", "Sep 23", "Open", "Ready", "Practice", false, true, 0, 0,
+            AnalysisPath: PracticePath, StartTimeUtc: "2026-09-24T01:45:56Z", SessionType: "Practice"));
+        state.Races.Add(new("race", "Lucas Oil Indianapolis Raceway Park", "IRP", "Toyota Supra Class B", "Sep 23", "Open", "Ready", "Race", false, true, 0, 0,
+            AnalysisPath: RacePath, StartTimeUtc: RaceStart));
+
+        var race = state.SetupTuningRace(irp);
+        Assert.AreEqual("race", race?.Id, "Tuning starts from the recording whose values the file shows.");
+        Assert.AreEqual(recordedRace.Id, SetupPage.TuningSetup(setups, irp, race!.AnalysisPath).Id);
+        Assert.AreEqual("race", state.SetupTuningRace(recordedRace)?.Id);
+
+        // Without a values recording (an exported sheet), the newest linked recording leads.
+        var exported = irp with { ValuesSource = "export", ValuesAnalysisPath = "" };
+        Assert.AreEqual("race", state.SetupTuningRace(exported)?.Id);
+
+        var page = File.ReadAllText(Path.Combine(TestRepositoryPaths.UiRoot, "SetupPage.razor"));
+        StringAssert.Contains(page, "State.SetupTuningRace(setup)");
+        Assert.DoesNotContain("SetupEvidenceRaces(setup).FirstOrDefault()", page);
+    }
+
     private sealed class NoBackend : IBackendClient
     {
         public Task<BackendHealthResult> CheckHealthAsync(BackendConfiguration configuration, CancellationToken cancellationToken = default) =>

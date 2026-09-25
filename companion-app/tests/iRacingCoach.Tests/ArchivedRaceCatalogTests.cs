@@ -49,10 +49,11 @@ public sealed class ArchivedRaceCatalogTests
     }
 
     [TestMethod]
-    public void ProjectionSavedBeforeRecordedSetupsCarriedTheirCarPath_IsRebuilt()
+    public void ProjectionSavedBeforeRecordedSetupsCarriedCarPathAndValuesReport_IsRebuilt()
     {
         // A projection written before recorded setups carried CarKey would keep them
-        // from ever matching their own linked setup files for comparison.
+        // from ever matching their own linked setup files for comparison, and one
+        // without ValuesAnalysisPath would let tuning start from another recording.
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-catalog-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var report = Path.Combine(root, "analysis.json");
@@ -68,18 +69,25 @@ public sealed class ArchivedRaceCatalogTests
                 },
                 race_summary = new { recorded_laps = 10 }
             }));
-            Assert.AreEqual("stockcars2 camaro2019", new ArchivedRaceCatalog().Read(report, cache, () => { })!.Setup!.CarKey);
+            var fresh = new ArchivedRaceCatalog().Read(report, cache, () => { })!.Setup!;
+            Assert.AreEqual("stockcars2 camaro2019", fresh.CarKey);
+            Assert.AreEqual(Path.GetFullPath(report), fresh.ValuesAnalysisPath);
 
+            // Version 1 lacked CarKey; version 2 lacked the report the values came from.
             var cachedPath = Directory.GetFiles(cache).Single();
-            var older = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(cachedPath))!.AsObject();
-            older["version"] = 1;
-            older["setup"]!.AsObject().Remove("carKey");
-            File.WriteAllText(cachedPath, older.ToJsonString());
+            foreach (var (version, missing) in new[] { (1, new[] { "carKey", "valuesAnalysisPath" }), (2, new[] { "valuesAnalysisPath" }) })
+            {
+                var older = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(cachedPath))!.AsObject();
+                older["version"] = version;
+                foreach (var name in missing) older["setup"]!.AsObject().Remove(name);
+                File.WriteAllText(cachedPath, older.ToJsonString());
 
-            var writes = 0;
-            var reread = new ArchivedRaceCatalog().Read(report, cache, () => writes++);
-            Assert.AreEqual("stockcars2 camaro2019", reread!.Setup!.CarKey);
-            Assert.AreEqual(1, writes, "The older projection is rebuilt from the report, not reused.");
+                var writes = 0;
+                var reread = new ArchivedRaceCatalog().Read(report, cache, () => writes++)!.Setup!;
+                Assert.AreEqual("stockcars2 camaro2019", reread.CarKey, $"version {version}");
+                Assert.AreEqual(Path.GetFullPath(report), reread.ValuesAnalysisPath, $"version {version}");
+                Assert.AreEqual(1, writes, $"A version {version} projection is rebuilt from the report, not reused.");
+            }
         }
         finally { Directory.Delete(root, recursive: true); }
     }

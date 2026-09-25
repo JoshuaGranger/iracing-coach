@@ -132,7 +132,8 @@ else
         _tuning = true;
         try
         {
-            var race = State.SetupEvidenceRaces(setup).FirstOrDefault();
+            // The recording whose values this setup shows, so tuning and the values agree.
+            var race = State.SetupTuningRace(setup);
             var target = race is null ? setup : TuningSetup(State.Setups, setup, race.AnalysisPath);
             await State.BeginSetupTuningAsync(target.Id, race is null || target.Id == setup.Id ? null : race.Id);
         }

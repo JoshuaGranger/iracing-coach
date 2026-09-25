@@ -138,7 +138,9 @@ public sealed record LocalSetup(
     string ValuesNote = "",
     // The iRacing car path (the setups car folder, or a recording's CarPath), when
     // known; setups compare only within one car.
-    string CarKey = "");
+    string CarKey = "",
+    // The analysis whose recording supplied Fields, when they came from one.
+    string ValuesAnalysisPath = "");
 
 public sealed record EvidenceText(EvidenceKind Kind, string Text)
 {
