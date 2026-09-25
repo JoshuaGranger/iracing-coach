@@ -54,6 +54,11 @@
     {
         <div class="toast" role="status"><span>@State.Toast</span><button aria-label="Dismiss notification" @onclick="State.DismissToast"><ProductIcon Name="close" Size="16" /></button></div>
     }
+    else if (State.UnreadableAnalysisNotice is { } unreadableAnalyses)
+    {
+        @* One quiet notice for every saved analysis the catalog could not read; dismissing it is remembered. *@
+        <div class="toast" role="status" data-unreadable-analyses><span>@unreadableAnalyses</span><button type="button" class="toast-action" @onclick="State.OpenLogs">Open logs</button><button type="button" aria-label="Dismiss notice" @onclick="State.DismissUnreadableAnalysisNotice"><ProductIcon Name="close" Size="16" /></button></div>
+    }
 </div>
 
 @code {

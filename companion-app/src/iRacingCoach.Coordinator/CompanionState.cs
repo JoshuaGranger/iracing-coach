@@ -62,7 +62,7 @@ public sealed partial class CompanionState : IDisposable
     private readonly bool _allowExternalHostActions;
     private readonly Dictionary<string, CancellationTokenSource> _jobTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly BackendOperationCoordinator _backendOperations = new();
-    private readonly ArchivedRaceCatalog _archivedRaceCatalog = new();
+    private readonly ArchivedRaceCatalog _archivedRaceCatalog = new(AppVersion);
     private readonly object _homeAnalysisSync = new();
     private readonly object _liveMonitorVisibilityGate = new();
     private readonly object _settingsPersistenceGate = new();
@@ -694,13 +694,17 @@ public sealed partial class CompanionState : IDisposable
                 return (IReadOnlyList<LocalSetup>)localSetups.ToArray();
             }, cancellationToken);
             var garageBeforeProbe = Garage61;
-            var garageTask = ReadRefreshSectionAsync("Garage61", async () =>
-            {
-                var response = await CallBackendAsync("garage61_auth_status", new { archive_root = roots.ArchiveRoot }, cancellationToken);
-                if (response.ValueKind != JsonValueKind.Object)
-                    throw new InvalidDataException("The Garage61 response was not an object.");
-                return RuntimeMapper.Garage61(response, garageBeforeProbe);
-            }, cancellationToken);
+            // A client that refuses the tool (the isolated host profile) is not asked:
+            // the refusal is policy, not a failure to log on every refresh.
+            var garageTask = Garage61ToolsEnabled
+                ? ReadRefreshSectionAsync("Garage61", async () =>
+                {
+                    var response = await CallBackendAsync("garage61_auth_status", new { archive_root = roots.ArchiveRoot }, cancellationToken);
+                    if (response.ValueKind != JsonValueKind.Object)
+                        throw new InvalidDataException("The Garage61 response was not an object.");
+                    return RuntimeMapper.Garage61(response, garageBeforeProbe);
+                }, cancellationToken)
+                : Task.FromResult(RefreshSection<Garage61Connection>.Succeeded(Garage61StatusReducer.Disabled()));
 
             await Task.WhenAll(healthTask, dashboardTask, discoveryTask, setupTask);
             var health = await healthTask;
@@ -744,6 +748,7 @@ public sealed partial class CompanionState : IDisposable
             }
 
             PublishLocalInventory(next, dashboard.Success);
+            RefreshUnreadableAnalysisNotice(roots.ArchiveRoot);
             if (setups.Success) SetupCatalogWarning = setupCatalogWarning;
             ConfigureWatchers(roots.IRacingRoot);
             if (health.Success)
@@ -2092,7 +2097,7 @@ public sealed partial class CompanionState : IDisposable
             return CurrentAnalysis;
         if (!string.IsNullOrWhiteSpace(race.AnalysisPath) && File.Exists(race.AnalysisPath))
         {
-            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(race.AnalysisPath, cancellationToken));
+            using var document = NonFiniteJson.Parse(await File.ReadAllBytesAsync(race.AnalysisPath, cancellationToken));
             var archived = RuntimeMapper.ArchivedAnalysis(document.RootElement);
             EnsureAnalysisMatchesSession(race, archived);
             archived = archived with
@@ -2613,8 +2618,21 @@ public sealed partial class CompanionState : IDisposable
         RaiseChanged();
     }
 
+    private bool Garage61ToolsEnabled => _backend.SupportsTool("garage61_auth_status");
+
+    // The isolated profile never had a Garage61 connection to lose; say it is disabled,
+    // not "not connected" or "disconnected".
+    private const string Garage61DisabledLabel = "Disabled in this profile";
+    private const string Garage61DisabledNotice = "Garage61 is disabled in this profile.";
+
     public async Task ConnectGarage61Async(CancellationToken cancellationToken = default)
     {
+        if (!Garage61ToolsEnabled)
+        {
+            Garage61KeyInput = string.Empty;
+            Notify(Garage61DisabledNotice);
+            return;
+        }
         var prior = Garage61;
         try
         {
@@ -2657,7 +2675,7 @@ public sealed partial class CompanionState : IDisposable
             _garage61Credentials.Remove();
             SaveSettingsToStore();
             await RefreshDataAsync(false, cancellationToken);
-            Toast = "Garage61 was disconnected from this PC.";
+            Toast = Garage61ToolsEnabled ? "Garage61 was disconnected from this PC." : Garage61DisabledNotice;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -3474,7 +3492,7 @@ public sealed partial class CompanionState : IDisposable
             section.Name,
             section.Message,
             section.Current ? "ready" : "warning")),
-        new("Garage61", Garage61.Available ? "Connected" : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
+        new("Garage61", Garage61.Available ? "Connected" : !Garage61ToolsEnabled ? Garage61DisabledLabel : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
         new("Live telemetry", LiveState.Snapshot.Connected ? $"Connected · {LiveState.Snapshot.Flag} · {LiveState.Snapshot.DataAge.TotalMilliseconds:0} ms old" : "Waiting for iRacing", LiveState.Snapshot.Connected ? "ready" : "neutral"),
         new("Live update pipeline", $"{LiveState.FramesRead:N0} frames · {LiveState.DroppedFrames:N0} dropped · {LiveState.RenderLatencyMs:0.00} ms compute", LiveState.DroppedFrames == 0 ? "ready" : "warning"),
         new("Replay capture", ReplayCaptureDiagnostic(), ReplayCaptureStatus.HasFailure ? "warning" : "ready"),
@@ -3706,7 +3724,9 @@ public sealed partial class CompanionState : IDisposable
         if (sourceAvailable || string.IsNullOrWhiteSpace(race.AnalysisPath) || !File.Exists(race.AnalysisPath)) return null;
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(race.AnalysisPath));
+            // The saved report is read as the library reads it: bare NaN/Infinity from an
+            // older analyzer is unknown, not a reason to fall back to reanalysis.
+            using var document = NonFiniteJson.Parse(File.ReadAllBytes(race.AnalysisPath));
             var analysis = RuntimeMapper.ArchivedAnalysis(document.RootElement);
             if (!AnalysisMatchesSession(race, analysis)) return null;
             var current = RuntimeMapper.HasCurrentAnalysisProfile(document.RootElement);
@@ -3740,7 +3760,7 @@ public sealed partial class CompanionState : IDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
             {
-                ReportUnhandledException("archived race catalog", ex);
+                RecordUnreadableAnalysis("archived race catalog", reports, path, ex);
             }
         }
         return result;
@@ -3748,7 +3768,71 @@ public sealed partial class CompanionState : IDisposable
 
     private ArchivedRaceCatalog.Entry? ReadArchivedCatalog(string path) =>
         _archivedRaceCatalog.Read(path, Path.Combine(Settings.ArchiveRoot, "ui-catalog-cache"),
-            () => _archive.MarkActive(Settings.CoachHome));
+            () => _archive.MarkActive(Settings.CoachHome), UnreadableAnalysisLedgerPath);
+
+    // App-owned local state, never the archive: the driver's saved reports stay untouched.
+    private string UnreadableAnalysisLedgerPath => Path.Combine(Settings.LocalStateRoot, "catalog", "unreadable-analyses.json");
+
+    /// <summary>
+    /// A saved analysis that cannot be read is logged once per file revision, without a
+    /// generic failure toast. The library then shows one specific notice for all of them.
+    /// </summary>
+    private void RecordUnreadableAnalysis(string scope, string reportsRoot, string path, Exception exception)
+    {
+        var relative = Path.GetRelativePath(reportsRoot, path);
+        _ = StructuredAppLog.Record(scope,
+            new InvalidDataException($"Saved analysis reports\\{relative} could not be read and was left unchanged. {exception.Message}", exception),
+            AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
+    }
+
+    private void RefreshUnreadableAnalysisNotice(string archiveRoot)
+    {
+        var reports = Path.Combine(archiveRoot, "reports");
+        try
+        {
+            var unreadable = Directory.Exists(reports)
+                ? _archivedRaceCatalog.UnreadableReports(reports, UnreadableAnalysisLedgerPath)
+                : [];
+            UnreadableAnalysisCount = unreadable.Count;
+            NewUnreadableAnalysisCount = unreadable.Count(report => !report.Acknowledged);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            UnreadableAnalysisCount = 0;
+            NewUnreadableAnalysisCount = 0;
+        }
+    }
+
+    /// <summary>Every saved analysis that could not be read, including ones already dismissed.</summary>
+    public int UnreadableAnalysisCount { get; private set; }
+
+    /// <summary>Those not yet dismissed. The notice appears only while there is one.</summary>
+    public int NewUnreadableAnalysisCount { get; private set; }
+
+    // The count is always the whole set: after a dismissal, one new failure among three
+    // must not read as if only one saved analysis were unreadable.
+    public string? UnreadableAnalysisNotice =>
+        NewUnreadableAnalysisCount <= 0 ? null
+        : UnreadableAnalysisCount <= NewUnreadableAnalysisCount
+            ? UnreadableAnalysisCount == 1
+                ? "1 saved analysis could not be read"
+                : $"{UnreadableAnalysisCount} saved analyses could not be read"
+            : $"{UnreadableAnalysisCount} saved analyses could not be read ({NewUnreadableAnalysisCount} new)";
+
+    public void DismissUnreadableAnalysisNotice()
+    {
+        var reports = Path.Combine(Settings.ArchiveRoot, "reports");
+        try
+        {
+            if (Directory.Exists(reports))
+                _archivedRaceCatalog.AcknowledgeUnreadable(
+                    _archivedRaceCatalog.UnreadableReports(reports, UnreadableAnalysisLedgerPath).Select(report => report.Path),
+                    UnreadableAnalysisLedgerPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
+        NewUnreadableAnalysisCount = 0;
+        RaiseChanged();
+    }
 
     private RecentRace EnrichRaceOverview(RecentRace race)
     {
@@ -3779,6 +3863,9 @@ public sealed partial class CompanionState : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
         {
+            // The catalog throws once per unreadable revision; keep that one log entry.
+            if (ex is JsonException or InvalidDataException or InvalidOperationException)
+                RecordUnreadableAnalysis("archived race overview", Path.Combine(Settings.ArchiveRoot, "reports"), race.AnalysisPath, ex);
             return false;
         }
     }
@@ -4275,7 +4362,7 @@ public sealed partial class CompanionState : IDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or InvalidOperationException)
             {
-                ReportUnhandledException("archived setup catalog", ex);
+                RecordUnreadableAnalysis("archived setup catalog", reports, path, ex);
             }
         }
         return result;

@@ -273,6 +273,82 @@ public sealed class HostIsolationTests
     }
 
     [TestMethod]
+    public async Task IsolatedRefresh_NeverCallsOrLogsTheDisabledGarage61Tool()
+    {
+        using var isolated = IsolatedProfileRoot.Create();
+        var settings = new CompanionSettings(isolated.Profile.Paths) { FirstRunComplete = true };
+        var inner = new LocalToolsBackend();
+        using var state = new CompanionState(
+            new LocalOnlyBackendClient(inner, isolated.Root),
+            new FixedSettingsStore(settings),
+            new DisconnectedLiveTelemetrySource(),
+            new DisabledCoachEngineSupervisor(),
+            new DisabledGarage61CredentialStore(Path.Combine(settings.LocalStateRoot, "credentials", "disabled")),
+            new DurableArchiveService(),
+            isolated.Profile.Paths,
+            allowExternalHostActions: false);
+
+        await state.InitializeAsync();
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while ((state.IsRefreshing || state.Health.Single(item => item.Id == "garage61").State == "checking") && DateTime.UtcNow < until)
+            await Task.Delay(10);
+
+        Assert.Contains("iracing_companion_dashboard", inner.Tools, "The isolated refresh must still read local data.");
+        var log = Path.Combine(settings.LogsRoot, "app-errors.jsonl");
+        var logged = File.Exists(log) ? File.ReadAllText(log) : string.Empty;
+        Assert.DoesNotContain("garage61", logged, StringComparison.OrdinalIgnoreCase,
+            "A tool the isolated profile disables by policy must not be called and logged as an error.");
+        Assert.AreEqual(0, state.ServiceFailureCount);
+        var garage = state.Health.Single(item => item.Id == "garage61");
+        Assert.AreEqual("neutral", garage.State);
+        Assert.AreEqual("Disabled in this profile", garage.Detail);
+        Assert.AreEqual("Disabled in this profile", state.Garage61StatusLabel);
+
+        state.Garage61KeyInput = "synthetic-never-sent";
+        await state.ConnectGarage61Async();
+        StringAssert.Contains(state.Toast, "disabled");
+        Assert.AreEqual(string.Empty, state.Garage61KeyInput);
+        Assert.AreEqual(0, state.ServiceFailureCount);
+    }
+
+    // The isolated profile has no Garage61 connection to lose. Diagnostics said "Not
+    // connected" and Disconnect said it "was disconnected from this PC".
+    [TestMethod]
+    public async Task IsolatedProfile_DescribesGarage61AsDisabledEverywhere()
+    {
+        using var isolated = IsolatedProfileRoot.Create();
+        var settings = new CompanionSettings(isolated.Profile.Paths) { FirstRunComplete = true };
+        var inner = new LocalToolsBackend();
+        using var state = new CompanionState(
+            new LocalOnlyBackendClient(inner, isolated.Root),
+            new FixedSettingsStore(settings),
+            new DisconnectedLiveTelemetrySource(),
+            new DisabledCoachEngineSupervisor(),
+            new DisabledGarage61CredentialStore(Path.Combine(settings.LocalStateRoot, "credentials", "disabled")),
+            new DurableArchiveService(),
+            isolated.Profile.Paths,
+            allowExternalHostActions: false);
+
+        await state.InitializeAsync();
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while ((state.IsRefreshing || !state.Diagnostics.Any(fact => fact.Label == "Garage61")) && DateTime.UtcNow < until)
+            await Task.Delay(10);
+
+        var diagnostic = state.Diagnostics.Single(fact => fact.Label == "Garage61");
+        Assert.AreEqual("Disabled in this profile", diagnostic.Value);
+        Assert.AreEqual("neutral", diagnostic.State);
+
+        await state.DisconnectGarage61Async();
+        Assert.AreEqual("Garage61 is disabled in this profile.", state.Toast);
+        Assert.AreEqual("Disabled in this profile", state.Diagnostics.Single(fact => fact.Label == "Garage61").Value);
+
+        await state.ConnectGarage61Async();
+        Assert.AreEqual("Garage61 is disabled in this profile.", state.Toast);
+        Assert.DoesNotContain("garage61", string.Join(' ', inner.Tools), StringComparison.OrdinalIgnoreCase,
+            "The disabled tools are never dispatched.");
+    }
+
+    [TestMethod]
     public void AppComposition_WiresConfinedWebViewAndSuppressesWindowsIntegration()
     {
         var root = TestRepositoryPaths.CompanionAppRoot;
@@ -354,6 +430,34 @@ public sealed class HostIsolationTests
         public void Dispose()
         {
             if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
+        }
+    }
+
+    private sealed class FixedSettingsStore(CompanionSettings settings) : ISettingsStore
+    {
+        public CompanionSettings Load() => settings;
+        public void Save(CompanionSettings value) { }
+    }
+
+    private sealed class LocalToolsBackend : IBackendClient
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _tools = new();
+        public IReadOnlyCollection<string> Tools => _tools.ToArray();
+
+        public Task<BackendHealthResult> CheckHealthAsync(BackendConfiguration configuration, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new BackendHealthResult(true, "test", "test", "test", 1, TimeSpan.Zero));
+
+        public Task<JsonElement> CallToolAsync(BackendConfiguration configuration, string toolName, object arguments, CancellationToken cancellationToken = default)
+        {
+            _tools.Enqueue(toolName);
+            return Task.FromResult(JsonSerializer.SerializeToElement(toolName switch
+            {
+                "iracing_companion_dashboard" => (object)new { ok = true, races = Array.Empty<object>() },
+                "discover_iracing_sessions" => new { sessions = Array.Empty<object>() },
+                "catalog_iracing_setups" => new { ok = true, entries = Array.Empty<object>() },
+                "list_driving_trials" => new { ok = true, trials = Array.Empty<object>() },
+                _ => new { ok = true }
+            }));
         }
     }
 

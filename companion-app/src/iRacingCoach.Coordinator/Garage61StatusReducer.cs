@@ -14,6 +14,15 @@ internal static class Garage61StatusReducer
             ? "A protected connection is saved. Garage61 has not been checked yet."
             : "Add a Garage61 token when you want reference laps.");
 
+    // The isolated host profile never dispatches Garage61 tools, so there is nothing to probe or report.
+    public static Garage61Connection Disabled() => new(
+        "absent",
+        "unverified",
+        "unverified",
+        "disabled",
+        "disabled",
+        "Garage61 is disabled in the isolated host profile. Local analysis remains ready.");
+
     public static Garage61Connection ApplyProbe(
         Garage61Connection previous,
         string outcome,
@@ -89,6 +98,7 @@ internal static class Garage61StatusReducer
 
     public static string Label(Garage61Connection status) => status.Connected
         ? "Connected"
+        : status.Availability == "disabled" ? "Disabled in this profile"
         : status.Credential == "absent" ? "Not configured"
         : status.Authentication == "rejected" ? "Credential rejected"
         : status.Permission == "insufficient_scope" ? "Permission needed"

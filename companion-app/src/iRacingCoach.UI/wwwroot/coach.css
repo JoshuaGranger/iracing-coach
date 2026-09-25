@@ -346,6 +346,7 @@ input:hover, select:hover, textarea:hover { border-color: var(--text-muted); }
 .toast { position: fixed; z-index: 40; left: 50%; bottom: var(--space-6); transform: translateX(-50%); max-width: 560px; display: flex; align-items: center; gap: var(--space-3); padding: 10px 12px 10px 16px; color: var(--text-primary); background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--radius-card); box-shadow: 0 10px 32px var(--shadow); pointer-events: none; }
 .toast button { width: 28px; height: 28px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-muted); cursor: pointer; pointer-events: auto; }
 .toast button:hover { background: var(--surface-hover); color: var(--text-primary); }
+.toast .toast-action { width: auto; padding: 0 10px; color: var(--text-primary); font-weight: 600; white-space: nowrap; }
 
 @media (max-width: 1250px) {
   .workflow-grid { grid-template-columns: repeat(2, 1fr); }.race-row { grid-template-columns: 38px minmax(220px, 1fr) 80px 100px auto; }.race-flags { display: none; }
