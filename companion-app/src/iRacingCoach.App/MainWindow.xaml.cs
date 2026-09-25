@@ -166,14 +166,18 @@ public partial class MainWindow : Window
             DisplayWorkAreas.MoveWindow(handle, plan);
     }
 
+    // The normal (restore) frame, never the window rectangle: during a maximize,
+    // SizeChanged and LocationChanged arrive while WindowState still reads Normal and
+    // GetWindowRect already returns the maximized frame.
     private void RememberNormalBounds()
     {
-        if (WindowState != WindowState.Normal || !IsVisible) return;
-        if (DisplayWorkAreas.TryGetWindowBounds(new WindowInteropHelper(this).Handle, out var bounds)) _lastNormalBounds = bounds;
+        if (!IsVisible) return;
+        if (DisplayWorkAreas.TryGetNormalBounds(new WindowInteropHelper(this).Handle, out var bounds)) _lastNormalBounds = bounds;
     }
 
     private void SavePlacement()
     {
+        RememberNormalBounds();
         if (_lastNormalBounds is { } bounds) _placementStore.Save(bounds with { Maximized = _lastShownMaximized });
     }
 

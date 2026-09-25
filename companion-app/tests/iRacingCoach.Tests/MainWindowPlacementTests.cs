@@ -147,6 +147,72 @@ public sealed class MainWindowPlacementTests
         Assert.AreEqual((900d, 640d), (tiny.Width, tiny.Height), "A remembered size below the minimum is raised to it.");
     }
 
+    // Maximize, then minimize to the tray: the window rectangle read during the maximize
+    // (WindowState still Normal) was the maximized frame, and it was saved as the restore
+    // bounds, so the next launch or restore opened a full-screen-sized normal window.
+    [TestMethod]
+    public void MaximizeThenTray_RemembersTheNormalFrameNotTheMaximizedOne()
+    {
+        var display = new DisplayWorkArea(0, 0, 2560, 1392, 1, IsPrimary: true);
+        // GetWindowPlacement while maximized: the normal position is still the 1600x1000
+        // frame the driver chose, even though GetWindowRect reports the whole work area.
+        var remembered = MainWindowPlacement.NormalBoundsOnScreen(new NativeNormalPosition(
+            300, 200, 1900, 1200, MonitorLeft: 0, MonitorTop: 0, WorkLeft: 0, WorkTop: 0));
+        Assert.AreEqual(new SavedWindowPlacement(300, 200, 1600, 1000), remembered);
+
+        var reopened = MainWindowPlacement.Resolve([display], remembered! with { Maximized = true });
+        Assert.IsTrue(reopened.Maximized);
+        Assert.AreEqual((300d, 200d, 1600d, 1000d), (reopened.Left, reopened.Top, reopened.Width, reopened.Height),
+            "Un-maximizing after a restart returns to the driver's normal frame, not a full-screen one.");
+    }
+
+    [TestMethod]
+    public void NormalBounds_ConvertWorkspaceCoordinatesToScreenCoordinates()
+    {
+        // Taskbar docked left (48 px): workspace x 100 is screen x 148.
+        Assert.AreEqual(new SavedWindowPlacement(148, 80, 1000, 700), MainWindowPlacement.NormalBoundsOnScreen(
+            new NativeNormalPosition(100, 80, 1100, 780, MonitorLeft: 0, MonitorTop: 0, WorkLeft: 48, WorkTop: 0)));
+
+        // Negative-origin secondary monitor with its taskbar on top (40 px).
+        Assert.AreEqual(new SavedWindowPlacement(-1200, -150, 1000, 700), MainWindowPlacement.NormalBoundsOnScreen(
+            new NativeNormalPosition(-1200, -190, -200, 510, MonitorLeft: -1280, MonitorTop: -200, WorkLeft: -1280, WorkTop: -160)));
+
+        // Tool windows report screen coordinates already.
+        Assert.AreEqual(new SavedWindowPlacement(100, 80, 1000, 700), MainWindowPlacement.NormalBoundsOnScreen(
+            new NativeNormalPosition(100, 80, 1100, 780, 0, 0, 48, 40, WorkspaceCoordinates: false)));
+
+        Assert.IsNull(MainWindowPlacement.NormalBoundsOnScreen(new NativeNormalPosition(100, 80, 100, 780, 0, 0, 0, 0)));
+        Assert.IsNull(MainWindowPlacement.NormalBoundsOnScreen(new NativeNormalPosition(double.NaN, 80, 1100, 780, 0, 0, 0, 0)));
+    }
+
+    [TestMethod]
+    public void AppComposition_RemembersTheNormalFrameFromWindowPlacement()
+    {
+        var root = TestRepositoryPaths.CompanionAppRoot;
+        var window = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "MainWindow.xaml.cs"));
+        var displays = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.App", "DisplayWorkAreas.cs"));
+
+        var remember = Method(window, "private void RememberNormalBounds");
+        StringAssert.Contains(remember, "DisplayWorkAreas.TryGetNormalBounds(");
+        Assert.DoesNotContain("TryGetWindowBounds", remember, "The window rectangle is the maximized frame during a maximize.");
+        Assert.DoesNotContain("WindowState", remember, "WindowState still reads Normal while the maximize is in progress.");
+        StringAssert.Contains(Method(window, "private void SavePlacement"), "RememberNormalBounds();");
+
+        var normal = Method(displays, "public static bool TryGetNormalBounds");
+        StringAssert.Contains(normal, "GetWindowPlacement(window, ref placement)");
+        StringAssert.Contains(normal, "placement.NormalPosition");
+        StringAssert.Contains(normal, "MainWindowPlacement.NormalBoundsOnScreen(");
+        Assert.DoesNotContain("GetWindowRect", normal);
+    }
+
+    private static string Method(string source, string signature)
+    {
+        var start = source.IndexOf(signature, StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, start, signature);
+        var body = source[start..];
+        return body[..body.IndexOf("\n    }", StringComparison.Ordinal)];
+    }
+
     [TestMethod]
     public void NoMonitorInformation_StillReturnsAReachablePlacement()
     {

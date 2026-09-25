@@ -13,6 +13,22 @@ public readonly record struct DisplayWorkArea(double Left, double Top, double Wi
 public sealed record SavedWindowPlacement(double Left, double Top, double Width, double Height, bool Maximized = false);
 
 /// <summary>
+/// A window's normal (restore) rectangle as GetWindowPlacement reports it, and the
+/// monitor and work-area origins of the monitor the window is on, all in device pixels.
+/// A top-level window that is not a tool window reports it in workspace coordinates.
+/// </summary>
+public readonly record struct NativeNormalPosition(
+    double Left,
+    double Top,
+    double Right,
+    double Bottom,
+    double MonitorLeft,
+    double MonitorTop,
+    double WorkLeft,
+    double WorkTop,
+    bool WorkspaceCoordinates = true);
+
+/// <summary>
 /// Where the main window opens: restore bounds in device pixels, and the minimum size in
 /// DIPs that still fits the chosen work area.
 /// </summary>
@@ -73,6 +89,27 @@ public static class MainWindowPlacement
             primary.Left + (primary.Width - width) / 2,
             primary.Top + (primary.Height - height) / 2,
             width, height, maximized: false, minimumWidth, minimumHeight, restoredSaved: false);
+    }
+
+    /// <summary>
+    /// The window's normal frame in screen device pixels, which is what is remembered.
+    /// The window rectangle is not: while a maximize is in progress WPF still reports
+    /// <c>WindowState.Normal</c> and the window rectangle is already the maximized frame,
+    /// so remembering it reopened the window at full-screen size. The normal position is
+    /// the restore frame in every state, maximized and minimized included.
+    /// </summary>
+    public static SavedWindowPlacement? NormalBoundsOnScreen(NativeNormalPosition position)
+    {
+        // Workspace coordinates leave out a taskbar docked to the left or top of the
+        // window's monitor; add that offset back to reach screen coordinates.
+        var offsetX = position.WorkspaceCoordinates ? position.WorkLeft - position.MonitorLeft : 0;
+        var offsetY = position.WorkspaceCoordinates ? position.WorkTop - position.MonitorTop : 0;
+        var bounds = new SavedWindowPlacement(
+            position.Left + offsetX,
+            position.Top + offsetY,
+            position.Right - position.Left,
+            position.Bottom - position.Top);
+        return IsUsable(bounds) ? bounds : null;
     }
 
     private static bool IsUsable(SavedWindowPlacement? saved) =>
