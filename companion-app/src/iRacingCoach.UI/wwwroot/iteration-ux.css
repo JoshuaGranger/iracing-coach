@@ -272,13 +272,17 @@ body {
   justify-content: space-between;
   gap: 6px;
 }
+/* A measurement's name is shown in full on up to two lines ("Average steering" / "(road wheel)"), so a qualifier is not cut off. */
 .race-technical-data .technical-findings-list article > header > div span {
   min-width: 0;
+  display: -webkit-box;
   overflow: hidden;
   color: var(--text-secondary);
   font-size: var(--font-size-min);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  text-wrap: balance;
 }
 .race-technical-data .technical-findings-list article > header > div strong {
   flex: 0 0 auto;
@@ -287,6 +291,8 @@ body {
 .race-technical-data .technical-findings-list p,
 .race-technical-data .technical-findings-list small {
   min-height: 0;
+  /* Two lines even when a taller card beside it (a two-line name) stretches the row. */
+  max-height: 2.4em;
   margin: 0;
   display: -webkit-box;
   overflow: hidden;

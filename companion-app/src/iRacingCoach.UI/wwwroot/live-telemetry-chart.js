@@ -8,7 +8,10 @@
     { key: "throttle", label: "Throttle", unit: "%", color: "throttle" },
     { key: "brake", label: "Brake", unit: "%", color: "brake" },
     // Road-wheel steering from the live setup's ratio; no line when the setup states none.
-    { key: "steering", label: "Steering (road wheel)", unit: "deg", color: "steering" }
+    // Its axis steps by 30 deg of wheel at the 12:1 reference ratio (2.5 deg of road
+    // wheel), so a 6 deg corner fills the row as a 72 deg wheel angle did on +/-90.
+    // "road wheel" gets its own line: the label column is 74 px wide.
+    { key: "steering", label: "Steering", unit: "deg", detail: "road wheel", color: "steering", rangeStep: 2.5 }
   ]);
 
   function number(value) {
@@ -209,7 +212,8 @@
       cache.maximum = Math.max(50, Math.ceil(observedMaximum / 25) * 25);
       return;
     }
-    const magnitude = Math.max(30, Math.ceil(Math.max(Math.abs(observedMinimum), Math.abs(observedMaximum)) / 30) * 30);
+    const step = panel.rangeStep || 30;
+    const magnitude = Math.max(step, Math.ceil(Math.max(Math.abs(observedMinimum), Math.abs(observedMaximum)) / step) * step);
     cache.minimum = -magnitude;
     cache.maximum = magnitude;
   }
@@ -352,6 +356,7 @@
       context.fillStyle = colors.muted;
       context.font = "10px 'Segoe UI', sans-serif";
       context.fillText(panel.unit, 8, plot.top + 25);
+      if (panel.detail) context.fillText(panel.detail, 8, plot.top + 38);
       context.font = "600 11px 'Segoe UI', sans-serif";
       drawTrace(context, state.panelCaches[index], panel, plot, startTime, state.cacheDuration, colors);
     }

@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using iRacingCoach.Contracts;
 using iRacingCoach.Coordinator;
 using iRacingCoach.UI;
@@ -285,6 +287,47 @@ public sealed class SteeringBasisTests
         Assert.AreEqual("Ratio not recorded", missing.DisplayValue);
         StringAssert.Contains(missing.AvailabilityMessage, "does not state a steering ratio");
         Assert.AreEqual(71.53, LiveTelemetryCatalog.Read("steering-wheel-angle", LiveState(wheel, null), includeTrend: false).NumericValue!.Value, 1e-9);
+    }
+
+    [TestMethod]
+    public void LiveSteeringTraceIsScaledForRoadWheelDegreesAndLabelledInsideItsColumn()
+    {
+        var chart = File.ReadAllText(Path.Combine(TestRepositoryPaths.UiRoot, "wwwroot", "live-telemetry-chart.js"));
+        var steering = Regex.Match(chart, "\\{ key: \"steering\"[^}]*\\}").Value;
+        // The row steps by 30 deg of wheel at the reference ratio (2.5 deg of road wheel), as every
+        // analysis steering floor converts; on the old +/-30 deg floor a 6 deg corner filled a fifth of it.
+        var step = Regex.Match(steering, "rangeStep: ([0-9.]+)");
+        Assert.IsTrue(step.Success, steering);
+        Assert.AreEqual(30 / AnalysisSteeringBasis.ThresholdReferenceRatio,
+            double.Parse(step.Groups[1].Value, CultureInfo.InvariantCulture), 1e-12);
+        StringAssert.Contains(chart, "const step = panel.rangeStep || 30;");
+        StringAssert.Contains(chart, "Math.max(step, Math.ceil(");
+        Assert.DoesNotContain("Math.max(30,", chart, "No row keeps the steering-wheel range floor.");
+        // The canvas label column is 74 px: "Steering" with "road wheel" on its own line, not one
+        // 21-character label drawn across the start of the plot.
+        StringAssert.Contains(steering, "label: \"Steering\"");
+        StringAssert.Contains(steering, "detail: \"road wheel\"");
+        StringAssert.Contains(chart, "if (panel.detail) context.fillText(panel.detail, 8, plot.top + 38);");
+    }
+
+    [TestMethod]
+    public void SteeringQualifierIsNotCutOffInTraceRowsOrMeasurementCards()
+    {
+        // At 1280x720 "Steering (road wheel)" read "Steering (roa…" in the 88 px trace label and
+        // "Average steering …" on the Details card, which looks like the old unqualified "Steering".
+        var coach = File.ReadAllText(Path.Combine(TestRepositoryPaths.UiRoot, "wwwroot", "coach.css"));
+        StringAssert.Contains(coach, ".trace-row-signal-name:only-child { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; text-wrap: balance; }");
+        var workspace = File.ReadAllText(Path.Combine(TestRepositoryPaths.UiRoot, "TelemetryWorkspace.razor"));
+        StringAssert.Contains(workspace, "<strong>@foreach (var signal in panel.Signals) { <span class=\"trace-row-signal-name\">@signal.Name</span> }</strong>",
+            "A one-signal row's name is the only child of its label, so it may take two lines.");
+
+        var iteration = File.ReadAllText(Path.Combine(TestRepositoryPaths.UiRoot, "wwwroot", "iteration-ux.css"));
+        var label = Regex.Match(iteration, @"\.race-technical-data \.technical-findings-list article > header > div span \{[^}]*\}").Value;
+        StringAssert.Contains(label, "-webkit-line-clamp: 2;");
+        StringAssert.Contains(label, "text-wrap: balance;");
+        Assert.DoesNotContain("white-space: nowrap", label);
+        var razor = File.ReadAllText(Path.Combine(TestRepositoryPaths.UiRoot, "RaceTechnicalData.razor"));
+        StringAssert.Contains(razor, "<header><span class=\"technical-finding-group\">@MetricGroupLabel(metric)</span><div><span>@metric.Label</span><strong>@metric.Value</strong></div></header>");
     }
 
     [TestMethod]
