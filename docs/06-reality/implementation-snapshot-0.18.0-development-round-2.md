@@ -121,11 +121,16 @@ The re-check on all 13 recordings (11 runs; v3 driven as runs 7, 9 and 11) found
 
 | Check | Result |
 |---|---|
-| `tools/verify-repository.ps1` | pass at `62b71bf` and on this record: **1,276/1,276** backend tests, 25 MCP tools, 22 contracts, 29 fixtures, MCP end to end |
-| Application tests (Release) | **581/581** at `62b71bf` |
-| `dotnet build iRacingCoach.sln -c Release` | pass, 0 warnings, at `62b71bf` |
+| `tools/verify-repository.ps1` | pass at `e1b683a` (end of round): **1,312/1,312** backend tests, 26 MCP tools; at `62b71bf`: **1,276/1,276** backend tests, 25 MCP tools, 22 contracts, 29 fixtures, MCP end to end |
+| Application tests (Release) | **613/613** at `e1b683a`; 581/581 at `62b71bf` |
+| `dotnet build iRacingCoach.sln -c Release` | pass, 0 warnings, at `e1b683a` |
 | Native acceptance | DESKTOP-SIM, hidden RDP session, 1280×800, copies of real data; findings and fixes above |
 | Browser preview | commit-recorded checks at 1280×720, 1280×800, 1024×720, 900×720 and 900×640 (notifications, Settings save bar, Plan, Sections strip, Details tire cards) |
+
+## Late additions (after the first draft of this record)
+
+- **Reviewed removal of older report copies** (`reclaim_report_storage`, contract `report-storage-reclaim-v1`): Settings › Data shows the reclaimable size only when the backend plan lists copies; *Review and remove* opens an explicit confirmation (what is removed, what is kept, recoverable move to `dataemoved-reports`); the backend re-plans and re-checks each folder under the history-index write lock before a single-rename move, never touching raw telemetry, setups or referenced copies. A dry run on Joshua's real archive plans 167 copies (2.3 GB) and keeps 22.
+- **Test day on the real day, final pass:** the same-setup floor uses the median pairwise spread when a setup has three or more runs; a same-setup run whose early pace departs far beyond within-run noise is flagged *Inconsistent repeat · pace changed* and excluded from thresholds and next-change decisions; returns to an earlier garage setup are recognised; headline changes are ranked by size and shown in garage units (RR track bar 13.00 → 12.00 in); hot pressures are source-labelled and cold set pressures labelled; the 12-recording cap drops untimed stubs first and never the opened recording; a selected row opens its recording; flagged runs no longer set the chart range; Details says *clean lap* outside races. On the 13 real recordings every same-setup pair except the flagged repeat reads *Within scatter* and the card asks to repeat v3 at the earlier pace.
 
 ## Not verified
 
@@ -134,7 +139,7 @@ The re-check on all 13 recordings (11 runs; v3 driven as runs 7, 9 and 11) found
 - The Live page with a live session: not exercised.
 - Multi-monitor and 150% scaling natively, and 1920×1080. `MainWindowPlacementTests` cover 150% scaling and a negative-origin secondary monitor through the placement function only.
 - A human-driven test day. The Test day acceptance used bot-driven recordings; nothing here shows how the review reads a human's runs.
-- The Test day real-data fixes: merged after this record with backend and browser-Preview evidence only; not yet re-accepted natively.
+- The Test day real-data fixes were re-accepted natively once (build `804cedc`, no P1); the final pass (robust same-setup floor, inconsistent-repeat flag, garage-unit headlines, labelled pressures, recording cap, row-to-recording link, chart range) has backend-on-real-data and test evidence only.
 - A real Improved or Worse verdict for a saved test: none is recorded in this round's commits.
 - Long paths outside the raw archive: the history database, report listing and application readers still assume paths under 260 characters (`GAP-020`).
 - IRP sections A–G come from one car and one driver's racing line; they are not verified turn boundaries.
@@ -152,10 +157,10 @@ The re-check on all 13 recordings (11 runs; v3 driven as runs 7, 9 and 11) found
 
 ## Next work, in order
 
-1. **With the Test day real-data fixes merged,** repeat native acceptance of the Test day tab on the 13 IRP recordings at 1280×800: verdicts against the noise threshold, late windows, tow exclusion, hot and cold pressures, readouts, chart and layout.
+1. **Repeat native acceptance** after the final Test day pass (build ≥ `e1b683a`) of the Test day tab on the 13 IRP recordings at 1280×800: verdicts against the noise threshold, late windows, tow exclusion, hot and cold pressures, readouts, chart and layout.
 2. **A human-driven test day.** Joshua drives two or three runs of about 20 laps with one setup change between them; confirm the verdict, the next-change card and the tire cards against what he felt and what the stall showed.
 3. **A real saved-test check.** Save an early-run test that a 20-lap run reaches, drive it on a later test day, and confirm the Improved or Worse verdict and the before/after section view.
 4. **Build a self-contained win-x64 installer and portable package with checksums** from `main`, then run the native states this round did not cover: 1920×1080, 150% scaling and multi-monitor. Re-measure click-to-view of an uncached practice on that build.
-5. **Reclaim duplicate and superseded report copies** through a Settings action with an explicit user choice (`GAP-025`, `PORT-007`) that re-checks references and drops app caches naming a removed copy.
+5. **Setups library:** show one entry for a `.sto` and the recorded-telemetry copies with identical garage values (skipped in the last pass); native check of the report-removal flow on a copy of real data.
 6. **Long paths beyond the raw archive:** history database, report listing and application readers (`GAP-020`).
 7. **Live** priorities once active simulator testing is authorized, then authenticated ChatGPT and Garage61.
