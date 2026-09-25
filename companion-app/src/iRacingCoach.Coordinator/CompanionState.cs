@@ -2620,12 +2620,17 @@ public sealed partial class CompanionState : IDisposable
 
     private bool Garage61ToolsEnabled => _backend.SupportsTool("garage61_auth_status");
 
+    // The isolated profile never had a Garage61 connection to lose; say it is disabled,
+    // not "not connected" or "disconnected".
+    private const string Garage61DisabledLabel = "Disabled in this profile";
+    private const string Garage61DisabledNotice = "Garage61 is disabled in this profile.";
+
     public async Task ConnectGarage61Async(CancellationToken cancellationToken = default)
     {
         if (!Garage61ToolsEnabled)
         {
             Garage61KeyInput = string.Empty;
-            Notify("Garage61 is disabled in the isolated host profile.");
+            Notify(Garage61DisabledNotice);
             return;
         }
         var prior = Garage61;
@@ -2670,7 +2675,7 @@ public sealed partial class CompanionState : IDisposable
             _garage61Credentials.Remove();
             SaveSettingsToStore();
             await RefreshDataAsync(false, cancellationToken);
-            Toast = "Garage61 was disconnected from this PC.";
+            Toast = Garage61ToolsEnabled ? "Garage61 was disconnected from this PC." : Garage61DisabledNotice;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -3487,7 +3492,7 @@ public sealed partial class CompanionState : IDisposable
             section.Name,
             section.Message,
             section.Current ? "ready" : "warning")),
-        new("Garage61", Garage61.Available ? "Connected" : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
+        new("Garage61", Garage61.Available ? "Connected" : !Garage61ToolsEnabled ? Garage61DisabledLabel : Garage61.Configured ? "Protected connection saved; retrying" : "Not connected", Garage61.Available ? "ready" : "neutral"),
         new("Live telemetry", LiveState.Snapshot.Connected ? $"Connected · {LiveState.Snapshot.Flag} · {LiveState.Snapshot.DataAge.TotalMilliseconds:0} ms old" : "Waiting for iRacing", LiveState.Snapshot.Connected ? "ready" : "neutral"),
         new("Live update pipeline", $"{LiveState.FramesRead:N0} frames · {LiveState.DroppedFrames:N0} dropped · {LiveState.RenderLatencyMs:0.00} ms compute", LiveState.DroppedFrames == 0 ? "ready" : "warning"),
         new("Replay capture", ReplayCaptureDiagnostic(), ReplayCaptureStatus.HasFailure ? "warning" : "ready"),

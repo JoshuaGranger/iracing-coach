@@ -311,6 +311,43 @@ public sealed class HostIsolationTests
         Assert.AreEqual(0, state.ServiceFailureCount);
     }
 
+    // The isolated profile has no Garage61 connection to lose. Diagnostics said "Not
+    // connected" and Disconnect said it "was disconnected from this PC".
+    [TestMethod]
+    public async Task IsolatedProfile_DescribesGarage61AsDisabledEverywhere()
+    {
+        using var isolated = IsolatedProfileRoot.Create();
+        var settings = new CompanionSettings(isolated.Profile.Paths) { FirstRunComplete = true };
+        var inner = new LocalToolsBackend();
+        using var state = new CompanionState(
+            new LocalOnlyBackendClient(inner, isolated.Root),
+            new FixedSettingsStore(settings),
+            new DisconnectedLiveTelemetrySource(),
+            new DisabledCoachEngineSupervisor(),
+            new DisabledGarage61CredentialStore(Path.Combine(settings.LocalStateRoot, "credentials", "disabled")),
+            new DurableArchiveService(),
+            isolated.Profile.Paths,
+            allowExternalHostActions: false);
+
+        await state.InitializeAsync();
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while ((state.IsRefreshing || !state.Diagnostics.Any(fact => fact.Label == "Garage61")) && DateTime.UtcNow < until)
+            await Task.Delay(10);
+
+        var diagnostic = state.Diagnostics.Single(fact => fact.Label == "Garage61");
+        Assert.AreEqual("Disabled in this profile", diagnostic.Value);
+        Assert.AreEqual("neutral", diagnostic.State);
+
+        await state.DisconnectGarage61Async();
+        Assert.AreEqual("Garage61 is disabled in this profile.", state.Toast);
+        Assert.AreEqual("Disabled in this profile", state.Diagnostics.Single(fact => fact.Label == "Garage61").Value);
+
+        await state.ConnectGarage61Async();
+        Assert.AreEqual("Garage61 is disabled in this profile.", state.Toast);
+        Assert.DoesNotContain("garage61", string.Join(' ', inner.Tools), StringComparison.OrdinalIgnoreCase,
+            "The disabled tools are never dispatched.");
+    }
+
     [TestMethod]
     public void AppComposition_WiresConfinedWebViewAndSuppressesWindowsIntegration()
     {
