@@ -1624,8 +1624,16 @@ def _analysis_pipeline_sha256() -> str:
 # Review 2026-09-25: ibt_reader discovery tags offline test-day stints with
 # optional test_day_* fields after grouping. Group keys, member files and every
 # analysis input are unchanged, so cached analyses remain valid.
+# Review 2026-09-25 (test-day fixes): v19 answers are unchanged. The optional
+# identity.garage_setup_fingerprint now also leaves out computed garage readouts
+# (corner/cross/nose weight, ride heights, truck-arm preload), so one .sto whose
+# readouts drift by a unit keeps one fingerprint. Only this unreleased branch
+# ever emitted the key, and no consumer reads it: the test-day review recomputes
+# it from identity.setup. Discovery also tags standalone hosted/official
+# practice with the optional test_day_* fields; group keys, member files and
+# every analysis input are unchanged, so cached analyses remain valid.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "cb3a6a890ddf303720965891458eadb055ca835bd9558354a20bd7a1bc0ea09f"
+    "a1f90701114ba4edaabbd2af8353c491d6e5dfd05e7f399a26bd1afcfa28ee62"
 )
 
 
