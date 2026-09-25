@@ -205,6 +205,54 @@ public sealed partial class CoordinatorTests
         await WaitUntilAsync(() => backend.AnalyzeCalls == analyzeCalls + 1, TimeSpan.FromSeconds(3));
     }
 
+    [TestMethod]
+    public async Task TestDayReviewDoesNotWaitForAParkedBackgroundRetry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-retry", Guid.NewGuid().ToString("N"));
+        string PathFor(string selector) => Path.Combine(root, "data", "reports", selector.Replace(':', '-'), "analysis.json");
+        var reviewCalls = 0;
+        // Background maintenance's first attempt fails (an IBT still being written, a timeout);
+        // its retry then yields to the driver's test-day review.
+        var backend = new FakeBackend(
+            discovery: TestDayDiscovery(
+                OfflineStint("local:run-1", "2026-08-06T23:00:00Z", 1, 2),
+                OfflineStint("local:run-2", "2026-08-06T23:50:00Z", 2, 2)),
+            analysisDelay: TimeSpan.FromMilliseconds(600),
+            analysisFailuresBeforeSuccess: 1,
+            responseOverride: (tool, _, arguments) =>
+            {
+                var args = JsonSerializer.SerializeToElement(arguments);
+                if (tool == "analyze_iracing_race")
+                {
+                    var selector = args.GetProperty("selector").GetString()!;
+                    Directory.CreateDirectory(Path.GetDirectoryName(PathFor(selector))!);
+                    File.WriteAllText(PathFor(selector), "{}");
+                    return HomeAnalysisResponse(PathFor(selector), "Offline Testing", selector);
+                }
+                if (tool != "review_test_day") return null;
+                Interlocked.Increment(ref reviewCalls);
+                return TestDayReviewFor(args.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()!).ToArray());
+            });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(() => backend.AnalyzeCalls >= 1, TimeSpan.FromSeconds(3));
+        var day = state.TestDayGroupFor(state.EventSessions.First(session => session.IsTestDayStint))!;
+
+        var load = state.LoadTestDayAsync(day);
+        var finished = await Task.WhenAny(load, Task.Delay(TimeSpan.FromSeconds(10))) == load;
+
+        Assert.IsTrue(finished, $"The review waited for a background retry that waits for the review ({state.TestDayMessage}).");
+        await load;
+        Assert.AreEqual(1, Volatile.Read(ref reviewCalls));
+        Assert.IsNotNull(state.CurrentTestDay, state.TestDayMessage);
+        Assert.IsFalse(state.TestDayLoading);
+        // The parked retry finds the analysis the review wrote instead of analyzing the stint again.
+        await WaitUntilAsync(() => state.EventSessions.Where(session => session.IsTestDayStint).All(session => session.Analyzed), TimeSpan.FromSeconds(4));
+        await Task.Delay(400);
+        Assert.AreEqual(3, backend.AnalyzeCalls, "One failed background attempt, then one analysis per stint.");
+    }
+
     private static string ArchivedStintReport(string analysisId, string groupId, string start, int subsession = 0) => $$$"""
         {
           "analysis_id":"{{{analysisId}}}",

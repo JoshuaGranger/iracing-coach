@@ -221,6 +221,12 @@ public sealed partial class CompanionState
         return analysisPath;
     }
 
+    /// <summary>
+    /// Waits while background maintenance is inside its backend call for this
+    /// recording. A worker parked between attempts (it yields to a running test-day
+    /// review, interactive analysis or live driving) is not waited for: it waits for
+    /// this job, and rereads the cache this job writes before it tries again.
+    /// </summary>
     private async Task WaitForBackgroundAnalysisOfAsync(RecentRace session, CancellationToken token)
     {
         var key = UiAnalysisCacheKey(session);
@@ -228,7 +234,7 @@ public sealed partial class CompanionState
         {
             lock (_homeAnalysisSync)
             {
-                if (!string.Equals(_homeAnalysisCurrentKey, key, StringComparison.OrdinalIgnoreCase)) return;
+                if (!string.Equals(_homeAnalysisCallKey, key, StringComparison.OrdinalIgnoreCase)) return;
             }
             await Task.Delay(TimeSpan.FromMilliseconds(100), token);
         }

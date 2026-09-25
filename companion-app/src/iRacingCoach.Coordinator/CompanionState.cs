@@ -73,6 +73,10 @@ public sealed partial class CompanionState : IDisposable
     private readonly HashSet<string> _homeAnalysisActiveKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, RecoverableAppError> _homeAnalysisErrors = new(StringComparer.OrdinalIgnoreCase);
     private string? _homeAnalysisCurrentKey;
+    // Set only while background maintenance is inside its backend call. A caller that
+    // wants the same recording waits for this, never for _homeAnalysisCurrentKey: the
+    // maintenance worker keeps that key while it waits for the driver's own work to end.
+    private string? _homeAnalysisCallKey;
     private readonly CancellationTokenSource _homeAnalysisCancellation = new();
     private Task? _homeAnalysisWorker;
     private static readonly TimeSpan HomeAnalysisRetryDelay = TimeSpan.FromMilliseconds(250);
@@ -4073,13 +4077,28 @@ public sealed partial class CompanionState : IDisposable
                     // every attempt because either state can change during retry delay.
                     await WaitForHomeAnalysisWindowAsync();
                     _homeAnalysisCancellation.Token.ThrowIfCancellationRequested();
-                    var result = await CallBackendAsync("analyze_iracing_race", new
+                    // The driver's own work (a test-day review) may have analyzed it meanwhile.
+                    if (TryReadUiAnalysisCache(race, out var preparedOverview, out var preparedPath))
                     {
-                        selector = race.EffectiveSelector,
-                        iracing_root = Settings.IRacingRoot,
-                        archive_root = Settings.ArchiveRoot,
-                        target_hz = (double?)null
-                    }, _homeAnalysisCancellation.Token, DetachedBackendOperationPolicy.CompleteForCache);
+                        if (ApplySuccessfulRaceAnalysis(race, preparedOverview, preparedPath)) RaiseChanged();
+                        return;
+                    }
+                    JsonElement result;
+                    lock (_homeAnalysisSync) _homeAnalysisCallKey = key;
+                    try
+                    {
+                        result = await CallBackendAsync("analyze_iracing_race", new
+                        {
+                            selector = race.EffectiveSelector,
+                            iracing_root = Settings.IRacingRoot,
+                            archive_root = Settings.ArchiveRoot,
+                            target_hz = (double?)null
+                        }, _homeAnalysisCancellation.Token, DetachedBackendOperationPolicy.CompleteForCache);
+                    }
+                    finally
+                    {
+                        lock (_homeAnalysisSync) _homeAnalysisCallKey = null;
+                    }
                     if (!result.TryGetProperty("analysis_view", out var view) || view.ValueKind != JsonValueKind.Object)
                         throw new InvalidDataException("Background race analysis did not return an analysis view.");
                     EnsureResponseMatchesSession(race, result);
