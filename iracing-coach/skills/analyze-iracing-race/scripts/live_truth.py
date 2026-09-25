@@ -82,7 +82,11 @@ SESSION_FLAG_BITS: tuple[tuple[str, int], ...] = (
 _BIT_BY_NAME = dict(SESSION_FLAG_BITS)
 
 #: The bits that mean the track is under caution. This is the backend's
-#: authority and it is what the offline analyzer already uses.
+#: authority and it is what the offline analyzer already uses. Outside a Race
+#: session the analyzer additionally ignores one-lap-to-green when no other
+#: caution bit is set, because iRacing holds that bit through Offline Testing
+#: and Lone Qualify out-laps (analysis_engine._caution_flag_series). These
+#: session-agnostic vectors do not yet carry that session rule.
 CAUTION_MASK = (
     _BIT_BY_NAME["yellow"]
     | _BIT_BY_NAME["yellow_waving"]

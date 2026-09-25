@@ -80,7 +80,7 @@ public sealed class PitFuelPresentationTests
     private static string Response(string rangeProperty) => $$$"""
     {
       "analysis_view":{
-        "schema_version":1,"analysis_profile_version":"post-race-foundations-v19",
+        "schema_version":1,"analysis_profile_version":"post-race-foundations-v20",
         "identity":{"track_name":"Bristol Motor Speedway","car_name":"Toyota Supra"},
         "race_summary":{"scheduled_laps":160,"recorded_laps":159},
         "runs":[{"run_number":1,"lap_numbers":[101,102],"green_laps":54,"ended_with_pit_stop":true,

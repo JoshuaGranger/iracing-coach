@@ -48,6 +48,8 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
 
 
 CAUTION_FLAGS = 0x0008 | 0x0100 | 0x0200 | 0x4000 | 0x8000
+# One-lap-to-green is a caution bit only in a Race; see _caution_flag_series.
+ONE_LAP_TO_GREEN_FLAG = 0x0200
 CHECKERED_FLAG = 0x0001
 WHITE_FLAG = 0x0002
 GREEN_FLAG = 0x0004
@@ -67,7 +69,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v19"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v20"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -1014,6 +1016,52 @@ def _lap_conditions(table: TelemetryTable, indices: Sequence[int]) -> dict[str, 
     }
 
 
+def _caution_flag_series(table: TelemetryTable) -> list[Any]:
+    """Return SessionFlags with the non-race one-lap-to-green state cleared.
+
+    iRacing holds one-lap-to-green (0x0200) on every sample of an Offline
+    Testing session, and on a Lone Qualify out-lap and after its checkered,
+    with no yellow or caution bit. Read as a caution, it turns every lap of a
+    test at race pace into a caution lap. In a Race the bit belongs to the
+    caution and restart sequence, so Race samples, and every sample of a
+    recording whose session type is unknown, keep the full CAUTION_FLAGS
+    meaning. A yellow or caution bit still counts in every session.
+    """
+
+    flags = table.get("SessionFlags", default=0)
+    recorded_type = str(table.metadata.get("sim_session_type") or "").strip().lower()
+    if recorded_type in ("", "race"):
+        return flags
+    session_types: dict[int, str] = {}
+    sessions = _path_get(table.session_info, "SessionInfo", "Sessions") or []
+    for item in sessions if isinstance(sessions, Sequence) else ():
+        number = _numeric_text(item.get("SessionNum")) if isinstance(item, Mapping) else None
+        if number is not None and math.isfinite(number) and number.is_integer():
+            session_types[int(number)] = str(item.get("SessionType") or "").strip().lower()
+    real_caution = CAUTION_FLAGS & ~ONE_LAP_TO_GREEN_FLAG
+    result = list(flags)
+    session_numbers: Sequence[Any] | None = None
+    for index, raw in enumerate(flags):
+        value = _finite(raw)
+        if value is None:
+            continue
+        flag = int(value)
+        if not flag & ONE_LAP_TO_GREEN_FLAG or flag & real_caution:
+            continue
+        if session_numbers is None:
+            # Read only when needed: a recording that runs on into a Race
+            # session keeps the race meaning for those samples.
+            session_numbers = table.get("SessionNum", default=None) if table.has("SessionNum") else ()
+        session_type = recorded_type
+        if session_numbers:
+            number = _finite(session_numbers[index])
+            if number is not None and number.is_integer():
+                session_type = session_types.get(int(number)) or recorded_type
+        if session_type != "race":
+            result[index] = flag & ~ONE_LAP_TO_GREEN_FLAG
+    return result
+
+
 def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     n = table.length
     times = table.get("SessionTime", "SessionTimeOfDay", default=None)
@@ -1038,7 +1086,7 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     lat_accel = table.get("LatAccel", default=None)
     long_accel = table.get("LongAccel", default=None)
     fuel = table.get("FuelLevel", default=None)
-    flags = table.get("SessionFlags", default=0)
+    flags = _caution_flag_series(table)
     # iRacing publishes the finished lap's own scored time in LapLastLapTime.
     # Deriving a lap time from sample timestamps is short by one sample interval
     # by construction (the last sample of a lap precedes the start/finish
@@ -3393,7 +3441,7 @@ def _runs(table: TelemetryTable, laps: list[dict[str, Any]]) -> list[dict[str, A
     if not boundaries:
         boundaries = [(first_index, last_index, post_race_event)]
     fuel = table.get("FuelLevel", default=None)
-    flags = table.get("SessionFlags", default=0)
+    flags = _caution_flag_series(table)
     result = []
     for start, end, ending_event in boundaries:
         run_laps = [
@@ -3761,7 +3809,7 @@ def _setup_channel_series(table: TelemetryTable) -> dict[str, Any]:
 
 def _setup_sample_indices(table: TelemetryTable) -> list[int]:
     pit = table.get("OnPitRoad", "PlayerCarInPitStall", "PitstopActive", default=False)
-    flags = table.get("SessionFlags", default=0)
+    flags = _caution_flag_series(table)
     has_distance = table.has("LapDistPct")
     distance = table.get("LapDistPct", default=None)
     result = []
@@ -3964,7 +4012,7 @@ def _track_profile(
     throttle = table.get("Throttle", "ThrottleRaw", default=None)
     steering = table.get("SteeringWheelAngle", default=None)
     lat_accel = table.get("LatAccel", default=None)
-    flags = table.get("SessionFlags", default=0)
+    flags = _caution_flag_series(table)
     pit = table.get("OnPitRoad", default=False)
     latitude = table.get("Lat", default=None)
     longitude = table.get("Lon", default=None)
@@ -4985,7 +5033,7 @@ def _corner_tire_age_summary(
         "brake": table.get("Brake", "BrakeRaw", default=None),
         "throttle": table.get("Throttle", "ThrottleRaw", default=None),
         "steering": table.get("SteeringWheelAngle", default=None),
-        "flags": table.get("SessionFlags", default=0),
+        "flags": _caution_flag_series(table),
         "pit": table.get("OnPitRoad", default=False),
         "track_location": table.get("PlayerTrackSurface", default=None) if table.has("PlayerTrackSurface") else (),
         "car_distance_ahead": table.get("CarDistAhead", default=None) if table.has("CarDistAhead") else (),
@@ -7805,6 +7853,8 @@ def analyze_telemetry(
         for name in groove_channel_names
         if table.has(name)
     }
+    if "SessionFlags" in groove_channels:
+        groove_channels["SessionFlags"] = _caution_flag_series(table)
     groove_evolution = analyze_groove_evolution(
         groove_channels,
         runs=runs,

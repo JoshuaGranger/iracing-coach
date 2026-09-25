@@ -15,7 +15,7 @@ public sealed class ArchivedRaceCatalogTests
         var cache = Path.Combine(root, "cache");
         void WriteReport(string track) => File.WriteAllText(report, JsonSerializer.Serialize(new
         {
-            analysis_id = "test", analysis_profile_version = "post-race-foundations-v19",
+            analysis_id = "test", analysis_profile_version = "post-race-foundations-v20",
             identity = new { track_name = track, event_type = "Race" },
             race_summary = new { recorded_laps = 10 }
         }));
