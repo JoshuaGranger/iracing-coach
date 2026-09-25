@@ -91,12 +91,22 @@ public sealed partial class CompanionState
         }
     }
 
-    /// <summary>An error that was written to the app log names what failed and links to the log.</summary>
-    private void ShowContainedError(RecoverableAppError? error)
+    /// <summary>
+    /// An error that was written to the app log names what failed and links to the log.
+    /// <paramref name="source"/> names the work whose later success answers it (by default,
+    /// the logged scope).
+    /// </summary>
+    private void ShowContainedError(RecoverableAppError? error, string? source = null)
     {
-        if (error is null) { ShowToast("An operation failed; details are in the app log.", ToastTone.Error); return; }
-        ShowToast(ToastNotice.ContainedErrorMessage(error), ToastTone.Error, ToastAction.OpenLogs, error.Id, error.Scope);
+        if (error is null) { ShowToast("An operation failed; details are in the app log.", ToastTone.Error, source: source); return; }
+        ShowToast(ToastNotice.ContainedErrorMessage(error), ToastTone.Error, ToastAction.OpenLogs, error.Id, source ?? error.Scope);
     }
+
+    /// <summary>
+    /// The work a job's failure belongs to: its canonical key (one recording, one test day,
+    /// one test check), never its title, which two recordings at one track share.
+    /// </summary>
+    private static string JobToastSource(string canonicalKey) => $"job {canonicalKey}";
 
     /// <summary>
     /// Clears information on screen (bringing back a problem it covered). Warnings and errors

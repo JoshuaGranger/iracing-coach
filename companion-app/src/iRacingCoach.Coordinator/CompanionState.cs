@@ -415,11 +415,13 @@ public sealed partial class CompanionState : IDisposable
     public bool IRacingDetected => Directory.Exists(Settings.IRacingRoot);
     public bool Garage61ReferenceActionVisible => Garage61.Available && TryGetAnalysisPath(SelectedRaceSession, out _);
 
-    public void ReportUnhandledException(string scope, Exception exception)
+    public void ReportUnhandledException(string scope, Exception exception) => ReportUnhandledException(scope, exception, toastSource: null);
+
+    private void ReportUnhandledException(string scope, Exception exception, string? toastSource)
     {
         LastRecoverableError = StructuredAppLog.Record(scope, exception, AppVersion, Settings.LogsRoot, _pathProvider.UserProfile);
         ServiceFailureCount++;
-        ShowContainedError(LastRecoverableError);
+        ShowContainedError(LastRecoverableError, toastSource);
         RaiseChanged();
     }
 
@@ -3271,8 +3273,9 @@ public sealed partial class CompanionState : IDisposable
             job.Status = "complete"; job.Stage = "Complete"; job.Progress = 100; job.Cancellable = false; job.Elapsed = timer.Elapsed;
             job.ArtifactLabel = canonicalKey.StartsWith("session:", StringComparison.Ordinal) ? "race" : null;
             JobTrayOpen = false;
-            // Success answers an earlier failure of the same work.
-            ClearPassingToast($"job {title}");
+            // Success answers an earlier failure of the same work: the same recording, not
+            // another one at the same track that shares this title.
+            ClearPassingToast(JobToastSource(canonicalKey));
         }
         catch (OperationCanceledException)
         {
@@ -3282,7 +3285,7 @@ public sealed partial class CompanionState : IDisposable
         }
         catch (Exception ex)
         {
-            ReportUnhandledException($"job {title}", ex);
+            ReportUnhandledException($"job {title}", ex, JobToastSource(canonicalKey));
             if (LastRecoverableError is { } error) onError?.Invoke(error);
             job.Status = "failed"; job.Stage = Bound(ex.Message); job.Cancellable = false; job.Elapsed = timer.Elapsed;
         }

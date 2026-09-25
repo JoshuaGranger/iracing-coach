@@ -1037,6 +1037,33 @@ public sealed partial class CoordinatorTests
         }
     }
 
+    // The failure was keyed on its title, "job Analyze {Track}", so analyzing a different
+    // recording at the same track cleared the first recording's undismissed failure.
+    [TestMethod]
+    public async Task SuccessfulJob_ForAnotherRecordingAtTheSameTrackKeepsTheFailure()
+    {
+        var (state, race) = RetryToastState("iracing-coach-same-track-toast");
+        using (state)
+        {
+            var other = race with { Id = "retry-toast-other", Selector = "87624988" };
+            state.Races.Add(other);
+            await state.AnalyzeRaceAsync(race, force: true);
+            var failure = state.CurrentToast!;
+            StringAssert.StartsWith(failure.Message, "Analyze Kentucky Speedway failed:");
+
+            await state.AnalyzeRaceAsync(other, force: true);
+
+            Assert.AreEqual("complete", state.Jobs[0].Status);
+            Assert.AreEqual(state.Jobs[1].Title, state.Jobs[0].Title, "Both recordings' jobs share one title.");
+            Assert.AreEqual(failure, state.CurrentToast, "Another recording's success does not answer this recording's failure.");
+
+            await state.RetryJobAsync(state.Jobs.Single(job => job.Status == "failed"));
+
+            Assert.AreEqual("complete", state.Jobs[0].Status);
+            Assert.IsNull(state.CurrentToast, "The failed recording's own success answers it.");
+        }
+    }
+
     private static (CompanionState State, RecentRace Race) RetryToastState(string name)
     {
         var root = Path.Combine(Path.GetTempPath(), name, Guid.NewGuid().ToString("N"));
