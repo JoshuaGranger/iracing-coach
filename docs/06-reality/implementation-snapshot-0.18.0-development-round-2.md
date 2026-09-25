@@ -70,17 +70,13 @@ Native acceptance on that data:
 - Test day tab: tire temperatures and inside/outside orientation matched ground truth, and laps 2–5 medians matched within 2 ms.
 - Setups page (fixed in `a67a3ee`, `6f296a0`): every file-selected Offline Testing analysis had superseded the other offline rows in the history index (ten real recordings kept one row), which unlinked their setup files. The page listed one setup five times, found nothing for "supra IRP", badged Offline Testing setups "Recorded race" and counted readouts as changes. v3 against baseline now reads "1 changed · 2 garage readouts moved" instead of "3 changed". A personal file name ("claude IRP test v2 LFcamber") no longer becomes a track.
 
-### Test day real-data fixes (in progress at time of writing)
+### Test day real-data fixes (merged after this record)
 
-The same acceptance found further defects in the Test day review. A separate branch fixing them was being finished when this record was written; it is **not** part of `62b71bf`, and this subsection will be updated when it merges. The areas:
+The same acceptance found further defects in the Test day review. They were fixed on a separate branch that is **not** part of `62b71bf` and merged after this record was written. Its evidence is the backend review and the browser Preview (isolated profile, 1280x720 and 1280x800) on local copies of ten of the thirteen recordings (baseline through v4); native re-acceptance on the sim is next work item 1.
 
-- the verdict's noise threshold;
-- late windows over the common run length;
-- an offline tow not excluded;
-- hot versus cold tire pressures;
-- readout headlines;
-- chart scaling;
-- layout.
+- Late windows over the common run length, the offline tow no longer excluding the next run (analysis profile v21 on the branch, v22 after its merge with `6725046`), hot pressures from the next matching garage sheet with the stall value labelled the cold setting, anti-roll-bar preload as a readout, and the table, chart and detail layout (`c6469c5`, `fe638e8`).
+- The verdict's noise threshold (`b15cd0c`). Lap-to-lap noise alone (0.008–0.066 s) called one garage setup faster than itself: the 22:43 run against run D by 0.247 s on laps 15–19 (threshold 0.047 s). The lap noise is now the larger of the lap-to-lap spread and each run's fall-off fit residual (0.10–0.17 s), laps whose pace wanders together count as fewer (autocorrelation 0.40), and a threshold is never below what two other same-setup runs of the day differed by. Fall-off is fitted from lap 6. All ten same-setup pairs read Within scatter in every window and in fall-off; v3 (steering 10:1) against v2 is 0.137 s faster on laps 10–14 but inside its 0.317 s threshold, so the day does not resolve it.
+- Runs with fewer than three clean laps (the four stubs between resets in the 22:43 recording) join the garage-only recordings on one quiet line instead of being rows, and the time axis covers the plotted runs' clean laps (22.8–24.1 s instead of 24–28.8 s).
 
 ## Setups
 
@@ -128,7 +124,7 @@ The same acceptance found further defects in the Test day review. A separate bra
 - The Live page with a live session: not exercised.
 - Multi-monitor and 150% scaling natively, and 1920×1080. `MainWindowPlacementTests` cover 150% scaling and a negative-origin secondary monitor through the placement function only.
 - A human-driven test day. The Test day acceptance used bot-driven recordings; nothing here shows how the review reads a human's runs.
-- The Test day real-data fixes: not merged at the time of writing.
+- The Test day real-data fixes: merged after this record with backend and browser-Preview evidence only; not yet re-accepted natively.
 - A real Improved or Worse verdict for a saved test: none is recorded in this round's commits.
 - Long paths outside the raw archive: the history database, report listing and application readers still assume paths under 260 characters (`GAP-020`).
 - IRP sections A–G come from one car and one driver's racing line; they are not verified turn boundaries.
@@ -146,7 +142,7 @@ The same acceptance found further defects in the Test day review. A separate bra
 
 ## Next work, in order
 
-1. **Merge the Test day real-data fixes** and repeat native acceptance of the Test day tab on the 13 IRP recordings at 1280×800: verdicts against the noise threshold, late windows, tow exclusion, hot and cold pressures, readouts, chart and layout.
+1. **With the Test day real-data fixes merged,** repeat native acceptance of the Test day tab on the 13 IRP recordings at 1280×800: verdicts against the noise threshold, late windows, tow exclusion, hot and cold pressures, readouts, chart and layout.
 2. **A human-driven test day.** Joshua drives two or three runs of about 20 laps with one setup change between them; confirm the verdict, the next-change card and the tire cards against what he felt and what the stall showed.
 3. **A real saved-test check.** Save an early-run test that a 20-lap run reaches, drive it on a later test day, and confirm the Improved or Worse verdict and the before/after section view.
 4. **Build a self-contained win-x64 installer and portable package with checksums** from `main`, then run the native states this round did not cover: 1920×1080, 150% scaling and multi-monitor. Re-measure click-to-view of an uncached practice on that build.
