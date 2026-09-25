@@ -355,7 +355,9 @@ def _stint(analysis: Mapping[str, Any], index: int, analysis_path: str | None) -
     run, rows, run_count = _measured_run(analysis, screen)
     by_lap = {int(lap["lap"]): lap for lap in analysis["laps"] if isinstance(lap, Mapping) and _number(lap.get("lap")) is not None}
     for row in rows:
-        row["plotted"] = _plotted(by_lap.get(row["lap"], {}), offline) and row["run_lap"] is not None
+        # A lap where the car stood still is neither a pace sample nor a pace observation to draw.
+        row["plotted"] = (_plotted(by_lap.get(row["lap"], {}), offline) and row["run_lap"] is not None
+                          and "stopped_on_track" not in row["exclusion_reasons"])
     setup = identity.get("setup")
     has_setup = isinstance(setup, Mapping) and bool(setup)
     temperatures = [value for row in rows if (value := _number(_path(by_lap.get(row["lap"], {}), "conditions", "track_temperature_f"))) is not None]
@@ -874,7 +876,7 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
         "screening": {
             "rule": ("Clean laps use the recording's investigation screen (partial, pit, caution, restart, off-track, "
                      "close-traffic, incident, damage and timing exclusions). Lap 1 of each run and laps where the car "
-                     f"stopped on track (below {STOPPED_ON_TRACK_MPH:.0f} mph off pit road) are also excluded."),
+                     f"stopped on track (below {STOPPED_ON_TRACK_MPH:.0f} mph off pit road) are also excluded; stopped laps are not plotted."),
             "offline_flag_rule_runs": offline_runs,
             "offline_flag_rule": OFFLINE_FLAG_NOTE if offline_runs else None,
         },

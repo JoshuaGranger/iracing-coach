@@ -2306,7 +2306,7 @@
       2,
       3
     ],
-    "rule": "Clean laps use the recording's investigation screen (partial, pit, caution, restart, off-track, close-traffic, incident, damage and timing exclusions). Lap 1 of each run and laps where the car stopped on track (below 15 mph off pit road) are also excluded."
+    "rule": "Clean laps use the recording's investigation screen (partial, pit, caution, restart, off-track, close-traffic, incident, damage and timing exclusions). Lap 1 of each run and laps where the car stopped on track (below 15 mph off pit road) are also excluded; stopped laps are not plotted."
   },
   "test_day_id": "test-day-0123456789abcdef",
   "track": {

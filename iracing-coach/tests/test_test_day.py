@@ -367,6 +367,8 @@ class TestDayWindowTests(unittest.TestCase):
         analysis["laps"][3]["lap_time_s"] = 138.419
         row = review(stint_analysis("a", 9), analysis)["runs"][1]
         self.assertIn("stopped_on_track", row["laps"][3]["exclusion_reasons"])
+        self.assertFalse(row["laps"][3]["plotted"])
+        self.assertTrue(row["laps"][4]["plotted"])
         self.assertEqual(row["early"]["laps"], [2, 3, 5])
         self.assertNotIn(4, row["fall_off"]["laps"])
 

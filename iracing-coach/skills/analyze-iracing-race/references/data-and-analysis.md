@@ -165,7 +165,7 @@ Discovery keeps every offline stint as its own group and additionally tags conse
 
 `review_test_day` (2-12 archived `analysis.json` paths, read-only) returns one row per stint in recording order:
 
-- equal run-age windows: laps 2-5 and the last five laps up to N, where N is the shortest stint of at least eight laps (withheld when none reaches eight); a window needs 3+ clean laps and reports a median;
+- equal run-age windows: laps 2-5 and the last five laps up to N, where N is the shortest stint of at least eight laps (withheld when none reaches eight); a window needs 3+ clean laps and reports a median. Clean laps use the investigation screen, and lap 1 of each run and laps where the car stopped on track (below 15 mph off pit road) are also excluded; stopped laps are not plotted;
 - least-squares fall-off over laps 2..N with its residual scatter;
 - the garage-setup change from the previous stint with tire readings and `UpdateCount` excluded (`garage_setup_fields`); a setting present in only one stint is unknown, never a change;
 - comparability with the previous stint (exact car path and configuration, open setup, track temperature under 5 °F apart, starting fuel under 2 gal apart, same compound when recorded) and a Faster / Slower / Within scatter / Not comparable verdict against `max(0.03 s, 2 × combined median standard error)`;
