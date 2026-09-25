@@ -8,7 +8,8 @@ namespace iRacingCoach.Tests;
 
 /// <summary>
 /// Test day in the coordinator: discovery tags group stints without merging them,
-/// and opening a stint opens that stint and reviews its day.
+/// opening a stint opens that stint and reviews its day, and background
+/// maintenance prepares tagged stints like races.
 /// </summary>
 public sealed partial class CoordinatorTests
 {
@@ -112,6 +113,96 @@ public sealed partial class CoordinatorTests
         await state.OpenRaceFromHomeAsync(state.EventSessions.Single(session => session.Id == "local:run-1"));
         Assert.AreEqual("local:run-1", state.SelectedRaceSessionId);
         Assert.AreEqual(reviews, backend.CallsFor("review_test_day"), "Switching stints of an unchanged day keeps the loaded review.");
+    }
+
+    [TestMethod]
+    public async Task BackgroundAnalysisPreparesTestDayStintsButNotLonePractice()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-background", Guid.NewGuid().ToString("N"));
+        string PathFor(string selector) => Path.Combine(root, "data", "reports", selector.Replace(':', '-'), "analysis.json");
+        var analyzed = new ConcurrentQueue<string>();
+        var backend = new FakeBackend(
+            discovery: TestDayDiscovery(
+                OfflineStint("local:run-1", "2026-08-06T23:00:00Z", 1, 2),
+                OfflineStint("local:run-2", "2026-08-06T23:50:00Z", 2, 2),
+                OfflineStint("local:lone", "2026-08-02T18:30:00Z", null, null)),
+            responseOverride: (tool, _, arguments) =>
+            {
+                if (tool != "analyze_iracing_race") return null;
+                var selector = JsonSerializer.SerializeToElement(arguments).GetProperty("selector").GetString()!;
+                analyzed.Enqueue(selector);
+                return HomeAnalysisResponse(PathFor(selector), "Offline Testing", selector);
+            });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(() => state.EventSessions.Where(session => session.IsTestDayStint).All(session => session.Analyzed), TimeSpan.FromSeconds(4));
+        await Task.Delay(150);
+
+        CollectionAssert.AreEquivalent(new[] { "local:run-1", "local:run-2" }, analyzed.ToArray(),
+            "Tagged stints are prepared once each; practice outside a test day still waits to be opened.");
+        Assert.IsFalse(state.EventSessions.Single(session => session.Id == "local:lone").Analyzed);
+        foreach (var stint in state.EventSessions.Where(session => session.IsTestDayStint))
+            Assert.AreEqual(PathFor(stint.Id), stint.AnalysisPath, "Each stint keeps its own analysis.");
+        Assert.IsEmpty(state.Jobs, "Preparing stints is quiet maintenance, not a job.");
+    }
+
+    [TestMethod]
+    public async Task BackgroundAnalysisWaitsWhileATestDayIsBeingReviewed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-yield", Guid.NewGuid().ToString("N"));
+        string PathFor(string selector) => Path.Combine(root, "data", "reports", selector.Replace(':', '-'), "analysis.json");
+        var releaseReview = new TaskCompletionSource();
+        var reviewStarted = new TaskCompletionSource();
+        var newRaceRecorded = false;
+        var stints = new[] { OfflineStint("local:run-1", "2026-08-06T23:00:00Z", 1, 2), OfflineStint("local:run-2", "2026-08-06T23:50:00Z", 2, 2) };
+        var race = new
+        {
+            group_id = "subsession:9101:1", subsession_id = 9101, session_id = 8101, sim_session_type = "Race", event_type = "Race", is_race = true,
+            valid = true, is_fixed_setup = true, track_name = "Recorded Track", track_config_name = "Oval", car_path = "recorded-car",
+            start_time_utc = "2026-08-07T02:00:00Z", file_count = 1, files = new[] { "race.ibt" }
+        };
+        var backend = new FakeBackend(responseOverride: (tool, _, arguments) =>
+        {
+            var args = JsonSerializer.SerializeToElement(arguments);
+            switch (tool)
+            {
+                case "discover_iracing_sessions":
+                    return Volatile.Read(ref newRaceRecorded) ? TestDayDiscovery([.. stints, race]) : TestDayDiscovery(stints);
+                case "analyze_iracing_race":
+                    var selector = args.GetProperty("selector").GetString()!;
+                    Directory.CreateDirectory(Path.GetDirectoryName(PathFor(selector))!);
+                    File.WriteAllText(PathFor(selector), "{}");
+                    return HomeAnalysisResponse(PathFor(selector), selector.StartsWith("local:", StringComparison.Ordinal) ? "Offline Testing" : "Race", selector);
+                case "review_test_day":
+                    reviewStarted.TrySetResult();
+                    releaseReview.Task.Wait(TimeSpan.FromSeconds(5));
+                    return TestDayReviewFor(args.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()!).ToArray());
+                default:
+                    return null;
+            }
+        });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(() => state.EventSessions.Count(session => session.IsTestDayStint && session.Analyzed) == 2, TimeSpan.FromSeconds(4));
+
+        var day = state.TestDayGroupFor(state.EventSessions.First(session => session.IsTestDayStint))!;
+        var review = Task.Run(() => state.LoadTestDayAsync(day));
+        await reviewStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.IsTrue(state.TestDayLoading);
+        var analyzeCalls = backend.AnalyzeCalls;
+        Volatile.Write(ref newRaceRecorded, true);
+        await state.RefreshDashboardAsync();
+        await Task.Delay(400);
+        Assert.AreEqual(analyzeCalls, backend.AnalyzeCalls, "Maintenance yields while the driver's test-day review runs.");
+
+        releaseReview.SetResult();
+        await review;
+        Assert.IsFalse(state.TestDayLoading);
+        Assert.IsNotNull(state.CurrentTestDay);
+        await WaitUntilAsync(() => backend.AnalyzeCalls == analyzeCalls + 1, TimeSpan.FromSeconds(3));
     }
 
     /// <summary>The backend fixture cut to one row per requested stint, pointing at those stints' analyses.</summary>

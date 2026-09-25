@@ -3975,7 +3975,9 @@ public sealed partial class CompanionState : IDisposable
         var changed = false;
         var candidates = EventSessions
             .Concat(Races)
-            .Where(race => race.IsRace && !string.IsNullOrWhiteSpace(race.EffectiveSelector))
+            // Test-day stints are prepared the same way so a day opens without
+            // waiting for every stint; practice outside a test day is analyzed on open.
+            .Where(race => (race.IsRace || race.IsTestDayStint) && !string.IsNullOrWhiteSpace(race.EffectiveSelector))
             .GroupBy(UiAnalysisCacheKey, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToArray();
@@ -4119,7 +4121,7 @@ public sealed partial class CompanionState : IDisposable
     private async Task WaitForHomeAnalysisWindowAsync()
     {
         while (!_homeAnalysisCancellation.IsCancellationRequested &&
-               (AnalysisLoading || LiveState.Snapshot.Connected))
+               (AnalysisLoading || TestDayLoading || LiveState.Snapshot.Connected))
         {
             try
             {
