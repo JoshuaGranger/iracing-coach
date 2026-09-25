@@ -772,6 +772,11 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertEqual((card["success_rule"]["reference_run"], card["success_rule"]["direction"]), (2, "measure"))
         self.assertIn("within 5 °F of run 2", card["success_rule"]["text"])
         self.assertEqual(card["changes"], [{"field": "chassis.front.front_brake_bias", "label": "Front brake bias", "from": "56.5%", "to": "56.0%"}])
+        # With one garage setup there is nothing to re-run: the latest run is the new baseline.
+        same = review(stint_analysis("a", 9, track_temp=95.0), stint_analysis("b", 10, track_temp=86.0))["next_change"]
+        self.assertEqual((same["kind"], same["title"]), ("rebaseline", "Make run 2 the baseline for today's conditions"))
+        self.assertIn("used the same garage setup and track temperature moved 95 → 86 °F", same["instruction"])
+        self.assertEqual((same["changes"], same["success_rule"]["reference_run"]), ([], 2))
 
     def test_a_blocked_measurement_asks_for_the_laps_its_own_rule_needs(self) -> None:
         # Run 2 stopped after 4 laps: laps 2-5 are the quickest window to compare, and the rule checks exactly them.

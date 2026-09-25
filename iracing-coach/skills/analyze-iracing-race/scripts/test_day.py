@@ -791,6 +791,13 @@ def _conditions_card(previous: Mapping[str, Any], latest: Mapping[str, Any], com
         # The track does not return to an earlier temperature; re-run the earlier setup under today's conditions.
         fuel = latest["start_fuel_gal"]
         back = latest["setup_change"]  # run {before} -> run {number}; reverting it loads run {before}'s setup
+        moved = f"{previous['track_temp_f']:.0f} → {latest['track_temp_f']:.0f} °F"
+        if back["status"] == "unchanged":
+            # Same garage setup: there is no change to measure, only a new baseline.
+            return _card("rebaseline", f"Make run {number} the baseline for today's conditions",
+                         f"Runs {before} and {number} used the same garage setup and track temperature moved {moved}, so their "
+                         f"difference is not a setup result. Make the next change from run {number}'s setup and compare it with run {number}.",
+                         [before, number], _success(latest, None, None, "measure"), comparison["reasons"])
         instruction = (f"Track temperature moved {previous['track_temp_f']:.0f} → {latest['track_temp_f']:.0f} °F since run "
                        f"{before} and will not come back. Drive run {before}'s setup again now"
                        + (f", starting with {fuel:.1f} gal," if fuel is not None else "")
