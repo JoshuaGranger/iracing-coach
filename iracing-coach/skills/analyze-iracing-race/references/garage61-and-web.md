@@ -57,7 +57,7 @@ The public API exposes telemetry CSV downloads for authorized laps but does not 
 
 Inspect `manifest.files.garage61` before querying. Reuse a valid seasonal Garage61 index and cached CSVs; sync only when that component is missing/stale, credentials newly become available, or the user explicitly requests a refresh. Do not treat a fresh car/track research state as proof that the optional Garage61 component exists, and do not retry a still-pending API request every race.
 
-Download authorized reference CSVs into the seasonal bundle. Preserve original headers and unknown columns, while mapping recognized lap distance, speed, brake, throttle, steering, and lateral-acceleration fields. Normalize percent/fraction and declared or inferred speed/steering units; record every assumption.
+Download authorized reference CSVs into the seasonal bundle. Preserve original headers and unknown columns, while mapping recognized lap distance, speed, brake, throttle, steering, and lateral-acceleration fields. Normalize percent/fraction and declared or inferred speed/steering units; record every assumption. A reference's steering is its steering-wheel angle with no recorded steering ratio, so it is kept as `steering_wheel_abs_rad` and never compared with local steering.
 
 Align each reference with Joshua's local track profile in the same lap-distance bins. Require sufficient shared coverage and speed before treating a reference as usable. Build the benchmark from same-setup usable laps when possible; if none exist, allow a clearly labeled `cross_setup_fallback`.
 
@@ -68,7 +68,7 @@ Archive:
 - `coaching_targets` for telemetry-derived load zones with enough shared samples;
 - overall `comparison_quality` with status `usable`, `partial`, or `unavailable` and setup scope.
 
-Interpret all deltas as local minus reference. Give exact entry speed, minimum speed, peak-brake, brake-release, steering, and throttle-pickup targets only when `comparison_quality.status` is `usable` and the relevant signals exist. A load-zone label is not an official corner name unless a sourced map supplies that identity.
+Interpret all deltas as local minus reference. Give exact entry speed, minimum speed, peak-brake, brake-release, and throttle-pickup targets only when `comparison_quality.status` is `usable` and the relevant signals exist. A load-zone label is not an official corner name unless a sourced map supplies that identity.
 
 ## Web bundle
 

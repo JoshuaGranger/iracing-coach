@@ -37,7 +37,7 @@ Use aliases and report absent fields. Important channels include:
 - time/position: `SessionTime`, `Lap`, `LapCompleted`, `LapDistPct`, `RaceLaps`, `PlayerCarPosition`, `PlayerCarClassPosition`;
 - state: `SessionFlags`, `OnPitRoad`, `PlayerCarInPitStall`, `PitstopActive`, `PitSvFlags`, `PlayerTrackSurface`;
 - incidents/repair: `PlayerCarMyIncidentCount` (with driver/team aliases), `PlayerIncidents`, the `SessionFlags` repair-required bit, `PlayerCarTowTime`, `PitRepairLeft`, `PitOptRepairLeft`, `PlayerCarPitSvStatus`, `PlayerFastRepairsUsed`/`FastRepairUsed`, `FastRepairAvailable`, and `dpFastRepair`/the fast-repair service flag as requests only;
-- controls: `Speed`, `Throttle`/`ThrottleRaw`, `Brake`/`BrakeRaw`, `SteeringWheelAngle`, gear, RPM;
+- controls: `Speed`, `Throttle`/`ThrottleRaw`, `Brake`/`BrakeRaw`, `SteeringWheelAngle` (analysed as steering applied: divided by the steering ratio the recording's `CarSetup` states, e.g. `Chassis.Front.SteeringRatio: 12:1`; see the analysis `steering` declaration), `SteeringWheelAngleMax` (lock only, never a steering trace), gear, RPM;
 - dynamics: lateral/longitudinal acceleration, orientation/rates, XYZ velocity, per-wheel speed/odometer, ABS state, and steering torque;
 - fuel/service: `FuelLevel`, `FuelLevelPct`, `FuelUsePerHour`, `PitSvFuel`, per-corner tire-use counters, and service-state transitions;
 - tires: per-corner wear, surface and carcass temperatures, live/cold pressure with channel/unit provenance, and tire-set odometers;
@@ -148,7 +148,7 @@ Use position-binned control proxies to explain likely causes:
 
 - brake-energy proxy: integral of brake fraction × speed;
 - brake-steer overlap duration;
-- steering-work/scrub proxy: integral of absolute steering × speed;
+- steering-work/scrub proxy: integral of absolute steering × speed, on road-wheel angle when the ratio is recorded (never compare it across recordings otherwise);
 - lateral-g exposure;
 - corrections/counter-steer;
 - entry, minimum, and exit speed;
