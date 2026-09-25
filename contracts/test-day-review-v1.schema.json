@@ -122,6 +122,7 @@
         "laps": { "type": "array", "items": { "type": "integer" } },
         "equal_age": { "type": "boolean", "description": "False when the run ended before the day's fall-off window did." },
         "slope_s_per_lap": { "type": ["number", "null"] },
+        "intercept_s": { "type": ["number", "null"], "description": "Fitted lap time at run lap 0; the chart draws this same line." },
         "scatter_s": { "type": ["number", "null"], "description": "Residual standard deviation of the fit." },
         "reason": { "type": ["string", "null"] }
       },
@@ -215,6 +216,7 @@
       "required": ["status", "max_temperature_delta_f", "max_tread_delta_percent"],
       "properties": {
         "status": { "enum": ["agree", "disagree", "not_compared"] },
+        "disagrees_on": { "type": "array", "items": { "enum": ["temperature", "tread"] }, "description": "The readings that differ beyond their limit; empty unless status is disagree." },
         "max_temperature_delta_f": { "type": ["number", "null"] },
         "max_tread_delta_percent": { "type": ["number", "null"] }
       },
@@ -276,6 +278,7 @@
           "properties": {
             "status": { "enum": ["measured", "not_measured"] },
             "source": { "const": "telemetry_pit_stall" },
+            "temperature": { "const": "carcass", "description": "The stall temperatures are carcass temperatures (LFtempCL/CM/CR)." },
             "measurement_status": { "type": ["string", "null"] },
             "reason": { "type": ["string", "null"] }
           },
@@ -288,7 +291,8 @@
             "status": { "enum": ["recorded", "not_recorded"] },
             "source": { "const": "garage_sheet" },
             "timing": { "const": "unverified" },
-            "timing_note": { "type": "string" }
+            "timing_note": { "type": "string" },
+            "uniform": { "type": "boolean", "description": "Every band of every recorded corner is equal: an untouched garage state." }
           },
           "additionalProperties": true
         },
@@ -386,7 +390,7 @@
         "comparison": { "$ref": "#/$defs/comparison" },
         "tires": { "$ref": "#/$defs/tires" },
         "laps": { "type": "array", "items": { "$ref": "#/$defs/lap" } },
-        "trend": { "type": ["object", "null"], "description": "race_inspection.run_views output with x = run lap (x_axis 'run_lap')." }
+        "trend": { "type": ["object", "null"], "description": "race_inspection.run_views output with x = run lap (x_axis 'run_lap'). Its fit is the fall-off fit over the same clean laps 2..N (fit_basis 'fall_off'), null when fall-off is not measured." }
       },
       "additionalProperties": true
     },

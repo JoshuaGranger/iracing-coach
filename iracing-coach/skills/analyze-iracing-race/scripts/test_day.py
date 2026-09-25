@@ -213,6 +213,7 @@ def _stop_reading(run: Mapping[str, Any] | None) -> tuple[dict[str, Any], dict[s
     header = {
         "status": "measured" if measured else "not_measured",
         "source": "telemetry_pit_stall",
+        "temperature": "carcass",
         "measurement_status": status,
         "reason": None if measured else _STOP_REASONS.get(status or "", "No stall reading is available for this run."),
     }
@@ -247,8 +248,11 @@ def _sheet_reading(setup: Any) -> tuple[dict[str, Any], dict[str, Any]]:
             **_corner_summary(reading.get("temperature_f"), reading.get("tread_percent")),
         }
     recorded = any(corner is not None for corner in corners.values())
+    temperatures = [corner["temperature_f"] for corner in corners.values() if corner and corner.get("temperature_f")]
+    # Every band of every recorded corner equal: a garage state no tire has driven on.
+    uniform = bool(temperatures) and all(len(set(bands.values())) == 1 for bands in temperatures)
     return {"status": "recorded" if recorded else "not_recorded", "source": "garage_sheet",
-            "timing": "unverified", "timing_note": SHEET_TIMING_NOTE}, corners
+            "timing": "unverified", "timing_note": SHEET_TIMING_NOTE, "uniform": uniform}, corners
 
 
 def _agreement(first: Mapping[str, Any] | None, second: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -259,10 +263,12 @@ def _agreement(first: Mapping[str, Any] | None, second: Mapping[str, Any] | None
                     for band in ("inside", "middle", "outside")
                     if first and second and first.get("tread_percent") and second.get("tread_percent")]
     if not temperature_deltas and not tread_deltas:
-        return {"status": "not_compared", "max_temperature_delta_f": None, "max_tread_delta_percent": None}
-    agree = all(delta <= SHEET_AGREEMENT_F for delta in temperature_deltas) and all(
-        delta <= SHEET_AGREEMENT_PERCENT for delta in tread_deltas)
-    return {"status": "agree" if agree else "disagree",
+        return {"status": "not_compared", "disagrees_on": [], "max_temperature_delta_f": None, "max_tread_delta_percent": None}
+    # Which reading differs, so a tread-only difference is never shown as a temperature one.
+    disagrees_on = [name for name, deltas, limit in (("temperature", temperature_deltas, SHEET_AGREEMENT_F),
+                                                     ("tread", tread_deltas, SHEET_AGREEMENT_PERCENT))
+                    if any(delta > limit for delta in deltas)]
+    return {"status": "disagree" if disagrees_on else "agree", "disagrees_on": disagrees_on,
             "max_temperature_delta_f": _round(max(temperature_deltas), 1) if temperature_deltas else None,
             "max_tread_delta_percent": _round(max(tread_deltas), 1) if tread_deltas else None}
 
@@ -426,7 +432,7 @@ def _fall_off(stint: Mapping[str, Any], last: int) -> dict[str, Any]:
     slope = _linear_slope(points) if len(points) >= MINIMUM_WINDOW_LAPS else None
     result = {"first_run_lap": first, "last_run_lap": end if end >= first else None, "fit_lap_count": len(points),
               "laps": [row["lap"] for row in clean], "equal_age": stint["run_laps"] >= last,
-              "slope_s_per_lap": None, "scatter_s": None, "status": "not_measured", "reason": None,
+              "slope_s_per_lap": None, "intercept_s": None, "scatter_s": None, "status": "not_measured", "reason": None,
               "method": "ordinary_least_squares_on_run_lap"}
     if slope is None:
         span = _window_label(first, max(end, first)).lower()
@@ -437,7 +443,7 @@ def _fall_off(stint: Mapping[str, Any], last: int) -> dict[str, Any]:
     intercept = mean_y - slope * mean_x
     residuals = [y - (intercept + slope * x) for x, y in points]
     scatter = math.sqrt(sum(value * value for value in residuals) / (len(points) - 2)) if len(points) > 2 else None
-    result.update(status="measured", slope_s_per_lap=_round(slope, 4), scatter_s=_round(scatter, 4))
+    result.update(status="measured", slope_s_per_lap=_round(slope, 4), intercept_s=_round(intercept, 4), scatter_s=_round(scatter, 4))
     return result
 
 
@@ -915,6 +921,20 @@ def _chart_trend(stint: Mapping[str, Any]) -> dict[str, Any] | None:
         return None
     view = dict(views[0])
     view["x_axis"] = "run_lap"
+    # The chart's fitted line is the table's fall-off: the same clean laps 2..N and the
+    # same slope, never a second fit over every plotted lap of a longer run.
+    fall_off = stint["fall_off"]
+    ages = sorted(row["run_lap"] for row in stint["rows"] if row["lap"] in set(fall_off["laps"]) and row["run_lap"] is not None)
+    if fall_off["status"] == "measured" and ages:
+        slope, intercept = fall_off["slope_s_per_lap"], fall_off["intercept_s"]
+        view["fit"] = {"method": fall_off["method"], "eligible_count": fall_off["fit_lap_count"], "laps": list(fall_off["laps"]),
+                       "slope_s_per_green_lap": slope, "domain": [float(ages[0]), float(ages[-1])],
+                       "points": [{"x": float(age), "y": _round(intercept + slope * age, 3)} for age in (ages[0], ages[-1])]}
+        view["fit_unavailable_reason"] = None
+    else:
+        view["fit"] = None
+        view["fit_unavailable_reason"] = fall_off["reason"]
+    view["fit_basis"] = "fall_off"
     return view
 
 

@@ -108,6 +108,7 @@
         "equal_age": true,
         "first_run_lap": 2,
         "fit_lap_count": 15,
+        "intercept_s": 24.0067,
         "laps": [
           2,
           3,
@@ -384,11 +385,15 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": null,
               "max_tread_delta_percent": null,
               "status": "not_compared"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [
+                "temperature"
+              ],
               "max_temperature_delta_f": 71.6,
               "max_tread_delta_percent": 0.2,
               "status": "disagree"
@@ -429,11 +434,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": null,
               "max_tread_delta_percent": null,
               "status": "not_compared"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.9,
               "max_tread_delta_percent": 0.5,
               "status": "agree"
@@ -474,11 +481,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": null,
               "max_tread_delta_percent": null,
               "status": "not_compared"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.9,
               "max_tread_delta_percent": 0.3,
               "status": "agree"
@@ -519,11 +528,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": null,
               "max_tread_delta_percent": null,
               "status": "not_compared"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.5,
               "max_tread_delta_percent": 0.3,
               "status": "agree"
@@ -550,13 +561,15 @@
           "source": "garage_sheet",
           "status": "recorded",
           "timing": "unverified",
-          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop."
+          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
+          "uniform": false
         },
         "stop_reading": {
           "measurement_status": "measured_at_stop",
           "reason": null,
           "source": "telemetry_pit_stall",
-          "status": "measured"
+          "status": "measured",
+          "temperature": "carcass"
         }
       },
       "trend": {
@@ -564,9 +577,9 @@
         "fit": {
           "domain": [
             2.0,
-            20.0
+            16.0
           ],
-          "eligible_count": 19,
+          "eligible_count": 15,
           "laps": [
             2,
             3,
@@ -582,25 +595,22 @@
             13,
             14,
             15,
-            16,
-            17,
-            18,
-            19,
-            20
+            16
           ],
-          "method": "ordinary_least_squares",
+          "method": "ordinary_least_squares_on_run_lap",
           "points": [
             {
               "x": 2.0,
               "y": 24.031
             },
             {
-              "x": 20.0,
-              "y": 24.245
+              "x": 16.0,
+              "y": 24.199
             }
           ],
-          "slope_s_per_green_lap": 0.01189
+          "slope_s_per_green_lap": 0.012
         },
+        "fit_basis": "fall_off",
         "fit_unavailable_reason": null,
         "last_lap": 20,
         "plotted_lap_count": 20,
@@ -925,6 +935,7 @@
         "equal_age": true,
         "first_run_lap": 2,
         "fit_lap_count": 15,
+        "intercept_s": 24.0167,
         "laps": [
           2,
           3,
@@ -1194,11 +1205,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.5,
               "max_tread_delta_percent": 0.2,
               "status": "agree"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.5,
               "max_tread_delta_percent": 0.2,
               "status": "agree"
@@ -1250,11 +1263,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.9,
               "max_tread_delta_percent": 0.5,
               "status": "agree"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.9,
               "max_tread_delta_percent": 0.5,
               "status": "agree"
@@ -1306,11 +1321,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.9,
               "max_tread_delta_percent": 0.3,
               "status": "agree"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.9,
               "max_tread_delta_percent": 0.3,
               "status": "agree"
@@ -1362,11 +1379,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.5,
               "max_tread_delta_percent": 0.3,
               "status": "agree"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.5,
               "max_tread_delta_percent": 0.3,
               "status": "agree"
@@ -1393,13 +1412,15 @@
           "source": "garage_sheet",
           "status": "recorded",
           "timing": "unverified",
-          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop."
+          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
+          "uniform": false
         },
         "stop_reading": {
           "measurement_status": "measured_at_stop",
           "reason": null,
           "source": "telemetry_pit_stall",
-          "status": "measured"
+          "status": "measured",
+          "temperature": "carcass"
         }
       },
       "trend": {
@@ -1407,9 +1428,9 @@
         "fit": {
           "domain": [
             2.0,
-            18.0
+            16.0
           ],
-          "eligible_count": 17,
+          "eligible_count": 15,
           "laps": [
             2,
             3,
@@ -1425,23 +1446,22 @@
             13,
             14,
             15,
-            16,
-            17,
-            18
+            16
           ],
-          "method": "ordinary_least_squares",
+          "method": "ordinary_least_squares_on_run_lap",
           "points": [
             {
               "x": 2.0,
-              "y": 24.04
+              "y": 24.041
             },
             {
-              "x": 18.0,
-              "y": 24.234
+              "x": 16.0,
+              "y": 24.209
             }
           ],
-          "slope_s_per_green_lap": 0.01215
+          "slope_s_per_green_lap": 0.012
         },
+        "fit_basis": "fall_off",
         "fit_unavailable_reason": null,
         "last_lap": 18,
         "plotted_lap_count": 18,
@@ -1742,6 +1762,7 @@
         "equal_age": true,
         "first_run_lap": 2,
         "fit_lap_count": 15,
+        "intercept_s": 23.9067,
         "laps": [
           2,
           3,
@@ -1991,11 +2012,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.5,
               "max_tread_delta_percent": 0.2,
               "status": "agree"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": null,
               "max_tread_delta_percent": null,
               "status": "not_compared"
@@ -2021,11 +2044,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.9,
               "max_tread_delta_percent": 0.5,
               "status": "agree"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": null,
               "max_tread_delta_percent": null,
               "status": "not_compared"
@@ -2051,11 +2076,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.9,
               "max_tread_delta_percent": 0.3,
               "status": "agree"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": null,
               "max_tread_delta_percent": null,
               "status": "not_compared"
@@ -2081,11 +2108,13 @@
               }
             },
             "sheet_vs_previous_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": 0.5,
               "max_tread_delta_percent": 0.3,
               "status": "agree"
             },
             "sheet_vs_stop": {
+              "disagrees_on": [],
               "max_temperature_delta_f": null,
               "max_tread_delta_percent": null,
               "status": "not_compared"
@@ -2097,13 +2126,15 @@
           "source": "garage_sheet",
           "status": "recorded",
           "timing": "unverified",
-          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop."
+          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
+          "uniform": false
         },
         "stop_reading": {
           "measurement_status": "unmeasured_final_run",
           "reason": "The run ended on track; there is no stall reading.",
           "source": "telemetry_pit_stall",
-          "status": "not_measured"
+          "status": "not_measured",
+          "temperature": "carcass"
         }
       },
       "trend": {
@@ -2131,7 +2162,7 @@
             15,
             16
           ],
-          "method": "ordinary_least_squares",
+          "method": "ordinary_least_squares_on_run_lap",
           "points": [
             {
               "x": 2.0,
@@ -2144,6 +2175,7 @@
           ],
           "slope_s_per_green_lap": 0.012
         },
+        "fit_basis": "fall_off",
         "fit_unavailable_reason": null,
         "last_lap": 16,
         "plotted_lap_count": 16,

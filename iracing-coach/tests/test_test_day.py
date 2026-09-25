@@ -355,7 +355,11 @@ class TestDayWindowTests(unittest.TestCase):
         self.assertEqual(first["fall_off"]["slope_s_per_lap"], 0.01)
         self.assertEqual(first["laps"][13]["label"], "Run 1 · lap 14")
         self.assertEqual(first["trend"]["x_axis"], "run_lap")
-        self.assertEqual(first["trend"]["fit"]["eligible_count"], 19)
+        # The chart's line is the table's fall-off (laps 2..15), not a fit over all 20 plotted laps.
+        fit = first["trend"]["fit"]
+        self.assertEqual((fit["eligible_count"], fit["domain"], fit["slope_s_per_green_lap"]), (14, [2.0, 15.0], 0.01))
+        self.assertEqual(fit["points"], [{"x": 2.0, "y": 24.02}, {"x": 15.0, "y": 24.15}])
+        self.assertEqual(first["trend"]["fit_basis"], "fall_off")
 
     def test_late_window_is_withheld_when_no_run_reaches_eight_laps(self) -> None:
         result = review(stint_analysis("a", 9, laps=7), stint_analysis("b", 10, laps=6))
@@ -604,11 +608,27 @@ class TestDayTireTests(unittest.TestCase):
         result = review(stint_analysis("a", 9), stint_analysis("b", 10, observation=stall_observation(lf_outside=150.0)))
         tires = result["runs"][1]["tires"]
         self.assertEqual(tires["corners"]["LF"]["sheet_vs_stop"],
-                         {"status": "disagree", "max_temperature_delta_f": 26.0, "max_tread_delta_percent": 0.0})
+                         {"status": "disagree", "disagrees_on": ["temperature"], "max_temperature_delta_f": 26.0, "max_tread_delta_percent": 0.0})
+        self.assertEqual(tires["stop_reading"]["temperature"], "carcass")
+        self.assertFalse(tires["sheet_reading"]["uniform"])
         self.assertEqual(tires["corners"]["LF"]["change_from_previous_stop"]["temperature_f"]["outside"], -26.0)
         self.assertEqual(tires["sheet_reading"]["timing"], "unverified")
         self.assertEqual(tires["sheet_reading"]["source"], "garage_sheet")
         self.assertEqual(tires["stop_reading"]["source"], "telemetry_pit_stall")
+
+    def test_a_tread_only_difference_is_named_as_tread(self) -> None:
+        observation = stall_observation()
+        observation["tires"]["LF"]["remaining_percent"] = {"L": 94.0, "M": 98.0, "R": 100.0}
+        agreement = review(stint_analysis("a", 9), stint_analysis("b", 10, observation=observation))["runs"][1]["tires"]["corners"]["LF"]["sheet_vs_stop"]
+        self.assertEqual(agreement, {"status": "disagree", "disagrees_on": ["tread"], "max_temperature_delta_f": 0.0, "max_tread_delta_percent": 3.0})
+
+    def test_an_untouched_garage_sheet_is_marked_uniform(self) -> None:
+        setup = car_setup(lf_temps="39C, 39C, 39C", rf_temps="39C, 39C, 39C")
+        for corner in ("LeftRear", "RightRear"):
+            key = "LastTempsOMI" if corner == "LeftRear" else "LastTempsIMO"
+            setup["Tires"][corner][key] = "39C, 39C, 39C"
+        tires = review(stint_analysis("a", 9), stint_analysis("b", 10, setup=setup))["runs"][1]["tires"]
+        self.assertTrue(tires["sheet_reading"]["uniform"])
 
     def test_a_run_ending_on_track_is_not_measured(self) -> None:
         result = review(stint_analysis("a", 9), stint_analysis("b", 10, stop_status="unmeasured_final_run"))
