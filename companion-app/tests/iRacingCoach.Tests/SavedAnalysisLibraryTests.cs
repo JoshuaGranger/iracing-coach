@@ -81,8 +81,38 @@ public sealed class SavedAnalysisLibraryTests
         File.WriteAllText(repairable, "{\"identity\":{\"track_name\":\"Repaired Speedway\",\"event_type\":\"Race\"},\"race_summary\":{\"recorded_laps\":12}}");
         using (var third = await library.LaunchAsync())
         {
-            Assert.AreEqual("1 saved analysis could not be read", third.UnreadableAnalysisNotice);
+            Assert.AreEqual("2 saved analyses could not be read (1 new)", third.UnreadableAnalysisNotice);
             Assert.IsTrue(third.Races.Any(race => race.Track == "Repaired Speedway"));
+        }
+    }
+
+    // After a dismissal the notice counted only the new failures: "1 saved analysis could
+    // not be read" while three could not be read.
+    [TestMethod]
+    public async Task AfterADismissalTheNoticeStillCountsEveryUnreadableAnalysis()
+    {
+        using var library = new Library();
+        library.AddReport("first", "{broken");
+        library.AddReport("second", "[broken");
+        using (var first = await library.LaunchAsync())
+        {
+            Assert.AreEqual("2 saved analyses could not be read", first.UnreadableAnalysisNotice);
+            first.DismissUnreadableAnalysisNotice();
+            Assert.AreEqual(2, first.UnreadableAnalysisCount, "Dismissing hides the notice; it does not make the files readable.");
+        }
+
+        library.AddReport("third", "{\"identity\":");
+        using (var second = await library.LaunchAsync())
+        {
+            Assert.AreEqual("3 saved analyses could not be read (1 new)", second.UnreadableAnalysisNotice);
+            Assert.AreEqual(3, second.UnreadableAnalysisCount);
+            second.DismissUnreadableAnalysisNotice();
+            Assert.IsNull(second.UnreadableAnalysisNotice);
+        }
+        using (var third = await library.LaunchAsync())
+        {
+            Assert.IsNull(third.UnreadableAnalysisNotice);
+            Assert.AreEqual(3, third.UnreadableAnalysisCount);
         }
     }
 

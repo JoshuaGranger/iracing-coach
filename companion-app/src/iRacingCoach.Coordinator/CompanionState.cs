@@ -3783,24 +3783,34 @@ public sealed partial class CompanionState : IDisposable
         var reports = Path.Combine(archiveRoot, "reports");
         try
         {
-            UnreadableAnalysisCount = Directory.Exists(reports)
-                ? _archivedRaceCatalog.UnreadableReports(reports, UnreadableAnalysisLedgerPath).Count(report => !report.Acknowledged)
-                : 0;
+            var unreadable = Directory.Exists(reports)
+                ? _archivedRaceCatalog.UnreadableReports(reports, UnreadableAnalysisLedgerPath)
+                : [];
+            UnreadableAnalysisCount = unreadable.Count;
+            NewUnreadableAnalysisCount = unreadable.Count(report => !report.Acknowledged);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             UnreadableAnalysisCount = 0;
+            NewUnreadableAnalysisCount = 0;
         }
     }
 
+    /// <summary>Every saved analysis that could not be read, including ones already dismissed.</summary>
     public int UnreadableAnalysisCount { get; private set; }
 
-    public string? UnreadableAnalysisNotice => UnreadableAnalysisCount switch
-    {
-        <= 0 => null,
-        1 => "1 saved analysis could not be read",
-        var count => $"{count} saved analyses could not be read"
-    };
+    /// <summary>Those not yet dismissed. The notice appears only while there is one.</summary>
+    public int NewUnreadableAnalysisCount { get; private set; }
+
+    // The count is always the whole set: after a dismissal, one new failure among three
+    // must not read as if only one saved analysis were unreadable.
+    public string? UnreadableAnalysisNotice =>
+        NewUnreadableAnalysisCount <= 0 ? null
+        : UnreadableAnalysisCount <= NewUnreadableAnalysisCount
+            ? UnreadableAnalysisCount == 1
+                ? "1 saved analysis could not be read"
+                : $"{UnreadableAnalysisCount} saved analyses could not be read"
+            : $"{UnreadableAnalysisCount} saved analyses could not be read ({NewUnreadableAnalysisCount} new)";
 
     public void DismissUnreadableAnalysisNotice()
     {
@@ -3813,7 +3823,7 @@ public sealed partial class CompanionState : IDisposable
                     UnreadableAnalysisLedgerPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
-        UnreadableAnalysisCount = 0;
+        NewUnreadableAnalysisCount = 0;
         RaiseChanged();
     }
 
