@@ -95,10 +95,26 @@
                                 <span>
                                     <span class="td-run-name"><b>Run @number</b>@if (SetupName(run) is { } setupName) { <span class="td-run-setup" title="@run.Setup.Name">@setupName</span> }@if (open) { <em class="td-open" title="This run's recording is open in Runs, Sections and Traces">open</em> }</span>
                                     <small title="@MeasuredTitle(run)">@RunDetail(run)</small>
+                                    @if (run.Consistency is { Inconsistent: true } odd) { <small class="td-inconsistent" data-inconsistent-repeat title="@odd.Reason">Inconsistent repeat · pace changed</small> }
                                     @if (excluded is { } summary) { <small class="td-excluded" data-excluded title="@summary.Title">@summary.Text</small> }
                                 </span>
                             </div></th>
-                            <td class="td-setup" title="@SetupTitle(run.SetupChange)"><span class="td-setup-first">@SetupCell(run.SetupChange)</span>@if (run.SetupChange.Changes.Count > 1) { <small class="td-more">+@(run.SetupChange.Changes.Count - 1) more</small> }</td>
+                            <td class="td-setup" title="@SetupTitle(run.SetupChange)">
+                                @if (ReturnedTo(run.SetupChange) is { } back)
+                                {
+                                    <span class="td-setup-first" data-returned-to="@string.Join(",", run.SetupChange.ReturnedToRuns)"><b>@back</b></span>
+                                }
+                                else if (run.SetupChange is { Status: "changed", Headline: { } headline })
+                                {
+                                    @* Label, then values on their own line: the headline change stays readable at 1280 px. *@
+                                    <span class="td-setup-first" data-headline="@headline.Field"><b>@(headline.ShortLabel ?? headline.Label)</b><span class="td-setup-values">@GarageValues(headline)</span></span>
+                                }
+                                else
+                                {
+                                    <span class="td-setup-first">@SetupCell(run.SetupChange)</span>
+                                }
+                                @if (run.SetupChange.Changes.Count > 1 && ReturnedTo(run.SetupChange) is null) { <small class="td-more">+@(run.SetupChange.Changes.Count - 1) more</small> }
+                            </td>
                             <td class="num">@WindowCell(run.Early, false)</td>
                             <td class="num">@WindowCell(run.Late, true)</td>
                             <td class="num" title="@FallOffTitle(run.FallOff)">
@@ -166,6 +182,10 @@
                         <button type="button" class="ri-link" @onclick="() => Close(chosen.Run)">Close</button>
                     </span>
                 </header>
+                @if (chosen.Consistency is { Inconsistent: true, Reason: { Length: > 0 } oddReason })
+                {
+                    <div class="td-compare-notes" data-consistency-notes><strong>Inconsistent repeat</strong><p>@oddReason</p></div>
+                }
                 @if (chosen.Comparison is { } versus)
                 {
                     @* Every reason and caution for the verdict, visible without hovering. *@
@@ -219,7 +239,7 @@
                         <strong>Setup</strong>
                         @if (chosen.SetupChange.Changes.Count > 0)
                         {
-                            <p>@string.Join(" · ", chosen.SetupChange.Changes.Select(Setting))</p>
+                            <p>@string.Join(" · ", OrderedChanges(chosen.SetupChange).Select(Setting))</p>
                         }
                         @if (chosen.SetupChange.Readouts.Count > 0)
                         {
@@ -265,8 +285,8 @@
                                         <div class="td-change"><dt>vs prev</dt><dd>@SignedBands(temperatureChange, right, "0") °F</dd></div>
                                     }
                                     <div><dt>Tread %</dt><dd>@Bands(stop.TreadPercent, right, "0.0")</dd></div>
-                                    <div data-hot-psi><dt>Hot psi</dt><dd>@(stop.HotPressurePsi is { } hot ? Pressure(hot) : "Not measured")</dd></div>
-                                    <div data-cold-psi><dt>Cold psi</dt><dd>@ColdPressure(stop)</dd></div>
+                                    <div data-hot-psi title="@HotTitle(chosen.Tires.StopReading)"><dt>Hot psi</dt><dd>@(stop.HotPressurePsi is { } hot ? $"{Pressure(hot)} · sheet" : "Not measured")</dd></div>
+                                    <div data-cold-psi title="The set cold pressure from this run's garage sheet; the stall pressure channel reads this setting, not a hot reading."><dt>Cold set psi</dt><dd>@ColdPressure(stop)</dd></div>
                                 }
                                 else
                                 {
@@ -292,7 +312,7 @@
                             {
                                 if (chosen.Tires.Corners.GetValueOrDefault(corner) is not { Sheet: { } sheet } sheetTire) continue;
                                 <span class="td-sheet-corner" title="@Agreement(sheetTire.SheetVsStop, "this stop") @Agreement(sheetTire.SheetVsPreviousStop, "the previous stop")">
-                                    <i>@corner</i> @Bands(sheet.TemperatureF, corner.StartsWith('R'), "0") °F <em>@AgreementShort(sheetTire.SheetVsStop)</em>
+                                    <i>@corner</i> @Bands(sheet.TemperatureF, corner.StartsWith('R'), "0") °F @if (sheet.HotPressurePsi is { } sheetHot) { <span data-sheet-hot-psi>· hot @Pressure(sheetHot) psi</span> } <em>@AgreementShort(sheetTire.SheetVsStop)</em>
                                 </span>
                             }
                         }
@@ -510,11 +530,33 @@
         _ => "Not recorded"
     };
 
-    private static string Setting(TestDaySettingChange item) => $"{item.Label} {item.Previous ?? "—"} → {item.Current ?? "—"}";
+    private static string Setting(TestDaySettingChange item) => $"{item.Label} {GarageValues(item)}";
+
+    /// <summary>"+13.00 in → +12.00 in": the garage's display units when the backend supplies them, else as recorded.</summary>
+    public static string GarageValues(TestDaySettingChange item) =>
+        $"{item.GaragePrevious ?? item.Previous ?? "—"} → {item.GarageCurrent ?? item.Current ?? "—"}";
+
+    /// <summary>"Back to run 7's setup" when the run returned to a garage setup driven earlier in the day.</summary>
+    public static string? ReturnedTo(TestDaySetupChange change) => change.ReturnedToRuns.Count switch
+    {
+        0 => null,
+        1 => $"Back to run {change.ReturnedToRuns[0]}'s setup",
+        _ => $"Back to runs {string.Join(", ", change.ReturnedToRuns.Take(change.ReturnedToRuns.Count - 1))} and {change.ReturnedToRuns[^1]}'s setup"
+    };
+
+    /// <summary>The headline change first, then the rest as recorded.</summary>
+    private static IEnumerable<TestDaySettingChange> OrderedChanges(TestDaySetupChange change) =>
+        change.Headline is { } headline ? change.Changes.Where(item => !ReferenceEquals(item, headline)).Prepend(headline) : change.Changes;
+
+    private static string HotTitle(TestDayStopReading reading) => reading.HotPressure is { Measured: true } hot
+        ? $"Hot pressure from the garage sheet loaded with run {hot.MatchedRun?.ToString(CultureInfo.CurrentCulture) ?? "?"}; its temperatures and tread match this stop."
+        : reading.HotPressure?.Reason ?? "No hot pressure was recorded for this stop.";
 
     private static string SetupTitle(TestDaySetupChange change)
     {
-        var lines = change.Changes.Select(Setting).ToList();
+        var lines = new List<string>();
+        if (ReturnedTo(change) is { } back) lines.Add(back + "; against the previous run:");
+        lines.AddRange(OrderedChanges(change).Select(Setting));
         if (change.Readouts.Count > 0) lines.Add($"Garage readouts moved: {string.Join(", ", change.Readouts.Select(Setting))}");
         if (change.UnknownCount > 0) lines.Add($"{change.UnknownCount} setting{(change.UnknownCount == 1 ? "" : "s")} could not be compared: {string.Join(", ", change.UnknownFields)}");
         if (change.Reason is { Length: > 0 } reason) lines.Add(reason);

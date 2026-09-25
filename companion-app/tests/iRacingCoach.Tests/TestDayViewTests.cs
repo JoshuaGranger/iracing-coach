@@ -394,8 +394,8 @@ public sealed class TestDayViewTests
         var detail = Tires(await RenderSelected(Fixture(), 1));
 
         StringAssert.Contains(detail, "Hot psi · garage sheet loaded with run 2, matched to this stop");
-        StringAssert.Contains(detail, "<div data-hot-psi><dt>Hot psi</dt><dd>20.2</dd></div>");
-        StringAssert.Contains(detail, "<div data-cold-psi><dt>Cold psi</dt><dd>17.0 set</dd></div>");
+        StringAssert.Contains(detail, "<dt>Hot psi</dt><dd>20.2 · sheet</dd></div>");
+        StringAssert.Contains(detail, "<dt>Cold set psi</dt><dd>17.0 set</dd></div>");
         Assert.DoesNotContain("<dt>psi</dt>", detail, "A cold setting is never shown as the pressure at the stop.");
 
         var fixture = Fixture();
@@ -407,8 +407,57 @@ public sealed class TestDayViewTests
         foreach (var corner in fixture["runs"]![0]!["tires"]!["corners"]!.AsObject()) corner.Value!["stop"]!["hot_pressure_psi"] = null;
         var missing = Tires(await RenderSelected(fixture, 1));
         StringAssert.Contains(missing, "Hot psi · Not measured");
-        StringAssert.Contains(missing, "<div data-hot-psi><dt>Hot psi</dt><dd>Not measured</dd></div>");
+        StringAssert.Contains(missing, "<dt>Hot psi</dt><dd>Not measured</dd></div>");
     }
+
+    [TestMethod]
+    public async Task TheHeadlineChangeReadsInGarageUnitsAndAReturnSaysSo()
+    {
+        // IRP 9/25 v5: the row led with a 1 mm LF perch move in mm and cut "Left front camber +6.0 deg → +…"
+        // at 1280 px; the file is named for the RR track bar, 13 → 12 in on the garage (+330 → +305 mm recorded).
+        var fixture = Fixture();
+        var change = fixture["runs"]![1]!["setup_change"]!.AsObject();
+        change["status"] = "changed";
+        change["changes"] = new JsonArray(
+            Setting("chassis.left_front.spring_perch_offset", "Left front spring perch offset", "LF perch", "-95 mm", "-96 mm", "-3.75 in", "-3.78 in"),
+            Setting("chassis.right_rear.track_bar_height", "Right rear track bar height", "RR track bar", "+330 mm", "+305 mm", "+13.00 in", "+12.00 in"));
+        change["change_count"] = 2;
+        change["headline"] = new JsonObject { ["index"] = 1, ["field"] = "chassis.right_rear.track_bar_height", ["basis"] = "setup_name", ["steps"] = 7.9 };
+        var back = fixture["runs"]![2]!["setup_change"]!.AsObject();
+        back["status"] = "changed";
+        back["changes"] = new JsonArray(Setting("chassis.right_rear.track_bar_height", "Right rear track bar height", "RR track bar", "+305 mm", "+330 mm", "+12.00 in", "+13.00 in"));
+        back["change_count"] = 1;
+        back["returned_to_runs"] = new JsonArray(1);
+        fixture["runs"]![2]!["consistency"] = new JsonObject
+        {
+            ["status"] = "inconsistent_repeat", ["setup_runs"] = new JsonArray(1, 3), ["delta_s"] = 0.7, ["limit_s"] = 0.526,
+            ["reason"] = "Inconsistent repeat: run 3 used the garage setup of run 1 but its laps 2–5 were 0.700 s slower."
+        };
+        var review = Map(fixture);
+        Assert.AreEqual("RR track bar", review.Runs[1].SetupChange.Headline?.ShortLabel);
+        Assert.IsTrue(review.Runs[2].Consistency?.Inconsistent);
+
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = review
+        });
+        var two = Row(html, 2);
+        StringAssert.Contains(two, "data-headline=\"chassis.right_rear.track_bar_height\"><b>RR track bar</b><span class=\"td-setup-values\">+13.00 in → +12.00 in</span>");
+        StringAssert.Contains(two, "+1 more");
+        Assert.DoesNotContain("-95 mm", two);
+        var three = Row(html, 3);
+        StringAssert.Contains(three, "<b>Back to run 1's setup</b>");
+        StringAssert.Contains(three, "data-inconsistent-repeat");
+        StringAssert.Contains(three, "Inconsistent repeat · pace changed");
+        Assert.DoesNotContain("+1 more", three);
+    }
+
+    private static JsonObject Setting(string field, string label, string shortLabel, string previous, string current, string garagePrevious, string garageCurrent) => new()
+    {
+        ["field"] = field, ["label"] = label, ["short_label"] = shortLabel, ["previous"] = previous, ["current"] = current,
+        ["garage_previous"] = garagePrevious, ["garage_current"] = garageCurrent, ["delta"] = -1.0, ["unit"] = "mm"
+    };
 
     [TestMethod]
     public async Task TheNextChangeNamesTheValueToSetSoNoArrowPointsBack()
@@ -508,7 +557,7 @@ public sealed class TestDayViewTests
         StringAssert.Contains(css, ".td-table { width: 100%; table-layout: fixed;");
         Assert.DoesNotContain("max-height: 42vh", css);
         var index = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.App", "wwwroot", "index.html"));
-        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=16");
+        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=17");
     }
 
     private static string Row(string html, int run)

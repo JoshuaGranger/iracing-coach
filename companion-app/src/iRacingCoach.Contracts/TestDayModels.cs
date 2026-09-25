@@ -79,6 +79,17 @@ public sealed record TestDayRun(
     public TestDayRecording? Recording { get; init; }
     /// <summary>The run's lap-to-lap noise after the warm-up; null from an older backend.</summary>
     public TestDayNoise? Noise { get; init; }
+    /// <summary>Whether this run repeated its garage setup's pace; null when no other run used the setup or from an older backend.</summary>
+    public TestDayConsistency? Consistency { get; init; }
+}
+
+/// <summary>
+/// A run against the other runs of its garage setup. An inconsistent repeat (three or more runs of the
+/// setup, laps 2–5 far outside their lap noise) measured the driver, not the setup: it sets no threshold.
+/// </summary>
+public sealed record TestDayConsistency(string Status, IReadOnlyList<int> SetupRuns, double? DeltaSeconds, double? LimitSeconds, string? Reason)
+{
+    public bool Inconsistent => string.Equals(Status, "inconsistent_repeat", StringComparison.Ordinal);
 }
 
 /// <summary>
@@ -100,7 +111,13 @@ public sealed record TestDayNoise(string Status, double? NoiseSeconds, int Diffe
 }
 
 /// <summary>What two other runs of the day on one garage setup differed by at the same laps.</summary>
-public sealed record TestDaySameSetupSpread(double? SpreadSeconds, double? SpreadSecondsPerLap, IReadOnlyList<int> Runs, int PairCount);
+public sealed record TestDaySameSetupSpread(double? SpreadSeconds, double? SpreadSecondsPerLap, IReadOnlyList<int> Runs, int PairCount)
+{
+    /// <summary>"median_of_pairs", "single_pair" or "single_pair_capped"; null from an older backend.</summary>
+    public string? Method { get; init; }
+    /// <summary>The one pair's difference before its cap, when capped.</summary>
+    public double? UncappedSeconds { get; init; }
+}
 
 /// <summary>A run's recording: several runs, split by pit visits, can share one.</summary>
 public sealed record TestDayRecording(int Number, string? AnalysisId, string? AnalysisPath, string? RecordedAt, int? RunInRecording, int RunsInRecording);
@@ -135,8 +152,22 @@ public sealed record TestDaySetupChange(string Status, int? ComparedWithRun, int
     int UnknownCount, IReadOnlyList<string> UnknownFields, bool Complete, string? Reason)
 {
     public IReadOnlyList<TestDaySettingChange> Readouts { get; init; } = [];
+    /// <summary>Index into <see cref="Changes"/> of the change the run was built around; null from an older backend.</summary>
+    public int? HeadlineIndex { get; init; }
+    /// <summary>"setup_name" or "largest_step": why the headline change leads.</summary>
+    public string? HeadlineBasis { get; init; }
+    /// <summary>Earlier runs (before the previous one) on exactly this garage setup: the run went back to it.</summary>
+    public IReadOnlyList<int> ReturnedToRuns { get; init; } = [];
+    public TestDaySettingChange? Headline => HeadlineIndex is { } index && index >= 0 && index < Changes.Count ? Changes[index] : Changes.FirstOrDefault();
 }
-public sealed record TestDaySettingChange(string Field, string Label, string? Previous, string? Current, double? Delta, string? Unit);
+public sealed record TestDaySettingChange(string Field, string Label, string? Previous, string? Current, double? Delta, string? Unit)
+{
+    /// <summary>"LF camber"; the full label when absent.</summary>
+    public string? ShortLabel { get; init; }
+    /// <summary>The values in the garage's English display units ("+13.00 in"); the recorded values when absent.</summary>
+    public string? GaragePrevious { get; init; }
+    public string? GarageCurrent { get; init; }
+}
 
 public sealed record TestDayComparison(int ComparedWithRun, string Verdict, string? BlockedBy, string? Basis, string? WindowLabel,
     int? FirstRunLap, int? LastRunLap, double? PreviousMedianSeconds, double? CurrentMedianSeconds, double? DeltaSeconds,

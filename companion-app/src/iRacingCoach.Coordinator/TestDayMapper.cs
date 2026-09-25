@@ -137,9 +137,14 @@ public static class TestDayMapper
                 RequiredInt(recording, "number", $"{path}.recording"), OptionalText(recording, "analysis_id", $"{path}.recording"),
                 OptionalText(recording, "analysis_path", $"{path}.recording"), OptionalText(recording, "recorded_at", $"{path}.recording"),
                 OptionalInt(recording, "run_in_recording", $"{path}.recording"), RequiredInt(recording, "runs_in_recording", $"{path}.recording")),
-            Noise = Noise(noise, $"{path}.noise")
+            Noise = Noise(noise, $"{path}.noise"),
+            Consistency = Consistency(ObjectIfPresent(item, "consistency", path), $"{path}.consistency")
         };
     }
+
+    private static TestDayConsistency? Consistency(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
+        RequiredText(item, "status", path), IntsIfPresent(item, "setup_runs", path), NumberIfPresent(item, "delta_s", path),
+        NumberIfPresent(item, "limit_s", path), item.TryGetProperty("reason", out _) ? OptionalText(item, "reason", path) : null);
 
     private static TestDayNoise? Noise(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
         RequiredText(item, "status", path), OptionalNumber(item, "noise_s", path),
@@ -175,7 +180,11 @@ public static class TestDayMapper
 
     private static TestDaySameSetupSpread? SameSetupSpread(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
         NumberIfPresent(item, "spread_s", path), NumberIfPresent(item, "spread_s_per_lap", path), IntsIfPresent(item, "runs", path),
-        item.TryGetProperty("pair_count", out _) ? RequiredInt(item, "pair_count", path) : 0);
+        item.TryGetProperty("pair_count", out _) ? RequiredInt(item, "pair_count", path) : 0)
+    {
+        Method = item.TryGetProperty("method", out _) ? OptionalText(item, "method", path) : null,
+        UncappedSeconds = NumberIfPresent(item, "uncapped_spread_s", path) ?? NumberIfPresent(item, "uncapped_spread_s_per_lap", path)
+    };
 
     /// <summary>An optional number added after v1 shipped: absent is null; present must be a finite number or null.</summary>
     private static double? NumberIfPresent(JsonElement item, string name, string path) =>
@@ -202,7 +211,12 @@ public static class TestDayMapper
         RequiredInt(item, "unknown_count", path), Strings(item, "unknown_fields", path), RequiredBoolean(item, "complete", path),
         OptionalText(item, "reason", path))
     {
-        Readouts = Settings(ArrayIfPresent(item, "readouts", path), $"{path}.readouts")
+        Readouts = Settings(ArrayIfPresent(item, "readouts", path), $"{path}.readouts"),
+        HeadlineIndex = ObjectIfPresent(item, "headline", path) is { ValueKind: JsonValueKind.Object } headline
+            ? OptionalInt(headline, "index", $"{path}.headline") : null,
+        HeadlineBasis = ObjectIfPresent(item, "headline", path) is { ValueKind: JsonValueKind.Object } basis
+            ? OptionalText(basis, "basis", $"{path}.headline") : null,
+        ReturnedToRuns = IntsIfPresent(item, "returned_to_runs", path)
     };
 
     private static TestDaySettingChange[] Settings(IReadOnlyList<JsonElement> items, string path) => items.Select((change, index) =>
@@ -210,7 +224,12 @@ public static class TestDayMapper
         var at = $"{path}[{index}]";
         return new TestDaySettingChange(RequiredText(change, "field", at), RequiredText(change, "label", at),
             OptionalScalar(change, "previous", at), OptionalScalar(change, "current", at), OptionalNumber(change, "delta", at),
-            OptionalText(change, "unit", at));
+            OptionalText(change, "unit", at))
+        {
+            ShortLabel = change.TryGetProperty("short_label", out _) ? OptionalText(change, "short_label", at) : null,
+            GaragePrevious = change.TryGetProperty("garage_previous", out _) ? OptionalScalar(change, "garage_previous", at) : null,
+            GarageCurrent = change.TryGetProperty("garage_current", out _) ? OptionalScalar(change, "garage_current", at) : null
+        };
     }).ToArray();
 
     private static TestDayComparison? Comparison(JsonElement item, string path)

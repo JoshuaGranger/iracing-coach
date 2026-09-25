@@ -425,7 +425,10 @@ public sealed class RaceAnalysisBehaviorTests
         // Each band tile carries its tread remaining and its carcass/surface temperature; pressure sits in the card header.
         // A separate footer row did not fit the grid cell at 1280x720 and was clipped.
         StringAssert.Contains(technical, "<em class=\"technical-band-temperature\">@BandTemperatures(tire, band.Label)</em>");
-        StringAssert.Contains(technical, "<span class=\"technical-tire-pressure\">@Pressure(tire.PressurePsi)</span>");
+        // IRP 9/25: the stall pressure read the set cold pressures (14.0/28.0 psi); it says so.
+        StringAssert.Contains(technical, "@Pressure(tire.PressurePsi)@PressureSuffix(tire.PressureKind)</span>");
+        Assert.AreEqual(" cold set", iRacingCoach.UI.RaceTechnicalData.PressureSuffix("Cold"));
+        Assert.AreEqual("", iRacingCoach.UI.RaceTechnicalData.PressureSuffix("Live"));
         Assert.DoesNotContain("technical-tire-vital", technical);
 
         StringAssert.Contains(unavailable, "data-technical-unavailable-reason");

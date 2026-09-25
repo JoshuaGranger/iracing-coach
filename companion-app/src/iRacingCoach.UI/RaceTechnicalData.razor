@@ -274,7 +274,7 @@
                                                 @* Each band tile holds that band's tread remaining and its carcass/surface temperature,
                                                    so the card fits its grid cell at 1280x720 without clipping a footer. *@
                                                 <article class="technical-tire-card">
-                                                    <header><strong>@tire.Corner</strong><span class="technical-tire-pressure">@Pressure(tire.PressurePsi)</span>@if (TireServiceTag(SelectedTireRun, tire.Corner) is { } serviceTag) { <span data-tire-service="@serviceTag" title="@TireServiceTitle(SelectedTireRun, tire.Corner)">@(serviceTag == "changed" ? "Changed" : "Kept")</span> }</header>
+                                                    <header><strong>@tire.Corner</strong><span class="technical-tire-pressure" data-pressure-kind="@tire.PressureKind" title="@PressureTitle(tire.PressureKind)">@Pressure(tire.PressurePsi)@PressureSuffix(tire.PressureKind)</span>@if (TireServiceTag(SelectedTireRun, tire.Corner) is { } serviceTag) { <span data-tire-service="@serviceTag" title="@TireServiceTitle(SelectedTireRun, tire.Corner)">@(serviceTag == "changed" ? "Changed" : "Kept")</span> }</header>
                                                     <div class="technical-tire-bands" aria-label="@tire.Corner wear and carcass/surface temperature by band">
                                                         @foreach (var band in TireBands(tire))
                                                         {
@@ -800,6 +800,13 @@
         return "hsl(" + hue.ToString(System.Globalization.CultureInfo.InvariantCulture) + " 64% 54%)";
     }
     private static string Pressure(double? value) => value.HasValue ? $"{value.Value:0.0} psi" : "—";
+
+    /// <summary>" cold set" when the stall value is the set cold pressure (the recorded cold-pressure channel), never a hot reading.</summary>
+    public static string PressureSuffix(string? kind) => string.Equals(kind, "Cold", StringComparison.OrdinalIgnoreCase) ? " cold set" : "";
+
+    private static string PressureTitle(string? kind) => string.Equals(kind, "Cold", StringComparison.OrdinalIgnoreCase)
+        ? "The set cold pressure recorded at the stop, not a hot reading."
+        : string.IsNullOrWhiteSpace(kind) ? "Recorded pressure." : $"{kind} pressure.";
     // Bands carry wear (100 - tread remaining); the tread scale above reads remaining.
     private static double? Remaining(double? wear) => wear.HasValue ? Math.Clamp(100d - wear.Value, 0d, 100d) : null;
 
