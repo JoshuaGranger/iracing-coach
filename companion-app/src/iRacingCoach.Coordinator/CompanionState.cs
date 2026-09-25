@@ -158,9 +158,14 @@ public sealed partial class CompanionState : IDisposable
         Settings = settingsStore?.Load() ?? new CompanionSettings(_pathProvider);
         _settingsDataRoots = new(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
         Settings.LiveMonitor ??= new LiveMonitorLayout();
-        // Showing any dashboard adds the built-in ones; do it before the saved baseline so
-        // merely opening a page never reads as an unsaved settings edit.
+        // Showing any dashboard adds the built-in ones, and opening Race Analysis repairs its
+        // trace layouts (including the one-time legacy import the store skips for a read-only
+        // or unreadable file). Do both before the saved baseline so merely opening a page
+        // never reads as an unsaved settings edit.
         _ = LiveMonitorLayouts.EnsureBuiltInDashboards(Settings.LiveMonitor);
+        Settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
+        Settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
+        _ = AnalysisTraceLayoutSets.ValidateAndRepair(Settings.RaceAnalysisTraceLayouts, Settings.RaceAnalysisTraces);
         MarkSettingsSaved();
         if (!Settings.Compatibility.Writable) SettingsMessage = Settings.Compatibility.Message;
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";

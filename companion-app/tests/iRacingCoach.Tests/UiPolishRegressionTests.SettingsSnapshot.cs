@@ -110,6 +110,45 @@ public sealed partial class UiPolishRegressionTests
         Assert.IsFalse(state.SettingsDirty);
     }
 
+    // With a read-only or unreadable settings file the store never repairs the trace layouts,
+    // so Race Analysis did the one-time legacy layout import after the load baseline was taken:
+    // merely opening a race raised a save bar that could never be saved.
+    [TestMethod]
+    public async Task OpeningRaceAnalysisIsNotAnEditWhenTheSettingsFileIsReadOnlyOrUnreadable()
+    {
+        var telemetry = File.ReadAllText(Path.Combine(UiRoot(), "TelemetryWorkspace.razor"));
+        const string workspaceRepair = "_ = AnalysisTraceLayoutSets.ValidateAndRepair(State.Settings.RaceAnalysisTraceLayouts, State.Settings.RaceAnalysisTraces);";
+        StringAssert.Contains(telemetry, workspaceRepair, "The workspace still repairs the layouts when it opens; this test repeats that call.");
+
+        foreach (var (name, contents) in new[]
+        {
+            ("read-only (newer schema)", "{\"settingsSchemaVersion\":99}"),
+            ("unreadable", "{not json")
+        })
+        {
+            var root = TempRoot();
+            var paths = new IsolatedCompanionPathProvider(root);
+            var file = Path.Combine(paths.Documents, "iRacing Coach", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, contents);
+            var store = new JsonSettingsStore(file, new DisabledGarage61CredentialStore(Path.Combine(root, "credentials")),
+                Path.Combine(root, "machine-settings.json"), paths, lockToProviderRoots: false);
+            using var state = NewSettingsState(root, paths, store);
+            Assert.IsFalse(state.SettingsWritable, $"{name}: the file is not writable.");
+            Assert.IsFalse(state.SettingsDirty, $"{name}: loaded values are not an edit.");
+
+            // What TelemetryWorkspace.OnParametersSet does when Race Analysis opens.
+            state.Settings.RaceAnalysisTraces ??= new AnalysisTraceLayout();
+            state.Settings.RaceAnalysisTraceLayouts ??= new AnalysisTraceLayoutSet();
+            _ = AnalysisTraceLayoutSets.ValidateAndRepair(state.Settings.RaceAnalysisTraceLayouts, state.Settings.RaceAnalysisTraces);
+            _ = AnalysisTraceLayoutSets.Choices(state.Settings.RaceAnalysisTraceLayouts);
+
+            Assert.IsFalse(state.SettingsDirty, $"{name}: opening Race Analysis is not a settings edit.");
+            Assert.DoesNotContain("data-settings-savebar", await RenderSettings(state), $"{name}: no save bar after opening a race.");
+            Assert.AreEqual(contents, File.ReadAllText(file), $"{name}: the settings file is left unchanged.");
+        }
+    }
+
     private static CompanionState NewSettingsState(string root, ICompanionPathProvider paths, ISettingsStore store) =>
         new(new QuietBackend(), store, new DisconnectedLiveTelemetrySource(), new DisabledCoachEngineSupervisor(),
             new DisabledGarage61CredentialStore(Path.Combine(root, "credentials")), new RestoredArchive("Restored 1 Coach item."), paths,
