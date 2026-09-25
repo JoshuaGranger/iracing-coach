@@ -845,6 +845,66 @@ class StorageReportUsageTests(unittest.TestCase):
             self.assertEqual(usage["reclaimable_bytes"], 0)
             self.assertFalse(root.exists())
 
+    @staticmethod
+    def _names(root: Path) -> list[str]:
+        return sorted(str(path.relative_to(root)) for path in root.rglob("*"))
+
+    def test_measuring_creates_no_file_beside_the_history_index(self) -> None:
+        # history.sqlite3 is in WAL mode. Opening it with ?mode=ro when no
+        # connection is open created history.sqlite3-shm and -wal in the
+        # user's archive, so the "read-only" measure was not read-only.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = ArchiveStore(root)
+            same = _report_analysis("same-analysis", "2026-09-21T00:07:38+00:00")
+            first = self._legacy_copy(store, "s", "a", same, modified=1_790_000_000_000_000_000)
+            self._legacy_copy(store, "s", "b", same, modified=1_790_000_000_000_000_001)
+            store.record_analysis(same, str(first / "report.md"))
+            before = self._names(root)
+            self.assertNotIn("history.sqlite3-wal", before)
+            self.assertNotIn("history.sqlite3-shm", before)
+            database_before = (root / "history.sqlite3").read_bytes()
+
+            usage = store.report_storage_usage()
+
+            self.assertEqual(self._names(root), before)
+            self.assertEqual((root / "history.sqlite3").read_bytes(), database_before)
+            self.assertEqual(usage["history_index"], "read")
+            self.assertEqual(usage["groups"][0]["retained"]["path"], str(first))
+
+    def test_index_rows_still_in_the_write_ahead_log_are_read_without_creating_files(self) -> None:
+        # While the backend holds the index open, its newest rows live only in
+        # history.sqlite3-wal. Reading the main file alone would miss them and
+        # could offer the copy the index now names.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = ArchiveStore(root)
+            same = _report_analysis("same-analysis", "2026-09-21T00:07:38+00:00")
+            first = self._legacy_copy(store, "s", "a", same, modified=1_790_000_000_000_000_001)
+            second = self._legacy_copy(store, "s", "b", same, modified=1_790_000_000_000_000_000)
+            store.record_analysis(same, str(first / "report.md"))
+            writer = sqlite3.connect(root / "history.sqlite3")
+            try:
+                writer.execute(
+                    "UPDATE sessions SET report_path = ? WHERE analysis_id = ?",
+                    (str(second / "report.md"), "same-analysis"),
+                )
+                writer.commit()
+                self.assertGreater((root / "history.sqlite3-wal").stat().st_size, 0)
+                before = self._names(root)
+
+                usage = store.report_storage_usage()
+
+                self.assertEqual(self._names(root), before)
+            finally:
+                writer.close()
+            self.assertEqual(usage["history_index"], "read")
+            group = usage["groups"][0]
+            self.assertEqual(group["retained"], {
+                "path": str(second), "bytes": self._bytes(second), "reason": "history-index",
+            })
+            self.assertEqual([item["path"] for item in group["reclaimable"]], [str(first)])
+
 
 def _hold_open(path: Path, opened: threading.Event, release: threading.Event,
                seconds: float | None) -> None:

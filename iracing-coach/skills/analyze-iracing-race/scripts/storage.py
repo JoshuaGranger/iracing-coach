@@ -871,6 +871,86 @@ def _referenced_report_directories(value: Any, found: set[str]) -> None:
             pass
 
 
+def _file_signature(path: str) -> tuple[int, int] | None:
+    try:
+        stat = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return stat.st_size, stat.st_mtime_ns
+
+
+def _copy_file_bytes(source: str, destination: str) -> None:
+    # Plain reads share read/write access with SQLite's own handles.
+    with open(source, "rb") as reader, open(destination, "wb") as writer:
+        shutil.copyfileobj(reader, writer, 1024 * 1024)
+
+
+_HISTORY_INDEX_COLUMNS = (
+    "analysis_id",
+    "session_group_id",
+    "subsession_id",
+    "session_phase",
+    "report_path",
+)
+
+
+def _query_history_index(uri: str) -> list[dict[str, Any]]:
+    connection = sqlite3.connect(uri, uri=True, timeout=5)
+    try:
+        available = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(sessions)")
+        }
+        if "report_path" not in available:
+            raise sqlite3.DatabaseError("history index has no report paths")
+        selected = ", ".join(
+            name if name in available else f"NULL AS {name}"
+            for name in _HISTORY_INDEX_COLUMNS
+        )
+        rows = connection.execute(f"SELECT {selected} FROM sessions").fetchall()
+    finally:
+        connection.close()
+    return [dict(zip(_HISTORY_INDEX_COLUMNS, row)) for row in rows]
+
+
+def _read_history_index_without_writing(db_path: Path) -> tuple[str, list[dict[str, Any]]]:
+    """Read history.sqlite3 without creating, changing or deleting any file.
+
+    The index is in WAL mode. A ``mode=ro`` connection to it creates -shm and
+    -wal beside it when no other connection is open, and cannot remove them
+    afterwards. With no write-ahead log the main file holds every committed
+    row and is read with ``immutable=1``, which touches nothing else. While a
+    log exists its newest rows are only there, so the log and the database
+    are copied into a private temporary folder and the copy is read. Either
+    read is kept only when neither file changed while it ran; after three
+    changed attempts the index counts as unreadable, which offers nothing.
+    """
+
+    database = _extended_path(db_path)
+    if not os.path.isfile(database):
+        return "absent", []
+    log = database + "-wal"
+    for _attempt in range(3):
+        before = (_file_signature(database), _file_signature(log))
+        try:
+            if before[1] is None or before[1][0] == 0:
+                rows = _query_history_index(
+                    f"{Path(db_path).resolve().as_uri()}?mode=ro&immutable=1"
+                )
+            else:
+                with tempfile.TemporaryDirectory(prefix="coach-index-") as scratch:
+                    copy = os.path.join(scratch, "history.sqlite3")
+                    # The log first: a checkpoint between the two copies only
+                    # moves pages the copied log already holds.
+                    _copy_file_bytes(log, copy + "-wal")
+                    _copy_file_bytes(database, copy)
+                    rows = _query_history_index(Path(copy).as_uri())
+        except (OSError, sqlite3.Error):
+            rows = None
+        if rows is not None and (_file_signature(database), _file_signature(log)) == before:
+            return "read", rows
+    return "unreadable", []
+
+
 # The app reads analysis.json (up to about 80 MB) with File.OpenRead,
 # ReadAllBytes and ReadAllTextAsync. None of them shares delete access, so
 # while one runs the file can be neither replaced nor deleted (WinError 5 or
@@ -2028,7 +2108,8 @@ class ArchiveStore:
         new full copy. A copy is reclaimable only when another directory holds
         the same analysis_id and neither the history index nor a saved trial
         or tuning record names it. The kept copy is the indexed one, else the
-        newest. Nothing is created, changed or deleted here.
+        newest. Nothing is created, changed or deleted here, including beside
+        the history index (see _read_history_index_without_writing).
         """
 
         reports_io = _extended_path(self.reports_dir)
@@ -2075,24 +2156,11 @@ class ArchiveStore:
                 ):
                     pending.append((entry.path, owner))
 
+        index_status, index_rows = _read_history_index_without_writing(self.db_path)
         indexed: set[str] = set()
-        index_status = "absent"
-        db_io = _extended_path(self.db_path)
-        if os.path.isfile(db_io):
-            try:
-                connection = sqlite3.connect(
-                    f"{Path(self.db_path).resolve().as_uri()}?mode=ro", uri=True, timeout=30
-                )
-                try:
-                    rows = connection.execute("SELECT report_path FROM sessions").fetchall()
-                finally:
-                    connection.close()
-                for row in rows:
-                    if row and row[0]:
-                        indexed.update(_report_directory_keys(os.path.dirname(str(row[0]))))
-                index_status = "read"
-            except sqlite3.Error:
-                index_status = "unreadable"
+        for row in index_rows:
+            if row.get("report_path"):
+                indexed.update(_report_directory_keys(os.path.dirname(str(row["report_path"]))))
 
         referenced: dict[str, str] = {key: "history-index" for key in indexed}
         for key, label in self._report_references().items():
