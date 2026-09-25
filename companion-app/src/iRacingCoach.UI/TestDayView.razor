@@ -25,9 +25,9 @@
             <div class="ri-panel td-chart">
                 @* Lap dots are not tab stops here: the run table below is the keyboard path. *@
                 <RunOverlayChart Investigation="Projection" Selected="SelectedComparison" XAxisTitle="Lap of run" RunCaption="RunCaption" Hint="Point to a lap for its time"
-                                 FitToggleLabel="Fall-off fit" FitToggleTitle="The table's fall-off: least-squares line through each run's clean laps from lap 2 to its last clean lap"
+                                 FitToggleLabel="Fall-off fit" FitToggleTitle="The table's fall-off: least-squares line through each run's clean laps from lap 6, after laps 2–5 where the tires come in, to its last clean lap"
                                  FitCaption="FitCaption" FocusableLaps="false" ScaleToEligible="true"
-                                 FootNote="Rings mark the laps compared for the selected run. Lines are a five-lap median of recorded laps; hollow dots are excluded from clean laps and the time axis covers clean laps only." />
+                                 FootNote="Rings mark the laps compared for the selected run. Lines are a five-lap median of recorded laps; hollow dots are excluded from clean laps. The time axis covers the runs' clean laps; a lap far outside them sits on the edge." />
             </div>
             <aside class="ri-panel td-next" data-next-change="@review.NextChange.Kind" aria-label="Next change">
                 <span class="ri-label">Next change</span>
@@ -55,11 +55,13 @@
             </aside>
         </div>
 
-        @if (review.UntimedRecordings.Count > 0)
+        @if (review.UntimedRecordings.Count > 0 || review.ShortRuns.Count > 0)
         {
-            @* Garage-only recordings have nothing to compare: one quiet line, never rows. *@
-            <p class="td-untimed" data-untimed="@review.UntimedRecordings.Count" title="@string.Join("\n", review.UntimedRecordings.Select(UntimedTitle))">
-                @UntimedLine(review.UntimedRecordings)
+            @* Garage-only recordings and runs too short to compare (stubs between resets) have nothing to
+               compare: one quiet line, never rows and never lines on the chart. *@
+            <p class="td-untimed" data-untimed="@review.UntimedRecordings.Count" data-short-runs="@review.ShortRuns.Count"
+               title="@string.Join("\n", review.ShortRuns.Select(ShortRunTitle).Concat(review.UntimedRecordings.Select(UntimedTitle)))">
+                @NotComparedLine(review)
             </p>
         }
 
@@ -73,7 +75,7 @@
                         <th scope="col">Setup change</th>
                         <th scope="col" class="num">@(review.Windows.Early.Label ?? "Early laps")</th>
                         <th scope="col" class="num" title="@LateTitle(review.Windows.Late)">Last 5 laps</th>
-                        <th scope="col" class="num" title="Least-squares slope of each run's clean lap times from lap 2 to its last clean lap">Fall-off</th>
+                        <th scope="col" class="num" title="Least-squares slope of each run's clean lap times from lap 6, after laps 2–5 where the tires come in, to its last clean lap">Fall-off</th>
                         <th scope="col" title="Compared with the previous run over the laps both runs reached, on the laps clean in both">vs previous run</th>
                         <th scope="col" title="Telemetry pit-stall reading at the end of the run: inside minus outside carcass temperature in °F, and lowest tread remaining">Tires at stop · I−O °F, tread</th>
                     </tr>
@@ -178,7 +180,7 @@
                                 <tbody>
                                     @foreach (var window in new[] { versus.EarlyWindow, versus.LateWindow }.OfType<TestDayPairWindow>())
                                     {
-                                        <tr data-pair-window="@window.Key">
+                                        <tr data-pair-window="@window.Key" title="@PairWindowTitle(window)">
                                             <th scope="row">@(window.Label ?? (window.Key == "late" ? "Late laps" : "Laps 2–5"))@if (window.RunLaps.Count > 0) { <small> · @window.RunLaps.Count laps</small> }</th>
                                             <td class="num">@LapTime(window.PreviousMedianSeconds)</td>
                                             <td class="num">@LapTime(window.CurrentMedianSeconds)</td>
@@ -435,7 +437,7 @@
         }
         if (run.Conditions.TrackTemperatureF is { } track) parts.Add($"Track {track.ToString("0", CultureInfo.CurrentCulture)} °F");
         if (run.Conditions.StartFuelGallons is { } fuel) parts.Add($"Start fuel {fuel.ToString("0.0", CultureInfo.CurrentCulture)} gal");
-        if (run.Noise is { Measured: true } noise) parts.Add($"Lap-to-lap noise {Seconds(noise.NoiseSeconds)} s");
+        if (run.Noise is { Measured: true } noise) parts.Add($"Lap noise after lap 5 {Seconds(noise.NoiseSeconds)} s");
         if (run.Conditions.TireStart.Detail is { Length: > 0 } detail) parts.Add(detail);
         return string.Join(". ", parts) + (parts.Count > 0 ? "." : "");
     }
@@ -460,11 +462,43 @@
         return (text, title);
     }
 
-    private static string UntimedLine(IReadOnlyList<TestDayUntimedRecording> recordings) =>
-        $"{recordings.Count} recording{(recordings.Count == 1 ? "" : "s")} without a timed lap ({string.Join(", ", recordings.Select(item => Time(item.RecordedAt)))}) {(recordings.Count == 1 ? "is" : "are")} not compared.";
+    /// <summary>
+    /// "4 runs with fewer than 3 clean laps (10:43 PM runs 1–4 of 5) and 2 recordings without a timed lap
+    /// (10:19 PM, 10:28 PM) are not compared."
+    /// </summary>
+    public static string NotComparedLine(TestDayReview review)
+    {
+        var parts = new List<string>();
+        var runs = review.ShortRuns;
+        if (runs.Count > 0)
+        {
+            var where = runs.GroupBy(run => run.Recording).Select(group =>
+            {
+                var first = group.First();
+                var places = group.Select(run => run.RunInRecording).OfType<int>().ToArray();
+                return places.Length == 0 || first.RunsInRecording <= 1 ? Time(first.RecordedAt)
+                    : $"{Time(first.RecordedAt)} run{(places.Length == 1 ? "" : "s")} {Places(places)} of {first.RunsInRecording}";
+            });
+            parts.Add($"{runs.Count} run{(runs.Count == 1 ? "" : "s")} with fewer than {review.Windows.MinimumCleanLaps} clean laps ({string.Join("; ", where)})");
+        }
+        var recordings = review.UntimedRecordings;
+        if (recordings.Count > 0)
+            parts.Add($"{recordings.Count} recording{(recordings.Count == 1 ? "" : "s")} without a timed lap ({string.Join(", ", recordings.Select(item => Time(item.RecordedAt)))})");
+        return $"{string.Join(" and ", parts)} {(runs.Count + recordings.Count == 1 ? "is" : "are")} not compared.";
+    }
+
+    /// <summary>"1–4" for consecutive places, otherwise "1, 3".</summary>
+    private static string Places(IReadOnlyList<int> places) =>
+        places.Count > 2 && places.Zip(places.Skip(1)).All(pair => pair.Second == pair.First + 1)
+            ? $"{places[0]}–{places[^1]}"
+            : string.Join(", ", places);
 
     private static string UntimedTitle(TestDayUntimedRecording recording) =>
         $"Recording {recording.Recording} · {Time(recording.RecordedAt)}{(recording.SetupName is { Length: > 0 } name ? $" · {name}" : "")}: {recording.Reason}";
+
+    private static string ShortRunTitle(TestDayShortRun run) =>
+        $"Recording {run.Recording} · {Time(run.RecordedAt)}{(run.RunInRecording is { } place ? $" · run {place} of {run.RunsInRecording}" : "")} · "
+        + (run.FirstLap == run.LastLap ? $"lap {run.FirstLap}" : $"laps {run.FirstLap}–{run.LastLap}") + $": {run.Reason}";
 
     private static string SetupCell(TestDaySetupChange change) => change.Status switch
     {
@@ -560,9 +594,30 @@
             "faster" => $"Faster · beyond ±{Seconds(window.ThresholdSeconds)}",
             "slower" => $"Slower · beyond ±{Seconds(window.ThresholdSeconds)}",
             _ => $"Within ±{Seconds(window.ThresholdSeconds)}"
-        },
+        } + SameSetupNote(window.SameSetupSpread, window.SameSetupSpread?.SpreadSeconds, window.StatisticalThresholdSeconds, 3),
         _ => window.Reason ?? "Not measured"
     };
+
+    /// <summary>
+    /// " · runs 1 and 5, one setup, differed 0.247" when what two same-setup runs of the day differed by on
+    /// these laps set the threshold rather than the lap noise.
+    /// </summary>
+    private static string SameSetupNote(TestDaySameSetupSpread? spread, double? value, double? statistical, int digits) =>
+        spread is { Runs.Count: 2 } && value is { } amount && amount >= (statistical ?? 0)
+            ? $" · runs {spread.Runs[0]} and {spread.Runs[1]}, one setup, differed {Seconds(amount, digits)}"
+            : "";
+
+    /// <summary>The window's threshold explained: its laps, how many they count as, and any same-setup spread.</summary>
+    private static string PairWindowTitle(TestDayPairWindow window)
+    {
+        if (!window.Measured) return window.Reason ?? "";
+        var text = $"Threshold ±{Seconds(window.ThresholdSeconds)} s: twice the combined standard error of the two medians";
+        if (window.EffectiveLapCount is { } effective && effective < window.RunLaps.Count)
+            text += $"; {window.RunLaps.Count} laps whose pace wanders together count as {effective.ToString("0.0", CultureInfo.CurrentCulture)}";
+        if (window.SameSetupSpread is { SpreadSeconds: { } spread, Runs.Count: 2 } same)
+            text += $"; runs {same.Runs[0]} and {same.Runs[1]} used one garage setup and differed by {Seconds(spread)} s on these laps";
+        return text + ".";
+    }
 
     private static string SlopeText(double? slope) => slope is { } value ? $"{Signed(value, 4)} s/lap" : "—";
 
@@ -573,13 +628,30 @@
             "more_fall_off" => $"More fall-off · beyond ±{Seconds(fall.ThresholdSecondsPerLap, 4)}",
             "less_fall_off" => $"Less fall-off · beyond ±{Seconds(fall.ThresholdSecondsPerLap, 4)}",
             _ => $"Within ±{Seconds(fall.ThresholdSecondsPerLap, 4)}"
-        },
+        } + SameSetupNote(fall.SameSetupSpread, fall.SameSetupSpread?.SpreadSecondsPerLap, fall.StatisticalThresholdSecondsPerLap, 4),
         _ => fall.Reason ?? "Not measured"
     };
 
-    private static string NoiseLine(TestDayNoise noise) => noise.Measured
-        ? $"Lap-to-lap noise {Seconds(noise.NoiseSeconds)} s from {noise.DifferenceCount} pairs of consecutive clean laps {noise.Basis switch { "day" => "across the day", "these_runs_from_lap_2" => "of both runs from lap 2", _ => "of both runs after lap 5" }}; each threshold is twice the combined standard error."
-        : noise.Reason ?? "Lap-to-lap noise is not measured.";
+    /// <summary>
+    /// "Lap noise 0.130 s: the larger of lap-to-lap 0.057 s (18 pairs of consecutive clean laps of both runs
+    /// after lap 5) and fall-off fit residual 0.130 s. Laps wander together (autocorrelation 0.40), so …"
+    /// </summary>
+    public static string NoiseLine(TestDayNoise noise)
+    {
+        if (!noise.Measured) return noise.Reason ?? "Lap noise is not measured.";
+        var from = noise.Basis switch { "day" => "across the day", "these_runs_from_lap_2" => "of both runs from lap 2", _ => "of both runs after lap 5" };
+        if (noise.DifferenceNoiseSeconds is null && noise.ResidualNoiseSeconds is null)
+            return $"Lap-to-lap noise {Seconds(noise.NoiseSeconds)} s from {noise.DifferenceCount} pairs of consecutive clean laps {from}; each threshold is twice the combined standard error.";
+        var sources = new[]
+        {
+            noise.DifferenceNoiseSeconds is { } lapToLap ? $"lap-to-lap {Seconds(lapToLap)} s ({noise.DifferenceCount} pairs of consecutive clean laps {from})" : null,
+            noise.ResidualNoiseSeconds is { } residual ? $"fall-off fit residual {Seconds(residual)} s{(noise.ResidualBasis == "day" ? " across the day" : "")}" : null
+        }.OfType<string>().ToArray();
+        var text = $"Lap noise {Seconds(noise.NoiseSeconds)} s: " + (sources.Length > 1 ? $"the larger of {sources[0]} and {sources[1]}" : sources[0]) + ".";
+        if (noise.Autocorrelation is > 0 and var together)
+            text += $" Laps wander together (autocorrelation {together.ToString("0.00", CultureInfo.CurrentCulture)}), so a window's laps count as fewer.";
+        return text + " Each threshold is twice the combined standard error, and never less than two other same-setup runs of the day differed by on the same laps.";
+    }
 
     /// <summary>Reasons and cautions the cell cannot show; selecting the row lists them.</summary>
     private static int NoteCount(TestDayComparison comparison) =>

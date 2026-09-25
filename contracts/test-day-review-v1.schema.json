@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "iRacing Coach test-day review v1",
-  "description": "Result of the read-only review_test_day tool: every run (the laps between pit visits) of 1-12 archived recordings of one test day, in time order. Every lap-time, window, fall-off, verdict, setup-change, tire and next-change value is computed by the backend; a consumer displays them and never re-derives a verdict. A measurement that is absent is null (Not measured), never zero. Two runs are compared over their common clean length N: laps 2-5, the last five laps up to N (withheld below eight laps) and the fall-off over laps 2..N, each against a threshold built from the runs' lap-to-lap noise. Verdicts are faster, slower, within_scatter or not_comparable; there is no 'unchanged'. A recording without a timed lap is listed once in untimed_recordings and is not a run. Garage-sheet tire readings carry timing 'unverified' and are never attributed to the stint's stop. Objects may gain optional fields; consumers must preserve unknown fields and fail on a missing required field or another contract/schema_version. Numeric domains are stated here rather than encoded because the repository's bounded validator supports no numeric keywords.",
+  "description": "Result of the read-only review_test_day tool: every run (the laps between pit visits) of 1-12 archived recordings of one test day, in time order. Every lap-time, window, fall-off, verdict, setup-change, tire and next-change value is computed by the backend; a consumer displays them and never re-derives a verdict. A measurement that is absent is null (Not measured), never zero. Two runs are compared over their common clean length N: laps 2-5, the last five laps up to N (withheld below eight laps) and the fall-off over laps 6..N (withheld below ten), each against a threshold built from the runs' lap noise (the larger of the lap-to-lap spread and the fall-off fit residual, from lap 6), widened for laps that wander together and never below the difference two other same-setup runs of the day showed at the same laps. Verdicts are faster, slower, within_scatter or not_comparable; there is no 'unchanged'. A recording without a timed lap is listed once in untimed_recordings, and a timed run with fewer than three clean laps once in short_runs; neither is a run, a row or a plotted line. Garage-sheet tire readings carry timing 'unverified' and are never attributed to the stint's stop. Objects may gain optional fields; consumers must preserve unknown fields and fail on a missing required field or another contract/schema_version. Numeric domains are stated here rather than encoded because the repository's bounded validator supports no numeric keywords.",
   "type": "object",
   "required": [
     "ok", "schema_version", "contract", "read_only", "run_count", "test_day_id", "car", "track",
@@ -28,6 +28,30 @@
           "recorded_at": { "type": ["string", "null"] },
           "session_type": { "type": ["string", "null"] },
           "setup_name": { "type": ["string", "null"] },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "short_runs": {
+      "type": "array",
+      "description": "Timed runs with fewer than three clean laps (for example one or two laps between resets), listed once and never compared, numbered or plotted. Absent from older backends.",
+      "items": {
+        "type": "object",
+        "required": ["recording", "analysis_id", "analysis_path", "recorded_at", "session_type", "setup_name", "run_in_recording", "runs_in_recording", "first_lap", "last_lap", "run_laps", "clean_lap_count", "reason"],
+        "properties": {
+          "recording": { "type": "integer", "description": "The recording's number on the day, 1 = oldest." },
+          "analysis_id": { "type": ["string", "null"] },
+          "analysis_path": { "type": ["string", "null"] },
+          "recorded_at": { "type": ["string", "null"] },
+          "session_type": { "type": ["string", "null"] },
+          "setup_name": { "type": ["string", "null"] },
+          "run_in_recording": { "type": ["integer", "null"] },
+          "runs_in_recording": { "type": "integer" },
+          "first_lap": { "type": "integer", "description": "Recording lap numbers of the run." },
+          "last_lap": { "type": "integer" },
+          "run_laps": { "type": "integer" },
+          "clean_lap_count": { "type": "integer" },
           "reason": { "type": "string" }
         },
         "additionalProperties": true
@@ -136,28 +160,34 @@
       "properties": {
         "status": { "enum": ["measured", "not_measured"] },
         "method": { "const": "ordinary_least_squares_on_run_lap" },
-        "first_run_lap": { "type": "integer" },
+        "first_run_lap": { "type": "integer", "description": "6: the first lap after laps 2-5, where the tires come in." },
         "last_run_lap": { "type": ["integer", "null"] },
         "fit_lap_count": { "type": "integer" },
         "laps": { "type": "array", "items": { "type": "integer" } },
-        "equal_age": { "type": "boolean", "description": "True when the fit covers the run's whole clean length, laps 2 to its last clean lap. Two runs' equal-age fall-off is comparison.fall_off." },
+        "equal_age": { "type": "boolean", "description": "True when the fit covers the run's whole clean length after the warm-up, lap 6 to its last clean lap. Two runs' equal-age fall-off is comparison.fall_off." },
         "slope_s_per_lap": { "type": ["number", "null"] },
         "intercept_s": { "type": ["number", "null"], "description": "Fitted lap time at run lap 0; the chart draws this same line." },
-        "scatter_s": { "type": ["number", "null"], "description": "Residual standard deviation of the fit; shown, never a verdict threshold." },
-        "reason": { "type": ["string", "null"], "description": "Why it is not measured; a run under eight clean laps is too short for fall-off." }
+        "scatter_s": { "type": ["number", "null"], "description": "Residual standard deviation of the fit: the run's fit-residual lap noise." },
+        "reason": { "type": ["string", "null"], "description": "Why it is not measured; a run under ten clean laps is too short for fall-off (the fit needs five laps after laps 2-5)." }
       },
       "additionalProperties": true
     },
     "noise": {
       "type": ["object", "null"],
       "required": ["status", "noise_s"],
-      "description": "Lap-to-lap noise: 1.4826 x the median absolute deviation of consecutive clean-lap differences, divided by the square root of 2.",
+      "description": "Lap noise: the larger of the lap-to-lap estimate (1.4826 x the median absolute deviation of consecutive clean-lap differences, divided by the square root of 2) and the fit-residual estimate (residual standard deviation of the fall-off fits), both from lap 6. A comparison's noise also carries the day's autocorrelation of fit residuals, which its thresholds use.",
       "properties": {
         "status": { "enum": ["measured", "not_measured"] },
-        "noise_s": { "type": ["number", "null"] },
+        "noise_s": { "type": ["number", "null"], "description": "The larger of difference_noise_s and residual_noise_s." },
+        "difference_noise_s": { "type": ["number", "null"], "description": "Lap-to-lap estimate; null when fewer than four consecutive clean-lap differences." },
+        "residual_noise_s": { "type": ["number", "null"], "description": "Fit-residual estimate; null when no run has a fall-off fit." },
         "difference_count": { "type": "integer" },
-        "first_run_lap": { "type": "integer", "description": "A run's differences start at lap 6, after the warm-up of laps 2-5." },
-        "basis": { "enum": ["these_runs", "day", "these_runs_from_lap_2", null], "description": "A comparison's source: both runs from lap 6, else the whole day from lap 6, else both runs from lap 2." },
+        "residual_lap_count": { "type": "integer" },
+        "first_run_lap": { "type": "integer", "description": "A run's differences and fit start at lap 6, after the warm-up of laps 2-5." },
+        "basis": { "enum": ["these_runs", "day", "these_runs_from_lap_2", null], "description": "The lap-to-lap estimate's source in a comparison: both runs from lap 6, else the whole day from lap 6, else both runs from lap 2." },
+        "residual_basis": { "enum": ["these_runs", "day", null], "description": "The fit-residual estimate's source in a comparison: both runs' fits, else the whole day's." },
+        "autocorrelation": { "type": ["number", "null"], "description": "The day's pooled lag-1 autocorrelation of fit residuals, clamped to 0-0.9; null when fewer than eight pairs of consecutive clean laps." },
+        "autocorrelation_pairs": { "type": "integer" },
         "method": { "type": "string" },
         "reason": { "type": ["string", "null"] }
       },
@@ -179,9 +209,24 @@
         "previous_median_s": { "type": ["number", "null"] },
         "current_median_s": { "type": ["number", "null"] },
         "delta_s": { "type": ["number", "null"] },
-        "threshold_s": { "type": ["number", "null"] },
+        "threshold_s": { "type": ["number", "null"], "description": "The larger of statistical_threshold_s and same_setup_spread.spread_s." },
+        "statistical_threshold_s": { "type": ["number", "null"], "description": "max(0.03 s, 2 x sqrt(2) x 1.2533 x noise / sqrt(effective_lap_count))." },
         "standard_error_s": { "type": ["number", "null"] },
+        "effective_lap_count": { "type": ["number", "null"], "description": "max(1, n x (1 - rho) / (1 + rho)) for the n laps clean in both runs and the day's autocorrelation rho." },
+        "same_setup_spread": { "$ref": "#/$defs/sameSetupSpread" },
         "reason": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "sameSetupSpread": {
+      "type": ["object", "null"],
+      "description": "The largest difference at the same laps of the run between two other runs of the day whose garage setups match and whose conditions are comparable: what the day shows when no setup changed. Null when no such pair has three shared clean laps there.",
+      "properties": {
+        "spread_s": { "type": "number", "description": "Median difference (windows)." },
+        "spread_s_per_lap": { "type": "number", "description": "Fall-off difference (comparison.fall_off)." },
+        "runs": { "type": "array", "items": { "type": "integer" } },
+        "run_laps": { "type": "array", "items": { "type": "integer" } },
+        "pair_count": { "type": "integer" }
       },
       "additionalProperties": true
     },
@@ -255,7 +300,7 @@
         "previous_median_s": { "type": ["number", "null"], "description": "Median of the previous run's laps at run_laps." },
         "current_median_s": { "type": ["number", "null"], "description": "Median of this run's laps at run_laps." },
         "delta_s": { "type": ["number", "null"], "description": "Current minus previous; null when not comparable." },
-        "threshold_s": { "type": ["number", "null"], "description": "max(0.03 s, 2 x sqrt(2) x 1.2533 x noise / sqrt(n)) for the n laps clean in both runs." },
+        "threshold_s": { "type": ["number", "null"], "description": "The compared window's threshold: max(0.03 s, 2 x sqrt(2) x 1.2533 x noise / sqrt(n_eff), same-setup spread) for the n laps clean in both runs." },
         "standard_error_s": { "type": ["number", "null"] },
         "common_run_laps": { "type": "integer", "description": "N: the shorter of the two runs' last clean laps." },
         "noise": { "$ref": "#/$defs/noise" },
@@ -270,7 +315,7 @@
         },
         "fall_off": {
           "type": ["object", "null"],
-          "description": "Both runs' least-squares fall-off over laps 2..N; withheld when N is under eight laps.",
+          "description": "Both runs' least-squares fall-off over laps 6..N; withheld when N is under ten laps. The threshold is max(0.002 s/lap, 2 x noise x sqrt((1 + rho) / (1 - rho)) x sqrt(1/Sxx1 + 1/Sxx2), the largest fall-off difference between two other same-setup runs over the same laps).",
           "properties": {
             "status": { "enum": ["measured", "not_measured", "withheld"] },
             "first_run_lap": { "type": "integer" },
@@ -280,6 +325,9 @@
             "current_slope_s_per_lap": { "type": ["number", "null"] },
             "delta_s_per_lap": { "type": ["number", "null"] },
             "threshold_s_per_lap": { "type": ["number", "null"] },
+            "statistical_threshold_s_per_lap": { "type": ["number", "null"] },
+            "standard_error_s_per_lap": { "type": ["number", "null"] },
+            "same_setup_spread": { "$ref": "#/$defs/sameSetupSpread" },
             "verdict": { "enum": ["more_fall_off", "less_fall_off", "within_scatter", null] },
             "reason": { "type": ["string", "null"] }
           },
@@ -504,7 +552,7 @@
         "comparison": { "$ref": "#/$defs/comparison" },
         "tires": { "$ref": "#/$defs/tires" },
         "laps": { "type": "array", "items": { "$ref": "#/$defs/lap" } },
-        "trend": { "type": ["object", "null"], "description": "race_inspection.run_views output with x = run lap (x_axis 'run_lap'). Its fit is the run's fall-off over its clean laps 2 to its last clean lap (fit_basis 'fall_off'), null when fall-off is not measured." }
+        "trend": { "type": ["object", "null"], "description": "race_inspection.run_views output with x = run lap (x_axis 'run_lap'). Its fit is the run's fall-off over its clean laps 6 to its last clean lap (fit_basis 'fall_off'), null when fall-off is not measured." }
       },
       "additionalProperties": true
     },

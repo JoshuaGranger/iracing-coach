@@ -25,7 +25,7 @@
   },
   "limitations": [
     "Pace windows count laps from the start of each stint's measured run. A verdict compares two runs over their common clean length on the laps of the run that are clean in both, so its medians are at equal run age; run age is not measured tire wear.",
-    "Verdicts compare medians against max(0.03 s, 2 × the combined standard error from the runs' lap-to-lap noise); a difference inside it is within scatter, not unchanged. The noise comes from consecutive clean laps from lap 6 on, so a warm-up ramp does not widen it.",
+    "Verdicts compare medians against max(0.03 s, 2 × the combined standard error from the runs' lap noise, the largest difference between two other runs of the day on one garage setup at the same laps); a difference inside it is within scatter, not unchanged. The lap noise is the larger of the lap-to-lap spread and each run's fall-off fit residual, from lap 6 on so a warm-up ramp does not widen it, and laps whose pace wanders together count as fewer independent laps.",
     "Track evolution, driver adaptation and traffic are not controlled between stints.",
     "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
     "Offline Testing holds iRacing's one-lap-to-green flag for the whole session, which the recording analysis reads as a caution. For Offline Testing stints the review ignores caution and restart classifications; every other exclusion still applies."
@@ -73,7 +73,7 @@
   },
   "ok": true,
   "read_only": true,
-  "recording_count": 4,
+  "recording_count": 5,
   "run_count": 3,
   "runs": [
     {
@@ -107,14 +107,10 @@
       },
       "fall_off": {
         "equal_age": true,
-        "first_run_lap": 2,
-        "fit_lap_count": 19,
-        "intercept_s": 24.0075,
+        "first_run_lap": 6,
+        "fit_lap_count": 15,
+        "intercept_s": 24.0113,
         "laps": [
-          2,
-          3,
-          4,
-          5,
           6,
           7,
           8,
@@ -134,8 +130,8 @@
         "last_run_lap": 20,
         "method": "ordinary_least_squares_on_run_lap",
         "reason": null,
-        "scatter_s": 0.0098,
-        "slope_s_per_lap": 0.0119,
+        "scatter_s": 0.01,
+        "slope_s_per_lap": 0.0116,
         "status": "measured"
       },
       "laps": [
@@ -348,10 +344,13 @@
       },
       "noise": {
         "difference_count": 14,
+        "difference_noise_s": 0.021,
         "first_run_lap": 6,
-        "method": "mad_of_consecutive_clean_lap_differences",
+        "method": "larger_of_lap_to_lap_and_fit_residual",
         "noise_s": 0.021,
         "reason": null,
+        "residual_lap_count": 15,
+        "residual_noise_s": 0.01,
         "status": "measured"
       },
       "offline_flag_rule_applied": true,
@@ -359,7 +358,7 @@
       "recording": {
         "analysis_id": "fixture-stint-1",
         "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-1\\analysis.json",
-        "number": 2,
+        "number": 3,
         "recorded_at": "2026-08-04T18:00:00+00:00",
         "run_in_recording": 1,
         "runs_in_recording": 1
@@ -613,15 +612,11 @@
         "first_lap": 1,
         "fit": {
           "domain": [
-            2.0,
+            6.0,
             20.0
           ],
-          "eligible_count": 19,
+          "eligible_count": 15,
           "laps": [
-            2,
-            3,
-            4,
-            5,
             6,
             7,
             8,
@@ -641,15 +636,15 @@
           "method": "ordinary_least_squares_on_run_lap",
           "points": [
             {
-              "x": 2.0,
-              "y": 24.031
+              "x": 6.0,
+              "y": 24.081
             },
             {
               "x": 20.0,
-              "y": 24.245
+              "y": 24.243
             }
           ],
-          "slope_s_per_green_lap": 0.0119
+          "slope_s_per_green_lap": 0.0116
         },
         "fit_basis": "fall_off",
         "fit_unavailable_reason": null,
@@ -921,15 +916,18 @@
         "current_median_s": 24.21,
         "delta_s": 0.01,
         "fall_off": {
-          "current_slope_s_per_lap": 0.0121,
-          "delta_s_per_lap": -0.0,
-          "first_run_lap": 2,
-          "label": "Laps 2–18",
+          "current_slope_s_per_lap": 0.012,
+          "delta_s_per_lap": 0.0,
+          "first_run_lap": 6,
+          "label": "Laps 6–18",
           "last_run_lap": 18,
-          "previous_slope_s_per_lap": 0.0121,
+          "previous_slope_s_per_lap": 0.012,
           "reason": null,
+          "same_setup_spread": null,
+          "standard_error_s_per_lap": 0.0022,
+          "statistical_threshold_s_per_lap": 0.0044,
           "status": "measured",
-          "threshold_s_per_lap": 0.0029,
+          "threshold_s_per_lap": 0.0044,
           "verdict": "within_scatter"
         },
         "first_run_lap": 14,
@@ -938,10 +936,16 @@
         ],
         "last_run_lap": 18,
         "noise": {
+          "autocorrelation": 0.0,
+          "autocorrelation_pairs": 36,
           "basis": "these_runs",
           "difference_count": 26,
+          "difference_noise_s": 0.021,
           "noise_s": 0.021,
           "reason": null,
+          "residual_basis": "these_runs",
+          "residual_lap_count": 28,
+          "residual_noise_s": 0.0103,
           "status": "measured"
         },
         "previous_laps": [
@@ -962,7 +966,7 @@
           18
         ],
         "standard_error_s": 0.0166,
-        "summary": "Laps 14–18, 5 laps clean in both runs: median 24.210 s, within the 0.033 s noise threshold of run 1 (24.200 s). Laps 2–5: +0.010 s, within the 0.037 s threshold.",
+        "summary": "Laps 14–18, 5 laps clean in both runs: median 24.210 s, +0.010 s, within the 0.033 s threshold of run 1 (24.200 s). Laps 2–5: +0.010 s, within the 0.037 s threshold.",
         "threshold_s": 0.033,
         "verdict": "within_scatter",
         "window_label": "Laps 14–18",
@@ -976,6 +980,7 @@
             ],
             "current_median_s": 24.062,
             "delta_s": 0.01,
+            "effective_lap_count": 4.0,
             "first_run_lap": 2,
             "key": "early",
             "label": "Laps 2–5",
@@ -994,7 +999,9 @@
               4,
               5
             ],
+            "same_setup_spread": null,
             "standard_error_s": 0.0186,
+            "statistical_threshold_s": 0.037,
             "status": "measured",
             "threshold_s": 0.037,
             "verdict": "within_scatter"
@@ -1009,6 +1016,7 @@
             ],
             "current_median_s": 24.21,
             "delta_s": 0.01,
+            "effective_lap_count": 5.0,
             "first_run_lap": 14,
             "key": "late",
             "label": "Laps 14–18",
@@ -1029,7 +1037,9 @@
               17,
               18
             ],
+            "same_setup_spread": null,
             "standard_error_s": 0.0166,
+            "statistical_threshold_s": 0.033,
             "status": "measured",
             "threshold_s": 0.033,
             "verdict": "within_scatter"
@@ -1063,14 +1073,10 @@
       },
       "fall_off": {
         "equal_age": true,
-        "first_run_lap": 2,
-        "fit_lap_count": 17,
-        "intercept_s": 24.0156,
+        "first_run_lap": 6,
+        "fit_lap_count": 13,
+        "intercept_s": 24.0177,
         "laps": [
-          2,
-          3,
-          4,
-          5,
           6,
           7,
           8,
@@ -1088,8 +1094,8 @@
         "last_run_lap": 18,
         "method": "ordinary_least_squares_on_run_lap",
         "reason": null,
-        "scatter_s": 0.0101,
-        "slope_s_per_lap": 0.0121,
+        "scatter_s": 0.0106,
+        "slope_s_per_lap": 0.012,
         "status": "measured"
       },
       "laps": [
@@ -1284,10 +1290,13 @@
       },
       "noise": {
         "difference_count": 12,
+        "difference_noise_s": 0.021,
         "first_run_lap": 6,
-        "method": "mad_of_consecutive_clean_lap_differences",
+        "method": "larger_of_lap_to_lap_and_fit_residual",
         "noise_s": 0.021,
         "reason": null,
+        "residual_lap_count": 13,
+        "residual_noise_s": 0.0106,
         "status": "measured"
       },
       "offline_flag_rule_applied": true,
@@ -1295,7 +1304,7 @@
       "recording": {
         "analysis_id": "fixture-stint-2",
         "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-2\\analysis.json",
-        "number": 3,
+        "number": 4,
         "recorded_at": "2026-08-04T18:40:00+00:00",
         "run_in_recording": 1,
         "runs_in_recording": 1
@@ -1591,15 +1600,11 @@
         "first_lap": 1,
         "fit": {
           "domain": [
-            2.0,
+            6.0,
             18.0
           ],
-          "eligible_count": 17,
+          "eligible_count": 13,
           "laps": [
-            2,
-            3,
-            4,
-            5,
             6,
             7,
             8,
@@ -1617,15 +1622,15 @@
           "method": "ordinary_least_squares_on_run_lap",
           "points": [
             {
-              "x": 2.0,
-              "y": 24.04
+              "x": 6.0,
+              "y": 24.09
             },
             {
               "x": 18.0,
-              "y": 24.233
+              "y": 24.234
             }
           ],
-          "slope_s_per_green_lap": 0.0121
+          "slope_s_per_green_lap": 0.012
         },
         "fit_basis": "fall_off",
         "fit_unavailable_reason": null,
@@ -1873,15 +1878,25 @@
         "current_median_s": 24.068,
         "delta_s": -0.11,
         "fall_off": {
-          "current_slope_s_per_lap": 0.012,
-          "delta_s_per_lap": -0.0,
-          "first_run_lap": 2,
-          "label": "Laps 2–16",
+          "current_slope_s_per_lap": 0.0116,
+          "delta_s_per_lap": 0.0,
+          "first_run_lap": 6,
+          "label": "Laps 6–16",
           "last_run_lap": 16,
-          "previous_slope_s_per_lap": 0.012,
+          "previous_slope_s_per_lap": 0.0116,
           "reason": null,
+          "same_setup_spread": {
+            "pair_count": 1,
+            "runs": [
+              1,
+              2
+            ],
+            "spread_s_per_lap": 0.0
+          },
+          "standard_error_s_per_lap": 0.00283,
+          "statistical_threshold_s_per_lap": 0.0057,
           "status": "measured",
-          "threshold_s_per_lap": 0.0035,
+          "threshold_s_per_lap": 0.0057,
           "verdict": "within_scatter"
         },
         "first_run_lap": 12,
@@ -1890,10 +1905,16 @@
         ],
         "last_run_lap": 16,
         "noise": {
+          "autocorrelation": 0.0,
+          "autocorrelation_pairs": 36,
           "basis": "these_runs",
           "difference_count": 22,
+          "difference_noise_s": 0.021,
           "noise_s": 0.021,
           "reason": null,
+          "residual_basis": "these_runs",
+          "residual_lap_count": 24,
+          "residual_noise_s": 0.0106,
           "status": "measured"
         },
         "previous_laps": [
@@ -1928,6 +1949,7 @@
             ],
             "current_median_s": 23.952,
             "delta_s": -0.11,
+            "effective_lap_count": 4.0,
             "first_run_lap": 2,
             "key": "early",
             "label": "Laps 2–5",
@@ -1946,7 +1968,22 @@
               4,
               5
             ],
+            "same_setup_spread": {
+              "pair_count": 1,
+              "run_laps": [
+                2,
+                3,
+                4,
+                5
+              ],
+              "runs": [
+                1,
+                2
+              ],
+              "spread_s": 0.01
+            },
             "standard_error_s": 0.0186,
+            "statistical_threshold_s": 0.037,
             "status": "measured",
             "threshold_s": 0.037,
             "verdict": "faster"
@@ -1961,6 +1998,7 @@
             ],
             "current_median_s": 24.068,
             "delta_s": -0.11,
+            "effective_lap_count": 5.0,
             "first_run_lap": 12,
             "key": "late",
             "label": "Laps 12–16",
@@ -1981,7 +2019,23 @@
               15,
               16
             ],
+            "same_setup_spread": {
+              "pair_count": 1,
+              "run_laps": [
+                12,
+                13,
+                14,
+                15,
+                16
+              ],
+              "runs": [
+                1,
+                2
+              ],
+              "spread_s": 0.01
+            },
             "standard_error_s": 0.0166,
+            "statistical_threshold_s": 0.033,
             "status": "measured",
             "threshold_s": 0.033,
             "verdict": "faster"
@@ -2015,14 +2069,10 @@
       },
       "fall_off": {
         "equal_age": true,
-        "first_run_lap": 2,
-        "fit_lap_count": 15,
-        "intercept_s": 23.9067,
+        "first_run_lap": 6,
+        "fit_lap_count": 11,
+        "intercept_s": 23.9113,
         "laps": [
-          2,
-          3,
-          4,
-          5,
           6,
           7,
           8,
@@ -2038,8 +2088,8 @@
         "last_run_lap": 16,
         "method": "ordinary_least_squares_on_run_lap",
         "reason": null,
-        "scatter_s": 0.0101,
-        "slope_s_per_lap": 0.012,
+        "scatter_s": 0.0106,
+        "slope_s_per_lap": 0.0116,
         "status": "measured"
       },
       "laps": [
@@ -2216,10 +2266,13 @@
       },
       "noise": {
         "difference_count": 10,
+        "difference_noise_s": 0.021,
         "first_run_lap": 6,
-        "method": "mad_of_consecutive_clean_lap_differences",
+        "method": "larger_of_lap_to_lap_and_fit_residual",
         "noise_s": 0.021,
         "reason": null,
+        "residual_lap_count": 11,
+        "residual_noise_s": 0.0106,
         "status": "measured"
       },
       "offline_flag_rule_applied": true,
@@ -2227,7 +2280,7 @@
       "recording": {
         "analysis_id": "fixture-stint-3",
         "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-3\\analysis.json",
-        "number": 4,
+        "number": 5,
         "recorded_at": "2026-08-04T19:25:00+00:00",
         "run_in_recording": 1,
         "runs_in_recording": 1
@@ -2419,15 +2472,11 @@
         "first_lap": 1,
         "fit": {
           "domain": [
-            2.0,
+            6.0,
             16.0
           ],
-          "eligible_count": 15,
+          "eligible_count": 11,
           "laps": [
-            2,
-            3,
-            4,
-            5,
             6,
             7,
             8,
@@ -2443,15 +2492,15 @@
           "method": "ordinary_least_squares_on_run_lap",
           "points": [
             {
-              "x": 2.0,
-              "y": 23.931
+              "x": 6.0,
+              "y": 23.981
             },
             {
               "x": 16.0,
-              "y": 24.099
+              "y": 24.097
             }
           ],
-          "slope_s_per_green_lap": 0.012
+          "slope_s_per_green_lap": 0.0116
         },
         "fit_basis": "fall_off",
         "fit_unavailable_reason": null,
@@ -2668,6 +2717,23 @@
     ],
     "rule": "Clean laps use the recording's investigation screen (partial, pit, caution, restart, off-track, close-traffic, incident, damage and timing exclusions). Lap 1 of each run and laps where the car stopped on track (below 15 mph off pit road) are also excluded; stopped laps are not plotted."
   },
+  "short_runs": [
+    {
+      "analysis_id": "fixture-stub",
+      "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stub\\analysis.json",
+      "clean_lap_count": 1,
+      "first_lap": 1,
+      "last_lap": 2,
+      "reason": "1 clean lap after lap 1; 3 are needed to compare a run.",
+      "recorded_at": "2026-08-04T17:55:00+00:00",
+      "recording": 2,
+      "run_in_recording": 1,
+      "run_laps": 2,
+      "runs_in_recording": 1,
+      "session_type": "Offline Testing",
+      "setup_name": "fixture-stub.sto"
+    }
+  ],
   "test_day_id": "test-day-0123456789abcdef",
   "track": {
     "configuration_key": "9001-oval",
@@ -2686,13 +2752,15 @@
     }
   ],
   "verdict_rule": {
-    "comparison": "Over the two runs' common clean length N: laps 2–5 and the last 5 laps up to N from lap 6 on (withheld when N < 8), each on the laps clean in both runs; the verdict is the late window's when it has 3+ such laps, otherwise laps 2–5's. Fall-off is compared over laps 2..N when N ≥ 8.",
+    "autocorrelation": "The day's pooled lag-1 autocorrelation ρ of fall-off fit residuals at consecutive clean laps (8+ pairs, clamped to 0–0.9); n laps count as n_eff = max(1, n × (1 − ρ) ÷ (1 + ρ)). Not measured: n_eff = n.",
+    "comparison": "Over the two runs' common clean length N: laps 2–5 and the last 5 laps up to N from lap 6 on (withheld when N < 8), each on the laps clean in both runs; the verdict is the late window's when it has 3+ such laps, otherwise laps 2–5's. Fall-off is compared over laps 6..N when N ≥ 10; a run with fewer than 3 clean laps is listed in short_runs and not compared.",
+    "fall_off_threshold": "max(0.002 s/lap, multiplier × noise × √((1 + ρ) ÷ (1 − ρ)) × √(1/Sxx₁ + 1/Sxx₂), the largest fall-off difference between two other same-setup runs over the same laps).",
     "median_standard_error_factor": 1.2533,
     "minimum_threshold_s": 0.03,
-    "noise": "1.4826 × median absolute deviation of consecutive clean-lap differences from lap 6 on, ÷ √2; both runs' differences pooled, else the whole day's, else both runs' from lap 2 on (4+ differences needed).",
-    "scatter": "Residual standard deviation of each run's fall-off fit; shown, not used for verdicts.",
+    "noise": "The larger of two estimates from lap 6 on: lap-to-lap, 1.4826 × median absolute deviation of consecutive clean-lap differences ÷ √2 (both runs' differences pooled, else the whole day's, else both runs' from lap 2 on; 4+ needed); and fit residual, the pooled residual standard deviation of both runs' fall-off fits (laps 6 to the last clean lap; else the whole day's).",
+    "scatter": "Residual standard deviation of each run's fall-off fit; the fit-residual noise estimate.",
     "standard_error_multiplier": 2.0,
-    "threshold": "max(minimum, multiplier × √2 × median factor × noise ÷ √n) for n laps clean in both runs."
+    "threshold": "max(minimum, multiplier × √2 × median factor × noise ÷ √n_eff, same-setup spread) for n laps clean in both runs. Same-setup spread: the largest median difference at the same laps between two other runs of the day whose garage setups match and whose conditions are comparable."
   },
   "windows": {
     "early": {
@@ -2701,8 +2769,8 @@
       "last_run_lap": 5
     },
     "fall_off": {
-      "first_run_lap": 2,
-      "label": "Laps 2 to the last clean lap",
+      "first_run_lap": 6,
+      "label": "Laps 6 to the last clean lap",
       "last_run_lap": 20
     },
     "late": {

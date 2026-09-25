@@ -1399,8 +1399,12 @@ def _test_day_fixture() -> dict[str, Any]:
     untimed = _test_day_stint("fixture-garage-only", "2026-08-04T17:50:00+00:00", laps=0, base=24.0,
                               setup=_test_day_setup("56.0%", 1, "40C, 40C, 40C"), ends_on_track=True)
     untimed["runs"] = []  # A recording made in the garage: no timed lap, listed apart from the runs.
+    # Two laps before a reset: one clean lap, too few to compare, listed apart and never plotted.
+    stub = _test_day_stint("fixture-stub", "2026-08-04T17:55:00+00:00", laps=2, base=24.0,
+                           setup=_test_day_setup("56.0%", 1, "40C, 40C, 40C"), ends_on_track=True)
     stints = [
         untimed,
+        stub,
         _test_day_stint("fixture-stint-1", "2026-08-04T18:00:00+00:00", laps=20, base=24.0,
                         setup=_test_day_setup("56.0%", 2, "40C, 40C, 40C")),
         _test_day_stint("fixture-stint-2", "2026-08-04T18:40:00+00:00", laps=18, base=24.01,

@@ -37,8 +37,8 @@ public sealed class TestDayMapperTests
         StringAssert.StartsWith(review.NextChange.SuccessRule.Text, "Beat 24.068 s median on laps 12–16 by at least 0.033 s");
         Assert.AreEqual(3, review.Runs[2].Trend!.RunNumber, "The chart trend belongs to the day's run, not the recording's run.");
         Assert.AreEqual("Run 3 · lap 14", review.Runs[2].Laps.Single(lap => lap.Lap == 14).Label);
-        Assert.AreEqual(new TestDayRecording(4, "fixture-stint-3", review.Runs[2].AnalysisPath, "2026-08-04T19:25:00+00:00", 1, 1), review.Runs[2].Recording,
-            "Recording 1 of the day has no timed lap; it is listed apart and never a run.");
+        Assert.AreEqual(new TestDayRecording(5, "fixture-stint-3", review.Runs[2].AnalysisPath, "2026-08-04T19:25:00+00:00", 1, 1), review.Runs[2].Recording,
+            "Recording 1 of the day has no timed lap and recording 2 one clean lap; both are listed apart and never a run.");
 
         var lastStop = review.Runs[2].Tires;
         Assert.IsFalse(lastStop.StopReading.Measured);
@@ -93,6 +93,53 @@ public sealed class TestDayMapperTests
         var wrong = Fixture();
         wrong["runs"]![2]!["comparison"]!["windows"]!["late"]!["run_laps"] = "12-16";
         StringAssert.Contains(Assert.ThrowsExactly<JsonException>(() => Map(wrong)).Message, "runs[2].comparison.windows.late.run_laps");
+    }
+
+    [TestMethod]
+    public void MapperReadsShortRunsTheNoiseEstimatesAndTheSameSetupSpread()
+    {
+        // IRP 9/24: four stubs between resets were rows; the verdicts ignored pace that wandered for laps at a time.
+        var review = Map(Fixture());
+
+        var stub = review.ShortRuns.Single();
+        Assert.AreEqual(new TestDayShortRun(2, "fixture-stub", stub.AnalysisPath, "2026-08-04T17:55:00+00:00", "Offline Testing", "fixture-stub.sto",
+            1, 1, 1, 2, 2, 1, "1 clean lap after lap 1; 3 are needed to compare a run."), stub);
+        var comparison = review.Runs[2].Comparison!;
+        Assert.AreEqual(0.021, comparison.Noise!.DifferenceNoiseSeconds);
+        Assert.AreEqual(0.0106, comparison.Noise.ResidualNoiseSeconds);
+        Assert.AreEqual("these_runs", comparison.Noise.ResidualBasis);
+        Assert.AreEqual(0.0, comparison.Noise.Autocorrelation);
+        var late = comparison.LateWindow!;
+        Assert.AreEqual(0.033, late.StatisticalThresholdSeconds);
+        Assert.AreEqual(5.0, late.EffectiveLapCount);
+        Assert.AreEqual(0.01, late.SameSetupSpread!.SpreadSeconds);
+        CollectionAssert.AreEqual(new[] { 1, 2 }, late.SameSetupSpread.Runs.ToArray());
+        Assert.AreEqual("Laps 6–16", comparison.FallOff!.Label, "Fall-off starts after laps 2–5, where the tires come in.");
+        Assert.AreEqual(0.0057, comparison.FallOff.StatisticalThresholdSecondsPerLap);
+        Assert.AreEqual(0.0, comparison.FallOff.SameSetupSpread!.SpreadSecondsPerLap);
+        Assert.IsNull(review.Runs[1].Comparison!.LateWindow!.SameSetupSpread, "No other same-setup pair: nothing stands in for it.");
+
+        // A v1 backend from before these fields: absent reads as empty or missing, never as zero or a failure.
+        var older = Fixture();
+        older.Remove("short_runs");
+        foreach (var run in older["runs"]!.AsArray())
+        {
+            if (run!["comparison"] is not JsonObject compared) continue;
+            foreach (var key in new[] { "difference_noise_s", "residual_noise_s", "residual_basis", "autocorrelation" }) compared["noise"]!.AsObject().Remove(key);
+            foreach (var window in compared["windows"]!.AsObject())
+                foreach (var key in new[] { "statistical_threshold_s", "effective_lap_count", "same_setup_spread" }) window.Value!.AsObject().Remove(key);
+            compared["fall_off"]!.AsObject().Remove("same_setup_spread");
+        }
+        var mapped = Map(older);
+        Assert.IsEmpty(mapped.ShortRuns);
+        Assert.IsNull(mapped.Runs[2].Comparison!.Noise!.ResidualNoiseSeconds);
+        Assert.IsNull(mapped.Runs[2].Comparison!.LateWindow!.EffectiveLapCount);
+        Assert.IsNull(mapped.Runs[2].Comparison!.LateWindow!.SameSetupSpread);
+        Assert.IsNull(mapped.Runs[2].Comparison!.FallOff!.SameSetupSpread);
+
+        var wrong = Fixture();
+        wrong["short_runs"]![0]!["clean_lap_count"] = "one";
+        StringAssert.Contains(Assert.ThrowsExactly<JsonException>(() => Map(wrong)).Message, "short_runs[0].clean_lap_count");
     }
 
     [TestMethod]

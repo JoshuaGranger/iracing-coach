@@ -114,7 +114,9 @@
     [Parameter] public bool FocusableLaps { get; set; } = true;
     /// <summary>
     /// Scale the time axis to eligible laps only, so one excluded outlier (a 62 s lap where the car
-    /// stopped) cannot squash every clean lap into a flat line; excluded laps beyond it sit on the edge.
+    /// stopped) cannot squash every clean lap into a flat line, and to their robust range: a clean lap
+    /// more than three interquartile ranges outside the middle half (a 28 s lap of a stub after a reset)
+    /// sits on the edge like an excluded one.
     /// </summary>
     [Parameter] public bool ScaleToEligible { get; set; }
     [Parameter] public string EmptyTitle { get; set; } = "No plotted laps with known run exposure";
@@ -139,12 +141,32 @@
         {
             var eligible = ScaleToEligible ? Points.Where(point => point.Eligible).ToArray() : [];
             var times = (eligible.Length > 0 ? eligible : Points).Select(point => point.LapTimeSeconds!.Value).ToArray();
-            var min = times.Min();
-            var max = times.Max();
+            var (min, max) = ScaleToEligible ? RobustRange(times) : (times.Min(), times.Max());
             var pad = Math.Max(.08, (max - min) * .06);
             var exposure = Points.Max(point => point.GreenExposure!.Value);
             return new PlotScale(44, 18, Math.Max(60, Width - 56), Math.Max(60, Height - 18 - 40), 0, Math.Max(1, exposure * 1.02), min - pad, max + pad);
         }
+    }
+
+    /// <summary>
+    /// The fastest and slowest lap times within three interquartile ranges (at least 0.1 s) of the middle
+    /// half; laps beyond that sit on the edge. Fewer than four laps keep their whole range.
+    /// </summary>
+    public static (double Min, double Max) RobustRange(IReadOnlyList<double> times)
+    {
+        var sorted = times.Order().ToArray();
+        if (sorted.Length < 4) return (sorted[0], sorted[^1]);
+        double Quantile(double q)
+        {
+            var position = q * (sorted.Length - 1);
+            var lower = (int)Math.Floor(position);
+            var upper = Math.Min(lower + 1, sorted.Length - 1);
+            return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+        }
+        var (q1, q3) = (Quantile(.25), Quantile(.75));
+        var fence = 3 * Math.Max(q3 - q1, .1);
+        var inside = sorted.Where(time => time >= q1 - fence && time <= q3 + fence).ToArray();
+        return (inside[0], inside[^1]);
     }
 
     private static string TrendPath(PlotScale plot, IReadOnlyList<RaceTrendPoint> segment) =>

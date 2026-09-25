@@ -3,15 +3,18 @@
 A test day is 1-12 archived recordings of one car at one track configuration
 holding two or more timed runs. A run is the laps between two pit visits, so
 one recording can hold several (an official practice split by garage and pit
-visits) and every timed run is a row; a recording without a timed lap is
-listed once, apart from the rows. Each recording keeps one garage sheet. The
-review measures, for every run, the median of clean laps 2-5 and of its own
-last five clean laps (from lap 6 on), a least-squares fall-off over its whole
-clean length, and its lap-to-lap noise (the spread of consecutive clean-lap
-differences after lap 5, where warm-up curvature no longer dominates). Two
-runs are compared over their common clean length N: laps 2-5, the last five
-laps up to N (withheld below eight laps so it never overlaps laps 2-5), and
-the fall-off over laps 2..N, each against a threshold built from the noise.
+visits) and every timed run with three or more clean laps is a row; a
+recording without a timed lap, and a shorter run (the one- or two-lap stubs
+between resets), are listed once, apart from the rows. Each recording keeps
+one garage sheet. The review measures, for every run, the median of clean
+laps 2-5 and of its own last five clean laps (from lap 6 on), a least-squares
+fall-off from lap 6 (after the warm-up of laps 2-5) to its last clean lap,
+and its lap noise after lap 5: the larger of the lap-to-lap spread and the
+fall-off fit's residual. Two runs are compared over their common clean length
+N: laps 2-5, the last five laps up to N (withheld below eight laps so it never
+overlaps laps 2-5), and the fall-off over laps 6..N (withheld below ten), each
+against a threshold built from the noise, widened when laps wander together
+and never below what two other runs of the day on one setup differed by.
 It also states the garage-setup change from the previous run (tire readings
 and computed readouts excluded; not recorded between two runs of one
 recording), whether the two runs can be compared at all, and the tire
@@ -70,20 +73,35 @@ LATE_WINDOW_LAPS = 5
 MINIMUM_WINDOW_LAPS = 3
 # A late window needs MINIMUM_WINDOW_LAPS laps after laps 2-5, so it never overlaps them.
 MINIMUM_LATE_RUN_LAPS = EARLY_WINDOW[1] + MINIMUM_WINDOW_LAPS
-# Laps 2-5 are the tires coming in; a shorter run's slope is that warm-up, not fall-off.
-MINIMUM_FALL_OFF_RUN_LAPS = MINIMUM_LATE_RUN_LAPS
+# A timed run with fewer clean laps than one window needs is listed apart, never a row or a plot.
+MINIMUM_COMPARED_CLEAN_LAPS = MINIMUM_WINDOW_LAPS
+# Laps 2-5 are the tires coming in. Lap noise, fit residuals and fall-off start at lap 6.
+NOISE_FIRST_RUN_LAP = EARLY_WINDOW[1] + 1
+FALL_OFF_FIRST_RUN_LAP = NOISE_FIRST_RUN_LAP
+# A fall-off fit (and the residual spread it measures) needs five clean laps from lap 6 on.
+MINIMUM_FIT_LAPS = LATE_WINDOW_LAPS
+MINIMUM_FALL_OFF_RUN_LAPS = FALL_OFF_FIRST_RUN_LAP + MINIMUM_FIT_LAPS - 1
 MINIMUM_THRESHOLD_S = 0.03
 MINIMUM_SLOPE_THRESHOLD_S = 0.002
 STANDARD_ERROR_MULTIPLIER = 2.0
 # Standard error of a median of n normal observations is sqrt(pi/2) * sd / sqrt(n).
 MEDIAN_STANDARD_ERROR_FACTOR = math.sqrt(math.pi / 2.0)
-# Lap-to-lap noise: 1.4826 * MAD of consecutive clean-lap differences / sqrt(2)
-# (a difference of two independent laps has sqrt(2) times one lap's spread).
-# Only laps after the early window count, so the warm-up ramp and its bend do
-# not inflate it, and the median ignores the occasional step between laps.
-NOISE_FIRST_RUN_LAP = EARLY_WINDOW[1] + 1
+# Lap noise is the larger of two estimates from lap 6 on. Lap-to-lap: 1.4826 *
+# MAD of consecutive clean-lap differences / sqrt(2) (a difference of two
+# independent laps has sqrt(2) times one lap's spread); it sees only short-term
+# jitter. Fit residual: the residual standard deviation of each run's own
+# fall-off fit; it sees pace that wanders for several laps. The IRP 9/24 bot
+# repeated laps to a few thousandths yet moved between 23.2 s and 23.5 s for
+# stretches of 3-5 laps after lap 6: lap-to-lap 0.03-0.06 s, fit residual
+# 0.10-0.17 s, and two runs of one garage setup 0.247 s apart on laps 15-19.
 MINIMUM_NOISE_DIFFERENCES = 4
 MAD_TO_STANDARD_DEVIATION = 1.4826
+# Laps that wander together are fewer independent samples: n laps with lag-1
+# autocorrelation rho count as n (1 - rho) / (1 + rho), at least one. rho is
+# the day's pooled autocorrelation of fit residuals, measured from 8+ pairs of
+# consecutive clean laps, and capped so a window keeps some weight.
+MINIMUM_AUTOCORRELATION_PAIRS = 8
+MAXIMUM_AUTOCORRELATION = 0.9
 # A stall pressure this close to the set cold pressure is that setting, not a hot reading.
 COLD_SETTING_MATCH_PSI = 0.25
 USED_TIRE_ODOMETER_M = 250.0
@@ -527,7 +545,7 @@ def _too_short(stint: Mapping[str, Any], length: int, what: str) -> str:
         return "No clean lap was recorded."
     if what == "fall-off":
         return (f"Too short for fall-off: the last clean lap is lap {length}; {MINIMUM_FALL_OFF_RUN_LAPS} are needed "
-                f"so laps {EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}, where the tires come in, are not read as fall-off.")
+                f"so the fit has {MINIMUM_FIT_LAPS} laps after laps {EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}, where the tires come in.")
     return (f"Too short for a late window: the last clean lap is lap {length}; {MINIMUM_LATE_RUN_LAPS} are needed "
             f"so it does not overlap laps {EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}.")
 
@@ -543,28 +561,37 @@ def _own_late(stint: Mapping[str, Any]) -> dict[str, Any]:
     return _window(stint, *span)
 
 
-def _fit(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+def _fit(rows: Sequence[Mapping[str, Any]], minimum: int = MINIMUM_WINDOW_LAPS) -> dict[str, Any] | None:
     try:
         from .analysis_engine import _linear_slope
     except ImportError:  # pragma: no cover
         from analysis_engine import _linear_slope
     points = [(float(row["run_lap"]), float(row["lap_time_s"])) for row in rows]
-    slope = _linear_slope(points) if len(points) >= MINIMUM_WINDOW_LAPS else None
+    slope = _linear_slope(points) if len(points) >= max(minimum, MINIMUM_WINDOW_LAPS) else None
     if slope is None:
         return None
     mean_x = statistics.fmean(x for x, _ in points)
     mean_y = statistics.fmean(y for _, y in points)
     intercept = mean_y - slope * mean_x
-    residuals = [y - (intercept + slope * x) for x, y in points]
-    scatter = math.sqrt(sum(value * value for value in residuals) / (len(points) - 2)) if len(points) > 2 else None
-    return {"slope": slope, "intercept": intercept, "scatter": scatter,
+    residuals = {int(x): y - (intercept + slope * x) for x, y in points}
+    scatter = math.sqrt(sum(value * value for value in residuals.values()) / (len(points) - 2)) if len(points) > 2 else None
+    return {"slope": slope, "intercept": intercept, "scatter": scatter, "residuals": residuals,
             "sxx": sum((x - mean_x) ** 2 for x, _ in points), "count": len(points)}
 
 
-def _fall_off(stint: Mapping[str, Any]) -> dict[str, Any]:
-    """Least-squares fall-off over the run's whole clean length, laps 2..last clean lap."""
+def _post_warm_up_fit(stint: Mapping[str, Any], length: int | None = None) -> dict[str, Any] | None:
+    """Least-squares fit of the clean laps from lap 6 to ``length`` (the run's clean length by default)."""
 
-    first = EARLY_WINDOW[0]
+    last = _clean_length(stint) if length is None else length
+    if last < MINIMUM_FALL_OFF_RUN_LAPS:
+        return None
+    return _fit(_clean_rows(stint, FALL_OFF_FIRST_RUN_LAP, last), MINIMUM_FIT_LAPS)
+
+
+def _fall_off(stint: Mapping[str, Any]) -> dict[str, Any]:
+    """Least-squares fall-off from lap 6, the first lap after the warm-up of laps 2-5, to the run's last clean lap."""
+
+    first = FALL_OFF_FIRST_RUN_LAP
     length = _clean_length(stint)
     clean = _clean_rows(stint, first, length) if length >= first else []
     result = {"first_run_lap": first, "last_run_lap": length if length >= first else None, "fit_lap_count": len(clean),
@@ -574,10 +601,10 @@ def _fall_off(stint: Mapping[str, Any]) -> dict[str, Any]:
     if length < MINIMUM_FALL_OFF_RUN_LAPS:
         result["reason"] = _too_short(stint, length, "fall-off")
         return result
-    fit = _fit(clean)
+    fit = _post_warm_up_fit(stint, length)
     if fit is None:
-        span = _window_label(first, max(length, first)).lower()
-        result["reason"] = f"{len(clean)} clean lap{'s' if len(clean) != 1 else ''} in {span}; {MINIMUM_WINDOW_LAPS} are needed."
+        span = _window_label(first, length).lower()
+        result["reason"] = f"{len(clean)} clean lap{'s' if len(clean) != 1 else ''} in {span}; {MINIMUM_FIT_LAPS} are needed."
         return result
     result.update(status="measured", equal_age=True, slope_s_per_lap=_round(fit["slope"], 4), intercept_s=_round(fit["intercept"], 4),
                   scatter_s=_round(fit["scatter"], 4))
@@ -599,55 +626,192 @@ def _noise_from(differences: Sequence[float]) -> float | None:
     return MAD_TO_STANDARD_DEVIATION * spread / math.sqrt(2.0)
 
 
+def _residual_spread(stints: Sequence[Mapping[str, Any]]) -> tuple[float | None, int]:
+    """Pooled residual standard deviation of the runs' own fall-off fits, and the laps behind it."""
+
+    fits = [fit for stint in stints if (fit := _post_warm_up_fit(stint)) is not None]
+    freedom = sum(fit["count"] - 2 for fit in fits)
+    if freedom <= 0:
+        return None, 0
+    total = sum(value * value for fit in fits for value in fit["residuals"].values())
+    return math.sqrt(total / freedom), sum(fit["count"] for fit in fits)
+
+
+def _autocorrelation(stints: Sequence[Mapping[str, Any]]) -> tuple[float | None, int]:
+    """Pooled lag-1 autocorrelation of the runs' fit residuals at consecutive clean laps, clamped to [0, 0.9]."""
+
+    fits = [fit for stint in stints if (fit := _post_warm_up_fit(stint)) is not None]
+    products = [fit["residuals"][age] * fit["residuals"][age + 1] for fit in fits for age in fit["residuals"] if age + 1 in fit["residuals"]]
+    total = sum(value * value for fit in fits for value in fit["residuals"].values())
+    if len(products) < MINIMUM_AUTOCORRELATION_PAIRS or total <= 0:
+        return None, len(products)
+    return min(MAXIMUM_AUTOCORRELATION, max(0.0, sum(products) / total)), len(products)
+
+
 def _run_noise(stint: Mapping[str, Any]) -> dict[str, Any]:
+    """This run's lap noise after the warm-up: the larger of its lap-to-lap and fit-residual estimates."""
+
     differences = _differences(stint)
-    noise = _noise_from(differences)
+    lap_to_lap = _noise_from(differences)
+    fit = _post_warm_up_fit(stint)
+    residual = fit["scatter"] if fit is not None else None
+    values = [value for value in (lap_to_lap, residual) if value is not None]
+    noise = max(values) if values else None
     return {"status": "measured" if noise is not None else "not_measured", "noise_s": _round(noise, 4),
-            "difference_count": len(differences), "first_run_lap": NOISE_FIRST_RUN_LAP,
-            "method": "mad_of_consecutive_clean_lap_differences",
+            "difference_noise_s": _round(lap_to_lap, 4), "residual_noise_s": _round(residual, 4),
+            "difference_count": len(differences), "residual_lap_count": fit["count"] if fit is not None else 0,
+            "first_run_lap": NOISE_FIRST_RUN_LAP, "method": "larger_of_lap_to_lap_and_fit_residual",
             "reason": None if noise is not None else
             (f"{len(differences)} pair{'s' if len(differences) != 1 else ''} of consecutive clean laps from lap "
-             f"{NOISE_FIRST_RUN_LAP} on; {MINIMUM_NOISE_DIFFERENCES} are needed.")}
+             f"{NOISE_FIRST_RUN_LAP} on ({MINIMUM_NOISE_DIFFERENCES} are needed) and no fall-off fit "
+             f"({MINIMUM_FALL_OFF_RUN_LAPS}+ clean laps).")}
+
+
+def _day_context(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """What the whole day measured: its lap noise, the autocorrelation of its fit residuals and its same-setup runs.
+
+    Two runs are a same-setup pair when their recordings' garage setups match
+    (no adjustment changed; computed readouts aside) and nothing blocks their
+    comparison. Their difference at the same laps of the run is what the day
+    shows when no setup changed, so a setup verdict must exceed it.
+    """
+
+    residual, residual_count = _residual_spread(members)
+    autocorrelation, pairs = _autocorrelation(members)
+    same_setup = []
+    for index, first in enumerate(members):
+        for second in members[index + 1:]:
+            if _setup_change(first, second)["status"] == "unchanged" and not _comparability(first, second)[0]:
+                same_setup.append((first, second))
+    return {"differences": [value for item in members for value in _differences(item)],
+            "residual_s": residual, "residual_lap_count": residual_count,
+            "autocorrelation": autocorrelation, "autocorrelation_pairs": pairs, "same_setup": same_setup}
 
 
 def _pair_noise(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, Any]:
-    """Lap-to-lap noise for one comparison: both runs' differences, else the whole day's."""
+    """Lap noise for one comparison: the larger of the lap-to-lap and fit-residual estimates.
 
+    Each comes from both runs, else from the whole day; with no run of the day
+    past lap 5, the lap-to-lap estimate uses both runs from lap 2. The day's
+    autocorrelation of fit residuals travels with it (``_threshold``).
+    """
+
+    day = current.get("day") or {}
     differences = _differences(previous) + _differences(current)
-    noise = _noise_from(differences)
+    lap_to_lap = _noise_from(differences)
     basis = "these_runs"
-    if noise is None:
-        differences = list(current.get("day_differences") or ())
-        noise = _noise_from(differences)
+    if lap_to_lap is None:
+        differences = list(day.get("differences") or ())
+        lap_to_lap = _noise_from(differences)
         basis = "day"
-    if noise is None:
+    if lap_to_lap is None:
         # Short runs only: their laps from lap 2 on. The median difference removes a
         # steady warm-up slope; a bend in it can only widen the threshold.
         differences = _differences(previous, EARLY_WINDOW[0]) + _differences(current, EARLY_WINDOW[0])
-        noise = _noise_from(differences)
-        basis = "these_runs_from_lap_2"
-    if noise is None:
-        return {"status": "not_measured", "noise_s": None, "basis": None, "difference_count": len(differences),
-                "reason": (f"Lap-to-lap noise is not measured: fewer than {MINIMUM_NOISE_DIFFERENCES} pairs of consecutive "
-                           f"clean laps in these runs or, from lap {NOISE_FIRST_RUN_LAP} on, in the rest of the day.")}
-    return {"status": "measured", "noise_s": _round(noise, 4), "basis": basis, "difference_count": len(differences),
-            "reason": None}
+        lap_to_lap = _noise_from(differences)
+        basis = "these_runs_from_lap_2" if lap_to_lap is not None else None
+    residual, residual_count = _residual_spread([previous, current])
+    residual_basis = "these_runs" if residual is not None else None
+    if residual is None and day.get("residual_s") is not None:
+        residual, residual_count, residual_basis = day["residual_s"], day["residual_lap_count"], "day"
+    autocorrelation = day.get("autocorrelation")
+    values = [value for value in (lap_to_lap, residual) if value is not None]
+    result = {"status": "not_measured", "noise_s": None, "basis": basis, "difference_count": len(differences),
+              "difference_noise_s": _round(lap_to_lap, 4), "residual_noise_s": _round(residual, 4),
+              "residual_basis": residual_basis, "residual_lap_count": residual_count,
+              "autocorrelation": _round(autocorrelation, 3), "autocorrelation_pairs": day.get("autocorrelation_pairs", 0),
+              "reason": None}
+    if not values:
+        result["reason"] = (f"Lap noise is not measured: fewer than {MINIMUM_NOISE_DIFFERENCES} pairs of consecutive clean laps "
+                            f"and no run of {MINIMUM_FALL_OFF_RUN_LAPS}+ clean laps in these runs or the rest of the day.")
+        return result
+    result.update(status="measured", noise_s=_round(max(values), 4))
+    return result
 
 
-def _threshold(noise: float, count: int) -> tuple[float, float]:
-    """Combined standard error of two medians of ``count`` laps each, and the verdict threshold."""
+def _threshold(noise: Mapping[str, Any], count: int) -> tuple[float, float, float]:
+    """Combined standard error of two medians of ``count`` laps each, the verdict threshold and the laps' effective count.
 
-    # Each median's standard error comes from the lap-to-lap noise; both runs share it.
-    combined = math.sqrt(2.0) * MEDIAN_STANDARD_ERROR_FACTOR * noise / math.sqrt(count)
-    return combined, round(max(MINIMUM_THRESHOLD_S, STANDARD_ERROR_MULTIPLIER * combined), 3)
+    The medians' standard error uses the lap noise; laps that wander together
+    count as fewer independent laps (``MINIMUM_AUTOCORRELATION_PAIRS``).
+    """
+
+    autocorrelation = _number(noise.get("autocorrelation")) or 0.0
+    effective = max(1.0, count * (1.0 - autocorrelation) / (1.0 + autocorrelation))
+    combined = math.sqrt(2.0) * MEDIAN_STANDARD_ERROR_FACTOR * float(noise["noise_s"]) / math.sqrt(effective)
+    return combined, round(max(MINIMUM_THRESHOLD_S, STANDARD_ERROR_MULTIPLIER * combined), 3), effective
 
 
 def _clean_by_age(stint: Mapping[str, Any], first: int, last: int) -> dict[int, Mapping[str, Any]]:
     return {row["run_lap"]: row for row in _clean_rows(stint, first, last)}
 
 
+def _same_pair(first: Mapping[str, Any], second: Mapping[str, Any], pair: tuple[Mapping[str, Any], Mapping[str, Any]]) -> bool:
+    return {first["number"], second["number"]} == {pair[0]["number"], pair[1]["number"]}
+
+
+def _same_setup_spread(day: Mapping[str, Any], first: int, last: int,
+                       exclude: tuple[Mapping[str, Any], Mapping[str, Any]] | None = None) -> dict[str, Any] | None:
+    """The largest median difference between two other same-setup runs of the day on laps ``first``-``last``."""
+
+    best: tuple[float, Mapping[str, Any], Mapping[str, Any], list[int]] | None = None
+    count = 0
+    for earlier, later in day.get("same_setup") or ():
+        if exclude is not None and _same_pair(earlier, later, exclude):
+            continue
+        before, after = _clean_by_age(earlier, first, last), _clean_by_age(later, first, last)
+        shared = sorted(set(before) & set(after))
+        if len(shared) < MINIMUM_WINDOW_LAPS:
+            continue
+        count += 1
+        spread = abs(statistics.median(after[age]["lap_time_s"] for age in shared)
+                     - statistics.median(before[age]["lap_time_s"] for age in shared))
+        if best is None or spread > best[0]:
+            best = (spread, earlier, later, shared)
+    if best is None:
+        return None
+    return {"spread_s": round(best[0], 3), "runs": [best[1]["number"], best[2]["number"]], "run_laps": best[3], "pair_count": count}
+
+
+def _same_setup_slope_spread(day: Mapping[str, Any], length: int,
+                             exclude: tuple[Mapping[str, Any], Mapping[str, Any]]) -> dict[str, Any] | None:
+    """The largest fall-off difference between two other same-setup runs of the day over laps 6..``length``."""
+
+    best: tuple[float, Mapping[str, Any], Mapping[str, Any]] | None = None
+    count = 0
+    for earlier, later in day.get("same_setup") or ():
+        if _same_pair(earlier, later, exclude):
+            continue
+        fits = [_fit(_clean_rows(item, FALL_OFF_FIRST_RUN_LAP, length), MINIMUM_FIT_LAPS) for item in (earlier, later)]
+        if length < MINIMUM_FALL_OFF_RUN_LAPS or any(fit is None for fit in fits):
+            continue
+        count += 1
+        spread = abs(fits[1]["slope"] - fits[0]["slope"])
+        if best is None or spread > best[0]:
+            best = (spread, earlier, later)
+    if best is None:
+        return None
+    return {"spread_s_per_lap": round(best[0], 4), "runs": [best[1]["number"], best[2]["number"]], "pair_count": count}
+
+
+def _window_threshold(noise: Mapping[str, Any], count: int, first: int, last: int, day: Mapping[str, Any],
+                      exclude: tuple[Mapping[str, Any], Mapping[str, Any]] | None = None) -> dict[str, Any]:
+    """The verdict threshold for ``count`` laps of laps ``first``-``last``: the noise's, or the same-setup spread when larger."""
+
+    combined, statistical, effective = _threshold(noise, count)
+    spread = _same_setup_spread(day, first, last, exclude)
+    threshold = max(statistical, spread["spread_s"] if spread else 0.0)
+    return {"standard_error_s": _round(combined, 4), "statistical_threshold_s": statistical, "threshold_s": round(threshold, 3),
+            "effective_lap_count": round(effective, 1), "same_setup_spread": spread}
+
+
+_PAIR_WINDOW_EMPTY = {"previous_median_s": None, "current_median_s": None, "delta_s": None, "threshold_s": None,
+                      "statistical_threshold_s": None, "standard_error_s": None, "effective_lap_count": None,
+                      "same_setup_spread": None}
+
+
 def _pair_window(previous: Mapping[str, Any], current: Mapping[str, Any], key: str, first: int, last: int,
-                 noise: float | None) -> dict[str, Any]:
+                 noise: Mapping[str, Any]) -> dict[str, Any]:
     """Both runs' medians over the laps of this window that are clean in both, and their verdict."""
 
     label = _window_label(first, last)
@@ -656,63 +820,71 @@ def _pair_window(previous: Mapping[str, Any], current: Mapping[str, Any], key: s
     result: dict[str, Any] = {
         "key": key, "label": label, "first_run_lap": first, "last_run_lap": last, "status": "not_measured", "verdict": None,
         "run_laps": shared, "previous_laps": [before_rows[age]["lap"] for age in shared],
-        "current_laps": [after_rows[age]["lap"] for age in shared],
-        "previous_median_s": None, "current_median_s": None, "delta_s": None, "threshold_s": None,
-        "standard_error_s": None, "reason": None}
+        "current_laps": [after_rows[age]["lap"] for age in shared], **_PAIR_WINDOW_EMPTY, "reason": None}
     if len(shared) < MINIMUM_WINDOW_LAPS:
         result["reason"] = (f"Only {len(shared)} lap{'s' if len(shared) != 1 else ''} of {label.lower()} "
                             f"{'is' if len(shared) == 1 else 'are'} clean in both runs; {MINIMUM_WINDOW_LAPS} are needed at the same laps of the run.")
         return result
     before = _round(statistics.median(before_rows[age]["lap_time_s"] for age in shared))
     after = _round(statistics.median(after_rows[age]["lap_time_s"] for age in shared))
-    result.update(previous_median_s=before, current_median_s=after, delta_s=round(after - before, 3))
-    if noise is None:
-        result["reason"] = "Lap-to-lap noise is not measured, so there is no threshold."
+    result.update(previous_median_s=before, current_median_s=after, delta_s=round(after - before, 3) + 0.0)  # + 0.0: never -0.0
+    if noise.get("status") != "measured":
+        result["reason"] = "Lap noise is not measured, so there is no threshold."
         return result
-    combined, threshold = _threshold(noise, len(shared))
-    delta = result["delta_s"]
-    result.update(status="measured", threshold_s=threshold, standard_error_s=_round(combined, 4),
-                  verdict="faster" if delta < -threshold else "slower" if delta > threshold else "within_scatter")
+    result.update(_window_threshold(noise, len(shared), first, last, current.get("day") or {}, (previous, current)))
+    delta, threshold = result["delta_s"], result["threshold_s"]
+    result.update(status="measured", verdict="faster" if delta < -threshold else "slower" if delta > threshold else "within_scatter")
     return result
 
 
 def _withheld_late(length: int) -> dict[str, Any]:
     return {"key": "late", "label": None, "first_run_lap": None, "last_run_lap": None, "status": "withheld", "verdict": None,
-            "run_laps": [], "previous_laps": [], "current_laps": [], "previous_median_s": None, "current_median_s": None,
-            "delta_s": None, "threshold_s": None, "standard_error_s": None,
+            "run_laps": [], "previous_laps": [], "current_laps": [], **_PAIR_WINDOW_EMPTY,
             "reason": ("One of the runs has no clean lap." if not length else
                        f"The shorter run's last clean lap is lap {length}; a late window needs {MINIMUM_LATE_RUN_LAPS} laps "
                        f"so it does not overlap laps {EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}.")}
 
 
-def _pair_fall_off(previous: Mapping[str, Any], current: Mapping[str, Any], length: int, noise: float | None) -> dict[str, Any]:
-    """Both runs' fall-off over the same laps 2..N and whether they differ beyond the noise."""
+def _pair_fall_off(previous: Mapping[str, Any], current: Mapping[str, Any], length: int, noise: Mapping[str, Any]) -> dict[str, Any]:
+    """Both runs' fall-off over the same laps 6..N and whether they differ beyond the noise.
 
-    first = EARLY_WINDOW[0]
+    The slopes' standard error uses the lap noise (the runs' fit residuals when
+    larger), widened by the autocorrelation of laps that wander together; a
+    difference must also exceed the fall-off difference between two other
+    same-setup runs of the day over the same laps.
+    """
+
+    first = FALL_OFF_FIRST_RUN_LAP
     result: dict[str, Any] = {"first_run_lap": first, "last_run_lap": length if length >= first else None,
                               "label": _window_label(first, length) if length >= first else None, "status": "not_measured",
                               "previous_slope_s_per_lap": None, "current_slope_s_per_lap": None, "delta_s_per_lap": None,
-                              "threshold_s_per_lap": None, "verdict": None, "reason": None}
+                              "threshold_s_per_lap": None, "statistical_threshold_s_per_lap": None,
+                              "standard_error_s_per_lap": None, "same_setup_spread": None, "verdict": None, "reason": None}
     if length < MINIMUM_FALL_OFF_RUN_LAPS:
-        # No label: "laps 2–5" would read as a fall-off measured over the warm-up.
+        # No label: "laps 6–8" would read as a fall-off measured from too few laps.
         result.update(status="withheld", label=None, reason="One of the runs has no clean lap." if not length else (
             f"Too short for fall-off: the shorter run's last clean lap is lap {length}; {MINIMUM_FALL_OFF_RUN_LAPS} are needed "
-            f"so laps {EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}, where the tires come in, are not read as fall-off."))
+            f"so the fit has {MINIMUM_FIT_LAPS} laps after laps {EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}, where the tires come in."))
         return result
-    fits = [_fit(_clean_rows(item, first, length)) for item in (previous, current)]
+    fits = [_fit(_clean_rows(item, first, length), MINIMUM_FIT_LAPS) for item in (previous, current)]
     if any(fit is None for fit in fits):
-        result["reason"] = f"Fewer than {MINIMUM_WINDOW_LAPS} clean laps in {result['label'].lower()} in one of the runs."
+        result["reason"] = f"Fewer than {MINIMUM_FIT_LAPS} clean laps in {result['label'].lower()} in one of the runs."
         return result
     before, after = fits
-    delta = after["slope"] - before["slope"]
+    delta = _round(after["slope"] - before["slope"], 4) + 0.0  # never -0.0
     result.update(previous_slope_s_per_lap=_round(before["slope"], 4), current_slope_s_per_lap=_round(after["slope"], 4),
-                  delta_s_per_lap=_round(delta, 4))
-    if noise is None or before["sxx"] <= 0 or after["sxx"] <= 0:
-        result["reason"] = "Lap-to-lap noise is not measured, so there is no threshold."
+                  delta_s_per_lap=delta)
+    if noise.get("status") != "measured" or before["sxx"] <= 0 or after["sxx"] <= 0:
+        result["reason"] = "Lap noise is not measured, so there is no threshold."
         return result
-    threshold = max(MINIMUM_SLOPE_THRESHOLD_S,
-                    STANDARD_ERROR_MULTIPLIER * noise * math.sqrt(1.0 / before["sxx"] + 1.0 / after["sxx"]))
-    result.update(status="measured", threshold_s_per_lap=_round(threshold, 4),
+    autocorrelation = _number(noise.get("autocorrelation")) or 0.0
+    inflation = math.sqrt((1.0 + autocorrelation) / (1.0 - autocorrelation))
+    error = float(noise["noise_s"]) * inflation * math.sqrt(1.0 / before["sxx"] + 1.0 / after["sxx"])
+    statistical = round(max(MINIMUM_SLOPE_THRESHOLD_S, STANDARD_ERROR_MULTIPLIER * error), 4)
+    spread = _same_setup_slope_spread(current.get("day") or {}, length, (previous, current))
+    threshold = round(max(statistical, spread["spread_s_per_lap"] if spread else 0.0), 4)
+    result.update(status="measured", threshold_s_per_lap=threshold, statistical_threshold_s_per_lap=statistical,
+                  standard_error_s_per_lap=_round(error, 5), same_setup_spread=spread,
                   verdict="more_fall_off" if delta > threshold else "less_fall_off" if delta < -threshold else "within_scatter")
     return result
 
@@ -773,13 +945,23 @@ def _window_sentence(window: Mapping[str, Any]) -> str:
     return window["reason"] or ""
 
 
+def _threshold_sentence(window: Mapping[str, Any]) -> str:
+    """' Runs 1 and 5 used the same setup and differed by 0.247 s here.' when that set the threshold."""
+
+    spread = window.get("same_setup_spread")
+    if not spread or spread["spread_s"] < (window.get("statistical_threshold_s") or 0.0):
+        return ""
+    first, second = spread["runs"]
+    return f" Runs {first} and {second} used one garage setup and differed by {spread['spread_s']:.3f} s on these laps."
+
+
 def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, Any]:
     """This run against an earlier one over their common clean length N.
 
     Laps 2-5, the last five laps up to N (from lap 6 on, withheld below eight
-    laps) and the fall-off over laps 2..N are each compared on the laps clean in
-    both runs. The verdict is the late window's when it is measured, otherwise
-    laps 2-5's; both windows are reported.
+    laps) and the fall-off over laps 6..N (withheld below ten) are each compared
+    on the laps clean in both runs. The verdict is the late window's when it is
+    measured, otherwise laps 2-5's; both windows are reported.
     """
 
     blocking, flags = _comparability(previous, current)
@@ -795,11 +977,10 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
         result.update(blocked_by="conditions", summary=f"Not comparable with run {previous['number']}: " + " ".join(reasons))
         return result
     noise = _pair_noise(previous, current)
-    sigma = noise["noise_s"]
     span = _late_span(length)
-    windows = {"early": _pair_window(previous, current, "early", EARLY_WINDOW[0], EARLY_WINDOW[1], sigma),
-               "late": _pair_window(previous, current, "late", span[0], span[1], sigma) if span else _withheld_late(length)}
-    result.update(noise=noise, windows=windows, fall_off=_pair_fall_off(previous, current, length, sigma))
+    windows = {"early": _pair_window(previous, current, "early", EARLY_WINDOW[0], EARLY_WINDOW[1], noise),
+               "late": _pair_window(previous, current, "late", span[0], span[1], noise) if span else _withheld_late(length)}
+    result.update(noise=noise, windows=windows, fall_off=_pair_fall_off(previous, current, length, noise))
     candidates = [window for window in (windows["late"], windows["early"]) if window["status"] != "withheld"]
     usable = [window for window in candidates if len(window["run_laps"]) >= MINIMUM_WINDOW_LAPS]
     if not usable:
@@ -808,7 +989,7 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
         result.update(blocked_by="measurement", reasons=[reason], reason_codes=["measurement"],
                       summary=f"Not comparable with run {previous['number']}: {reason}")
         return result
-    if sigma is None:
+    if noise["status"] != "measured":
         reason = noise["reason"]
         result.update(blocked_by="measurement", reasons=[reason], reason_codes=["scatter"],
                       summary=f"Not comparable with run {previous['number']}: {reason}")
@@ -818,7 +999,7 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
     verdict, delta, threshold = window["verdict"], window["delta_s"], window["threshold_s"]
     before, after, ages = window["previous_median_s"], window["current_median_s"], window["run_laps"]
     words = {"faster": f"{-delta:.3f} s faster than", "slower": f"{delta:.3f} s slower than",
-             "within_scatter": f"within the {threshold:.3f} s noise threshold of"}[verdict]
+             "within_scatter": f"{delta:+.3f} s, within the {threshold:.3f} s threshold of"}[verdict]
     result.update(verdict=verdict, basis=f"{window['key']}_window", window_label=window["label"],
                   first_run_lap=window["first_run_lap"], last_run_lap=window["last_run_lap"],
                   run_laps=ages, previous_laps=window["previous_laps"], current_laps=window["current_laps"],
@@ -827,6 +1008,7 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
                   summary=(f"{window['label']}, {len(ages)} laps clean in both runs: median {after:.3f} s, {words} "
                            f"run {previous['number']} ({before:.3f} s)"
                            + ("." if verdict == "within_scatter" else f"; threshold {threshold:.3f} s.")
+                           + _threshold_sentence(window)
                            + "".join(f" {_window_sentence(item)}" for item in others if _window_sentence(item))))
     return result
 
@@ -1050,10 +1232,11 @@ def _rule_window(comparison: Mapping[str, Any], reference: Mapping[str, Any], si
     if comparison.get("basis") == "late_window":
         return _pair_reference(comparison, side), comparison.get("threshold_s")
     late = reference["late"]
-    noise = _number((comparison.get("noise") or {}).get("noise_s"))
-    if late["status"] == "measured" and noise is not None and late["clean_lap_count"]:
+    noise = comparison.get("noise") or {}
+    if late["status"] == "measured" and noise.get("status") == "measured" and late["clean_lap_count"]:
+        rule = _window_threshold(noise, late["clean_lap_count"], late["first_run_lap"], late["last_run_lap"], reference.get("day") or {})
         return ({"label": late["label"], "first_run_lap": late["first_run_lap"], "last_run_lap": late["last_run_lap"],
-                 "median_s": late["median_s"]}, _threshold(noise, late["clean_lap_count"])[1])
+                 "median_s": late["median_s"]}, rule["threshold_s"])
     return _pair_reference(comparison, side), comparison.get("threshold_s")
 
 
@@ -1343,6 +1526,20 @@ def _untimed(entry: Mapping[str, Any]) -> dict[str, Any]:
             "reason": "No timed lap was recorded."}
 
 
+def _short_run(entry: Mapping[str, Any]) -> dict[str, Any]:
+    """A timed run with fewer clean laps than one window needs: listed once, never a row, never plotted."""
+
+    clean = len(_clean_rows(entry))
+    run = entry["run"]
+    return {"recording": entry["recording_number"], "analysis_id": entry["analysis_id"], "analysis_path": entry["analysis_path"],
+            "recorded_at": entry["recorded_at"], "session_type": entry["session_type"], "setup_name": entry["setup_name"],
+            "run_in_recording": entry["run_in_recording"], "runs_in_recording": entry["run_count"],
+            "first_lap": int(run["start_lap"]), "last_lap": int(run["end_lap"]), "run_laps": entry["run_laps"],
+            "clean_lap_count": clean,
+            "reason": (f"{'No' if not clean else clean} clean lap{'s' if clean != 1 else ''} after lap 1; "
+                       f"{MINIMUM_COMPARED_CLEAN_LAPS} are needed to compare a run.")}
+
+
 def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] | None = None, *,
                           analysis_paths: Sequence[str | None] | None = None) -> dict[str, Any]:
     """Review the runs of 1-12 recordings of one test day. Pure: reads the analyses, writes nothing."""
@@ -1364,16 +1561,25 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
         raise TestDayError("The same recording was supplied more than once.")
     recordings.sort(key=lambda entries: (entries[0]["recorded"], entries[0]["analysis_id"] or "", entries[0]["index"]))
     stints = []
+    short = []
     untimed = []
     for recording_number, entries in enumerate(recordings, start=1):
         for entry in entries:
             entry["recording_number"] = recording_number
-            # A recording without a timed lap is listed once, apart from the runs: it has nothing to compare.
-            (stints if entry["run"] is not None else untimed).append(entry)
+            # A recording without a timed lap, or a run too short to hold one window (the stubs
+            # between resets), is listed once apart from the runs: it has nothing to compare.
+            if entry["run"] is None:
+                untimed.append(entry)
+            elif len(_clean_rows(entry)) < MINIMUM_COMPARED_CLEAN_LAPS:
+                short.append(entry)
+            else:
+                stints.append(entry)
     if len(stints) < MINIMUM_RUNS:
+        apart = [*([f"{len(short)} run{'s have' if len(short) != 1 else ' has'} fewer than {MINIMUM_COMPARED_CLEAN_LAPS} clean laps"] if short else []),
+                 *([f"{len(untimed)} recording{'s have' if len(untimed) != 1 else ' has'} no timed lap"] if untimed else [])]
         raise TestDayError(f"A test day needs at least {MINIMUM_RUNS} runs; "
                            f"{'this recording holds' if len(recordings) == 1 else 'these recordings hold'} {len(stints)}"
-                           + (f" ({len(untimed)} recording{'s have' if len(untimed) != 1 else ' has'} no timed lap)." if untimed else "."))
+                           + (f" ({'; '.join(apart)})." if apart else "."))
     omitted = max(0, len(stints) - MAXIMUM_ROWS)
     stints = stints[omitted:]
     for number, stint in enumerate(stints, start=1):
@@ -1390,14 +1596,14 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
     first = stints[0]
     members = [item for item in stints if item["car_path"] == first["car_path"]
                and item["configuration_key"] == first["configuration_key"]]
-    day_differences = [value for item in members for value in _differences(item)]
+    day = _day_context(members)
     lengths = [_clean_length(item) for item in members]
     for stint in stints:
         stint["early"] = _window(stint, *EARLY_WINDOW)
         stint["late"] = _own_late(stint)
         stint["fall_off"] = _fall_off(stint)
         stint["noise"] = _run_noise(stint)
-        stint["day_differences"] = day_differences if any(item is stint for item in members) else []
+        stint["day"] = day if any(item is stint for item in members) else {}
     if any(length >= MINIMUM_LATE_RUN_LAPS for length in lengths):
         late = {"status": "available", "first_run_lap": None, "last_run_lap": None, "label": "Last 5 laps", "reason": None,
                 "basis": (f"Each run's late window is its last {LATE_WINDOW_LAPS} clean-length laps from lap "
@@ -1419,8 +1625,10 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
         "Pace windows count laps from the start of each stint's measured run. A verdict compares two runs over their common "
         "clean length on the laps of the run that are clean in both, so its medians are at equal run age; run age is not measured tire wear.",
         (f"Verdicts compare medians against max({MINIMUM_THRESHOLD_S:.2f} s, {STANDARD_ERROR_MULTIPLIER:.0f} × the combined standard "
-         "error from the runs' lap-to-lap noise); a difference inside it is within scatter, not unchanged. The noise comes from "
-         f"consecutive clean laps from lap {NOISE_FIRST_RUN_LAP} on, so a warm-up ramp does not widen it."),
+         "error from the runs' lap noise, the largest difference between two other runs of the day on one garage setup at the "
+         "same laps); a difference inside it is within scatter, not unchanged. The lap noise is the larger of the lap-to-lap "
+         f"spread and each run's fall-off fit residual, from lap {NOISE_FIRST_RUN_LAP} on so a warm-up ramp does not widen it, and "
+         "laps whose pace wanders together count as fewer independent laps."),
         "Track evolution, driver adaptation and traffic are not controlled between stints.",
         SHEET_TIMING_NOTE,
     ]
@@ -1434,6 +1642,7 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
         "run_count": len(stints),
         "recording_count": len(recordings),
         "untimed_recordings": [_untimed(entry) for entry in untimed],
+        "short_runs": [_short_run(entry) for entry in short],
         "test_day_id": test_days.pop() if len(test_days) == 1 and all(stint["test_day_id"] for stint in stints) else None,
         "car": {"car_path": first["car_path"], "car_name": first["car_name"], "car_id": first["car_id"]},
         "track": {"track_name": first["track_name"], "track_config": first["track_config"],
@@ -1441,8 +1650,8 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
         "windows": {
             "early": {"first_run_lap": EARLY_WINDOW[0], "last_run_lap": EARLY_WINDOW[1], "label": _window_label(*EARLY_WINDOW)},
             "late": late,
-            "fall_off": {"first_run_lap": EARLY_WINDOW[0], "last_run_lap": max([EARLY_WINDOW[0], *lengths]),
-                         "label": f"Laps {EARLY_WINDOW[0]} to the last clean lap"},
+            "fall_off": {"first_run_lap": FALL_OFF_FIRST_RUN_LAP, "last_run_lap": max([FALL_OFF_FIRST_RUN_LAP, *lengths]),
+                         "label": f"Laps {FALL_OFF_FIRST_RUN_LAP} to the last clean lap"},
             "minimum_clean_laps": MINIMUM_WINDOW_LAPS,
         },
         "screening": {
@@ -1454,15 +1663,27 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
         },
         "verdict_rule": {"minimum_threshold_s": MINIMUM_THRESHOLD_S, "standard_error_multiplier": STANDARD_ERROR_MULTIPLIER,
                          "median_standard_error_factor": round(MEDIAN_STANDARD_ERROR_FACTOR, 4),
-                         "noise": (f"{MAD_TO_STANDARD_DEVIATION} × median absolute deviation of consecutive clean-lap differences "
-                                   f"from lap {NOISE_FIRST_RUN_LAP} on, ÷ √2; both runs' differences pooled, else the whole day's, else both "
-                                   f"runs' from lap {EARLY_WINDOW[0]} on ({MINIMUM_NOISE_DIFFERENCES}+ differences needed)."),
-                         "threshold": "max(minimum, multiplier × √2 × median factor × noise ÷ √n) for n laps clean in both runs.",
-                         "scatter": "Residual standard deviation of each run's fall-off fit; shown, not used for verdicts.",
+                         "noise": (f"The larger of two estimates from lap {NOISE_FIRST_RUN_LAP} on: lap-to-lap, {MAD_TO_STANDARD_DEVIATION} × "
+                                   "median absolute deviation of consecutive clean-lap differences ÷ √2 (both runs' differences pooled, "
+                                   f"else the whole day's, else both runs' from lap {EARLY_WINDOW[0]} on; {MINIMUM_NOISE_DIFFERENCES}+ needed); "
+                                   f"and fit residual, the pooled residual standard deviation of both runs' fall-off fits (laps "
+                                   f"{FALL_OFF_FIRST_RUN_LAP} to the last clean lap; else the whole day's)."),
+                         "autocorrelation": (f"The day's pooled lag-1 autocorrelation ρ of fall-off fit residuals at consecutive clean laps "
+                                             f"({MINIMUM_AUTOCORRELATION_PAIRS}+ pairs, clamped to 0–{MAXIMUM_AUTOCORRELATION}); n laps count "
+                                             "as n_eff = max(1, n × (1 − ρ) ÷ (1 + ρ)). Not measured: n_eff = n."),
+                         "threshold": ("max(minimum, multiplier × √2 × median factor × noise ÷ √n_eff, same-setup spread) for n laps "
+                                       "clean in both runs. Same-setup spread: the largest median difference at the same laps between two "
+                                       "other runs of the day whose garage setups match and whose conditions are comparable."),
+                         "fall_off_threshold": (f"max({MINIMUM_SLOPE_THRESHOLD_S} s/lap, multiplier × noise × √((1 + ρ) ÷ (1 − ρ)) × "
+                                                "√(1/Sxx₁ + 1/Sxx₂), the largest fall-off difference between two other same-setup runs over "
+                                                "the same laps)."),
+                         "scatter": "Residual standard deviation of each run's fall-off fit; the fit-residual noise estimate.",
                          "comparison": (f"Over the two runs' common clean length N: laps 2–5 and the last {LATE_WINDOW_LAPS} laps up to N "
                                         f"from lap {EARLY_WINDOW[1] + 1} on (withheld when N < {MINIMUM_LATE_RUN_LAPS}), each on the laps "
                                         f"clean in both runs; the verdict is the late window's when it has {MINIMUM_WINDOW_LAPS}+ such laps, "
-                                        f"otherwise laps 2–5's. Fall-off is compared over laps 2..N when N ≥ {MINIMUM_FALL_OFF_RUN_LAPS}.")},
+                                        f"otherwise laps 2–5's. Fall-off is compared over laps {FALL_OFF_FIRST_RUN_LAP}..N when "
+                                        f"N ≥ {MINIMUM_FALL_OFF_RUN_LAPS}; a run with fewer than {MINIMUM_COMPARED_CLEAN_LAPS} clean laps "
+                                        "is listed in short_runs and not compared.")},
         "comparability_rule": {"track_temperature_f": MATERIAL_TEMPERATURE_F, "start_fuel_gal": MATERIAL_FUEL_GAL,
                                "used_tire_odometer_m": USED_TIRE_ODOMETER_M,
                                "requires": ["exact car path", "exact track configuration", "open setup",

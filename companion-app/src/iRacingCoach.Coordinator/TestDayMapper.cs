@@ -55,6 +55,15 @@ public static class TestDayMapper
                 return new TestDayUntimedRecording(RequiredInt(item, "recording", at), OptionalText(item, "analysis_id", at),
                     OptionalText(item, "analysis_path", at), OptionalText(item, "recorded_at", at), OptionalText(item, "session_type", at),
                     OptionalText(item, "setup_name", at), RequiredText(item, "reason", at));
+            }).ToArray(),
+            ShortRuns = ArrayIfPresent(response, "short_runs", "$").Select((item, index) =>
+            {
+                var at = $"short_runs[{index}]";
+                return new TestDayShortRun(RequiredInt(item, "recording", at), OptionalText(item, "analysis_id", at),
+                    OptionalText(item, "analysis_path", at), OptionalText(item, "recorded_at", at), OptionalText(item, "session_type", at),
+                    OptionalText(item, "setup_name", at), OptionalInt(item, "run_in_recording", at), RequiredInt(item, "runs_in_recording", at),
+                    RequiredInt(item, "first_lap", at), RequiredInt(item, "last_lap", at), RequiredInt(item, "run_laps", at),
+                    RequiredInt(item, "clean_lap_count", at), RequiredText(item, "reason", at));
             }).ToArray()
         };
     }
@@ -136,18 +145,41 @@ public static class TestDayMapper
         RequiredText(item, "status", path), OptionalNumber(item, "noise_s", path),
         item.TryGetProperty("difference_count", out _) ? RequiredInt(item, "difference_count", path) : 0,
         item.TryGetProperty("basis", out _) ? OptionalText(item, "basis", path) : null,
-        item.TryGetProperty("reason", out _) ? OptionalText(item, "reason", path) : null);
+        item.TryGetProperty("reason", out _) ? OptionalText(item, "reason", path) : null)
+    {
+        DifferenceNoiseSeconds = NumberIfPresent(item, "difference_noise_s", path),
+        ResidualNoiseSeconds = NumberIfPresent(item, "residual_noise_s", path),
+        ResidualBasis = item.TryGetProperty("residual_basis", out _) ? OptionalText(item, "residual_basis", path) : null,
+        Autocorrelation = NumberIfPresent(item, "autocorrelation", path)
+    };
 
     private static TestDayPairWindow? PairWindow(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
         RequiredText(item, "key", path), RequiredText(item, "status", path), OptionalText(item, "label", path),
         OptionalInt(item, "first_run_lap", path), OptionalInt(item, "last_run_lap", path), OptionalText(item, "verdict", path),
         Ints(item, "run_laps", path), OptionalNumber(item, "previous_median_s", path), OptionalNumber(item, "current_median_s", path),
-        OptionalNumber(item, "delta_s", path), OptionalNumber(item, "threshold_s", path), OptionalText(item, "reason", path));
+        OptionalNumber(item, "delta_s", path), OptionalNumber(item, "threshold_s", path), OptionalText(item, "reason", path))
+    {
+        StatisticalThresholdSeconds = NumberIfPresent(item, "statistical_threshold_s", path),
+        EffectiveLapCount = NumberIfPresent(item, "effective_lap_count", path),
+        SameSetupSpread = SameSetupSpread(ObjectIfPresent(item, "same_setup_spread", path), $"{path}.same_setup_spread")
+    };
 
     private static TestDayPairFallOff? PairFallOff(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
         RequiredText(item, "status", path), OptionalText(item, "label", path), OptionalNumber(item, "previous_slope_s_per_lap", path),
         OptionalNumber(item, "current_slope_s_per_lap", path), OptionalNumber(item, "delta_s_per_lap", path),
-        OptionalNumber(item, "threshold_s_per_lap", path), OptionalText(item, "verdict", path), OptionalText(item, "reason", path));
+        OptionalNumber(item, "threshold_s_per_lap", path), OptionalText(item, "verdict", path), OptionalText(item, "reason", path))
+    {
+        StatisticalThresholdSecondsPerLap = NumberIfPresent(item, "statistical_threshold_s_per_lap", path),
+        SameSetupSpread = SameSetupSpread(ObjectIfPresent(item, "same_setup_spread", path), $"{path}.same_setup_spread")
+    };
+
+    private static TestDaySameSetupSpread? SameSetupSpread(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
+        NumberIfPresent(item, "spread_s", path), NumberIfPresent(item, "spread_s_per_lap", path), IntsIfPresent(item, "runs", path),
+        item.TryGetProperty("pair_count", out _) ? RequiredInt(item, "pair_count", path) : 0);
+
+    /// <summary>An optional number added after v1 shipped: absent is null; present must be a finite number or null.</summary>
+    private static double? NumberIfPresent(JsonElement item, string name, string path) =>
+        item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out _) ? OptionalNumber(item, name, path) : null;
 
     /// <summary>An optional object added after v1 shipped: absent or null is default; present must be an object.</summary>
     private static JsonElement ObjectIfPresent(JsonElement item, string name, string path) =>

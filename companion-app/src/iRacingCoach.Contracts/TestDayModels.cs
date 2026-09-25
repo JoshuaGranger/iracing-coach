@@ -26,11 +26,20 @@ public sealed record TestDayReview(
 
     /// <summary>Recordings of the day with no timed lap, listed once apart from the runs; empty from an older backend.</summary>
     public IReadOnlyList<TestDayUntimedRecording> UntimedRecordings { get; init; } = [];
+    /// <summary>Timed runs with fewer than three clean laps, listed once apart from the runs; empty from an older backend.</summary>
+    public IReadOnlyList<TestDayShortRun> ShortRuns { get; init; } = [];
 }
 
 /// <summary>A recording of the day without a timed lap (garage only). It is never a run and never compared.</summary>
 public sealed record TestDayUntimedRecording(int Recording, string? AnalysisId, string? AnalysisPath, string? RecordedAt,
     string? SessionType, string? SetupName, string Reason);
+
+/// <summary>
+/// A timed run with fewer than three clean laps (a stub between resets). It is never a row, never
+/// numbered, never plotted and never compared.
+/// </summary>
+public sealed record TestDayShortRun(int Recording, string? AnalysisId, string? AnalysisPath, string? RecordedAt, string? SessionType,
+    string? SetupName, int? RunInRecording, int RunsInRecording, int FirstLap, int LastLap, int RunLaps, int CleanLapCount, string Reason);
 
 public sealed record TestDayCar(string? CarPath, string? CarName, string? CarId);
 public sealed record TestDayTrack(string? TrackName, string? TrackConfig, string? ConfigurationKey);
@@ -72,11 +81,26 @@ public sealed record TestDayRun(
     public TestDayNoise? Noise { get; init; }
 }
 
-/// <summary>Lap-to-lap noise: the spread of consecutive clean-lap differences, in seconds.</summary>
+/// <summary>
+/// Lap noise after the warm-up, in seconds: the larger of the lap-to-lap spread (consecutive clean-lap
+/// differences) and the fall-off fit's residual. A comparison's noise also carries the day's
+/// autocorrelation of fit residuals, which widens its thresholds.
+/// </summary>
 public sealed record TestDayNoise(string Status, double? NoiseSeconds, int DifferenceCount, string? Basis, string? Reason)
 {
     public bool Measured => string.Equals(Status, "measured", StringComparison.Ordinal) && NoiseSeconds.HasValue;
+    /// <summary>The lap-to-lap estimate; null when not measured or from an older backend.</summary>
+    public double? DifferenceNoiseSeconds { get; init; }
+    /// <summary>The fit-residual estimate; null when no run has a fall-off fit or from an older backend.</summary>
+    public double? ResidualNoiseSeconds { get; init; }
+    /// <summary>"these_runs" or "day": where the fit-residual estimate came from.</summary>
+    public string? ResidualBasis { get; init; }
+    /// <summary>The day's lag-1 autocorrelation of fit residuals (0–0.9); null when not measured.</summary>
+    public double? Autocorrelation { get; init; }
 }
+
+/// <summary>What two other runs of the day on one garage setup differed by at the same laps.</summary>
+public sealed record TestDaySameSetupSpread(double? SpreadSeconds, double? SpreadSecondsPerLap, IReadOnlyList<int> Runs, int PairCount);
 
 /// <summary>A run's recording: several runs, split by pit visits, can share one.</summary>
 public sealed record TestDayRecording(int Number, string? AnalysisId, string? AnalysisPath, string? RecordedAt, int? RunInRecording, int RunsInRecording);
@@ -132,7 +156,7 @@ public sealed record TestDayComparison(int ComparedWithRun, string Verdict, stri
     public TestDayPairWindow? EarlyWindow { get; init; }
     /// <summary>The last five laps up to <see cref="CommonRunLaps"/>, or withheld with a reason.</summary>
     public TestDayPairWindow? LateWindow { get; init; }
-    /// <summary>Both runs' fall-off over laps 2..N.</summary>
+    /// <summary>Both runs' fall-off over laps 6..N.</summary>
     public TestDayPairFallOff? FallOff { get; init; }
 }
 
@@ -142,13 +166,20 @@ public sealed record TestDayPairWindow(string Key, string Status, string? Label,
     double? ThresholdSeconds, string? Reason)
 {
     public bool Measured => string.Equals(Status, "measured", StringComparison.Ordinal) && DeltaSeconds.HasValue;
+    /// <summary>The noise's own threshold; <see cref="ThresholdSeconds"/> is it or the same-setup spread, whichever is larger.</summary>
+    public double? StatisticalThresholdSeconds { get; init; }
+    /// <summary>How many independent laps the window's laps count as when their pace wanders together.</summary>
+    public double? EffectiveLapCount { get; init; }
+    public TestDaySameSetupSpread? SameSetupSpread { get; init; }
 }
 
-/// <summary>Both runs' fall-off over the same laps 2..N.</summary>
+/// <summary>Both runs' fall-off over the same laps 6..N.</summary>
 public sealed record TestDayPairFallOff(string Status, string? Label, double? PreviousSlopeSecondsPerLap, double? CurrentSlopeSecondsPerLap,
     double? DeltaSecondsPerLap, double? ThresholdSecondsPerLap, string? Verdict, string? Reason)
 {
     public bool Measured => string.Equals(Status, "measured", StringComparison.Ordinal) && DeltaSecondsPerLap.HasValue;
+    public double? StatisticalThresholdSecondsPerLap { get; init; }
+    public TestDaySameSetupSpread? SameSetupSpread { get; init; }
 }
 
 public sealed record TestDayTires(TestDayStopReading StopReading, TestDaySheetReading SheetReading,

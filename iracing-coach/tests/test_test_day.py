@@ -369,6 +369,15 @@ def review(*analyses: dict) -> dict:
     return test_day.build_test_day_review(list(analyses), RULES)
 
 
+def in_traffic(analysis: dict, *laps: int) -> dict:
+    """Screen these recording laps out as close traffic."""
+
+    for lap in analysis["laps"]:
+        if lap["lap"] in laps:
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.4
+    return analysis
+
+
 class TestDayWindowTests(unittest.TestCase):
     """Backend 3: equal-age windows, fall-off and the screen behind them."""
 
@@ -383,9 +392,9 @@ class TestDayWindowTests(unittest.TestCase):
             self.assertFalse(row["laps"][0]["eligible"])
         self.assertEqual((first["late"]["label"], first["late"]["laps"]), ("Laps 16–20", [16, 17, 18, 19, 20]))
         self.assertEqual((second["late"]["label"], second["late"]["laps"]), ("Laps 11–15", [11, 12, 13, 14, 15]))
-        # Each run's fall-off covers its whole clean length, not the shortest run's.
-        self.assertEqual(first["fall_off"]["laps"], list(range(2, 21)))
-        self.assertEqual(second["fall_off"]["laps"], list(range(2, 16)))
+        # Each run's fall-off covers its whole clean length after the warm-up of laps 2-5, not the shortest run's.
+        self.assertEqual(first["fall_off"]["laps"], list(range(6, 21)))
+        self.assertEqual(second["fall_off"]["laps"], list(range(6, 16)))
         self.assertEqual(first["early"]["median_s"], 24.035)
         self.assertEqual(first["late"]["median_s"], 24.18)
         self.assertEqual(first["fall_off"]["slope_s_per_lap"], 0.01)
@@ -395,16 +404,16 @@ class TestDayWindowTests(unittest.TestCase):
                          ("late_window", "Laps 11–15", [11, 12, 13, 14, 15]))
         self.assertEqual(comparison["windows"]["early"]["run_laps"], [2, 3, 4, 5])
         self.assertEqual(comparison["windows"]["early"]["verdict"], "within_scatter")
-        # The pair's fall-off is at equal age: laps 2-15 of both runs.
+        # The pair's fall-off is at equal age: laps 6-15 of both runs.
         self.assertEqual((comparison["fall_off"]["label"], comparison["fall_off"]["previous_slope_s_per_lap"],
                           comparison["fall_off"]["current_slope_s_per_lap"], comparison["fall_off"]["verdict"]),
-                         ("Laps 2–15", 0.01, 0.01, "within_scatter"))
+                         ("Laps 6–15", 0.01, 0.01, "within_scatter"))
         self.assertEqual(first["laps"][13]["label"], "Run 1 · lap 14")
         self.assertEqual(first["trend"]["x_axis"], "run_lap")
         # The chart's line is the table's fall-off over the run's own clean laps.
         fit = first["trend"]["fit"]
-        self.assertEqual((fit["eligible_count"], fit["domain"], fit["slope_s_per_green_lap"]), (19, [2.0, 20.0], 0.01))
-        self.assertEqual(fit["points"], [{"x": 2.0, "y": 24.02}, {"x": 20.0, "y": 24.2}])
+        self.assertEqual((fit["eligible_count"], fit["domain"], fit["slope_s_per_green_lap"]), (15, [6.0, 20.0], 0.01))
+        self.assertEqual(fit["points"], [{"x": 6.0, "y": 24.06}, {"x": 20.0, "y": 24.2}])
         self.assertEqual(first["trend"]["fit_basis"], "fall_off")
 
     def test_nineteen_lap_runs_compare_their_last_five_laps(self) -> None:
@@ -415,7 +424,7 @@ class TestDayWindowTests(unittest.TestCase):
         self.assertEqual((comparison["window_label"], comparison["run_laps"]), ("Laps 15–19", [15, 16, 17, 18, 19]))
         self.assertEqual(result["runs"][3]["late"]["label"], "Laps 15–19")
         self.assertEqual(result["runs"][1]["late"]["label"], "Laps 6–10")
-        self.assertEqual(result["runs"][3]["fall_off"]["laps"], list(range(2, 20)))
+        self.assertEqual(result["runs"][3]["fall_off"]["laps"], list(range(6, 20)))
 
     def test_late_window_is_withheld_when_no_run_reaches_eight_laps(self) -> None:
         result = review(stint_analysis("a", 9, laps=7), stint_analysis("b", 10, laps=6))
@@ -436,7 +445,8 @@ class TestDayWindowTests(unittest.TestCase):
         fall_off = result["runs"][1]["fall_off"]
         self.assertEqual(fall_off["status"], "not_measured")
         self.assertIsNone(fall_off["slope_s_per_lap"])
-        self.assertTrue(fall_off["reason"].startswith("Too short for fall-off: the last clean lap is lap 7; 8 are needed"))
+        self.assertEqual(fall_off["reason"], "Too short for fall-off: the last clean lap is lap 7; 10 are needed so the fit "
+                                             "has 5 laps after laps 2–5, where the tires come in.")
         self.assertIsNone(result["runs"][1]["trend"]["fit"])
         pair = result["runs"][1]["comparison"]["fall_off"]
         self.assertEqual((pair["status"], pair["label"], pair["previous_slope_s_per_lap"]), ("withheld", None, None))
@@ -479,10 +489,17 @@ class TestDayWindowTests(unittest.TestCase):
         self.assertEqual(offline["screening"]["offline_flag_rule_runs"], [1, 2])
         self.assertEqual(offline["runs"][0]["early"]["status"], "measured")
         self.assertIn("one-lap-to-green", offline["screening"]["offline_flag_rule"])
-        hosted = review(stint_analysis("a", 9, session_type="Practice"), stint_analysis("b", 10, session_type="Practice"))
+        # A hosted practice keeps the caution screen: laps 3-4 under caution leave laps 2-5 two clean laps.
+        cautious = stint_analysis("b", 10, session_type="Practice", flag_state="green")
+        for lap in cautious["laps"][2:4]:
+            lap.update(flag_state="caution", green_fraction=0.0)
+        hosted = review(stint_analysis("a", 9, session_type="Practice", flag_state="green"), cautious)
         self.assertEqual(hosted["screening"]["offline_flag_rule_runs"], [])
-        self.assertEqual(hosted["runs"][0]["early"]["status"], "not_measured")
-        self.assertIn("caution_or_mixed", hosted["runs"][0]["laps"][3]["exclusion_reasons"])
+        self.assertEqual(hosted["runs"][1]["early"]["status"], "not_measured")
+        self.assertIn("caution_or_mixed", hosted["runs"][1]["laps"][3]["exclusion_reasons"])
+        # A hosted practice under caution throughout has no clean lap: both runs are listed apart, never rows.
+        with self.assertRaisesRegex(test_day.TestDayError, r"hold 0 \(2 runs have fewer than 3 clean laps\)"):
+            review(stint_analysis("a", 9, session_type="Practice"), stint_analysis("b", 10, session_type="Practice"))
         green = review(stint_analysis("a", 9, session_type="Practice", flag_state="green"),
                        stint_analysis("b", 10, session_type="Practice", flag_state="green"))
         self.assertEqual(green["runs"][0]["early"]["status"], "measured")
@@ -520,8 +537,8 @@ class TestDayVerdictTests(unittest.TestCase):
         self.assertEqual((slower["verdict"], slower["delta_s"]), ("slower", 0.031))
         self.assertIn("0.031 s slower than run 1", slower["summary"])
         verdicts = {row["comparison"]["verdict"] for row in review(
-            stint_analysis("a", 9), stint_analysis("b", 10), stint_analysis("c", 11, base=23.8),
-            stint_analysis("d", 12, base=24.2), stint_analysis("e", 13, fuel_l=40.0))["runs"][1:]}
+            stint_analysis("a", 9), stint_analysis("b", 10), stint_analysis("c", 11, base=23.8, setup=car_setup(brake_bias="56.5%")),
+            stint_analysis("d", 12, base=24.2, setup=car_setup(brake_bias="57.0%")), stint_analysis("e", 13, fuel_l=40.0))["runs"][1:]}
         self.assertEqual(verdicts, {"within_scatter", "faster", "slower", "not_comparable"})
 
     def test_medians_are_compared_at_the_same_laps_of_the_run(self) -> None:
@@ -567,8 +584,13 @@ class TestDayVerdictTests(unittest.TestCase):
         noise = 1.4826 * 0.2 / 2 ** 0.5
         self.assertAlmostEqual(result["runs"][0]["noise"]["noise_s"], round(noise, 4), places=4)
         self.assertEqual(result["runs"][0]["noise"]["difference_count"], 14)
-        self.assertEqual(comparison["noise"], {"status": "measured", "noise_s": round(noise, 4), "basis": "these_runs",
-                                               "difference_count": 28, "reason": None})
+        # Alternating laps: the lap-to-lap spread is the larger estimate, and a lap that reverses the one
+        # before it has negative autocorrelation, which never narrows a threshold (it is clamped to 0).
+        self.assertLess(comparison["noise"]["residual_noise_s"], comparison["noise"]["difference_noise_s"])
+        self.assertEqual({key: comparison["noise"][key] for key in ("status", "noise_s", "basis", "difference_count", "autocorrelation", "reason")},
+                         {"status": "measured", "noise_s": round(noise, 4), "basis": "these_runs", "difference_count": 28,
+                          "autocorrelation": 0.0, "reason": None})
+        self.assertEqual(comparison["windows"]["late"]["effective_lap_count"], 5.0)
         expected = round(2 * 2 ** 0.5 * test_day.MEDIAN_STANDARD_ERROR_FACTOR * noise / 5 ** 0.5, 3)
         self.assertEqual(comparison["threshold_s"], expected)
         self.assertEqual(comparison["verdict"], "within_scatter")
@@ -620,7 +642,8 @@ class TestDayVerdictTests(unittest.TestCase):
         # Just inside both limits is comparable.
         near = review(stint_analysis("a", 9), stint_analysis("b", 10, track_temp=84.9, fuel_l=53.0))["runs"][1]["comparison"]
         self.assertNotEqual(near["verdict"], "not_comparable")
-        short = review(stint_analysis("a", 9, laps=3), stint_analysis("b", 10))["runs"][1]["comparison"]
+        # Seven laps with laps 3-4 in traffic: four clean laps, but only laps 2 and 5 of laps 2-5 and no late window.
+        short = review(in_traffic(stint_analysis("a", 9, laps=7), 3, 4), stint_analysis("b", 10))["runs"][1]["comparison"]
         self.assertEqual((short["verdict"], short["blocked_by"]), ("not_comparable", "measurement"))
         # Laps 2-4 of a 4-lap run are the same laps of the run in both: that is a comparison.
         four = review(stint_analysis("a", 9, laps=4), stint_analysis("b", 10))["runs"][1]["comparison"]
@@ -646,6 +669,145 @@ def json_text(value: dict) -> str:
     import json
 
     return json.dumps(value, ensure_ascii=False, allow_nan=False)
+
+
+# IRP 9/24 bot test day (September 24-25, 2026): the recorded lap times of every timed run, in
+# order, from the local copies of the ten recordings (numbers only). The 22:43 recording holds
+# four stubs between resets (its fourth lap stood still on track) before a 19-lap run.
+IRP_STUBS = ([28.202, 28.226], [25.154, 25.081], [23.858, 23.758], [62.558])
+IRP_LAPS = {
+    "22:43": [23.342, 23.268, 23.286, 23.288, 23.284, 23.288, 23.287, 23.286, 23.291, 23.287, 23.292, 23.298, 23.295,
+              23.3, 23.354, 23.792, 23.994, 23.769, 23.535],
+    "23:44": [23.792, 23.522, 23.307, 23.08, 22.888],
+    "00:03": [23.794, 23.522, 23.306, 23.081, 22.978, 23.298, 23.312, 23.201, 23.154, 23.362],
+    "00:13": [23.795, 23.518, 23.309, 23.081, 22.893],
+    "D": [23.795, 23.518, 23.311, 23.077, 22.951, 23.189, 23.192, 23.236, 23.49, 23.52, 23.47, 23.397, 23.362, 23.336,
+          23.323, 23.523, 23.522, 23.504, 23.71],
+    "E": [23.795, 23.521, 23.306, 23.082, 23.019, 23.021, 23.045, 23.47, 23.471, 23.36, 23.256, 23.261, 23.507, 23.508,
+          23.489, 23.65, 23.622, 23.566, 23.536],
+    "F": [23.78, 23.514, 23.299, 23.074, 22.936, 22.933, 22.936, 23.059, 23.218, 23.373, 23.334, 23.223, 23.17, 23.173],
+    "G": [23.787, 23.514, 23.299, 23.075, 22.937, 22.933, 22.95],
+}
+IRP_HOURS = {"22:43": 3 + 43 / 60, "23:44": 4 + 44 / 60, "00:03": 5 + 3 / 60, "00:13": 5 + 13 / 60, "D": 5 + 19 / 60,
+             "E": 5 + 32 / 60, "F": 5 + 45 / 60, "G": 5 + 57 / 60}
+IRP_SAME_SETUP = ("22:43", "23:44", "00:03", "00:13", "D")
+
+
+def irp_setup(name: str) -> dict:
+    """The day's garage setups: baseline through D, then v2 (LF camber), v3 (steering 10:1), v4 (wedge)."""
+
+    setup = car_setup()
+    chassis = setup["Chassis"]
+    chassis["Front"]["SteeringRatio"] = "12:1"
+    chassis["LeftFront"].update(Camber="+6.0 deg", SpringPerchOffset="-95 mm")
+    chassis["RightFront"].update(Camber="-3.3 deg", SpringPerchOffset="-95 mm")
+    chassis["LeftRear"]["SpringPerchOffset"] = "-76 mm"
+    if name == "E":
+        chassis["LeftFront"].update(Camber="+5.2 deg", SpringPerchOffset="-98 mm")
+    if name in ("F", "G"):
+        chassis["Front"]["SteeringRatio"] = "10:1"
+    if name == "G":
+        chassis["LeftRear"]["SpringPerchOffset"] = "-79 mm"
+        chassis["RightFront"].update(Camber="-3.2 deg", SpringPerchOffset="-98 mm")
+    return setup
+
+
+def irp_recording(name: str) -> dict:
+    """One recording of the IRP day with its runs split at pit visits, lap times as recorded."""
+
+    runs = [*IRP_STUBS, IRP_LAPS[name]] if name == "22:43" else [IRP_LAPS[name]]
+    analysis = stint_analysis(f"irp-{name}", IRP_HOURS[name], laps=sum(len(times) for times in runs), setup=irp_setup(name))
+    entries, start = [], 1
+    for number, times in enumerate(runs, start=1):
+        for offset, time in enumerate(times):
+            analysis["laps"][start - 1 + offset]["lap_time_s"] = time
+            if time > 60.0:
+                analysis["laps"][start - 1 + offset]["speed"]["minimum_mph"] = 0.0  # stood still, then reset
+        entries.append({"run_number": number, "start_lap": start, "end_lap": start + len(times) - 1, "fuel": {"start_l": 60.0},
+                        "tire_measurement_status": "measured_at_stop", "tire_observation": stall_observation(),
+                        "tire_set_lifecycle": {"confirmed_changed_at_run_end": []}})
+        start += len(times)
+    analysis["runs"] = entries
+    return analysis
+
+
+class TestDayRealDayTests(unittest.TestCase):
+    """IRP 9/24 real lap times: pace that wanders for laps at a time must not make a same-setup run faster."""
+
+    def comparison(self, *names: str) -> dict:
+        return review(*(irp_recording(name) for name in names))["runs"][-1]["comparison"]
+
+    def assert_within(self, comparison: dict, label: str) -> None:
+        self.assertEqual(comparison["verdict"], "within_scatter", f"{label}: {comparison['summary']}")
+        for key, window in comparison["windows"].items():
+            if window["status"] == "measured":
+                self.assertEqual(window["verdict"], "within_scatter", f"{label} {key}: {window}")
+                self.assertGreaterEqual(window["threshold_s"], abs(window["delta_s"]))
+        if comparison["fall_off"]["status"] == "measured":
+            self.assertEqual(comparison["fall_off"]["verdict"], "within_scatter", f"{label} fall-off: {comparison['fall_off']}")
+
+    def test_every_same_setup_pair_reads_within_scatter(self) -> None:
+        # Before: 23:44 vs 22:43 "faster" by 0.091 s on laps 2-5 (threshold 0.030 s); D vs 22:43 "faster" by
+        # 0.247 s on laps 15-19 (threshold 0.047 s); D vs 00:03 "more fall-off". Lap-to-lap noise after lap 6
+        # was 0.008-0.066 s while the bot's pace moved between 23.2 s and 23.5 s for 3-5 laps at a time.
+        import itertools
+
+        for earlier, later in itertools.combinations(IRP_SAME_SETUP, 2):
+            with self.subTest(f"{later} vs {earlier}"):
+                result = review(irp_recording(earlier), irp_recording(later))
+                self.assertEqual(result["runs"][-1]["setup_change"]["status"], "unchanged")
+                self.assert_within(result["runs"][-1]["comparison"], f"{later} vs {earlier}")
+        control = self.comparison("22:43", "D")
+        self.assertEqual((control["window_label"], control["delta_s"]), ("Laps 15–19", -0.247))
+        self.assertGreater(control["noise"]["residual_noise_s"], 3 * control["noise"]["difference_noise_s"])
+        self.assertGreater(control["noise"]["autocorrelation"], 0.3)
+        self.assertEqual(self.comparison("22:43", "23:44")["delta_s"], -0.091)
+        self.assertEqual(self.comparison("00:03", "D")["fall_off"]["label"], "Laps 6–10")
+        day = review(*(irp_recording(name) for name in IRP_LAPS))
+        for row in day["runs"][1:len(IRP_SAME_SETUP)]:
+            self.assert_within(row["comparison"], f"day run {row['run']}")
+
+    def test_a_setup_change_must_beat_the_days_same_setup_spread(self) -> None:
+        # E (LF camber) against D: its late window must beat the 0.247 s the day's two 19-lap runs on one setup
+        # differed by on laps 15-19, and its fall-off the same-setup fall-off difference; E was "more fall-off"
+        # by 0.0044 s/lap against a 0.0044 s/lap threshold from laps 2-19.
+        day = review(*(irp_recording(name) for name in IRP_LAPS))
+        numbers = {row["analysis_id"]: row["run"] for row in day["runs"]}
+        e = next(row for row in day["runs"] if row["analysis_id"] == "irp-E")["comparison"]
+        self.assertEqual((e["window_label"], e["delta_s"], e["verdict"]), ("Laps 15–19", 0.044, "within_scatter"))
+        spread = e["windows"]["late"]["same_setup_spread"]
+        self.assertEqual((spread["spread_s"], spread["runs"]), (0.247, [numbers["irp-22:43"], numbers["irp-D"]]))
+        self.assertGreaterEqual(e["threshold_s"], 0.247)
+        fall = e["fall_off"]
+        self.assertEqual((fall["label"], fall["verdict"]), ("Laps 6–19", "within_scatter"))
+        self.assertGreaterEqual(fall["threshold_s_per_lap"], 0.02)
+
+    def test_steering_against_lf_camber_is_not_resolved_by_this_day(self) -> None:
+        # F against E: 0.137 s faster on laps 10-14 (0.14-0.33 s on single common laps). The same setup moved
+        # 0.247 s late in the day and the lap noise is 0.13 s with laps moving together, so the day cannot
+        # tell this change from scatter; before, it read "faster" against a 0.090 s threshold.
+        day = review(*(irp_recording(name) for name in IRP_LAPS))
+        f = next(row for row in day["runs"] if row["analysis_id"] == "irp-F")["comparison"]
+        self.assertEqual((f["window_label"], f["delta_s"]), ("Laps 10–14", -0.137))
+        self.assertEqual(f["verdict"], "within_scatter")
+        self.assertGreater(f["threshold_s"], 0.137)
+        self.assertLess(f["windows"]["late"]["effective_lap_count"], 5)
+        self.assertEqual(self.comparison("E", "F")["verdict"], "within_scatter")
+
+    def test_runs_too_short_to_compare_are_listed_apart_and_not_plotted(self) -> None:
+        # The 22:43 recording's four stubs between resets were rows "Not comparable" and set the chart's time
+        # axis to 24-28.8 s with their 28.2 s and 25.1 s laps.
+        day = review(*(irp_recording(name) for name in IRP_LAPS))
+        self.assertEqual(day["run_count"], 8)
+        self.assertEqual([(item["run_in_recording"], item["runs_in_recording"], item["clean_lap_count"]) for item in day["short_runs"]],
+                         [(1, 5, 1), (2, 5, 1), (3, 5, 1), (4, 5, 0)])
+        self.assertEqual(day["short_runs"][0]["reason"], "1 clean lap after lap 1; 3 are needed to compare a run.")
+        self.assertEqual(day["short_runs"][3]["reason"], "No clean laps after lap 1; 3 are needed to compare a run.")
+        first = day["runs"][0]
+        self.assertEqual((first["run"], first["recording"]["run_in_recording"], first["setup_change"]["status"]), (1, 5, "first_run"))
+        plotted = [lap["lap_time_s"] for row in day["runs"] for lap in row["laps"] if lap["plotted"]]
+        self.assertLess(max(plotted), 24.0)
+        self.assertTrue(all(row["comparison"]["verdict"] != "not_comparable" for row in day["runs"][1:]))
 
 
 class TestDaySetupChangeTests(unittest.TestCase):
@@ -925,7 +1087,7 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertIn("starting with 15.8 gal (within 2 gal of run 1)", card["instruction"])
         self.assertEqual(card["success_rule"]["direction"], "measure")
         self.assertIn("within 2 gal", card["success_rule"]["text"])
-        short = self.card(stint_analysis("a", 9, laps=3), stint_analysis("b", 10))
+        short = self.card(in_traffic(stint_analysis("a", 9, laps=7), 3, 4), stint_analysis("b", 10))
         self.assertEqual((short["kind"], short["success_rule"]["reference_run"]), ("repeat_comparable", 2))
         other = self.card(stint_analysis("a", 9), stint_analysis("b", 10, fixed=True))
         self.assertEqual(other["title"], "Repeat run 2 under comparable conditions")
@@ -950,8 +1112,9 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertEqual((same["changes"], same["success_rule"]["reference_run"]), ([], 2))
 
     def test_a_blocked_measurement_asks_for_the_laps_its_own_rule_needs(self) -> None:
-        # Run 2 stopped after 3 laps: laps 2-5 are the quickest window to compare, and the rule checks exactly them.
-        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, laps=3))
+        # Run 2 stopped after 7 laps with laps 3-4 in traffic: laps 2-5 are the quickest window to compare,
+        # and the rule checks exactly them.
+        card = self.card(stint_analysis("a", 9), in_traffic(stint_analysis("b", 10, laps=7), 3, 4))
         self.assertEqual(card["instruction"], "Drive run 2's setup again, unchanged, for at least 5 laps so laps 2–5 can be compared with run 1.")
         self.assertEqual((card["success_rule"]["window_label"], card["success_rule"]["last_run_lap"]), ("Laps 2–5", 5))
         # Run 1 measured only its late window, so the repeat must reach it.
@@ -963,11 +1126,12 @@ class TestDayNextChangeTests(unittest.TestCase):
         self.assertEqual((card["success_rule"]["window_label"], card["success_rule"]["last_run_lap"]), ("Laps 16–20", 20))
 
     def test_a_blocked_measurement_names_the_run_that_lacked_laps(self) -> None:
-        card = self.card(stint_analysis("a", 9, laps=2), stint_analysis("b", 10, laps=6))
+        # Run 1 kept three clean laps (5-7): no window of its own, so run 2 becomes the baseline.
+        card = self.card(in_traffic(stint_analysis("a", 9, laps=7), 2, 3, 4), stint_analysis("b", 10, laps=6))
         self.assertEqual(card["title"], "Run 1 has too few clean laps; make run 2 the baseline")
         self.assertIn("Run 1 has no pace window with 3+ clean laps", card["instruction"])
         self.assertEqual(card["success_rule"]["reference_run"], 2)
-        neither = self.card(stint_analysis("a", 9, laps=2), stint_analysis("b", 10, laps=2))
+        neither = self.card(in_traffic(stint_analysis("a", 9, laps=7), 2, 3, 4), in_traffic(stint_analysis("b", 10, laps=7), 2, 3, 4))
         self.assertEqual(neither["title"], "Runs 1 and 2 have too few clean laps")
 
     def test_a_faster_run_that_is_not_comparable_is_named_not_skipped(self) -> None:
@@ -1073,10 +1237,10 @@ class TestDayRunsInsideARecordingTests(unittest.TestCase):
             review(garage, stint_analysis("a", 9))
 
     def test_a_long_practice_keeps_its_latest_runs(self) -> None:
-        many = split_runs(stint_analysis("many", 9, laps=60), *range(2, 60, 2))
+        many = split_runs(stint_analysis("many", 9, laps=120, fuel_l=120.0), *range(4, 120, 4))
         result = review(many)
         self.assertEqual(result["run_count"], test_day.MAXIMUM_ROWS)
-        self.assertEqual(result["runs"][0]["measured_run"]["first_lap"], 13)
+        self.assertEqual(result["runs"][0]["measured_run"]["first_lap"], 25)
         self.assertIn(f"Showing the latest {test_day.MAXIMUM_ROWS} runs; 6 earlier runs are left out.", result["limitations"])
 
 

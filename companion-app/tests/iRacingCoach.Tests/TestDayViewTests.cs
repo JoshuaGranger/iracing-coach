@@ -312,9 +312,78 @@ public sealed class TestDayViewTests
 
         StringAssert.Contains(html, "data-untimed=\"1\"");
         StringAssert.Contains(html, "1 recording without a timed lap (");
-        StringAssert.Contains(html, ") is not compared.");
+        StringAssert.Contains(html, ") are not compared.");
         Assert.AreEqual(3, Count(html, "<tr data-run="), "The garage-only recording is not a run row.");
         Assert.DoesNotContain("no timed run", html);
+
+        var garageOnly = Fixture();
+        garageOnly.Remove("short_runs");
+        var alone = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(garageOnly)
+        });
+        StringAssert.Contains(alone, ") is not compared.");
+        Assert.DoesNotContain("clean laps (", alone);
+    }
+
+    [TestMethod]
+    public async Task RunsTooShortToCompareJoinTheQuietLineAndAreNeverPlotted()
+    {
+        // IRP 9/24: the 22:43 recording's four stubs between resets (28.2 s, 25.1 s, 23.8 s laps and a stop)
+        // were "Not comparable" rows and set the chart's time axis to 24–28.8 s.
+        var fixture = Fixture();
+        var shortRuns = fixture["short_runs"]!.AsArray();
+        var stub = shortRuns[0]!.AsObject();
+        stub["recorded_at"] = "2026-09-25T03:43:02+00:00";
+        stub["runs_in_recording"] = 5;
+        foreach (var place in new[] { 2, 3, 4 })
+        {
+            var copy = stub.DeepClone().AsObject();
+            copy["run_in_recording"] = place;
+            shortRuns.Add(copy);
+        }
+        var review = Map(fixture);
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = review
+        });
+
+        StringAssert.Contains(html, "data-short-runs=\"4\"");
+        var line = TestDayView.NotComparedLine(review);
+        StringAssert.Contains(line, "4 runs with fewer than 3 clean laps (");
+        StringAssert.Contains(line, " runs 1–4 of 5) and 1 recording without a timed lap (");
+        StringAssert.EndsWith(line, ") are not compared.");
+        Assert.AreEqual(3, Count(html, "<tr data-run="), "A stub is never a run row.");
+        Assert.AreEqual(3, Count(html, "class=\"ri-run-key\""), "A stub is never a line on the chart.");
+    }
+
+    [TestMethod]
+    public void TheTimeAxisTrimsACleanLapFarOutsideTheRest()
+    {
+        // A clean 28.2 s lap among 23 s laps sits on the edge instead of stretching the axis to 28.8 s.
+        var laps = new[] { 23.52, 23.31, 23.08, 22.89, 23.19, 23.24, 23.49, 23.52, 23.47, 23.36, 23.99, 28.226 };
+        var (min, max) = RunOverlayChart.RobustRange(laps);
+        Assert.AreEqual(22.89, min);
+        Assert.AreEqual(23.99, max, "Every lap inside three interquartile ranges keeps its place, the slowest clean lap included.");
+        Assert.AreEqual((23.0, 23.1), RunOverlayChart.RobustRange([23.0, 23.1, 23.05]), "Too few laps to trim: the whole range.");
+        Assert.AreEqual((23.0, 23.0), RunOverlayChart.RobustRange([23.0, 23.0, 23.0, 23.0, 23.0]));
+    }
+
+    [TestMethod]
+    public void TheNoiseLineNamesBothEstimatesAndLapsThatWanderTogether()
+    {
+        var noise = new TestDayNoise("measured", 0.1304, 18, "these_runs", null)
+        {
+            DifferenceNoiseSeconds = 0.0566, ResidualNoiseSeconds = 0.1304, ResidualBasis = "these_runs", Autocorrelation = 0.403
+        };
+        var line = TestDayView.NoiseLine(noise);
+        StringAssert.StartsWith(line, "Lap noise 0.130 s: the larger of lap-to-lap 0.057 s (18 pairs of consecutive clean laps of both runs after lap 5) and fall-off fit residual 0.130 s.");
+        StringAssert.Contains(line, "Laps wander together (autocorrelation 0.40), so a window's laps count as fewer.");
+        StringAssert.EndsWith(line, "never less than two other same-setup runs of the day differed by on the same laps.");
+        StringAssert.StartsWith(TestDayView.NoiseLine(new TestDayNoise("measured", 0.021, 22, "these_runs", null)),
+            "Lap-to-lap noise 0.021 s from 22 pairs", "An older backend's noise keeps its own wording.");
     }
 
     [TestMethod]
@@ -391,7 +460,9 @@ public sealed class TestDayViewTests
         StringAssert.Contains(detail, "data-pair-window=\"fall_off\"");
         StringAssert.Contains(detail, "Laps 12–16<small> · 5 laps</small>");
         StringAssert.Contains(detail, "Faster · beyond ±0.033");
-        StringAssert.Contains(detail, "Lap-to-lap noise 0.021 s from 22 pairs of consecutive clean laps of both runs after lap 5");
+        StringAssert.Contains(detail, "Lap noise 0.021 s: the larger of lap-to-lap 0.021 s (22 pairs of consecutive clean laps of both runs after lap 5) and fall-off fit residual 0.011 s.");
+        StringAssert.Contains(detail, "Fall-off · laps 6–16", "Fall-off is compared after laps 2–5, where the tires come in.");
+        StringAssert.Contains(detail, "runs 1 and 2 used one garage setup and differed by 0.010 s on these laps");
 
         var fixture = Fixture();
         var fallOff = fixture["runs"]![2]!["fall_off"]!.AsObject();
@@ -437,7 +508,7 @@ public sealed class TestDayViewTests
         StringAssert.Contains(css, ".td-table { width: 100%; table-layout: fixed;");
         Assert.DoesNotContain("max-height: 42vh", css);
         var index = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.App", "wwwroot", "index.html"));
-        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=13");
+        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=15");
     }
 
     private static string Row(string html, int run)
