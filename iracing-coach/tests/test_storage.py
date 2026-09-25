@@ -620,13 +620,20 @@ class StorageRecentAnalysesTests(unittest.TestCase):
             self.assertEqual(rows[0]["session_group_id"], "subsession:42:1")
 
 
-def _report_analysis(identifier: str, analyzed_at: str, *, green_laps: int = 10) -> dict:
+def _report_analysis(
+    identifier: str,
+    analyzed_at: str,
+    *,
+    green_laps: int = 10,
+    subsession: int = 88628993,
+    selection: dict | None = None,
+) -> dict:
     return {
         "analysis_id": identifier,
         "analyzed_at": analyzed_at,
         "identity": {
             "session_start": "2026-09-20T23:00:00+00:00",
-            "subsession_id": 88628993,
+            "subsession_id": subsession,
             "session_id": 84,
             "season_year": 2026,
             "season_quarter": 3,
@@ -637,12 +644,16 @@ def _report_analysis(identifier: str, analyzed_at: str, *, green_laps: int = 10)
         "race_summary": {"scheduled_laps": 250, "recorded_laps": 250},
         "source": {
             "telemetry_files": ["race.ibt"],
-            "selection": {
-                "group_id": "subsession:88628993:2",
-                "subsession_id": 88628993,
-                "sim_session_num": 2,
-                "sim_session_type": "Race",
-            },
+            "selection": (
+                selection
+                if selection is not None
+                else {
+                    "group_id": f"subsession:{subsession}:2",
+                    "subsession_id": subsession,
+                    "sim_session_num": 2,
+                    "sim_session_type": "Race",
+                }
+            ),
         },
         "runs": [{"run_number": 1, "green_laps": green_laps}],
     }
@@ -736,9 +747,11 @@ class StorageReportUsageTests(unittest.TestCase):
             middle = self._legacy_copy(store, bristol, "2026-09-21t01-01-46-00-00", same, modified=base_ns + 2)
             newest = self._legacy_copy(store, bristol, "2026-09-21t03-54-20-00-00", same, modified=base_ns + 3,
                                        padding=5000)
+            # Another session's only copy; nothing in the index supersedes it.
             single = self._legacy_copy(
                 store, "subsession-88667162-2", "2026-09-21t02-00-00-00-00",
-                _report_analysis("single-analysis", "2026-09-21T02:00:00+00:00"), modified=base_ns,
+                _report_analysis("single-analysis", "2026-09-21T02:00:00+00:00", subsession=88667162),
+                modified=base_ns,
             )
             # A report written without sorted keys is identified by parsing it.
             unsorted = json.dumps({"runs": [], "analysis_id": "unsorted-analysis"})
@@ -904,6 +917,107 @@ class StorageReportUsageTests(unittest.TestCase):
                 "path": str(second), "bytes": self._bytes(second), "reason": "history-index",
             })
             self.assertEqual([item["path"] for item in group["reclaimable"]], [str(first)])
+
+    def test_copies_from_an_older_analyzer_revision_are_counted_reclaimable(self) -> None:
+        # Re-analysis under a new analyzer revision drops the older revision's
+        # index row (record_analysis), but its report copies stayed on disk and
+        # were not counted: 2.14 GB of the DESKTOP-SIM QA profile.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = ArchiveStore(root)
+            base_ns = 1_790_000_000_000_000_000
+            session = "subsession-88628993-2"
+            current = _report_analysis("revision-current", "2026-09-22T00:00:00+00:00")
+            current_dir = self._legacy_copy(store, session, "revision-current", current, modified=base_ns + 10)
+            store.record_analysis(current, str(current_dir / "report.md"))
+            old = _report_analysis("revision-old", "2026-09-21T00:00:00+00:00")
+            old_a = self._legacy_copy(store, session, "2026-09-21t00-00-00-00-00", old, modified=base_ns)
+            old_b = self._legacy_copy(store, session, "2026-09-21t01-00-00-00-00", old, modified=base_ns + 1)
+            # An August report: bare-subsession directory, indented JSON, and a
+            # selection written before group ids existed.
+            august = _report_analysis(
+                "revision-august", "2026-08-01T00:00:00+00:00",
+                selection={"subsession_id": 88628993, "sim_session_num": 2, "sim_session_type": "Race"},
+            )
+            august_dir = self._legacy_copy(
+                store, "88628993", "2026-08-01t00-00-00-00-00", august, modified=base_ns - 5,
+                raw_text=json.dumps(august, indent=2, sort_keys=True),
+            )
+            by_trial = self._legacy_copy(
+                store, session, "2026-09-20t00-00-00-00-00",
+                _report_analysis("revision-trial", "2026-09-20T00:00:00+00:00"), modified=base_ns - 1,
+            )
+            (root / "trials").mkdir()
+            (root / "trials" / "trial-1.json").write_text(
+                json.dumps({"analysis_path": str(by_trial / "analysis.json")}), encoding="utf-8"
+            )
+            # Neither is provably an older analysis of the indexed session.
+            anonymous = _report_analysis("revision-anonymous", "2026-08-01T00:00:00+00:00")
+            anonymous["source"].pop("selection")
+            anonymous_dir = self._legacy_copy(store, session, "anonymous", anonymous, modified=base_ns)
+            other_dir = self._legacy_copy(
+                store, "subsession-77777777-2", "t1",
+                _report_analysis("other-session", "2026-09-21T00:00:00+00:00", subsession=77777777),
+                modified=base_ns,
+            )
+            before = _snapshot(root)
+
+            usage = store.report_storage_usage()
+
+            self.assertEqual(_snapshot(root), before)
+            superseded = {
+                group["analysis_id"]: group for group in usage["groups"] if group["kind"] == "superseded"
+            }
+            self.assertEqual(set(superseded), {"revision-old", "revision-august", "revision-trial"})
+            for group in superseded.values():
+                self.assertIsNone(group["retained"])
+                self.assertEqual(
+                    group["superseded_by"],
+                    {"analysis_id": "revision-current", "path": str(current_dir)},
+                )
+            self.assertEqual(
+                sorted(item["path"] for item in superseded["revision-old"]["reclaimable"]),
+                sorted([str(old_a), str(old_b)]),
+            )
+            self.assertEqual(
+                [item["path"] for item in superseded["revision-august"]["reclaimable"]],
+                [str(august_dir)],
+            )
+            self.assertEqual(superseded["revision-trial"]["reclaimable"], [])
+            self.assertEqual(
+                superseded["revision-trial"]["kept"],
+                [{"path": str(by_trial), "bytes": self._bytes(by_trial), "reason": "trials"}],
+            )
+            expected = self._bytes(old_a) + self._bytes(old_b) + self._bytes(august_dir)
+            self.assertEqual(usage["superseded_bytes"], expected)
+            self.assertEqual(usage["superseded_directory_count"], 3)
+            self.assertEqual(usage["superseded_group_count"], 2)
+            self.assertEqual(usage["duplicate_group_count"], 0)
+            self.assertEqual(usage["reclaimable_bytes"], expected)
+            self.assertEqual(usage["reclaimable_directory_count"], 3)
+            offered = {item["path"] for group in usage["groups"] for item in group["reclaimable"]}
+            for kept in (current_dir, anonymous_dir, other_dir, by_trial):
+                self.assertNotIn(str(kept), offered)
+
+    def test_an_older_revision_is_kept_when_the_current_report_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = ArchiveStore(root)
+            current = _report_analysis("revision-current", "2026-09-22T00:00:00+00:00")
+            store.record_analysis(
+                current, str(store.reports_dir / "season-6079" / "gone" / "report.md")
+            )
+            self._legacy_copy(
+                store, "subsession-88628993-2", "t1",
+                _report_analysis("revision-old", "2026-09-21T00:00:00+00:00"),
+                modified=1_790_000_000_000_000_000,
+            )
+
+            usage = store.report_storage_usage()
+
+            self.assertEqual(usage["reclaimable_bytes"], 0)
+            self.assertEqual(usage["superseded_directory_count"], 0)
+            self.assertEqual(usage["groups"], [])
 
 
 def _hold_open(path: Path, opened: threading.Event, release: threading.Event,

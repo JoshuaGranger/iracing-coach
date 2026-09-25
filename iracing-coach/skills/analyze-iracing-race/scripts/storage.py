@@ -871,6 +871,68 @@ def _referenced_report_directories(value: Any, found: set[str]) -> None:
             pass
 
 
+# A JSON string cannot contain an unescaped quote, so this matches only real
+# object members named "source" whose value is an object.
+_REPORT_SOURCE_MEMBER = re.compile(rb'"source"\s*:\s*\{')
+_REPORT_SOURCE_WINDOW_BYTES = 8 * 1024 * 1024
+
+
+def _report_session_identity(path: str) -> dict[str, str | None] | None:
+    """Return the session a stored report analyzed, or None when unproven.
+
+    The session is in the top-level ``source.selection``, near the end of a
+    report that can be 80 MB. Parsing the whole file costs about ten times its
+    size in memory, so only the ``"source": {`` objects are decoded. An answer
+    is given only when every such object that carries both ``selection`` and
+    ``telemetry_files`` names the same session.
+    """
+
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        return None
+    decoder = json.JSONDecoder()
+    found: set[tuple[tuple[str, str | None], ...]] = set()
+    for match in _REPORT_SOURCE_MEMBER.finditer(data):
+        start = match.end() - 1
+        value: Any = None
+        for end in (start + _REPORT_SOURCE_WINDOW_BYTES, len(data)):
+            try:
+                value, _ = decoder.raw_decode(
+                    data[start:end].decode("utf-8", errors="replace")
+                )
+                break
+            except ValueError:
+                value = None
+                if end >= len(data):
+                    break
+        if (
+            not isinstance(value, Mapping)
+            or not isinstance(value.get("selection"), Mapping)
+            or not isinstance(value.get("telemetry_files"), list)
+        ):
+            continue
+        found.add(tuple(sorted(_analysis_session_identity({"source": value}).items())))
+    return dict(next(iter(found))) if len(found) == 1 else None
+
+
+def _session_match_keys(
+    session_group_id: Any, subsession_id: Any, phase: Any
+) -> list[str]:
+    """Keys under which record_analysis treats two analyses as one session."""
+
+    keys: list[str] = []
+    group = str(session_group_id or "").strip().casefold()
+    if group:
+        keys.append("group:" + group)
+    subsession = str(subsession_id or "").strip()
+    normalized_phase = str(phase or "").strip().casefold()
+    if subsession and normalized_phase not in ("", "unknown"):
+        keys.append(f"phase:{subsession}:{normalized_phase}")
+    return keys
+
+
 def _file_signature(path: str) -> tuple[int, int] | None:
     try:
         stat = os.stat(path)
@@ -2102,14 +2164,21 @@ class ArchiveStore:
         return result
 
     def report_storage_usage(self) -> dict[str, Any]:
-        """Measure report copies that repeat an analysis already kept; read-only.
+        """Measure report copies that repeat what the archive keeps; read-only.
 
-        Before reports were keyed by analysis_id, every re-analysis wrote a
-        new full copy. A copy is reclaimable only when another directory holds
-        the same analysis_id and neither the history index nor a saved trial
-        or tuning record names it. The kept copy is the indexed one, else the
-        newest. Nothing is created, changed or deleted here, including beside
-        the history index (see _read_history_index_without_writing).
+        Two kinds of copy are reclaimable:
+
+        - ``duplicate``: another directory holds the same analysis_id. Before
+          reports were keyed by analysis_id every re-analysis wrote a new full
+          copy. The kept copy is the indexed one, else the newest.
+        - ``superseded``: the copy's session has a newer analysis in the history
+          index (a later analyzer revision) whose report still exists.
+          record_analysis drops the older revision's index row but never its
+          copies, so none of them is kept.
+
+        A copy named by the history index or by a saved trial or tuning record
+        is never offered. Nothing is created, changed or deleted here, including
+        beside the history index (see _read_history_index_without_writing).
         """
 
         reports_io = _extended_path(self.reports_dir)
@@ -2135,6 +2204,7 @@ class ArchiveStore:
                 analysis_stat = analysis_entry.stat(follow_symlinks=False)
                 directories[current] = {
                     "path": _ordinary_path(current),
+                    "analysis_file": analysis_entry.path,
                     "bytes": 0,
                     "analysis_id": _report_analysis_id(
                         analysis_entry.path, analysis_stat.st_size
@@ -2180,13 +2250,55 @@ class ArchiveStore:
                 None,
             )
 
+        # The analysis the index names for a session supersedes that session's
+        # older revisions, but only while its own report still exists.
+        directory_by_key: dict[str, dict[str, Any]] = {}
+        for directory in directories.values():
+            for key in _report_directory_keys(directory["path"]):
+                directory_by_key.setdefault(key, directory)
+        current_by_session: dict[str, dict[str, dict[str, str]]] = {}
+        for row in index_rows:
+            if not row.get("report_path") or not row.get("analysis_id"):
+                continue
+            existing = next(
+                (
+                    directory_by_key[key]
+                    for key in _report_directory_keys(os.path.dirname(str(row["report_path"])))
+                    if key in directory_by_key
+                ),
+                None,
+            )
+            if existing is None or existing["analysis_id"] != str(row["analysis_id"]):
+                continue
+            for key in _session_match_keys(
+                row.get("session_group_id"), row.get("subsession_id"), row.get("session_phase")
+            ):
+                current_by_session.setdefault(key, {})[str(row["analysis_id"])] = {
+                    "analysis_id": str(row["analysis_id"]),
+                    "path": existing["path"],
+                }
+
+        def superseding(copies: Sequence[Mapping[str, Any]]) -> dict[str, str] | None:
+            if not current_by_session:
+                return None
+            identity = _report_session_identity(copies[0]["analysis_file"])
+            if identity is None:
+                return None
+            for key in _session_match_keys(
+                identity["session_group_id"], identity["subsession_id"], identity["session_phase"]
+            ):
+                current = current_by_session.get(key) or {}
+                # Two current analyses under one key do not prove which one
+                # this copy belongs to.
+                if len(current) == 1:
+                    return dict(next(iter(current.values())))
+            return None
+
         # An index that exists but cannot be read might name any copy, so no
         # copy is offered for removal until it can be read again.
         measurable = index_status != "unreadable"
-        duplicate_groups: list[dict[str, Any]] = []
+        listed_groups: list[dict[str, Any]] = []
         for analysis_id, copies in groups.items():
-            if len(copies) < 2:
-                continue
             copies.sort(
                 key=lambda item: (
                     bool(_report_directory_keys(item["path"]) & indexed),
@@ -2194,10 +2306,18 @@ class ArchiveStore:
                 ),
                 reverse=True,
             )
-            retained, *others = copies
+            superseded_by = (
+                superseding(copies)
+                if measurable
+                and not any(_report_directory_keys(item["path"]) & indexed for item in copies)
+                else None
+            )
+            if superseded_by is None and len(copies) < 2:
+                continue
+            retained = None if superseded_by is not None else copies[0]
             kept: list[dict[str, Any]] = []
             reclaimable: list[dict[str, Any]] = []
-            for copy in others:
+            for copy in copies if retained is None else copies[1:]:
                 reason = reference_reason(copy["path"])
                 if reason or not measurable:
                     kept.append(
@@ -2209,25 +2329,42 @@ class ArchiveStore:
                     )
                 else:
                     reclaimable.append({"path": copy["path"], "bytes": copy["bytes"]})
-            duplicate_groups.append(
-                {
-                    "analysis_id": analysis_id,
-                    "copies": len(copies),
-                    "retained": {
+            group: dict[str, Any] = {
+                "kind": "duplicate" if retained is not None else "superseded",
+                "analysis_id": analysis_id,
+                "copies": len(copies),
+                "retained": (
+                    {
                         "path": retained["path"],
                         "bytes": retained["bytes"],
                         "reason": reference_reason(retained["path"]) or "newest",
-                    },
-                    "kept": kept,
-                    "reclaimable": reclaimable,
-                    "reclaimable_bytes": sum(item["bytes"] for item in reclaimable),
-                }
-            )
-        duplicate_groups.sort(
+                    }
+                    if retained is not None
+                    else None
+                ),
+                "kept": kept,
+                "reclaimable": reclaimable,
+                "reclaimable_bytes": sum(item["bytes"] for item in reclaimable),
+            }
+            if superseded_by is not None:
+                group["superseded_by"] = superseded_by
+            listed_groups.append(group)
+        listed_groups.sort(
             key=lambda group: (-group["reclaimable_bytes"], group["analysis_id"])
         )
+
+        def totals(kind: str) -> tuple[int, int, int]:
+            chosen = [group for group in listed_groups if group["kind"] == kind]
+            return (
+                sum(1 for group in chosen if group["reclaimable"]),
+                sum(len(group["reclaimable"]) for group in chosen),
+                sum(group["reclaimable_bytes"] for group in chosen),
+            )
+
+        duplicate_groups, duplicate_directories, duplicate_bytes = totals("duplicate")
+        superseded_groups, superseded_directories, superseded_bytes = totals("superseded")
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "read_only": True,
             "status": (
                 "empty"
@@ -2246,16 +2383,15 @@ class ArchiveStore:
             ),
             "history_index": index_status,
             "reference_sources": ["history-index", "trials", "tuning"],
-            "duplicate_group_count": sum(
-                1 for group in duplicate_groups if group["reclaimable"]
-            ),
-            "reclaimable_directory_count": sum(
-                len(group["reclaimable"]) for group in duplicate_groups
-            ),
-            "reclaimable_bytes": sum(
-                group["reclaimable_bytes"] for group in duplicate_groups
-            ),
-            "groups": duplicate_groups,
+            "duplicate_group_count": duplicate_groups,
+            "duplicate_directory_count": duplicate_directories,
+            "duplicate_bytes": duplicate_bytes,
+            "superseded_group_count": superseded_groups,
+            "superseded_directory_count": superseded_directories,
+            "superseded_bytes": superseded_bytes,
+            "reclaimable_directory_count": duplicate_directories + superseded_directories,
+            "reclaimable_bytes": duplicate_bytes + superseded_bytes,
+            "groups": listed_groups,
             "note": (
                 "Measured only; nothing was removed. Before deleting a copy, "
                 "re-check these references and drop app caches that name it."
