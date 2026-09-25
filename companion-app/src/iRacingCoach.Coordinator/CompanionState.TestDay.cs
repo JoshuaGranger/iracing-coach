@@ -96,63 +96,113 @@ public sealed partial class CompanionState
         TestDayError = null;
         TestDayMessage = $"Reading {stints.Length} runs…";
         RaiseChanged();
-        var jobKey = $"test-day:{testDayId}";
+        // One read per day: returning to a day whose review is still running waits for
+        // that review instead of starting a second job that the tray would refuse.
+        Task<TestDayReadResult> read;
+        TaskCompletionSource<TestDayReadResult>? started = null;
+        Task? earlier = null;
+        lock (_testDayReadGate)
+        {
+            _testDayReads.TryGetValue(testDayId, out var running);
+            if (running is null || running.Task.IsCompleted || !string.Equals(running.Signature, signature, StringComparison.Ordinal))
+            {
+                // Registered before any of its work runs, so a caller arriving meanwhile always finds it.
+                earlier = running?.Task;
+                started = new TaskCompletionSource<TestDayReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                running = new TestDayRead(signature, started.Task);
+                _testDayReads[testDayId] = running;
+            }
+            read = running.Task;
+        }
+        if (started is not null) _ = CompleteTestDayReadAsync(started, group, testDayId, stints, earlier, cancellationToken);
+        var result = new TestDayReadResult(null, null);
         try
         {
-            await RunJobAsync($"Test day · {group.Track}", jobKey, "Reading the day's runs", async token =>
-            {
-                var paths = new List<string>(stints.Length);
-                for (var index = 0; index < stints.Length; index++)
-                {
-                    if (TestDayStillCurrent(epoch))
-                    {
-                        TestDayMessage = $"Reading run {index + 1} of {stints.Length}…";
-                        SetJobStage(jobKey, TestDayMessage);
-                        RaiseChanged();
-                    }
-                    var path = await EnsureAnalyzedAsync(stints[index], token);
-                    if (string.IsNullOrWhiteSpace(path))
-                        throw new InvalidOperationException($"Run {index + 1} has no saved analysis to compare.");
-                    paths.Add(path);
-                }
-                if (TestDayStillCurrent(epoch))
-                {
-                    TestDayMessage = "Comparing the runs…";
-                    SetJobStage(jobKey, TestDayMessage);
-                    RaiseChanged();
-                }
-                var response = await CallBackendAsync("review_test_day", new
-                {
-                    analysis_paths = paths,
-                    archive_root = Settings.ArchiveRoot
-                }, token);
-                var review = TestDayMapper.Map(response);
-                if (!TestDayStillCurrent(epoch)) return;
-                CurrentTestDay = review;
-                _testDaySignature = signature;
-                TestDayMessage = stints.Length < group.Sessions.Count
-                    ? $"Showing the latest {stints.Length} of {group.Sessions.Count} runs."
-                    : string.Empty;
-            }, cancellationToken, error =>
-            {
-                if (!TestDayStillCurrent(epoch)) return;
-                TestDayError = error;
-            });
+            result = await read;
         }
         finally
         {
+            lock (_testDayReadGate)
+            {
+                if (read.IsCompleted && _testDayReads.TryGetValue(testDayId, out var done) && done.Task == read) _testDayReads.Remove(testDayId);
+            }
             if (TestDayStillCurrent(epoch))
             {
                 TestDayLoading = false;
-                if (CurrentTestDay is null)
+                if (result.Review is { } review)
                 {
-                    TestDayMessage = TestDayError is { } error
-                        ? BackendMessage(error.Message)
-                        : "The day's runs were not compared.";
+                    CurrentTestDay = review;
+                    _testDaySignature = signature;
+                    TestDayMessage = stints.Length < group.Sessions.Count
+                        ? $"Showing the latest {stints.Length} of {group.Sessions.Count} runs."
+                        : string.Empty;
+                }
+                else
+                {
+                    TestDayError = result.Error;
+                    if (CurrentTestDay is null)
+                        TestDayMessage = result.Error is { } error ? BackendMessage(error.Message) : "The day's runs were not compared.";
                 }
                 RaiseChanged();
             }
         }
+    }
+
+    private readonly object _testDayReadGate = new();
+    private readonly Dictionary<string, TestDayRead> _testDayReads = new(StringComparer.OrdinalIgnoreCase);
+    private sealed record TestDayRead(string Signature, Task<TestDayReadResult> Task);
+    private sealed record TestDayReadResult(TestDayReview? Review, RecoverableAppError? Error);
+
+    private async Task CompleteTestDayReadAsync(TaskCompletionSource<TestDayReadResult> completion, RaceEventGroup group, string testDayId,
+        IReadOnlyList<RecentRace> stints, Task? earlier, CancellationToken cancellationToken)
+    {
+        try { completion.SetResult(await ReadTestDayAsync(group, testDayId, stints, earlier, cancellationToken)); }
+        catch (Exception ex) { completion.SetException(ex); }
+    }
+
+    /// <summary>
+    /// The day's one job: analyze any stint without an archived analysis, then call
+    /// review_test_day. Its result goes to every caller waiting for this day; each
+    /// shows it only if the day is still the one open.
+    /// </summary>
+    private async Task<TestDayReadResult> ReadTestDayAsync(RaceEventGroup group, string testDayId, IReadOnlyList<RecentRace> stints,
+        Task? earlier, CancellationToken cancellationToken)
+    {
+        if (earlier is not null)
+        {
+            try { await earlier; }
+            catch (Exception ex) when (ex is OperationCanceledException or InvalidOperationException) { }
+        }
+        TestDayReview? review = null;
+        RecoverableAppError? failure = null;
+        var jobKey = $"test-day:{testDayId}";
+        void Stage(string message)
+        {
+            SetJobStage(jobKey, message);
+            if (!TestDayLoading || !string.Equals(CurrentTestDayId, testDayId, StringComparison.OrdinalIgnoreCase)) return;
+            TestDayMessage = message;
+            RaiseChanged();
+        }
+        await RunJobAsync($"Test day · {group.Track}", jobKey, "Reading the day's runs", async token =>
+        {
+            var paths = new List<string>(stints.Count);
+            for (var index = 0; index < stints.Count; index++)
+            {
+                Stage($"Reading run {index + 1} of {stints.Count}…");
+                var path = await EnsureAnalyzedAsync(stints[index], token);
+                if (string.IsNullOrWhiteSpace(path))
+                    throw new InvalidOperationException($"Run {index + 1} has no saved analysis to compare.");
+                paths.Add(path);
+            }
+            Stage("Comparing the runs…");
+            var response = await CallBackendAsync("review_test_day", new
+            {
+                analysis_paths = paths,
+                archive_root = Settings.ArchiveRoot
+            }, token);
+            review = TestDayMapper.Map(response);
+        }, cancellationToken, error => failure = error);
+        return new TestDayReadResult(review, failure);
     }
 
     /// <summary>Opens another stint of the open day; the day's review stays loaded.</summary>

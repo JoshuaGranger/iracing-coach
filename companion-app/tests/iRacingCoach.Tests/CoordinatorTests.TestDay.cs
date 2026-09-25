@@ -253,6 +253,70 @@ public sealed partial class CoordinatorTests
         Assert.AreEqual(3, backend.AnalyzeCalls, "One failed background attempt, then one analysis per stint.");
     }
 
+    [TestMethod]
+    public async Task ReturningToADayWhoseReviewIsStillRunningShowsThatReview()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-return", Guid.NewGuid().ToString("N"));
+        string PathFor(string selector) => Path.Combine(root, "data", "reports", selector.Replace(':', '-'), "analysis.json");
+        var releaseDayA = new TaskCompletionSource();
+        var dayAStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        const string otherDay = "test-day-fedcba9876543210";
+        object Stint(string id, string start, int run, string tag) => new
+        {
+            group_id = id, subsession_id = 0, session_id = 0, sim_session_type = "Offline Testing", event_type = "Test", is_race = false,
+            valid = true, is_fixed_setup = false, track_display_name = tag == TestDayTag ? "New Hampshire Motor Speedway" : "Iowa Speedway",
+            track_config_name = "Oval", car_name = "Toyota Supra Class B", car_path = "stockcars2 supra2019", start_time_utc = start,
+            file_count = 1, files = new[] { id + ".ibt" }, test_day_id = tag, test_day_run = run, test_day_run_count = 2
+        };
+        var backend = new FakeBackend(
+            discovery: TestDayDiscovery(
+                Stint("local:a-1", "2026-08-06T23:00:00Z", 1, TestDayTag), Stint("local:a-2", "2026-08-06T23:50:00Z", 2, TestDayTag),
+                Stint("local:b-1", "2026-08-08T23:00:00Z", 1, otherDay), Stint("local:b-2", "2026-08-08T23:50:00Z", 2, otherDay)),
+            responseOverride: (tool, _, arguments) =>
+            {
+                var args = JsonSerializer.SerializeToElement(arguments);
+                if (tool == "analyze_iracing_race")
+                {
+                    var selector = args.GetProperty("selector").GetString()!;
+                    Directory.CreateDirectory(Path.GetDirectoryName(PathFor(selector))!);
+                    File.WriteAllText(PathFor(selector), "{}");
+                    return HomeAnalysisResponse(PathFor(selector), "Offline Testing", selector);
+                }
+                if (tool != "review_test_day") return null;
+                var paths = args.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()!).ToArray();
+                if (paths[0].Contains("a-1", StringComparison.Ordinal))
+                {
+                    dayAStarted.TrySetResult();
+                    releaseDayA.Task.Wait(TimeSpan.FromSeconds(5));
+                }
+                return TestDayReviewFor(paths);
+            });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        await state.RefreshDashboardAsync();
+        await WaitUntilAsync(() => state.EventSessions.All(session => session.Analyzed), TimeSpan.FromSeconds(4));
+        RaceEventGroup Day(string tag) => state.EventGroups.OfType<RaceEventGroup>().Single(group => group.TestDayId == tag);
+
+        var firstVisit = Task.Run(() => state.LoadTestDayAsync(Day(TestDayTag)));
+        await dayAStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await state.LoadTestDayAsync(Day(otherDay));
+        Assert.AreEqual(otherDay, state.CurrentTestDayId);
+        Assert.IsNotNull(state.CurrentTestDay);
+
+        var secondVisit = state.LoadTestDayAsync(Day(TestDayTag));
+        Assert.IsTrue(state.TestDayLoading, "Day A is still being compared.");
+        Assert.AreEqual(2, backend.CallsFor("review_test_day"), "Day A's first review and day B's; returning to day A starts no second one.");
+        releaseDayA.SetResult();
+        await Task.WhenAll(firstVisit, secondVisit);
+
+        Assert.AreEqual(TestDayTag, state.CurrentTestDayId);
+        Assert.IsNotNull(state.CurrentTestDay, state.TestDayMessage);
+        Assert.AreEqual(string.Empty, state.TestDayMessage, "The first visit's review is shown, not a failure.");
+        Assert.IsFalse(state.TestDayLoading);
+        Assert.AreEqual(2, backend.CallsFor("review_test_day"));
+        Assert.IsFalse(state.Jobs.Any(job => job.Status == "failed"));
+    }
+
     private static string ArchivedStintReport(string analysisId, string groupId, string start, int subsession = 0) => $$$"""
         {
           "analysis_id":"{{{analysisId}}}",
