@@ -241,6 +241,35 @@ class SetupRecordingLinkTests(unittest.TestCase):
                          "The same 16 characters an analysis identity carries.")
         self.assertEqual(values["session_type"], "Offline Testing")
 
+    def test_each_linked_recording_says_whether_it_drove_the_values_shown_for_the_file(self) -> None:
+        # The IRP Supra test day listed twelve recorded setups beside the six files
+        # they loaded. The library lists a file and each recording that loaded it
+        # unchanged with identical adjustments as one setup; a readout a unit apart
+        # is not a difference, a changed spring perch is.
+        newest = self._record("offline-3.ibt", _session_info_yaml(subsession_id=0, event_type="Test"),
+                              subsession=0, start="2026-09-25T05:19:25+00:00", phase="Offline Testing", selection=OFFLINE_FILE_SELECTION)
+        drift = self._record("offline-2.ibt", _session_info_yaml(subsession_id=0, event_type="Test")
+                             .replace("CrossWeight: 50.9%", "CrossWeight: 51.0%").replace("128 kPa", "140 kPa"),
+                             subsession=0, start="2026-09-25T04:19:25+00:00", phase="Offline Testing", selection=OFFLINE_FILE_SELECTION)
+        changed = self._record("offline-1.ibt", _session_info_yaml(subsession_id=0, event_type="Test")
+                               .replace("SpringPerchOffset: -95 mm", "SpringPerchOffset: -92 mm"),
+                               subsession=0, start="2026-09-25T03:19:28+00:00", phase="Offline Testing", selection=OFFLINE_FILE_SELECTION)
+        uses = {use["analysis_path"]: use
+                for use in self._entry(self._catalog(), "stockcars2 supra2019", IRP_R[:-4])["recorded_setup"]["uses"]}
+        self.assertTrue(uses[newest]["values_match"], "The recording the values come from.")
+        self.assertTrue(uses[drift]["values_match"], "Run readings and a computed readout are not adjustments.")
+        self.assertFalse(uses[changed]["values_match"], "A different spring perch differs from the file's values.")
+        self.assertEqual(uses[newest]["garage_fingerprint"], uses[drift]["garage_fingerprint"])
+        self.assertNotEqual(uses[newest]["garage_fingerprint"], uses[changed]["garage_fingerprint"])
+
+        no_fingerprint = {"setup_name": IRP_R, "load_type": "user", "modified": False, "car_path": "stockcars2 supra2019",
+                          "garage": {"Chassis": {"Front": {"CrossWeight": "51.0%"}}}, "analysis_path": "race.json",
+                          "session_start": "2026-09-24T02:09:03+00:00"}
+        entry = next(item for item in tuning_workflow.catalog_setups(self.setups)["entries"]
+                     if item["car_folder"] == "stockcars2 supra2019" and item["stem"] == IRP_R[:-4])
+        linked = setup_recordings.link_recorded_setups([entry], [no_fingerprint])[0]
+        self.assertIsNone(linked["recorded_setup"]["uses"][0]["values_match"], "Unknown is neither equal nor different.")
+
     def test_iracing_and_fixed_loads_never_link_to_a_library_file_with_the_same_name(self) -> None:
         self._record("fixed.ibt", _session_info_yaml("bristol.sto", load_type="fixed"),
                      subsession=88790968, start="2026-09-21T01:09:35+00:00")

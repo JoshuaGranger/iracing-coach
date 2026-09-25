@@ -257,6 +257,25 @@ def _use_summary(use: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _linked_use_summary(use: Mapping[str, Any], values: Mapping[str, Any] | None) -> dict[str, Any]:
+    """A linked recording, and whether it drove exactly the values shown for the file.
+
+    ``values_match`` compares adjustment fingerprints (no run readings, no
+    computed readouts), so the Setups library can list a file and the
+    recordings that loaded it unchanged with identical adjustments as one
+    setup. It is ``None`` when either side has no fingerprint: unknown is
+    never reported as equal or as different.
+    """
+
+    fingerprint = _text(use.get("garage_fingerprint"))
+    shown = _text((values or {}).get("garage_fingerprint"))
+    return {
+        **_use_summary(use),
+        "garage_fingerprint": fingerprint,
+        "values_match": (fingerprint == shown) if fingerprint and shown else None,
+    }
+
+
 def _recordings_agree(uses: Sequence[Mapping[str, Any]], garage: Mapping[str, Any]) -> bool:
     """Whether every unmodified recording of a file drove the same adjustments.
 
@@ -397,7 +416,7 @@ def link_recorded_setups(
         entry["recorded_setup"] = {"schema_version": SCHEMA_VERSION, "status": status} if status == "none" else {
             "schema_version": SCHEMA_VERSION,
             "status": status,
-            "uses": [_use_summary(item) for item in ordered["uses"]],
+            "uses": [_linked_use_summary(item, values) for item in ordered["uses"]],
             "modified_uses": [_use_summary(item) for item in ordered["modified"]],
             "ambiguous_use_count": len(ordered["ambiguous"]),
             "values": values,
