@@ -63,7 +63,7 @@ public sealed class TestDayViewTests
         StringAssert.Contains(html, "Faster</span>");
         StringAssert.Contains(html, "−0.110 s · Laps 12–16");
         StringAssert.Contains(html, "Front brake bias 56.0% → 56.5%");
-        StringAssert.Contains(html, "Keep front brake bias; try one more step");
+        StringAssert.Contains(html, "Keep front brake bias at 56.5%; try one more step");
         StringAssert.Contains(html, "Beat 24.068 s median on laps 12–16 by at least 0.030 s with 3+ clean laps.");
         StringAssert.Contains(html, "garage step size not verified");
         Assert.DoesNotContain("data-tires-run", html, "Tire detail appears only for a selected run.");
