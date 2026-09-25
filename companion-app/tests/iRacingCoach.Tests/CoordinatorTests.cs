@@ -11,7 +11,7 @@ using iRacingCoach.Coordinator;
 namespace iRacingCoach.Tests;
 
 [TestClass]
-public sealed class CoordinatorTests
+public sealed partial class CoordinatorTests
 {
     [TestMethod]
     public void IdenticalSetupBytesInDifferentCarsRemainIndependentlySelectable()
