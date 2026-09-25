@@ -149,6 +149,41 @@ public sealed partial class UiPolishRegressionTests
         StringAssert.Contains(css, "@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }");
     }
 
+    // A persistent warning or error floated over the page just below the top bar, and its dismiss
+    // button took clicks meant for the right-hand header action (Setups "Find a baseline", the
+    // Sessions search) at 900, 1024 and 1280 px. It now takes its own row between the top bar
+    // and the workspace, so the page, its header and its sticky or fixed-height parts start below it.
+    [TestMethod]
+    public async Task ANotificationReservesItsOwnRowInsteadOfFloatingOverThePageHeader()
+    {
+        var css = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "coach.css"));
+        var toastRule = Regex.Match(css, @"^\.toast \{[^}]*\}", RegexOptions.Multiline).Value;
+        Assert.IsNotEmpty(toastRule);
+        Assert.DoesNotContain("position: fixed", toastRule, "A floating toast covered page-header actions.");
+        Assert.DoesNotContain("position: absolute", toastRule);
+        foreach (var offset in new[] { "top", "bottom", "left", "right", "inset" })
+            Assert.IsFalse(Regex.IsMatch(toastRule, $@"[{{;\s]{offset}\s*:"), $"The toast is laid out in its own row, not offset with {offset}.");
+        StringAssert.Contains(toastRule, "pointer-events: none;", "Only the toast's own buttons take clicks.");
+        Assert.DoesNotContain(".first-run-mode .toast {", css);
+
+        var shell = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "race-investigation.css"));
+        StringAssert.Contains(shell, ".app-shell.top-nav:has(> .toast) { grid-template-rows: 40px auto minmax(0, 1fr); }");
+        StringAssert.Contains(shell, ".app-shell.top-nav > .app-topbar { grid-row: 1; }");
+        StringAssert.Contains(shell, ".app-shell.top-nav > .toast { grid-row: 2; }");
+        StringAssert.Contains(shell, ".app-shell.top-nav:has(> .toast) > .workspace { grid-row: 3; height: auto; }",
+            "The workspace (and every header, sticky toolbar and test strip in it) starts below the toast.");
+        StringAssert.Contains(shell, ".app-shell.first-run-mode.top-nav:has(> .toast) { grid-template-rows: auto minmax(0, 1fr); }");
+        StringAssert.Contains(shell, ".app-shell.first-run-mode.top-nav > .toast { grid-row: 1; }");
+        StringAssert.Contains(shell, ".app-shell.first-run-mode.top-nav:has(> .toast) > .workspace { grid-row: 2; }");
+
+        // The row is reserved only while a notification is showing, and :has(> .toast) needs the
+        // toast to be the shell's own child: AppToast renders no wrapper.
+        using var state = NewState();
+        Assert.AreEqual(string.Empty, (await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state })).Trim());
+        state.Notify("Choose a local setup file first.", ToastTone.Warning);
+        StringAssert.StartsWith((await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state })).TrimStart(), "<div class=\"toast warning\"");
+    }
+
     // Main's unreadable saved-analyses notice had its own toast markup in the shell; it now
     // shares the one notification placement and keeps its recovery, dismissal and priority.
     [TestMethod]

@@ -143,13 +143,13 @@ public sealed class IterationUxTests
         var css = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "coach.css"));
 
         // The toast body never takes a click; only its own buttons do.
-        StringAssert.Contains(css, ".toast { position: fixed;");
+        StringAssert.Contains(css, ".toast { position: relative;");
         StringAssert.Contains(css, "box-shadow: 0 10px 32px var(--shadow); pointer-events: none;");
         StringAssert.Contains(css, ".toast button {");
         StringAssert.Contains(css, "cursor: pointer; pointer-events: auto;");
 
         // It never overlaps primary navigation: it is not laid out inside the top bar (where a
-        // crowded bar at 900-1280 px let it cover Live), and it floats below the bar's row.
+        // crowded bar at 900-1280 px let it cover Live), and it takes the row below the bar's row.
         var topBar = File.ReadAllText(Path.Combine(UiRoot(), "AppTopBar.razor"));
         Assert.DoesNotContain("<AppToast", topBar);
         var shell = File.ReadAllText(Path.Combine(UiRoot(), "CompanionShell.razor"));
@@ -157,10 +157,9 @@ public sealed class IterationUxTests
             "One notification for every page, in the shell rather than the top bar or a first-run branch.");
         var shellCss = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "race-investigation.css"));
         var topBarRow = int.Parse(Regex.Match(shellCss, @"\.app-shell\.top-nav \{[^}]*grid-template-rows: (?<height>\d+)px").Groups["height"].Value);
+        StringAssert.Contains(shellCss, $".app-shell.top-nav:has(> .toast) {{ grid-template-rows: {topBarRow}px auto minmax(0, 1fr); }}",
+            "The toast's row follows the top bar's row.");
         var toastRule = Regex.Match(css, @"^\.toast \{[^}]*\}", RegexOptions.Multiline).Value;
-        var top = Regex.Match(toastRule, @"top: calc\((?<bar>\d+)px \+ var\(--space-\d\)\);");
-        Assert.IsTrue(top.Success, "The toast is placed a gap below the top bar.");
-        Assert.IsGreaterThanOrEqualTo(topBarRow, int.Parse(top.Groups["bar"].Value), "The toast starts below the top bar row.");
         Assert.DoesNotContain("bottom:", toastRule, "Bottom-center covered the Sections test strip.");
     }
 
