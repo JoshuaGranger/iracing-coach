@@ -62,7 +62,7 @@ public sealed partial class CompanionState : IDisposable
     private readonly bool _allowExternalHostActions;
     private readonly Dictionary<string, CancellationTokenSource> _jobTokens = new(StringComparer.OrdinalIgnoreCase);
     private readonly BackendOperationCoordinator _backendOperations = new();
-    private readonly ArchivedRaceCatalog _archivedRaceCatalog = new();
+    private readonly ArchivedRaceCatalog _archivedRaceCatalog = new(AppVersion);
     private readonly object _homeAnalysisSync = new();
     private readonly object _liveMonitorVisibilityGate = new();
     private readonly object _settingsPersistenceGate = new();

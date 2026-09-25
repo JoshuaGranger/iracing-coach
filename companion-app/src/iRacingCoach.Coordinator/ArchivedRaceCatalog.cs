@@ -17,13 +17,40 @@ internal sealed class ArchivedRaceCatalog
     private readonly Dictionary<string, UnreadableReport> _invalidReports = new(StringComparer.OrdinalIgnoreCase);
     private string? _ledgerPath;
     private bool _ledgerWritable;
+    private readonly string _reader;
+
+    /// <param name="appVersion">Added to <see cref="CurrentReader"/>, so every app release also retries once.</param>
+    public ArchivedRaceCatalog(string? appVersion = null) =>
+        _reader = string.IsNullOrWhiteSpace(appVersion) ? CurrentReader : $"{appVersion}/{CurrentReader}";
 
     internal sealed record Entry(int Version, string ReportPath, long Length, DateTime LastWriteUtc, RecentRace Race, LocalSetup? Setup);
 
-    /// <summary>A report revision that could not be read. It is remembered, not retried, until its size or time changes.</summary>
-    internal sealed record UnreadableReport(string Path, long Length, DateTime LastWriteUtc, bool Acknowledged = false);
+    /// <summary>
+    /// A report revision that could not be read. It is remembered, not retried, until its
+    /// size or time changes or a different <paramref name="Reader"/> is running.
+    /// </summary>
+    internal sealed record UnreadableReport(string Path, long Length, DateTime LastWriteUtc, bool Acknowledged = false, string? Reader = null);
 
     private sealed record UnreadableLedger(int SchemaVersion, IReadOnlyList<UnreadableReport> Reports);
+
+    /// <summary>
+    /// This build of the report reader: the parsing and mapping code in this assembly and
+    /// the contract models it fills. A report hidden by a reader bug must not stay hidden
+    /// after an upgrade fixes the bug, so a failure recorded by any other build is retried
+    /// once. Development builds share an app version, so the build itself is the key.
+    /// </summary>
+    internal static string CurrentReader { get; } = ReaderBuild();
+
+    private static string ReaderBuild()
+    {
+        string Module(System.Reflection.Assembly assembly)
+        {
+            try { return assembly.ManifestModule.ModuleVersionId.ToString("N"); }
+            catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException) { return assembly.FullName ?? "unknown"; }
+        }
+        var modules = string.Join('|', Module(typeof(ArchivedRaceCatalog).Assembly), Module(typeof(RecentRace).Assembly));
+        return $"catalog-{ProjectionVersion}-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(modules)))[..16].ToLowerInvariant();
+    }
 
     /// <param name="unreadableLedgerPath">
     /// App-owned local state that remembers unreadable report revisions across launches.
@@ -37,8 +64,19 @@ internal sealed class ArchivedRaceCatalog
             UseLedger(unreadableLedgerPath);
             var info = new FileInfo(path);
             if (!info.Exists) throw new FileNotFoundException("The saved race could not be found.", path);
-            if (_invalidReports.TryGetValue(path, out var failed) && SameRevision(failed, info)) return null;
-            if (_invalidReports.Remove(path)) SaveLedger();
+            var alreadyReported = false;
+            if (_invalidReports.TryGetValue(path, out var failed))
+            {
+                if (SameRevision(failed, info))
+                {
+                    if (string.Equals(failed.Reader, _reader, StringComparison.Ordinal)) return null;
+                    // Another reader judged this revision; retry it once. If it still cannot be
+                    // read, the driver has already been told about this same file.
+                    alreadyReported = failed.Acknowledged;
+                }
+                _invalidReports.Remove(path);
+                SaveLedger();
+            }
             bool Current(Entry? entry) => entry is not null && entry.Race is not null && entry.Version == ProjectionVersion
                 && string.Equals(entry.ReportPath, path, StringComparison.OrdinalIgnoreCase)
                 && entry.Length == info.Length && entry.LastWriteUtc == info.LastWriteTimeUtc;
@@ -69,7 +107,7 @@ internal sealed class ArchivedRaceCatalog
                 // Report this revision once. Both catalogs share this reader, so an
                 // unchanged invalid report is neither reparsed nor logged per refresh,
                 // and the ledger keeps the next launch from reading it again.
-                _invalidReports[path] = new UnreadableReport(path, info.Length, info.LastWriteTimeUtc);
+                _invalidReports[path] = new UnreadableReport(path, info.Length, info.LastWriteTimeUtc, alreadyReported, _reader);
                 SaveLedger();
                 throw;
             }

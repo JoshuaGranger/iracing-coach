@@ -162,6 +162,60 @@ public sealed class ArchivedRaceCatalogTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    // The ledger key was path + size + time only. A report hidden by a reader bug stayed
+    // hidden after an upgrade fixed the bug, because the unchanged file was never reread.
+    [TestMethod]
+    public void UpgradedReaderRetriesARememberedUnreadableReportOnce()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-catalog-" + Guid.NewGuid().ToString("N"));
+        var reports = Path.Combine(root, "reports");
+        var hidden = Path.Combine(reports, "hidden", "analysis.json");
+        var broken = Path.Combine(reports, "broken", "analysis.json");
+        var cache = Path.Combine(root, "cache");
+        var ledger = Path.Combine(root, "local-state", "catalog", "unreadable-analyses.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(hidden)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(broken)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(ledger)!);
+        try
+        {
+            File.WriteAllText(hidden, "{\"identity\":{\"track_name\":\"Upgrade Speedway\",\"event_type\":\"Race\"},\"race_summary\":{\"recorded_laps\":12}}");
+            File.WriteAllText(broken, "{broken");
+            object Remembered(string path, bool acknowledged, string? reader)
+            {
+                var info = new FileInfo(path);
+                return new { path = info.FullName, length = info.Length, lastWriteUtc = info.LastWriteTimeUtc, acknowledged, reader };
+            }
+            // Written by an older build whose reader wrongly rejected the first report.
+            File.WriteAllText(ledger, JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                reports = new[] { Remembered(hidden, false, "0.18.0/older-reader"), Remembered(broken, true, null) }
+            }));
+
+            var upgraded = new ArchivedRaceCatalog("0.18.0");
+            var listed = upgraded.Read(hidden, cache, () => { }, ledger);
+            Assert.IsNotNull(listed, "The upgraded reader must read the unchanged report again.");
+            Assert.AreEqual("Upgrade Speedway", listed.Race.Track);
+
+            // A still-unreadable report is retried once, then remembered for this reader,
+            // keeping the driver's earlier dismissal of the same file.
+            Assert.Throws<JsonException>(() => upgraded.Read(broken, cache, () => { }, ledger));
+            var remembered = upgraded.UnreadableReports(reports, ledger).Single();
+            Assert.AreEqual(Path.GetFullPath(broken), remembered.Path);
+            Assert.IsTrue(remembered.Acknowledged);
+            Assert.EndsWith(ArchivedRaceCatalog.CurrentReader, remembered.Reader!);
+
+            var nextLaunch = new ArchivedRaceCatalog("0.18.0");
+            using (new FileStream(broken, FileMode.Open, FileAccess.Read, FileShare.None))
+                Assert.IsNull(nextLaunch.Read(broken, cache, () => Assert.Fail("An unreadable report has no projection."), ledger),
+                    "The same reader does not reopen it again.");
+            Assert.IsNotNull(new ArchivedRaceCatalog("0.19.0").Read(hidden, cache, () => { }, ledger));
+            Assert.Throws<JsonException>(() => new ArchivedRaceCatalog("0.19.0").Read(broken, cache, () => { }, ledger),
+                "A new app version retries once as well.");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [TestMethod]
     public void NewerUnreadableLedgerIsNeitherUsedNorOverwritten()
     {
