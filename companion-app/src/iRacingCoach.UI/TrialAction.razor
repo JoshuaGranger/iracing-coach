@@ -8,7 +8,8 @@
         @if (!Compact) { <p>@Action.Instruction</p> }
         @if (Action.Trial is { } trial)
         {
-            <small>@trial.MetricLabel @Percent(trial.MetricStartPct)–@Percent(trial.MetricEndPct)% · @Window(trial) · success: @trial.MinimumLaps screened laps at least @Seconds(trial.ThresholdSeconds) s under @Seconds(trial.BaselineMedianSeconds) s</small>
+            @* The success rule is its own unit so a narrow strip wraps before it instead of cutting it. *@
+            <small class="ri-test-terms"><span>@trial.MetricLabel @Percent(trial.MetricStartPct)–@Percent(trial.MetricEndPct)% · @Window(trial) ·</span> <span class="ri-test-rule">success: @trial.MinimumLaps screened laps at least @Seconds(trial.ThresholdSeconds) s under @Seconds(trial.BaselineMedianSeconds) s</span></small>
         }
         else if (Eligibility != "eligible")
         {
