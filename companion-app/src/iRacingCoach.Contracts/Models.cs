@@ -173,7 +173,18 @@ public sealed record LocalSetup(
     // the same one drove the same adjustments.
     string GarageFingerprint = "",
     // When the recording that supplied Fields started (ISO 8601), when known.
-    string RecordedUtc = "");
+    string RecordedUtc = "",
+    // For a setup file showing recorded values: the linked recordings the backend found
+    // drove exactly those garage adjustments (run readings and computed readouts aside),
+    // and those it found drove different ones. A linked recording in neither list is unknown.
+    IReadOnlyList<string>? MatchingAnalysisPaths = null,
+    IReadOnlyList<string>? DifferingAnalysisPaths = null,
+    // Set by the setup library, never by a mapper: the recorded setups this file stands
+    // for, the words they add to a search, and, on a recorded setup the library keeps
+    // beside its file, the name of the file whose values it differs from.
+    IReadOnlyList<string>? GroupedSetupIds = null,
+    string SearchAliases = "",
+    string DiffersFromFile = "");
 
 /// <summary>One setting of a backend setup comparison (compare_iracing_setups).</summary>
 /// <param name="Key">The field key both setups list it under, so the page keeps its own label.</param>

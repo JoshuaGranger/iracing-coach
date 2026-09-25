@@ -18,14 +18,15 @@ public sealed partial class CompanionState
     /// <summary>
     /// Every word of the search appears somewhere in the setup's name, file, car (display
     /// name or iRacing car path), track, season or session, in any order: "supra IRP"
-    /// found nothing when the whole phrase had to appear in one place.
+    /// found nothing when the whole phrase had to appear in one place. A file also matches the
+    /// words of the recorded setups the library lists as that file.
     /// </summary>
     public static bool MatchesSetupSearch(LocalSetup setup, string? query)
     {
         var words = (query ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 0) return true;
         var haystack = string.Join(' ', setup.Name, Path.GetFileName(setup.StoPath), setup.Car, setup.CarKey, setup.Track,
-            setup.Season, setup.Role);
+            setup.Season, setup.Role, setup.SearchAliases);
         return words.All(word => haystack.Contains(word, StringComparison.CurrentCultureIgnoreCase));
     }
 

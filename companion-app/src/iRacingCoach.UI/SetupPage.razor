@@ -6,7 +6,9 @@
 else
 {
     var visibleSetups = VisibleSetups;
-    var selectedSetup = visibleSetups.FirstOrDefault(item => item.Id == State.SelectedSetupId) ?? visibleSetups.FirstOrDefault();
+    var library = State.LibrarySetups;
+    var selectedId = SetupLibrary.EntryId(library, State.SelectedSetupId);
+    var selectedSetup = visibleSetups.FirstOrDefault(item => item.Id == selectedId) ?? visibleSetups.FirstOrDefault();
     <div class="setup-library-page">
         <header class="page-heading compact-heading">
             <div><span class="eyebrow">Setups</span><h1>Your setup library</h1></div>
@@ -41,7 +43,7 @@ else
                         <button class="setup-library-row @(selectedSetup?.Id == setup.Id ? "selected" : null)" aria-pressed="@(selectedSetup?.Id == setup.Id ? "true" : "false")" @onclick="() => Select(setup)">
                             <span class="setup-library-row-top"><strong>@setup.Name</strong><small>@SourceLabel(setup)</small></span>
                             <span>@setup.Car · @(setup.Track.Length > 0 ? setup.Track : "Track unspecified")</span>
-                            <small>@ValuesSummary(setup) · @evidence.Count linked recording@(evidence.Count == 1 ? "" : "s") · @(setup.Season.Length > 0 ? setup.Season : "Season unknown")</small>
+                            <small>@ValuesSummary(setup)@(setup.DiffersFromFile.Length > 0 ? " · differs from the file" : "") · @evidence.Count linked recording@(evidence.Count == 1 ? "" : "s") · @(setup.Season.Length > 0 ? setup.Season : "Season unknown")</small>
                         </button>
                     }
                 </section>
@@ -69,7 +71,11 @@ else
                             <div class="setup-evidence-empty"><strong>No recording uses this setup yet</strong><p>Record a run with this setup, then analyze it to compare handling and pace.</p><button class="button secondary compact" @onclick='() => State.Navigate("analysis")'>Review a recording</button></div>
                         }
                         @{ var values = SetupReadings.Values(selected); var readings = SetupReadings.Readings(selected); }
-                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId" @bind:after="() => CompareSelectedAsync(selected)" disabled="@(values.Count == 0)" title="@(values.Count == 0 ? "This setup's values are unknown, so it can't be compared." : null)"><option value="">No comparison</option>@foreach (var group in CompareGroups(State.Setups, selected)) { <optgroup label="@group.Label">@foreach (var candidate in group.Setups) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</optgroup> }</select></label></div>
+                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId" @bind:after="() => CompareSelectedAsync(selected)" disabled="@(values.Count == 0)" title="@(values.Count == 0 ? "This setup's values are unknown, so it can't be compared." : null)"><option value="">No comparison</option>@foreach (var group in CompareGroups(library, selected)) { <optgroup label="@group.Label">@foreach (var candidate in group.Setups) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</optgroup> }</select></label></div>
+                        @if (selected.DiffersFromFile.Length > 0)
+                        {
+                            <p class="setup-source-note" data-differs-from-file>Differs from the file @selected.DiffersFromFile: this recording loaded it unchanged, but with other garage adjustments than the file's recorded values.</p>
+                        }
                         @if (values.Count > 0 && selected.ValuesNote.Length > 0)
                         {
                             <p class="setup-source-note" data-values-source="@selected.ValuesSource">@selected.ValuesNote</p>
@@ -124,7 +130,7 @@ else
                                     <dl>@foreach (var field in readings) { <div><dt>@field.Group · @field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
                             }
                         }
-                        @if (CompareExclusions(State.Setups, selected) is { Count: > 0 } excluded)
+                        @if (CompareExclusions(library, selected) is { Count: > 0 } excluded)
                         {
                             <details class="setup-values-group" data-compare-excluded open="@(excluded.Count <= 3)"><summary>Not offered for comparison <span>@excluded.Count same-car setup@(excluded.Count == 1 ? "" : "s")</span></summary>
                                 <dl>@foreach (var item in excluded) { <div data-excluded-setup="@item.Setup.Id"><dt>@item.Setup.Name</dt><dd>@item.Reason</dd></div> }</dl></details>
@@ -141,10 +147,11 @@ else
     private bool _creating;
     private bool _tuning;
     private IReadOnlyList<LocalSetup> VisibleSetups => State.FilteredSetups.ToArray();
-    private LocalSetup? Selected => VisibleSetups.FirstOrDefault(item => item.Id == State.SelectedSetupId) ?? VisibleSetups.FirstOrDefault();
-    private IEnumerable<string> Cars => State.Setups.Select(item => item.Car).Where(value => value.Length > 0).Distinct().Order();
-    private IEnumerable<string> Tracks => State.Setups.Select(item => item.Track).Where(value => value.Length > 0).Distinct().Order();
-    private IEnumerable<string> Seasons => State.Setups.Select(item => item.Season.Length > 0 ? item.Season : "Unknown").Distinct().OrderDescending();
+    // A recorded setup the library lists as its file (after tuning from it, say) selects that file.
+    private LocalSetup? Selected => VisibleSetups.FirstOrDefault(item => item.Id == State.LibrarySetupId(State.SelectedSetupId)) ?? VisibleSetups.FirstOrDefault();
+    private IEnumerable<string> Cars => State.LibrarySetups.Select(item => item.Car).Where(value => value.Length > 0).Distinct().Order();
+    private IEnumerable<string> Tracks => State.LibrarySetups.Select(item => item.Track).Where(value => value.Length > 0).Distinct().Order();
+    private IEnumerable<string> Seasons => State.LibrarySetups.Select(item => item.Season.Length > 0 ? item.Season : "Unknown").Distinct().OrderDescending();
     protected override void OnParametersSet()
     {
         if (Selected is not { } setup) return;
@@ -201,7 +208,8 @@ else
     private static string Seconds(double? value) => value is { } v ? $"{v:0.000}s" : "—";
     private static string Signed(double? value) => value is { } v ? $"{v:+0.000;-0.000;0.000}s/lap" : "—";
     private static string Percent(double? value) => value is { } v ? $"{v:0.0}%" : "—";
-    private LocalSetup? Comparison(LocalSetup setup) => CompareCandidates(State.Setups, setup).FirstOrDefault(item => item.Id == State.CompareSetupId);
+    // The Compare list follows the library: a file stands for the recordings grouped into it.
+    private LocalSetup? Comparison(LocalSetup setup) => CompareCandidates(State.LibrarySetups, setup).FirstOrDefault(item => item.Id == State.CompareSetupId);
     /// <summary>A setup's name with its newest linked recording, never a list of every date.</summary>
     private string ComparisonLabel(LocalSetup setup)
     {

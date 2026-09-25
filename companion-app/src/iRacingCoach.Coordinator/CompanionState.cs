@@ -272,7 +272,17 @@ public sealed partial class CompanionState : IDisposable
     public string SetupCarFilter { get; set; } = string.Empty;
     public string SetupTrackFilter { get; set; } = string.Empty;
     public string SetupSeasonFilter { get; set; } = string.Empty;
-    public IEnumerable<LocalSetup> FilteredSetups => Setups.Where(item =>
+    /// <summary>
+    /// The Setups library: one entry per setup the driver loads. A recorded setup that loaded a
+    /// library file unchanged with the file's own adjustments is listed as that file
+    /// (<see cref="SetupLibrary"/>); <see cref="Setups"/> keeps every entry for tuning.
+    /// </summary>
+    public IReadOnlyList<LocalSetup> LibrarySetups => SetupLibrary.Group(Setups);
+
+    /// <summary>The library entry that lists this setup (a grouped recording's file).</summary>
+    public string LibrarySetupId(string? setupId) => SetupLibrary.EntryId(LibrarySetups, setupId);
+
+    public IEnumerable<LocalSetup> FilteredSetups => LibrarySetups.Where(item =>
         (SetupCarFilter.Length == 0 || item.Car == SetupCarFilter)
         && (SetupTrackFilter.Length == 0 || item.Track == SetupTrackFilter)
         && (SetupSeasonFilter.Length == 0 || (item.Season.Length == 0 ? "Unknown" : item.Season) == SetupSeasonFilter)
@@ -465,7 +475,7 @@ public sealed partial class CompanionState : IDisposable
                 // itself was fixed, so the navigation gate must not hide that path.
                 HasOpenAnalyzedRace = TuningEvidenceRaces.Any(),
                 HasSetupFiles = Setups.Count > 0,
-                HasComparableSetups = CapabilityRegistry.HasSetupComparison(Setups, SelectedSetupId),
+                HasComparableSetups = CapabilityRegistry.HasSetupComparison(LibrarySetups, LibrarySetupId(SelectedSetupId)),
                 HasTrackView = CapabilityRegistry.HasTrackView(CurrentAnalysis),
                 HasMissingRawTelemetry = Archive?.Restored.UnresolvedSources > 0,
                 LiveConnected = live.Connected,

@@ -307,7 +307,10 @@ public static class RuntimeMapper
                 values.Fields, Text(identity, "season_key") ?? string.Empty, values.AnalysisPaths,
                 values.Source, values.Note, Text(entry, "car_folder") ?? string.Empty, values.AnalysisPath, values.Readings,
                 GarageFingerprint: values.Source == "recording" ? Text(recordedValues, "garage_fingerprint") ?? string.Empty : string.Empty,
-                RecordedUtc: values.Source == "recording" ? Text(recordedValues, "session_start") ?? string.Empty : string.Empty));
+                RecordedUtc: values.Source == "recording" ? Text(recordedValues, "session_start") ?? string.Empty : string.Empty,
+                // Only recorded values can be matched to a recording; an exported sheet uses its own names and units.
+                MatchingAnalysisPaths: values.Source == "recording" ? LinkedUses(entry, true) : [],
+                DifferingAnalysisPaths: values.Source == "recording" ? LinkedUses(entry, false) : []));
         }
         return result;
     }
@@ -359,6 +362,16 @@ public static class RuntimeMapper
         }
         return DisplayTrack(Text(filenameIdentity, "track_hint")) ?? string.Empty;
     }
+
+    /// <summary>
+    /// The linked recordings the backend found drove (or did not drive) the garage adjustments
+    /// shown for the file. A use without a verdict (no fingerprint on a side) is in neither list.
+    /// </summary>
+    private static IReadOnlyList<string> LinkedUses(JsonElement entry, bool match) =>
+        Array(Object(entry, "recorded_setup"), "uses")
+            .Where(use => Boolean(use, "values_match") == match)
+            .Select(use => Text(use, "analysis_path")).OfType<string>().Where(path => path.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
     private sealed record SetupFileValueSet(IReadOnlyList<SetupField> Fields, IReadOnlyList<string> AnalysisPaths, string Source, string Note,
         string AnalysisPath = "", IReadOnlyList<SetupField>? Readings = null);
