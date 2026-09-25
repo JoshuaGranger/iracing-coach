@@ -1685,8 +1685,15 @@ def _analysis_pipeline_sha256() -> str:
 # everything since the previous section's start; and a run's tire explanation
 # includes the confirmed tire change that started it (Kansas 9/21 run 2). Cached
 # analyses rebuild the projection through refresh_race_investigation.
+# Review 2026-09-25 (Details tire convention): v20 core answers are unchanged.
+# Technical insights state tire condition as tread remaining ("Lowest
+# remaining", "Front minus rear remaining", "2 vs 4 outgoing remaining")
+# instead of wear, matching the takeaway and every tire reading (Kansas 9/21
+# showed "9.8 %" wear beside "90.2 % remaining"). The workflow rebuilds
+# technical_insights from the cached analysis on every analysis request, after
+# tire learning, so cached analyses remain valid.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "d0198de10733af5b22810c07025df0b904a8c5ee6cf25466f04273658a89d83c"
+    "1ee2bfd0076c1ed734b2a2ab955f495c433b323eca9fe5a3e08820f4260d5110"
 )
 
 

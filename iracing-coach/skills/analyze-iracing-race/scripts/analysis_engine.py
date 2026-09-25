@@ -6479,16 +6479,17 @@ def build_technical_insights(
             )
         )
     if two_wear is not None and four_wear is not None:
-        wear_comparison = round(two_wear - four_wear, 1)
+        # Displayed as tread remaining, the convention every tire reading uses.
+        remaining_comparison = round(four_wear - two_wear, 1)
         pit_metrics.append(
             metric(
-                "2 vs 4 outgoing wear",
-                wear_comparison,
+                "2 vs 4 outgoing remaining",
+                remaining_comparison,
                 "points",
                 "derived",
                 signed=True,
-                detail="Average confirmed O/M/I wear before two-tire stops minus the four-tire-stop average.",
-                action="Use this with the service, cycle, and following-run results; unlike-for-like wear is essential.",
+                detail="Average confirmed O/M/I tread remaining before two-tire stops minus the four-tire-stop average.",
+                action="Use this with the service, cycle, and following-run results; unlike-for-like tire condition is essential.",
                 group="tires",
             )
         )
@@ -6664,14 +6665,17 @@ def build_technical_insights(
         key=lambda item: _finite(item.get("run_number")) or -1.0,
         default=None,
     )
-    latest_corner_wear: dict[str, float] = {}
+    # Tire condition reads as tread remaining everywhere: the takeaway, the
+    # per-run readings and the tire cards all state remaining, so a metric in
+    # wear ("9.8 %" beside "90.2 % remaining", Kansas 9/21) contradicted them.
+    latest_corner_remaining: dict[str, float] = {}
     if latest_measured_run is not None:
         for corner, details in ((latest_measured_run.get("tire_observation") or {}).get("tires") or {}).items():
             if not isinstance(details, Mapping):
                 continue
             remaining = _finite(details.get("average_remaining_percent"))
             if remaining is not None:
-                latest_corner_wear[str(corner).upper()] = 100.0 - remaining
+                latest_corner_remaining[str(corner).upper()] = remaining
 
     tire_metrics: list[dict[str, Any]] = []
     tire_prediction = tire_learning.get("prediction") or {}
@@ -6681,10 +6685,10 @@ def build_technical_insights(
         run_suffix = f" - run {run_number}" if run_number else ""
         tire_metrics.append(
             metric(
-                f"Most wear: {corner} {band}{run_suffix}",
-                round(100.0 - lowest_remaining, 1),
+                f"Lowest remaining: {corner} {band}{run_suffix}",
+                round(lowest_remaining, 1),
                 "%",
-                detail=f"{lowest_remaining:.1f}% remained in the most-used confirmed O/M/I band.",
+                detail="Tread remaining in the most-used confirmed O/M/I band.",
                 action="Compare this corner and band with steering load and the late-run pace change.",
                 tone="attention" if lowest_remaining < 45.0 else "neutral",
                 group="condition",
@@ -6722,34 +6726,34 @@ def build_technical_insights(
                 group="driver load",
             )
         )
-    if len(latest_corner_wear) >= 4:
-        front_wear = _mean(latest_corner_wear.get(corner) for corner in ("LF", "RF"))
-        rear_wear = _mean(latest_corner_wear.get(corner) for corner in ("LR", "RR"))
-        left_wear = _mean(latest_corner_wear.get(corner) for corner in ("LF", "LR"))
-        right_wear = _mean(latest_corner_wear.get(corner) for corner in ("RF", "RR"))
-        if front_wear is not None and rear_wear is not None:
+    if len(latest_corner_remaining) >= 4:
+        front_remaining = _mean(latest_corner_remaining.get(corner) for corner in ("LF", "RF"))
+        rear_remaining = _mean(latest_corner_remaining.get(corner) for corner in ("LR", "RR"))
+        left_remaining = _mean(latest_corner_remaining.get(corner) for corner in ("LF", "LR"))
+        right_remaining = _mean(latest_corner_remaining.get(corner) for corner in ("RF", "RR"))
+        if front_remaining is not None and rear_remaining is not None:
             tire_metrics.append(
                 metric(
-                    "Front vs rear wear",
-                    round(front_wear - rear_wear, 1),
+                    "Front minus rear remaining",
+                    round(front_remaining - rear_remaining, 1),
                     "points",
                     "derived",
                     signed=True,
-                    detail="Average front wear minus average rear wear at the latest confirmed tire reading.",
-                    action="Positive means the fronts wore more; inspect entry speed, steering work, and balance together.",
+                    detail="Average front tread remaining minus average rear tread remaining at the latest confirmed tire reading.",
+                    action="Negative means the fronts wore more; inspect entry speed, steering work, and balance together.",
                     group="balance",
                 )
             )
-        if right_wear is not None and left_wear is not None:
+        if right_remaining is not None and left_remaining is not None:
             tire_metrics.append(
                 metric(
-                    "Right vs left wear",
-                    round(right_wear - left_wear, 1),
+                    "Right minus left remaining",
+                    round(right_remaining - left_remaining, 1),
                     "points",
                     "derived",
                     signed=True,
-                    detail="Average right-side wear minus average left-side wear at the latest confirmed tire reading.",
-                    action="Use the per-corner O/M/I cards to see which tire and band created the difference.",
+                    detail="Average right-side tread remaining minus average left-side tread remaining at the latest confirmed tire reading.",
+                    action="Negative means the right side wore more; use the per-corner O/M/I cards to see which tire and band created the difference.",
                     group="balance",
                 )
             )

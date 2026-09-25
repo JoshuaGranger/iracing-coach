@@ -248,7 +248,7 @@
                     <div class="technical-investigation-body tire-investigation">
                         <div class="technical-tire-investigation-shell @(TireDriverMetrics.Count > 0 ? "with-dynamics" : null)">
                             <section class="technical-tire-source measured" data-tire-source="measured">
-                                <header><strong>Tire condition at stop</strong>@if (TireStops.Count > 0) { <small class="technical-tire-key">Each band: wear · carcass/surface °F</small> }</header>
+                                <header><strong>Tire condition at stop</strong>@if (TireStops.Count > 0) { <small class="technical-tire-key">Each band: tread remaining · carcass/surface °F</small> }</header>
                                 @if (TireStops.Count == 0)
                                 {
                                     <TechnicalUnavailable Title="No tire condition available" Detail="This race did not produce a completed outer, middle, and inner tire reading." Action="Use the dynamics panel for immediate technique review; a completed stop will add physical tire condition next time." />
@@ -266,14 +266,14 @@
                                         <div class="technical-tire-grid">
                                             @foreach (var tire in TireConditions(pit))
                                             {
-                                                @* Each band tile holds that band's wear and its carcass/surface temperature, so the
-                                                   card fits its grid cell at 1280x720 without clipping a footer. *@
+                                                @* Each band tile holds that band's tread remaining and its carcass/surface temperature,
+                                                   so the card fits its grid cell at 1280x720 without clipping a footer. *@
                                                 <article class="technical-tire-card">
                                                     <header><strong>@tire.Corner</strong><span class="technical-tire-pressure">@Pressure(tire.PressurePsi)</span><span>@(ChangedAtStop(SelectedTireRun, tire.Corner) ? "Changed" : "Kept")</span></header>
                                                     <div class="technical-tire-bands" aria-label="@tire.Corner wear and carcass/surface temperature by band">
                                                         @foreach (var band in TireBands(tire))
                                                         {
-                                                            <span style="--tread-color:@TreadColor(Remaining(band.Value))" title="@BandTitle(tire, band.Label, band.Value)"><small>@band.Label <b>@Percent(band.Value)</b></small><em class="technical-band-temperature">@BandTemperatures(tire, band.Label)</em></span>
+                                                            <span style="--tread-color:@TreadColor(Remaining(band.Value))" title="@BandTitle(tire, band.Label, band.Value)"><small>@band.Label <b>@Percent(Remaining(band.Value))</b></small><em class="technical-band-temperature">@BandTemperatures(tire, band.Label)</em></span>
                                                         }
                                                     </div>
                                                 </article>
@@ -490,7 +490,7 @@
     private string LongestRun => LongestGreenRun is null ? "—" : $"{LongestGreenRun.GreenLaps} laps";
     private string RecordedServiceTime { get { var total = PitRuns.Sum(run => run.PitStop?.ServiceSeconds ?? 0); return Duration(total > 0 ? total : null); } }
     private string TireSummary => TireStops.Count > 0 ? "Pit-stop tire condition" : "No tire snapshot";
-    private string MostTireWearReading => MostRecordedTireWear() is { } value ? $"{value:0.0}%" : "—";
+    private string LowestRemainingReading => LowestRecordedTreadRemaining() is { } value ? $"{value:0.0}%" : "—";
     private int TireChangeCount => PitRuns.Sum(run => run.PitStop?.TiresChanged?.Count ?? 0);
     private string FuelSummary => Workspace.Strategy.GreenFuelGallonsPerLap.HasValue ? "Fuel baseline available" : FuelRuns.Count > 0 ? "Consumption by run" : "Fuel use unavailable";
     private string FuelPerGreenLap => Gallons(Workspace.Strategy.GreenFuelGallonsPerLap);
@@ -568,8 +568,23 @@
     private string FuelTakeaway => InsightTakeaway(FuelInsight) ?? (AuthoritativeFuelStops is { } minimum
         ? $"All-green fuel minimum: {minimum} stop{(minimum == 1 ? string.Empty : "s")} plus {FuelReserve} reserve."
         : FuelRuns.Count > 0 ? $"Run {FuelRuns.MaxBy(run => run.FuelUsedGallons)?.Number} used the most fuel." : "No fuel outcome can be evaluated.");
-    private string PaceState => InsightRating(RacecraftInsight) ?? (RepresentativePaceRun?.PaceSlopeSecondsPerLap switch { > .02 => "Falling off", < -.01 => "Improving", not null => "Stable", _ => ComparableRuns.Count > 0 ? "Comparable" : "Unavailable" });
-    private string PaceStateClass => InsightStateClass(RacecraftInsight) ?? (PaceState switch { "Stable" or "Improving" => "positive", "Comparable" => "neutral", "Falling off" => "attention", _ => "unavailable" });
+    // The backend's gain/loss/stable rating is the start-to-finish position change. A bare
+    // "Gain" above "No clean run comparison" (Kansas 9/21) read as a pace gain nothing
+    // supported, so the badge states the measured position change it rests on, and
+    // without that measurement it falls back to the clean-run pace state.
+    private string? RacecraftRating => RacecraftInsight is { } insight && !insight.Status.Equals("unavailable", StringComparison.OrdinalIgnoreCase)
+        ? insight.Rating.Trim().ToLowerInvariant() : null;
+    private bool PositionRating => RacecraftRating is "gain" or "loss" or "stable";
+    private AnalysisTechnicalMetric? NetPositions => RacecraftInsight?.Metrics.FirstOrDefault(metric => metric.Label.Equals("Net positions", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(metric.Value));
+    private string PaceTrendState => RepresentativePaceRun?.PaceSlopeSecondsPerLap switch { > .02 => "Falling off", < -.01 => "Improving", not null => "Stable", _ => ComparableRuns.Count > 0 ? "Comparable" : "Unavailable" };
+    private string PaceTrendClass => PaceTrendState switch { "Stable" or "Improving" => "positive", "Comparable" => "neutral", "Falling off" => "attention", _ => "unavailable" };
+    private string PaceState => PositionRating
+        ? NetPositions is { } net ? (RacecraftRating == "stable" ? "Positions held" : net.Value) : PaceTrendState
+        : InsightRating(RacecraftInsight) ?? PaceTrendState;
+    private string PaceStateClass => PositionRating
+        ? NetPositions is null ? PaceTrendClass : RacecraftRating switch { "gain" => "positive", "loss" => "attention", _ => "neutral" }
+        : InsightStateClass(RacecraftInsight) ?? PaceTrendClass;
     private string PaceTakeaway => Workspace.Investigation?.Summary ?? InsightTakeaway(RacecraftInsight) ?? (RepresentativePaceRun is { } run
         ? $"Run {run.Number}: {PaceTrend(run)} across {run.GreenLaps} green laps."
         : "No clean run is long enough for a pace outcome.");
@@ -577,7 +592,7 @@
     private IReadOnlyList<CardMetric> PitCardMetrics => CardMetrics(PitInsight,
         new("Stops", Workspace.PitStops.ToString(), "measured"), new("Longest run", LongestRun, "derived"), new("Service", RecordedServiceTime, "measured"));
     private IReadOnlyList<CardMetric> TireCardMetrics => CardMetrics(TireInsight,
-        new("Snapshots", TireStops.Count.ToString(), "measured"), new("Most wear", MostTireWearReading, "measured"), new("Changed", TireChangeCount.ToString(), "measured"));
+        new("Snapshots", TireStops.Count.ToString(), "measured"), new("Lowest remaining", LowestRemainingReading, "measured"), new("Changed", TireChangeCount.ToString(), "measured"));
     private IReadOnlyList<CardMetric> FuelCardMetrics => CardMetrics(FuelInsight,
         new("Green lap", FuelPerGreenLap, "measured"), new("Range", FuelRange, "derived"), new("Reserve", FuelReserve, "calculated"));
     private IReadOnlyList<CardMetric> RacecraftCardMetrics => RacecraftOverviewMetrics(CardMetrics(RacecraftInsight,
@@ -768,7 +783,7 @@
     {
         var name = band switch { "O" => "Outside", "M" => "Middle", "I" => "Inside", _ => "Average" };
         static string Degrees(double? value) => value.HasValue ? $"{value.Value:0} °F" : "not measured";
-        var text = $"{name}: {Percent(wear)} worn; carcass {Degrees(Band(tire.CarcassTemperatureF, band))}, surface {Degrees(Band(tire.SurfaceTemperatureF, band))}.";
+        var text = $"{name}: {Percent(Remaining(wear))} tread remaining; carcass {Degrees(Band(tire.CarcassTemperatureF, band))}, surface {Degrees(Band(tire.SurfaceTemperatureF, band))}.";
         return tire.CarcassTemperatureF is { Inner: { } inside, Outer: { } outside }
             ? $"{text} Carcass inside minus outside {inside - outside:+0;−0;0} °F."
             : text;
@@ -791,14 +806,15 @@
         return maximum <= 0 ? "0%" : $"{Math.Clamp((run.FuelUsedGallons ?? 0) / maximum * 100, 0, 100):0.#}%";
     }
     private static string PaceDirectionClass(AnalysisRun run) => run.EarlyToLateDeltaSeconds switch { > .01 => "slower", < -.01 => "faster", _ => "stable" };
-    private double? MostRecordedTireWear() => TireStops
+    // Tire condition reads as tread remaining everywhere on this page; bands carry wear.
+    private double? LowestRecordedTreadRemaining() => TireStops
         .SelectMany(run => TireConditions(run.PitStop!))
         .SelectMany(tire => TireBands(tire))
-        .Select(band => band.Value)
+        .Select(band => Remaining(band.Value))
         .Where(value => value.HasValue)
         .Select(value => value!.Value)
         .DefaultIfEmpty(double.NaN)
-        .Max() is var value && !double.IsNaN(value) ? value : null;
+        .Min() is var value && !double.IsNaN(value) ? value : null;
     private static IEnumerable<double?> LegacyWear(AnalysisPitStop pit) => [pit.LeftFrontTireWearPercent, pit.RightFrontTireWearPercent, pit.LeftRearTireWearPercent, pit.RightRearTireWearPercent];
     private static bool ChangedAtStop(AnalysisRun? run, string corner) => run?.PitStop?.TiresChanged?.Contains(corner, StringComparer.OrdinalIgnoreCase) == true;
     private static IReadOnlyList<AnalysisTireCondition> TireConditions(AnalysisPitStop pit)

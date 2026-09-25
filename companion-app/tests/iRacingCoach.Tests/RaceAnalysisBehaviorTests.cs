@@ -418,10 +418,11 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(technical, "Comparable reference laps");
         StringAssert.Contains(technical, "Find reference laps");
         StringAssert.Contains(technical, "Estimated life");
-        StringAssert.Contains(technical, "new(\"Most wear\", MostTireWearReading");
+        StringAssert.Contains(technical, "new(\"Lowest remaining\", LowestRemainingReading");
+        Assert.DoesNotContain("new(\"Most wear\"", technical, "Tire condition reads as tread remaining everywhere.");
         Assert.DoesNotContain("new(\"Lowest\", LowestTireReading", technical);
         StringAssert.Contains(technical, "PredictionUnavailableReason");
-        // Each band tile carries its wear and its carcass/surface temperature; pressure sits in the card header.
+        // Each band tile carries its tread remaining and its carcass/surface temperature; pressure sits in the card header.
         // A separate footer row did not fit the grid cell at 1280x720 and was clipped.
         StringAssert.Contains(technical, "<em class=\"technical-band-temperature\">@BandTemperatures(tire, band.Label)</em>");
         StringAssert.Contains(technical, "<span class=\"technical-tire-pressure\">@Pressure(tire.PressurePsi)</span>");

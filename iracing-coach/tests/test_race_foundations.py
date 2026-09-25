@@ -790,12 +790,39 @@ class RaceFoundationTests(unittest.TestCase):
         self.assertEqual(pit_metrics["2 vs 4 service"]["numeric_value"], -4.0)
         self.assertEqual(pit_metrics["2 vs 4 next-run pace"]["numeric_value"], 0.5)
         self.assertEqual(pit_metrics["2 vs 4 cycle"]["numeric_value"], -3.0)
-        self.assertEqual(pit_metrics["2 vs 4 outgoing wear"]["numeric_value"], -10.0)
+        # Tread remaining, like every tire reading: 80% before the two-tire stop, 70% before the four.
+        self.assertEqual(pit_metrics["2 vs 4 outgoing remaining"]["numeric_value"], 10.0)
+        self.assertNotIn("2 vs 4 outgoing wear", pit_metrics)
         self.assertIn("association", pit_metrics["2 vs 4 next-run pace"]["action"])
 
         one_strategy = {"pit_assessments": strategy["pit_assessments"][:1], "forecast": {}}
         one_call = build_technical_insights([], runs[:1], {}, one_strategy, {}, {})[0]
         self.assertFalse(any(item["label"].startswith("2 vs 4") for item in one_call["metrics"]))
+
+    def test_tire_findings_read_as_tread_remaining_like_the_takeaway(self) -> None:
+        # Kansas 9/21: the tire card showed "Most wear: RF middle - run 1  9.8 %"
+        # beside "The most-worn band was RF middle, with 90.2% remaining."
+        bands = {"LF": {"L": 96.0, "M": 97.1, "R": 97.5}, "RF": {"L": 91.0, "M": 90.2, "R": 92.4},
+                 "LR": {"L": 97.8, "M": 98.0, "R": 98.3}, "RR": {"L": 94.1, "M": 93.6, "R": 95.0}}
+        observation = {"tires": {corner: {"remaining_percent": values, "average_remaining_percent": sum(values.values()) / 3}
+                                 for corner, values in bands.items()}}
+        runs = [
+            {"run_number": 1, "start_lap": 1, "end_lap": 17, "ended_with_pit_stop": True,
+             "pit_service": {"start_time": 100.0, "end_time": 118.0, "tires_changed_observed": ["LF", "LR", "RF", "RR"]},
+             "tire_observation": observation, "pace": {}},
+            {"run_number": 2, "start_lap": 19, "end_lap": 42, "ended_with_pit_stop": False, "pace": {}},
+        ]
+        tires = next(item for item in build_technical_insights([], runs, {}, {"forecast": {}}, {}, {}) if item["key"] == "tires")
+        metrics = {item["label"]: item for item in tires["metrics"]}
+
+        self.assertEqual(tires["takeaway"], "The most-worn band was RF middle, with 90.2% remaining.")
+        self.assertEqual(metrics["Lowest remaining: RF middle - run 1"]["value"], "90.2 %")
+        front = (sum(bands["LF"].values()) + sum(bands["RF"].values())) / 6
+        rear = (sum(bands["LR"].values()) + sum(bands["RR"].values())) / 6
+        self.assertAlmostEqual(metrics["Front minus rear remaining"]["numeric_value"], round(front - rear, 1))
+        self.assertLess(metrics["Front minus rear remaining"]["numeric_value"], 0, "the fronts wore more")
+        self.assertLess(metrics["Right minus left remaining"]["numeric_value"], 0, "the right side wore more")
+        self.assertFalse([label for label in metrics if "wear" in label.lower()])
 
     def test_raw_archive_is_verified_deduplicated_and_non_destructive(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
