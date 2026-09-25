@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "iRacing Coach test-day review v1",
-  "description": "Result of the read-only review_test_day tool: 2-12 archived stints of one test day in recording order. Every lap-time, window, fall-off, verdict, setup-change, tire and next-change value is computed by the backend; a consumer displays them and never re-derives a verdict. A measurement that is absent is null (Not measured), never zero. Verdicts are faster, slower, within_scatter or not_comparable; there is no 'unchanged'. Garage-sheet tire readings carry timing 'unverified' and are never attributed to the stint's stop. Objects may gain optional fields; consumers must preserve unknown fields and fail on a missing required field or another contract/schema_version. Numeric domains are stated here rather than encoded because the repository's bounded validator supports no numeric keywords.",
+  "description": "Result of the read-only review_test_day tool: every run (the laps between pit visits) of 1-12 archived recordings of one test day, in time order. Every lap-time, window, fall-off, verdict, setup-change, tire and next-change value is computed by the backend; a consumer displays them and never re-derives a verdict. A measurement that is absent is null (Not measured), never zero. Verdicts are faster, slower, within_scatter or not_comparable; there is no 'unchanged'. Garage-sheet tire readings carry timing 'unverified' and are never attributed to the stint's stop. Objects may gain optional fields; consumers must preserve unknown fields and fail on a missing required field or another contract/schema_version. Numeric domains are stated here rather than encoded because the repository's bounded validator supports no numeric keywords.",
   "type": "object",
   "required": [
     "ok", "schema_version", "contract", "read_only", "run_count", "test_day_id", "car", "track",
@@ -12,7 +12,8 @@
     "schema_version": { "const": 1 },
     "contract": { "const": "test-day-review-v1" },
     "read_only": { "const": true },
-    "run_count": { "type": "integer", "description": "2-12; equals the length of runs." },
+    "run_count": { "type": "integer", "description": "2 or more; equals the length of runs. At most 24: a longer day keeps its latest runs and says so in limitations." },
+    "recording_count": { "type": "integer", "description": "Recordings (analysis.json files) reviewed, 1-12." },
     "test_day_id": { "type": ["string", "null"], "description": "The discovery test_day_id when every stint's analysis records the same one." },
     "car": {
       "type": "object",
@@ -132,7 +133,7 @@
       "type": "object",
       "required": ["status", "compared_with_run", "change_count", "changes", "unknown_count", "unknown_fields", "complete", "reason"],
       "properties": {
-        "status": { "enum": ["first_run", "unchanged", "changed", "unknown"] },
+        "status": { "enum": ["first_run", "unchanged", "changed", "unknown", "not_recorded"], "description": "not_recorded: both runs are in one recording, which keeps one garage sheet." },
         "compared_with_run": { "type": ["integer", "null"] },
         "change_count": { "type": "integer", "description": "Garage adjustments changed; computed readouts are not counted." },
         "changes": {
@@ -332,7 +333,20 @@
         "setup_change", "comparison", "tires", "laps", "trend"
       ],
       "properties": {
-        "run": { "type": "integer", "description": "1 = oldest stint." },
+        "run": { "type": "integer", "description": "The run's number on the day, 1 = oldest run; the table, chart labels and next-change text use it." },
+        "recording": {
+          "type": "object",
+          "required": ["number", "analysis_id", "analysis_path", "recorded_at", "run_in_recording", "runs_in_recording"],
+          "properties": {
+            "number": { "type": "integer", "description": "1 = oldest recording reviewed." },
+            "analysis_id": { "type": ["string", "null"] },
+            "analysis_path": { "type": ["string", "null"] },
+            "recorded_at": { "type": ["string", "null"] },
+            "run_in_recording": { "type": ["integer", "null"], "description": "Null when the recording has no timed run." },
+            "runs_in_recording": { "type": "integer" }
+          },
+          "additionalProperties": true
+        },
         "analysis_id": { "type": ["string", "null"] },
         "analysis_path": { "type": ["string", "null"] },
         "recorded_at": { "type": ["string", "null"] },

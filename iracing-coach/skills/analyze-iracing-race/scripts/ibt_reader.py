@@ -1783,17 +1783,36 @@ def _group_id(key: tuple[Any, ...]) -> str:
 TEST_DAY_MAX_GAP_S = 2 * 60 * 60
 
 
-def _test_day_key(group: Mapping[str, Any]) -> tuple[Any, ...] | None:
-    """Exact car/track identity of an offline practice or test stint, else None.
+def _server_event(group: Mapping[str, Any]) -> tuple[str, int] | None:
+    """The hosted/official event a group belongs to (subsession, else server session), or None offline."""
 
-    Only local groups (no subsession or server session) qualify. A Race or any
-    qualifying session never does, and neither does a group whose kind is
-    unknown or whose times come from file modification alone.
+    subsession = _as_int(group.get("subsession_id"))
+    if subsession not in {None, 0}:
+        return ("subsession", subsession)
+    session = _as_int(group.get("session_id"))
+    return ("session", session) if session not in {None, 0} else None
+
+
+def _is_race_or_qualifying(group: Mapping[str, Any]) -> bool:
+    kind = (_as_text(group.get("sim_session_type")) or _as_text(group.get("event_type")) or "").casefold()
+    return bool(group.get("is_race")) or "race" in kind or "qualify" in kind
+
+
+def _test_day_key(group: Mapping[str, Any], event_sessions: frozenset[tuple[str, int]] = frozenset()) -> tuple[Any, ...] | None:
+    """Exact car/track identity of a practice or test recording, else None.
+
+    Offline groups qualify, and so does a hosted or official practice whose
+    event has no race or qualifying session in the recordings (a standalone
+    practice is a test day too). A practice that belongs to a recorded race
+    event stays with that event. A Race or any qualifying session never
+    qualifies, and neither does a group whose kind is unknown or whose times
+    come from file modification alone.
     """
 
     if group.get("kind") != "session" or group.get("is_race"):
         return None
-    if not str(group.get("group_id") or "").startswith("local:"):
+    event = _server_event(group)
+    if event is not None and event in event_sessions:
         return None
     if group.get("time_source") == "mtime":
         return None
@@ -1811,7 +1830,7 @@ def _test_day_key(group: Mapping[str, Any]) -> tuple[Any, ...] | None:
 
 
 def _assign_test_days(groups: Sequence[dict[str, Any]]) -> None:
-    """Tag offline stints that form one test day, in place.
+    """Tag practice and test recordings that form one test day, in place.
 
     Stints of the same car path at the same track configuration join while
     each starts within :data:`TEST_DAY_MAX_GAP_S` of the previous stint's end.
@@ -1820,9 +1839,11 @@ def _assign_test_days(groups: Sequence[dict[str, Any]]) -> None:
     Every stint keeps its own ``group_id``; the tag never merges recordings.
     """
 
+    event_sessions = frozenset(event for group in groups if group.get("kind") == "session"
+                               and _is_race_or_qualifying(group) and (event := _server_event(group)) is not None)
     by_key: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     for group in groups:
-        key = _test_day_key(group)
+        key = _test_day_key(group, event_sessions)
         if key is not None:
             by_key.setdefault(key, []).append(group)
     for members in by_key.values():

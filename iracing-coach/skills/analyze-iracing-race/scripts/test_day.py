@@ -1,13 +1,16 @@
-"""One review of a test day: every stint in time order, compared at equal tire age.
+"""One review of a test day: every run in time order, compared at equal tire age.
 
-A test day is 2-12 archived stints of one car at one track configuration. Each
-stint is one recording with one garage setup. The review measures, for every
-stint, the median of clean laps in the same run-age windows (laps 2-5, and the
-last five laps up to the shortest stint of at least eight laps, never overlapping
-laps 2-5), a least-squares
-fall-off over laps 2..N with its residual scatter, the garage-setup change from
-the previous stint (tire readings excluded), whether the two stints can be
-compared at all, and the tire readings at the stint's stop with their sources.
+A test day is 1-12 archived recordings of one car at one track configuration
+holding two or more runs. A run is the laps between two pit visits, so one
+recording can hold several (an official practice split by garage and pit
+visits) and every run is a row. Each recording keeps one garage sheet. The
+review measures, for every run, the median of clean laps in the same run-age
+windows (laps 2-5, and the last five laps up to the shortest run of at least
+eight laps, never overlapping laps 2-5), a least-squares fall-off over laps
+2..N with its residual scatter, the garage-setup change from the previous run
+(tire readings excluded; not recorded between two runs of one recording),
+whether the two runs can be compared at all, and the tire readings at the
+run's stop with their sources.
 
 Nothing here infers a setup direction from tire temperatures, and nothing is
 called "unchanged": a difference inside the scatter threshold is Within
@@ -52,8 +55,11 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
 
 SCHEMA_VERSION = 1
 CONTRACT = "test-day-review-v1"
+MINIMUM_RECORDINGS = 1
+MAXIMUM_RECORDINGS = 12
 MINIMUM_RUNS = 2
-MAXIMUM_RUNS = 12
+# A long practice split by many pit visits keeps its latest runs; the review says how many it left out.
+MAXIMUM_ROWS = 24
 EARLY_WINDOW = (2, 5)
 LATE_WINDOW_LAPS = 5
 MINIMUM_WINDOW_LAPS = 3
@@ -283,16 +289,16 @@ def _change(current: Mapping[str, Any] | None, previous: Mapping[str, Any] | Non
     return {"temperature_f": delta("temperature_f"), "tread_percent": delta("tread_percent")}
 
 
-def _measured_run(analysis: Mapping[str, Any], screen: Mapping[int, Sequence[str]]) -> tuple[Mapping[str, Any] | None, list[dict[str, Any]], int]:
-    """The run with the most screened laps of known run age, and its lap rows."""
+def _run_rows(analysis: Mapping[str, Any], screen: Mapping[int, Sequence[str]]) -> list[tuple[Mapping[str, Any], list[dict[str, Any]]]]:
+    """Every run of the recording that has laps, in order, with its lap rows."""
 
     laps = sorted((lap for lap in analysis.get("laps") or () if isinstance(lap, Mapping) and (_number(lap.get("lap")) or 0) > 0),
                   key=lambda lap: lap["lap"])
     runs = sorted((run for run in analysis.get("runs") or () if isinstance(run, Mapping)
                    and _number(run.get("start_lap")) is not None and _number(run.get("end_lap")) is not None),
                   key=lambda run: (_number(run.get("start_lap")) or 0))
-    best: tuple[tuple[int, int, int], Mapping[str, Any], list[dict[str, Any]]] | None = None
-    for position, run in enumerate(runs):
+    result: list[tuple[Mapping[str, Any], list[dict[str, Any]]]] = []
+    for run in runs:
         start, end = int(run["start_lap"]), int(run["end_lap"])
         run_laps = [lap for lap in laps if start <= int(lap["lap"]) <= end]
         exposure = _run_exposure(run_laps)
@@ -309,14 +315,9 @@ def _measured_run(analysis: Mapping[str, Any], screen: Mapping[int, Sequence[str
             rows.append({"lap": number, "run_lap": run_lap, "lap_time_s": _round(lap.get("lap_time_s")),
                          "eligible": not reasons and (_number(lap.get("lap_time_s")) or 0) > 0,
                          "exclusion_reasons": reasons})
-        clean = sum(1 for row in rows if row["eligible"])
-        known_laps = max((row["run_lap"] for row in rows if row["run_lap"] is not None), default=0)
-        rank = (clean, known_laps, -position)
-        if best is None or rank > best[0]:
-            best = (rank, run, rows)
-    if best is None:
-        return None, [], len(runs)
-    return best[1], best[2], len(runs)
+        if rows:
+            result.append((run, rows))
+    return result
 
 
 def _tire_start(analysis: Mapping[str, Any], run: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -348,35 +349,27 @@ def _tire_start(analysis: Mapping[str, Any], run: Mapping[str, Any] | None) -> d
     return {"status": "no_prior_distance", "initial_odometer_m": values, "detail": None}
 
 
-def _stint(analysis: Mapping[str, Any], index: int, analysis_path: str | None) -> dict[str, Any]:
+def _recording_runs(analysis: Mapping[str, Any], index: int, analysis_path: str | None) -> list[dict[str, Any]]:
+    """One entry per run of one recording; a recording without a timed run is one entry without laps."""
+
     identity = analysis.get("identity")
     if not isinstance(identity, Mapping):
-        raise TestDayError(f"Stint {index + 1} has no identity; refresh its analysis.")
+        raise TestDayError(f"Recording {index + 1} has no identity; refresh its analysis.")
     for field in ("laps", "runs"):
         if not isinstance(analysis.get(field), list):
-            raise TestDayError(f"Stint {index + 1} has no {field} list; refresh its analysis.")
+            raise TestDayError(f"Recording {index + 1} has no {field} list; refresh its analysis.")
     recorded = _epoch(identity.get("session_start"))
     if recorded is None:
-        raise TestDayError(f"Stint {index + 1} has no recording time (identity.session_start); refresh its analysis.")
+        raise TestDayError(f"Recording {index + 1} has no recording time (identity.session_start); refresh its analysis.")
     offline = _is_offline_testing(analysis)
     screen = _screen(analysis, offline)
-    run, rows, run_count = _measured_run(analysis, screen)
+    runs = _run_rows(analysis, screen) or [(None, [])]
     by_lap = {int(lap["lap"]): lap for lap in analysis["laps"] if isinstance(lap, Mapping) and _number(lap.get("lap")) is not None}
-    for row in rows:
-        # A lap where the car stood still is neither a pace sample nor a pace observation to draw.
-        row["plotted"] = (_plotted(by_lap.get(row["lap"], {}), offline) and row["run_lap"] is not None
-                          and "stopped_on_track" not in row["exclusion_reasons"])
     setup = identity.get("setup")
     has_setup = isinstance(setup, Mapping) and bool(setup)
-    temperatures = [value for row in rows if (value := _number(_path(by_lap.get(row["lap"], {}), "conditions", "track_temperature_f"))) is not None]
-    start_fuel = _gallons((run or {}).get("fuel", {}).get("start_l") if isinstance((run or {}).get("fuel"), Mapping) else None)
-    if start_fuel is None and rows:
-        start_fuel = _gallons(_path(by_lap.get(rows[0]["lap"], {}), "fuel", "start_l"))
-    stop_header, stop_corners = _stop_reading(run)
-    sheet_header, sheet_corners = _sheet_reading(setup)
+    sheet = _sheet_reading(setup)
     selection = _path(analysis, "source", "selection") or {}
-    run_laps = max((row["run_lap"] for row in rows if row["run_lap"] is not None), default=0)
-    return {
+    recording = {
         "analysis": analysis, "index": index, "recorded": recorded, "offline": offline,
         "analysis_id": _text(analysis.get("analysis_id")), "analysis_path": analysis_path,
         "recorded_at": _text(identity.get("session_start")),
@@ -392,12 +385,30 @@ def _stint(analysis: Mapping[str, Any], index: int, analysis_path: str | None) -
         "garage_fields": garage_setup_fields(setup)["fields"] if has_setup else None,
         "garage_fingerprint": (garage_setup_fingerprint(setup) or "")[:16] or None if has_setup else None,
         "compound": _text(identity.get("tire_compound")),
-        "track_temp_f": _round(statistics.median(temperatures), 1) if temperatures else None,
-        "start_fuel_gal": start_fuel,
-        "tire_start": _tire_start(analysis, run),
-        "run": run, "run_count": run_count, "rows": rows, "run_laps": run_laps,
-        "stop": (stop_header, stop_corners), "sheet": (sheet_header, sheet_corners),
+        "run_count": len([run for run, _ in runs if run is not None]),
+        "sheet": sheet,
     }
+    entries = []
+    for position, (run, rows) in enumerate(runs, start=1):
+        for row in rows:
+            # A lap where the car stood still is neither a pace sample nor a pace observation to draw.
+            row["plotted"] = (_plotted(by_lap.get(row["lap"], {}), offline) and row["run_lap"] is not None
+                              and "stopped_on_track" not in row["exclusion_reasons"])
+        temperatures = [value for row in rows if (value := _number(_path(by_lap.get(row["lap"], {}), "conditions", "track_temperature_f"))) is not None]
+        start_fuel = _gallons((run or {}).get("fuel", {}).get("start_l") if isinstance((run or {}).get("fuel"), Mapping) else None)
+        if start_fuel is None and rows:
+            start_fuel = _gallons(_path(by_lap.get(rows[0]["lap"], {}), "fuel", "start_l"))
+        entries.append({
+            **recording,
+            "run_in_recording": position if run is not None else None,
+            "track_temp_f": _round(statistics.median(temperatures), 1) if temperatures else None,
+            "start_fuel_gal": start_fuel,
+            "tire_start": _tire_start(analysis, run),
+            "run": run, "rows": rows,
+            "run_laps": max((row["run_lap"] for row in rows if row["run_lap"] is not None), default=0),
+            "stop": _stop_reading(run),
+        })
+    return entries
 
 
 # --------------------------------------------------------------------------
@@ -589,6 +600,12 @@ def _setup_change(previous: Mapping[str, Any] | None, current: Mapping[str, Any]
     if previous is None:
         return {"status": "first_run", "compared_with_run": None, **empty, "complete": True, "reason": None}
     result = {"status": "unknown", "compared_with_run": previous["number"], **empty, "complete": False, "reason": None}
+    if previous["index"] == current["index"]:
+        # A recording keeps one garage sheet, so a change between two of its runs is not recorded.
+        result.update(status="not_recorded",
+                      reason=f"Runs {previous['number']} and {current['number']} are in one recording, which keeps one garage "
+                             "sheet; a setup change between them is not recorded.")
+        return result
     missing = [item["number"] for item in (previous, current) if item["garage_fields"] is None]
     if missing:
         result["reason"] = "No embedded garage setup was recorded for run " + " or ".join(str(number) for number in missing) + "."
@@ -610,6 +627,9 @@ def _setup_change(previous: Mapping[str, Any] | None, current: Mapping[str, Any]
         shown = ", ".join(f"{item['label'].lower()} {item['previous']} → {item['current']}" for item in readouts[:3])
         reason = (f"No adjustment changed; only computed garage readouts differ ({shown}"
                   + (", …" if len(readouts) > 3 else "") + ").")
+    if reason is None and previous["run_count"] > 1:
+        reason = (f"Compared with the one garage sheet of run {previous['number']}'s recording, which holds "
+                  f"{previous['run_count']} runs; a change made between those runs is not recorded.")
     result.update(status=status, change_count=len(changes), changes=changes, readout_count=len(readouts),
                   readouts=readouts, unknown_count=unknown_count, unknown_fields=unknown,
                   complete=not comparison["output_truncated"], reason=reason)
@@ -830,7 +850,7 @@ def _return_card(stints: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
     if pair["verdict"] != "slower":
         return None
     target = _setup_change(earlier, latest)
-    if target["status"] == "unchanged":
+    if target["status"] in ("unchanged", "not_recorded"):
         return None
     detail = (f"Load run {earlier['number']}'s setup ({earlier['setup_name']})." if earlier["setup_name"]
               else f"Load run {earlier['number']}'s setup.")
@@ -968,6 +988,9 @@ def _row(stint: Mapping[str, Any], previous: Mapping[str, Any] | None) -> dict[s
                     "run_laps": stint["run_laps"], "other_run_count": max(0, stint["run_count"] - 1)}
     return {
         "run": stint["number"], "analysis_id": stint["analysis_id"], "analysis_path": stint["analysis_path"],
+        "recording": {"number": stint["recording_number"], "analysis_id": stint["analysis_id"],
+                      "analysis_path": stint["analysis_path"], "recorded_at": stint["recorded_at"],
+                      "run_in_recording": stint["run_in_recording"], "runs_in_recording": stint["run_count"]},
         "recorded_at": stint["recorded_at"], "session_type": stint["session_type"],
         "test_day_id": stint["test_day_id"], "test_day_run": stint["test_day_run"],
         "offline_flag_rule_applied": stint["offline"],
@@ -988,24 +1011,34 @@ def _row(stint: Mapping[str, Any], previous: Mapping[str, Any] | None) -> dict[s
 
 def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] | None = None, *,
                           analysis_paths: Sequence[str | None] | None = None) -> dict[str, Any]:
-    """Review 2-12 stints of one test day. Pure: reads the analyses, writes nothing."""
+    """Review the runs of 1-12 recordings of one test day. Pure: reads the analyses, writes nothing."""
 
     if isinstance(analyses, (str, bytes, Mapping)) or not isinstance(analyses, Sequence):
-        raise TestDayError("A test-day review needs a list of stint analyses.")
-    if not MINIMUM_RUNS <= len(analyses) <= MAXIMUM_RUNS:
-        raise TestDayError(f"A test-day review needs {MINIMUM_RUNS}–{MAXIMUM_RUNS} stints; {len(analyses)} were supplied.")
+        raise TestDayError("A test-day review needs a list of recording analyses.")
+    if not MINIMUM_RECORDINGS <= len(analyses) <= MAXIMUM_RECORDINGS:
+        raise TestDayError(f"A test-day review needs {MINIMUM_RECORDINGS}–{MAXIMUM_RECORDINGS} recordings; {len(analyses)} were supplied.")
     paths = list(analysis_paths) if analysis_paths is not None else [None] * len(analyses)
     if len(paths) != len(analyses):
-        raise TestDayError("Each stint needs exactly one analysis path.")
-    stints = []
+        raise TestDayError("Each recording needs exactly one analysis path.")
+    recordings = []
     for index, analysis in enumerate(analyses):
         if not isinstance(analysis, Mapping):
-            raise TestDayError(f"Stint {index + 1} is not an analysis object.")
-        stints.append(_stint(analysis, index, paths[index]))
-    identifiers = [item["analysis_id"] for item in stints if item["analysis_id"]]
+            raise TestDayError(f"Recording {index + 1} is not an analysis object.")
+        recordings.append(_recording_runs(analysis, index, paths[index]))
+    identifiers = [entries[0]["analysis_id"] for entries in recordings if entries[0]["analysis_id"]]
     if len(identifiers) != len(set(identifiers)):
         raise TestDayError("The same recording was supplied more than once.")
-    stints.sort(key=lambda item: (item["recorded"], item["analysis_id"] or "", item["index"]))
+    recordings.sort(key=lambda entries: (entries[0]["recorded"], entries[0]["analysis_id"] or "", entries[0]["index"]))
+    stints = []
+    for recording_number, entries in enumerate(recordings, start=1):
+        for entry in entries:
+            entry["recording_number"] = recording_number
+            stints.append(entry)
+    if len(stints) < MINIMUM_RUNS:
+        raise TestDayError(f"A test day needs at least {MINIMUM_RUNS} runs; "
+                           f"{'this recording holds' if len(recordings) == 1 else 'these recordings hold'} {len(stints)}.")
+    omitted = max(0, len(stints) - MAXIMUM_ROWS)
+    stints = stints[omitted:]
     for number, stint in enumerate(stints, start=1):
         stint["number"] = number
 
@@ -1046,6 +1079,7 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
     rows = [_row(stint, stints[index - 1] if index else None) for index, stint in enumerate(stints)]
     offline_runs = [stint["number"] for stint in stints if stint["offline"]]
     limitations = [
+        *([f"Showing the latest {MAXIMUM_ROWS} runs; {omitted} earlier run{'s are' if omitted != 1 else ' is'} left out."] if omitted else []),
         "Pace windows count laps from the start of each stint's measured run. A verdict compares the two runs on the laps of "
         "the run that are clean in both, so its medians are at equal run age; run age is not measured tire wear.",
         "Verdicts compare medians against a threshold of max(0.03 s, 2 × combined standard error); a difference inside it is within scatter, not unchanged.",
@@ -1060,6 +1094,7 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
     return {
         "ok": True, "schema_version": SCHEMA_VERSION, "contract": CONTRACT, "read_only": True,
         "run_count": len(stints),
+        "recording_count": len(recordings),
         "test_day_id": test_days.pop() if len(test_days) == 1 and all(stint["test_day_id"] for stint in stints) else None,
         "car": {"car_path": first["car_path"], "car_name": first["car_name"], "car_id": first["car_id"]},
         "track": {"track_name": first["track_name"], "track_config": first["track_config"],
@@ -1109,12 +1144,12 @@ def _read_analysis(path: Path) -> dict[str, Any]:
 
 
 def review_test_day_workflow(*, analysis_paths: Sequence[str], archive_root: str) -> dict[str, Any]:
-    """Read-only test-day review of archived stint analyses under ``archive_root``."""
+    """Read-only test-day review of archived recording analyses under ``archive_root``."""
 
     if isinstance(analysis_paths, (str, bytes)) or not isinstance(analysis_paths, Sequence):
         raise TestDayError("analysis_paths must be a list of archived analysis.json paths.")
-    if not MINIMUM_RUNS <= len(analysis_paths) <= MAXIMUM_RUNS:
-        raise TestDayError(f"A test-day review needs {MINIMUM_RUNS}–{MAXIMUM_RUNS} stints; {len(analysis_paths)} were supplied.")
+    if not MINIMUM_RECORDINGS <= len(analysis_paths) <= MAXIMUM_RECORDINGS:
+        raise TestDayError(f"A test-day review needs {MINIMUM_RECORDINGS}–{MAXIMUM_RECORDINGS} recordings; {len(analysis_paths)} were supplied.")
     reports = (Path(archive_root) / "reports").resolve()
     resolved: list[Path] = []
     for raw in analysis_paths:

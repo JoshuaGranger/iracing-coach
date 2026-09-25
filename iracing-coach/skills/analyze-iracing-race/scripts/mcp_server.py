@@ -811,18 +811,18 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "review_test_day",
-        "description": "Read-only review of 2-12 archived test-day stints in recording order: equal-age pace windows, fall-off, garage-setup changes without tire readings, comparability, source-labelled tire readings, and exactly one next-change card. Verdicts are faster, slower, within scatter or not comparable; never unchanged. Writes nothing.",
+        "description": "Read-only review of the runs in 1-12 archived test-day recordings (offline stints or practice sessions; a run is the laps between pit visits) in time order: equal-age pace windows, fall-off, garage-setup changes without tire readings or computed readouts, comparability, source-labelled tire readings, and exactly one next-change card. Needs two or more runs. Verdicts are faster, slower, within scatter or not comparable; never unchanged. Writes nothing.",
         "inputSchema": {
             "type": "object",
             "required": ["analysis_paths"],
             "properties": {
                 "analysis_paths": {
                     "type": "array",
-                    "minItems": 2,
+                    "minItems": 1,
                     "maxItems": 12,
                     "uniqueItems": True,
                     "items": {"type": "string"},
-                    "description": "Archived analysis.json paths, one per stint, in any order.",
+                    "description": "Archived analysis.json paths, one per recording, in any order.",
                 },
                 "archive_root": {"type": "string"},
             },
@@ -1103,8 +1103,8 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
     if name == "review_test_day":
         import test_day
         raw_paths = arguments.get("analysis_paths")
-        if not isinstance(raw_paths, list) or not 2 <= len(raw_paths) <= 12:
-            raise ValueError("analysis_paths must contain 2-12 archived analysis.json paths.")
+        if not isinstance(raw_paths, list) or not 1 <= len(raw_paths) <= 12:
+            raise ValueError("analysis_paths must contain 1-12 archived analysis.json paths.")
         if any(not isinstance(item, str) for item in raw_paths):
             raise ValueError("Each analysis path must be a string.")
         return test_day.review_test_day_workflow(

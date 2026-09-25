@@ -73,6 +73,7 @@
   },
   "ok": true,
   "read_only": true,
+  "recording_count": 3,
   "run_count": 3,
   "runs": [
     {
@@ -342,6 +343,14 @@
       },
       "offline_flag_rule_applied": true,
       "recorded_at": "2026-08-04T18:00:00+00:00",
+      "recording": {
+        "analysis_id": "fixture-stint-1",
+        "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-1\\analysis.json",
+        "number": 1,
+        "recorded_at": "2026-08-04T18:00:00+00:00",
+        "run_in_recording": 1,
+        "runs_in_recording": 1
+      },
       "run": 1,
       "session_type": "Offline Testing",
       "setup": {
@@ -1151,6 +1160,14 @@
       },
       "offline_flag_rule_applied": true,
       "recorded_at": "2026-08-04T18:40:00+00:00",
+      "recording": {
+        "analysis_id": "fixture-stint-2",
+        "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-2\\analysis.json",
+        "number": 2,
+        "recorded_at": "2026-08-04T18:40:00+00:00",
+        "run_in_recording": 1,
+        "runs_in_recording": 1
+      },
       "run": 2,
       "session_type": "Offline Testing",
       "setup": {
@@ -1960,6 +1977,14 @@
       },
       "offline_flag_rule_applied": true,
       "recorded_at": "2026-08-04T19:25:00+00:00",
+      "recording": {
+        "analysis_id": "fixture-stint-3",
+        "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-3\\analysis.json",
+        "number": 3,
+        "recorded_at": "2026-08-04T19:25:00+00:00",
+        "run_in_recording": 1,
+        "runs_in_recording": 1
+      },
       "run": 3,
       "session_type": "Offline Testing",
       "setup": {

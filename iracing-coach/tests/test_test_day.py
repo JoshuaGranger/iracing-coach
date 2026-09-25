@@ -233,21 +233,32 @@ class TestDayGroupingTests(unittest.TestCase):
         ibt_reader._assign_test_days(groups)
         self.assertTrue(all("test_day_id" not in group for group in groups))
 
-    def test_races_qualifying_hosted_and_undated_sessions_are_never_tagged(self) -> None:
+    def test_races_qualifying_event_practice_and_undated_sessions_are_never_tagged(self) -> None:
         groups = [
             stint(DAY_START),
-            stint(DAY_START + 5 * 60, kind="Race", is_race=True),
+            stint(DAY_START + 5 * 60, kind="Race", is_race=True, group_prefix="subsession"),
             stint(DAY_START + 10 * 60, kind="Lone Qualify"),
             stint(DAY_START + 15 * 60, kind="Practice", group_prefix="subsession"),
             stint(DAY_START + 20 * 60, time_source="mtime"),
             stint(DAY_START + 25 * 60, kind=None),
             stint(DAY_START + 30 * 60),
         ]
+        # The practice belongs to the recorded race event (one subsession) and stays with it.
+        groups[1]["subsession_id"] = groups[3]["subsession_id"] = 9001
         groups[5]["event_type"] = None
         ibt_reader._assign_test_days(groups)
         tagged = [index for index, group in enumerate(groups) if "test_day_id" in group]
         self.assertEqual(tagged, [0, 6])
         self.assertEqual([groups[0]["test_day_run"], groups[6]["test_day_run"]], [1, 2])
+
+    def test_a_standalone_hosted_practice_is_a_test_day_recording(self) -> None:
+        # Addendum 4: an official or hosted practice without a recorded race joins the day like an offline stint.
+        practice = stint(DAY_START, kind="Practice", group_prefix="subsession")
+        practice["subsession_id"] = 77001
+        offline = stint(DAY_START + 70 * 60)
+        ibt_reader._assign_test_days([practice, offline])
+        self.assertEqual(practice["test_day_id"], offline["test_day_id"])
+        self.assertEqual([practice["test_day_run"], offline["test_day_run"]], [1, 2])
 
     def test_discovery_tags_offline_stints_and_leaves_races_untouched(self) -> None:
         import tempfile
@@ -821,12 +832,83 @@ def ballast(setup: dict, value: str) -> dict:
     return setup
 
 
+def split_runs(analysis: dict, *ends: int) -> dict:
+    """Split one recording into runs ending at `ends` (pit visits), each starting at lap 1 of its run."""
+
+    laps = analysis["laps"]
+    template = analysis["runs"][0]
+    runs, start = [], 1
+    for number, end in enumerate((*ends, len(laps)), start=1):
+        fuel = laps[start - 1]["fuel"]["start_l"]
+        observation = template["tire_observation"] if end == len(laps) else stall_observation()
+        runs.append({**template, "run_number": number, "start_lap": start, "end_lap": end, "fuel": {"start_l": fuel},
+                     "tire_measurement_status": template["tire_measurement_status"] if end == len(laps) else "measured_at_stop",
+                     "tire_observation": observation, "tire_set_lifecycle": {"confirmed_changed_at_run_end": []}})
+        start = end + 1
+    for lap in laps:
+        run = next(item for item in runs if item["start_lap"] <= lap["lap"] <= item["end_lap"])
+        base = lap["lap_time_s"] - analysis_slope(analysis) * lap["lap"]
+        lap["lap_time_s"] = round(base + analysis_slope(analysis) * (lap["lap"] - run["start_lap"] + 1), 3)
+    analysis["runs"] = runs
+    return analysis
+
+
+def analysis_slope(analysis: dict) -> float:
+    laps = analysis["laps"]
+    return round((laps[1]["lap_time_s"] - laps[0]["lap_time_s"]), 6) if len(laps) > 1 else 0.0
+
+
+class TestDayRunsInsideARecordingTests(unittest.TestCase):
+    """Addendum 1: runs inside one recording are rows, split by pit visits."""
+
+    def test_one_recording_with_two_runs_is_a_test_day_of_two_rows(self) -> None:
+        practice = split_runs(stint_analysis("practice", 20, laps=30, session_type="Practice", flag_state="green"), 12)
+        result = review(practice)
+        self.assertEqual((result["run_count"], result["recording_count"]), (2, 1))
+        first, second = result["runs"]
+        self.assertEqual((first["run"], second["run"]), (1, 2))
+        self.assertEqual(first["recording"], {"number": 1, "analysis_id": "practice", "analysis_path": None,
+                                              "recorded_at": "2026-08-04T20:00:00+00:00", "run_in_recording": 1, "runs_in_recording": 2})
+        self.assertEqual(second["recording"]["run_in_recording"], 2)
+        self.assertEqual((first["measured_run"]["first_lap"], first["measured_run"]["last_lap"]), (1, 12))
+        self.assertEqual((second["measured_run"]["first_lap"], second["measured_run"]["last_lap"], second["measured_run"]["run_laps"]), (13, 30, 18))
+        self.assertEqual(second["laps"][0]["label"], "Run 2 · lap 1")
+        self.assertEqual(second["early"]["laps"], [14, 15, 16, 17])  # laps 2-5 of the second run
+        # The recording keeps one garage sheet: a change between its runs is not recorded, never inferred.
+        change = second["setup_change"]
+        self.assertEqual(change["status"], "not_recorded")
+        self.assertIn("one recording, which keeps one garage sheet", change["reason"])
+        self.assertEqual(second["conditions"]["tire_start"]["status"], "carried_over")
+        self.assertEqual(second["conditions"]["start_fuel_gal"], round((60.0 - 0.75 * 12) / 3.785411784, 2))
+        self.assertTrue(first["tires"]["stop_reading"]["status"] == "measured")
+        self.assertIsNotNone(second["comparison"])
+        self.assertNotEqual(result["next_change"]["kind"], "revert", "No setup change is attributed inside one recording.")
+
+    def test_the_next_recordings_setup_is_compared_with_a_caveat_when_the_last_held_several_runs(self) -> None:
+        first = split_runs(stint_analysis("a", 9, laps=24), 12)
+        result = review(first, stint_analysis("b", 10, setup=car_setup(brake_bias="56.5%")))
+        self.assertEqual(result["run_count"], 3)
+        change = result["runs"][2]["setup_change"]
+        self.assertEqual((change["status"], change["compared_with_run"]), ("changed", 2))
+        self.assertIn("one garage sheet of run 2's recording, which holds 2 runs", change["reason"])
+        self.assertEqual([row["recording"]["number"] for row in result["runs"]], [1, 1, 2])
+
+    def test_a_long_practice_keeps_its_latest_runs(self) -> None:
+        many = split_runs(stint_analysis("many", 9, laps=60), *range(2, 60, 2))
+        result = review(many)
+        self.assertEqual(result["run_count"], test_day.MAXIMUM_ROWS)
+        self.assertEqual(result["runs"][0]["measured_run"]["first_lap"], 13)
+        self.assertIn(f"Showing the latest {test_day.MAXIMUM_ROWS} runs; 6 earlier runs are left out.", result["limitations"])
+
+
 class TestDayInputTests(unittest.TestCase):
-    def test_the_review_needs_two_to_twelve_distinct_stints(self) -> None:
-        with self.assertRaisesRegex(test_day.TestDayError, "2–12 stints; 1"):
+    def test_the_review_needs_two_runs_in_one_to_twelve_distinct_recordings(self) -> None:
+        with self.assertRaisesRegex(test_day.TestDayError, "at least 2 runs; this recording holds 1"):
             review(stint_analysis("a", 9))
-        with self.assertRaisesRegex(test_day.TestDayError, "2–12 stints; 13"):
+        with self.assertRaisesRegex(test_day.TestDayError, "1–12 recordings; 13"):
             review(*[stint_analysis(f"s{index}", 1 + index * 0.5) for index in range(13)])
+        with self.assertRaisesRegex(test_day.TestDayError, "1–12 recordings; 0"):
+            test_day.build_test_day_review([], RULES)
         with self.assertRaisesRegex(test_day.TestDayError, "more than once"):
             review(stint_analysis("a", 9), stint_analysis("a", 10))
 
@@ -835,7 +917,7 @@ class TestDayInputTests(unittest.TestCase):
             with self.subTest(field):
                 broken = stint_analysis("b", 10)
                 del broken[field]
-                with self.assertRaisesRegex(test_day.TestDayError, f"Stint 2 has {message}"):
+                with self.assertRaisesRegex(test_day.TestDayError, f"Recording 2 has {message}"):
                     review(stint_analysis("a", 9), broken)
         undated = stint_analysis("b", 10)
         undated["identity"]["session_start"] = None
@@ -898,7 +980,7 @@ class TestDayWorkflowTests(unittest.TestCase):
             ([self.paths[0], str(outside)], "within"),
             ([self.paths[0], str(renamed)], "within"),
             ([self.paths[0], self.paths[0]], "more than once"),
-            ([self.paths[0]], "2–12 stints; 1"),
+            ([self.paths[0]], "at least 2 runs; this recording holds 1"),
             (self.paths[0], "must be a list"),
             ([self.paths[0], str(broken)], "could not be read"),
         )
@@ -930,7 +1012,7 @@ class TestDayToolContractTests(unittest.TestCase):
         self.assertEqual(len(mcp_server.TOOLS), 24)
         tool = next(item for item in mcp_server.TOOLS if item["name"] == "review_test_day")
         paths = tool["inputSchema"]["properties"]["analysis_paths"]
-        self.assertEqual((paths["minItems"], paths["maxItems"]), (2, 12))
+        self.assertEqual((paths["minItems"], paths["maxItems"]), (1, 12))
         self.assertEqual(tool["inputSchema"]["required"], ["analysis_paths"])
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         snapshot = json_load(WORKSPACE / "contracts" / "mcp-tools.v1.json")
@@ -964,7 +1046,7 @@ class TestDayToolContractTests(unittest.TestCase):
                 self.assertEqual(result["run_count"], 2)
                 with self.assertRaisesRegex(ValueError, "must stay within"):
                     mcp_server.call_tool("review_test_day", {"analysis_paths": [paths[0], str(Path(directory) / "analysis.json")]})
-                with self.assertRaisesRegex(ValueError, "2-12"):
+                with self.assertRaisesRegex(ValueError, "1-12"):
                     mcp_server.call_tool("review_test_day", {"analysis_paths": paths[0]})
                 with self.assertRaisesRegex(ValueError, "analysis.json"):
                     mcp_server.call_tool("review_test_day", {"analysis_paths": [paths[0], str(archive / "reports" / "two" / "other.json")]})
@@ -979,7 +1061,8 @@ class TestDayToolContractTests(unittest.TestCase):
         generator = _load_tool_module("generate_fixtures_for_test_day", WORKSPACE / "tools" / "generate_fixtures.py")
         self.assertEqual(json_load_text(json_text(generator._test_day_fixture())), fixture)
         for payload in (review(stint_analysis("a", 9), stint_analysis("b", 10, fuel_l=45.0)),
-                        review(stint_analysis("a", 9, laps=4), stint_analysis("b", 10, stop_status="unmeasured_final_run"))):
+                        review(stint_analysis("a", 9, laps=4), stint_analysis("b", 10, stop_status="unmeasured_final_run")),
+                        review(split_runs(stint_analysis("p", 9, laps=24), 12), stint_analysis("b", 10))):
             validation.assert_valid(json_load_text(json_text(payload)), schema, "review")
 
     def test_the_contract_rejects_a_missing_field_and_an_unchanged_verdict(self) -> None:
