@@ -83,6 +83,37 @@ public sealed class OfflineDetailsTests
     }
 
     [TestMethod]
+    public void OfflineDetailsSayCleanLapsWhereRunsSaysNoLapIsGreen()
+    {
+        // Details of an Offline Testing recording read "fuel per green lap" and "s per green lap across
+        // 19 green laps" while Runs said no lap of the recording counts as green.
+        AnalysisTechnicalInsight[] insights =
+        [
+            new("fuel", "Fuel", "available", "stable", "Run 1 burned 0.042 gal per green lap.",
+                [new("Green-lap use", "0.042 gal/lap", EvidenceKind.Measured, "Median fuel use across comparable green-flag run segments.",
+                    "Use this rate for green-run range and reserve checks.", "neutral", "burn")], [], []),
+            new("tires", "Tires", "available", "stable", "",
+                [new("Rear wheelspin proxy", "1.20 s", EvidenceKind.Measured, "Run 1: 0.063 s per green lap across 19 green laps.",
+                    "", "attention", "tire events")], [], [])
+        ];
+        var test = Component(Workspace("Offline Testing") with { TechnicalInsights = insights });
+        var fuel = Read<AnalysisTechnicalInsight>(test, "FuelInsight");
+        Assert.AreEqual("Clean-lap use", fuel.Metrics[0].Label);
+        Assert.AreEqual("Median fuel use across comparable clean run segments.", fuel.Metrics[0].Detail);
+        Assert.AreEqual("Use this rate for clean-run range and reserve checks.", fuel.Metrics[0].Action);
+        Assert.AreEqual("Run 1 burned 0.042 gal per clean lap.", fuel.Takeaway);
+        Assert.AreEqual("Run 1: 0.063 s per clean lap across 19 clean laps.", Read<AnalysisTechnicalInsight>(test, "TireInsight").Metrics[0].Detail);
+        CollectionAssert.Contains(Labels(Read<object>(Component(Workspace("Offline Testing")), "FuelCardMetrics")), "Clean lap");
+        Assert.AreEqual("Clean-lap range", RaceTechnicalData.CleanLapWording("All-green range"));
+        Assert.AreEqual("Longest clean run", RaceTechnicalData.CleanLapWording("Longest green run"));
+        Assert.AreEqual("Green flag at stop", RaceTechnicalData.CleanLapWording("Green flag at stop"), "Only lap and run wording changes.");
+
+        var race = Component(Workspace("Race") with { TechnicalInsights = insights });
+        Assert.AreEqual("Green-lap use", Read<AnalysisTechnicalInsight>(race, "FuelInsight").Metrics[0].Label, "A race keeps green laps.");
+        CollectionAssert.Contains(Labels(Read<object>(Component(Workspace("Race")), "FuelCardMetrics")), "Green lap");
+    }
+
+    [TestMethod]
     public void SettingsNameThePopoutDashboardInBodyText()
     {
         // The card showed the dashboard name "Default Copy" alone in purple monospace.

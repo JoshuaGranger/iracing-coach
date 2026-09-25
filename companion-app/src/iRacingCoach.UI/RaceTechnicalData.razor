@@ -171,7 +171,7 @@
                                     <p>@NoStopExplanation</p>
                                     <div class="technical-decision-facts">
                                         <span><small>Race distance</small><b>@ScheduledDistance</b></span>
-                                        <span><small>Longest green run</small><b>@LongestRun</b></span>
+                                        <span><small>@Wording("Longest green run")</small><b>@LongestRun</b></span>
                                         <span><small>Fuel range</small><b>@FuelRange</b></span>
                                     </div>
                                 </div>
@@ -353,15 +353,15 @@
                             </section>
                             }
                             <div class="technical-fuel-summary">
-                                <article><span>Green-lap use</span><strong>@FuelPerGreenLap</strong></article>
+                                <article><span>@Wording("Green-lap use")</span><strong>@FuelPerGreenLap</strong></article>
                                 <article><span>Caution-lap use</span><strong>@Gallons(Workspace.Strategy.CautionFuelGallonsPerLap)</strong></article>
-                                <article><span>All-green range</span><strong>@FuelRange</strong></article>
+                                <article><span>@Wording("All-green range")</span><strong>@FuelRange</strong></article>
                                 @if (IsRaceSession) { <article><span>Minimum stops</span><strong>@(AuthoritativeFuelStops?.ToString() ?? "—")</strong></article> }
                             </div>
                             <div class="technical-bar-list" aria-label="Fuel consumed by run">
                                 @foreach (var run in FuelRuns)
                                 {
-                                    <div><span>Run @run.Number</span><i><b style="width:@FuelBarWidth(run)"></b></i><strong>@Gallons(run.FuelUsedGallons)</strong><small>@run.GreenLaps green</small></div>
+                                    <div><span>Run @run.Number</span><i><b style="width:@FuelBarWidth(run)"></b></i><strong>@Gallons(run.FuelUsedGallons)</strong><small>@run.GreenLaps @(IsRaceSession ? "green" : "clean")</small></div>
                                 }
                             </div>
                         }
@@ -382,7 +382,7 @@
                         @if (ComparableRuns.Count == 0)
                         {
                             <div class="technical-racecraft-no-comparison" data-racecraft-no-comparison>
-                                <TechnicalUnavailable Title="Clean-run pace comparison unavailable" Detail="Cautions, pit laps, or missing timing prevented a comparable early-to-late run." Action="Use the race-pace and controls findings below now; a multi-lap green run will add the early-to-late vector next time." />
+                                <TechnicalUnavailable Title="Clean-run pace comparison unavailable" Detail="Cautions, pit laps, or missing timing prevented a comparable early-to-late run." Action="@Wording("Use the race-pace and controls findings below now; a multi-lap green run will add the early-to-late vector next time.")" />
                             </div>
                         }
                         else if (SelectedComparableRun is { } paceRun)
@@ -396,7 +396,7 @@
                                 <i aria-hidden="true"><b></b></i>
                                 <em title="Late minus early lap time">@Delta(paceDelta)</em>
                                 <span><small>@(cleanEarlyLate is { } late ? $"{late.Compared.Label} · median" : "Late · average")</small><strong>@LapTime(cleanEarlyLate?.Compared.MedianLapSeconds ?? paceRun.LateAverageLapSeconds)</strong></span>
-                                <span class="technical-pace-vector-context"><b>@paceRun.GreenLaps green laps</b><small title="Lap-time slope across the run">@PaceTrend(paceRun)</small></span>
+                                <span class="technical-pace-vector-context"><b>@paceRun.GreenLaps @(IsRaceSession ? "green" : "clean") laps</b><small title="Lap-time slope across the run">@PaceTrend(paceRun)</small></span>
                             </div>
                         }
                         @if (RacecraftMetricGroups.Count > 0)
@@ -483,7 +483,37 @@
     private AnalysisTechnicalInsight? TireInsight => Insight("tires");
     private AnalysisTechnicalInsight? FuelInsight => Insight("fuel");
     private AnalysisTechnicalInsight? RacecraftInsight => Insight("racecraft");
-    private AnalysisTechnicalInsight? Insight(string key) => Workspace.TechnicalInsights?.FirstOrDefault(item => item.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+    private AnalysisTechnicalInsight? Insight(string key) => Workspace.TechnicalInsights?.FirstOrDefault(item => item.Key.Equals(key, StringComparison.OrdinalIgnoreCase)) is { } insight
+        ? IsRaceSession ? insight : CleanLapInsight(insight)
+        : null;
+
+    /// <summary>
+    /// Outside a race no lap counts as green (Runs reads Offline Testing laps as caution), so the
+    /// backend's green-lap wording reads as clean laps there; its figures are unchanged.
+    /// </summary>
+    private static AnalysisTechnicalInsight CleanLapInsight(AnalysisTechnicalInsight insight) => insight with
+    {
+        Takeaway = CleanLapWording(insight.Takeaway),
+        Metrics = insight.Metrics.Select(metric => metric with
+        {
+            Label = CleanLapWording(metric.Label), Detail = CleanLapWording(metric.Detail), Action = CleanLapWording(metric.Action)
+        }).ToArray(),
+        Evidence = insight.Evidence.Select(CleanLapWording).ToArray()
+    };
+
+    private string Wording(string text) => IsRaceSession ? text : CleanLapWording(text);
+
+    private static readonly System.Text.RegularExpressions.Regex GreenLapWords =
+        new(@"\b([Gg])reen(?=[- ](?:laps?|runs?)\b)", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>"Green-lap use" → "Clean-lap use", "0.042 s per green lap across 19 green laps" → "… clean lap … clean laps".</summary>
+    public static string CleanLapWording(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return text ?? string.Empty;
+        var worded = text.Replace("All-green", "Clean-lap", StringComparison.Ordinal).Replace("all-green", "clean-lap", StringComparison.Ordinal)
+            .Replace("Green-flag", "Clean", StringComparison.Ordinal).Replace("green-flag", "clean", StringComparison.Ordinal);
+        return GreenLapWords.Replace(worded, match => match.Groups[1].Value == "G" ? "Clean" : "clean");
+    }
     private AnalysisTechnicalInsight? ActiveInsight => ActiveInvestigation switch { "pit" => PitInsight, "tires" => TireInsight, "fuel" => FuelInsight, "racecraft" => RacecraftInsight, _ => null };
     private IReadOnlyList<AnalysisTechnicalMetric> ActiveMetrics => (ActiveInsight?.Metrics ?? []).Where(metric => !RaceOnly(metric.Label)).ToArray();
     /// <summary>
@@ -609,7 +639,7 @@
         ? NetPositions is null ? PaceTrendClass : RacecraftRating switch { "gain" => "positive", "loss" => "attention", _ => "neutral" }
         : InsightStateClass(RacecraftInsight) ?? PaceTrendClass;
     private string PaceTakeaway => Workspace.Investigation?.Summary ?? InsightTakeaway(RacecraftInsight) ?? (RepresentativePaceRun is { } run
-        ? $"Run {run.Number}: {PaceTrend(run)} across {run.GreenLaps} green laps."
+        ? $"Run {run.Number}: {PaceTrend(run)} across {run.GreenLaps} {(IsRaceSession ? "green" : "clean")} laps."
         : "No clean run is long enough for a pace outcome.");
 
     private IReadOnlyList<CardMetric> PitCardMetrics => CardMetrics(PitInsight,
@@ -617,7 +647,7 @@
     private IReadOnlyList<CardMetric> TireCardMetrics => CardMetrics(TireInsight,
         new("Snapshots", TireStops.Count.ToString(), "measured"), new("Lowest remaining", LowestRemainingReading, "measured"), new("Changed", TireChangeCount.ToString(), "measured"));
     private IReadOnlyList<CardMetric> FuelCardMetrics => CardMetrics(FuelInsight,
-        new("Green lap", FuelPerGreenLap, "measured"), new("Range", FuelRange, "derived"), new("Reserve", FuelReserve, "calculated"));
+        new(Wording("Green lap"), FuelPerGreenLap, "measured"), new("Range", FuelRange, "derived"), new("Reserve", FuelReserve, "calculated"));
     private IReadOnlyList<CardMetric> RacecraftCardMetrics => RacecraftOverviewMetrics(CardMetrics(RacecraftInsight,
         new("Fastest clean", FastestCleanLap, "measured"), new("Comparable runs", ComparableRuns.Count.ToString(), "derived"), new("Incidents", IncidentSummary, "measured")))
         .Where(metric => !RaceOnly(metric.Label)).ToArray();
