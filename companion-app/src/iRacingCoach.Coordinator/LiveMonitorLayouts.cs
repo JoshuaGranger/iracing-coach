@@ -50,6 +50,12 @@ public static class LiveMonitorLayouts
             .ToArray();
     }
 
+    /// <summary>
+    /// Adds the built-in dashboards once, as listing or opening any dashboard does. Returns true
+    /// when it changed the preferences.
+    /// </summary>
+    public static bool EnsureBuiltInDashboards(LiveMonitorLayout preferences) => InitializeBuiltInDashboards(preferences);
+
     public static LiveMonitorLayoutChoice Active(LiveMonitorLayout preferences)
     {
         InitializeBuiltInDashboards(preferences);

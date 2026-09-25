@@ -154,6 +154,9 @@ public sealed partial class CompanionState : IDisposable
         Settings = settingsStore?.Load() ?? new CompanionSettings(_pathProvider);
         _settingsDataRoots = new(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
         Settings.LiveMonitor ??= new LiveMonitorLayout();
+        // Showing any dashboard adds the built-in ones; do it before the saved baseline so
+        // merely opening a page never reads as an unsaved settings edit.
+        _ = LiveMonitorLayouts.EnsureBuiltInDashboards(Settings.LiveMonitor);
         MarkSettingsSaved();
         if (!Settings.Compatibility.Writable) SettingsMessage = Settings.Compatibility.Message;
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
@@ -2553,7 +2556,7 @@ public sealed partial class CompanionState : IDisposable
             }
             if (!string.Equals(_ensuredCoachHome, Settings.CoachHome, StringComparison.Ordinal))
                 EnsureRepository();
-            SaveSettingsToStore();
+            SaveSettingsToStore(confirmsSettingsPage: true);
             SettingsMessage = "Settings saved.";
             ShowToast("Settings saved.", ToastTone.Info);
             SettingsSaved?.Invoke(Settings);
@@ -2641,7 +2644,7 @@ public sealed partial class CompanionState : IDisposable
             }
 
             Garage61 = candidate;
-            SaveSettingsToStore();
+            SaveSettingsToStore(confirmsSettingsPage: false);
             replacement.Commit();
             SetupStep = Math.Max(SetupStep, 4);
             ShowToast("Garage61 is connected for this Windows user.", ToastTone.Info);
@@ -2662,7 +2665,7 @@ public sealed partial class CompanionState : IDisposable
         try
         {
             _garage61Credentials.Remove();
-            SaveSettingsToStore();
+            SaveSettingsToStore(confirmsSettingsPage: false);
             await RefreshDataAsync(false, cancellationToken);
             ShowToast("Garage61 was disconnected from this PC.", ToastTone.Info);
         }
@@ -2844,7 +2847,7 @@ public sealed partial class CompanionState : IDisposable
     {
         Settings.FirstRunComplete = true;
         Settings.SettingsSchemaVersion = Math.Max(Settings.SettingsSchemaVersion, 2);
-        SaveSettingsToStore();
+        SaveSettingsToStore(confirmsSettingsPage: true);
         CurrentPage = "home";
         ShowToast("iRacing Coach is ready.", ToastTone.Info);
         RaiseChanged();
@@ -4500,12 +4503,17 @@ public sealed partial class CompanionState : IDisposable
         }
     }
 
-    private void SaveSettingsToStore()
+    /// <summary>
+    /// Writes the settings files. Only Save (and finishing first run) confirms the Settings
+    /// page; any other write leaves the driver's unsaved page edits pending.
+    /// </summary>
+    private void SaveSettingsToStore(bool confirmsSettingsPage)
     {
         lock (_settingsPersistenceGate)
         {
             _settingsStore?.Save(Settings);
-            MarkSettingsSaved();
+            if (confirmsSettingsPage) MarkSettingsSaved();
+            else MarkSettingsWrittenQuietly();
         }
     }
 
@@ -4517,7 +4525,7 @@ public sealed partial class CompanionState : IDisposable
             {
                 _archive.MarkActive(Settings.CoachHome);
                 _settingsStore?.Save(Settings);
-                MarkSettingsSaved();
+                MarkSettingsWrittenQuietly();
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { }
