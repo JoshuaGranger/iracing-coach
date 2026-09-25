@@ -1616,8 +1616,16 @@ def _analysis_pipeline_sha256() -> str:
 # Review 2026-09-23 (performance): per-sample finite checks take an exact-float
 # fast path and unit conversions resolve once per channel. A cold NH race
 # (203 MB) produced an identical analysis view; timing fell 24.8 s -> 21.9 s.
+# Review 2026-09-24 (performance): v19 answers are unchanged. Stages read each
+# recorded column once through cached column views, per-sample work runs a
+# column at a time (left folds kept where the original used +=), the IBT
+# reader decodes scalar columns through typed memory views, and track
+# geometry filters columns in C. The complete cold outputs of four real
+# recordings (NH race and practice, a short NH test, an Iowa race) are
+# byte-identical under tools/analysis_parity.py, and test_analysis_columns
+# pins every rewritten helper against the verbatim pre-change functions.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "8437019a8303207614831a9f245f103f0facfab7740f9ca8649adaaa582c6dc2"
+    "552822f75bceecfe53191341bc32f22a27e025e80c21572fd74979df89d87489"
 )
 
 

@@ -1716,6 +1716,20 @@
                          {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_an_explicitly_null_authority_is_present_and_unreadable","tier":"Behavioral","technique":"fault"},
                          {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_the_card_prints_no_stop_language_for_no_null_authority","tier":"Behavioral","technique":"fault"},
                          {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_the_report_refuses_a_null_authority_instead_of_inferring","tier":"Behavioral","technique":"fault"},
-                         {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_an_absent_key_still_permits_legacy_inference","tier":"Behavioral","technique":"none"}
+                         {"family":"backend","id":"test_technical_strategy_depth.UnreadablePlanDecisionTests.test_an_absent_key_still_permits_legacy_inference","tier":"Behavioral","technique":"none"},
+                         {"family":"backend","id":"test_analysis_columns.ColumnPrimitiveTests.test_fraction_bool_flag_and_binary_columns","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.ColumnPrimitiveTests.test_mean_median_percentile_match_the_original","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.ColumnPrimitiveTests.test_normalize_and_finite_values","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.ColumnPrimitiveTests.test_row_means_equal_per_sample_fmean","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.ColumnPrimitiveTests.test_sequence_helpers","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.ColumnPrimitiveTests.test_unit_steps_match_the_original_conversions","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.StageEquivalenceTests.test_cached_column_views_never_alter_recorded_columns","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.StageEquivalenceTests.test_conditions_adjustments_and_service_events","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.StageEquivalenceTests.test_disrupted_samples_match_the_per_sample_state_loop","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.StageEquivalenceTests.test_lap_summaries_and_traces","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.StageEquivalenceTests.test_lap_summaries_with_zero_or_single_sample_laps","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.StageEquivalenceTests.test_setup_series_telemetry_and_track_profile","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.StageEquivalenceTests.test_track_geometry_and_foundation_statistics","tier":"Behavioral","technique":"fault"},
+                         {"family":"backend","id":"test_analysis_columns.TypedViewDecoderTests.test_typed_views_match_struct_rows","tier":"Behavioral","technique":"fault"}
                      ]
 }
