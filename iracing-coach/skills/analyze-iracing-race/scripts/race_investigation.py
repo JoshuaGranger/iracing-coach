@@ -404,7 +404,8 @@ def _trial(comparison: Mapping[str, Any], corner: Mapping[str, Any], section_set
                    "unit": "s", "direction": "decrease", "start_pct": start, "end_pct": end},
         "section": {"id": corner["id"], "label": corner.get("short_label") or corner["id"],
                     "start_pct": corner["start_pct"], "end_pct": end,
-                    "boundary_status": corner.get("boundary_status")},
+                    "boundary_status": corner.get("boundary_status"),
+                    **({"name": corner["name"]} if corner.get("name") else {})},
         "annotation": {"configuration_key": section_set.get("configuration_key"), "source": section_set.get("source"),
                        "version": section_set.get("version")},
         "baseline": {"laps": list(compared["lap_numbers"]), "run_number": compared.get("run_number"),
@@ -446,7 +447,7 @@ def _actions(comparison: Mapping[str, Any], section_set: Mapping[str, Any] | Non
         loss = corner.get("delta_s")
         if loss is None or loss < 0.03:
             continue
-        name = f"section {corner.get('short_label') or corner['id']}"
+        name = f"section {corner.get('short_label') or corner['id']}" + (f" ({corner['name']})" if corner.get("name") else "")
         pair = (inspection.get("sections") or {}).get(corner["id"]) or {}
         brake = metrics.get("brake", {}).get("delta")
         steer = metrics.get("steering", {}).get("delta")
@@ -502,7 +503,7 @@ def _actions(comparison: Mapping[str, Any], section_set: Mapping[str, Any] | Non
     if not result:
         largest = next((corner for corner in comparison["corners"] if (corner.get("delta_s") or 0) >= 0.03), None)
         if largest is not None:
-            label = largest.get("short_label") or largest["id"]
+            label = (largest.get("short_label") or largest["id"]) + (f" ({largest['name']})" if largest.get("name") else "")
             result.append({"priority": 1, "title": f"Repeat section {label} at the same run age",
                            "instruction": f"Section {label} lost {largest['delta_s']:.3f} s by group median without a supported input change. Drive three clear laps at the same run age and fuel with unchanged inputs. If the loss repeats, treat it as grip, tires or setup rather than technique; if it disappears, it was lap-to-lap variation.",
                            "evidence": [comparison["summary"]], "limitation": caveat,
