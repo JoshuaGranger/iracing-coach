@@ -6,6 +6,7 @@ reinstalling the plugin must never remove race history or cached references.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import heapq
 import json
@@ -78,11 +79,36 @@ class AtomicReplaceExhausted(StorageCommitError):
         self.final_winerror = final_winerror
 
 
+# These failures stop an analysis, so their text must say what to do. It never
+# names the path, digest or bytes involved (WS-10A redaction contract).
+_RECORDING_CHANGED_ACTION = (
+    "The source file changed while it was being archived. Wait until iRacing "
+    "has finished writing it, then try again."
+)
+_VERIFICATION_ACTIONS = {
+    "source-digest-changed-before-copy": _RECORDING_CHANGED_ACTION,
+    "archived-digest-mismatch": (
+        "The archive copy did not match the source file and was discarded. "
+        "Try again; if this repeats, check the drive that holds the iRacing "
+        "Coach data folder."
+    ),
+    "existing-copy-digest-mismatch": (
+        "A different file already occupies the archive name and was left "
+        "unchanged."
+    ),
+}
+
+
 class ArchiveVerificationFailed(StorageCommitError):
     """An immutable archival copy failed a digest invariant."""
 
     def __init__(self, code: str) -> None:
-        super().__init__("archive verification refused the copy")
+        action = _VERIFICATION_ACTIONS.get(code)
+        super().__init__(
+            f"archive verification refused the copy ({code}). {action}"
+            if action
+            else "archive verification refused the copy"
+        )
         self.code = code
 
 
@@ -90,7 +116,7 @@ class ArchiveSourceUnstable(StorageCommitError):
     """A source changed during the read-only archival workflow."""
 
     def __init__(self, code: str) -> None:
-        super().__init__("archive source is unstable")
+        super().__init__(f"archive source is unstable ({code}). {_RECORDING_CHANGED_ACTION}")
         self.code = code
 
 
@@ -492,9 +518,46 @@ def _analysis_session_identity(analysis: Mapping[str, Any]) -> dict[str, str | N
     }
 
 
-def file_sha256(path: Path, block_size: int = 1024 * 1024) -> str:
+_EXTENDED_PREFIX = "\\\\?\\"
+_EXTENDED_UNC_PREFIX = "\\\\?\\UNC\\"
+
+
+def _extended_path(path: str | os.PathLike[str]) -> str:
+    """Return the Win32 extended-length spelling of ``path`` for file I/O.
+
+    With LongPathsEnabled=0, Win32 rejects paths of MAX_PATH (260) characters
+    or more: ``Path.is_file()`` then reports an existing file as absent and a
+    rename onto it fails with WinError 3. A Documents folder under OneDrive or
+    a long profile pushes ordinary archive paths past that limit. The ``\\\\?\\``
+    form lifts it, but also disables Win32 normalization, so the path is made
+    absolute and normalized first. Returned values are for I/O only; callers
+    keep reporting the ordinary spelling. Other platforms are unchanged.
+    """
+
+    text = os.fspath(path)
+    if os.name != "nt" or text.startswith(("\\\\?\\", "\\\\.\\")):
+        return text
+    absolute = os.path.abspath(text)
+    if absolute.startswith("\\\\"):
+        return _EXTENDED_UNC_PREFIX + absolute[2:]
+    if len(absolute) >= 3 and absolute[1] == ":" and absolute[2] == "\\":
+        return _EXTENDED_PREFIX + absolute
+    return absolute
+
+
+def _ordinary_path(path: str) -> str:
+    """Return the display spelling of a path produced by ``_extended_path``."""
+
+    if path.startswith(_EXTENDED_UNC_PREFIX):
+        return "\\\\" + path[len(_EXTENDED_UNC_PREFIX):]
+    if path.startswith(_EXTENDED_PREFIX):
+        return path[len(_EXTENDED_PREFIX):]
+    return path
+
+
+def file_sha256(path: str | os.PathLike[str], block_size: int = 1024 * 1024) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with open(_extended_path(path), "rb") as handle:
         while block := handle.read(block_size):
             digest.update(block)
     return digest.hexdigest()
@@ -563,15 +626,17 @@ def _atomic_write_text(
     sleeper=time.sleep,
     jitter_ms=_atomic_jitter_ms,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=".write-", dir=path.parent)
+    target = _extended_path(path)
+    parent = os.path.dirname(target)
+    os.makedirs(parent, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=".write-", dir=parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
         _atomic_replace_with_retry(
-            temp_name, path, sleeper=sleeper, jitter_ms=jitter_ms
+            temp_name, target, sleeper=sleeper, jitter_ms=jitter_ms
         )
     finally:
         try:
@@ -591,44 +656,135 @@ def _atomic_copy_verified(
 ) -> None:
     """Copy one immutable source without ever moving or modifying the original."""
 
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.is_file() and file_sha256(destination) == expected_sha256:
+    # Every operation uses the extended-length spelling. Without it an
+    # existing verified copy beyond MAX_PATH looks absent, is copied again,
+    # and the final rename onto it fails with WinError 3.
+    target = _extended_path(destination)
+    parent = os.path.dirname(target)
+    os.makedirs(parent, exist_ok=True)
+    if os.path.isfile(target) and file_sha256(target) == expected_sha256:
         actual_source_sha256 = file_sha256(source)
         if actual_source_sha256 != expected_sha256:
             raise ArchiveVerificationFailed("source-digest-changed-before-copy")
         return
-    if not replace_existing and destination.exists():
+    if not replace_existing and os.path.exists(target):
         raise ArchiveVerificationFailed("existing-copy-digest-mismatch")
     # A telemetry filename can already be close to the Windows path limit.
     # The temporary sibling needs uniqueness, not another copy of that name.
-    fd, temp_name = tempfile.mkstemp(prefix=".copy-", dir=destination.parent)
+    fd, temp_name = tempfile.mkstemp(prefix=".copy-", dir=parent)
     try:
-        with source.open("rb") as source_handle, os.fdopen(fd, "wb") as target_handle:
+        with open(_extended_path(source), "rb") as source_handle, os.fdopen(fd, "wb") as target_handle:
             shutil.copyfileobj(source_handle, target_handle, 1024 * 1024)
             target_handle.flush()
             os.fsync(target_handle.fileno())
-        temporary = Path(temp_name)
-        actual_sha256 = file_sha256(temporary)
+        actual_sha256 = file_sha256(temp_name)
         if actual_sha256 != expected_sha256:
             raise ArchiveVerificationFailed("archived-digest-mismatch")
         if replace_existing:
             _atomic_replace_with_retry(
-                temporary, destination, sleeper=sleeper, jitter_ms=jitter_ms
+                temp_name, target, sleeper=sleeper, jitter_ms=jitter_ms
             )
         else:
             # Publish the verified temporary without a check-then-replace race.
             # This links only our temporary sibling, never the source file;
             # the temporary name is removed below, leaving an independent copy.
             try:
-                os.link(temporary, destination)
+                os.link(temp_name, target)
             except FileExistsError:
-                if not destination.is_file() or file_sha256(destination) != expected_sha256:
+                if not os.path.isfile(target) or file_sha256(target) != expected_sha256:
                     raise ArchiveVerificationFailed("existing-copy-digest-mismatch") from None
     finally:
         try:
             os.unlink(temp_name)
         except FileNotFoundError:
             pass
+
+
+# These mean the recording no longer matches its verified fingerprint, so the
+# analysis must stop (TD-002). Any other OSError while writing the portable
+# copy is a destination failure: TD-008 lets the analysis use the readable
+# original while recording that the raw copy is not yet durable.
+_RAW_ARCHIVE_INTEGRITY_FAILURES = (
+    ArchiveSourceUnstable,
+    ArchiveVerificationFailed,
+    InvalidSourceDigest,
+)
+_NO_SPACE_WINERRORS = (39, 112)
+_ACCESS_WINERRORS = (5, 32, 33)
+
+
+def _raw_archive_failure(
+    *,
+    sha256: str,
+    size: int,
+    source: Path,
+    destination: Path,
+    stage: str,
+    error: OSError,
+) -> dict[str, Any]:
+    """Describe a failed raw copy completely, without the exception text.
+
+    ``str(OSError)`` leads with the temporary path, so a bounded log line
+    loses the destination. This record names the cause, the action, and the
+    full destination path in that order.
+    """
+
+    winerror = getattr(error, "winerror", None)
+    if isinstance(winerror, bool) or not isinstance(winerror, int):
+        winerror = None
+    error_number = getattr(error, "errno", None)
+    if isinstance(error_number, bool) or not isinstance(error_number, int):
+        error_number = None
+    if isinstance(error, AtomicReplaceExhausted):
+        winerror = error.final_winerror
+        reason = f"the archive file stayed locked after {error.attempts} attempts"
+    else:
+        reason = str(getattr(error, "strerror", None) or "").strip().rstrip(".")
+        reason = reason or type(error).__name__
+    label = (
+        f"WinError {winerror}"
+        if winerror is not None
+        else errno.errorcode.get(error_number, f"errno {error_number}")
+        if error_number is not None
+        else type(error).__name__
+    )
+    if winerror in _NO_SPACE_WINERRORS or error_number == errno.ENOSPC:
+        action = "Free space on the drive that holds the iRacing Coach data folder."
+    elif (
+        winerror in _ACCESS_WINERRORS
+        or isinstance(error, (PermissionError, AtomicReplaceExhausted))
+    ):
+        action = (
+            "Allow access to the iRacing Coach data folder; antivirus or cloud "
+            "sync may be holding it."
+        )
+    else:
+        action = "Check that the iRacing Coach data folder is available and writable."
+    archive_path = str(destination)
+    return {
+        "sha256": sha256,
+        "size": size,
+        "source_path": str(source),
+        "archive_path": archive_path,
+        "archive_path_length": len(archive_path),
+        "status": "failed",
+        "stage": stage,
+        "code": (
+            error.code
+            if isinstance(error, StorageCommitError)
+            else f"raw-{stage}-failed"
+        ),
+        "winerror": winerror,
+        "errno": error_number,
+        "retryable": True,
+        "message": (
+            f"Raw telemetry {'copy' if stage == 'copy' else 'archive record'} "
+            f"failed ({label}: {reason}). {action} The "
+            "original recording is unchanged and this analysis used it; the "
+            "next analysis retries the copy. Archive path "
+            f"({len(archive_path)} characters): {archive_path}"
+        ),
+    }
 
 
 def _json_text(value: Any) -> str:
@@ -2052,9 +2208,11 @@ class ArchiveStore:
             archive_dir = self.telemetry_traces_dir / "raw" / sha256
             manifest_path = archive_dir / "manifest.json"
             prior: Mapping[str, Any] = {}
-            if manifest_path.is_file():
+            manifest_io = _extended_path(manifest_path)
+            if os.path.isfile(manifest_io):
                 try:
-                    decoded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    with open(manifest_io, encoding="utf-8") as handle:
+                        decoded = json.load(handle)
                     if isinstance(decoded, Mapping) and decoded.get("sha256") == sha256:
                         prior = decoded
                 except (OSError, json.JSONDecodeError):
@@ -2062,6 +2220,11 @@ class ArchiveStore:
 
             prior_archived_name = str(prior.get("archived_file") or "").strip()
             if prior_archived_name and Path(prior_archived_name).name == prior_archived_name:
+                # Archives made before the short name keep the simulator
+                # filename, which can pass MAX_PATH under a long Documents
+                # root. The copy primitives use extended-length paths, so the
+                # existing verified copy is found and never renamed or copied
+                # again.
                 archived_name = prior_archived_name
             else:
                 suffix = source.suffix.casefold() if source.suffix else ".bin"
@@ -2072,7 +2235,22 @@ class ArchiveStore:
                 # names above so upgrades never rename an immutable copy.
                 archived_name = f"telemetry{suffix}"
             destination = archive_dir / archived_name
-            _atomic_copy_verified(source, destination, sha256)
+            try:
+                _atomic_copy_verified(source, destination, sha256)
+            except _RAW_ARCHIVE_INTEGRITY_FAILURES:
+                raise
+            except OSError as error:
+                items.append(
+                    _raw_archive_failure(
+                        sha256=sha256,
+                        size=expected_size,
+                        source=source,
+                        destination=destination,
+                        stage="copy",
+                        error=error,
+                    )
+                )
+                continue
 
             source_stat = source.stat()
             if (
@@ -2080,81 +2258,30 @@ class ArchiveStore:
                 or source_stat.st_mtime_ns != source_before.st_mtime_ns
             ):
                 raise ArchiveSourceUnstable("source-changed-during-archival")
-            archived_size = destination.stat().st_size
-            modified_ns = expected_modified_ns
-            discovery_id = stable_hash(
-                {
-                    "sha256": sha256,
-                    "source_path": str(source),
-                    "size": archived_size,
-                    "modified_ns": modified_ns,
-                },
-                64,
-            )
-            discoveries: list[dict[str, Any]] = []
-            for item in prior.get("source_discoveries") or ():
-                if not isinstance(item, Mapping) or not item.get("discovery_id"):
-                    continue
-                discoveries.append(dict(item))
-            if not discoveries and prior.get("original_path"):
-                legacy_modified_ns = prior.get("modified_ns")
-                legacy_discovery_id = stable_hash(
-                    {
-                        "sha256": sha256,
-                        "source_path": str(prior.get("original_path")),
-                        "size": int(prior.get("size") or archived_size),
-                        "modified_ns": legacy_modified_ns,
-                    },
-                    64,
+            try:
+                manifest, discovery_id, is_new_discovery = self._write_raw_manifest(
+                    manifest_path=manifest_path,
+                    destination=destination,
+                    archived_name=archived_name,
+                    sha256=sha256,
+                    source=source,
+                    modified_ns=expected_modified_ns,
+                    prior=prior,
                 )
-                discoveries.append(
-                    {
-                        "discovery_id": legacy_discovery_id,
-                        "source_path": str(prior.get("original_path")),
-                        "original_file_name": str(
-                            prior.get("original_file_name")
-                            or Path(str(prior.get("original_path"))).name
-                        ),
-                        "size": int(prior.get("size") or archived_size),
-                        "modified_ns": legacy_modified_ns,
-                        "discovered_at": prior.get("verified_at") or utc_now(),
-                    }
+            except _RAW_ARCHIVE_INTEGRITY_FAILURES:
+                raise
+            except OSError as error:
+                items.append(
+                    _raw_archive_failure(
+                        sha256=sha256,
+                        size=expected_size,
+                        source=source,
+                        destination=destination,
+                        stage="manifest",
+                        error=error,
+                    )
                 )
-            is_new_discovery = not any(
-                str(item.get("discovery_id")) == discovery_id for item in discoveries
-            )
-            verified_at = utc_now()
-            if is_new_discovery:
-                discoveries.append(
-                    {
-                        "discovery_id": discovery_id,
-                        "source_path": str(source),
-                        "original_file_name": source.name,
-                        "size": archived_size,
-                        "modified_ns": modified_ns,
-                        "discovered_at": verified_at,
-                    }
-                )
-            first_discovery = discoveries[0]
-            manifest = {
-                "schema_version": 2,
-                "sha256": sha256,
-                "size": archived_size,
-                "archived_file": archived_name,
-                # Retain the original contract-v1 fields as the first known
-                # discovery.  New readers use source_discoveries so a later
-                # identical file never erases earlier provenance.
-                "original_file_name": first_discovery.get("original_file_name"),
-                "original_path": first_discovery.get("source_path"),
-                "verified_at": verified_at,
-                "first_archived_at": prior.get("first_archived_at")
-                or prior.get("verified_at")
-                or verified_at,
-                "source_discovery_count": len(discoveries),
-                "source_discoveries": discoveries,
-                "retention": "append-only; source and archive are never deleted by analysis",
-            }
-            _atomic_write_text(manifest_path, _json_text(manifest))
+                continue
             items.append(
                 {
                     "sha256": sha256,
@@ -2166,12 +2293,111 @@ class ArchiveStore:
                     "status": "verified",
                 }
             )
+        failed = [item for item in items if item.get("status") != "verified"]
         return {
             "schema_version": 2,
-            "status": "verified" if items else "empty",
-            "durably_copied": bool(items),
+            "status": (
+                "empty"
+                if not items
+                else "verified"
+                if not failed
+                else "failed"
+                if len(failed) == len(items)
+                else "partial"
+            ),
+            "durably_copied": bool(items) and not failed,
+            "failed_count": len(failed),
             "items": items,
         }
+
+    def _write_raw_manifest(
+        self,
+        *,
+        manifest_path: Path,
+        destination: Path,
+        archived_name: str,
+        sha256: str,
+        source: Path,
+        modified_ns: int,
+        prior: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], str, bool]:
+        """Record provenance for one verified copy; returns the manifest."""
+
+        archived_size = os.stat(_extended_path(destination)).st_size
+        discovery_id = stable_hash(
+            {
+                "sha256": sha256,
+                "source_path": str(source),
+                "size": archived_size,
+                "modified_ns": modified_ns,
+            },
+            64,
+        )
+        discoveries: list[dict[str, Any]] = []
+        for item in prior.get("source_discoveries") or ():
+            if not isinstance(item, Mapping) or not item.get("discovery_id"):
+                continue
+            discoveries.append(dict(item))
+        if not discoveries and prior.get("original_path"):
+            legacy_modified_ns = prior.get("modified_ns")
+            legacy_discovery_id = stable_hash(
+                {
+                    "sha256": sha256,
+                    "source_path": str(prior.get("original_path")),
+                    "size": int(prior.get("size") or archived_size),
+                    "modified_ns": legacy_modified_ns,
+                },
+                64,
+            )
+            discoveries.append(
+                {
+                    "discovery_id": legacy_discovery_id,
+                    "source_path": str(prior.get("original_path")),
+                    "original_file_name": str(
+                        prior.get("original_file_name")
+                        or Path(str(prior.get("original_path"))).name
+                    ),
+                    "size": int(prior.get("size") or archived_size),
+                    "modified_ns": legacy_modified_ns,
+                    "discovered_at": prior.get("verified_at") or utc_now(),
+                }
+            )
+        is_new_discovery = not any(
+            str(item.get("discovery_id")) == discovery_id for item in discoveries
+        )
+        verified_at = utc_now()
+        if is_new_discovery:
+            discoveries.append(
+                {
+                    "discovery_id": discovery_id,
+                    "source_path": str(source),
+                    "original_file_name": source.name,
+                    "size": archived_size,
+                    "modified_ns": modified_ns,
+                    "discovered_at": verified_at,
+                }
+            )
+        first_discovery = discoveries[0]
+        manifest = {
+            "schema_version": 2,
+            "sha256": sha256,
+            "size": archived_size,
+            "archived_file": archived_name,
+            # Retain the original contract-v1 fields as the first known
+            # discovery.  New readers use source_discoveries so a later
+            # identical file never erases earlier provenance.
+            "original_file_name": first_discovery.get("original_file_name"),
+            "original_path": first_discovery.get("source_path"),
+            "verified_at": verified_at,
+            "first_archived_at": prior.get("first_archived_at")
+            or prior.get("verified_at")
+            or verified_at,
+            "source_discovery_count": len(discoveries),
+            "source_discoveries": discoveries,
+            "retention": "append-only; source and archive are never deleted by analysis",
+        }
+        _atomic_write_text(manifest_path, _json_text(manifest))
+        return manifest, discovery_id, is_new_discovery
 
     @staticmethod
     def _verified_geometry_quality(value: Mapping[str, Any]) -> dict[str, Any]:

@@ -1801,6 +1801,46 @@ def _local_race_file_references(
     }
 
 
+def _raw_archive_failures(raw_archive: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [
+        dict(item)
+        for item in raw_archive.get("items") or ()
+        if isinstance(item, Mapping) and item.get("status") == "failed"
+    ]
+
+
+def _raw_archive_failure_note(raw_archive: Mapping[str, Any]) -> str:
+    failures = _raw_archive_failures(raw_archive)
+    if not failures:
+        return (
+            "No raw IBT was copied, so future raw-channel reanalysis is not yet "
+            "durable; originals remain untouched."
+        )
+    extra = len(failures) - 1
+    return (
+        "Future raw-channel reanalysis is not yet durable. "
+        + str(failures[0].get("message") or "").strip()
+        + (f" {extra} more raw file(s) also failed." if extra else "")
+    )
+
+
+def _raw_archive_summary(raw_archive: Mapping[str, Any]) -> dict[str, Any]:
+    """Bounded retryable state for the caller; complete detail stays in analysis.json."""
+
+    return {
+        "status": raw_archive.get("status"),
+        "durably_copied": raw_archive.get("durably_copied") is True,
+        "failed_count": len(_raw_archive_failures(raw_archive)),
+        "failures": [
+            {
+                key: item.get(key)
+                for key in ("code", "stage", "retryable", "archive_path", "message")
+            }
+            for item in _raw_archive_failures(raw_archive)[:8]
+        ],
+    }
+
+
 def _write_json_cache(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -1957,6 +1997,13 @@ def analyze_race_workflow(
         "archive": raw_archive,
         "note": "Verified raw IBTs are copied into portable append-only storage; originals remain untouched.",
     }
+    # TD-008: a failed copy leaves the original untouched and does not stop the
+    # analysis, which records that raw-channel reanalysis is not yet durable.
+    source["raw_source_policy"]["raw_reanalysis_durable"] = (
+        raw_archive.get("durably_copied") is True
+    )
+    if raw_archive.get("durably_copied") is not True:
+        source["raw_source_policy"]["note"] = _raw_archive_failure_note(raw_archive)
     if iracing_root is not None:
         selected_iracing_root = _resolved_root(iracing_root)
     else:
@@ -2117,6 +2164,7 @@ def analyze_race_workflow(
         "analysis_view": analysis_view,
         "timing": timing,
         "artifacts": artifacts,
+        "raw_archive": _raw_archive_summary(raw_archive),
     }
 
 
