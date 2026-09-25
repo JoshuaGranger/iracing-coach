@@ -9,7 +9,9 @@ the explicit status and sync workflows.
 from __future__ import annotations
 
 from collections import Counter
+import contextlib
 import datetime as _datetime
+import gc
 import hashlib
 import json
 import math
@@ -18,7 +20,7 @@ import re
 import statistics
 import time
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 try:  # Package import and direct script execution are both supported.
     from . import backend_roots
@@ -1623,6 +1625,14 @@ def _analysis_pipeline_sha256() -> str:
 # Review 2026-09-23 (performance): per-sample finite checks take an exact-float
 # fast path and unit conversions resolve once per channel. A cold NH race
 # (203 MB) produced an identical analysis view; timing fell 24.8 s -> 21.9 s.
+# Review 2026-09-24 (performance): v19 answers are unchanged. Stages read each
+# recorded column once through cached column views, per-sample work runs a
+# column at a time (left folds kept where the original used +=), the IBT
+# reader decodes scalar columns through typed memory views, and track
+# geometry filters columns in C. The complete cold outputs of four real
+# recordings (NH race and practice, a short NH test, an Iowa race) are
+# byte-identical under tools/analysis_parity.py, and test_analysis_columns
+# pins every rewritten helper against the verbatim pre-change functions.
 # Review 2026-09-24: v19 core answers are unchanged. review_sections.v1.json
 # adds IRP (232-irp/2026-09-24.1) and sections may carry a driver-readable
 # name; only the race investigation of an exact catalogued configuration
@@ -1632,7 +1642,7 @@ def _analysis_pipeline_sha256() -> str:
 # (archive paths, timestamps and archive-derived observation ids aside), and a
 # refreshed cache hit equalled a cold build.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "e76756c04165f0c31754c99e4142e6bad9f8a025d77fc473f32765e41425484f"
+    "5b0ae89f697b5e68abaa24f691a91e536eed71636b93581bf103525b72080afd"
 )
 
 
@@ -1837,6 +1847,28 @@ def _reject_nonfinite_json(value: str) -> None:
     raise ValueError(f"Non-finite number in cached analysis: {value}")
 
 
+@contextlib.contextmanager
+def _automatic_gc_paused() -> Iterator[None]:
+    """Pause automatic cyclic garbage collection for one analysis.
+
+    A decoded race is millions of samples held in long lists, plus per-column
+    views of them. Every automatic collection re-traverses the young ones, and
+    a cold 203 MB race triggered about 900 collections costing 1.3-1.7 s while
+    finding almost nothing: one analysis leaves roughly 12,000 small cyclic
+    objects. Reference counting still frees all acyclic data immediately; the
+    collector resumes on return or error, and only if it was running before.
+    Collection timing cannot change any computed value.
+    """
+
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+
+
 def analyze_race_workflow(
     *,
     selector: str = "latest",
@@ -1846,6 +1878,22 @@ def analyze_race_workflow(
 ) -> dict[str, Any]:
     """Resolve, analyze, report, and archive one local recording offline."""
 
+    with _automatic_gc_paused():
+        return _analyze_race_workflow(
+            selector=selector,
+            iracing_root=iracing_root,
+            archive_root=archive_root,
+            target_hz=target_hz,
+        )
+
+
+def _analyze_race_workflow(
+    *,
+    selector: str,
+    iracing_root: str | os.PathLike[str] | None,
+    archive_root: str | os.PathLike[str] | None,
+    target_hz: float | None,
+) -> dict[str, Any]:
     workflow_started = time.perf_counter()
     rate = None if target_hz is None else _target_rate(target_hz)
     selection = _resolve_session_selection(selector, iracing_root)
