@@ -148,7 +148,7 @@ Use position-binned control proxies to explain likely causes:
 
 - brake-energy proxy: integral of brake fraction × speed;
 - brake-steer overlap duration;
-- steering-work/scrub proxy: integral of absolute steering × speed, on road-wheel angle when the ratio is recorded (never compare it across recordings otherwise);
+- steering-work/scrub proxy: integral of absolute steering × speed, on road-wheel angle when the ratio is recorded (never compare it across recordings otherwise, nor between setups that state different steering offsets: the offset is not applied);
 - lateral-g exposure;
 - corrections/counter-steer;
 - entry, minimum, and exit speed;
