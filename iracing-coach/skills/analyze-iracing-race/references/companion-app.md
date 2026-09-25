@@ -54,7 +54,7 @@ Avoid coupling the product contract to one UI framework or an exact runtime vers
 - **Home and selection:** `iracing_companion_dashboard`, `inventory_iracing_data`, `discover_iracing_sessions`.
 - **Race evidence:** `analyze_iracing_race`, `query_iracing_telemetry`, `find_iracing_telemetry_events`, `iracing_strategy_history`.
 - **Seasonal knowledge:** `iracing_knowledge_cache_status`, `archive_iracing_knowledge`.
-- **Setup work:** `catalog_iracing_setups`, `build_open_setup_package`, `recommend_open_setup_tuning`, `record_open_setup_feedback`, `iracing_setup_history`.
+- **Setup work:** `catalog_iracing_setups`, `compare_iracing_setups` (two setups of one car as the garage displays them; computed readouts listed apart, never counted), `build_open_setup_package`, `recommend_open_setup_tuning`, `record_open_setup_feedback`, `iracing_setup_history`.
 - **Garage61:** `garage61_auth_status`, `sync_garage61_references`.
 
 Treat tool results as authoritative structured data. For `analyze_iracing_race`, render the inline `race_card.markdown` first and retain its `path`, `timing`, evidence tags, phase model, and omitted-row count. Render `analysis_path`, `race_card_path`, `report_path`, and visual artifact paths returned by the backend; do not reconstruct archive paths in the UI. After resolving `latest`, pin subsequent calls to the exact session/source returned by discovery or analysis. For an "important transients" action, call `find_iracing_telemetry_events` with `selection_mode: "severity"` and display its scan/candidate/omission metadata; use chronological mode for a user-selected lap or record window.

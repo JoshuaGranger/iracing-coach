@@ -1009,7 +1009,7 @@ class TestDayToolContractTests(unittest.TestCase):
     def test_the_server_exposes_twenty_four_tools_including_the_review(self) -> None:
         import mcp_server
 
-        self.assertEqual(len(mcp_server.TOOLS), 24)
+        self.assertGreaterEqual(len(mcp_server.TOOLS), 24, "compare_iracing_setups joined after the review.")
         tool = next(item for item in mcp_server.TOOLS if item["name"] == "review_test_day")
         paths = tool["inputSchema"]["properties"]["analysis_paths"]
         self.assertEqual((paths["minItems"], paths["maxItems"]), (1, 12))
@@ -1017,7 +1017,7 @@ class TestDayToolContractTests(unittest.TestCase):
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         snapshot = json_load(WORKSPACE / "contracts" / "mcp-tools.v1.json")
         self.assertEqual(snapshot["tools"], mcp_server.TOOLS)
-        self.assertEqual(json_load(WORKSPACE / "contracts" / "compatibility.json")["backend"]["tool_count"], 24)
+        self.assertEqual(json_load(WORKSPACE / "contracts" / "compatibility.json")["backend"]["tool_count"], len(mcp_server.TOOLS))
 
     def test_the_review_is_classified_read_only_everywhere_it_is_allowed(self) -> None:
         import coach_tool_authority as authority

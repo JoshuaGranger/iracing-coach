@@ -32,7 +32,7 @@
       "2025-03-26",
       "2024-11-05"
     ],
-    "tool_count": 24,
+    "tool_count": 25,
     "transport": "stdio-jsonl-utf8",
     "tuning_schema_version": 1
   },

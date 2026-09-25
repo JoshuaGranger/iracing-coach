@@ -475,7 +475,30 @@ def session_phase(value: Any) -> str:
     return normalized or "unknown"
 
 
-def _analysis_session_identity(analysis: Mapping[str, Any]) -> dict[str, str | None]:
+def is_session_identifier(value: Any) -> bool:
+    """Whether a recorded SubSessionID names one hosted session.
+
+    iRacing records SubSessionID 0 for every offline session (testing and
+    offline AI alike), so zero names no session. Treated as an identity, it
+    made each file-selected offline analysis supersede every other offline
+    analysis in the history index (the 9/24 IRP test day kept one of ten
+    recordings), which unlinked their setup files and merged their runs.
+    """
+
+    text = str(value).strip() if value is not None else ""
+    return bool(text) and text not in {"0", "0.0"}
+
+
+def _analysis_session_identity(
+    analysis: Mapping[str, Any], *, zero_subsession_is_identity: bool = False
+) -> dict[str, str | None]:
+    """The recorded session an analysis belongs to, for superseding and matching.
+
+    ``zero_subsession_is_identity`` keeps SubSessionID 0 only where it names a
+    stable directory (see :meth:`ArchiveStore.report_directory`), never where it
+    decides that two analyses are the same session.
+    """
+
     identity = analysis.get("identity")
     identity = identity if isinstance(identity, Mapping) else {}
     source = analysis.get("source")
@@ -489,6 +512,7 @@ def _analysis_session_identity(analysis: Mapping[str, Any]) -> dict[str, str | N
     subsession_id = (
         str(subsession_value).strip()
         if subsession_value not in (None, "")
+        and (zero_subsession_is_identity or is_session_identifier(subsession_value))
         else None
     )
     sim_session_value = selection.get("sim_session_num")
@@ -1804,7 +1828,10 @@ class ArchiveStore:
     def report_directory(self, analysis: Mapping[str, Any]) -> Path:
         identity = analysis.get("identity", {})
         context = self.context_from_analysis(analysis)
-        session_identity = _analysis_session_identity(analysis)
+        # Directory naming only: an offline recording keeps its established
+        # subsession-0 directory (the leaf is its analysis_id), so a fix to
+        # session matching never moves or duplicates an existing report.
+        session_identity = _analysis_session_identity(analysis, zero_subsession_is_identity=True)
         subsession = session_identity["subsession_id"] or identity.get("session_id") or "offline"
         session_key = session_identity["session_group_id"] or (
             f"{subsession}-{session_identity['session_phase']}"
@@ -2441,7 +2468,7 @@ class ArchiveStore:
                 f"group:{item.get('session_group_id')}"
                 if item.get("session_group_id")
                 else f"subsession:{item.get('subsession_id')}:{item.get('session_phase') or 'unknown'}"
-                if item.get("subsession_id") not in (None, "")
+                if is_session_identifier(item.get("subsession_id"))
                 else f"source:{str(item.get('source_path') or '').casefold()}"
                 if item.get("source_path")
                 else f"session:{item.get('session_id')}:{item.get('session_start')}"

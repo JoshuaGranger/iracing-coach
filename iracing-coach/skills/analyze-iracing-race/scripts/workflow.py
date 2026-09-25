@@ -1701,8 +1701,14 @@ def _analysis_pipeline_sha256() -> str:
 # comparison's test of the same section only when it exists. IRP 9/23's test
 # needed 77.5-81.5 green laps into a run and waited on 20-lap test runs.
 # Cached analyses rebuild the projection through refresh_race_investigation.
+# Review 2026-09-25 (Setups page): v20 answers are unchanged. setup_catalog.py
+# gains compare_displayed_setups (the Setups page comparison, outside the
+# analyzer) and a setup file's name yields a track hint only in the shop
+# convention (vendor or season present); the analyzer uses neither. The one
+# function the analyzer calls, garage_setup_fingerprint, is byte-identical, and
+# the ten IRP 9/24 test-day recordings keep their stored garage fingerprints.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "3ae93d0342793c93cd52f1ef285c20a35f414a3ae8ca5821e247e4c1c088ce94"
+    "f5a94631a86358ebcf295a7eada3b32d6fcf7b3c245b20e3056ff7cb4ff4ef3c"
 )
 
 

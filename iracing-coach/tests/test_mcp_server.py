@@ -102,6 +102,21 @@ class McpServerSafetyTests(unittest.TestCase):
                 },
             )
 
+    def test_setup_comparison_tool_is_pure_and_counts_adjustments_only(self) -> None:
+        self.assertIn("compare_iracing_setups", {tool["name"] for tool in mcp_server.TOOLS})
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(mcp_server, "DEFAULT_ARCHIVE_ROOT", Path(directory) / "never"):
+            result = mcp_server.call_tool("compare_iracing_setups", {
+                "left": {"Chassis.Front.SteeringRatio": "10:1", "Chassis.LeftRear.CornerWeight": "4127 N",
+                         "Chassis.FrontArb.LinkSlack": "-0 mm"},
+                "right": {"Chassis.Front.SteeringRatio": "12:1", "Chassis.LeftRear.CornerWeight": "4126 N",
+                          "Chassis.FrontArb.LinkSlack": "0 mm"},
+            })
+            self.assertFalse((Path(directory) / "never").exists(), "A comparison touches no archive.")
+        self.assertEqual((result["counts"]["changed"], result["counts"]["readouts_changed"], result["counts"]["identical"]), (1, 1, 1))
+        json.dumps(result, allow_nan=False)
+        with self.assertRaisesRegex(ValueError, "left and right"):
+            mcp_server.call_tool("compare_iracing_setups", {"left": [], "right": {}})
+
     def test_setup_tools_are_bounded_and_do_not_expose_a_writer(self) -> None:
         names = {item["name"] for item in mcp_server.TOOLS}
         self.assertTrue(

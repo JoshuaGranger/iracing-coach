@@ -393,6 +393,58 @@ class StorageRecentAnalysesTests(unittest.TestCase):
             self.assertEqual([row["analysis_id"] for row in history], ["analysis-new"])
             self.assertEqual(history[0]["green_laps"], 12)
 
+    def test_offline_recordings_selected_by_file_never_supersede_each_other(self) -> None:
+        # The 9/24 IRP test day: ten Offline Testing recordings analysed by file path
+        # all record SubSessionID 0 and SessionNum 0. As an identity that made each
+        # analysis delete every other offline row, so the index kept one recording
+        # and the setup files the other nine loaded could not be linked.
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArchiveStore(directory)
+
+            def analysis(identifier: str, start: str) -> tuple[dict, Path]:
+                source = Path(directory) / f"stockcars2 supra2019_irp {identifier}.ibt"
+                source.write_bytes(identifier.encode("utf-8"))
+                return {
+                    "analysis_id": identifier,
+                    "analyzed_at": start,
+                    "identity": {
+                        "session_start": start, "subsession_id": 0, "session_id": 0, "event_type": "Test",
+                        "car_name": "Toyota Supra Class B", "track_name": "Lucas Oil Indianapolis Raceway Park",
+                        "track_config": "IRP", "is_fixed_setup": False,
+                    },
+                    "race_summary": {"recorded_laps": 20},
+                    "source": {
+                        "telemetry_files": [str(source)],
+                        "selection": {"group_id": None, "subsession_id": 0, "sim_session_num": 0,
+                                      "sim_session_type": "Offline Testing", "selector_type": "file"},
+                    },
+                    "runs": [{"run_number": 1, "green_laps": 19}],
+                }, source
+
+            baseline, _ = analysis("00-19-25", "2026-09-25T05:19:25+00:00")
+            camber, camber_source = analysis("00-32-47", "2026-09-25T05:32:47+00:00")
+            directory_before = store.report_directory(camber)
+            store.record_analysis(baseline, str(Path(directory) / "a" / "report.md"))
+            store.record_analysis(camber, str(Path(directory) / "b" / "report.md"))
+
+            recent = store.recent_analyses(limit=10)
+            self.assertEqual({row["analysis_id"] for row in recent}, {"00-19-25", "00-32-47"})
+            self.assertTrue(all(row["subsession_id"] is None and row["session_group_id"] is None for row in recent))
+            history = store.historical_runs(store.context_from_analysis(camber))
+            self.assertEqual({row["analysis_id"] for row in history}, {"00-19-25", "00-32-47"},
+                             "Each recording's run is its own history row.")
+            self.assertEqual(directory_before.parent.name, "subsession-0-0",
+                             "Report directories keep their established name.")
+
+            # Re-analysing one recording still supersedes only that recording.
+            again = dict(camber, analysis_id="00-32-47-v2", analyzed_at="2026-09-25T06:00:00+00:00")
+            store.record_analysis(again, str(Path(directory) / "c" / "report.md"))
+            self.assertEqual({row["analysis_id"] for row in store.recent_analyses(limit=10)}, {"00-19-25", "00-32-47-v2"})
+            self.assertTrue(camber_source.is_file())
+            self.assertFalse(storage.is_session_identifier(0))
+            self.assertFalse(storage.is_session_identifier("0"))
+            self.assertTrue(storage.is_session_identifier(88866363))
+
     def test_recent_analyses_returns_compact_availability_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = ArchiveStore(directory)

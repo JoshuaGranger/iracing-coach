@@ -613,6 +613,35 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "compare_iracing_setups",
+        "description": "Read-only comparison of two setups of one car as the garage displays them: changed, unknown and identical settings, with computed garage readouts (corner/cross/nose weight, ride heights, preloads) listed apart and never counted as changes. Values shown in the same unit are equal only when the displayed numbers are (-0 equals 0); tire readings are left out. Writes nothing.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["left", "right"],
+            "properties": {
+                "scheme": {
+                    "type": "string",
+                    "enum": ["recording", "export"],
+                    "default": "recording",
+                    "description": "recording: keys are CarSetup paths such as Chassis.LeftFront.Camber; export: keys are setup-sheet canonical keys.",
+                },
+                "left": {
+                    "type": "object",
+                    "maxProperties": 4096,
+                    "additionalProperties": {"type": ["string", "number", "boolean", "null"]},
+                    "description": "Field key to displayed value for the selected setup.",
+                },
+                "right": {
+                    "type": "object",
+                    "maxProperties": 4096,
+                    "additionalProperties": {"type": ["string", "number", "boolean", "null"]},
+                    "description": "Field key to displayed value for the comparison setup.",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "copy_iracing_setup_to_coach",
         "description": "Save an exact, verified STO copy in the configured Coach archive without modifying source setups or overwriting changed copies.",
         "inputSchema": {
@@ -882,6 +911,13 @@ def _workflow_function(name: str) -> Callable[..., Any]:
 def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
     if not isinstance(arguments, Mapping):
         raise ValueError("Tool arguments must be an object.")
+    if name == "compare_iracing_setups":
+        # Pure: compares the displayed values it is given and touches no file.
+        from setup_catalog import compare_displayed_setups
+        left, right = arguments.get("left"), arguments.get("right")
+        if not isinstance(left, Mapping) or not isinstance(right, Mapping):
+            raise ValueError("left and right must map field keys to displayed values.")
+        return compare_displayed_setups(left, right, scheme=str(arguments.get("scheme") or "recording"))
     archive_root = _archive_root(arguments.get("archive_root"))
     store = ArchiveStore(archive_root)
     if name == "inventory_iracing_data":

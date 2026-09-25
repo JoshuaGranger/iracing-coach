@@ -118,21 +118,47 @@ def _driver(driver_info: Mapping[str, Any]) -> Mapping[str, Any]:
     return {}
 
 
+def _garage_fingerprint(car_setup: Mapping[str, Any] | None) -> str | None:
+    try:  # Package import and direct script execution are both supported.
+        from .setup_catalog import garage_setup_fingerprint
+    except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+        from setup_catalog import garage_setup_fingerprint  # type: ignore[no-redef]
+    fingerprint = garage_setup_fingerprint(car_setup)
+    # Sixteen characters, exactly as an analysis identity stores it, so a file's
+    # recorded values and the recording's own setup name the same adjustments.
+    return fingerprint[:16] if fingerprint else None
+
+
 def recorded_setup_identity(session_info: Mapping[str, Any]) -> dict[str, Any]:
-    """Read exactly what one recording says about the setup that was driven."""
+    """Read exactly what one recording says about the setup that was driven.
+
+    The recording also names where it was driven (``WeekendInfo``), which is the
+    only recorded track a setup file has: its name is free text.
+    """
 
     driver_info = session_info.get("DriverInfo")
     driver_info = driver_info if isinstance(driver_info, Mapping) else {}
+    weekend = session_info.get("WeekendInfo")
+    weekend = weekend if isinstance(weekend, Mapping) else {}
     modified = driver_info.get("DriverSetupIsModified")
     if modified is None:  # Older synthetic fixtures used this spelling.
         modified = driver_info.get("DriverSetupModified")
     car_setup = session_info.get("CarSetup")
+    car_setup = car_setup if isinstance(car_setup, Mapping) else None
     return {
         "setup_name": _text(driver_info.get("DriverSetupName")),
         "load_type": (_text(driver_info.get("DriverSetupLoadTypeName")) or "").casefold() or None,
         "modified": _flag(modified),
         "car_path": _text(_driver(driver_info).get("CarPath")),
-        "garage": garage_values(car_setup if isinstance(car_setup, Mapping) else None),
+        # Named as the analysis identity names them, so a file and its recording
+        # read the same track ("Lucas Oil Indianapolis Raceway Park · IRP").
+        "track_name": _text(weekend.get("TrackDisplayName")) or _text(weekend.get("TrackName")),
+        "track_config": _text(weekend.get("TrackConfigName")) or _text(weekend.get("TrackDisplayShortName")),
+        "track_path": _text(weekend.get("TrackName")),
+        "garage": garage_values(car_setup),
+        # The adjustments alone (no tire readings, no computed readouts), so two
+        # loads of one file whose corner weights read a newton apart still agree.
+        "garage_fingerprint": _garage_fingerprint(car_setup),
     }
 
 
@@ -226,7 +252,29 @@ def _use_summary(use: Mapping[str, Any]) -> dict[str, Any]:
         "session_type": use.get("session_type"),
         "subsession_id": use.get("subsession_id"),
         "source_path": use.get("source_path"),
+        "track_name": use.get("track_name"),
+        "track_config": use.get("track_config"),
     }
+
+
+def _recordings_agree(uses: Sequence[Mapping[str, Any]], garage: Mapping[str, Any]) -> bool:
+    """Whether every unmodified recording of a file drove the same adjustments.
+
+    Computed readouts (corner and cross weight, ride heights, ...) drift by a
+    unit between loads of one file, so recordings are compared by their
+    adjustment fingerprint when both have one, and by the whole garage tree
+    otherwise.
+    """
+
+    newest = uses[0].get("garage_fingerprint")
+    for item in uses:
+        fingerprint = item.get("garage_fingerprint")
+        if newest and fingerprint:
+            if fingerprint != newest:
+                return False
+        elif (item.get("garage") or {}) != garage:
+            return False
+    return True
 
 
 def _source_names(entry: Mapping[str, Any]) -> list[tuple[Mapping[str, Any], str, str]]:
@@ -327,12 +375,13 @@ def link_recorded_setups(
                     "analysis_id": newest.get("analysis_id"),
                     "session_start": newest.get("session_start"),
                     "session_type": newest.get("session_type"),
+                    "track_name": newest.get("track_name"),
+                    "track_config": newest.get("track_config"),
                     "setup": garage,
                     "field_count": _leaf_count(garage),
+                    "garage_fingerprint": newest.get("garage_fingerprint"),
                     "file_saved_after_recording": bool(recorded_at and saved_at and saved_at > recorded_at),
-                    "recordings_agree": all(
-                        (item.get("garage") or {}) == garage for item in ordered["uses"]
-                    ),
+                    "recordings_agree": _recordings_agree(ordered["uses"], garage),
                 }
         if ordered["uses"]:
             status, reason_code, reason = "linked", None, None
