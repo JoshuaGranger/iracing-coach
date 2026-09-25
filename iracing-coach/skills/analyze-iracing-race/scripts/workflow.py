@@ -1620,8 +1620,12 @@ def _analysis_pipeline_sha256() -> str:
 # a Race no longer counts as a caution. Offline Testing holds that bit on every
 # sample, so v19 classified every test lap as caution. Race answers are
 # unchanged: the IRP 9/23 and Kansas 9/21 races differ only in analysis_id.
+# Review 2026-09-24: v20 core answers are unchanged. The race investigation
+# projection moves to sections-trials-v2: a comparison whose laps are all
+# excluded, or whose window spans a caution, carries no pace delta and says
+# why. Cached analyses rebuild it through refresh_race_investigation.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "a47a6f739774a67d6b52af5fcc316d66d978652711a629557027c426315073e9"
+    "30ad45aa75b5bfa2b50d8789684917b1c8eb154986ed162a1128d3b907e32831"
 )
 
 

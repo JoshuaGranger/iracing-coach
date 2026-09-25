@@ -268,5 +268,97 @@ class RaceInvestigationTests(unittest.TestCase):
         self.assertFalse(context["recorded_usage_channel"])
 
 
+def caution_run_fixture(cautions: set[int], lap_count: int, traffic: float) -> dict:
+    """One run with the given caution laps; every other lap is a complete green lap."""
+    laps = []
+    for number in range(1, lap_count + 1):
+        caution = number in cautions
+        laps.append({
+            "lap": number, "complete": True, "flag_state": "caution" if caution else "green",
+            "green_fraction": 0.0 if caution else 1.0, "caution_fraction": 1.0 if caution else 0.0,
+            "pit_time_s": 0.0, "racing_state_fraction": 1.0,
+            "lap_time_s": 80.0 if caution else 31.4 + number * 0.01,
+            "clean_context": {"on_track_fraction": 1.0, "traffic_proximity_fraction": traffic},
+        })
+    return {"laps": laps, "runs": [{"run_number": 1, "start_lap": 1, "end_lap": lap_count}]}
+
+
+class UnusablePaceComparisonTests(unittest.TestCase):
+    """Kansas 9/21: "Laps 30–42 were 3.121 s/lap slower" compared laps 30, 38 and
+    42 across two cautions, with all six selected laps excluded."""
+
+    def build(self, analysis: dict) -> dict:
+        return build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
+
+    def test_window_spanning_cautions_with_all_laps_excluded_has_no_pace_headline(self) -> None:
+        # Green 1-5, caution 6-8, green 9-10, caution 11-17, green 18,
+        # caution 19-21, green 22; pack traffic excludes every lap.
+        cautions = {6, 7, 8, *range(11, 18), 19, 20, 21}
+        result = self.build(caution_run_fixture(cautions, 22, traffic=0.3))
+        comparison = next(item for item in result["comparisons"] if item["id"] == "run-1-finish")
+        self.assertEqual(comparison["baseline"]["lap_numbers"], [1, 2, 3])
+        self.assertEqual(comparison["compared"]["lap_numbers"], [10, 18, 22])
+        self.assertEqual(comparison["eligibility"], "observed")
+        self.assertIsNone(comparison["delta_s"])
+        self.assertFalse(comparison["pace_comparable"])
+        self.assertEqual(comparison["pace_unusable_reasons"], ["spans_caution", "all_laps_excluded"])
+        self.assertEqual(
+            comparison["summary"],
+            "Not a usable pace comparison: laps 10, 18 and 22 span caution laps 11–17 and 19–21; "
+            "all 6 selected laps are excluded from clean coaching.",
+        )
+        self.assertNotIn("s/lap", comparison["summary"])
+        self.assertEqual(result["default_comparison_id"], comparison["id"])
+        self.assertEqual(result["summary"], comparison["summary"])
+        # Section losses inherit the same confound and are not turned into corrections.
+        self.assertEqual(len(comparison["actions"]), 1)
+        self.assertIsNone(comparison["actions"][0]["section_id"])
+        self.assertIsNone(comparison["actions"][0]["trial"])
+        self.assertEqual(comparison["actions"][0]["evidence"], [comparison["summary"]])
+        # The cohort medians remain visible as observations.
+        self.assertIsNotNone(comparison["compared"]["median_lap_s"])
+
+    def test_all_excluded_comparison_without_a_caution_states_why(self) -> None:
+        result = self.build(caution_run_fixture(set(), 12, traffic=0.3))
+        comparison = next(item for item in result["comparisons"] if item["id"] == "run-1-finish")
+        self.assertIsNone(comparison["delta_s"])
+        self.assertEqual(comparison["pace_unusable_reasons"], ["all_laps_excluded"])
+        self.assertEqual(comparison["summary"],
+                         "Not a usable pace comparison: all 8 selected laps are excluded from clean coaching.")
+
+    def test_screened_window_spanning_a_caution_is_not_a_pace_result(self) -> None:
+        # Lap 3 is the restart after the lap-2 caution, so the clean laps are
+        # 1, 4, 5, 6, 7, 8 and the earlier clean window is laps 1 and 4.
+        result = self.build(caution_run_fixture({2}, 8, traffic=0.0))
+        comparison = next(item for item in result["comparisons"] if item["id"] == "run-1-clean")
+        self.assertEqual(comparison["baseline"]["lap_numbers"], [1, 4])
+        self.assertEqual(comparison["eligibility"], "eligible")
+        self.assertIsNone(comparison["delta_s"])
+        self.assertEqual(comparison["pace_unusable_reasons"], ["spans_caution"])
+        self.assertEqual(comparison["summary"], "Not a usable pace comparison: laps 1 and 4 span caution lap 2.")
+
+    def test_headline_prefers_the_latest_usable_comparison(self) -> None:
+        analysis = investigation_fixture()
+        for lap in analysis["laps"][10:]:
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.3
+        result = self.build(analysis)
+        finish = next(item for item in result["comparisons"] if item["id"] == "run-2-finish")
+        self.assertFalse(finish["pace_comparable"])
+        self.assertEqual(result["default_comparison_id"], "run-1-clean")
+        default = next(item for item in result["comparisons"] if item["id"] == "run-1-clean")
+        self.assertTrue(default["pace_comparable"])
+        self.assertIsNotNone(default["delta_s"])
+        self.assertEqual(result["summary"], default["summary"])
+        self.assertIn("s/lap", result["summary"])
+
+    def test_usable_comparisons_keep_their_pace_headline(self) -> None:
+        result = self.build(investigation_fixture())
+        self.assertTrue(all(item["pace_comparable"] for item in result["comparisons"]))
+        self.assertTrue(all(item["pace_unusable_reasons"] == [] for item in result["comparisons"]))
+        finish = next(item for item in result["comparisons"] if item["id"] == "run-2-finish")
+        self.assertEqual(finish["delta_s"], 1.64)
+        self.assertIn("s/lap slower", finish["summary"])
+
+
 if __name__ == "__main__":
     unittest.main()

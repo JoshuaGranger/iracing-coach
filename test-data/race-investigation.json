@@ -753,6 +753,8 @@
           "unit": "°F"
         }
       ],
+      "pace_comparable": true,
+      "pace_unusable_reasons": [],
       "summary": "Laps 7–9 were 0.120 s/lap slower than laps 1–3 by median.",
       "title": "Run 1: clean early versus late"
     },
@@ -1480,6 +1482,8 @@
           "unit": "°F"
         }
       ],
+      "pace_comparable": true,
+      "pace_unusable_reasons": [],
       "summary": "Laps 9–12 were 1.160 s/lap slower than laps 1–4 by median. 3 of 8 selected laps are excluded from clean coaching.",
       "title": "Run 1: earlier to final green laps"
     }
@@ -1633,11 +1637,12 @@
   "limitations": [
     "Window medians are observed comparisons, not estimates of a single cause.",
     "Clean windows use the existing recorded eligibility screen; observed finish windows retain excluded laps and their reasons.",
+    "A comparison whose selected laps are all excluded, or whose window spans a caution, carries no pace delta and states why.",
     "Cross-run exposure uses sampled green-time fractions from complete laps, not measured tire wear or exact physical green distance.",
     "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
     "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."
   ],
-  "projection_version": "sections-trials-v1",
+  "projection_version": "sections-trials-v2",
   "runs": [
     {
       "first_lap": 1,
