@@ -66,6 +66,7 @@ TOOL_CAPABILITIES: Mapping[str, str] = {
     "recommend_open_setup_tuning": CAPABILITY_READ_SETUP,
     "recommend_structured_open_setup_tuning": CAPABILITY_READ_SETUP,
     "record_open_setup_feedback": CAPABILITY_WRITE,
+    "review_test_day": CAPABILITY_READ_ANALYSIS,
     "save_driving_trial": CAPABILITY_WRITE,
     "sync_garage61_references": CAPABILITY_NETWORK,
 }

@@ -8,7 +8,7 @@ public static class RaceInvestigationMapper
 {
     public const int CurrentSchemaVersion = 2;
     /// <summary>Must equal race_investigation.PROJECTION_VERSION in the backend.</summary>
-    public const string CurrentProjectionVersion = "sections-trials-v1";
+    public const string CurrentProjectionVersion = "sections-trials-v3";
 
     public static RaceInvestigation? Map(JsonElement source)
     {
@@ -29,7 +29,7 @@ public static class RaceInvestigationMapper
                 Array(source, "timeline").Select(item => new RaceInvestigationEvent(RequiredInt(item, "lap"), RequiredText(item, "kind"),
                     RequiredText(item, "label"), Text(item, "detail") ?? "", Number(item, "value"), Text(item, "unit"))).ToArray(),
                 Track(Property(source, "track_evolution")), Strings(source, "limitations"), retained,
-                Runs: current ? Array(source, "runs").Select(Run).ToArray() : null,
+                Runs: current ? Array(source, "runs").Select(RunView).ToArray() : null,
                 Sections: current ? Sections(Property(source, "sections")) : null,
                 ProjectionVersion: current ? RequiredText(source, "projection_version") : null);
         }
@@ -55,7 +55,10 @@ public static class RaceInvestigationMapper
             RequiredText(action, "instruction"), Strings(action, "evidence"), Text(action, "limitation"), Integers(action, "lap_numbers"),
             Number(action, "start_pct"), Number(action, "end_pct"), Strings(action, "signal_keys"),
             current ? Text(action, "section_id") : null, current ? TrialSpec(Property(action, "trial")) : null)).ToArray(),
-        current ? Inspection(Property(item, "inspection")) : null);
+        current ? Inspection(Property(item, "inspection")) : null,
+        // Absent before sections-trials-v2; present, it must be a boolean.
+        Boolean(item, "pace_comparable") ?? true,
+        Property(item, "pace_unusable_reasons").ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? [] : Strings(item, "pace_unusable_reasons"));
 
     private static RaceInvestigationCohort Cohort(JsonElement item) => new(
         RequiredText(item, "label"), Integer(item, "run_number"), Integers(item, "lap_numbers"), RequiredInt(item, "lap_count"),
@@ -77,7 +80,8 @@ public static class RaceInvestigationMapper
             Text(item, "usage_source"), Strings(item, "limitations"));
     }
 
-    private static RaceRunView Run(JsonElement item)
+    /// <summary>Maps one run's observed trend and screened fit; also read by the test-day review.</summary>
+    public static RaceRunView RunView(JsonElement item)
     {
         var trend = Property(item, "trend");
         var fit = Property(item, "fit");

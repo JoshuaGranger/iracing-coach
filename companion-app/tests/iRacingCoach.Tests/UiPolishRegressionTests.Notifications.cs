@@ -149,6 +149,51 @@ public sealed partial class UiPolishRegressionTests
         StringAssert.Contains(css, "@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }");
     }
 
+    // Main's unreadable saved-analyses notice had its own toast markup in the shell; it now
+    // shares the one notification placement and keeps its recovery, dismissal and priority.
+    [TestMethod]
+    public async Task UnreadableSavedAnalysesNoticeSharesTheOneNotificationPlacement()
+    {
+        var root = TempRoot();
+        var paths = new IsolatedCompanionPathProvider(root);
+        var settings = new CompanionSettings(paths) { FirstRunComplete = true };
+        Directory.CreateDirectory(settings.IRacingRoot);
+        Directory.CreateDirectory(settings.IRacingInstallRoot);
+        var report = Path.Combine(settings.ArchiveRoot, "reports", "season-1", "subsession-1000001-2", "broken", "analysis.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(report)!);
+        File.WriteAllText(report, "{broken");
+        using var state = NewSettingsState(root, paths, new MemorySettingsStore(settings));
+        await state.InitializeAsync();
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while ((state.IsRefreshing || !state.HomeDataReady) && DateTime.UtcNow < until) await Task.Delay(10);
+        Assert.AreEqual("1 saved analysis could not be read", state.UnreadableAnalysisNotice);
+        Assert.IsNull(state.CurrentToast);
+
+        var html = await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state });
+        StringAssert.Contains(html, "data-unreadable-analyses");
+        StringAssert.Contains(html, "class=\"toast warning\"");
+        StringAssert.Contains(html, "1 saved analysis could not be read");
+        StringAssert.Contains(html, ">Open logs</button>");
+        StringAssert.Contains(html, "aria-label=\"Dismiss notice\"");
+
+        // Any other notification takes the place first; the notice returns when it clears.
+        state.Notify("Settings saved.", ToastTone.Info);
+        html = await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state });
+        StringAssert.Contains(html, "Settings saved.");
+        Assert.DoesNotContain("data-unreadable-analyses", html);
+        state.DismissToast(state.CurrentToast!.Revision);
+        StringAssert.Contains(await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state }), "data-unreadable-analyses");
+
+        state.DismissUnreadableAnalysisNotice();
+        Assert.DoesNotContain("toast", await Render<AppToast>(state, new() { [nameof(AppToast.State)] = state }));
+
+        var shell = File.ReadAllText(Path.Combine(UiRoot(), "CompanionShell.razor"));
+        Assert.DoesNotContain("class=\"toast", shell, "The shell has one notification placement: AppToast.");
+        var css = File.ReadAllText(Path.Combine(UiRoot(), "wwwroot", "coach.css"));
+        Assert.HasCount(1, Regex.Matches(css, @"\.toast \.toast-action \{"), "One rule sizes the recovery button.");
+        StringAssert.Contains(css, ".toast .toast-action { width: auto;");
+    }
+
     private sealed class ManualTime : TimeProvider
     {
         private DateTimeOffset _now = new(2026, 9, 24, 20, 0, 0, TimeSpan.Zero);

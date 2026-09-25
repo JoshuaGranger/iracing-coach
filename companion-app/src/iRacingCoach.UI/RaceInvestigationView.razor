@@ -15,7 +15,14 @@
         }
         else
         {
-            <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" /></div>
+            @if (OfflineTesting)
+            {
+                <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" EmptyTitle="No green laps to place here" EmptyDetail="@OfflineRunsDetail" /></div>
+            }
+            else
+            {
+                <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" /></div>
+            }
         }
     }
     else if (View == "sections")
@@ -23,6 +30,7 @@
         @if (!Investigation.HasSectionInspection || Selected?.Inspection is null)
         {
             @if (Investigation.Runs is null) { <LegacyNotice OnRefresh="OnRefresh" /> }
+            else if (OfflineTesting && Selected is null) { <div class="ri-empty ri-panel"><strong>No green-lap comparison to inspect</strong><span>@OfflineSectionsDetail</span></div> }
             else { <div class="ri-empty ri-panel"><strong>No track sections to inspect</strong><span>@(Investigation.Sections?.UnavailableReason ?? "Select a comparison with recorded traces.")</span></div> }
         }
         else
@@ -59,10 +67,10 @@
                     {
                         var selected = choice.Id == Selected?.Id;
                         <button type="button" class="ri-comparison @(selected ? "selected" : null)" aria-pressed="@(selected ? "true" : "false")"
-                                data-comparison="@choice.Id" @onclick="() => SelectComparison(choice.Id)">
+                                data-comparison="@choice.Id" title="@(choice.PaceComparable ? null : choice.Summary)" @onclick="() => SelectComparison(choice.Id)">
                             <span class="ri-comparison-title">@choice.Title</span>
-                            <span class="ri-comparison-laps">@Laps(choice.Baseline.LapNumbers) → @Laps(choice.Compared.LapNumbers)@if (choice.Eligibility != "eligible") { <em> · @ExcludedSummary(choice)</em> }</span>
-                            <strong class="@(choice.DeltaSeconds > 0 ? "loss" : "gain")">@Signed(choice.DeltaSeconds)</strong>
+                            <span class="ri-comparison-laps">@Laps(choice.Baseline.LapNumbers) → @Laps(choice.Compared.LapNumbers)@if (!choice.PaceComparable) { <em> · no pace result</em> } else if (choice.Eligibility != "eligible") { <em> · @ExcludedSummary(choice)</em> }</span>
+                            <strong class="@PaceTone(choice)">@(HasPaceResult(choice) ? Signed(choice.DeltaSeconds) : "—")</strong>
                         </button>
                     }
                     @if (Investigation.Comparisons.Count == 0) { <p class="ri-muted">@Investigation.Summary</p> }
@@ -70,7 +78,11 @@
                 @if (Selected is { } comparison)
                 {
                     <section class="ri-panel ri-card" data-selected-comparison="@comparison.Id">
-                        <header><h2>@comparison.Title</h2><strong class="@(comparison.DeltaSeconds > 0 ? "loss" : "gain")">@Signed(comparison.DeltaSeconds) s/lap</strong></header>
+                        <header><h2>@comparison.Title</h2><strong class="@PaceTone(comparison)">@PaceResult(comparison)</strong></header>
+                        @if (!comparison.PaceComparable)
+                        {
+                            <p class="ri-unusable" data-pace-unusable>@comparison.Summary</p>
+                        }
                         <div class="ri-cohorts">
                             @foreach (var (cohort, role) in new[] { (comparison.Baseline, "Earlier"), (comparison.Compared, "Later") })
                             {
@@ -92,20 +104,23 @@
                         {
                             <div class="ri-changes"><span>Changed</span>@foreach (var metric in changes) { <b title="@metric.Detail">@metric.Label @Number(metric.Baseline, Digits(metric.Unit)) → @Number(metric.Compared, Digits(metric.Unit)) @metric.Unit</b> }</div>
                         }
-                        <div class="ri-explanations">
-                            <span>Explanations</span>
-                            @foreach (var hypothesis in comparison.Hypotheses)
-                            {
-                                <b class="ri-hypothesis @hypothesis.Status" title="@HypothesisTitle(hypothesis)">@hypothesis.Label<small>@HypothesisStatus(hypothesis.Status)</small></b>
-                            }
-                            <details><summary>Evidence</summary>
+                        @if (comparison.PaceComparable && comparison.Hypotheses.Count > 0)
+                        {
+                            <div class="ri-explanations">
+                                <span>Explanations</span>
                                 @foreach (var hypothesis in comparison.Hypotheses)
                                 {
-                                    <p><b>@hypothesis.Label.</b> @string.Join(" ", hypothesis.Supporting.Concat(hypothesis.Contradicting).Concat(hypothesis.Unknown))</p>
+                                    <b class="ri-hypothesis @hypothesis.Status" title="@HypothesisTitle(hypothesis)">@hypothesis.Label<small>@HypothesisStatus(hypothesis.Status)</small></b>
                                 }
-                                @if (Investigation.TrackEvolution is { } track) { <p><b>Track.</b> @track.Summary</p> }
-                            </details>
-                        </div>
+                                <details><summary>Evidence</summary>
+                                    @foreach (var hypothesis in comparison.Hypotheses)
+                                    {
+                                        <p><b>@hypothesis.Label.</b> @string.Join(" ", hypothesis.Supporting.Concat(hypothesis.Contradicting).Concat(hypothesis.Unknown))</p>
+                                    }
+                                    @if (Investigation.TrackEvolution is { } track) { <p><b>Track.</b> @track.Summary</p> }
+                                </details>
+                            </div>
+                        }
                         @if (comparison.Actions.OrderBy(item => item.Priority).FirstOrDefault() is { } lead)
                         {
                             <TrialAction Action="lead" ComparisonId="@comparison.Id" Eligibility="@comparison.Eligibility" State="State" AnalysisId="@AnalysisId"
@@ -120,10 +135,22 @@
 
 @code {
     [Parameter, EditorRequired] public RaceInvestigation Investigation { get; set; } = null!;
+    private string OfflineRunsDetail => "Offline Testing holds iRacing's one-lap-to-green flag for the whole session, and this recording's analysis reads those laps as caution, so none is placed on the green-lap axis."
+        + (TestDayAvailable ? " Test day compares them by lap of run." : "");
+    private string OfflineSectionsDetail => "Section comparisons pair green laps, and this recording's analysis reads Offline Testing laps as caution."
+        + (TestDayAvailable ? " Test day compares them by lap of run." : "");
     [Parameter] public AnalysisTrackGeometry? Geometry { get; set; }
     [Parameter] public CompanionState? State { get; set; }
     [Parameter] public string AnalysisId { get; set; } = "";
     [Parameter] public string View { get; set; } = "race";
+    /// <summary>
+    /// An Offline Testing recording: iRacing holds the one-lap-to-green flag for the whole
+    /// session and the recording analysis reads its laps as caution, so empty views say so
+    /// instead of blaming the laps.
+    /// </summary>
+    [Parameter] public bool OfflineTesting { get; set; }
+    /// <summary>The recording belongs to a test day whose Test day view compares these laps.</summary>
+    [Parameter] public bool TestDayAvailable { get; set; }
     [Parameter] public string? ComparisonId { get; set; }
     [Parameter] public string? SectionId { get; set; }
     [Parameter] public EventCallback<(string View, string? ComparisonId, string? SectionId)> OnSelectionChanged { get; set; }

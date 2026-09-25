@@ -87,12 +87,13 @@ else
                         <button type="button" class="session-row @(first ? null : "sub") @(selected ? "selected" : null)" data-session="@session.Id" @onclick="() => Open(session)"
                                 title="Open @session.SessionType.ToLowerInvariant() analysis">
                             <span class="session-main">
-                                @if (first) { <b>@group.Track <span class="ri-muted">@group.Layout</span></b> }
-                                <small>@SessionWhen(session) · @group.Car@(string.IsNullOrWhiteSpace(group.SetupType) ? "" : $" · {group.SetupType} setup")</small>
+                                @if (first) { <b>@group.Track <span class="ri-muted">@group.Layout@(group.TestDay ? $" · test day, {group.Sessions.Count} recordings" : "")</span></b> }
+                                @* "Run N" names a row of the Test day table (the laps between pit visits); a recording can hold several. *@
+                                <small>@(group.TestDay && session.TestDayRunNumber is { } recording ? $"Recording {recording} · " : "")@SessionWhen(session) · @group.Car@(string.IsNullOrWhiteSpace(group.SetupType) ? "" : $" · {group.SetupType} setup")</small>
                             </span>
                             <span class="session-type @TypeClass(session)">@TypeLabel(session)</span>
                             <span>@Result(session)</span>
-                            <span class="session-extra">@Laps(overview)</span>
+                            <span class="session-extra">@Laps(session, overview)</span>
                             <span class="session-status @StatusClass(session)" title="@State.RaceAnalysisFailure(session)">@(group.Archived ? "Saved analysis · recording not in folder" : Status(session, overview))</span>
                             <span aria-hidden="true"><ProductIcon Name="chevron-right" Size="14" /></span>
                         </button>
@@ -113,7 +114,7 @@ else
 
     private bool BackendUnavailable => State.Health.Any(item => item.Id == "backend" && item.State == "unavailable");
 
-    private sealed record Group(string Id, string Track, string Layout, string Car, string SetupType, IReadOnlyList<RecentRace> Sessions, bool Archived = false);
+    private sealed record Group(string Id, string Track, string Layout, string Car, string SetupType, IReadOnlyList<RecentRace> Sessions, bool Archived = false, bool TestDay = false);
 
     private IReadOnlyList<Group> Groups
     {
@@ -122,8 +123,12 @@ else
             var search = State.RaceSearchText?.Trim() ?? "";
             var recorded = State.EventGroups.OfType<RaceEventGroup>()
                 .Select(group => new Group(group.Id, group.Track, group.Layout, group.Car, group.SetupType,
-                    (group.Sessions ?? []).OfType<RecentRace>().Where(Matches).OrderBy(session => session.IsRace ? 0 : 1)
-                        .ThenByDescending(session => session.StartTimeUtc, StringComparer.Ordinal).ToArray()))
+                    group.IsTestDay
+                        // A test day reads in the order it was driven: run 1 first.
+                        ? (group.Sessions ?? []).OfType<RecentRace>().Where(Matches).OrderBy(session => session.TestDayRunNumber ?? int.MaxValue).ToArray()
+                        : (group.Sessions ?? []).OfType<RecentRace>().Where(Matches).OrderBy(session => session.IsRace ? 0 : 1)
+                            .ThenByDescending(session => session.StartTimeUtc, StringComparer.Ordinal).ToArray(),
+                    TestDay: group.IsTestDay))
                 .ToList();
             // Saved analyses stay reviewable after their recording is moved or deleted.
             var sessions = State.EventGroups.OfType<RaceEventGroup>().SelectMany(group => group.Sessions ?? []).OfType<RecentRace>().ToArray();
@@ -150,6 +155,9 @@ else
         _ => true
     };
 
+    private static bool OfflineTesting(RecentRace session) =>
+        session.SessionType?.Contains("Offline Testing", StringComparison.OrdinalIgnoreCase) == true;
+
     private void ClearFilters() { _filter = "all"; State.RaceSearchText = string.Empty; }
 
     private Task Open(RecentRace session) => State.OpenRaceFromHomeAsync(session);
@@ -167,11 +175,14 @@ else
         _ => ""
     };
 
-    private static string Laps(RaceOverview? overview)
+    private static string Laps(RecentRace session, RaceOverview? overview)
     {
         if (overview is null) return "";
         var parts = new List<string>();
-        if (overview.GreenLaps > 0 || overview.CautionLaps > 0) parts.Add($"{overview.GreenLaps} green · {overview.CautionLaps} caution");
+        // Offline Testing holds iRacing's one-lap-to-green flag, which the recording
+        // analysis reads as caution; a green/caution split would misstate the stint.
+        if (OfflineTesting(session) && overview.RecordedLaps > 0) parts.Add($"{overview.RecordedLaps} laps");
+        else if (overview.GreenLaps > 0 || overview.CautionLaps > 0) parts.Add($"{overview.GreenLaps} green · {overview.CautionLaps} caution");
         else if (overview.RecordedLaps > 0) parts.Add($"{overview.RecordedLaps} laps");
         if (overview.BestCleanLapSeconds is > 0) parts.Add($"best {LapTime(overview.BestCleanLapSeconds)}");
         return string.Join(" · ", parts);

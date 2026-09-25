@@ -22,6 +22,12 @@ public sealed record RaceInvestigation(
     public bool HasSectionInspection => SchemaVersion >= 2 && Sections is { Sections.Count: > 0 };
 }
 
+/// <summary>
+/// One backend window comparison. <see cref="PaceComparable"/> false means the backend
+/// withheld the pace result (for example a caution between or inside the windows, or no
+/// screened lap); <see cref="Summary"/> then states why. Projections before
+/// sections-trials-v2 carry no flag and read as comparable.
+/// </summary>
 public sealed record RaceInvestigationComparison(
     string Id, string Kind, string Title, string Summary,
     RaceInvestigationCohort Baseline, RaceInvestigationCohort Compared,
@@ -30,7 +36,9 @@ public sealed record RaceInvestigationComparison(
     IReadOnlyList<RaceInvestigationCorner> Corners,
     IReadOnlyList<RaceInvestigationHypothesis> Hypotheses,
     IReadOnlyList<RaceInvestigationAction> Actions,
-    RaceInspection? Inspection = null);
+    RaceInspection? Inspection = null,
+    bool PaceComparable = true,
+    IReadOnlyList<string>? PaceUnusableReasons = null);
 
 public sealed record RaceInvestigationCohort(
     string Label, int? RunNumber, IReadOnlyList<int> LapNumbers, int LapCount,
@@ -52,9 +60,13 @@ public sealed record RaceInvestigationAction(int Priority, string Title, string 
     IReadOnlyList<string> Evidence, string? Limitation, IReadOnlyList<int> LapNumbers,
     double? StartPct, double? EndPct, IReadOnlyList<string> SignalKeys,
     string? SectionId = null, RaceTrialSpec? Trial = null);
+/// <summary>
+/// One lap on the investigation charts. <see cref="Label"/> is set by projections
+/// whose lap numbers repeat across runs (a test day's "Run 3 · lap 14").
+/// </summary>
 public sealed record RaceInvestigationLap(int Lap, double? LapTimeSeconds, int? Position,
     string FlagState, bool Eligible, IReadOnlyList<string> ExclusionReasons, int? RunNumber, bool PlotPace = false,
-    double? GreenExposure = null);
+    double? GreenExposure = null, string? Label = null);
 public sealed record RaceInvestigationEvent(int Lap, string Kind, string Label, string Detail,
     double? Value, string? Unit);
 public sealed record RaceTrackEvolution(string Status, string? Provenance, string? StartingUsage,

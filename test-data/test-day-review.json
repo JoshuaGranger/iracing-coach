@@ -1,0 +1,2452 @@
+{
+  "car": {
+    "car_id": 9002,
+    "car_name": "Synthetic O'Reilly car",
+    "car_path": "stockcars2 synthetic"
+  },
+  "comparability_rule": {
+    "requires": [
+      "exact car path",
+      "exact track configuration",
+      "open setup",
+      "track temperature within the limit",
+      "starting fuel within the limit",
+      "same tire compound when recorded"
+    ],
+    "start_fuel_gal": 2.0,
+    "track_temperature_f": 5.0,
+    "used_tire_odometer_m": 250.0
+  },
+  "contract": "test-day-review-v1",
+  "fixture_metadata": {
+    "production_use_allowed": false,
+    "real_driver_or_setup_data": false,
+    "synthetic": true
+  },
+  "limitations": [
+    "Pace windows count laps from the start of each stint's measured run. A verdict compares the two runs on the laps of the run that are clean in both, so its medians are at equal run age; run age is not measured tire wear.",
+    "Verdicts compare medians against a threshold of max(0.03 s, 2 × combined standard error); a difference inside it is within scatter, not unchanged.",
+    "Track evolution, driver adaptation and traffic are not controlled between stints.",
+    "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
+    "Offline Testing holds iRacing's one-lap-to-green flag for the whole session, which the recording analysis reads as a caution. For Offline Testing stints the review ignores caution and restart classifications; every other exclusion still applies."
+  ],
+  "next_change": {
+    "based_on_runs": [
+      2,
+      3
+    ],
+    "changes": [
+      {
+        "field": "chassis.front.front_brake_bias",
+        "from": "56.5%",
+        "label": "Front brake bias",
+        "to": null
+      }
+    ],
+    "evidence": [
+      "Laps 12–16, 5 laps clean in both runs: median 24.068 s, 0.110 s faster than run 2 (24.178 s); threshold 0.030 s."
+    ],
+    "instruction": "Move front brake bias forward by one available garage step. Expected: Increase rear stability during brake application and release. Risk: Front locking, longer stopping distance, or a tighter center.",
+    "kind": "keep_and_step",
+    "note": "No setup direction is inferred from tire temperatures or wear.",
+    "ruleset_step": {
+      "direction": "forward",
+      "expected_effect": "Increase rear stability during brake application and release.",
+      "instruction": "Move front brake bias forward by one available garage step.",
+      "risk": "Front locking, longer stopping distance, or a tighter center.",
+      "ruleset_id": "nascar-oreilly-xfinity-2026s3-v1",
+      "setting_id": "front-brake-bias",
+      "step_verified": false
+    },
+    "success_rule": {
+      "direction": "faster",
+      "first_run_lap": 12,
+      "last_run_lap": 16,
+      "minimum_clean_laps": 3,
+      "reference_median_s": 24.068,
+      "reference_run": 3,
+      "text": "Beat 24.068 s median on laps 12–16 by at least 0.030 s with 3+ clean laps.",
+      "threshold_s": 0.03,
+      "window_label": "Laps 12–16"
+    },
+    "title": "Keep front brake bias at 56.5%; try one more step"
+  },
+  "ok": true,
+  "read_only": true,
+  "recording_count": 3,
+  "run_count": 3,
+  "runs": [
+    {
+      "analysis_id": "fixture-stint-1",
+      "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-1\\analysis.json",
+      "comparison": null,
+      "conditions": {
+        "start_fuel_gal": 18.49,
+        "tire_compound": null,
+        "tire_start": {
+          "detail": null,
+          "initial_odometer_m": null,
+          "status": "not_measured"
+        },
+        "track_temp_f": 81.0
+      },
+      "early": {
+        "clean_lap_count": 4,
+        "first_run_lap": 2,
+        "label": "Laps 2–5",
+        "laps": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "last_run_lap": 5,
+        "median_s": 24.052,
+        "reason": null,
+        "status": "measured"
+      },
+      "fall_off": {
+        "equal_age": true,
+        "first_run_lap": 2,
+        "fit_lap_count": 15,
+        "intercept_s": 24.0067,
+        "laps": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "last_run_lap": 16,
+        "method": "ordinary_least_squares_on_run_lap",
+        "reason": null,
+        "scatter_s": 0.0101,
+        "slope_s_per_lap": 0.012,
+        "status": "measured"
+      },
+      "laps": [
+        {
+          "eligible": false,
+          "exclusion_reasons": [
+            "first_lap_of_run"
+          ],
+          "label": "Run 1 · lap 1",
+          "lap": 1,
+          "lap_time_s": 24.012,
+          "plotted": true,
+          "run_lap": 1
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 2",
+          "lap": 2,
+          "lap_time_s": 24.024,
+          "plotted": true,
+          "run_lap": 2
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 3",
+          "lap": 3,
+          "lap_time_s": 24.056,
+          "plotted": true,
+          "run_lap": 3
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 4",
+          "lap": 4,
+          "lap_time_s": 24.048,
+          "plotted": true,
+          "run_lap": 4
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 5",
+          "lap": 5,
+          "lap_time_s": 24.06,
+          "plotted": true,
+          "run_lap": 5
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 6",
+          "lap": 6,
+          "lap_time_s": 24.092,
+          "plotted": true,
+          "run_lap": 6
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 7",
+          "lap": 7,
+          "lap_time_s": 24.084,
+          "plotted": true,
+          "run_lap": 7
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 8",
+          "lap": 8,
+          "lap_time_s": 24.096,
+          "plotted": true,
+          "run_lap": 8
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 9",
+          "lap": 9,
+          "lap_time_s": 24.128,
+          "plotted": true,
+          "run_lap": 9
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 10",
+          "lap": 10,
+          "lap_time_s": 24.12,
+          "plotted": true,
+          "run_lap": 10
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 11",
+          "lap": 11,
+          "lap_time_s": 24.132,
+          "plotted": true,
+          "run_lap": 11
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 12",
+          "lap": 12,
+          "lap_time_s": 24.164,
+          "plotted": true,
+          "run_lap": 12
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 13",
+          "lap": 13,
+          "lap_time_s": 24.156,
+          "plotted": true,
+          "run_lap": 13
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 14",
+          "lap": 14,
+          "lap_time_s": 24.168,
+          "plotted": true,
+          "run_lap": 14
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 15",
+          "lap": 15,
+          "lap_time_s": 24.2,
+          "plotted": true,
+          "run_lap": 15
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 16",
+          "lap": 16,
+          "lap_time_s": 24.192,
+          "plotted": true,
+          "run_lap": 16
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 17",
+          "lap": 17,
+          "lap_time_s": 24.204,
+          "plotted": true,
+          "run_lap": 17
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 18",
+          "lap": 18,
+          "lap_time_s": 24.236,
+          "plotted": true,
+          "run_lap": 18
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 19",
+          "lap": 19,
+          "lap_time_s": 24.228,
+          "plotted": true,
+          "run_lap": 19
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 1 · lap 20",
+          "lap": 20,
+          "lap_time_s": 24.24,
+          "plotted": true,
+          "run_lap": 20
+        }
+      ],
+      "late": {
+        "clean_lap_count": 5,
+        "first_run_lap": 12,
+        "label": "Laps 12–16",
+        "laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "last_run_lap": 16,
+        "median_s": 24.168,
+        "reason": null,
+        "status": "measured"
+      },
+      "measured_run": {
+        "analysis_run": 1,
+        "first_lap": 1,
+        "last_lap": 20,
+        "other_run_count": 0,
+        "run_laps": 20
+      },
+      "offline_flag_rule_applied": true,
+      "recorded_at": "2026-08-04T18:00:00+00:00",
+      "recording": {
+        "analysis_id": "fixture-stint-1",
+        "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-1\\analysis.json",
+        "number": 1,
+        "recorded_at": "2026-08-04T18:00:00+00:00",
+        "run_in_recording": 1,
+        "runs_in_recording": 1
+      },
+      "run": 1,
+      "session_type": "Offline Testing",
+      "setup": {
+        "embedded": true,
+        "fixed": false,
+        "garage_fingerprint": "cca1f11aebe7872e",
+        "name": "fixture-stint-1.sto"
+      },
+      "setup_change": {
+        "change_count": 0,
+        "changes": [],
+        "compared_with_run": null,
+        "complete": true,
+        "readout_count": 0,
+        "readouts": [],
+        "reason": null,
+        "status": "first_run",
+        "unknown_count": 0,
+        "unknown_fields": []
+      },
+      "test_day_id": "test-day-0123456789abcdef",
+      "test_day_run": null,
+      "tires": {
+        "corners": {
+          "LF": {
+            "change_from_previous_stop": null,
+            "sheet": {
+              "cold_pressure_psi": 16.97,
+              "hot_pressure_psi": 20.16,
+              "minimum_tread_percent": 97.0,
+              "spread_f": 0.0,
+              "temperature_f": {
+                "inside": 104.0,
+                "middle": 104.0,
+                "outside": 104.0
+              },
+              "tread_percent": {
+                "inside": 100.0,
+                "middle": 98.0,
+                "outside": 97.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": null,
+              "max_tread_delta_percent": null,
+              "status": "not_compared"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [
+                "temperature"
+              ],
+              "max_temperature_delta_f": 71.6,
+              "max_tread_delta_percent": 0.2,
+              "status": "disagree"
+            },
+            "stop": {
+              "minimum_tread_percent": 97.1,
+              "pressure_kind": "live",
+              "pressure_psi": 17.0,
+              "spread_f": -69.3,
+              "temperature_f": {
+                "inside": 106.3,
+                "middle": 147.0,
+                "outside": 175.6
+              },
+              "tread_percent": {
+                "inside": 99.9,
+                "middle": 98.2,
+                "outside": 97.1
+              }
+            }
+          },
+          "LR": {
+            "change_from_previous_stop": null,
+            "sheet": {
+              "cold_pressure_psi": 16.97,
+              "hot_pressure_psi": 21.18,
+              "minimum_tread_percent": 99.0,
+              "spread_f": -16.2,
+              "temperature_f": {
+                "inside": 158.0,
+                "middle": 168.8,
+                "outside": 174.2
+              },
+              "tread_percent": {
+                "inside": 100.0,
+                "middle": 99.0,
+                "outside": 99.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": null,
+              "max_tread_delta_percent": null,
+              "status": "not_compared"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.9,
+              "max_tread_delta_percent": 0.5,
+              "status": "agree"
+            },
+            "stop": {
+              "minimum_tread_percent": 99.4,
+              "pressure_kind": "live",
+              "pressure_psi": 17.0,
+              "spread_f": -17.3,
+              "temperature_f": {
+                "inside": 157.1,
+                "middle": 167.9,
+                "outside": 174.4
+              },
+              "tread_percent": {
+                "inside": 99.5,
+                "middle": 99.4,
+                "outside": 99.4
+              }
+            }
+          },
+          "RF": {
+            "change_from_previous_stop": null,
+            "sheet": {
+              "cold_pressure_psi": 27.99,
+              "hot_pressure_psi": 33.5,
+              "minimum_tread_percent": 95.0,
+              "spread_f": 36.0,
+              "temperature_f": {
+                "inside": 224.6,
+                "middle": 210.2,
+                "outside": 188.6
+              },
+              "tread_percent": {
+                "inside": 95.0,
+                "middle": 95.0,
+                "outside": 98.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": null,
+              "max_tread_delta_percent": null,
+              "status": "not_compared"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.9,
+              "max_tread_delta_percent": 0.3,
+              "status": "agree"
+            },
+            "stop": {
+              "minimum_tread_percent": 95.0,
+              "pressure_kind": "live",
+              "pressure_psi": 28.0,
+              "spread_f": 36.4,
+              "temperature_f": {
+                "inside": 224.1,
+                "middle": 209.8,
+                "outside": 187.7
+              },
+              "tread_percent": {
+                "inside": 95.0,
+                "middle": 95.0,
+                "outside": 97.7
+              }
+            }
+          },
+          "RR": {
+            "change_from_previous_stop": null,
+            "sheet": {
+              "cold_pressure_psi": 27.99,
+              "hot_pressure_psi": 31.76,
+              "minimum_tread_percent": 99.0,
+              "spread_f": 9.0,
+              "temperature_f": {
+                "inside": 165.2,
+                "middle": 161.6,
+                "outside": 156.2
+              },
+              "tread_percent": {
+                "inside": 99.0,
+                "middle": 99.0,
+                "outside": 99.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": null,
+              "max_tread_delta_percent": null,
+              "status": "not_compared"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.5,
+              "max_tread_delta_percent": 0.3,
+              "status": "agree"
+            },
+            "stop": {
+              "minimum_tread_percent": 98.7,
+              "pressure_kind": "live",
+              "pressure_psi": 28.0,
+              "spread_f": 9.9,
+              "temperature_f": {
+                "inside": 165.6,
+                "middle": 161.8,
+                "outside": 155.7
+              },
+              "tread_percent": {
+                "inside": 98.7,
+                "middle": 98.7,
+                "outside": 98.8
+              }
+            }
+          }
+        },
+        "sheet_reading": {
+          "source": "garage_sheet",
+          "status": "recorded",
+          "timing": "unverified",
+          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
+          "uniform": false
+        },
+        "stop_reading": {
+          "measurement_status": "measured_at_stop",
+          "reason": null,
+          "source": "telemetry_pit_stall",
+          "status": "measured",
+          "temperature": "carcass"
+        }
+      },
+      "trend": {
+        "first_lap": 1,
+        "fit": {
+          "domain": [
+            2.0,
+            16.0
+          ],
+          "eligible_count": 15,
+          "laps": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ],
+          "method": "ordinary_least_squares_on_run_lap",
+          "points": [
+            {
+              "x": 2.0,
+              "y": 24.031
+            },
+            {
+              "x": 16.0,
+              "y": 24.199
+            }
+          ],
+          "slope_s_per_green_lap": 0.012
+        },
+        "fit_basis": "fall_off",
+        "fit_unavailable_reason": null,
+        "last_lap": 20,
+        "plotted_lap_count": 20,
+        "run_number": 1,
+        "trend": {
+          "covered_lap_count": 20,
+          "gaps": [],
+          "includes_reference_exclusions": true,
+          "method": "centered_five_observation_median",
+          "segments": [
+            [
+              {
+                "lap": 1,
+                "sample_laps": [
+                  1,
+                  2,
+                  3
+                ],
+                "x": 1.0,
+                "y": 24.024
+              },
+              {
+                "lap": 2,
+                "sample_laps": [
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "x": 2.0,
+                "y": 24.036
+              },
+              {
+                "lap": 3,
+                "sample_laps": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "x": 3.0,
+                "y": 24.048
+              },
+              {
+                "lap": 4,
+                "sample_laps": [
+                  2,
+                  3,
+                  4,
+                  5,
+                  6
+                ],
+                "x": 4.0,
+                "y": 24.056
+              },
+              {
+                "lap": 5,
+                "sample_laps": [
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "x": 5.0,
+                "y": 24.06
+              },
+              {
+                "lap": 6,
+                "sample_laps": [
+                  4,
+                  5,
+                  6,
+                  7,
+                  8
+                ],
+                "x": 6.0,
+                "y": 24.084
+              },
+              {
+                "lap": 7,
+                "sample_laps": [
+                  5,
+                  6,
+                  7,
+                  8,
+                  9
+                ],
+                "x": 7.0,
+                "y": 24.092
+              },
+              {
+                "lap": 8,
+                "sample_laps": [
+                  6,
+                  7,
+                  8,
+                  9,
+                  10
+                ],
+                "x": 8.0,
+                "y": 24.096
+              },
+              {
+                "lap": 9,
+                "sample_laps": [
+                  7,
+                  8,
+                  9,
+                  10,
+                  11
+                ],
+                "x": 9.0,
+                "y": 24.12
+              },
+              {
+                "lap": 10,
+                "sample_laps": [
+                  8,
+                  9,
+                  10,
+                  11,
+                  12
+                ],
+                "x": 10.0,
+                "y": 24.128
+              },
+              {
+                "lap": 11,
+                "sample_laps": [
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ],
+                "x": 11.0,
+                "y": 24.132
+              },
+              {
+                "lap": 12,
+                "sample_laps": [
+                  10,
+                  11,
+                  12,
+                  13,
+                  14
+                ],
+                "x": 12.0,
+                "y": 24.156
+              },
+              {
+                "lap": 13,
+                "sample_laps": [
+                  11,
+                  12,
+                  13,
+                  14,
+                  15
+                ],
+                "x": 13.0,
+                "y": 24.164
+              },
+              {
+                "lap": 14,
+                "sample_laps": [
+                  12,
+                  13,
+                  14,
+                  15,
+                  16
+                ],
+                "x": 14.0,
+                "y": 24.168
+              },
+              {
+                "lap": 15,
+                "sample_laps": [
+                  13,
+                  14,
+                  15,
+                  16,
+                  17
+                ],
+                "x": 15.0,
+                "y": 24.192
+              },
+              {
+                "lap": 16,
+                "sample_laps": [
+                  14,
+                  15,
+                  16,
+                  17,
+                  18
+                ],
+                "x": 16.0,
+                "y": 24.2
+              },
+              {
+                "lap": 17,
+                "sample_laps": [
+                  15,
+                  16,
+                  17,
+                  18,
+                  19
+                ],
+                "x": 17.0,
+                "y": 24.204
+              },
+              {
+                "lap": 18,
+                "sample_laps": [
+                  16,
+                  17,
+                  18,
+                  19,
+                  20
+                ],
+                "x": 18.0,
+                "y": 24.228
+              },
+              {
+                "lap": 19,
+                "sample_laps": [
+                  17,
+                  18,
+                  19,
+                  20
+                ],
+                "x": 19.0,
+                "y": 24.232
+              },
+              {
+                "lap": 20,
+                "sample_laps": [
+                  18,
+                  19,
+                  20
+                ],
+                "x": 20.0,
+                "y": 24.236
+              }
+            ]
+          ]
+        },
+        "x_axis": "run_lap"
+      }
+    },
+    {
+      "analysis_id": "fixture-stint-2",
+      "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-2\\analysis.json",
+      "comparison": {
+        "basis": "late_window",
+        "blocked_by": null,
+        "compared_with_run": 1,
+        "current_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "current_median_s": 24.178,
+        "delta_s": 0.01,
+        "first_run_lap": 12,
+        "flags": [
+          "Tire compound is not recorded for run 1 or run 2."
+        ],
+        "last_run_lap": 16,
+        "previous_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "previous_median_s": 24.168,
+        "reason_codes": [],
+        "reasons": [],
+        "run_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "standard_error_s": 0.008,
+        "summary": "Laps 12–16, 5 laps clean in both runs: median 24.178 s, within the 0.030 s scatter threshold of run 1 (24.168 s).",
+        "threshold_s": 0.03,
+        "verdict": "within_scatter",
+        "window_label": "Laps 12–16"
+      },
+      "conditions": {
+        "start_fuel_gal": 18.49,
+        "tire_compound": null,
+        "tire_start": {
+          "detail": null,
+          "initial_odometer_m": null,
+          "status": "not_measured"
+        },
+        "track_temp_f": 81.0
+      },
+      "early": {
+        "clean_lap_count": 4,
+        "first_run_lap": 2,
+        "label": "Laps 2–5",
+        "laps": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "last_run_lap": 5,
+        "median_s": 24.062,
+        "reason": null,
+        "status": "measured"
+      },
+      "fall_off": {
+        "equal_age": true,
+        "first_run_lap": 2,
+        "fit_lap_count": 15,
+        "intercept_s": 24.0167,
+        "laps": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "last_run_lap": 16,
+        "method": "ordinary_least_squares_on_run_lap",
+        "reason": null,
+        "scatter_s": 0.0101,
+        "slope_s_per_lap": 0.012,
+        "status": "measured"
+      },
+      "laps": [
+        {
+          "eligible": false,
+          "exclusion_reasons": [
+            "first_lap_of_run"
+          ],
+          "label": "Run 2 · lap 1",
+          "lap": 1,
+          "lap_time_s": 24.022,
+          "plotted": true,
+          "run_lap": 1
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 2",
+          "lap": 2,
+          "lap_time_s": 24.034,
+          "plotted": true,
+          "run_lap": 2
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 3",
+          "lap": 3,
+          "lap_time_s": 24.066,
+          "plotted": true,
+          "run_lap": 3
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 4",
+          "lap": 4,
+          "lap_time_s": 24.058,
+          "plotted": true,
+          "run_lap": 4
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 5",
+          "lap": 5,
+          "lap_time_s": 24.07,
+          "plotted": true,
+          "run_lap": 5
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 6",
+          "lap": 6,
+          "lap_time_s": 24.102,
+          "plotted": true,
+          "run_lap": 6
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 7",
+          "lap": 7,
+          "lap_time_s": 24.094,
+          "plotted": true,
+          "run_lap": 7
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 8",
+          "lap": 8,
+          "lap_time_s": 24.106,
+          "plotted": true,
+          "run_lap": 8
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 9",
+          "lap": 9,
+          "lap_time_s": 24.138,
+          "plotted": true,
+          "run_lap": 9
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 10",
+          "lap": 10,
+          "lap_time_s": 24.13,
+          "plotted": true,
+          "run_lap": 10
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 11",
+          "lap": 11,
+          "lap_time_s": 24.142,
+          "plotted": true,
+          "run_lap": 11
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 12",
+          "lap": 12,
+          "lap_time_s": 24.174,
+          "plotted": true,
+          "run_lap": 12
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 13",
+          "lap": 13,
+          "lap_time_s": 24.166,
+          "plotted": true,
+          "run_lap": 13
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 14",
+          "lap": 14,
+          "lap_time_s": 24.178,
+          "plotted": true,
+          "run_lap": 14
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 15",
+          "lap": 15,
+          "lap_time_s": 24.21,
+          "plotted": true,
+          "run_lap": 15
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 16",
+          "lap": 16,
+          "lap_time_s": 24.202,
+          "plotted": true,
+          "run_lap": 16
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 17",
+          "lap": 17,
+          "lap_time_s": 24.214,
+          "plotted": true,
+          "run_lap": 17
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 2 · lap 18",
+          "lap": 18,
+          "lap_time_s": 24.246,
+          "plotted": true,
+          "run_lap": 18
+        }
+      ],
+      "late": {
+        "clean_lap_count": 5,
+        "first_run_lap": 12,
+        "label": "Laps 12–16",
+        "laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "last_run_lap": 16,
+        "median_s": 24.178,
+        "reason": null,
+        "status": "measured"
+      },
+      "measured_run": {
+        "analysis_run": 1,
+        "first_lap": 1,
+        "last_lap": 18,
+        "other_run_count": 0,
+        "run_laps": 18
+      },
+      "offline_flag_rule_applied": true,
+      "recorded_at": "2026-08-04T18:40:00+00:00",
+      "recording": {
+        "analysis_id": "fixture-stint-2",
+        "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-2\\analysis.json",
+        "number": 2,
+        "recorded_at": "2026-08-04T18:40:00+00:00",
+        "run_in_recording": 1,
+        "runs_in_recording": 1
+      },
+      "run": 2,
+      "session_type": "Offline Testing",
+      "setup": {
+        "embedded": true,
+        "fixed": false,
+        "garage_fingerprint": "cca1f11aebe7872e",
+        "name": "fixture-stint-2.sto"
+      },
+      "setup_change": {
+        "change_count": 0,
+        "changes": [],
+        "compared_with_run": 1,
+        "complete": true,
+        "readout_count": 0,
+        "readouts": [],
+        "reason": null,
+        "status": "unchanged",
+        "unknown_count": 0,
+        "unknown_fields": []
+      },
+      "test_day_id": "test-day-0123456789abcdef",
+      "test_day_run": null,
+      "tires": {
+        "corners": {
+          "LF": {
+            "change_from_previous_stop": {
+              "temperature_f": {
+                "inside": 0.0,
+                "middle": 0.0,
+                "outside": 0.0
+              },
+              "tread_percent": {
+                "inside": 0.0,
+                "middle": 0.0,
+                "outside": 0.0
+              }
+            },
+            "sheet": {
+              "cold_pressure_psi": 16.97,
+              "hot_pressure_psi": 20.16,
+              "minimum_tread_percent": 97.0,
+              "spread_f": -70.2,
+              "temperature_f": {
+                "inside": 105.8,
+                "middle": 147.2,
+                "outside": 176.0
+              },
+              "tread_percent": {
+                "inside": 100.0,
+                "middle": 98.0,
+                "outside": 97.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.5,
+              "max_tread_delta_percent": 0.2,
+              "status": "agree"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.5,
+              "max_tread_delta_percent": 0.2,
+              "status": "agree"
+            },
+            "stop": {
+              "minimum_tread_percent": 97.1,
+              "pressure_kind": "live",
+              "pressure_psi": 17.0,
+              "spread_f": -69.3,
+              "temperature_f": {
+                "inside": 106.3,
+                "middle": 147.0,
+                "outside": 175.6
+              },
+              "tread_percent": {
+                "inside": 99.9,
+                "middle": 98.2,
+                "outside": 97.1
+              }
+            }
+          },
+          "LR": {
+            "change_from_previous_stop": {
+              "temperature_f": {
+                "inside": 0.0,
+                "middle": 0.0,
+                "outside": 0.0
+              },
+              "tread_percent": {
+                "inside": 0.0,
+                "middle": 0.0,
+                "outside": 0.0
+              }
+            },
+            "sheet": {
+              "cold_pressure_psi": 16.97,
+              "hot_pressure_psi": 21.18,
+              "minimum_tread_percent": 99.0,
+              "spread_f": -16.2,
+              "temperature_f": {
+                "inside": 158.0,
+                "middle": 168.8,
+                "outside": 174.2
+              },
+              "tread_percent": {
+                "inside": 100.0,
+                "middle": 99.0,
+                "outside": 99.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.9,
+              "max_tread_delta_percent": 0.5,
+              "status": "agree"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.9,
+              "max_tread_delta_percent": 0.5,
+              "status": "agree"
+            },
+            "stop": {
+              "minimum_tread_percent": 99.4,
+              "pressure_kind": "live",
+              "pressure_psi": 17.0,
+              "spread_f": -17.3,
+              "temperature_f": {
+                "inside": 157.1,
+                "middle": 167.9,
+                "outside": 174.4
+              },
+              "tread_percent": {
+                "inside": 99.5,
+                "middle": 99.4,
+                "outside": 99.4
+              }
+            }
+          },
+          "RF": {
+            "change_from_previous_stop": {
+              "temperature_f": {
+                "inside": 0.0,
+                "middle": 0.0,
+                "outside": 0.0
+              },
+              "tread_percent": {
+                "inside": 0.0,
+                "middle": 0.0,
+                "outside": 0.0
+              }
+            },
+            "sheet": {
+              "cold_pressure_psi": 27.99,
+              "hot_pressure_psi": 33.5,
+              "minimum_tread_percent": 95.0,
+              "spread_f": 36.0,
+              "temperature_f": {
+                "inside": 224.6,
+                "middle": 210.2,
+                "outside": 188.6
+              },
+              "tread_percent": {
+                "inside": 95.0,
+                "middle": 95.0,
+                "outside": 98.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.9,
+              "max_tread_delta_percent": 0.3,
+              "status": "agree"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.9,
+              "max_tread_delta_percent": 0.3,
+              "status": "agree"
+            },
+            "stop": {
+              "minimum_tread_percent": 95.0,
+              "pressure_kind": "live",
+              "pressure_psi": 28.0,
+              "spread_f": 36.4,
+              "temperature_f": {
+                "inside": 224.1,
+                "middle": 209.8,
+                "outside": 187.7
+              },
+              "tread_percent": {
+                "inside": 95.0,
+                "middle": 95.0,
+                "outside": 97.7
+              }
+            }
+          },
+          "RR": {
+            "change_from_previous_stop": {
+              "temperature_f": {
+                "inside": 0.0,
+                "middle": 0.0,
+                "outside": 0.0
+              },
+              "tread_percent": {
+                "inside": 0.0,
+                "middle": 0.0,
+                "outside": 0.0
+              }
+            },
+            "sheet": {
+              "cold_pressure_psi": 27.99,
+              "hot_pressure_psi": 31.76,
+              "minimum_tread_percent": 99.0,
+              "spread_f": 9.0,
+              "temperature_f": {
+                "inside": 165.2,
+                "middle": 161.6,
+                "outside": 156.2
+              },
+              "tread_percent": {
+                "inside": 99.0,
+                "middle": 99.0,
+                "outside": 99.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.5,
+              "max_tread_delta_percent": 0.3,
+              "status": "agree"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.5,
+              "max_tread_delta_percent": 0.3,
+              "status": "agree"
+            },
+            "stop": {
+              "minimum_tread_percent": 98.7,
+              "pressure_kind": "live",
+              "pressure_psi": 28.0,
+              "spread_f": 9.9,
+              "temperature_f": {
+                "inside": 165.6,
+                "middle": 161.8,
+                "outside": 155.7
+              },
+              "tread_percent": {
+                "inside": 98.7,
+                "middle": 98.7,
+                "outside": 98.8
+              }
+            }
+          }
+        },
+        "sheet_reading": {
+          "source": "garage_sheet",
+          "status": "recorded",
+          "timing": "unverified",
+          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
+          "uniform": false
+        },
+        "stop_reading": {
+          "measurement_status": "measured_at_stop",
+          "reason": null,
+          "source": "telemetry_pit_stall",
+          "status": "measured",
+          "temperature": "carcass"
+        }
+      },
+      "trend": {
+        "first_lap": 1,
+        "fit": {
+          "domain": [
+            2.0,
+            16.0
+          ],
+          "eligible_count": 15,
+          "laps": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ],
+          "method": "ordinary_least_squares_on_run_lap",
+          "points": [
+            {
+              "x": 2.0,
+              "y": 24.041
+            },
+            {
+              "x": 16.0,
+              "y": 24.209
+            }
+          ],
+          "slope_s_per_green_lap": 0.012
+        },
+        "fit_basis": "fall_off",
+        "fit_unavailable_reason": null,
+        "last_lap": 18,
+        "plotted_lap_count": 18,
+        "run_number": 2,
+        "trend": {
+          "covered_lap_count": 18,
+          "gaps": [],
+          "includes_reference_exclusions": true,
+          "method": "centered_five_observation_median",
+          "segments": [
+            [
+              {
+                "lap": 1,
+                "sample_laps": [
+                  1,
+                  2,
+                  3
+                ],
+                "x": 1.0,
+                "y": 24.034
+              },
+              {
+                "lap": 2,
+                "sample_laps": [
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "x": 2.0,
+                "y": 24.046
+              },
+              {
+                "lap": 3,
+                "sample_laps": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "x": 3.0,
+                "y": 24.058
+              },
+              {
+                "lap": 4,
+                "sample_laps": [
+                  2,
+                  3,
+                  4,
+                  5,
+                  6
+                ],
+                "x": 4.0,
+                "y": 24.066
+              },
+              {
+                "lap": 5,
+                "sample_laps": [
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "x": 5.0,
+                "y": 24.07
+              },
+              {
+                "lap": 6,
+                "sample_laps": [
+                  4,
+                  5,
+                  6,
+                  7,
+                  8
+                ],
+                "x": 6.0,
+                "y": 24.094
+              },
+              {
+                "lap": 7,
+                "sample_laps": [
+                  5,
+                  6,
+                  7,
+                  8,
+                  9
+                ],
+                "x": 7.0,
+                "y": 24.102
+              },
+              {
+                "lap": 8,
+                "sample_laps": [
+                  6,
+                  7,
+                  8,
+                  9,
+                  10
+                ],
+                "x": 8.0,
+                "y": 24.106
+              },
+              {
+                "lap": 9,
+                "sample_laps": [
+                  7,
+                  8,
+                  9,
+                  10,
+                  11
+                ],
+                "x": 9.0,
+                "y": 24.13
+              },
+              {
+                "lap": 10,
+                "sample_laps": [
+                  8,
+                  9,
+                  10,
+                  11,
+                  12
+                ],
+                "x": 10.0,
+                "y": 24.138
+              },
+              {
+                "lap": 11,
+                "sample_laps": [
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ],
+                "x": 11.0,
+                "y": 24.142
+              },
+              {
+                "lap": 12,
+                "sample_laps": [
+                  10,
+                  11,
+                  12,
+                  13,
+                  14
+                ],
+                "x": 12.0,
+                "y": 24.166
+              },
+              {
+                "lap": 13,
+                "sample_laps": [
+                  11,
+                  12,
+                  13,
+                  14,
+                  15
+                ],
+                "x": 13.0,
+                "y": 24.174
+              },
+              {
+                "lap": 14,
+                "sample_laps": [
+                  12,
+                  13,
+                  14,
+                  15,
+                  16
+                ],
+                "x": 14.0,
+                "y": 24.178
+              },
+              {
+                "lap": 15,
+                "sample_laps": [
+                  13,
+                  14,
+                  15,
+                  16,
+                  17
+                ],
+                "x": 15.0,
+                "y": 24.202
+              },
+              {
+                "lap": 16,
+                "sample_laps": [
+                  14,
+                  15,
+                  16,
+                  17,
+                  18
+                ],
+                "x": 16.0,
+                "y": 24.21
+              },
+              {
+                "lap": 17,
+                "sample_laps": [
+                  15,
+                  16,
+                  17,
+                  18
+                ],
+                "x": 17.0,
+                "y": 24.212
+              },
+              {
+                "lap": 18,
+                "sample_laps": [
+                  16,
+                  17,
+                  18
+                ],
+                "x": 18.0,
+                "y": 24.214
+              }
+            ]
+          ]
+        },
+        "x_axis": "run_lap"
+      }
+    },
+    {
+      "analysis_id": "fixture-stint-3",
+      "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-3\\analysis.json",
+      "comparison": {
+        "basis": "late_window",
+        "blocked_by": null,
+        "compared_with_run": 2,
+        "current_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "current_median_s": 24.068,
+        "delta_s": -0.11,
+        "first_run_lap": 12,
+        "flags": [
+          "Tire compound is not recorded for run 2 or run 3."
+        ],
+        "last_run_lap": 16,
+        "previous_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "previous_median_s": 24.178,
+        "reason_codes": [],
+        "reasons": [],
+        "run_laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "standard_error_s": 0.008,
+        "summary": "Laps 12–16, 5 laps clean in both runs: median 24.068 s, 0.110 s faster than run 2 (24.178 s); threshold 0.030 s.",
+        "threshold_s": 0.03,
+        "verdict": "faster",
+        "window_label": "Laps 12–16"
+      },
+      "conditions": {
+        "start_fuel_gal": 18.49,
+        "tire_compound": null,
+        "tire_start": {
+          "detail": null,
+          "initial_odometer_m": null,
+          "status": "not_measured"
+        },
+        "track_temp_f": 81.0
+      },
+      "early": {
+        "clean_lap_count": 4,
+        "first_run_lap": 2,
+        "label": "Laps 2–5",
+        "laps": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "last_run_lap": 5,
+        "median_s": 23.952,
+        "reason": null,
+        "status": "measured"
+      },
+      "fall_off": {
+        "equal_age": true,
+        "first_run_lap": 2,
+        "fit_lap_count": 15,
+        "intercept_s": 23.9067,
+        "laps": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "last_run_lap": 16,
+        "method": "ordinary_least_squares_on_run_lap",
+        "reason": null,
+        "scatter_s": 0.0101,
+        "slope_s_per_lap": 0.012,
+        "status": "measured"
+      },
+      "laps": [
+        {
+          "eligible": false,
+          "exclusion_reasons": [
+            "first_lap_of_run"
+          ],
+          "label": "Run 3 · lap 1",
+          "lap": 1,
+          "lap_time_s": 23.912,
+          "plotted": true,
+          "run_lap": 1
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 2",
+          "lap": 2,
+          "lap_time_s": 23.924,
+          "plotted": true,
+          "run_lap": 2
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 3",
+          "lap": 3,
+          "lap_time_s": 23.956,
+          "plotted": true,
+          "run_lap": 3
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 4",
+          "lap": 4,
+          "lap_time_s": 23.948,
+          "plotted": true,
+          "run_lap": 4
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 5",
+          "lap": 5,
+          "lap_time_s": 23.96,
+          "plotted": true,
+          "run_lap": 5
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 6",
+          "lap": 6,
+          "lap_time_s": 23.992,
+          "plotted": true,
+          "run_lap": 6
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 7",
+          "lap": 7,
+          "lap_time_s": 23.984,
+          "plotted": true,
+          "run_lap": 7
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 8",
+          "lap": 8,
+          "lap_time_s": 23.996,
+          "plotted": true,
+          "run_lap": 8
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 9",
+          "lap": 9,
+          "lap_time_s": 24.028,
+          "plotted": true,
+          "run_lap": 9
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 10",
+          "lap": 10,
+          "lap_time_s": 24.02,
+          "plotted": true,
+          "run_lap": 10
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 11",
+          "lap": 11,
+          "lap_time_s": 24.032,
+          "plotted": true,
+          "run_lap": 11
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 12",
+          "lap": 12,
+          "lap_time_s": 24.064,
+          "plotted": true,
+          "run_lap": 12
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 13",
+          "lap": 13,
+          "lap_time_s": 24.056,
+          "plotted": true,
+          "run_lap": 13
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 14",
+          "lap": 14,
+          "lap_time_s": 24.068,
+          "plotted": true,
+          "run_lap": 14
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 15",
+          "lap": 15,
+          "lap_time_s": 24.1,
+          "plotted": true,
+          "run_lap": 15
+        },
+        {
+          "eligible": true,
+          "exclusion_reasons": [],
+          "label": "Run 3 · lap 16",
+          "lap": 16,
+          "lap_time_s": 24.092,
+          "plotted": true,
+          "run_lap": 16
+        }
+      ],
+      "late": {
+        "clean_lap_count": 5,
+        "first_run_lap": 12,
+        "label": "Laps 12–16",
+        "laps": [
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "last_run_lap": 16,
+        "median_s": 24.068,
+        "reason": null,
+        "status": "measured"
+      },
+      "measured_run": {
+        "analysis_run": 1,
+        "first_lap": 1,
+        "last_lap": 16,
+        "other_run_count": 0,
+        "run_laps": 16
+      },
+      "offline_flag_rule_applied": true,
+      "recorded_at": "2026-08-04T19:25:00+00:00",
+      "recording": {
+        "analysis_id": "fixture-stint-3",
+        "analysis_path": "%ARCHIVE_ROOT%\\reports\\season-unknown\\fixture-stint-3\\analysis.json",
+        "number": 3,
+        "recorded_at": "2026-08-04T19:25:00+00:00",
+        "run_in_recording": 1,
+        "runs_in_recording": 1
+      },
+      "run": 3,
+      "session_type": "Offline Testing",
+      "setup": {
+        "embedded": true,
+        "fixed": false,
+        "garage_fingerprint": "1794f593423d9f73",
+        "name": "fixture-stint-3.sto"
+      },
+      "setup_change": {
+        "change_count": 1,
+        "changes": [
+          {
+            "current": "56.5%",
+            "delta": 0.5,
+            "field": "chassis.front.front_brake_bias",
+            "label": "Front brake bias",
+            "previous": "56.0%",
+            "unit": "%"
+          }
+        ],
+        "compared_with_run": 2,
+        "complete": true,
+        "readout_count": 0,
+        "readouts": [],
+        "reason": null,
+        "status": "changed",
+        "unknown_count": 0,
+        "unknown_fields": []
+      },
+      "test_day_id": "test-day-0123456789abcdef",
+      "test_day_run": null,
+      "tires": {
+        "corners": {
+          "LF": {
+            "change_from_previous_stop": null,
+            "sheet": {
+              "cold_pressure_psi": 16.97,
+              "hot_pressure_psi": 20.16,
+              "minimum_tread_percent": 97.0,
+              "spread_f": -70.2,
+              "temperature_f": {
+                "inside": 105.8,
+                "middle": 147.2,
+                "outside": 176.0
+              },
+              "tread_percent": {
+                "inside": 100.0,
+                "middle": 98.0,
+                "outside": 97.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.5,
+              "max_tread_delta_percent": 0.2,
+              "status": "agree"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": null,
+              "max_tread_delta_percent": null,
+              "status": "not_compared"
+            },
+            "stop": null
+          },
+          "LR": {
+            "change_from_previous_stop": null,
+            "sheet": {
+              "cold_pressure_psi": 16.97,
+              "hot_pressure_psi": 21.18,
+              "minimum_tread_percent": 99.0,
+              "spread_f": -16.2,
+              "temperature_f": {
+                "inside": 158.0,
+                "middle": 168.8,
+                "outside": 174.2
+              },
+              "tread_percent": {
+                "inside": 100.0,
+                "middle": 99.0,
+                "outside": 99.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.9,
+              "max_tread_delta_percent": 0.5,
+              "status": "agree"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": null,
+              "max_tread_delta_percent": null,
+              "status": "not_compared"
+            },
+            "stop": null
+          },
+          "RF": {
+            "change_from_previous_stop": null,
+            "sheet": {
+              "cold_pressure_psi": 27.99,
+              "hot_pressure_psi": 33.5,
+              "minimum_tread_percent": 95.0,
+              "spread_f": 36.0,
+              "temperature_f": {
+                "inside": 224.6,
+                "middle": 210.2,
+                "outside": 188.6
+              },
+              "tread_percent": {
+                "inside": 95.0,
+                "middle": 95.0,
+                "outside": 98.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.9,
+              "max_tread_delta_percent": 0.3,
+              "status": "agree"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": null,
+              "max_tread_delta_percent": null,
+              "status": "not_compared"
+            },
+            "stop": null
+          },
+          "RR": {
+            "change_from_previous_stop": null,
+            "sheet": {
+              "cold_pressure_psi": 27.99,
+              "hot_pressure_psi": 31.76,
+              "minimum_tread_percent": 99.0,
+              "spread_f": 9.0,
+              "temperature_f": {
+                "inside": 165.2,
+                "middle": 161.6,
+                "outside": 156.2
+              },
+              "tread_percent": {
+                "inside": 99.0,
+                "middle": 99.0,
+                "outside": 99.0
+              }
+            },
+            "sheet_vs_previous_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": 0.5,
+              "max_tread_delta_percent": 0.3,
+              "status": "agree"
+            },
+            "sheet_vs_stop": {
+              "disagrees_on": [],
+              "max_temperature_delta_f": null,
+              "max_tread_delta_percent": null,
+              "status": "not_compared"
+            },
+            "stop": null
+          }
+        },
+        "sheet_reading": {
+          "source": "garage_sheet",
+          "status": "recorded",
+          "timing": "unverified",
+          "timing_note": "Garage-sheet readings carry no timestamp. In checked recordings they matched the recording's start or an older garage state and never this stint's own stall reading, so they are not attributed to this stop.",
+          "uniform": false
+        },
+        "stop_reading": {
+          "measurement_status": "unmeasured_final_run",
+          "reason": "The run ended on track; there is no stall reading.",
+          "source": "telemetry_pit_stall",
+          "status": "not_measured",
+          "temperature": "carcass"
+        }
+      },
+      "trend": {
+        "first_lap": 1,
+        "fit": {
+          "domain": [
+            2.0,
+            16.0
+          ],
+          "eligible_count": 15,
+          "laps": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ],
+          "method": "ordinary_least_squares_on_run_lap",
+          "points": [
+            {
+              "x": 2.0,
+              "y": 23.931
+            },
+            {
+              "x": 16.0,
+              "y": 24.099
+            }
+          ],
+          "slope_s_per_green_lap": 0.012
+        },
+        "fit_basis": "fall_off",
+        "fit_unavailable_reason": null,
+        "last_lap": 16,
+        "plotted_lap_count": 16,
+        "run_number": 3,
+        "trend": {
+          "covered_lap_count": 16,
+          "gaps": [],
+          "includes_reference_exclusions": true,
+          "method": "centered_five_observation_median",
+          "segments": [
+            [
+              {
+                "lap": 1,
+                "sample_laps": [
+                  1,
+                  2,
+                  3
+                ],
+                "x": 1.0,
+                "y": 23.924
+              },
+              {
+                "lap": 2,
+                "sample_laps": [
+                  1,
+                  2,
+                  3,
+                  4
+                ],
+                "x": 2.0,
+                "y": 23.936
+              },
+              {
+                "lap": 3,
+                "sample_laps": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "x": 3.0,
+                "y": 23.948
+              },
+              {
+                "lap": 4,
+                "sample_laps": [
+                  2,
+                  3,
+                  4,
+                  5,
+                  6
+                ],
+                "x": 4.0,
+                "y": 23.956
+              },
+              {
+                "lap": 5,
+                "sample_laps": [
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "x": 5.0,
+                "y": 23.96
+              },
+              {
+                "lap": 6,
+                "sample_laps": [
+                  4,
+                  5,
+                  6,
+                  7,
+                  8
+                ],
+                "x": 6.0,
+                "y": 23.984
+              },
+              {
+                "lap": 7,
+                "sample_laps": [
+                  5,
+                  6,
+                  7,
+                  8,
+                  9
+                ],
+                "x": 7.0,
+                "y": 23.992
+              },
+              {
+                "lap": 8,
+                "sample_laps": [
+                  6,
+                  7,
+                  8,
+                  9,
+                  10
+                ],
+                "x": 8.0,
+                "y": 23.996
+              },
+              {
+                "lap": 9,
+                "sample_laps": [
+                  7,
+                  8,
+                  9,
+                  10,
+                  11
+                ],
+                "x": 9.0,
+                "y": 24.02
+              },
+              {
+                "lap": 10,
+                "sample_laps": [
+                  8,
+                  9,
+                  10,
+                  11,
+                  12
+                ],
+                "x": 10.0,
+                "y": 24.028
+              },
+              {
+                "lap": 11,
+                "sample_laps": [
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ],
+                "x": 11.0,
+                "y": 24.032
+              },
+              {
+                "lap": 12,
+                "sample_laps": [
+                  10,
+                  11,
+                  12,
+                  13,
+                  14
+                ],
+                "x": 12.0,
+                "y": 24.056
+              },
+              {
+                "lap": 13,
+                "sample_laps": [
+                  11,
+                  12,
+                  13,
+                  14,
+                  15
+                ],
+                "x": 13.0,
+                "y": 24.064
+              },
+              {
+                "lap": 14,
+                "sample_laps": [
+                  12,
+                  13,
+                  14,
+                  15,
+                  16
+                ],
+                "x": 14.0,
+                "y": 24.068
+              },
+              {
+                "lap": 15,
+                "sample_laps": [
+                  13,
+                  14,
+                  15,
+                  16
+                ],
+                "x": 15.0,
+                "y": 24.08
+              },
+              {
+                "lap": 16,
+                "sample_laps": [
+                  14,
+                  15,
+                  16
+                ],
+                "x": 16.0,
+                "y": 24.092
+              }
+            ]
+          ]
+        },
+        "x_axis": "run_lap"
+      }
+    }
+  ],
+  "schema_version": 1,
+  "screening": {
+    "offline_flag_rule": "Offline Testing holds iRacing's one-lap-to-green flag for the whole session, which the recording analysis reads as a caution. For Offline Testing stints the review ignores caution and restart classifications; every other exclusion still applies.",
+    "offline_flag_rule_runs": [
+      1,
+      2,
+      3
+    ],
+    "rule": "Clean laps use the recording's investigation screen (partial, pit, caution, restart, off-track, close-traffic, incident, damage and timing exclusions). Lap 1 of each run and laps where the car stopped on track (below 15 mph off pit road) are also excluded; stopped laps are not plotted."
+  },
+  "test_day_id": "test-day-0123456789abcdef",
+  "track": {
+    "configuration_key": "9001-oval",
+    "track_config": "Oval",
+    "track_name": "Synthetic Speedway"
+  },
+  "verdict_rule": {
+    "comparison": "Late window when both runs have 3+ of its laps clean at the same laps of the run, otherwise laps 2–5; medians over those shared laps only.",
+    "median_standard_error_factor": 1.2533,
+    "minimum_threshold_s": 0.03,
+    "scatter": "Residual standard deviation of the fall-off fit over laps 2..N.",
+    "standard_error_multiplier": 2.0
+  },
+  "windows": {
+    "early": {
+      "first_run_lap": 2,
+      "label": "Laps 2–5",
+      "last_run_lap": 5
+    },
+    "fall_off": {
+      "first_run_lap": 2,
+      "label": "Laps 2–16",
+      "last_run_lap": 16
+    },
+    "late": {
+      "basis": "Shortest run of at least 8 laps: run 3 (16 laps).",
+      "first_run_lap": 12,
+      "label": "Laps 12–16",
+      "last_run_lap": 16,
+      "reason": null,
+      "status": "available"
+    },
+    "minimum_clean_laps": 3
+  }
+}

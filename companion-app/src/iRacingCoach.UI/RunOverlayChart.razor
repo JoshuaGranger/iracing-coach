@@ -9,23 +9,23 @@
             {
                 <span class="ri-run-key" data-run="@run.RunNumber" title="@RunTitle(run)">
                     <svg width="20" height="8" aria-hidden="true"><line x1="0" y1="4" x2="20" y2="4" stroke="@RunColor(run.RunNumber)" stroke-width="2.5" stroke-dasharray="@RunDash(run.RunNumber)" /></svg>
-                    <b>Run @run.RunNumber</b><small>laps @run.FirstLap–@run.LastLap · @run.PlottedLapCount plotted</small>
-                    @if (_showFit && run.Fit is { } fit) { <small class="ri-fit-text">fit @Signed(fit.SlopeSecondsPerGreenLap * 10, 2) s / 10 green · @fit.EligibleCount screened laps · @Number(fit.DomainStart)–@Number(fit.DomainEnd)</small> }
+                    <b>Run @run.RunNumber</b><small>@(RunCaption?.Invoke(run) ?? $"laps {run.FirstLap}–{run.LastLap} · {run.PlottedLapCount} plotted")</small>
+                    @if (_showFit && run.Fit is { } fit) { <small class="ri-fit-text">@(FitCaption?.Invoke(fit) ?? $"fit {Signed(fit.SlopeSecondsPerGreenLap * 10, 2)} s / 10 green · {fit.EligibleCount} screened laps · {Number(fit.DomainStart)}–{Number(fit.DomainEnd)}")</small> }
                 </span>
             }
         </div>
-        <button type="button" class="ri-toggle" aria-pressed="@(_showFit ? "true" : "false")" title="Least-squares line through screened laps only, drawn across their exposure range" @onclick="() => _showFit = !_showFit">Screened fit</button>
+        <button type="button" class="ri-toggle" aria-pressed="@(_showFit ? "true" : "false")" title="@FitToggleTitle" @onclick="() => _showFit = !_showFit">@FitToggleLabel</button>
         <output class="ri-readout" aria-live="polite">@Readout</output>
     </div>
     <div class="ri-plot" @ref="Target">
         @if (Points.Count == 0)
         {
-            <div class="ri-empty"><strong>No plotted laps with known run exposure</strong><span>Runs need complete green laps to place them on a shared axis.</span></div>
+            <div class="ri-empty"><strong>@EmptyTitle</strong><span>@EmptyDetail</span></div>
         }
         else
         {
             var plot = Scale;
-            <svg class="ri-plot-svg" viewBox="0 0 @N(Width) @N(Height)" role="group" aria-label="Lap time against green laps into each run, runs overlaid">
+            <svg class="ri-plot-svg" viewBox="0 0 @N(Width) @N(Height)" role="group" aria-label="Lap time against @XAxisTitle.ToLowerInvariant(), runs overlaid">
                 @foreach (var tick in Ticks(plot.YMin, plot.YMax, 4))
                 {
                     <line x1="@N(plot.Left)" x2="@N(plot.Right)" y1="@N(plot.Y(tick))" y2="@N(plot.Y(tick))" class="ri-grid" />
@@ -36,7 +36,7 @@
                     <g><text x="@N(plot.X(tick))" y="@N(plot.Bottom + 16)" text-anchor="middle" class="ri-axis">@tick.ToString("0", CultureInfo.CurrentCulture)</text></g>
                 }
                 <g><text x="@N(plot.Left)" y="12" class="ri-axis-title">Lap time · s</text></g>
-                <g><text x="@N(plot.Right)" y="@N(plot.Bottom + 32)" text-anchor="end" class="ri-axis-title">Green laps into run</text></g>
+                <g><text x="@N(plot.Right)" y="@N(plot.Bottom + 32)" text-anchor="end" class="ri-axis-title">@XAxisTitle</text></g>
                 @if (Selected is { } comparison)
                 {
                     foreach (var cohort in new[] { comparison.Baseline, comparison.Compared })
@@ -61,22 +61,26 @@
                 @foreach (var point in Points)
                 {
                     var color = RunColor(point.RunNumber);
-                    var chosen = _chosen.Contains(point.Lap);
+                    var chosen = IsChosen(point);
                     var x = plot.X(point.GreenExposure!.Value);
                     var y = plot.Y(Math.Clamp(point.LapTimeSeconds!.Value, plot.YMin, plot.YMax));
                     if (chosen) { <circle cx="@N(x)" cy="@N(y)" r="7" class="ri-ring" stroke="@color" /> }
                     <circle cx="@N(x)" cy="@N(y)" r="@(chosen ? "4" : "2.8")" fill="@(point.Eligible ? color : "var(--surface-1)")" stroke="@color"
-                            class="ri-dot @(point.Eligible ? null : "excluded")" tabindex="0" data-lap="@point.Lap"
+                            class="ri-dot @(point.Eligible ? null : "excluded")" tabindex="@(FocusableLaps ? "0" : "-1")" data-lap="@point.Lap"
                             @onmouseenter="() => _hover = point" @onfocus="() => _hover = point"
                             aria-label="@LapLabel(point)"><title>@LapLabel(point)</title></circle>
                 }
             </svg>
         }
     </div>
-    @if (Selected is { } selected)
+    @if (FootNote is { Length: > 0 } note)
+    {
+        <div class="ri-runs-foot"><small>@note</small></div>
+    }
+    else if (Selected is { } selected)
     {
         <div class="ri-runs-foot">
-            <strong>@selected.Title <b class="@(selected.DeltaSeconds > 0 ? "loss" : "gain")">@Signed(selected.DeltaSeconds) s/lap</b></strong>
+            <strong>@selected.Title <b class="@PaceTone(selected)">@PaceResult(selected)</b></strong>
             @foreach (var cohort in new[] { selected.Baseline, selected.Compared })
             {
                 <span class="ri-cohort-key">
@@ -92,18 +96,35 @@
 @code {
     [Parameter, EditorRequired] public RaceInvestigation Investigation { get; set; } = null!;
     [Parameter] public RaceInvestigationComparison? Selected { get; set; }
+    /// <summary>X-axis meaning; a test day plots lap of run rather than green-lap exposure.</summary>
+    [Parameter] public string XAxisTitle { get; set; } = "Green laps into run";
+    /// <summary>Replaces the legend's "laps a–b · n plotted" caption for a run.</summary>
+    [Parameter] public Func<RaceRunView, string>? RunCaption { get; set; }
+    /// <summary>Readout text before a lap is pointed at.</summary>
+    [Parameter] public string Hint { get; set; } = "Point to a lap for its time and exposure";
+    /// <summary>When set, the footer shows only this note instead of the selected comparison.</summary>
+    [Parameter] public string? FootNote { get; set; }
+    /// <summary>The fit toggle's label and hover text; a test day draws its fall-off rather than a screened race fit.</summary>
+    [Parameter] public string FitToggleLabel { get; set; } = "Screened fit";
+    [Parameter] public string FitToggleTitle { get; set; } = "Least-squares line through screened laps only, drawn across their exposure range";
+    /// <summary>Replaces the legend's "fit … s / 10 green" text for a run's fit.</summary>
+    [Parameter] public Func<RaceRunFit, string>? FitCaption { get; set; }
+    /// <summary>False when another control (a test day's run table) is the keyboard path, so each lap is not a tab stop.</summary>
+    [Parameter] public bool FocusableLaps { get; set; } = true;
+    [Parameter] public string EmptyTitle { get; set; } = "No plotted laps with known run exposure";
+    [Parameter] public string EmptyDetail { get; set; } = "Runs need complete green laps to place them on a shared axis.";
 
     private bool _showFit;
     private RaceInvestigationLap? _hover;
-    private HashSet<int> _chosen = [];
+    private IReadOnlyList<RaceInvestigationCohort> _chosen = [];
     private IReadOnlyList<RaceRunView> Runs => Investigation.Runs ?? [];
     private IReadOnlyList<RaceInvestigationLap> Points { get; set; } = [];
 
     protected override void OnParametersSet()
     {
         Points = Investigation.Laps.Where(lap => lap.PlotPace && lap.GreenExposure is not null && lap.LapTimeSeconds is > 0).ToArray();
-        _chosen = Selected is null ? [] : Selected.Baseline.LapNumbers.Concat(Selected.Compared.LapNumbers).ToHashSet();
-        if (_hover is not null && Points.All(point => point.Lap != _hover.Lap)) _hover = null;
+        _chosen = Selected is null ? [] : [Selected.Baseline, Selected.Compared];
+        if (_hover is not null && !Points.Contains(_hover)) _hover = null;
     }
 
     private PlotScale Scale
@@ -122,10 +143,18 @@
     private static string TrendPath(PlotScale plot, IReadOnlyList<RaceTrendPoint> segment) =>
         string.Concat(segment.Select((point, index) => $"{(index == 0 ? 'M' : 'L')}{N(plot.X(point.X))},{N(plot.Y(Math.Clamp(point.Y, plot.YMin, plot.YMax)))} "));
 
-    private string Readout => _hover is { } lap ? LapLabel(lap) : "Point to a lap for its time and exposure";
+    /// <summary>
+    /// A cohort names laps of one run when it carries a run number; lap numbers
+    /// repeat across a test day's stints, so the run must match as well.
+    /// </summary>
+    private bool IsChosen(RaceInvestigationLap point) => _chosen.Any(cohort =>
+        cohort.LapNumbers.Contains(point.Lap) && (cohort.RunNumber is null || cohort.RunNumber == point.RunNumber));
 
-    private static string LapLabel(RaceInvestigationLap lap) =>
-        $"Lap {lap.Lap} · Run {lap.RunNumber} · {LapTime(lap.LapTimeSeconds)} s · {Exposure(lap.GreenExposure)}{(lap.Eligible ? "" : " · " + Reasons(lap.ExclusionReasons))}";
+    private string Readout => _hover is { } lap ? LapLabel(lap) : Hint;
+
+    private static string LapLabel(RaceInvestigationLap lap) => lap.Label is { Length: > 0 } label
+        ? $"{label} · {LapTime(lap.LapTimeSeconds)} s{(lap.Eligible ? "" : " · " + Reasons(lap.ExclusionReasons))}"
+        : $"Lap {lap.Lap} · Run {lap.RunNumber} · {LapTime(lap.LapTimeSeconds)} s · {Exposure(lap.GreenExposure)}{(lap.Eligible ? "" : " · " + Reasons(lap.ExclusionReasons))}";
 
     private static string RunTitle(RaceRunView run) =>
         $"Observed trend covers {run.Trend.CoveredLapCount} of {run.PlottedLapCount} plotted laps; breaks at {string.Join(", ", run.Trend.Gaps.Select(gap => $"{gap.AfterLap}–{gap.BeforeLap} ({gap.Reason.Replace('_', ' ')})"))}."

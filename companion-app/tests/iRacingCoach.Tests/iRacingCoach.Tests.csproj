@@ -26,6 +26,8 @@
     <None Include="..\..\..\test-data\setup-package.json" Link="fixtures\setup-package.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\test-data\event-plan-estimate.json" Link="fixtures\event-plan-estimate.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\test-data\live-truth-conformance-v1.json" Link="fixtures\live-truth-conformance-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\test-data\test-day-review.json" Link="fixtures\test-day-review.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="fixtures\analysis-nullable-kentucky-shape.json" Link="fixtures\analysis-nullable-kentucky-shape.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures\archived-analysis-nonfinite-v16.json" Link="fixtures\archived-analysis-nonfinite-v16.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

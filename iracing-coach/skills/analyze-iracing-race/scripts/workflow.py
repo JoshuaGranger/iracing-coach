@@ -1641,8 +1641,43 @@ def _analysis_pipeline_sha256() -> str:
 # race/practice analyses matched pre-change output outside race_investigation
 # (archive paths, timestamps and archive-derived observation ids aside), and a
 # refreshed cache hit equalled a cold build.
+# Review 2026-09-24: v20 retires v19 because one-lap-to-green (0x0200) outside
+# a Race no longer counts as a caution. Offline Testing holds that bit on every
+# sample, so v19 classified every test lap as caution. Race answers are
+# unchanged: the IRP 9/23 and Kansas 9/21 races differ only in analysis_id.
+# Review 2026-09-24: v20 core answers are unchanged. The race investigation
+# projection moves to sections-trials-v2: a comparison whose laps are all
+# excluded, or whose window spans a caution, carries no pace delta and says
+# why. Cached analyses rebuild it through refresh_race_investigation.
+# Review 2026-09-24 (merge): the v20 session-flag rule and sections-trials-v2
+# are re-applied on the column-wise engine; _caution_flag_series now reads the
+# cached flag_bits column. Race and synthetic parity outputs are unchanged.
+# Review 2026-09-24: v20 core answers are unchanged. The race investigation
+# projection moves to sections-trials-v3: earlier and later laps of one run
+# that a caution separates are not a pace result (Iowa 8/03 run 3 compared
+# laps 23-24 with 32-33 across caution laps 25-30), an unusable comparison
+# carries no explanation statuses, and when more than 24 candidates exist the
+# retained default and ranked slots prefer usable comparisons. Cross-run
+# windows stay exposure-matched across a stop. Cached analyses rebuild it
+# through refresh_race_investigation.
+# Review 2026-09-25: v19 answers are unchanged. identity gains the optional
+# garage_setup_fingerprint (the embedded CarSetup without last-stop tire
+# readings or UpdateCount), so setup_catalog.py joins the bundle. Every existing
+# field, including setup_fingerprint, is byte-identical; a cached analysis
+# without the new key is not wrong, and consumers derive it from identity.setup.
+# Review 2026-09-25: ibt_reader discovery tags offline test-day stints with
+# optional test_day_* fields after grouping. Group keys, member files and every
+# analysis input are unchanged, so cached analyses remain valid.
+# Review 2026-09-25 (test-day fixes): v19 answers are unchanged. The optional
+# identity.garage_setup_fingerprint now also leaves out computed garage readouts
+# (corner/cross/nose weight, ride heights, truck-arm preload), so one .sto whose
+# readouts drift by a unit keeps one fingerprint. Only this unreleased branch
+# ever emitted the key, and no consumer reads it: the test-day review recomputes
+# it from identity.setup. Discovery also tags standalone hosted/official
+# practice with the optional test_day_* fields; group keys, member files and
+# every analysis input are unchanged, so cached analyses remain valid.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "5b0ae89f697b5e68abaa24f691a91e536eed71636b93581bf103525b72080afd"
+    "0b1a14fca8cf4abdcca8bc400c13bc04f708d1141a7f44063da1ff9d222ad478"
 )
 
 
@@ -1823,6 +1858,46 @@ def _local_race_file_references(
         ),
         "replay_matches": replay_matches,
         "replay_status": "matched_by_subsession_id" if replay_matches else "not_found",
+    }
+
+
+def _raw_archive_failures(raw_archive: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [
+        dict(item)
+        for item in raw_archive.get("items") or ()
+        if isinstance(item, Mapping) and item.get("status") == "failed"
+    ]
+
+
+def _raw_archive_failure_note(raw_archive: Mapping[str, Any]) -> str:
+    failures = _raw_archive_failures(raw_archive)
+    if not failures:
+        return (
+            "No raw IBT was copied, so future raw-channel reanalysis is not yet "
+            "durable; originals remain untouched."
+        )
+    extra = len(failures) - 1
+    return (
+        "Future raw-channel reanalysis is not yet durable. "
+        + str(failures[0].get("message") or "").strip()
+        + (f" {extra} more raw file(s) also failed." if extra else "")
+    )
+
+
+def _raw_archive_summary(raw_archive: Mapping[str, Any]) -> dict[str, Any]:
+    """Bounded retryable state for the caller; complete detail stays in analysis.json."""
+
+    return {
+        "status": raw_archive.get("status"),
+        "durably_copied": raw_archive.get("durably_copied") is True,
+        "failed_count": len(_raw_archive_failures(raw_archive)),
+        "failures": [
+            {
+                key: item.get(key)
+                for key in ("code", "stage", "retryable", "archive_path", "message")
+            }
+            for item in _raw_archive_failures(raw_archive)[:8]
+        ],
     }
 
 
@@ -2020,6 +2095,13 @@ def _analyze_race_workflow(
         "archive": raw_archive,
         "note": "Verified raw IBTs are copied into portable append-only storage; originals remain untouched.",
     }
+    # TD-008: a failed copy leaves the original untouched and does not stop the
+    # analysis, which records that raw-channel reanalysis is not yet durable.
+    source["raw_source_policy"]["raw_reanalysis_durable"] = (
+        raw_archive.get("durably_copied") is True
+    )
+    if raw_archive.get("durably_copied") is not True:
+        source["raw_source_policy"]["note"] = _raw_archive_failure_note(raw_archive)
     if iracing_root is not None:
         selected_iracing_root = _resolved_root(iracing_root)
     else:
@@ -2180,6 +2262,7 @@ def _analyze_race_workflow(
         "analysis_view": analysis_view,
         "timing": timing,
         "artifacts": artifacts,
+        "raw_archive": _raw_archive_summary(raw_archive),
     }
 
 

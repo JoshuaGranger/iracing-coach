@@ -13,7 +13,7 @@ from typing import Any, Mapping, Sequence
 
 SCHEMA_VERSION = 2
 # Bump when any projection below changes; cached analyses rebuild it without decoding.
-PROJECTION_VERSION = "sections-trials-v1"
+PROJECTION_VERSION = "sections-trials-v3"
 MAX_COMPARISONS = 24
 TIRES = ("LF", "RF", "LR", "RR")
 RUBBER_REFERENCE = {
@@ -75,6 +75,76 @@ def _window_text(numbers: Sequence[int]) -> str:
     if len(numbers) == 1:
         return f"Lap {numbers[0]}"
     return f"Laps {numbers[0]}–{numbers[-1]}"
+
+
+def _joined(parts: Sequence[str]) -> str:
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def _lap_ranges(numbers: Sequence[int]) -> str:
+    spans: list[list[int]] = []
+    for number in sorted(numbers):
+        if spans and number == spans[-1][1] + 1:
+            spans[-1][1] = number
+        else:
+            spans.append([number, number])
+    return _joined([f"{start}–{end}" if end > start else str(start) for start, end in spans])
+
+
+def _caution_laps_within(numbers: Sequence[int], flags: Mapping[int, str]) -> list[int]:
+    """Recorded caution laps from a window's first lap to its last."""
+    if not numbers:
+        return []
+    return [lap for lap in range(min(numbers), max(numbers) + 1) if flags.get(lap) == "caution"]
+
+
+def _lap_flags(analysis: Mapping[str, Any]) -> dict[int, str]:
+    return {int(number): str(lap.get("flag_state") or "") for lap in analysis.get("laps", ())
+            if isinstance(lap, Mapping) and (number := _number(lap.get("lap"))) is not None}
+
+
+def _eligibility(before: Sequence[int], after: Sequence[int], exclusions: Mapping[int, Sequence[str]]) -> str:
+    numbers = [*before, *after]
+    eligible = sum(1 for number in numbers if not exclusions.get(number, ["eligibility_unknown"]))
+    return "eligible" if eligible == len(numbers) else "mixed" if eligible else "observed"
+
+
+def _caution_laps_between(before: Sequence[int], after: Sequence[int], flags: Mapping[int, str]) -> list[int]:
+    """Recorded caution laps after the earlier window ends and before the later one starts."""
+    if not before or not after or max(before) >= min(after):
+        return []
+    return [lap for lap in range(max(before) + 1, min(after)) if flags.get(lap) == "caution"]
+
+
+def _pace_usability(kind: str, before: Sequence[int], after: Sequence[int], eligibility: str,
+                    flags: Mapping[int, str]) -> tuple[list[str], list[str]]:
+    """Reason codes and text for a comparison whose median delta is not a pace result.
+
+    A pace change is claimed within one green run. A window that spans a
+    caution, or earlier and later windows that a caution separates, mix laps
+    from separate green runs; a comparison whose every lap is excluded has no
+    screened lap to stand on. Cross-run comparisons pair laps at matched green
+    exposure across a stop by design, so only cautions inside their windows
+    disqualify them; their summary discloses that cautions are not controlled.
+    """
+    codes: list[str] = []
+    reasons: list[str] = []
+    for numbers in (before, after):
+        cautions = _caution_laps_within(numbers, flags)
+        if cautions:
+            laps = _joined([str(number) for number in numbers])
+            reasons.append(f"laps {laps} span caution {'lap' if len(cautions) == 1 else 'laps'} {_lap_ranges(cautions)}")
+    if reasons:
+        codes.append("spans_caution")
+    between = _caution_laps_between(before, after, flags) if kind != "cross_run" else []
+    if between:
+        codes.append("separated_by_caution")
+        reasons.append(f"caution {'lap' if len(between) == 1 else 'laps'} {_lap_ranges(between)} "
+                       f"{'separates' if len(between) == 1 else 'separate'} laps {_lap_ranges(before)} from laps {_lap_ranges(after)}")
+    if eligibility == "observed":
+        codes.append("all_laps_excluded")
+        reasons.append(f"all {len(before) + len(after)} selected laps are excluded from clean coaching")
+    return codes, reasons
 
 
 def _metric(key: str, label: str, unit: str, before: Any, after: Any, detail: str = "") -> dict[str, Any]:
@@ -380,6 +450,15 @@ def _actions(comparison: Mapping[str, Any], section_set: Mapping[str, Any] | Non
     traces = traces or {}
     baseline, compared = comparison["baseline"], comparison["compared"]
     lap_numbers = sorted(set(baseline["lap_numbers"] + compared["lap_numbers"]))
+    if comparison.get("pace_comparable") is False:
+        # Section losses between these windows inherit the same caution or
+        # exclusion confound, so they do not become driving corrections.
+        return [{"priority": 1, "title": "Compare laps from one green run",
+                 "instruction": "These windows cannot show a pace change. Compare complete, clear green laps that no caution separates, at similar fuel and run age.",
+                 "evidence": [comparison["summary"]],
+                 "limitation": "Section and control differences in these windows are observations, not driving corrections.",
+                 "lap_numbers": lap_numbers, "start_pct": None, "end_pct": None,
+                 "signal_keys": ["delta", "speed", "brake", "throttle", "steering"], "section_id": None, "trial": None}]
     caveat = "Change one input at a time on clear, complete green laps at similar run age and fuel. The observed association is not a proven cause."
     if comparison["eligibility"] != "eligible":
         caveat = "The later window includes excluded laps. Confirm the pattern on a clear lap before treating this as a driving correction. " + caveat
@@ -469,19 +548,27 @@ def _comparison(identifier: str, kind: str, before: Sequence[Mapping[str, Any]],
     compared = _cohort(after, after_run, exclusions, ages)
     eligible_count = len(baseline["eligible_lap_numbers"]) + len(compared["eligible_lap_numbers"])
     count = baseline["lap_count"] + compared["lap_count"]
-    eligibility = "eligible" if eligible_count == count else "mixed" if eligible_count else "observed"
+    eligibility = _eligibility(baseline["lap_numbers"], compared["lap_numbers"], exclusions)
     delta = compared["median_lap_s"] - baseline["median_lap_s"] if baseline["median_lap_s"] is not None and compared["median_lap_s"] is not None else None
     label = "slower" if delta is not None and delta > 0 else "faster" if delta is not None and delta < 0 else "unchanged"
     summary = f"{compared['label']} were {abs(delta):.3f} s/lap {label} than {baseline['label'].lower()} by median." if delta is not None else "Both windows need usable recorded lap times."
     if eligibility != "eligible":
         summary += f" {count - eligible_count} of {count} selected laps are excluded from clean coaching."
+    unusable, reasons = _pace_usability(kind, baseline["lap_numbers"], compared["lap_numbers"], eligibility, _lap_flags(analysis))
+    if unusable:
+        # Cohort medians stay visible as observations; no pace change is claimed.
+        delta = None
+        summary = "Not a usable pace comparison: " + "; ".join(reasons) + "."
     title = f"Run {after_run.get('run_number')}: earlier to final green laps" if kind == "observed_finish" else f"Run {after_run.get('run_number')}: clean early versus late" if kind == "within_run" else f"Runs {before_run.get('run_number')} and {after_run.get('run_number')}: similar green exposure"
     result = {"id": identifier, "kind": kind, "title": title, "summary": summary,
+              "pace_comparable": not unusable, "pace_unusable_reasons": unusable,
               "baseline": baseline, "compared": compared, "delta_s": _round(delta), "eligibility": eligibility,
               "metrics": _cohort_metrics(before, after),
               "corners": _section_metrics(baseline["lap_numbers"], compared["lap_numbers"], traces, sections),
               "hypotheses": [], "actions": []}
-    result["hypotheses"] = _hypotheses(result, analysis, track)
+    # Explanations describe a pace change; an unusable comparison claims none,
+    # so it carries no explanation statuses to read as evidence.
+    result["hypotheses"] = [] if unusable else _hypotheses(result, analysis, track)
     return result
 
 
@@ -571,11 +658,18 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
             compared = sorted((pair[1] for pair in pairs), key=lambda lap: lap["lap"])
             candidates.append((f"runs-{before_run['run_number']}-{after_run['run_number']}-age", "cross_run", baseline, compared, before_run, after_run))
     comparison_coverage = {"candidate_count": len(candidates), "generated_count": min(len(candidates), MAX_COMPARISONS),
-                           "selection_policy": "At most 24 comparisons: retain the latest/default window, the first and last four candidates, then the largest absolute median pace changes. All recorded laps remain in the timeline."}
+                           "selection_policy": "At most 24 comparisons: retain the latest usable window, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."}
     if len(candidates) > MAX_COMPARISONS:
-        default_index = max(range(len(candidates)), key=lambda i: (max(lap["lap"] for lap in candidates[i][3]), candidates[i][1] == "observed_finish"))
+        flags = _lap_flags(analysis)
+        usable = []
+        for _identifier, kind, before, after, _before_run, _after_run in candidates:
+            numbers = (_lap_numbers(before), _lap_numbers(after))
+            usable.append(not _pace_usability(kind, *numbers, _eligibility(*numbers, lap_exclusions), flags)[0])
+        # The headline's key over the same pool, so the retained default is the one shown.
+        pool = [i for i in range(len(candidates)) if usable[i]] or range(len(candidates))
+        default_index = max(pool, key=lambda i: (max(lap["lap"] for lap in candidates[i][3]), candidates[i][1] == "observed_finish"))
         retained = set(range(4)) | set(range(len(candidates) - 4, len(candidates))) | {default_index}
-        ranked = sorted(range(len(candidates)), key=lambda i: abs(_median([lap["lap_time_s"] for lap in candidates[i][3]]) - _median([lap["lap_time_s"] for lap in candidates[i][2]])), reverse=True)
+        ranked = sorted(range(len(candidates)), key=lambda i: (usable[i], abs(_median([lap["lap_time_s"] for lap in candidates[i][3]]) - _median([lap["lap_time_s"] for lap in candidates[i][2]]))), reverse=True)
         for index in ranked:
             if len(retained) >= MAX_COMPARISONS:
                 break
@@ -591,12 +685,15 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
     comparisons = []
     for identifier, kind, before, after, before_run, after_run in candidates:
         comparison = _comparison(identifier, kind, before, after, before_run, after_run, lap_exclusions, ages, traces, analysis, track, sections)
-        if kind == "cross_run":
+        if kind == "cross_run" and comparison["pace_comparable"]:
             comparison["summary"] += " Pairs are within two sampled green-lap equivalents since their run starts; tire age, fuel, cautions and conditions are not controlled."
         comparison["inspection"] = comparison_inspection(comparison, by_number, ages, run_for_lap, lap_exclusions, traces, sections)
         comparison["actions"] = _actions(comparison, section_set, traces)
         comparisons.append(comparison)
-    default = max(comparisons, key=lambda item: (max(item["compared"]["lap_numbers"]), item["kind"] == "observed_finish"), default=None)
+    # The headline follows the latest usable comparison; an unusable one leads
+    # only when nothing else exists, and then its summary states why.
+    comparable = [item for item in comparisons if item["pace_comparable"]]
+    default = max(comparable or comparisons, key=lambda item: (max(item["compared"]["lap_numbers"]), item["kind"] == "observed_finish"), default=None)
     lap_rows = [{"lap": int(lap["lap"]), "lap_time_s": _round(lap.get("lap_time_s")), "position": _number(_path(lap, "position", "end")),
                  "flag_state": str(lap.get("flag_state") or "unknown"), "eligible": not bool(lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"])),
                  "plot_pace": _plot_pace(lap),
@@ -614,6 +711,7 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
         "timeline": _timeline(analysis, laps), "track_evolution": track,
         "limitations": ([f"Showing {comparison_coverage['generated_count']} of {comparison_coverage['candidate_count']} candidate comparisons. " + comparison_coverage["selection_policy"]] if comparison_coverage["candidate_count"] > MAX_COMPARISONS else []) + ["Window medians are observed comparisons, not estimates of a single cause.",
                         "Clean windows use the existing recorded eligibility screen; observed finish windows retain excluded laps and their reasons.",
+                        "A comparison whose selected laps are all excluded, whose window spans a caution, or whose earlier and later laps a caution separates carries no pace delta or explanations and states why. Cross-run windows are matched by green exposure across a stop.",
                         "Cross-run exposure uses sampled green-time fractions from complete laps, not measured tire wear or exact physical green distance.",
                         "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
                         "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."],

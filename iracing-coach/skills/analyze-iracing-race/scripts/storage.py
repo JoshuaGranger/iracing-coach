@@ -6,6 +6,7 @@ reinstalling the plugin must never remove race history or cached references.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import heapq
 import json
@@ -78,11 +79,36 @@ class AtomicReplaceExhausted(StorageCommitError):
         self.final_winerror = final_winerror
 
 
+# These failures stop an analysis, so their text must say what to do. It never
+# names the path, digest or bytes involved (WS-10A redaction contract).
+_RECORDING_CHANGED_ACTION = (
+    "The source file changed while it was being archived. Wait until iRacing "
+    "has finished writing it, then try again."
+)
+_VERIFICATION_ACTIONS = {
+    "source-digest-changed-before-copy": _RECORDING_CHANGED_ACTION,
+    "archived-digest-mismatch": (
+        "The archive copy did not match the source file and was discarded. "
+        "Try again; if this repeats, check the drive that holds the iRacing "
+        "Coach data folder."
+    ),
+    "existing-copy-digest-mismatch": (
+        "A different file already occupies the archive name and was left "
+        "unchanged."
+    ),
+}
+
+
 class ArchiveVerificationFailed(StorageCommitError):
     """An immutable archival copy failed a digest invariant."""
 
     def __init__(self, code: str) -> None:
-        super().__init__("archive verification refused the copy")
+        action = _VERIFICATION_ACTIONS.get(code)
+        super().__init__(
+            f"archive verification refused the copy ({code}). {action}"
+            if action
+            else "archive verification refused the copy"
+        )
         self.code = code
 
 
@@ -90,7 +116,7 @@ class ArchiveSourceUnstable(StorageCommitError):
     """A source changed during the read-only archival workflow."""
 
     def __init__(self, code: str) -> None:
-        super().__init__("archive source is unstable")
+        super().__init__(f"archive source is unstable ({code}). {_RECORDING_CHANGED_ACTION}")
         self.code = code
 
 
@@ -492,9 +518,46 @@ def _analysis_session_identity(analysis: Mapping[str, Any]) -> dict[str, str | N
     }
 
 
-def file_sha256(path: Path, block_size: int = 1024 * 1024) -> str:
+_EXTENDED_PREFIX = "\\\\?\\"
+_EXTENDED_UNC_PREFIX = "\\\\?\\UNC\\"
+
+
+def _extended_path(path: str | os.PathLike[str]) -> str:
+    """Return the Win32 extended-length spelling of ``path`` for file I/O.
+
+    With LongPathsEnabled=0, Win32 rejects paths of MAX_PATH (260) characters
+    or more: ``Path.is_file()`` then reports an existing file as absent and a
+    rename onto it fails with WinError 3. A Documents folder under OneDrive or
+    a long profile pushes ordinary archive paths past that limit. The ``\\\\?\\``
+    form lifts it, but also disables Win32 normalization, so the path is made
+    absolute and normalized first. Returned values are for I/O only; callers
+    keep reporting the ordinary spelling. Other platforms are unchanged.
+    """
+
+    text = os.fspath(path)
+    if os.name != "nt" or text.startswith(("\\\\?\\", "\\\\.\\")):
+        return text
+    absolute = os.path.abspath(text)
+    if absolute.startswith("\\\\"):
+        return _EXTENDED_UNC_PREFIX + absolute[2:]
+    if len(absolute) >= 3 and absolute[1] == ":" and absolute[2] == "\\":
+        return _EXTENDED_PREFIX + absolute
+    return absolute
+
+
+def _ordinary_path(path: str) -> str:
+    """Return the display spelling of a path produced by ``_extended_path``."""
+
+    if path.startswith(_EXTENDED_UNC_PREFIX):
+        return "\\\\" + path[len(_EXTENDED_UNC_PREFIX):]
+    if path.startswith(_EXTENDED_PREFIX):
+        return path[len(_EXTENDED_PREFIX):]
+    return path
+
+
+def file_sha256(path: str | os.PathLike[str], block_size: int = 1024 * 1024) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with open(_extended_path(path), "rb") as handle:
         while block := handle.read(block_size):
             digest.update(block)
     return digest.hexdigest()
@@ -563,15 +626,29 @@ def _atomic_write_text(
     sleeper=time.sleep,
     jitter_ms=_atomic_jitter_ms,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=".write-", dir=path.parent)
+    _atomic_write_bytes(
+        path, text.encode("utf-8"), sleeper=sleeper, jitter_ms=jitter_ms
+    )
+
+
+def _atomic_write_bytes(
+    path: Path,
+    data: bytes,
+    *,
+    sleeper=time.sleep,
+    jitter_ms=_atomic_jitter_ms,
+) -> None:
+    target = _extended_path(path)
+    parent = os.path.dirname(target)
+    os.makedirs(parent, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=".write-", dir=parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
         _atomic_replace_with_retry(
-            temp_name, path, sleeper=sleeper, jitter_ms=jitter_ms
+            temp_name, target, sleeper=sleeper, jitter_ms=jitter_ms
         )
     finally:
         try:
@@ -591,44 +668,393 @@ def _atomic_copy_verified(
 ) -> None:
     """Copy one immutable source without ever moving or modifying the original."""
 
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.is_file() and file_sha256(destination) == expected_sha256:
+    # Every operation uses the extended-length spelling. Without it an
+    # existing verified copy beyond MAX_PATH looks absent, is copied again,
+    # and the final rename onto it fails with WinError 3.
+    target = _extended_path(destination)
+    parent = os.path.dirname(target)
+    os.makedirs(parent, exist_ok=True)
+    if os.path.isfile(target) and file_sha256(target) == expected_sha256:
         actual_source_sha256 = file_sha256(source)
         if actual_source_sha256 != expected_sha256:
             raise ArchiveVerificationFailed("source-digest-changed-before-copy")
         return
-    if not replace_existing and destination.exists():
+    if not replace_existing and os.path.exists(target):
         raise ArchiveVerificationFailed("existing-copy-digest-mismatch")
     # A telemetry filename can already be close to the Windows path limit.
     # The temporary sibling needs uniqueness, not another copy of that name.
-    fd, temp_name = tempfile.mkstemp(prefix=".copy-", dir=destination.parent)
+    fd, temp_name = tempfile.mkstemp(prefix=".copy-", dir=parent)
     try:
-        with source.open("rb") as source_handle, os.fdopen(fd, "wb") as target_handle:
+        with open(_extended_path(source), "rb") as source_handle, os.fdopen(fd, "wb") as target_handle:
             shutil.copyfileobj(source_handle, target_handle, 1024 * 1024)
             target_handle.flush()
             os.fsync(target_handle.fileno())
-        temporary = Path(temp_name)
-        actual_sha256 = file_sha256(temporary)
+        actual_sha256 = file_sha256(temp_name)
         if actual_sha256 != expected_sha256:
             raise ArchiveVerificationFailed("archived-digest-mismatch")
         if replace_existing:
             _atomic_replace_with_retry(
-                temporary, destination, sleeper=sleeper, jitter_ms=jitter_ms
+                temp_name, target, sleeper=sleeper, jitter_ms=jitter_ms
             )
         else:
             # Publish the verified temporary without a check-then-replace race.
             # This links only our temporary sibling, never the source file;
             # the temporary name is removed below, leaving an independent copy.
             try:
-                os.link(temporary, destination)
+                os.link(temp_name, target)
             except FileExistsError:
-                if not destination.is_file() or file_sha256(destination) != expected_sha256:
+                if not os.path.isfile(target) or file_sha256(target) != expected_sha256:
                     raise ArchiveVerificationFailed("existing-copy-digest-mismatch") from None
     finally:
         try:
             os.unlink(temp_name)
         except FileNotFoundError:
             pass
+
+
+# These mean the recording no longer matches its verified fingerprint, so the
+# analysis must stop (TD-002). Any other OSError while writing the portable
+# copy is a destination failure: TD-008 lets the analysis use the readable
+# original while recording that the raw copy is not yet durable.
+_RAW_ARCHIVE_INTEGRITY_FAILURES = (
+    ArchiveSourceUnstable,
+    ArchiveVerificationFailed,
+    InvalidSourceDigest,
+)
+_NO_SPACE_WINERRORS = (39, 112)
+_ACCESS_WINERRORS = (5, 32, 33)
+
+
+def _raw_archive_failure(
+    *,
+    sha256: str,
+    size: int,
+    source: Path,
+    destination: Path,
+    stage: str,
+    error: OSError,
+) -> dict[str, Any]:
+    """Describe a failed raw copy completely, without the exception text.
+
+    ``str(OSError)`` leads with the temporary path, so a bounded log line
+    loses the destination. This record names the cause, the action, and the
+    full destination path in that order.
+    """
+
+    winerror = getattr(error, "winerror", None)
+    if isinstance(winerror, bool) or not isinstance(winerror, int):
+        winerror = None
+    error_number = getattr(error, "errno", None)
+    if isinstance(error_number, bool) or not isinstance(error_number, int):
+        error_number = None
+    if isinstance(error, AtomicReplaceExhausted):
+        winerror = error.final_winerror
+        reason = f"the archive file stayed locked after {error.attempts} attempts"
+    else:
+        reason = str(getattr(error, "strerror", None) or "").strip().rstrip(".")
+        reason = reason or type(error).__name__
+    label = (
+        f"WinError {winerror}"
+        if winerror is not None
+        else errno.errorcode.get(error_number, f"errno {error_number}")
+        if error_number is not None
+        else type(error).__name__
+    )
+    if winerror in _NO_SPACE_WINERRORS or error_number == errno.ENOSPC:
+        action = "Free space on the drive that holds the iRacing Coach data folder."
+    elif (
+        winerror in _ACCESS_WINERRORS
+        or isinstance(error, (PermissionError, AtomicReplaceExhausted))
+    ):
+        action = (
+            "Allow access to the iRacing Coach data folder; antivirus or cloud "
+            "sync may be holding it."
+        )
+    else:
+        action = "Check that the iRacing Coach data folder is available and writable."
+    archive_path = str(destination)
+    return {
+        "sha256": sha256,
+        "size": size,
+        "source_path": str(source),
+        "archive_path": archive_path,
+        "archive_path_length": len(archive_path),
+        "status": "failed",
+        "stage": stage,
+        "code": (
+            error.code
+            if isinstance(error, StorageCommitError)
+            else f"raw-{stage}-failed"
+        ),
+        "winerror": winerror,
+        "errno": error_number,
+        "retryable": True,
+        "message": (
+            f"Raw telemetry {'copy' if stage == 'copy' else 'archive record'} "
+            f"failed ({label}: {reason}). {action} The "
+            "original recording is unchanged and this analysis used it; the "
+            "next analysis retries the copy. Archive path "
+            f"({len(archive_path)} characters): {archive_path}"
+        ),
+    }
+
+
+# analysis.json is written by _json_text with sorted keys, so the top-level
+# analysis_id is the first member. Reading a few bytes identifies a 40 MB
+# report without parsing it.
+_REPORT_ANALYSIS_ID_HEAD = re.compile(
+    rb'\A(?:\xef\xbb\xbf)?\s*\{\s*"analysis_id"\s*:\s*"((?:[^"\\]|\\.){1,200})"'
+)
+_REPORT_ID_PARSE_MAX_BYTES = 16 * 1024 * 1024
+_REFERENCE_RECORD_MAX_BYTES = 8 * 1024 * 1024
+_REPORT_ARTIFACT_NAMES = ("analysis.json", "report.md", "race-card.md")
+
+
+def _report_analysis_id(path: str, size: int) -> str | None:
+    """Return a report's top-level analysis_id, or None when it is unknown."""
+
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(4096)
+    except OSError:
+        return None
+    match = _REPORT_ANALYSIS_ID_HEAD.match(head)
+    if match:
+        try:
+            value = json.loads(b'"' + match.group(1) + b'"')
+        except ValueError:
+            return None
+        return value if isinstance(value, str) and value.strip() else None
+    if size > _REPORT_ID_PARSE_MAX_BYTES:
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            decoded = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    value = decoded.get("analysis_id") if isinstance(decoded, Mapping) else None
+    return str(value) if isinstance(value, (str, int)) and str(value).strip() else None
+
+
+def _report_directory_keys(path: str | os.PathLike[str]) -> set[str]:
+    """Identities under which a stored path may name a report directory.
+
+    The history index and saved records hold absolute paths. After the
+    Documents home is copied or migrated (PORT-002) those still name the old
+    location, so a directory also matches by its path below ``reports``.
+    """
+
+    absolute = os.path.normcase(os.path.abspath(_ordinary_path(os.fspath(path))))
+    keys = {"abs:" + absolute}
+    parts = [part for part in absolute.replace("/", "\\").split("\\") if part]
+    folded = [part.casefold() for part in parts]
+    if "reports" in folded:
+        below = parts[len(folded) - 1 - folded[::-1].index("reports") + 1:]
+        if below:
+            keys.add("rel:" + "\\".join(below).casefold())
+    return keys
+
+
+def _referenced_report_directories(value: Any, found: set[str]) -> None:
+    """Collect report directories named by any path string inside a record."""
+
+    if isinstance(value, Mapping):
+        for item in value.values():
+            _referenced_report_directories(item, found)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _referenced_report_directories(item, found)
+    elif isinstance(value, str) and value.casefold().endswith(_REPORT_ARTIFACT_NAMES):
+        try:
+            found.update(_report_directory_keys(os.path.dirname(value)))
+        except (OSError, ValueError):
+            pass
+
+
+# A JSON string cannot contain an unescaped quote, so this matches only real
+# object members named "source" whose value is an object.
+_REPORT_SOURCE_MEMBER = re.compile(rb'"source"\s*:\s*\{')
+_REPORT_SOURCE_WINDOW_BYTES = 8 * 1024 * 1024
+
+
+def _report_session_identity(path: str) -> dict[str, str | None] | None:
+    """Return the session a stored report analyzed, or None when unproven.
+
+    The session is in the top-level ``source.selection``, near the end of a
+    report that can be 80 MB. Parsing the whole file costs about ten times its
+    size in memory, so only the ``"source": {`` objects are decoded. An answer
+    is given only when every such object that carries both ``selection`` and
+    ``telemetry_files`` names the same session.
+    """
+
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        return None
+    decoder = json.JSONDecoder()
+    found: set[tuple[tuple[str, str | None], ...]] = set()
+    for match in _REPORT_SOURCE_MEMBER.finditer(data):
+        start = match.end() - 1
+        value: Any = None
+        for end in (start + _REPORT_SOURCE_WINDOW_BYTES, len(data)):
+            try:
+                value, _ = decoder.raw_decode(
+                    data[start:end].decode("utf-8", errors="replace")
+                )
+                break
+            except ValueError:
+                value = None
+                if end >= len(data):
+                    break
+        if (
+            not isinstance(value, Mapping)
+            or not isinstance(value.get("selection"), Mapping)
+            or not isinstance(value.get("telemetry_files"), list)
+        ):
+            continue
+        found.add(tuple(sorted(_analysis_session_identity({"source": value}).items())))
+    return dict(next(iter(found))) if len(found) == 1 else None
+
+
+def _session_match_keys(
+    session_group_id: Any, subsession_id: Any, phase: Any
+) -> list[str]:
+    """Keys under which record_analysis treats two analyses as one session."""
+
+    keys: list[str] = []
+    group = str(session_group_id or "").strip().casefold()
+    if group:
+        keys.append("group:" + group)
+    subsession = str(subsession_id or "").strip()
+    normalized_phase = str(phase or "").strip().casefold()
+    if subsession and normalized_phase not in ("", "unknown"):
+        keys.append(f"phase:{subsession}:{normalized_phase}")
+    return keys
+
+
+def _file_signature(path: str) -> tuple[int, int] | None:
+    try:
+        stat = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return stat.st_size, stat.st_mtime_ns
+
+
+def _copy_file_bytes(source: str, destination: str) -> None:
+    # Plain reads share read/write access with SQLite's own handles.
+    with open(source, "rb") as reader, open(destination, "wb") as writer:
+        shutil.copyfileobj(reader, writer, 1024 * 1024)
+
+
+_HISTORY_INDEX_COLUMNS = (
+    "analysis_id",
+    "session_group_id",
+    "subsession_id",
+    "session_phase",
+    "report_path",
+)
+
+
+def _query_history_index(uri: str) -> list[dict[str, Any]]:
+    connection = sqlite3.connect(uri, uri=True, timeout=5)
+    try:
+        available = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(sessions)")
+        }
+        if "report_path" not in available:
+            raise sqlite3.DatabaseError("history index has no report paths")
+        selected = ", ".join(
+            name if name in available else f"NULL AS {name}"
+            for name in _HISTORY_INDEX_COLUMNS
+        )
+        rows = connection.execute(f"SELECT {selected} FROM sessions").fetchall()
+    finally:
+        connection.close()
+    return [dict(zip(_HISTORY_INDEX_COLUMNS, row)) for row in rows]
+
+
+def _read_history_index_without_writing(db_path: Path) -> tuple[str, list[dict[str, Any]]]:
+    """Read history.sqlite3 without creating, changing or deleting any file.
+
+    The index is in WAL mode. A ``mode=ro`` connection to it creates -shm and
+    -wal beside it when no other connection is open, and cannot remove them
+    afterwards. With no write-ahead log the main file holds every committed
+    row and is read with ``immutable=1``, which touches nothing else. While a
+    log exists its newest rows are only there, so the log and the database
+    are copied into a private temporary folder and the copy is read. Either
+    read is kept only when neither file changed while it ran; after three
+    changed attempts the index counts as unreadable, which offers nothing.
+    """
+
+    database = _extended_path(db_path)
+    if not os.path.isfile(database):
+        return "absent", []
+    log = database + "-wal"
+    for _attempt in range(3):
+        before = (_file_signature(database), _file_signature(log))
+        try:
+            if before[1] is None or before[1][0] == 0:
+                rows = _query_history_index(
+                    f"{Path(db_path).resolve().as_uri()}?mode=ro&immutable=1"
+                )
+            else:
+                with tempfile.TemporaryDirectory(prefix="coach-index-") as scratch:
+                    copy = os.path.join(scratch, "history.sqlite3")
+                    # The log first: a checkpoint between the two copies only
+                    # moves pages the copied log already holds.
+                    _copy_file_bytes(log, copy + "-wal")
+                    _copy_file_bytes(database, copy)
+                    rows = _query_history_index(Path(copy).as_uri())
+        except (OSError, sqlite3.Error):
+            rows = None
+        if rows is not None and (_file_signature(database), _file_signature(log)) == before:
+            return "read", rows
+    return "unreadable", []
+
+
+# The app reads analysis.json (up to about 80 MB) with File.OpenRead,
+# ReadAllBytes and ReadAllTextAsync. None of them shares delete access, so
+# while one runs the file can be neither replaced nor deleted (WinError 5 or
+# 32). A report save waits this long for such reads to end; a read that
+# outlasts it gets a complete new copy beside the report instead of a failure.
+_REPORT_REPLACE_WAIT_S = 5.0
+_REPORT_REPLACE_DELAYS_MS = (10, 20, 40, 80, 160, 250)
+_REPORT_CONTENTION_WINERRORS = (5, 32, 33)
+
+
+def _replace_before_deadline(
+    source: str,
+    destination: str,
+    deadline: float,
+    *,
+    clock=time.monotonic,
+    sleeper=time.sleep,
+) -> bool:
+    """Replace ``destination``; False when a reader still holds it at ``deadline``.
+
+    Every failure other than reader contention is raised.
+    """
+
+    attempt = 0
+    while True:
+        try:
+            os.replace(source, destination)
+            return True
+        except OSError as exc:
+            winerror = getattr(exc, "winerror", None)
+            if (
+                isinstance(winerror, bool)
+                or not isinstance(winerror, int)
+                or winerror not in _REPORT_CONTENTION_WINERRORS
+            ):
+                raise
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return False
+        delay_ms = _REPORT_REPLACE_DELAYS_MS[min(attempt, len(_REPORT_REPLACE_DELAYS_MS) - 1)]
+        sleeper(min(delay_ms / 1000.0, remaining))
+        attempt += 1
 
 
 def _json_text(value: Any) -> str:
@@ -1385,8 +1811,15 @@ class ArchiveStore:
             if session_identity["session_phase"] not in (None, "", "unknown")
             else str(subsession)
         )
-        stamp = safe_slug(analysis.get("analyzed_at") or utc_now())
-        return self.reports_dir / context["season_key"] / safe_slug(session_key) / stamp
+        # analysis_id hashes the source bytes, analyzer revision, profile and
+        # exact session, so it names one analysis of one recording. Keying the
+        # directory by it makes re-analysis replace that report in place; the
+        # former analyzed_at stamp wrote a new full copy on every open (about
+        # 42 MB per Bristol race, 20 copies on 2026-09-21).
+        leaf = safe_slug(analysis.get("analysis_id"), "") or safe_slug(
+            analysis.get("analyzed_at") or utc_now()
+        )
+        return self.reports_dir / context["season_key"] / safe_slug(session_key) / leaf
 
     def save_report_artifacts(
         self,
@@ -1394,27 +1827,182 @@ class ArchiveStore:
         report_markdown: str,
         extra_files: Mapping[str, str | bytes] | None = None,
     ) -> dict[str, str]:
+        """Write one analysis's report, replacing that recording's copy in place.
+
+        The app may be reading the previous copy through a handle that forbids
+        replacing it. The save waits up to ``_REPORT_REPLACE_WAIT_S`` for such
+        reads to end. A read that outlasts the wait gets the complete report
+        in a new sibling directory (``<analysis_id>.<stamp>``) instead, and
+        record_analysis points the history index there; the stable directory
+        returns on the next save, which also removes the superseded sibling
+        once nothing reads or names it. A save never fails because a report is
+        being read.
+        """
+
         self.initialize()
         report_dir = self.report_directory(analysis)
-        report_dir.mkdir(parents=True, exist_ok=True)
-        analysis_path = report_dir / "analysis.json"
-        report_path = report_dir / "report.md"
-        _atomic_write_text(analysis_path, _json_text(dict(analysis)))
-        _atomic_write_text(report_path, report_markdown.rstrip() + "\n")
-        artifacts = {"analysis": str(analysis_path), "report": str(report_path)}
+        payloads: list[tuple[str, Path, bytes]] = [
+            ("analysis", Path("analysis.json"), _json_text(dict(analysis)).encode("utf-8")),
+            ("report", Path("report.md"), (report_markdown.rstrip() + "\n").encode("utf-8")),
+        ]
         for relative, payload in (extra_files or {}).items():
             target = (report_dir / relative).resolve()
             if report_dir not in target.parents:
                 raise ValueError(f"Unsafe report artifact path: {relative}")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if isinstance(payload, bytes):
-                target.write_bytes(payload)
-            else:
-                _atomic_write_text(target, payload)
-            artifacts[relative] = str(target)
-        return artifacts
+            payloads.append(
+                (
+                    relative,
+                    target.relative_to(report_dir),
+                    payload if isinstance(payload, bytes) else str(payload).encode("utf-8"),
+                )
+            )
+        directory = report_dir
+        if not self._replace_report_files(report_dir, payloads):
+            directory = self._new_report_generation(report_dir)
+            for _key, relative, data in payloads:
+                _atomic_write_bytes(directory / relative, data)
+        return {
+            key: str(
+                directory / relative
+                if key in ("analysis", "report")
+                else (directory / relative).resolve()
+            )
+            for key, relative, _data in payloads
+        }
+
+    @staticmethod
+    def _replace_report_files(
+        report_dir: Path, payloads: Sequence[tuple[str, Path, bytes]]
+    ) -> bool:
+        """Replace a report's files in place; False when a read outlasts the wait.
+
+        Every new file is complete on disk before any target is replaced.
+        analysis.json goes first because it is the file the app reads, so a
+        read of it that outlasts the wait leaves the previous report whole.
+        """
+
+        base = _extended_path(report_dir)
+        staged: list[tuple[str, str]] = []
+        try:
+            for _key, relative, data in payloads:
+                target = os.path.join(base, *relative.parts)
+                parent = os.path.dirname(target)
+                os.makedirs(parent, exist_ok=True)
+                fd, temp_name = tempfile.mkstemp(prefix=".write-", dir=parent)
+                staged.append((temp_name, target))
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(data)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            deadline = time.monotonic() + _REPORT_REPLACE_WAIT_S
+            return all(
+                _replace_before_deadline(temp_name, target, deadline)
+                for temp_name, target in staged
+            )
+        finally:
+            for temp_name, _target in staged:
+                try:
+                    os.unlink(temp_name)
+                except FileNotFoundError:
+                    pass
+
+    @staticmethod
+    def _new_report_generation(report_dir: Path) -> Path:
+        # safe_slug never emits ".", so "<leaf>." names only this analysis's
+        # own siblings.
+        stamp = safe_slug(utc_now())
+        for _attempt in range(100):
+            candidate = report_dir.with_name(
+                f"{report_dir.name}.{stamp}-{os.urandom(3).hex()}"
+            )
+            try:
+                os.makedirs(_extended_path(candidate))
+            except FileExistsError:
+                continue
+            return candidate
+        raise StorageCommitError("no free report directory name")
+
+    def _report_references(self) -> dict[str, str]:
+        """Report directory keys named by saved trial and tuning records."""
+
+        referenced: dict[str, str] = {}
+        for label, base in (("trials", self.root / "trials"), ("tuning", self.tuning_dir)):
+            base_io = _extended_path(base)
+            if not os.path.isdir(base_io):
+                continue
+            for current, _subdirectories, names in os.walk(base_io):
+                for name in names:
+                    if not name.casefold().endswith(".json"):
+                        continue
+                    record_path = os.path.join(current, name)
+                    try:
+                        if os.path.getsize(record_path) > _REFERENCE_RECORD_MAX_BYTES:
+                            continue
+                        with open(record_path, encoding="utf-8") as handle:
+                            record = json.load(handle)
+                    except (OSError, ValueError):
+                        continue
+                    found: set[str] = set()
+                    _referenced_report_directories(record, found)
+                    for key in found:
+                        referenced.setdefault(key, label)
+        return referenced
+
+    def _discard_superseded_report_copies(
+        self, analysis: Mapping[str, Any], report_path: str
+    ) -> None:
+        """Remove this analysis's sibling copies that the index no longer names.
+
+        Only ``<analysis_id>.<stamp>`` directories written by
+        save_report_artifacts are candidates; the stable directory and every
+        copy a trial or tuning record names are kept. analysis.json is removed
+        first: while the app still reads it the removal fails and the whole
+        copy is left for a later save. Nothing here can fail the save.
+        """
+
+        try:
+            analysis_id = str(analysis.get("analysis_id") or "")
+            stable = self.report_directory(analysis)
+            if not analysis_id or safe_slug(analysis_id, "") != stable.name:
+                return
+            current = _report_directory_keys(os.path.dirname(os.fspath(report_path)))
+            prefix = stable.name + "."
+            with os.scandir(_extended_path(stable.parent)) as iterator:
+                candidates = [
+                    entry.path
+                    for entry in iterator
+                    if entry.name.startswith(prefix)
+                    and entry.is_dir(follow_symlinks=False)
+                    and not entry.is_symlink()
+                    and not getattr(entry, "is_junction", lambda: False)()
+                    and not (_report_directory_keys(entry.path) & current)
+                ]
+            if not candidates:
+                return
+            references = self._report_references()
+            for candidate in candidates:
+                if _report_directory_keys(candidate) & references.keys():
+                    continue
+                analysis_file = os.path.join(candidate, "analysis.json")
+                if os.path.isfile(analysis_file):
+                    if _report_analysis_id(
+                        analysis_file, os.path.getsize(analysis_file)
+                    ) != analysis_id:
+                        continue
+                    try:
+                        os.unlink(analysis_file)
+                    except OSError:
+                        continue
+                shutil.rmtree(candidate, ignore_errors=True)
+        except (OSError, ValueError):
+            return
 
     def record_analysis(self, analysis: Mapping[str, Any], report_path: str) -> None:
+        self._record_analysis_row(analysis, report_path)
+        # The index now names report_path, so copies it superseded can go.
+        self._discard_superseded_report_copies(analysis, report_path)
+
+    def _record_analysis_row(self, analysis: Mapping[str, Any], report_path: str) -> None:
         self.initialize()
         context = self.context_from_analysis(analysis)
         identity = analysis.get("identity", {})
@@ -1574,6 +2162,241 @@ class ArchiveStore:
             item["source_available"] = bool(item.get("source_path") and source_path.is_file())
             result.append(item)
         return result
+
+    def report_storage_usage(self) -> dict[str, Any]:
+        """Measure report copies that repeat what the archive keeps; read-only.
+
+        Two kinds of copy are reclaimable:
+
+        - ``duplicate``: another directory holds the same analysis_id. Before
+          reports were keyed by analysis_id every re-analysis wrote a new full
+          copy. The kept copy is the indexed one, else the newest.
+        - ``superseded``: the copy's session has a newer analysis in the history
+          index (a later analyzer revision) whose report still exists.
+          record_analysis drops the older revision's index row but never its
+          copies, so none of them is kept.
+
+        A copy named by the history index or by a saved trial or tuning record
+        is never offered. Nothing is created, changed or deleted here, including
+        beside the history index (see _read_history_index_without_writing).
+        """
+
+        reports_io = _extended_path(self.reports_dir)
+        directories: dict[str, dict[str, Any]] = {}
+        unattributed_bytes = 0
+        unreadable_directories = 0
+        pending: list[tuple[str, str | None]] = (
+            [(reports_io, None)] if os.path.isdir(reports_io) else []
+        )
+        while pending:
+            current, inherited_owner = pending.pop()
+            try:
+                with os.scandir(current) as iterator:
+                    entries = list(iterator)
+            except OSError:
+                unreadable_directories += 1
+                continue
+            files = [entry for entry in entries if entry.is_file(follow_symlinks=False)]
+            owner = inherited_owner
+            analysis_entry = next((entry for entry in files if entry.name == "analysis.json"), None)
+            if analysis_entry is not None:
+                owner = current
+                analysis_stat = analysis_entry.stat(follow_symlinks=False)
+                directories[current] = {
+                    "path": _ordinary_path(current),
+                    "analysis_file": analysis_entry.path,
+                    "bytes": 0,
+                    "analysis_id": _report_analysis_id(
+                        analysis_entry.path, analysis_stat.st_size
+                    ),
+                    "modified_ns": analysis_stat.st_mtime_ns,
+                }
+            for entry in files:
+                size = entry.stat(follow_symlinks=False).st_size
+                if owner is None:
+                    unattributed_bytes += size
+                else:
+                    directories[owner]["bytes"] += size
+            for entry in entries:
+                # Junctions and symlinks could leave the archive; never follow.
+                if (
+                    entry.is_dir(follow_symlinks=False)
+                    and not entry.is_symlink()
+                    and not getattr(entry, "is_junction", lambda: False)()
+                ):
+                    pending.append((entry.path, owner))
+
+        index_status, index_rows = _read_history_index_without_writing(self.db_path)
+        indexed: set[str] = set()
+        for row in index_rows:
+            if row.get("report_path"):
+                indexed.update(_report_directory_keys(os.path.dirname(str(row["report_path"]))))
+
+        referenced: dict[str, str] = {key: "history-index" for key in indexed}
+        for key, label in self._report_references().items():
+            referenced.setdefault(key, label)
+
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for directory in directories.values():
+            if directory["analysis_id"] is not None:
+                groups.setdefault(directory["analysis_id"], []).append(directory)
+
+        def reference_reason(path: str) -> str | None:
+            labels = {
+                referenced[key] for key in _report_directory_keys(path) if key in referenced
+            }
+            return next(
+                (label for label in ("history-index", "trials", "tuning") if label in labels),
+                None,
+            )
+
+        # The analysis the index names for a session supersedes that session's
+        # older revisions, but only while its own report still exists.
+        directory_by_key: dict[str, dict[str, Any]] = {}
+        for directory in directories.values():
+            for key in _report_directory_keys(directory["path"]):
+                directory_by_key.setdefault(key, directory)
+        current_by_session: dict[str, dict[str, dict[str, str]]] = {}
+        for row in index_rows:
+            if not row.get("report_path") or not row.get("analysis_id"):
+                continue
+            existing = next(
+                (
+                    directory_by_key[key]
+                    for key in _report_directory_keys(os.path.dirname(str(row["report_path"])))
+                    if key in directory_by_key
+                ),
+                None,
+            )
+            if existing is None or existing["analysis_id"] != str(row["analysis_id"]):
+                continue
+            for key in _session_match_keys(
+                row.get("session_group_id"), row.get("subsession_id"), row.get("session_phase")
+            ):
+                current_by_session.setdefault(key, {})[str(row["analysis_id"])] = {
+                    "analysis_id": str(row["analysis_id"]),
+                    "path": existing["path"],
+                }
+
+        def superseding(copies: Sequence[Mapping[str, Any]]) -> dict[str, str] | None:
+            if not current_by_session:
+                return None
+            identity = _report_session_identity(copies[0]["analysis_file"])
+            if identity is None:
+                return None
+            for key in _session_match_keys(
+                identity["session_group_id"], identity["subsession_id"], identity["session_phase"]
+            ):
+                current = current_by_session.get(key) or {}
+                # Two current analyses under one key do not prove which one
+                # this copy belongs to.
+                if len(current) == 1:
+                    return dict(next(iter(current.values())))
+            return None
+
+        # An index that exists but cannot be read might name any copy, so no
+        # copy is offered for removal until it can be read again.
+        measurable = index_status != "unreadable"
+        listed_groups: list[dict[str, Any]] = []
+        for analysis_id, copies in groups.items():
+            copies.sort(
+                key=lambda item: (
+                    bool(_report_directory_keys(item["path"]) & indexed),
+                    item["modified_ns"],
+                ),
+                reverse=True,
+            )
+            superseded_by = (
+                superseding(copies)
+                if measurable
+                and not any(_report_directory_keys(item["path"]) & indexed for item in copies)
+                else None
+            )
+            if superseded_by is None and len(copies) < 2:
+                continue
+            retained = None if superseded_by is not None else copies[0]
+            kept: list[dict[str, Any]] = []
+            reclaimable: list[dict[str, Any]] = []
+            for copy in copies if retained is None else copies[1:]:
+                reason = reference_reason(copy["path"])
+                if reason or not measurable:
+                    kept.append(
+                        {
+                            "path": copy["path"],
+                            "bytes": copy["bytes"],
+                            "reason": reason or "history-index-unreadable",
+                        }
+                    )
+                else:
+                    reclaimable.append({"path": copy["path"], "bytes": copy["bytes"]})
+            group: dict[str, Any] = {
+                "kind": "duplicate" if retained is not None else "superseded",
+                "analysis_id": analysis_id,
+                "copies": len(copies),
+                "retained": (
+                    {
+                        "path": retained["path"],
+                        "bytes": retained["bytes"],
+                        "reason": reference_reason(retained["path"]) or "newest",
+                    }
+                    if retained is not None
+                    else None
+                ),
+                "kept": kept,
+                "reclaimable": reclaimable,
+                "reclaimable_bytes": sum(item["bytes"] for item in reclaimable),
+            }
+            if superseded_by is not None:
+                group["superseded_by"] = superseded_by
+            listed_groups.append(group)
+        listed_groups.sort(
+            key=lambda group: (-group["reclaimable_bytes"], group["analysis_id"])
+        )
+
+        def totals(kind: str) -> tuple[int, int, int]:
+            chosen = [group for group in listed_groups if group["kind"] == kind]
+            return (
+                sum(1 for group in chosen if group["reclaimable"]),
+                sum(len(group["reclaimable"]) for group in chosen),
+                sum(group["reclaimable_bytes"] for group in chosen),
+            )
+
+        duplicate_groups, duplicate_directories, duplicate_bytes = totals("duplicate")
+        superseded_groups, superseded_directories, superseded_bytes = totals("superseded")
+        return {
+            "schema_version": 2,
+            "read_only": True,
+            "status": (
+                "empty"
+                if not directories
+                else "index-unreadable"
+                if not measurable
+                else "measured"
+            ),
+            "reports_root": str(self.reports_dir),
+            "report_directory_count": len(directories),
+            "report_bytes": sum(item["bytes"] for item in directories.values()),
+            "unattributed_bytes": unattributed_bytes,
+            "unreadable_directory_count": unreadable_directories,
+            "unidentified_directory_count": sum(
+                1 for item in directories.values() if item["analysis_id"] is None
+            ),
+            "history_index": index_status,
+            "reference_sources": ["history-index", "trials", "tuning"],
+            "duplicate_group_count": duplicate_groups,
+            "duplicate_directory_count": duplicate_directories,
+            "duplicate_bytes": duplicate_bytes,
+            "superseded_group_count": superseded_groups,
+            "superseded_directory_count": superseded_directories,
+            "superseded_bytes": superseded_bytes,
+            "reclaimable_directory_count": duplicate_directories + superseded_directories,
+            "reclaimable_bytes": duplicate_bytes + superseded_bytes,
+            "groups": listed_groups,
+            "note": (
+                "Measured only; nothing was removed. Before deleting a copy, "
+                "re-check these references and drop app caches that name it."
+            ),
+        }
 
     def historical_runs(
         self,
@@ -2052,9 +2875,11 @@ class ArchiveStore:
             archive_dir = self.telemetry_traces_dir / "raw" / sha256
             manifest_path = archive_dir / "manifest.json"
             prior: Mapping[str, Any] = {}
-            if manifest_path.is_file():
+            manifest_io = _extended_path(manifest_path)
+            if os.path.isfile(manifest_io):
                 try:
-                    decoded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    with open(manifest_io, encoding="utf-8") as handle:
+                        decoded = json.load(handle)
                     if isinstance(decoded, Mapping) and decoded.get("sha256") == sha256:
                         prior = decoded
                 except (OSError, json.JSONDecodeError):
@@ -2062,6 +2887,11 @@ class ArchiveStore:
 
             prior_archived_name = str(prior.get("archived_file") or "").strip()
             if prior_archived_name and Path(prior_archived_name).name == prior_archived_name:
+                # Archives made before the short name keep the simulator
+                # filename, which can pass MAX_PATH under a long Documents
+                # root. The copy primitives use extended-length paths, so the
+                # existing verified copy is found and never renamed or copied
+                # again.
                 archived_name = prior_archived_name
             else:
                 suffix = source.suffix.casefold() if source.suffix else ".bin"
@@ -2072,7 +2902,22 @@ class ArchiveStore:
                 # names above so upgrades never rename an immutable copy.
                 archived_name = f"telemetry{suffix}"
             destination = archive_dir / archived_name
-            _atomic_copy_verified(source, destination, sha256)
+            try:
+                _atomic_copy_verified(source, destination, sha256)
+            except _RAW_ARCHIVE_INTEGRITY_FAILURES:
+                raise
+            except OSError as error:
+                items.append(
+                    _raw_archive_failure(
+                        sha256=sha256,
+                        size=expected_size,
+                        source=source,
+                        destination=destination,
+                        stage="copy",
+                        error=error,
+                    )
+                )
+                continue
 
             source_stat = source.stat()
             if (
@@ -2080,81 +2925,30 @@ class ArchiveStore:
                 or source_stat.st_mtime_ns != source_before.st_mtime_ns
             ):
                 raise ArchiveSourceUnstable("source-changed-during-archival")
-            archived_size = destination.stat().st_size
-            modified_ns = expected_modified_ns
-            discovery_id = stable_hash(
-                {
-                    "sha256": sha256,
-                    "source_path": str(source),
-                    "size": archived_size,
-                    "modified_ns": modified_ns,
-                },
-                64,
-            )
-            discoveries: list[dict[str, Any]] = []
-            for item in prior.get("source_discoveries") or ():
-                if not isinstance(item, Mapping) or not item.get("discovery_id"):
-                    continue
-                discoveries.append(dict(item))
-            if not discoveries and prior.get("original_path"):
-                legacy_modified_ns = prior.get("modified_ns")
-                legacy_discovery_id = stable_hash(
-                    {
-                        "sha256": sha256,
-                        "source_path": str(prior.get("original_path")),
-                        "size": int(prior.get("size") or archived_size),
-                        "modified_ns": legacy_modified_ns,
-                    },
-                    64,
+            try:
+                manifest, discovery_id, is_new_discovery = self._write_raw_manifest(
+                    manifest_path=manifest_path,
+                    destination=destination,
+                    archived_name=archived_name,
+                    sha256=sha256,
+                    source=source,
+                    modified_ns=expected_modified_ns,
+                    prior=prior,
                 )
-                discoveries.append(
-                    {
-                        "discovery_id": legacy_discovery_id,
-                        "source_path": str(prior.get("original_path")),
-                        "original_file_name": str(
-                            prior.get("original_file_name")
-                            or Path(str(prior.get("original_path"))).name
-                        ),
-                        "size": int(prior.get("size") or archived_size),
-                        "modified_ns": legacy_modified_ns,
-                        "discovered_at": prior.get("verified_at") or utc_now(),
-                    }
+            except _RAW_ARCHIVE_INTEGRITY_FAILURES:
+                raise
+            except OSError as error:
+                items.append(
+                    _raw_archive_failure(
+                        sha256=sha256,
+                        size=expected_size,
+                        source=source,
+                        destination=destination,
+                        stage="manifest",
+                        error=error,
+                    )
                 )
-            is_new_discovery = not any(
-                str(item.get("discovery_id")) == discovery_id for item in discoveries
-            )
-            verified_at = utc_now()
-            if is_new_discovery:
-                discoveries.append(
-                    {
-                        "discovery_id": discovery_id,
-                        "source_path": str(source),
-                        "original_file_name": source.name,
-                        "size": archived_size,
-                        "modified_ns": modified_ns,
-                        "discovered_at": verified_at,
-                    }
-                )
-            first_discovery = discoveries[0]
-            manifest = {
-                "schema_version": 2,
-                "sha256": sha256,
-                "size": archived_size,
-                "archived_file": archived_name,
-                # Retain the original contract-v1 fields as the first known
-                # discovery.  New readers use source_discoveries so a later
-                # identical file never erases earlier provenance.
-                "original_file_name": first_discovery.get("original_file_name"),
-                "original_path": first_discovery.get("source_path"),
-                "verified_at": verified_at,
-                "first_archived_at": prior.get("first_archived_at")
-                or prior.get("verified_at")
-                or verified_at,
-                "source_discovery_count": len(discoveries),
-                "source_discoveries": discoveries,
-                "retention": "append-only; source and archive are never deleted by analysis",
-            }
-            _atomic_write_text(manifest_path, _json_text(manifest))
+                continue
             items.append(
                 {
                     "sha256": sha256,
@@ -2166,12 +2960,111 @@ class ArchiveStore:
                     "status": "verified",
                 }
             )
+        failed = [item for item in items if item.get("status") != "verified"]
         return {
             "schema_version": 2,
-            "status": "verified" if items else "empty",
-            "durably_copied": bool(items),
+            "status": (
+                "empty"
+                if not items
+                else "verified"
+                if not failed
+                else "failed"
+                if len(failed) == len(items)
+                else "partial"
+            ),
+            "durably_copied": bool(items) and not failed,
+            "failed_count": len(failed),
             "items": items,
         }
+
+    def _write_raw_manifest(
+        self,
+        *,
+        manifest_path: Path,
+        destination: Path,
+        archived_name: str,
+        sha256: str,
+        source: Path,
+        modified_ns: int,
+        prior: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], str, bool]:
+        """Record provenance for one verified copy; returns the manifest."""
+
+        archived_size = os.stat(_extended_path(destination)).st_size
+        discovery_id = stable_hash(
+            {
+                "sha256": sha256,
+                "source_path": str(source),
+                "size": archived_size,
+                "modified_ns": modified_ns,
+            },
+            64,
+        )
+        discoveries: list[dict[str, Any]] = []
+        for item in prior.get("source_discoveries") or ():
+            if not isinstance(item, Mapping) or not item.get("discovery_id"):
+                continue
+            discoveries.append(dict(item))
+        if not discoveries and prior.get("original_path"):
+            legacy_modified_ns = prior.get("modified_ns")
+            legacy_discovery_id = stable_hash(
+                {
+                    "sha256": sha256,
+                    "source_path": str(prior.get("original_path")),
+                    "size": int(prior.get("size") or archived_size),
+                    "modified_ns": legacy_modified_ns,
+                },
+                64,
+            )
+            discoveries.append(
+                {
+                    "discovery_id": legacy_discovery_id,
+                    "source_path": str(prior.get("original_path")),
+                    "original_file_name": str(
+                        prior.get("original_file_name")
+                        or Path(str(prior.get("original_path"))).name
+                    ),
+                    "size": int(prior.get("size") or archived_size),
+                    "modified_ns": legacy_modified_ns,
+                    "discovered_at": prior.get("verified_at") or utc_now(),
+                }
+            )
+        is_new_discovery = not any(
+            str(item.get("discovery_id")) == discovery_id for item in discoveries
+        )
+        verified_at = utc_now()
+        if is_new_discovery:
+            discoveries.append(
+                {
+                    "discovery_id": discovery_id,
+                    "source_path": str(source),
+                    "original_file_name": source.name,
+                    "size": archived_size,
+                    "modified_ns": modified_ns,
+                    "discovered_at": verified_at,
+                }
+            )
+        first_discovery = discoveries[0]
+        manifest = {
+            "schema_version": 2,
+            "sha256": sha256,
+            "size": archived_size,
+            "archived_file": archived_name,
+            # Retain the original contract-v1 fields as the first known
+            # discovery.  New readers use source_discoveries so a later
+            # identical file never erases earlier provenance.
+            "original_file_name": first_discovery.get("original_file_name"),
+            "original_path": first_discovery.get("source_path"),
+            "verified_at": verified_at,
+            "first_archived_at": prior.get("first_archived_at")
+            or prior.get("verified_at")
+            or verified_at,
+            "source_discovery_count": len(discoveries),
+            "source_discoveries": discoveries,
+            "retention": "append-only; source and archive are never deleted by analysis",
+        }
+        _atomic_write_text(manifest_path, _json_text(manifest))
+        return manifest, discovery_id, is_new_discovery
 
     @staticmethod
     def _verified_geometry_quality(value: Mapping[str, Any]) -> dict[str, Any]:

@@ -430,7 +430,9 @@ public sealed class DurableArchiveService : IDurableArchiveService
                 try
                 {
                     if (new FileInfo(file).Length > 16 * 1024 * 1024) continue;
-                    using var document = JsonDocument.Parse(File.ReadAllText(file));
+                    // Older reports can hold bare NaN/Infinity; one unknown number must not
+                    // hide the recording the report names.
+                    using var document = NonFiniteJson.Parse(File.ReadAllBytes(file));
                     VisitStrings(document.RootElement, value =>
                     {
                         if (!value.EndsWith(".ibt", StringComparison.OrdinalIgnoreCase) || File.Exists(value)) return;
@@ -440,7 +442,7 @@ public sealed class DurableArchiveService : IDurableArchiveService
                         results.TryAdd(id, new(id, name, "Original iRacing telemetry is not present on this PC. Archived reports remain available; native-rate queries need the source file to be located."));
                     });
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException) { }
             }
         }
         return results.Values.OrderBy(item => item.FileName, StringComparer.OrdinalIgnoreCase).ToList();

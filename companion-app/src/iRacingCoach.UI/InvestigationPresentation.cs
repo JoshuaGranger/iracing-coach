@@ -26,6 +26,17 @@ public static class InvestigationPresentation
     public static string Percent(double fraction) => (fraction * 100).ToString("0.0", CultureInfo.CurrentCulture);
     public static string Exposure(double? value) => value is { } number ? $"{number.ToString("0.0", CultureInfo.CurrentCulture)} green" : "exposure unknown";
 
+    /// <summary>True only when the backend reports a usable, finite median pace change.</summary>
+    public static bool HasPaceResult(RaceInvestigationComparison comparison) =>
+        comparison.PaceComparable && comparison.DeltaSeconds is { } delta && double.IsFinite(delta);
+
+    /// <summary>Slower is a loss, faster a gain; a withheld or missing result is neutral, never a gain.</summary>
+    public static string PaceTone(RaceInvestigationComparison comparison) =>
+        !HasPaceResult(comparison) ? "neutral" : comparison.DeltaSeconds > 0 ? "loss" : "gain";
+
+    public static string PaceResult(RaceInvestigationComparison comparison) =>
+        HasPaceResult(comparison) ? $"{Signed(comparison.DeltaSeconds)} s/lap" : "No pace result";
+
     public static string LapTime(double? seconds) => seconds is not { } value || !double.IsFinite(value) ? "—"
         : value >= 60 ? TimeSpan.FromSeconds(value).ToString(@"m\:ss\.fff", CultureInfo.InvariantCulture) : value.ToString("0.000", CultureInfo.CurrentCulture);
 

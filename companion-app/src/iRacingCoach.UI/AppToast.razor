@@ -22,6 +22,17 @@
         <button type="button" class="toast-dismiss" aria-label="Dismiss notification" @onclick="() => State.DismissToast(toast.Revision)"><ProductIcon Name="close" Size="15" /></button>
     </div>
 }
+else if (State.UnreadableAnalysisNotice is { } unreadableAnalyses)
+{
+    @* One quiet notice for every saved analysis the catalog could not read. It yields to any other
+       notification, never counts down, and dismissing it is remembered for those files. *@
+    <div class="toast warning" role="status" data-toast="warning" data-unreadable-analyses>
+        <ProductIcon Name="info" Size="15" />
+        <span class="toast-message" title="@unreadableAnalyses">@unreadableAnalyses</span>
+        <button type="button" class="toast-action" @onclick="State.OpenLogs">Open logs</button>
+        <button type="button" class="toast-dismiss" aria-label="Dismiss notice" @onclick="State.DismissUnreadableAnalysisNotice"><ProductIcon Name="close" Size="15" /></button>
+    </div>
+}
 
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
