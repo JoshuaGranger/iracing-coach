@@ -810,6 +810,26 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "review_test_day",
+        "description": "Read-only review of 2-12 archived test-day stints in recording order: equal-age pace windows, fall-off, garage-setup changes without tire readings, comparability, source-labelled tire readings, and exactly one next-change card. Verdicts are faster, slower, within scatter or not comparable; never unchanged. Writes nothing.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["analysis_paths"],
+            "properties": {
+                "analysis_paths": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 12,
+                    "uniqueItems": True,
+                    "items": {"type": "string"},
+                    "description": "Archived analysis.json paths, one per stint, in any order.",
+                },
+                "archive_root": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "iracing_setup_history",
         "description": "Return season/car/track-scoped open-setup experiments and their recorded outcomes.",
         "inputSchema": {
@@ -1079,6 +1099,16 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
             return driving_trials.load_driving_trial_workflow(trial_id=trial_id, archive_root=str(archive_root))
         return driving_trials.evaluate_driving_trial_workflow(
             trial_id=trial_id, analysis_path=str(_analysis_path(arguments.get("analysis_path"), archive_root)),
+            archive_root=str(archive_root))
+    if name == "review_test_day":
+        import test_day
+        raw_paths = arguments.get("analysis_paths")
+        if not isinstance(raw_paths, list) or not 2 <= len(raw_paths) <= 12:
+            raise ValueError("analysis_paths must contain 2-12 archived analysis.json paths.")
+        if any(not isinstance(item, str) for item in raw_paths):
+            raise ValueError("Each analysis path must be a string.")
+        return test_day.review_test_day_workflow(
+            analysis_paths=[str(_analysis_path(item, archive_root)) for item in raw_paths],
             archive_root=str(archive_root))
     if name == "iracing_setup_history":
         analysis_path = (

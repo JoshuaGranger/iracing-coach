@@ -1038,6 +1038,32 @@
       "name": "evaluate_driving_trial"
     },
     {
+      "description": "Read-only review of 2-12 archived test-day stints in recording order: equal-age pace windows, fall-off, garage-setup changes without tire readings, comparability, source-labelled tire readings, and exactly one next-change card. Verdicts are faster, slower, within scatter or not comparable; never unchanged. Writes nothing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_paths": {
+            "description": "Archived analysis.json paths, one per stint, in any order.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 2,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "archive_root": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "analysis_paths"
+        ],
+        "type": "object"
+      },
+      "name": "review_test_day"
+    },
+    {
       "description": "Return season/car/track-scoped open-setup experiments and their recorded outcomes.",
       "inputSchema": {
         "additionalProperties": false,

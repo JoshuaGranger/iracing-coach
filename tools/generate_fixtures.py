@@ -1339,6 +1339,77 @@ def _race_investigation_fixture() -> dict[str, Any]:
     return result
 
 
+def _test_day_setup(brake_bias: str, update_count: int, lf_temps: str) -> dict[str, Any]:
+    """A synthetic O'Reilly-shaped embedded CarSetup; tire readings vary by stint."""
+
+    return {
+        "UpdateCount": update_count,
+        "Tires": {
+            "LeftFront": {"ColdPressure": "117 kPa", "LastHotPressure": "139 kPa", "LastTempsOMI": lf_temps, "TreadRemaining": "97%, 98%, 100%"},
+            "RightFront": {"ColdPressure": "193 kPa", "LastHotPressure": "231 kPa", "LastTempsIMO": "107C, 99C, 87C", "TreadRemaining": "95%, 95%, 98%"},
+            "LeftRear": {"ColdPressure": "117 kPa", "LastHotPressure": "146 kPa", "LastTempsOMI": "79C, 76C, 70C", "TreadRemaining": "99%, 99%, 100%"},
+            "RightRear": {"ColdPressure": "193 kPa", "LastHotPressure": "219 kPa", "LastTempsIMO": "74C, 72C, 69C", "TreadRemaining": "99%, 99%, 99%"},
+        },
+        "Chassis": {
+            "Front": {"CrossWeight": "50.0%", "FrontBrakeBias": brake_bias, "NoseWeight": "51.0%"},
+            "LeftRear": {"TrackBarHeight": "10.00 in"},
+            "RightRear": {"TrackBarHeight": "10.00 in"},
+        },
+    }
+
+
+def _test_day_stint(identifier: str, start: str, *, laps: int, base: float, setup: dict[str, Any],
+                    ends_on_track: bool = False) -> dict[str, Any]:
+    """One synthetic Offline Testing stint: every lap classified caution, as recorded."""
+
+    rows = [{
+        "lap": number, "complete": True, "flag_state": "caution", "green_fraction": 0.0, "pit_time_s": 0.0,
+        "racing_state_fraction": 1.0, "lap_time_s": round(base + 0.012 * number + (0.02 if number % 3 == 0 else 0.0), 3),
+        "clean_context": {"on_track_fraction": 1.0, "traffic_proximity_fraction": 0.0},
+        "conditions": {"track_temperature_f": 81.0}, "fuel": {"start_l": 70.0 - 0.76 * (number - 1)},
+        "speed": {"minimum_mph": 118.0},
+    } for number in range(1, laps + 1)]
+    observation = {"tires": {
+        "LF": {"remaining_percent": {"L": 97.1, "M": 98.2, "R": 99.9}, "carcass_temperature_f": {"CL": 175.6, "CM": 147.0, "CR": 106.3}, "pressure": {"psi": 17.0, "kind": "live"}},
+        "RF": {"remaining_percent": {"L": 95.0, "M": 95.0, "R": 97.7}, "carcass_temperature_f": {"CL": 224.1, "CM": 209.8, "CR": 187.7}, "pressure": {"psi": 28.0, "kind": "live"}},
+        "LR": {"remaining_percent": {"L": 99.4, "M": 99.4, "R": 99.5}, "carcass_temperature_f": {"CL": 174.4, "CM": 167.9, "CR": 157.1}, "pressure": {"psi": 17.0, "kind": "live"}},
+        "RR": {"remaining_percent": {"L": 98.7, "M": 98.7, "R": 98.8}, "carcass_temperature_f": {"CL": 165.6, "CM": 161.8, "CR": 155.7}, "pressure": {"psi": 28.0, "kind": "live"}},
+    }}
+    return {
+        "analysis_id": identifier,
+        "identity": {"session_start": start, "event_type": "Test", "track_id": 9001, "track_name": "Synthetic Speedway",
+                     "track_config": "Oval", "car_id": 9002, "car_name": "Synthetic O'Reilly car",
+                     "car_path": "stockcars2 synthetic", "is_fixed_setup": False, "setup_name": f"{identifier}.sto",
+                     "tire_compound": None, "setup": setup},
+        "source": {"selection": {"sim_session_type": "Offline Testing", "test_day_id": "test-day-0123456789abcdef"}},
+        "laps": rows,
+        "runs": [{"run_number": 1, "start_lap": 1, "end_lap": laps, "fuel": {"start_l": 70.0},
+                  "tire_measurement_status": "unmeasured_final_run" if ends_on_track else "measured_at_stop",
+                  "tire_observation": None if ends_on_track else observation}],
+        "damage_repair": {"incident_points": {"events": []}},
+    }
+
+
+def _test_day_fixture() -> dict[str, Any]:
+    """A backend-built review of three synthetic stints: baseline, repeat, one brake-bias step."""
+
+    from test_day import build_test_day_review
+    from tuning_engine import load_structured_tuning_rules
+
+    stints = [
+        _test_day_stint("fixture-stint-1", "2026-08-04T18:00:00+00:00", laps=20, base=24.0,
+                        setup=_test_day_setup("56.0%", 2, "40C, 40C, 40C")),
+        _test_day_stint("fixture-stint-2", "2026-08-04T18:40:00+00:00", laps=18, base=24.01,
+                        setup=_test_day_setup("56.0%", 5, "80C, 64C, 41C")),
+        _test_day_stint("fixture-stint-3", "2026-08-04T19:25:00+00:00", laps=16, base=23.9,
+                        setup=_test_day_setup("56.5%", 7, "80C, 64C, 41C"), ends_on_track=True),
+    ]
+    paths = [f"%ARCHIVE_ROOT%\\reports\\season-unknown\\{item['analysis_id']}\\analysis.json" for item in stints]
+    result = build_test_day_review(stints, load_structured_tuning_rules(), analysis_paths=paths)
+    result["fixture_metadata"] = {"synthetic": True, "real_driver_or_setup_data": False, "production_use_allowed": False}
+    return result
+
+
 def main() -> int:
     card = _race_card()
     damage = _damage_repair()
@@ -1558,6 +1629,7 @@ def main() -> int:
     _write_json("analyze-repair-heavy.json", analyze)
     _write_json("race-card.json", card)
     _write_json("race-investigation.json", _race_investigation_fixture())
+    _write_json("test-day-review.json", _test_day_fixture())
     _write_json("track-phase-visualization.json", _visualization_fixture())
     _write_json(
         "track-phase-visualization-unavailable.json",

@@ -1,0 +1,425 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "iRacing Coach test-day review v1",
+  "description": "Result of the read-only review_test_day tool: 2-12 archived stints of one test day in recording order. Every lap-time, window, fall-off, verdict, setup-change, tire and next-change value is computed by the backend; a consumer displays them and never re-derives a verdict. A measurement that is absent is null (Not measured), never zero. Verdicts are faster, slower, within_scatter or not_comparable; there is no 'unchanged'. Garage-sheet tire readings carry timing 'unverified' and are never attributed to the stint's stop. Objects may gain optional fields; consumers must preserve unknown fields and fail on a missing required field or another contract/schema_version. Numeric domains are stated here rather than encoded because the repository's bounded validator supports no numeric keywords.",
+  "type": "object",
+  "required": [
+    "ok", "schema_version", "contract", "read_only", "run_count", "test_day_id", "car", "track",
+    "windows", "screening", "verdict_rule", "comparability_rule", "runs", "next_change", "limitations"
+  ],
+  "properties": {
+    "ok": { "const": true },
+    "schema_version": { "const": 1 },
+    "contract": { "const": "test-day-review-v1" },
+    "read_only": { "const": true },
+    "run_count": { "type": "integer", "description": "2-12; equals the length of runs." },
+    "test_day_id": { "type": ["string", "null"], "description": "The discovery test_day_id when every stint's analysis records the same one." },
+    "car": {
+      "type": "object",
+      "required": ["car_path", "car_name", "car_id"],
+      "properties": {
+        "car_path": { "type": ["string", "null"] },
+        "car_name": { "type": ["string", "null"] },
+        "car_id": { "type": ["integer", "string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "track": {
+      "type": "object",
+      "required": ["track_name", "track_config", "configuration_key"],
+      "properties": {
+        "track_name": { "type": ["string", "null"] },
+        "track_config": { "type": ["string", "null"] },
+        "configuration_key": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "windows": {
+      "type": "object",
+      "required": ["early", "late", "fall_off", "minimum_clean_laps"],
+      "properties": {
+        "early": { "$ref": "#/$defs/span" },
+        "late": {
+          "type": "object",
+          "required": ["status", "first_run_lap", "last_run_lap", "label", "reason", "basis"],
+          "properties": {
+            "status": { "enum": ["available", "withheld"] },
+            "first_run_lap": { "type": ["integer", "null"] },
+            "last_run_lap": { "type": ["integer", "null"] },
+            "label": { "type": ["string", "null"] },
+            "reason": { "type": ["string", "null"] },
+            "basis": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "fall_off": { "$ref": "#/$defs/span" },
+        "minimum_clean_laps": { "type": "integer" }
+      },
+      "additionalProperties": true
+    },
+    "screening": {
+      "type": "object",
+      "required": ["rule", "offline_flag_rule_runs", "offline_flag_rule"],
+      "properties": {
+        "rule": { "type": "string" },
+        "offline_flag_rule_runs": { "type": "array", "items": { "type": "integer" } },
+        "offline_flag_rule": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "verdict_rule": { "type": "object", "additionalProperties": true },
+    "comparability_rule": { "type": "object", "additionalProperties": true },
+    "runs": { "type": "array", "items": { "$ref": "#/$defs/run" } },
+    "next_change": { "$ref": "#/$defs/card" },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "span": {
+      "type": "object",
+      "required": ["first_run_lap", "last_run_lap", "label"],
+      "properties": {
+        "first_run_lap": { "type": "integer" },
+        "last_run_lap": { "type": "integer" },
+        "label": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "bands": {
+      "type": ["object", "null"],
+      "required": ["inside", "middle", "outside"],
+      "properties": {
+        "inside": { "type": "number" },
+        "middle": { "type": "number" },
+        "outside": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "window": {
+      "type": "object",
+      "required": ["status", "first_run_lap", "last_run_lap", "label", "clean_lap_count", "laps", "median_s", "reason"],
+      "properties": {
+        "status": { "enum": ["measured", "not_measured"] },
+        "first_run_lap": { "type": ["integer", "null"] },
+        "last_run_lap": { "type": ["integer", "null"] },
+        "label": { "type": ["string", "null"] },
+        "clean_lap_count": { "type": "integer" },
+        "laps": { "type": "array", "items": { "type": "integer" }, "description": "Recording lap numbers of the clean laps used." },
+        "median_s": { "type": ["number", "null"] },
+        "reason": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "fallOff": {
+      "type": "object",
+      "required": ["status", "method", "first_run_lap", "last_run_lap", "fit_lap_count", "laps", "equal_age", "slope_s_per_lap", "scatter_s", "reason"],
+      "properties": {
+        "status": { "enum": ["measured", "not_measured"] },
+        "method": { "const": "ordinary_least_squares_on_run_lap" },
+        "first_run_lap": { "type": "integer" },
+        "last_run_lap": { "type": ["integer", "null"] },
+        "fit_lap_count": { "type": "integer" },
+        "laps": { "type": "array", "items": { "type": "integer" } },
+        "equal_age": { "type": "boolean", "description": "False when the run ended before the day's fall-off window did." },
+        "slope_s_per_lap": { "type": ["number", "null"] },
+        "scatter_s": { "type": ["number", "null"], "description": "Residual standard deviation of the fit." },
+        "reason": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "setupChange": {
+      "type": "object",
+      "required": ["status", "compared_with_run", "change_count", "changes", "unknown_count", "unknown_fields", "complete", "reason"],
+      "properties": {
+        "status": { "enum": ["first_run", "unchanged", "changed", "unknown"] },
+        "compared_with_run": { "type": ["integer", "null"] },
+        "change_count": { "type": "integer" },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["field", "label", "previous", "current", "delta", "unit"],
+            "properties": {
+              "field": { "type": "string" },
+              "label": { "type": "string" },
+              "previous": { "type": ["string", "null"], "description": "As recorded in the garage sheet." },
+              "current": { "type": ["string", "null"] },
+              "delta": { "type": ["number", "null"], "description": "Current minus previous in the canonical unit." },
+              "unit": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        },
+        "unknown_count": { "type": "integer" },
+        "unknown_fields": { "type": "array", "items": { "type": "string" } },
+        "complete": { "type": "boolean" },
+        "reason": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "comparison": {
+      "type": ["object", "null"],
+      "description": "Null for run 1; otherwise this run against the previous run.",
+      "required": [
+        "compared_with_run", "verdict", "blocked_by", "basis", "window_label", "first_run_lap", "last_run_lap",
+        "previous_median_s", "current_median_s", "delta_s", "threshold_s", "standard_error_s", "reasons", "flags", "summary"
+      ],
+      "properties": {
+        "compared_with_run": { "type": "integer" },
+        "verdict": { "enum": ["faster", "slower", "within_scatter", "not_comparable"] },
+        "blocked_by": { "enum": ["conditions", "measurement", null] },
+        "basis": { "enum": ["late_window", "early_window", null] },
+        "window_label": { "type": ["string", "null"] },
+        "first_run_lap": { "type": ["integer", "null"] },
+        "last_run_lap": { "type": ["integer", "null"] },
+        "previous_median_s": { "type": ["number", "null"] },
+        "current_median_s": { "type": ["number", "null"] },
+        "delta_s": { "type": ["number", "null"], "description": "Current minus previous; null when not comparable." },
+        "threshold_s": { "type": ["number", "null"] },
+        "standard_error_s": { "type": ["number", "null"] },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "flags": { "type": "array", "items": { "type": "string" } },
+        "summary": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "agreement": {
+      "type": "object",
+      "required": ["status", "max_temperature_delta_f", "max_tread_delta_percent"],
+      "properties": {
+        "status": { "enum": ["agree", "disagree", "not_compared"] },
+        "max_temperature_delta_f": { "type": ["number", "null"] },
+        "max_tread_delta_percent": { "type": ["number", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "stopCorner": {
+      "type": ["object", "null"],
+      "required": ["temperature_f", "tread_percent", "pressure_psi", "pressure_kind", "spread_f", "minimum_tread_percent"],
+      "properties": {
+        "temperature_f": { "$ref": "#/$defs/bands" },
+        "tread_percent": { "$ref": "#/$defs/bands" },
+        "pressure_psi": { "type": ["number", "null"] },
+        "pressure_kind": { "type": ["string", "null"] },
+        "spread_f": { "type": ["number", "null"], "description": "Inside minus outside." },
+        "minimum_tread_percent": { "type": ["number", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "sheetCorner": {
+      "type": ["object", "null"],
+      "required": ["temperature_f", "tread_percent", "hot_pressure_psi", "cold_pressure_psi", "spread_f", "minimum_tread_percent"],
+      "properties": {
+        "temperature_f": { "$ref": "#/$defs/bands" },
+        "tread_percent": { "$ref": "#/$defs/bands" },
+        "hot_pressure_psi": { "type": ["number", "null"] },
+        "cold_pressure_psi": { "type": ["number", "null"] },
+        "spread_f": { "type": ["number", "null"] },
+        "minimum_tread_percent": { "type": ["number", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "corner": {
+      "type": "object",
+      "required": ["stop", "sheet", "sheet_vs_stop", "sheet_vs_previous_stop", "change_from_previous_stop"],
+      "properties": {
+        "stop": { "$ref": "#/$defs/stopCorner" },
+        "sheet": { "$ref": "#/$defs/sheetCorner" },
+        "sheet_vs_stop": { "$ref": "#/$defs/agreement" },
+        "sheet_vs_previous_stop": { "$ref": "#/$defs/agreement" },
+        "change_from_previous_stop": {
+          "type": ["object", "null"],
+          "required": ["temperature_f", "tread_percent"],
+          "properties": {
+            "temperature_f": { "$ref": "#/$defs/bands" },
+            "tread_percent": { "$ref": "#/$defs/bands" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "tires": {
+      "type": "object",
+      "required": ["stop_reading", "sheet_reading", "corners"],
+      "properties": {
+        "stop_reading": {
+          "type": "object",
+          "required": ["status", "source", "measurement_status", "reason"],
+          "properties": {
+            "status": { "enum": ["measured", "not_measured"] },
+            "source": { "const": "telemetry_pit_stall" },
+            "measurement_status": { "type": ["string", "null"] },
+            "reason": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "sheet_reading": {
+          "type": "object",
+          "required": ["status", "source", "timing", "timing_note"],
+          "properties": {
+            "status": { "enum": ["recorded", "not_recorded"] },
+            "source": { "const": "garage_sheet" },
+            "timing": { "const": "unverified" },
+            "timing_note": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "corners": {
+          "type": "object",
+          "required": ["LF", "RF", "LR", "RR"],
+          "properties": {
+            "LF": { "$ref": "#/$defs/corner" },
+            "RF": { "$ref": "#/$defs/corner" },
+            "LR": { "$ref": "#/$defs/corner" },
+            "RR": { "$ref": "#/$defs/corner" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "lap": {
+      "type": "object",
+      "required": ["lap", "run_lap", "lap_time_s", "eligible", "plotted", "exclusion_reasons", "label"],
+      "properties": {
+        "lap": { "type": "integer" },
+        "run_lap": { "type": ["integer", "null"], "description": "1 = first lap of the measured run; null when run age is unknown." },
+        "lap_time_s": { "type": ["number", "null"] },
+        "eligible": { "type": "boolean" },
+        "plotted": { "type": "boolean" },
+        "exclusion_reasons": { "type": "array", "items": { "type": "string" } },
+        "label": { "type": "string", "description": "For example 'Run 3 · lap 14'." }
+      },
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "run", "analysis_id", "analysis_path", "recorded_at", "session_type", "test_day_id", "test_day_run",
+        "offline_flag_rule_applied", "setup", "measured_run", "conditions", "early", "late", "fall_off",
+        "setup_change", "comparison", "tires", "laps", "trend"
+      ],
+      "properties": {
+        "run": { "type": "integer", "description": "1 = oldest stint." },
+        "analysis_id": { "type": ["string", "null"] },
+        "analysis_path": { "type": ["string", "null"] },
+        "recorded_at": { "type": ["string", "null"] },
+        "session_type": { "type": ["string", "null"] },
+        "test_day_id": { "type": ["string", "null"] },
+        "test_day_run": { "type": ["integer", "null"] },
+        "offline_flag_rule_applied": { "type": "boolean" },
+        "setup": {
+          "type": "object",
+          "required": ["name", "fixed", "embedded", "garage_fingerprint"],
+          "properties": {
+            "name": { "type": ["string", "null"] },
+            "fixed": { "type": ["boolean", "null"] },
+            "embedded": { "type": "boolean" },
+            "garage_fingerprint": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "measured_run": {
+          "type": ["object", "null"],
+          "required": ["analysis_run", "first_lap", "last_lap", "run_laps", "other_run_count"],
+          "properties": {
+            "analysis_run": { "type": ["integer", "null"] },
+            "first_lap": { "type": "integer" },
+            "last_lap": { "type": "integer" },
+            "run_laps": { "type": "integer" },
+            "other_run_count": { "type": "integer" }
+          },
+          "additionalProperties": true
+        },
+        "conditions": {
+          "type": "object",
+          "required": ["track_temp_f", "start_fuel_gal", "tire_compound", "tire_start"],
+          "properties": {
+            "track_temp_f": { "type": ["number", "null"] },
+            "start_fuel_gal": { "type": ["number", "null"] },
+            "tire_compound": { "type": ["string", "null"] },
+            "tire_start": {
+              "type": "object",
+              "required": ["status", "initial_odometer_m", "detail"],
+              "properties": {
+                "status": { "enum": ["no_prior_distance", "possibly_used", "carried_over", "changed_before_run", "not_measured"] },
+                "initial_odometer_m": { "type": ["object", "null"] },
+                "detail": { "type": ["string", "null"] }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "early": { "$ref": "#/$defs/window" },
+        "late": { "$ref": "#/$defs/window" },
+        "fall_off": { "$ref": "#/$defs/fallOff" },
+        "setup_change": { "$ref": "#/$defs/setupChange" },
+        "comparison": { "$ref": "#/$defs/comparison" },
+        "tires": { "$ref": "#/$defs/tires" },
+        "laps": { "type": "array", "items": { "$ref": "#/$defs/lap" } },
+        "trend": { "type": ["object", "null"], "description": "race_inspection.run_views output with x = run lap (x_axis 'run_lap')." }
+      },
+      "additionalProperties": true
+    },
+    "card": {
+      "type": "object",
+      "required": ["kind", "title", "instruction", "based_on_runs", "changes", "ruleset_step", "success_rule", "evidence", "note"],
+      "properties": {
+        "kind": { "enum": ["revert", "return_to_setup", "keep", "keep_and_step", "isolate", "repeat", "repeat_comparable"] },
+        "title": { "type": "string" },
+        "instruction": { "type": "string" },
+        "based_on_runs": { "type": "array", "items": { "type": "integer" } },
+        "changes": {
+          "type": "array",
+          "description": "Settings to apply for the next run. 'to' is null only for a one-garage-step suggestion whose step size is not verified.",
+          "items": {
+            "type": "object",
+            "required": ["field", "label", "from", "to"],
+            "properties": {
+              "field": { "type": "string" },
+              "label": { "type": "string" },
+              "from": { "type": ["string", "null"] },
+              "to": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        },
+        "ruleset_step": {
+          "type": ["object", "null"],
+          "required": ["ruleset_id", "setting_id", "direction", "instruction", "expected_effect", "risk", "step_verified"],
+          "properties": {
+            "ruleset_id": { "type": ["string", "null"] },
+            "setting_id": { "type": ["string", "null"] },
+            "direction": { "type": "string" },
+            "instruction": { "type": ["string", "null"] },
+            "expected_effect": { "type": ["string", "null"] },
+            "risk": { "type": ["string", "null"] },
+            "step_verified": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        },
+        "success_rule": {
+          "type": "object",
+          "required": ["direction", "reference_run", "reference_median_s", "window_label", "first_run_lap", "last_run_lap", "threshold_s", "minimum_clean_laps", "text"],
+          "properties": {
+            "direction": { "enum": ["faster", "within", "measure"] },
+            "reference_run": { "type": "integer" },
+            "reference_median_s": { "type": ["number", "null"] },
+            "window_label": { "type": "string" },
+            "first_run_lap": { "type": ["integer", "null"] },
+            "last_run_lap": { "type": ["integer", "null"] },
+            "threshold_s": { "type": "number" },
+            "minimum_clean_laps": { "type": "integer" },
+            "text": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

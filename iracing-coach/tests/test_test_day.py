@@ -695,5 +695,106 @@ class TestDayWorkflowTests(unittest.TestCase):
                     test_day.review_test_day_workflow(analysis_paths=paths, archive_root=str(self.archive))
 
 
+WORKSPACE = Path(__file__).resolve().parents[2]
+
+
+def _load_tool_module(name: str, path: Path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestDayToolContractTests(unittest.TestCase):
+    """Backend 4: one more read-only tool, its contract and its fixture."""
+
+    def test_the_server_exposes_twenty_four_tools_including_the_review(self) -> None:
+        import mcp_server
+
+        self.assertEqual(len(mcp_server.TOOLS), 24)
+        tool = next(item for item in mcp_server.TOOLS if item["name"] == "review_test_day")
+        paths = tool["inputSchema"]["properties"]["analysis_paths"]
+        self.assertEqual((paths["minItems"], paths["maxItems"]), (2, 12))
+        self.assertEqual(tool["inputSchema"]["required"], ["analysis_paths"])
+        self.assertFalse(tool["inputSchema"]["additionalProperties"])
+        snapshot = json_load(WORKSPACE / "contracts" / "mcp-tools.v1.json")
+        self.assertEqual(snapshot["tools"], mcp_server.TOOLS)
+        self.assertEqual(json_load(WORKSPACE / "contracts" / "compatibility.json")["backend"]["tool_count"], 24)
+
+    def test_the_review_is_classified_read_only_everywhere_it_is_allowed(self) -> None:
+        import coach_tool_authority as authority
+
+        self.assertEqual(authority.TOOL_CAPABILITIES["review_test_day"], authority.CAPABILITY_READ_ANALYSIS)
+        host = (WORKSPACE / "companion-app" / "src" / "iRacingCoach.Coordinator" / "CompanionHostProfile.cs").read_text(encoding="utf-8")
+        self.assertIn('"review_test_day"', host)
+
+    def test_the_tool_confines_paths_to_archived_analyses(self) -> None:
+        import json
+        import tempfile
+        from unittest import mock
+
+        import mcp_server
+
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "archive"
+            paths = []
+            for name, hour in (("one", 9), ("two", 10)):
+                path = archive / "reports" / name / "analysis.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(stint_analysis(name, hour)), encoding="utf-8")
+                paths.append(str(path))
+            with mock.patch.object(mcp_server, "DEFAULT_ARCHIVE_ROOT", archive):
+                result = mcp_server.call_tool("review_test_day", {"analysis_paths": paths})
+                self.assertEqual(result["run_count"], 2)
+                with self.assertRaisesRegex(ValueError, "must stay within"):
+                    mcp_server.call_tool("review_test_day", {"analysis_paths": [paths[0], str(Path(directory) / "analysis.json")]})
+                with self.assertRaisesRegex(ValueError, "2-12"):
+                    mcp_server.call_tool("review_test_day", {"analysis_paths": paths[0]})
+                with self.assertRaisesRegex(ValueError, "analysis.json"):
+                    mcp_server.call_tool("review_test_day", {"analysis_paths": [paths[0], str(archive / "reports" / "two" / "other.json")]})
+
+    def test_the_fixture_is_current_and_validates_against_the_contract(self) -> None:
+        validation = _load_tool_module("contract_validation_for_test_day", WORKSPACE / "tools" / "contract_validation.py")
+        schema = json_load(WORKSPACE / "contracts" / "test-day-review-v1.schema.json")
+        fixture = json_load(WORKSPACE / "test-data" / "test-day-review.json")
+        validation.assert_valid(fixture, schema, "test-day-review fixture")
+        self.assertTrue(fixture["fixture_metadata"]["synthetic"])
+        self.assertEqual(fixture["next_change"]["kind"], "keep_and_step")
+        generator = _load_tool_module("generate_fixtures_for_test_day", WORKSPACE / "tools" / "generate_fixtures.py")
+        self.assertEqual(json_load_text(json_text(generator._test_day_fixture())), fixture)
+        for payload in (review(stint_analysis("a", 9), stint_analysis("b", 10, fuel_l=45.0)),
+                        review(stint_analysis("a", 9, laps=4), stint_analysis("b", 10, stop_status="unmeasured_final_run"))):
+            validation.assert_valid(json_load_text(json_text(payload)), schema, "review")
+
+    def test_the_contract_rejects_a_missing_field_and_an_unchanged_verdict(self) -> None:
+        validation = _load_tool_module("contract_validation_for_test_day", WORKSPACE / "tools" / "contract_validation.py")
+        schema = json_load(WORKSPACE / "contracts" / "test-day-review-v1.schema.json")
+        payload = json_load_text(json_text(review(stint_analysis("a", 9), stint_analysis("b", 10))))
+        missing = copy.deepcopy(payload)
+        del missing["runs"][1]["tires"]
+        self.assertTrue(any("tires" in error for error in validation.validate(missing, schema)))
+        unchanged = copy.deepcopy(payload)
+        unchanged["runs"][1]["comparison"]["verdict"] = "unchanged"
+        self.assertTrue(validation.validate(unchanged, schema))
+        extended = copy.deepcopy(payload)
+        extended["runs"][1]["future_optional_field"] = {"kept": True}
+        self.assertEqual(validation.validate(extended, schema), [])
+
+
+def json_load(path: Path) -> dict:
+    import json
+
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def json_load_text(text: str) -> dict:
+    import json
+
+    return json.loads(text)
+
+
 if __name__ == "__main__":
     unittest.main()
