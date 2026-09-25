@@ -317,6 +317,15 @@
 .plan-compact .planning-decision-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .plan-compact .planning-decision-hero strong { display: block; margin: 4px 0; color: var(--text-primary); font-size: 22px; line-height: 1.2; }
 .plan-compact .planning-decision-hero p { margin: 0; max-width: 760px; color: var(--text-secondary); font-size: 13px; }
+/* The plan builds itself from the reference recording; show that it is working. */
+.plan-compact .planning-building { align-self: start; display: flex; align-items: center; gap: 12px; min-height: 72px; }
+.plan-compact .planning-building > div { display: grid; gap: 2px; }
+.plan-compact .planning-building strong { color: var(--text-primary); font-size: 14px; }
+.plan-compact .planning-building > div > span { color: var(--text-muted); font-size: 12px; }
+.plan-compact .planning-building .activity-spinner { flex: none; animation: plan-building-spin .8s linear infinite; }
+@keyframes plan-building-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .plan-compact .planning-building .activity-spinner { animation: none; } }
+.reduced-motion .plan-compact .planning-building .activity-spinner { animation: none; }
 .plan-strip { display: grid; gap: 6px; margin: 14px 0 10px; }
 .plan-strip-track { position: relative; height: 26px; border-radius: var(--radius-control); background: var(--surface-3); overflow: hidden; }
 .plan-strip-track i { position: absolute; top: 0; bottom: 0; }

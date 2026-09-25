@@ -16,7 +16,7 @@
             {
                 <p class="planning-reference-missing">No matching recording. Enter fuel use and start fuel below for an estimate.</p>
             }
-            <button class="button primary compact" disabled="@(!State.CanBuildPlan)" @onclick="BuildPlan">@(State.PlanBusy ? "Building…" : "Build plan")</button>
+            <button class="@(State.PlanGenerated ? "button secondary compact" : "button primary compact")" disabled="@(!State.CanBuildPlan)" @onclick="BuildPlan">@(State.PlanBusy ? "Building…" : State.PlanGenerated ? "Rebuild plan" : "Build plan")</button>
         </div>
 
         <div class="planning-setup-grid">
@@ -55,8 +55,16 @@
             </details>
         </div>
         <p class="planning-note">Blank fuel fields use the reference recording. One green lap of fuel is always held in reserve.</p>
-        @if (!string.IsNullOrWhiteSpace(State.PlanMessage)) { <p class="planning-status" role="status">@State.PlanMessage</p> }
+        @if (!State.PlanBusy && !string.IsNullOrWhiteSpace(State.PlanMessage)) { <p class="planning-status" role="status">@State.PlanMessage</p> }
     </section>
+
+    @if (State.PlanBusy)
+    {
+        <section class="surface-card planning-building" data-plan-building aria-busy="true" role="status">
+            <span class="activity-spinner" aria-hidden="true"></span>
+            <div><strong>Building the plan</strong><span>@BuildingDetail</span></div>
+        </section>
+    }
 
     @if (State.PlanGenerated && State.PlanBriefing is { } plan)
     {
@@ -182,6 +190,19 @@
         }
     }
     private Task BuildPlan() => State.GeneratePlanAsync();
+
+    // Every input defaults from the reference recording, so the plan builds as soon as it can;
+    // Build plan stays for rebuilding after the driver changes a value.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!State.PlanReadyToBuildFromDefaults) return;
+        try { await State.BuildPlanFromDefaultsAsync(); }
+        catch (Exception error) { State.ReportUnhandledException("race planning", error); }
+    }
+
+    private string BuildingDetail => State.SelectedPlanRace is { } race
+        ? $"Fuel and pace from {race.Track}, {race.Date}"
+        : "From the fuel values entered above";
     private static string ReferenceLabel(RecentRace race) => $"{race.Date} · {race.Track}{(string.IsNullOrWhiteSpace(race.Layout) ? string.Empty : $" · {race.Layout}")}";
     private static string ReferenceFacts(RecentRace race)
     {
