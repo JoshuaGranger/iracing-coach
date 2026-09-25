@@ -1621,8 +1621,11 @@ def _analysis_pipeline_sha256() -> str:
 # readings or UpdateCount), so setup_catalog.py joins the bundle. Every existing
 # field, including setup_fingerprint, is byte-identical; a cached analysis
 # without the new key is not wrong, and consumers derive it from identity.setup.
+# Review 2026-09-25: ibt_reader discovery tags offline test-day stints with
+# optional test_day_* fields after grouping. Group keys, member files and every
+# analysis input are unchanged, so cached analyses remain valid.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "725bcbc88bcec5ce4f794f8a15fddada0e73e5211b16f17cf7dd5bcf3fd83167"
+    "cb3a6a890ddf303720965891458eadb055ca835bd9558354a20bd7a1bc0ea09f"
 )
 
 
