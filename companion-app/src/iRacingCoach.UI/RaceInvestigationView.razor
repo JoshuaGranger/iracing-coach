@@ -106,7 +106,7 @@
                         </div>
                         @if (Changes(comparison) is { Count: > 0 } changes)
                         {
-                            <div class="ri-changes"><span>Changed</span>@foreach (var metric in changes) { <b title="@metric.Detail">@metric.Label @Number(metric.Baseline, Digits(metric.Unit)) → @Number(metric.Compared, Digits(metric.Unit)) @metric.Unit</b> }</div>
+                            <div class="ri-changes"><span>Changed</span>@foreach (var metric in changes) { <b title="@metric.Detail">@metric.Label @Number(metric.Baseline, Digits(metric)) → @Number(metric.Compared, Digits(metric)) @metric.Unit</b> }</div>
                         }
                         @if (comparison.PaceComparable && comparison.Hypotheses.Count > 0)
                         {
@@ -232,11 +232,16 @@
         ["track_temperature"] = 1, ["track_usage"] = .1, ["brake_bias"] = .1, ["traffic"] = 1
     };
 
-    private static IReadOnlyList<RaceInvestigationMetric> Changes(RaceInvestigationComparison comparison) => comparison.Metrics
-        .Where(metric => metric.Delta is { } delta && ChangeThresholds.TryGetValue(metric.Key, out var threshold) && Math.Abs(delta) >= threshold)
+    // The steering threshold is steering-wheel degrees; on road-wheel steering it is
+    // converted as the backend converts its own (2° -> 2/12°).
+    private IReadOnlyList<RaceInvestigationMetric> Changes(RaceInvestigationComparison comparison) => comparison.Metrics
+        .Where(metric => metric.Delta is { } delta && ChangeThresholds.TryGetValue(metric.Key, out var threshold)
+            && Math.Abs(delta) >= (metric.Key == "steering" ? Investigation.SteeringBasis.Threshold(threshold) : threshold))
         .Take(5).ToArray();
 
-    private static int Digits(string unit) => unit switch { "gal" => 1, "setting" => 2, "°F" => 0, "%" => 0, "per lap" => 1, _ => 1 };
+    private int Digits(RaceInvestigationMetric metric) => metric.Key == "steering"
+        ? Investigation.SteeringBasis.DegreeDigits
+        : metric.Unit switch { "gal" => 1, "setting" => 2, "°F" => 0, "%" => 0, "per lap" => 1, _ => 1 };
 
     private static string HypothesisTitle(RaceInvestigationHypothesis hypothesis) =>
         string.Join("\n", hypothesis.Supporting.Select(text => "+ " + text)

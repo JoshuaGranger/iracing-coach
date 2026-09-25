@@ -959,7 +959,7 @@
     private AnalysisTraceLayout EditableTraceLayout => AnalysisTraceLayoutSets.EnsureEditable(TraceLayoutPreferences).Layout;
     private IReadOnlyList<TracePanelRow> TraceRows => TraceLayout.Rows.Select(row => new TracePanelRow(
         row,
-        new[] { AnalysisTraceLayouts.Signal(row.PrimarySignalId), AnalysisTraceLayouts.Signal(row.SecondarySignalId) }
+        new[] { AnalysisTraceLayouts.Signal(row.PrimarySignalId, Workspace.Steering), AnalysisTraceLayouts.Signal(row.SecondarySignalId, Workspace.Steering) }
             .Where(signal => signal is not null).Cast<AnalysisTraceSignalDefinition>().ToArray())).ToArray();
     private AnalysisLapTrace PrimaryTrace => SelectedTraces.FirstOrDefault() ?? Workspace.Traces[0];
     private AnalysisLapTrace ReferenceTrace => _referenceTraceCache ??=
@@ -1140,7 +1140,11 @@
     }
 
     private AnalysisTraceRow? SelectedTraceRow => TraceLayout.Rows.FirstOrDefault(row => string.Equals(row.Id, _selectedTraceRowId, StringComparison.Ordinal));
+    // Steering is named for the analysis's basis. The raw wheel angle is a separate,
+    // secondary trace only beside road-wheel steering; without a ratio it is the steering.
     private IReadOnlyList<AnalysisTraceSignalDefinition> FilteredTraceSignals => AnalysisTraceLayouts.Signals
+        .Where(signal => signal.Id != "steering-wheel-angle" || Workspace.SteeringBasis.IsRoadWheel)
+        .Select(signal => AnalysisTraceLayouts.For(signal, Workspace.Steering))
         .Where(signal => string.IsNullOrWhiteSpace(_traceSignalSearch) ||
             signal.Name.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase) ||
             signal.Unit.Contains(_traceSignalSearch, StringComparison.OrdinalIgnoreCase) ||
@@ -1651,6 +1655,8 @@
                     id = signal.Id,
                     shortLabel = signal.ShortLabel,
                     unit = signal.Unit,
+                    // Road-wheel degrees read to two decimals; wheel angles to one.
+                    digits = signal.Id == "steering" ? Workspace.SteeringBasis.DegreeDigits : signal.Id == "steering-wheel-angle" ? 1 : (int?)null,
                     minimum = InteropNumber(range.Min) ?? -.5,
                     maximum = InteropNumber(range.Max) ?? .5
                 };
@@ -2202,10 +2208,12 @@
         }
         if (Mode == "steering")
         {
+            // Floors are steering-wheel radians, converted like the backend's thresholds.
+            var steering = Workspace.SteeringBasis;
             var maximum = SelectedTraces.SelectMany(trace => trace.Points)
                 .Select(point => point.SteeringPeakRadians).Where(value => value.HasValue)
-                .Select(value => Math.Abs(value!.Value)).DefaultIfEmpty(.55).Max();
-            return _trackRangeCache[key] = (0, Math.Max(.05, maximum));
+                .Select(value => Math.Abs(value!.Value)).DefaultIfEmpty(steering.Threshold(.55)).Max();
+            return _trackRangeCache[key] = (0, Math.Max(steering.Threshold(.05), maximum));
         }
         var values = SelectedTraces.SelectMany(trace => trace.Points).Select(point => point.SpeedMph)
             .Where(value => value.HasValue).Select(value => value!.Value).ToArray();
@@ -2365,9 +2373,10 @@
         if (signal.Id is "throttle" or "brake") return _traceRangeCache[key] = (0, 1);
         if (signal.Unit == "on / off") return _traceRangeCache[key] = (0, 1);
         if (signal.Id == "tire-wear") return _traceRangeCache[key] = (0, Math.Max(.01, values.Max() * 1.05));
-        if (signal.Id is "delta" or "steering" or "slip" or "yaw")
+        if (signal.Id is "delta" or "steering" or "steering-wheel-angle" or "slip" or "yaw")
         {
-            var minimumMagnitude = signal.Id == "delta" ? .05 : 1;
+            // Road-wheel steering is about a twelfth of the wheel angle: a 1° floor would flatten it.
+            var minimumMagnitude = signal.Id == "delta" ? .05 : signal.Id == "steering" ? Workspace.SteeringBasis.Threshold(1) : 1;
             var magnitude = Math.Max(minimumMagnitude, values.Max(value => Math.Abs(value)));
             return _traceRangeCache[key] = (-magnitude, magnitude);
         }

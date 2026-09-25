@@ -213,8 +213,11 @@ public sealed class CapabilityRegistryTests
         var traceLayouts = File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Coordinator", "AnalysisTraceLayouts.cs"));
         var cursorInterop = File.ReadAllText(Path.Combine(ui, "wwwroot", "analysis-telemetry-cursor.js"));
         StringAssert.Contains(telemetry, "<b>@trace.Lap</b>");
-        foreach (var channel in new[] { "Speed", "Time delta", "Throttle", "Brake", "Calculated tire wear", "Gear", "RPM", "Steering", "Slip angle", "Yaw rate", "Lateral G", "Longitudinal G" })
+        foreach (var channel in new[] { "Speed", "Time delta", "Throttle", "Brake", "Calculated tire wear", "Gear", "RPM", "Slip angle", "Yaw rate", "Lateral G", "Longitudinal G" })
             StringAssert.Contains(traceLayouts, $"\"{channel}\"");
+        // Steering is the steering applied at the front wheels, named for the analysis's basis.
+        StringAssert.Contains(traceLayouts, "new(\"steering\", AnalysisSteeringBasis.RoadWheelLabel");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(root, "src", "iRacingCoach.Contracts", "Models.cs")), "RoadWheelLabel = \"Steering (road wheel)\"");
         StringAssert.Contains(traceLayouts, "public const int MaximumRows = 10");
         StringAssert.Contains(traceLayouts, "Row(\"slip\", \"yaw\")");
         StringAssert.Contains(traceLayouts, "Row(\"lateral-g\", \"longitudinal-g\")");

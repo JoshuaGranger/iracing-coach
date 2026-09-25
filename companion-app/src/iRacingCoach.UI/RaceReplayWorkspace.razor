@@ -282,13 +282,15 @@
         ("LR", ["LR", "left-rear", "left rear"]),
         ("RR", ["RR", "right-rear", "right rear"])
     ];
-    private static readonly ReplayChart[] ReplayCharts =
+    private static readonly ReplayChart[] PedalCharts =
     [
         new("speed", "Speed", "mph"),
         new("throttle", "Throttle", "%"),
-        new("brake", "Brake", "%"),
-        new("steering", "Steering", "left / right")
+        new("brake", "Brake", "%")
     ];
+    // Steering is the analysis's basis: road-wheel steering, or the labelled wheel angle.
+    private ReplayChart[] ReplayCharts => [.. PedalCharts, new("steering", Workspace.SteeringBasis.IsRoadWheel
+        ? AnalysisSteeringBasis.RoadWheelLabel : Workspace.SteeringBasis.Label, "deg left / right")];
 
     protected override void OnParametersSet()
     {
@@ -1103,7 +1105,8 @@
         if (values.Length == 0) return _replayChartRangeCache[key] = (-.5, .5);
         if (signal == "steering")
         {
-            var magnitude = Math.Max(.1, values.Max(Math.Abs));
+            // A steering-wheel-radian floor, converted like the backend's thresholds.
+            var magnitude = Math.Max(Workspace.SteeringBasis.Threshold(.1), values.Max(Math.Abs));
             return _replayChartRangeCache[key] = (-magnitude, magnitude);
         }
         var minimum = values.Min();
@@ -1118,9 +1121,17 @@
         {
             "speed" => value.HasValue ? $"{value:0} mph" : "—",
             "throttle" or "brake" => value.HasValue ? $"{value * 100:0}%" : "—",
-            "steering" => value.HasValue ? $"{Math.Abs(value.Value * 180 / Math.PI):0.0}° {(value < 0 ? "left" : "right")}" : "—",
+            // iRacing steering is positive to the left.
+            "steering" => value.HasValue ? SteeringText(value.Value) : "—",
             _ => "—"
         };
+    }
+    private string SteeringText(double radians)
+    {
+        var degrees = radians * 180 / Math.PI;
+        var digits = Workspace.SteeringBasis.DegreeDigits;
+        var magnitude = Math.Abs(degrees).ToString("F" + digits, CultureInfo.InvariantCulture);
+        return Math.Abs(degrees) < Math.Pow(10, -digits) / 2 ? $"{magnitude}°" : $"{magnitude}° {(degrees > 0 ? "left" : "right")}";
     }
     private static double? ChartSignal(AnalysisTracePoint point, string signal) => signal switch { "speed" => point.SpeedMph, "throttle" => point.Throttle, "brake" => point.Brake, "steering" => point.SteeringRadians, _ => null };
     private static double? Additional(AnalysisTracePoint point, string id) => point.AdditionalSignals is not null && point.AdditionalSignals.TryGetValue(id, out var value) ? value : null;

@@ -126,7 +126,7 @@
                                     <span class="ri-zone" style="left:0">Approach</span>
                                     <span class="ri-zone" style="left:@N(Fraction(Pair.StartPct) * 100)%">Section @SectionLabel</span>
                                 }
-                                @if (!HasValues(channel.Key)) { <span class="ri-zone missing">Not recorded</span> }
+                                @if (!HasValues(channel.Key)) { <span class="ri-zone missing" title="@channel.Title">@MissingText(channel)</span> }
                                 <svg class="ri-chart" data-ri-chart tabindex="0" role="group" viewBox="0 0 @N(ViewWidth) @N(ViewHeight)" preserveAspectRatio="none"
                                      data-view-width="@N(ViewWidth)" data-left="0" data-width="@N(ViewWidth)"
                                      aria-label="@channel.Label comparison. Move the pointer or use arrow keys to inspect.">
@@ -176,15 +176,40 @@
     private sealed record Channel(string Key, string Label, string Unit, int Digits, int AxisDigits, string Title, double? FixedMin = null, double? FixedMax = null);
     private sealed record MapLabel(string Id, string Text, double X, double Y, double AnchorX, double AnchorY, bool Leader);
 
-    private static readonly Channel[] Channels =
+    private static readonly Channel[] PassChannels =
     [
         new("speed", "Speed", "mph", 1, 0, "Recorded speed of each pass"),
         new("gap", "Time gap", "s", 3, 2, "Second pass minus first pass, zero at the approach start. Positive means the second pass is behind."),
         new("throttle", "Throttle", "%", 0, 0, "Recorded throttle", 0, 100),
-        new("brake", "Brake", "%", 0, 0, "Recorded brake (bin mean)", 0, 100),
-        new("steering", "Steering", "°", 1, 0, "Steering wheel angle, signed peak per distance bin"),
-        new("slip", "Body slip", "°", 2, 1, "Chassis sideslip: the car's velocity angle relative to its heading. Not individual tire slip or grip. Signed peak per distance bin.")
+        new("brake", "Brake", "%", 0, 0, "Recorded brake (bin mean)", 0, 100)
     ];
+    private static readonly Channel SlipChannel =
+        new("slip", "Body slip", "°", 2, 1, "Chassis sideslip: the car's velocity angle relative to its heading. Not individual tire slip or grip. Signed peak per distance bin.");
+
+    private Channel[] Channels => [.. PassChannels, SteeringChannel, SlipChannel];
+
+    /// <summary>
+    /// Steering as the pair declares it: road-wheel steering (comparable across steering
+    /// ratios), the labelled steering-wheel angle when the ratio is unknown, or withheld
+    /// between recordings whose steering cannot be compared.
+    /// </summary>
+    private Channel SteeringChannel
+    {
+        get
+        {
+            var steering = Pair?.SteeringDeclaration ?? RaceSteeringPair.Undeclared;
+            if (!steering.Comparable)
+                return new("steering", "Steering", "°", 1, 0, steering.Reason ?? "Steering is not compared between these recordings.");
+            return steering.IsRoadWheel
+                ? new("steering", AnalysisSteeringBasis.RoadWheelLabel, "°", 2, 1,
+                    "Steer applied at the front wheels: steering-wheel angle divided by the steering ratio in each recording's setup. Signed peak per distance bin; positive is left.")
+                : new("steering", AnalysisSteeringBasis.SteeringWheelLabel, "°, ratio not recorded", 1, 0,
+                    $"{steering.Label}. Without the steering ratio it is not converted to road-wheel steering. Signed peak per distance bin; positive is left.");
+        }
+    }
+
+    private string MissingText(Channel channel) =>
+        channel.Key == "steering" && Pair?.SteeringDeclaration is { Comparable: false } ? "Not compared" : "Not recorded";
 
     [Parameter] public RacePassPair? Pair { get; set; }
     [Parameter] public string SectionLabel { get; set; } = "";
@@ -278,7 +303,8 @@
         else
         {
             min = values.Min(); max = values.Max();
-            var pad = Math.Max((max - min) * .12, channel.Key == "gap" ? .005 : channel.Key == "slip" ? .2 : 1);
+            var pad = Math.Max((max - min) * .12, channel.Key == "gap" ? .005 : channel.Key == "slip" ? .2
+                : channel.Key == "steering" && Pair.SteeringDeclaration.IsRoadWheel ? .1 : 1);
             min -= pad; max += pad;
         }
         return new PlotScale(0, 4, ViewWidth, ViewHeight - 8, Pair.ContextStartPct, Pair.EndPct, min, max);

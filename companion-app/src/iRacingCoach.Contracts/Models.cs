@@ -259,6 +259,45 @@ public sealed record AnalysisTraceSignal(
     string Description,
     IReadOnlyList<string> SourceChannels);
 
+/// <summary>
+/// What an analysis's steering values mean, as the backend declares it
+/// (<c>lap_traces.steering</c>). Road wheel: the recorded steering-wheel angle divided by
+/// the steering ratio the recording's garage setup states, so setups with different
+/// ratios compare directly. Otherwise the steering-wheel angle, labelled with why the ratio
+/// is unknown; the two are never drawn on one axis or compared. An analysis without a
+/// declaration predates it and is steering-wheel angle (<see cref="Undeclared"/>).
+/// </summary>
+public sealed record AnalysisSteeringBasis(
+    string Basis,
+    string Status,
+    string Label,
+    string ShortLabel,
+    double? SteeringRatio = null,
+    string? SteeringRatioText = null,
+    string? RatioSource = null,
+    string? SetupSteeringOffset = null,
+    string? Reason = null,
+    string Definition = "")
+{
+    public const string RoadWheelBasis = "road_wheel";
+    public const string SteeringWheelBasis = "steering_wheel";
+    /// <summary>Backend steering thresholds are wheel-angle values divided by this on road-wheel angle.</summary>
+    public const double ThresholdReferenceRatio = 12.0;
+    public const string RoadWheelLabel = "Steering (road wheel)";
+    public const string SteeringWheelLabel = "Steering wheel angle";
+
+    public static AnalysisSteeringBasis Undeclared { get; } = new(
+        SteeringWheelBasis, "not_recorded", SteeringWheelLabel + " — ratio not recorded", SteeringWheelLabel,
+        Reason: "This analysis predates steering-ratio normalization; reanalyze it for road-wheel steering.",
+        Definition: "Recorded SteeringWheelAngle; the steering ratio was not applied.");
+
+    public bool IsRoadWheel => Basis == RoadWheelBasis && SteeringRatio is > 0;
+    /// <summary>Road-wheel angles are about a twelfth of wheel angles: one more decimal.</summary>
+    public int DegreeDigits => IsRoadWheel ? 2 : 1;
+    /// <summary>A threshold stated on steering-wheel angle, in this basis (as the backend converts it).</summary>
+    public double Threshold(double wheelValue) => IsRoadWheel ? wheelValue / ThresholdReferenceRatio : wheelValue;
+}
+
 public sealed record AnalysisLapConditions(
     string? Sky,
     double? TrackTemperatureF,
@@ -790,7 +829,12 @@ public sealed record AnalysisWorkspace(
     int DeclaredLapLimit = 0,
     double DeclaredTimeLimitMinutes = 0,
     RaceInvestigation? Investigation = null,
-    RaceOverview? Overview = null);
+    RaceOverview? Overview = null,
+    AnalysisSteeringBasis? Steering = null)
+{
+    /// <summary>The steering basis of <see cref="Traces"/>; undeclared analyses are wheel angle.</summary>
+    public AnalysisSteeringBasis SteeringBasis => Steering ?? AnalysisSteeringBasis.Undeclared;
+}
 
 public sealed class JobItem
 {
@@ -1006,7 +1050,10 @@ public sealed record LiveTracePoint(
     double? Latitude,
     double? Longitude,
     double? LastLapSeconds,
-    LiveMetricHistoryFrame Metrics = default);
+    LiveMetricHistoryFrame Metrics = default,
+    // Steering applied at the front wheels: the wheel angle divided by the live setup's
+    // steering ratio; null when the setup states none (never guessed).
+    double? SteeringRoadWheelRadians = null);
 
 // Retained beside the high-rate driving channels without a dictionary or
 // boxed value per sample. Nullable fields preserve unavailable data as missing.
@@ -1121,7 +1168,10 @@ public sealed record LiveRaceSnapshot(
     double? Latitude = null,
     double? Longitude = null,
     double? FuelLiters = null,
-    double? FuelLevelPercent = null);
+    double? FuelLevelPercent = null,
+    // Road-wheel steering from the live setup's steering ratio; both null when it states none.
+    double? SteeringRoadWheelRadians = null,
+    double? SteeringRatio = null);
 
 public sealed record LiveMonitorState(
     LiveRaceSnapshot Snapshot,

@@ -19,6 +19,7 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
     private int _variableOffset = -1;
     private int _sessionInfoUpdate = -1;
     private long? _subsessionId;
+    private double? _steeringRatio;
     private IReadOnlyDictionary<int, string> _sessionTypes = new Dictionary<int, string>();
     private IReadOnlyList<LiveReplayParticipant> _replayParticipants = [];
     private IReadOnlyList<LiveReplayChannelCoverage> _replayCoverage = [];
@@ -136,6 +137,7 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 MandatoryRepairSeconds = NonNegative(ReadDouble("PitRepairLeft", bestOffset)),
                 OptionalRepairSeconds = NonNegative(ReadDouble("PitOptRepairLeft", bestOffset)),
                 SteeringWheelAngleRadians = ReadDouble("SteeringWheelAngle", bestOffset),
+                SteeringRatio = _steeringRatio,
                 Throttle = ReadDouble("Throttle", bestOffset),
                 Brake = ReadDouble("Brake", bestOffset),
                 BrakeAbsActive = ReadBool("BrakeABSactive", bestOffset) ??
@@ -241,6 +243,8 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
                 ? parsedSubsession
                 : null;
         _sessionTypes = ParseSessionTypes(text);
+        // The live garage setup's steering ratio; null (never guessed) when it states none.
+        _steeringRatio = LiveSteering.RatioFromSessionInfo(text);
         _replayParticipants = ParseParticipants(text);
         _sessionInfoUpdate = update;
         RefreshReplayCoverage();
@@ -467,6 +471,7 @@ public sealed class IRacingSdkTelemetrySource : ILiveTelemetrySource
         _variableOffset = -1;
         _sessionInfoUpdate = -1;
         _subsessionId = null;
+        _steeringRatio = null;
         _sessionTypes = new Dictionary<int, string>();
         _replayParticipants = [];
         _replayCoverage = [];

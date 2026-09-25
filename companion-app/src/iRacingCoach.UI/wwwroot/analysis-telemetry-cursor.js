@@ -46,10 +46,13 @@
     return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
   }
 
-  function directionalDegrees(value, compact) {
-    if (Math.abs(value) < 0.05) return compact ? "C 0°" : "Center 0°";
+  // iRacing steering is positive to the left. Road-wheel steering is about a
+  // twelfth of the wheel angle, so the backend's basis sets the decimals.
+  function directionalDegrees(value, compact, digits) {
+    const places = Number.isInteger(digits) ? digits : 1;
+    if (Math.abs(value) < Math.pow(10, -places) / 2) return compact ? "C 0°" : "Center 0°";
     const direction = value > 0 ? (compact ? "L" : "Left") : (compact ? "R" : "Right");
-    return `${direction} ${Math.abs(value).toFixed(1)}°`;
+    return `${direction} ${Math.abs(value).toFixed(places)}°`;
   }
 
   function formatSignal(signal, value, includeLabel) {
@@ -62,7 +65,8 @@
       case "throttle":
       case "brake": return `${prefix}${(value * 100).toFixed(0)}%`;
       case "tire-wear": return `${prefix}${value.toFixed(3)}% est.`;
-      case "steering": return `${prefix}${directionalDegrees(value, includeLabel)}`;
+      case "steering":
+      case "steering-wheel-angle": return `${prefix}${directionalDegrees(value, includeLabel, signal.digits)}`;
       case "slip": return `${prefix}${signed(value, 1)}°`;
       case "yaw": return `${prefix}${signed(value, 1)}°/s`;
       case "lateral-g":

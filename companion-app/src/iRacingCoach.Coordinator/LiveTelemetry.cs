@@ -113,6 +113,8 @@ public sealed record LiveTelemetrySample
     public double? MandatoryRepairSeconds { get; init; }
     public double? OptionalRepairSeconds { get; init; }
     public double? SteeringWheelAngleRadians { get; init; }
+    /// <summary>The live setup's steering ratio (CarSetup); null when it states none.</summary>
+    public double? SteeringRatio { get; init; }
     public double? Throttle { get; init; }
     public double? Brake { get; init; }
     public bool? BrakeAbsActive { get; init; }
@@ -315,7 +317,7 @@ public sealed class LiveTelemetryService : IDisposable
                         sample.SteeringWheelAngleRadians, sample.Gear, sample.Rpm,
                         sample.YawRateRadiansPerSecond * 57.29577951308232, sample.LateralAccelerationG,
                         sample.LongitudinalAccelerationG, sample.Latitude, sample.Longitude, sample.LastLapSeconds,
-                        historyMetrics);
+                        historyMetrics, LiveSteering.RoadWheelRadians(sample.SteeringWheelAngleRadians, sample.SteeringRatio));
                     _history.Enqueue(tracePoint);
                     while (_history.Count > MaximumHistoryPoints ||
                            (_history.Count > 1 && tracePoint.At - _history.Peek().At > TimeSpan.FromMinutes(10)))
@@ -711,7 +713,7 @@ public sealed class LiveTelemetryEngine
         var pace = BuildPaceTarget(sample, runPhase);
         var pit = BuildPit(sample);
         var measuredStraight = sample.Brake is { } brake && double.IsFinite(brake) && brake < 0.05 &&
-            sample.SteeringWheelAngleRadians is { } steering && double.IsFinite(steering) && Math.Abs(steering) < 0.12 &&
+            LiveSteering.NearCenter(sample.SteeringWheelAngleRadians, sample.SteeringRatio) &&
             sample.LateralAccelerationG is { } lateralAcceleration && double.IsFinite(lateralAcceleration) && Math.Abs(lateralAcceleration) < 0.35;
         var glanceOpportunity = sample.UnderCaution || sample.OnPitRoad || lapAdvanced || measuredStraight;
         var candidate = BuildCue(sample, ahead, pit, pace, _persistentDriverCue, coachingPaused);
@@ -752,7 +754,8 @@ public sealed class LiveTelemetryEngine
             sample.SpeedMetersPerSecond * 2.2369362920544, sample.Throttle, sample.Brake, sample.SteeringWheelAngleRadians,
             sample.Gear, sample.Rpm, sample.YawRateRadiansPerSecond * 57.29577951308232, sample.LateralAccelerationG,
             sample.LongitudinalAccelerationG, LiveTruthPolicy.NormalizeLapDistance(sample.LapDistancePercent), sample.Latitude, sample.Longitude,
-            sample.FuelLiters, sample.FuelLevelPercent);
+            sample.FuelLiters, sample.FuelLevelPercent,
+            LiveSteering.RoadWheelRadians(sample.SteeringWheelAngleRadians, sample.SteeringRatio), sample.SteeringRatio);
     }
 
     public static LiveRaceSnapshot Disconnected(string reason = "Start iRacing to connect the local telemetry stream.")

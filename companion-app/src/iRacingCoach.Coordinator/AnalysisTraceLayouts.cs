@@ -24,7 +24,9 @@ public static class AnalysisTraceLayouts
         new("tire-wear", "Calculated tire wear", "% this lap", "tire", "Wear"),
         new("gear", "Gear", "selected gear", "drivetrain", "Gear"),
         new("rpm", "RPM", "rpm", "drivetrain", "RPM"),
-        new("steering", "Steering", "left / right", "rotation", "Steer"),
+        // Steering applied at the front wheels; For(steering) names a wheel-angle fallback.
+        new("steering", AnalysisSteeringBasis.RoadWheelLabel, "deg left / right", "rotation", "Steer"),
+        new("steering-wheel-angle", AnalysisSteeringBasis.SteeringWheelLabel, "deg left / right", "rotation", "Wheel"),
         new("slip", "Slip angle", "deg", "rotation", "Slip"),
         new("yaw", "Yaw rate", "deg/s", "rotation", "Yaw"),
         new("lateral-g", "Lateral G", "g", "acceleration", "Lat"),
@@ -296,19 +298,38 @@ public static class AnalysisTraceLayouts
 
     public static IReadOnlyList<AnalysisTraceSignalDefinition> SecondarySignalOptions(string primarySignalId) =>
         Signal(primarySignalId) is { } primary
-            ? Signals.Where(signal => signal.Id != primary.Id).ToArray()
+            ? Signals.Where(signal => signal.Id != primary.Id && !SteeringPair(primary.Id, signal.Id)).ToArray()
             : [];
 
     public static AnalysisTraceSignalDefinition? Signal(string signalId) =>
         Signals.FirstOrDefault(signal => string.Equals(signal.Id, signalId, StringComparison.Ordinal));
+
+    /// <summary>
+    /// The definition as the analysis names it: "steering" is road-wheel steering, or the
+    /// backend's labelled steering-wheel angle when the recording states no usable ratio.
+    /// </summary>
+    public static AnalysisTraceSignalDefinition? Signal(string signalId, AnalysisSteeringBasis? steering) =>
+        Signal(signalId) is { } signal ? For(signal, steering) : null;
+
+    public static AnalysisTraceSignalDefinition For(AnalysisTraceSignalDefinition signal, AnalysisSteeringBasis? steering)
+    {
+        var basis = steering ?? AnalysisSteeringBasis.Undeclared;
+        return signal.Id == "steering" && !basis.IsRoadWheel
+            ? signal with { Name = basis.Label, ShortLabel = "Wheel" }
+            : signal;
+    }
 
     private static bool IsValidSecondSignal(string primarySignalId, string? secondarySignalId)
     {
         if (string.IsNullOrWhiteSpace(secondarySignalId)) return true;
         var primary = Signal(primarySignalId);
         var secondary = Signal(secondarySignalId);
-        return primary is not null && secondary is not null && primary.Id != secondary.Id;
+        return primary is not null && secondary is not null && primary.Id != secondary.Id && !SteeringPair(primary.Id, secondary.Id);
     }
+
+    /// <summary>Road-wheel steering and the raw wheel angle never share a row: they are not one quantity.</summary>
+    private static bool SteeringPair(string first, string second) =>
+        (first, second) is ("steering", "steering-wheel-angle") or ("steering-wheel-angle", "steering");
 
     private static string SignalInSlot(AnalysisTraceRow row, TraceSignalSlot slot) => slot switch
     {

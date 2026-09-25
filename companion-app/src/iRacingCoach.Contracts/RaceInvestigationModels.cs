@@ -16,8 +16,12 @@ public sealed record RaceInvestigation(
     string? UnavailableReason = null,
     IReadOnlyList<RaceRunView>? Runs = null,
     RaceReviewSections? Sections = null,
-    string? ProjectionVersion = null)
+    string? ProjectionVersion = null,
+    AnalysisSteeringBasis? Steering = null)
 {
+    /// <summary>The basis of every steering metric in this investigation; undeclared projections are wheel angle.</summary>
+    public AnalysisSteeringBasis SteeringBasis => Steering ?? AnalysisSteeringBasis.Undeclared;
+
     /// <summary>Schema 1 predates run views, review sections and pass inspection.</summary>
     public bool HasSectionInspection => SchemaVersion >= 2 && Sections is { Sections.Count: > 0 };
 
@@ -116,7 +120,23 @@ public sealed record RaceInspection(string Mode, IReadOnlyList<int> PoolLaps, do
 public sealed record RacePassPair(string SectionId, double StartPct, double EndPct, double ContextStartPct,
     string ContextLabel, bool TimingComplete, int CandidateCount, RacePass A, RacePass B,
     double? SectionDeltaSeconds, double? EntryGapSeconds, double? ExitGapSeconds, double? EntrySpeedDifferenceMph,
-    RaceSlipSummary Slip, IReadOnlyList<RacePairRow> Rows);
+    RaceSlipSummary Slip, IReadOnlyList<RacePairRow> Rows, RaceSteeringPair? Steering = null)
+{
+    /// <summary>What the rows' steering values are; a pair without a declaration predates it (wheel angle).</summary>
+    public RaceSteeringPair SteeringDeclaration => Steering ?? RaceSteeringPair.Undeclared;
+}
+
+/// <summary>
+/// The steering a pass pair draws. Both passes share it; a before/after pair from two
+/// recordings is <see cref="Comparable"/> only when both are road-wheel angle, and its
+/// steering rows are then withheld by the backend with <see cref="Reason"/>.
+/// </summary>
+public sealed record RaceSteeringPair(string? Basis, string Label, string ShortLabel, int DegreeDigits, bool Comparable, string? Reason)
+{
+    public static RaceSteeringPair Undeclared { get; } = new(AnalysisSteeringBasis.SteeringWheelBasis,
+        AnalysisSteeringBasis.Undeclared.Label, AnalysisSteeringBasis.SteeringWheelLabel, 1, true, null);
+    public bool IsRoadWheel => Basis == AnalysisSteeringBasis.RoadWheelBasis;
+}
 public sealed record RacePass(int Lap, string Role, double? SectionSeconds, int? RunNumber, double? GreenExposure,
     bool Eligible, IReadOnlyList<string> ExclusionReasons, double? FuelStartGallons, double? TrackTemperatureF);
 public sealed record RaceSlipSummary(RaceSlipValue A, RaceSlipValue B);

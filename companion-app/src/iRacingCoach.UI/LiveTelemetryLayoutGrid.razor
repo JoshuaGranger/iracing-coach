@@ -789,7 +789,7 @@
     private static string GaugeDash(LiveTelemetryMetricReading reading) => $"{PercentToken(MeterPercent(reading))} 100";
     private static string PercentToken(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
     private static string TileStyle(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition) => $"grid-column:{tile.Column + 1} / span {tile.ColumnSpan};grid-row:{tile.Row + 1} / span {tile.RowSpan};--tile-accent:{TileAccent(tile, definition)}";
-    private static string TileAccent(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition) => tile.Accent != "default" ? AccentToken(tile.Accent) : definition.Id switch { "speed" => "var(--telemetry-speed)", "throttle" => "var(--telemetry-throttle)", "brake" => "var(--telemetry-brake)", "steering" => "var(--telemetry-steering)", "fuel" or "fuel-laps" => "var(--telemetry-fuel)", _ => "var(--accent)" };
+    private static string TileAccent(LiveMonitorTile tile, LiveTelemetryMetricDefinition definition) => tile.Accent != "default" ? AccentToken(tile.Accent) : definition.Id switch { "speed" => "var(--telemetry-speed)", "throttle" => "var(--telemetry-throttle)", "brake" => "var(--telemetry-brake)", "steering" or "steering-wheel-angle" => "var(--telemetry-steering)", "fuel" or "fuel-laps" => "var(--telemetry-fuel)", _ => "var(--accent)" };
     private static string AccentToken(string accent) => accent switch { "blue" => "var(--telemetry-speed)", "green" => "var(--telemetry-throttle)", "amber" => "var(--telemetry-fuel)", "coral" => "var(--telemetry-brake)", "violet" => "var(--telemetry-steering)", _ => "var(--accent)" };
 
     private static string TrendPath(IReadOnlyList<double> values, LiveMonitorTrendShape shape)

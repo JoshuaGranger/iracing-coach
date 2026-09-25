@@ -45,13 +45,14 @@
                 @if (Snapshot.SpeedMph.HasValue) { <div class="speed"><span>Speed</span><strong>@Snapshot.SpeedMph.Value.ToString("0")</strong><small>mph</small></div> }
                 @if (Snapshot.Gear.HasValue) { <div><span>Gear</span><strong>@Snapshot.Gear</strong></div> }
                 @if (Snapshot.Rpm.HasValue) { <div><span>Engine</span><strong>@Snapshot.Rpm.Value.ToString("0")</strong><small>RPM</small></div> }
-                @if (Snapshot.SteeringWheelAngleRadians.HasValue) { <div><span>Steering</span><strong>@Degrees(Snapshot.SteeringWheelAngleRadians)</strong><small>deg</small></div> }
+                @if (Snapshot.SteeringRoadWheelRadians.HasValue) { <div title="Steering-wheel angle ÷ the @(RatioText) steering ratio in the live setup"><span>Steering (road wheel)</span><strong>@RoadWheelDegrees(Snapshot.SteeringRoadWheelRadians)</strong><small>deg</small></div> }
+                else if (Snapshot.SteeringWheelAngleRadians.HasValue) { <div title="The live setup does not state a steering ratio, so road-wheel steering is not shown."><span>Steering wheel angle</span><strong>@Degrees(Snapshot.SteeringWheelAngleRadians)</strong><small>deg · ratio not recorded</small></div> }
                 @if (Snapshot.LateralAccelerationG.HasValue) { <div><span>Lateral load</span><strong>@Snapshot.LateralAccelerationG.Value.ToString("+0.00;-0.00;0.00")</strong><small>g</small></div> }
                 @if (Snapshot.YawRateDegreesPerSecond.HasValue) { <div><span>Yaw rate</span><strong>@Snapshot.YawRateDegreesPerSecond.Value.ToString("+0.0;-0.0;0.0")</strong><small>deg/s</small></div> }
             </div>
             <div class="panel-title live-trend-title"><strong>Recent traces</strong></div>
-            <canvas @ref="ChartElement" class="live-trend-chart" data-source-rate="@State.LiveState.SourceTickRate" role="img" aria-label="Display-synchronized live speed, throttle, brake, and steering history">
-                Live speed, throttle, brake, and steering traces.
+            <canvas @ref="ChartElement" class="live-trend-chart" data-source-rate="@State.LiveState.SourceTickRate" role="img" aria-label="Display-synchronized live speed, throttle, brake, and road-wheel steering history">
+                Live speed, throttle, brake, and road-wheel steering traces.
             </canvas>
         </div>
     </div>
@@ -204,7 +205,7 @@
             point => point.SpeedMph,
             point => point.Throttle,
             point => point.Brake,
-            point => point.SteeringWheelAngleRadians
+            point => point.SteeringRoadWheelRadians
         };
         return LiveTelemetryFrameCompaction.Compact(frames, maximumFrames, selectors);
     }
@@ -227,11 +228,14 @@
     }
     private static LiveChartPoint ToChartPoint(LiveTracePoint point) => new(
         point.At.ToUnixTimeMilliseconds(), point.SpeedMph, point.Throttle * 100, point.Brake * 100,
-        point.SteeringWheelAngleRadians * 57.29577951308232, point.LastLapSeconds);
+        // The chart draws road-wheel steering only; without a live ratio the row stays empty.
+        point.SteeringRoadWheelRadians * 57.29577951308232, point.LastLapSeconds);
     private double LapX(LapPoint point) { var min = LapHistory.Min(p => p.Lap); var max = LapHistory.Max(p => p.Lap); return 45 + (point.Lap - min) / (double)Math.Max(1, max - min) * 940; }
     private double LapY(LapPoint point) { var min = LapHistory.Min(p => p.Seconds); var max = LapHistory.Max(p => p.Seconds); return 96 - (point.Seconds - min) / Math.Max(.001, max - min) * 78; }
     private static string Percent(double? value) => value.HasValue ? $"{value.Value * 100:0}%" : "—";
     private static string Degrees(double? value) => value.HasValue ? (value.Value * 57.29577951308232).ToString("+0;-0;0") : "—";
+    private static string RoadWheelDegrees(double? value) => value.HasValue ? (value.Value * 57.29577951308232).ToString("+0.0;-0.0;0.0") : "—";
+    private string RatioText => Snapshot.SteeringRatio is { } ratio ? ratio.ToString("0.##", CultureInfo.InvariantCulture) + ":1" : "recorded";
     private static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     public async ValueTask DisposeAsync()

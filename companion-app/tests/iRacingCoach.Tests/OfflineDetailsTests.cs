@@ -196,7 +196,7 @@ public sealed class OfflineDetailsTests
     private const string Response = """
     {
       "analysis_view":{
-        "schema_version":1,"analysis_profile_version":"post-race-foundations-v22",
+        "schema_version":1,"analysis_profile_version":"post-race-foundations-v23",
         "identity":{"track_name":"Lucas Oil Indianapolis Raceway Park","track_config":"IRP","car_name":"Toyota Supra Class B","event_type":"Test"},
         "race_summary":{"recorded_laps":42},
         "runs":[

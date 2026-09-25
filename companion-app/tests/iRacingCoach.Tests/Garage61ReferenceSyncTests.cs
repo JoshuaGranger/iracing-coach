@@ -153,7 +153,7 @@ public sealed class Garage61ReferenceSyncTests
             status = "complete",
             garage61_representative_laps = new
             {
-                target_derivation_version = "explicit-analysis-paths-v1",
+                target_derivation_version = "explicit-analysis-paths-v2",
                 status = "available",
                 comparison_scope = "own/team",
                 representative_laps = new[]

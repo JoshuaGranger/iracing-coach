@@ -8,7 +8,7 @@ public static class RaceInvestigationMapper
 {
     public const int CurrentSchemaVersion = 2;
     /// <summary>Must equal race_investigation.PROJECTION_VERSION in the backend.</summary>
-    public const string CurrentProjectionVersion = "sections-trials-v6";
+    public const string CurrentProjectionVersion = "sections-trials-v7";
 
     public static RaceInvestigation? Map(JsonElement source)
     {
@@ -31,7 +31,8 @@ public static class RaceInvestigationMapper
                 Track(Property(source, "track_evolution")), Strings(source, "limitations"), retained,
                 Runs: current ? Array(source, "runs").Select(RunView).ToArray() : null,
                 Sections: current ? Sections(Property(source, "sections")) : null,
-                ProjectionVersion: current ? RequiredText(source, "projection_version") : null);
+                ProjectionVersion: current ? RequiredText(source, "projection_version") : null,
+                Steering: current ? SteeringBasisMapper.Map(Property(source, "steering")) : null);
         }
         catch (JsonException exception)
         {
@@ -130,7 +131,8 @@ public static class RaceInvestigationMapper
             Number(item, "entry_speed_difference_mph"),
             new RaceSlipSummary(SlipValue(Property(slip, "a")), SlipValue(Property(slip, "b"))),
             Array(item, "rows").Select(row => new RacePairRow(RequiredNumber(row, "x"), Channels(Property(row, "a")),
-                Channels(Property(row, "b")), Number(row, "gap"))).ToArray());
+                Channels(Property(row, "b")), Number(row, "gap"))).ToArray(),
+            SteeringBasisMapper.MapPair(Property(item, "steering")));
     }
 
     private static RacePass Pass(JsonElement item) => new(RequiredInt(item, "lap"), RequiredText(item, "role"), Number(item, "section_s"),

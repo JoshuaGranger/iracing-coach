@@ -969,7 +969,7 @@ public partial class LiveMonitorWindow : Window
             "speed" => Resource<Brush>("MonitorMintBrush"),
             "throttle" => Resource<Brush>("MonitorGreenBrush"),
             "brake" => Resource<Brush>("MonitorCoralBrush"),
-            "steering" => Resource<Brush>("MonitorVioletBrush"),
+            "steering" or "steering-wheel-angle" => Resource<Brush>("MonitorVioletBrush"),
             "fuel" or "fuel-laps" => Resource<Brush>("MonitorAmberBrush"),
             _ => Resource<Brush>("MonitorAccentBrush")
         };

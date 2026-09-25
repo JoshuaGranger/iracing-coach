@@ -7,8 +7,8 @@ namespace iRacingCoach.Coordinator;
 
 public static class RuntimeMapper
 {
-    private const string Garage61TargetDerivationVersion = "explicit-analysis-paths-v1";
-    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v22";
+    private const string Garage61TargetDerivationVersion = "explicit-analysis-paths-v2";
+    private const string CurrentAnalysisProfileVersion = "post-race-foundations-v23";
     private const double RacePlanRelativeTolerance = 1e-9;
     private static readonly HashSet<string> RacePlanStatuses = new(StringComparer.Ordinal)
     {
@@ -773,7 +773,8 @@ public static class RuntimeMapper
             declaredLapLimit,
             declaredTimeLimitMinutes,
             RaceInvestigationMapper.Map(Object(view, "race_investigation")),
-            summary.ValueKind == JsonValueKind.Object ? Overview(view) : null);
+            summary.ValueKind == JsonValueKind.Object ? Overview(view) : null,
+            SteeringBasisMapper.Map(Object(traceRoot, "steering")));
     }
 
     public static SetupPackageView SetupPackage(JsonElement response, string requestedCar, string requestedTrack, string requestedSeason, string purpose)

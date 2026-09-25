@@ -97,7 +97,7 @@ public sealed class TechnicalDataConsistencyTests
     private const string KansasResponse = """
     {
       "analysis_view":{
-        "schema_version":1,"analysis_profile_version":"post-race-foundations-v22",
+        "schema_version":1,"analysis_profile_version":"post-race-foundations-v23",
         "identity":{"track_name":"Kansas Speedway","car_name":"Toyota Tundra TRD Pro","event_type":"Race"},
         "race_summary":{"scheduled_laps":42,"recorded_laps":42},
         "runs":[

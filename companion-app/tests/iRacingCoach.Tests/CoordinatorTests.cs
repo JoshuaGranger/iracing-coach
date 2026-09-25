@@ -484,7 +484,7 @@ public sealed partial class CoordinatorTests
     {
         using var response = JsonDocument.Parse("""
         {"analysis_view":{
-          "analysis_profile_version":"post-race-foundations-v22",
+          "analysis_profile_version":"post-race-foundations-v23",
           "identity":{"event_type":"Race"},
           "race_summary":{"recorded_laps":8,"scheduled_laps":500,"scheduled_minutes":30.5},
           "runs":[],"laps":[],"lap_traces":{"traces":[]},
@@ -538,11 +538,11 @@ public sealed partial class CoordinatorTests
         }
 
         var exact = Map(
-            "post-race-foundations-v22",
+            "post-race-foundations-v23",
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":80}");
         var hybrid = Map(
-            "post-race-foundations-v22",
+            "post-race-foundations-v23",
             "{\"recorded_laps\":7,\"scheduled_laps\":500,\"scheduled_minutes\":30.5}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var legacy = Map(
@@ -550,7 +550,7 @@ public sealed partial class CoordinatorTests
             "{\"recorded_laps\":7,\"scheduled_laps\":80}",
             "{\"status\":\"usable\",\"scheduled_laps\":7}");
         var timed = Map(
-            "post-race-foundations-v22",
+            "post-race-foundations-v23",
             "{\"recorded_laps\":7,\"scheduled_laps\":null,\"scheduled_minutes\":30.5}",
             "{\"status\":\"insufficient_evidence\",\"scheduled_laps\":null}");
 
@@ -840,7 +840,7 @@ public sealed partial class CoordinatorTests
     public void ArchivedAnalysis_CurrentLapProfileKeepsResolvedDistance()
     {
         using var report = JsonDocument.Parse("""
-        {"analysis_profile_version":"post-race-foundations-v22","identity":{},
+        {"analysis_profile_version":"post-race-foundations-v23","identity":{},
          "race_summary":{"recorded_laps":80,"scheduled_laps":100},"laps":[],"runs":[],
          "lap_traces":{"traces":[]},"track_profile":{"shape":[],"detected_corner_segments":[]},
          "strategy":{"forecast":{"status":"usable","scheduled_laps":100,"minimum_stops_all_green":2,"equal_stint_pit_targets_all_green":[33,67]}},
@@ -2836,7 +2836,7 @@ public sealed partial class CoordinatorTests
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-profile-migration", Guid.NewGuid().ToString("N"));
         const string selector = "subsession:8001:1";
-        var old = JsonDocument.Parse(HomeAnalysisResponse(selector: selector).GetRawText().Replace("post-race-foundations-v22", "post-race-foundations-v15"));
+        var old = JsonDocument.Parse(HomeAnalysisResponse(selector: selector).GetRawText().Replace("post-race-foundations-v23", "post-race-foundations-v15"));
         WriteUiAnalysisCache(root, selector, old.RootElement);
         var backend = new FakeBackend(analysis: HomeAnalysisResponse(selector: selector));
         using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
@@ -2901,7 +2901,7 @@ public sealed partial class CoordinatorTests
         analysis_view = new
         {
             schema_version = 1,
-            analysis_profile_version = "post-race-foundations-v22",
+            analysis_profile_version = "post-race-foundations-v23",
             identity = new { event_type = sessionType, track_name = "Recorded Track", car_name = "Recorded Car" },
             race_summary = new
             {
@@ -3373,7 +3373,7 @@ public sealed partial class CoordinatorTests
             """).RootElement;
         var response = (string windows) => JsonSerializer.SerializeToElement(new
         {
-            analysis_view = new { analysis_profile_version = "post-race-foundations-v22", strategy = new { forecast = Forecast(windows) }, identity = new { }, race_summary = new { } }
+            analysis_view = new { analysis_profile_version = "post-race-foundations-v23", strategy = new { forecast = Forecast(windows) }, identity = new { }, race_summary = new { } }
         });
         var mapped = RuntimeMapper.Plan(response("""[{"stop":1,"earliest_lap":20.6,"latest_lap":139.4}]""")).FuelPlan!;
         Assert.AreEqual(1, mapped.StopWindows!.Single().Stop);

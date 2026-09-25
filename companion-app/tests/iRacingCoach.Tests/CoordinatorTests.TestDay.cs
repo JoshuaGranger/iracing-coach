@@ -596,7 +596,7 @@ public sealed partial class CoordinatorTests
                     Directory.CreateDirectory(Path.GetDirectoryName(PathFor(selector))!);
                     File.WriteAllText(PathFor(selector), JsonSerializer.Serialize(new
                     {
-                        analysis_id = selector, analysis_profile_version = "post-race-foundations-v22",
+                        analysis_id = selector, analysis_profile_version = "post-race-foundations-v23",
                         identity = new
                         {
                             track_name = "New Hampshire Motor Speedway", event_type = "Test", car_path = "stockcars2 supra2019",

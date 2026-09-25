@@ -87,7 +87,7 @@ public sealed class RaceOverviewConsistencyTests
         foreach (var name in new[] { "context", "analysis_cache", "knowledge_cache", "race_summary", "race_timeline", "damage_repair", "strategy_forecast", "data_quality", "source_channel_coverage", "artifacts" }) root[name] = new JsonObject();
         var view = new JsonObject
         {
-            ["schema_version"] = 1, ["analysis_profile_version"] = "post-race-foundations-v22",
+            ["schema_version"] = 1, ["analysis_profile_version"] = "post-race-foundations-v23",
             ["identity"] = new JsonObject { ["event_type"] = "Race", ["track_name"] = "Fixture track", ["car_name"] = "Fixture car" },
             ["race_summary"] = new JsonObject { ["recorded_laps"] = 159, ["green_laps_estimated"] = 128, ["caution_laps_estimated"] = 31, ["fuel_used_gal"] = 18.451, ["pit_stops_detected"] = 1 },
             ["runs"] = JsonSerializer.SerializeToNode(new[] {

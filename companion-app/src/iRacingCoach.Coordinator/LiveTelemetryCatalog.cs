@@ -97,7 +97,8 @@ public static class LiveTelemetryCatalog
             "position" => Position(snapshot.OverallPosition, trend),
             "rpm" => Number(snapshot.Rpm, "rpm", 0, trend),
             "speed" => Number(snapshot.SpeedMph, unit, precision, trend, value => Speed(value, unit)),
-            "steering" => Number(snapshot.SteeringWheelAngleRadians, unit, precision, trend, value => Steering(value, unit)),
+            "steering" => RoadWheelSteering(snapshot, unit, precision, trend),
+            "steering-wheel-angle" => Number(snapshot.SteeringWheelAngleRadians, unit, precision, trend, value => Steering(value, unit)),
             "throttle" => Percent(snapshot.Throttle, precision, trend),
             "tire-phase" => TirePhase(snapshot, trend),
             "track-temperature" => Number(snapshot.TrackTemperatureC, unit, precision, trend, value => Temperature(value, unit)),
@@ -194,7 +195,8 @@ public static class LiveTelemetryCatalog
             "flag" => Ordinal(point.Metrics.FlagState),
             "fuel" => ConvertValue(point.Metrics.FuelLiters, value => unit == "US gal" ? value * 0.2641720524 : value),
             "fuel-laps" => point.Metrics.FuelLapsRemaining,
-            "steering" => point.SteeringWheelAngleRadians.HasValue ? Steering(point.SteeringWheelAngleRadians.Value, unit) : null,
+            "steering" => point.SteeringRoadWheelRadians.HasValue ? Steering(point.SteeringRoadWheelRadians.Value, unit) : null,
+            "steering-wheel-angle" => point.SteeringWheelAngleRadians.HasValue ? Steering(point.SteeringWheelAngleRadians.Value, unit) : null,
             "gear" => point.Gear,
             "lap" => point.Lap,
             "laps-remaining" => point.Metrics.LapsRemaining,
@@ -249,7 +251,8 @@ public static class LiveTelemetryCatalog
             D("position", "Position", "Recorded overall scoring position.", LiveMonitorMetricSource.Recorded, string.Empty, [string.Empty], all, 0, 1),
             DWithDefault("rpm", "RPM", "Recorded engine speed.", LiveMonitorMetricSource.Recorded, "rpm", ["rpm"], all, LiveMonitorDisplayStyle.Trend, 0, 0),
             DWithDefault("speed", "Speed", "Recorded vehicle speed.", LiveMonitorMetricSource.Recorded, "mph", ["mph", "km/h"], all, LiveMonitorDisplayStyle.Trend, 1, 0),
-            DWithDefault("steering", "Steering", "Recorded steering-wheel angle.", LiveMonitorMetricSource.Recorded, "deg", ["deg", "rad"], all, LiveMonitorDisplayStyle.Trend, 1),
+            DWithDefault("steering", "Steering (road wheel)", "Steering applied at the front wheels: the steering-wheel angle divided by the steering ratio in the live garage setup. Unavailable, never guessed, when the setup states no ratio.", LiveMonitorMetricSource.Calculated, "deg", ["deg", "rad"], all, LiveMonitorDisplayStyle.Trend, 1),
+            D("steering-wheel-angle", "Steering wheel angle", "Recorded steering-wheel angle. It depends on the car's steering ratio; Steering (road wheel) compares across ratios.", LiveMonitorMetricSource.Recorded, "deg", ["deg", "rad"], all, 0),
             DWithDefault("throttle", "Throttle", "Recorded throttle-pedal input.", LiveMonitorMetricSource.Recorded, "%", ["%"], all, LiveMonitorDisplayStyle.Gauge, 0, 0, 100),
             D("tire-phase", "Run phase", "Early, middle, or late segment derived from observed clean laps since pit-road entry; tire service is not confirmed.", LiveMonitorMetricSource.Coach, string.Empty, [string.Empty], status, 0),
             D("track-temperature", "Track temperature", "Recorded track temperature.", LiveMonitorMetricSource.Recorded, "°C", ["°C", "°F"], all, 1),
@@ -274,6 +277,24 @@ public static class LiveTelemetryCatalog
         return new(true, value.ToString($"F{precision}", CultureInfo.CurrentCulture), secondary, unit,
             value, 0, capacity,
             snapshot.FuelLevelPercent.HasValue ? string.Empty : "Fuel percentage not measured; range follows recorded amount.", trend);
+    }
+
+    /// <summary>
+    /// Road-wheel steering, or an explicit "ratio not recorded" state when the live setup
+    /// states no steering ratio; the wheel angle is never shown under this name.
+    /// </summary>
+    private static LiveTelemetryMetricReading RoadWheelSteering(LiveRaceSnapshot snapshot, string unit, int precision, IReadOnlyList<double> trend)
+    {
+        if (snapshot.SteeringRoadWheelRadians is { } road && double.IsFinite(road))
+        {
+            var reading = Number<double>(road, unit, precision, trend, value => Steering(value, unit));
+            return snapshot.SteeringRatio is { } ratio
+                ? reading with { SecondaryValue = $"{ratio.ToString("0.##", CultureInfo.InvariantCulture)}:1 steering ratio" }
+                : reading;
+        }
+        if (!snapshot.SteeringWheelAngleRadians.HasValue) return Missing(unit, "Not measured in this session");
+        return new(false, "Ratio not recorded", string.Empty, unit, null, null, null,
+            "The live setup does not state a steering ratio, so road-wheel steering is not shown. Steering wheel angle shows the recorded wheel.", []);
     }
 
     private static LiveTelemetryMetricReading Flag(LiveRaceSnapshot snapshot, IReadOnlyList<double> trend)
@@ -398,7 +419,8 @@ public static class LiveTelemetryCatalog
             "flag" => Ordinal(point.Metrics.FlagState),
             "fuel" => ConvertValue(point.Metrics.FuelLiters, value => unit == "US gal" ? value * 0.2641720524 : value),
             "fuel-laps" => point.Metrics.FuelLapsRemaining,
-            "steering" => point.SteeringWheelAngleRadians.HasValue ? Steering(point.SteeringWheelAngleRadians.Value, unit) : null,
+            "steering" => point.SteeringRoadWheelRadians.HasValue ? Steering(point.SteeringRoadWheelRadians.Value, unit) : null,
+            "steering-wheel-angle" => point.SteeringWheelAngleRadians.HasValue ? Steering(point.SteeringWheelAngleRadians.Value, unit) : null,
             "gear" => point.Gear,
             "lap" => point.Lap,
             "laps-remaining" => point.Metrics.LapsRemaining,

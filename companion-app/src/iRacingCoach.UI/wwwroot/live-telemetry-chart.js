@@ -7,7 +7,8 @@
     { key: "speed", label: "Speed", unit: "mph", color: "speed" },
     { key: "throttle", label: "Throttle", unit: "%", color: "throttle" },
     { key: "brake", label: "Brake", unit: "%", color: "brake" },
-    { key: "steering", label: "Steering", unit: "deg", color: "steering" }
+    // Road-wheel steering from the live setup's ratio; no line when the setup states none.
+    { key: "steering", label: "Steering (road wheel)", unit: "deg", color: "steering" }
   ]);
 
   function number(value) {
