@@ -350,6 +350,10 @@ def _history(args: argparse.Namespace) -> Any:
     )
 
 
+def _report_storage(args: argparse.Namespace) -> Any:
+    return _archive_store(args).report_storage_usage()
+
+
 def _inline_json_object(value: str | None, *, description: str) -> dict[str, Any] | None:
     if not value:
         return None
@@ -806,6 +810,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include matching races from earlier seasons.",
     )
     history.set_defaults(handler=_history)
+
+    report_storage = subparsers.add_parser(
+        "report-storage",
+        help="Measure reclaimable duplicate report copies read-only.",
+    )
+    _add_archive_root(report_storage)
+    report_storage.set_defaults(handler=_report_storage)
 
     setup_catalog = subparsers.add_parser(
         "setup-catalog",

@@ -787,6 +787,65 @@ def _raw_archive_failure(
     }
 
 
+# analysis.json is written by _json_text with sorted keys, so the top-level
+# analysis_id is the first member. Reading a few bytes identifies a 40 MB
+# report without parsing it.
+_REPORT_ANALYSIS_ID_HEAD = re.compile(
+    rb'\A(?:\xef\xbb\xbf)?\s*\{\s*"analysis_id"\s*:\s*"((?:[^"\\]|\\.){1,200})"'
+)
+_REPORT_ID_PARSE_MAX_BYTES = 16 * 1024 * 1024
+_REFERENCE_RECORD_MAX_BYTES = 8 * 1024 * 1024
+_REPORT_ARTIFACT_NAMES = ("analysis.json", "report.md", "race-card.md")
+
+
+def _report_analysis_id(path: str, size: int) -> str | None:
+    """Return a report's top-level analysis_id, or None when it is unknown."""
+
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(4096)
+    except OSError:
+        return None
+    match = _REPORT_ANALYSIS_ID_HEAD.match(head)
+    if match:
+        try:
+            value = json.loads(b'"' + match.group(1) + b'"')
+        except ValueError:
+            return None
+        return value if isinstance(value, str) and value.strip() else None
+    if size > _REPORT_ID_PARSE_MAX_BYTES:
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            decoded = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    value = decoded.get("analysis_id") if isinstance(decoded, Mapping) else None
+    return str(value) if isinstance(value, (str, int)) and str(value).strip() else None
+
+
+def _path_key(path: str | os.PathLike[str]) -> str:
+    """Case- and spelling-insensitive identity for comparing local paths."""
+
+    return os.path.normcase(os.path.abspath(_ordinary_path(os.fspath(path))))
+
+
+def _referenced_report_directories(value: Any, found: set[str]) -> None:
+    """Collect report directories named by any path string inside a record."""
+
+    if isinstance(value, Mapping):
+        for item in value.values():
+            _referenced_report_directories(item, found)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _referenced_report_directories(item, found)
+    elif isinstance(value, str) and value.casefold().endswith(_REPORT_ARTIFACT_NAMES):
+        try:
+            found.add(_path_key(os.path.dirname(value)))
+        except (OSError, ValueError):
+            pass
+
+
 def _json_text(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True, ensure_ascii=False, default=str, allow_nan=False) + "\n"
 
@@ -1737,6 +1796,190 @@ class ArchiveStore:
             item["source_available"] = bool(item.get("source_path") and source_path.is_file())
             result.append(item)
         return result
+
+    def report_storage_usage(self) -> dict[str, Any]:
+        """Measure report copies that repeat an analysis already kept; read-only.
+
+        Before reports were keyed by analysis_id, every re-analysis wrote a
+        new full copy. A copy is reclaimable only when another directory holds
+        the same analysis_id and neither the history index nor a saved trial
+        or tuning record names it. The kept copy is the indexed one, else the
+        newest. Nothing is created, changed or deleted here.
+        """
+
+        reports_io = _extended_path(self.reports_dir)
+        directories: dict[str, dict[str, Any]] = {}
+        unattributed_bytes = 0
+        unreadable_directories = 0
+        pending: list[tuple[str, str | None]] = (
+            [(reports_io, None)] if os.path.isdir(reports_io) else []
+        )
+        while pending:
+            current, inherited_owner = pending.pop()
+            try:
+                with os.scandir(current) as iterator:
+                    entries = list(iterator)
+            except OSError:
+                unreadable_directories += 1
+                continue
+            files = [entry for entry in entries if entry.is_file(follow_symlinks=False)]
+            owner = inherited_owner
+            analysis_entry = next((entry for entry in files if entry.name == "analysis.json"), None)
+            if analysis_entry is not None:
+                owner = current
+                analysis_stat = analysis_entry.stat(follow_symlinks=False)
+                directories[current] = {
+                    "path": _ordinary_path(current),
+                    "bytes": 0,
+                    "analysis_id": _report_analysis_id(
+                        analysis_entry.path, analysis_stat.st_size
+                    ),
+                    "modified_ns": analysis_stat.st_mtime_ns,
+                }
+            for entry in files:
+                size = entry.stat(follow_symlinks=False).st_size
+                if owner is None:
+                    unattributed_bytes += size
+                else:
+                    directories[owner]["bytes"] += size
+            for entry in entries:
+                # Junctions and symlinks could leave the archive; never follow.
+                if (
+                    entry.is_dir(follow_symlinks=False)
+                    and not entry.is_symlink()
+                    and not getattr(entry, "is_junction", lambda: False)()
+                ):
+                    pending.append((entry.path, owner))
+
+        indexed: set[str] = set()
+        index_status = "absent"
+        db_io = _extended_path(self.db_path)
+        if os.path.isfile(db_io):
+            try:
+                connection = sqlite3.connect(
+                    f"{Path(self.db_path).resolve().as_uri()}?mode=ro", uri=True, timeout=30
+                )
+                try:
+                    rows = connection.execute("SELECT report_path FROM sessions").fetchall()
+                finally:
+                    connection.close()
+                indexed = {
+                    _path_key(os.path.dirname(str(row[0])))
+                    for row in rows
+                    if row and row[0]
+                }
+                index_status = "read"
+            except sqlite3.Error:
+                index_status = "unreadable"
+
+        referenced: dict[str, str] = {key: "history-index" for key in indexed}
+        for label, base in (("trials", self.root / "trials"), ("tuning", self.tuning_dir)):
+            base_io = _extended_path(base)
+            if not os.path.isdir(base_io):
+                continue
+            for current, _subdirectories, names in os.walk(base_io):
+                for name in names:
+                    if not name.casefold().endswith(".json"):
+                        continue
+                    record_path = os.path.join(current, name)
+                    try:
+                        if os.path.getsize(record_path) > _REFERENCE_RECORD_MAX_BYTES:
+                            continue
+                        with open(record_path, encoding="utf-8") as handle:
+                            record = json.load(handle)
+                    except (OSError, ValueError):
+                        continue
+                    found: set[str] = set()
+                    _referenced_report_directories(record, found)
+                    for key in found:
+                        referenced.setdefault(key, label)
+
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for directory in directories.values():
+            if directory["analysis_id"] is not None:
+                groups.setdefault(directory["analysis_id"], []).append(directory)
+
+        # An index that exists but cannot be read might name any copy, so no
+        # copy is offered for removal until it can be read again.
+        measurable = index_status != "unreadable"
+        duplicate_groups: list[dict[str, Any]] = []
+        for analysis_id, copies in groups.items():
+            if len(copies) < 2:
+                continue
+            copies.sort(
+                key=lambda item: (
+                    _path_key(item["path"]) in indexed,
+                    item["modified_ns"],
+                ),
+                reverse=True,
+            )
+            retained, *others = copies
+            kept: list[dict[str, Any]] = []
+            reclaimable: list[dict[str, Any]] = []
+            for copy in others:
+                reason = referenced.get(_path_key(copy["path"]))
+                if reason or not measurable:
+                    kept.append(
+                        {
+                            "path": copy["path"],
+                            "bytes": copy["bytes"],
+                            "reason": reason or "history-index-unreadable",
+                        }
+                    )
+                else:
+                    reclaimable.append({"path": copy["path"], "bytes": copy["bytes"]})
+            duplicate_groups.append(
+                {
+                    "analysis_id": analysis_id,
+                    "copies": len(copies),
+                    "retained": {
+                        "path": retained["path"],
+                        "bytes": retained["bytes"],
+                        "reason": referenced.get(_path_key(retained["path"]), "newest"),
+                    },
+                    "kept": kept,
+                    "reclaimable": reclaimable,
+                    "reclaimable_bytes": sum(item["bytes"] for item in reclaimable),
+                }
+            )
+        duplicate_groups.sort(
+            key=lambda group: (-group["reclaimable_bytes"], group["analysis_id"])
+        )
+        return {
+            "schema_version": 1,
+            "read_only": True,
+            "status": (
+                "empty"
+                if not directories
+                else "index-unreadable"
+                if not measurable
+                else "measured"
+            ),
+            "reports_root": str(self.reports_dir),
+            "report_directory_count": len(directories),
+            "report_bytes": sum(item["bytes"] for item in directories.values()),
+            "unattributed_bytes": unattributed_bytes,
+            "unreadable_directory_count": unreadable_directories,
+            "unidentified_directory_count": sum(
+                1 for item in directories.values() if item["analysis_id"] is None
+            ),
+            "history_index": index_status,
+            "reference_sources": ["history-index", "trials", "tuning"],
+            "duplicate_group_count": sum(
+                1 for group in duplicate_groups if group["reclaimable"]
+            ),
+            "reclaimable_directory_count": sum(
+                len(group["reclaimable"]) for group in duplicate_groups
+            ),
+            "reclaimable_bytes": sum(
+                group["reclaimable_bytes"] for group in duplicate_groups
+            ),
+            "groups": duplicate_groups,
+            "note": (
+                "Measured only; nothing was removed. Before deleting a copy, "
+                "re-check these references and drop app caches that name it."
+            ),
+        }
 
     def historical_runs(
         self,

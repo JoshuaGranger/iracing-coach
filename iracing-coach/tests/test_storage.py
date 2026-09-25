@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -692,6 +693,128 @@ class StorageReportDeduplicationTests(unittest.TestCase):
             )
             self.assertNotEqual(Path(old["analysis"]).parent, Path(new["analysis"]).parent)
             self.assertEqual(Path(old["report"]).read_text(encoding="utf-8"), "# old\n")
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+class StorageReportUsageTests(unittest.TestCase):
+    """Read-only measure of duplicate report copies written before the fix."""
+
+    def _legacy_copy(self, store: ArchiveStore, session: str, stamp: str, analysis: dict,
+                     *, modified: int, padding: int = 1000, raw_text: str | None = None) -> Path:
+        directory = store.reports_dir / "season-6079" / session / stamp
+        (directory / "visuals").mkdir(parents=True)
+        (directory / "analysis.json").write_text(
+            raw_text if raw_text is not None else storage._json_text(analysis),
+            encoding="utf-8",
+        )
+        (directory / "report.md").write_text("#" * padding, encoding="utf-8")
+        (directory / "visuals" / "lap-trend.svg").write_text("<svg/>", encoding="utf-8")
+        os.utime(directory / "analysis.json", ns=(modified, modified))
+        return directory
+
+    @staticmethod
+    def _bytes(directory: Path) -> int:
+        return sum(path.stat().st_size for path in directory.rglob("*") if path.is_file())
+
+    def test_duplicate_copies_are_measured_without_touching_referenced_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = ArchiveStore(root)
+            bristol = "subsession-88628993-2"
+            same = _report_analysis("ae7b1748175fa9e9f5c6ae52", "2026-09-21T00:07:38+00:00")
+            base_ns = 1_790_000_000_000_000_000
+            by_trial = self._legacy_copy(store, bristol, "2026-09-21t00-07-38-00-00", same, modified=base_ns)
+            indexed = self._legacy_copy(store, bristol, "2026-09-21t00-07-43-00-00", same, modified=base_ns + 1)
+            middle = self._legacy_copy(store, bristol, "2026-09-21t01-01-46-00-00", same, modified=base_ns + 2)
+            newest = self._legacy_copy(store, bristol, "2026-09-21t03-54-20-00-00", same, modified=base_ns + 3,
+                                       padding=5000)
+            single = self._legacy_copy(
+                store, "subsession-88667162-2", "2026-09-21t02-00-00-00-00",
+                _report_analysis("single-analysis", "2026-09-21T02:00:00+00:00"), modified=base_ns,
+            )
+            # A report written without sorted keys is identified by parsing it.
+            unsorted = json.dumps({"runs": [], "analysis_id": "unsorted-analysis"})
+            older_unsorted = self._legacy_copy(store, "legacy", "one", {}, modified=base_ns, raw_text=unsorted)
+            newer_unsorted = self._legacy_copy(store, "legacy", "two", {}, modified=base_ns + 5, raw_text=unsorted)
+            unknown = self._legacy_copy(store, "legacy", "unknown", {}, modified=base_ns, raw_text="{}")
+
+            store.record_analysis(same, str(indexed / "report.md"))
+            trials = root / "trials"
+            trials.mkdir()
+            (trials / "trial-1.json").write_text(
+                json.dumps({"source": {"analysis_path": str(by_trial / "analysis.json")}}),
+                encoding="utf-8",
+            )
+            before = _snapshot(root / "reports")
+            db_before = (root / "history.sqlite3").read_bytes()
+
+            usage = store.report_storage_usage()
+
+            self.assertEqual(_snapshot(root / "reports"), before)
+            self.assertEqual((root / "history.sqlite3").read_bytes(), db_before)
+            self.assertTrue(usage["read_only"])
+            self.assertEqual(usage["status"], "measured")
+            self.assertEqual(usage["history_index"], "read")
+            self.assertEqual(usage["report_directory_count"], 8)
+            self.assertEqual(usage["unidentified_directory_count"], 1)
+            all_dirs = [by_trial, indexed, middle, newest, single, older_unsorted, newer_unsorted, unknown]
+            self.assertEqual(usage["report_bytes"], sum(self._bytes(item) for item in all_dirs))
+
+            groups = {group["analysis_id"]: group for group in usage["groups"]}
+            self.assertEqual(set(groups), {"ae7b1748175fa9e9f5c6ae52", "unsorted-analysis"})
+            bristol_group = groups["ae7b1748175fa9e9f5c6ae52"]
+            self.assertEqual(bristol_group["copies"], 4)
+            # The indexed copy is kept even though a newer copy exists.
+            self.assertEqual(bristol_group["retained"]["path"], str(indexed))
+            self.assertEqual(bristol_group["retained"]["reason"], "history-index")
+            self.assertEqual(
+                bristol_group["kept"],
+                [{"path": str(by_trial), "bytes": self._bytes(by_trial), "reason": "trials"}],
+            )
+            self.assertEqual(
+                sorted(item["path"] for item in bristol_group["reclaimable"]),
+                sorted([str(middle), str(newest)]),
+            )
+            unsorted_group = groups["unsorted-analysis"]
+            self.assertEqual(unsorted_group["retained"]["path"], str(newer_unsorted))
+            self.assertEqual(unsorted_group["reclaimable"], [
+                {"path": str(older_unsorted), "bytes": self._bytes(older_unsorted)}
+            ])
+            expected = self._bytes(middle) + self._bytes(newest) + self._bytes(older_unsorted)
+            self.assertEqual(usage["reclaimable_bytes"], expected)
+            self.assertEqual(usage["reclaimable_directory_count"], 3)
+            self.assertEqual(usage["duplicate_group_count"], 2)
+            self.assertEqual(usage["groups"][0]["analysis_id"], "ae7b1748175fa9e9f5c6ae52")
+
+    def test_unreadable_history_index_offers_nothing_for_removal(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = ArchiveStore(root)
+            same = _report_analysis("same-analysis", "2026-09-21T00:07:38+00:00")
+            self._legacy_copy(store, "s", "a", same, modified=1_790_000_000_000_000_000)
+            self._legacy_copy(store, "s", "b", same, modified=1_790_000_000_000_000_001)
+            (root / "history.sqlite3").write_bytes(b"not a database")
+
+            usage = store.report_storage_usage()
+
+            self.assertEqual(usage["status"], "index-unreadable")
+            self.assertEqual(usage["reclaimable_bytes"], 0)
+            self.assertEqual(usage["groups"][0]["kept"][0]["reason"], "history-index-unreadable")
+
+    def test_missing_archive_is_reported_empty_without_creating_it(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "not-created"
+            usage = ArchiveStore(root).report_storage_usage()
+            self.assertEqual(usage["status"], "empty")
+            self.assertEqual(usage["reclaimable_bytes"], 0)
+            self.assertFalse(root.exists())
 
 
 if __name__ == "__main__":
