@@ -224,9 +224,12 @@
       "properties": {
         "spread_s": { "type": "number", "description": "Median difference (windows)." },
         "spread_s_per_lap": { "type": "number", "description": "Fall-off difference (comparison.fall_off)." },
-        "runs": { "type": "array", "items": { "type": "integer" } },
-        "run_laps": { "type": "array", "items": { "type": "integer" } },
-        "pair_count": { "type": "integer" }
+        "runs": { "type": "array", "items": { "type": "integer" }, "description": "The same-setup runs behind the floor." },
+        "run_laps": { "type": ["array", "null"], "items": { "type": "integer" } },
+        "pair_count": { "type": "integer" },
+        "method": { "enum": ["median_of_pairs", "single_pair", "single_pair_capped"], "description": "median_of_pairs: three or more runs of one garage setup, the median of their pairwise differences. single_pair: two runs, their one difference. single_pair_capped: that difference limited to twice the lap-noise threshold." },
+        "uncapped_spread_s": { "type": ["number", "null"] },
+        "uncapped_spread_s_per_lap": { "type": ["number", "null"] }
       },
       "additionalProperties": true
     },
@@ -249,7 +252,10 @@
               "previous": { "type": ["string", "null"], "description": "As recorded in the garage sheet." },
               "current": { "type": ["string", "null"] },
               "delta": { "type": ["number", "null"], "description": "Current minus previous in the canonical unit." },
-              "unit": { "type": ["string", "null"] }
+              "unit": { "type": ["string", "null"] },
+              "short_label": { "type": "string", "description": "Corner-abbreviated label, e.g. LF camber." },
+              "garage_previous": { "type": ["string", "null"], "description": "previous in English garage units (in, lb/in, lbs, psi); lengths within the recorded 1 mm rounding of a sixteenth inch are that sixteenth." },
+              "garage_current": { "type": ["string", "null"] }
             },
             "additionalProperties": true
           }
@@ -273,6 +279,18 @@
           }
         },
         "unknown_count": { "type": "integer" },
+        "headline": {
+          "type": ["object", "null"],
+          "description": "The change the run was built around: the one its setup file name names, else the one moved by the most typical garage steps.",
+          "properties": {
+            "index": { "type": "integer", "description": "Index into changes." },
+            "field": { "type": "string" },
+            "basis": { "enum": ["setup_name", "largest_step"] },
+            "steps": { "type": ["number", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "returned_to_runs": { "type": "array", "items": { "type": "integer" }, "description": "Earlier runs (before the previous one) on exactly this garage setup: the run is a return, not a new experiment." },
         "unknown_fields": { "type": "array", "items": { "type": "string" } },
         "complete": { "type": "boolean" },
         "reason": { "type": ["string", "null"] }
@@ -289,7 +307,7 @@
       "properties": {
         "compared_with_run": { "type": "integer" },
         "verdict": { "enum": ["faster", "slower", "within_scatter", "not_comparable"] },
-        "blocked_by": { "enum": ["conditions", "measurement", null] },
+        "blocked_by": { "enum": ["conditions", "measurement", "inconsistent_repeat", null], "description": "inconsistent_repeat: one run repeated a garage setup at another pace (row consistency), so the difference is not a setup result." },
         "basis": { "enum": ["late_window", "early_window", null] },
         "window_label": { "type": ["string", "null"] },
         "first_run_lap": { "type": ["integer", "null"] },
@@ -336,7 +354,7 @@
         "reasons": { "type": "array", "items": { "type": "string" } },
         "reason_codes": {
           "type": "array",
-          "items": { "enum": ["car", "configuration", "configuration_missing", "fixed_setup", "setup_type_missing", "track_temperature", "track_temperature_missing", "fuel", "fuel_missing", "compound", "measurement", "scatter"] },
+          "items": { "enum": ["car", "configuration", "configuration_missing", "fixed_setup", "setup_type_missing", "track_temperature", "track_temperature_missing", "fuel", "fuel_missing", "compound", "measurement", "scatter", "inconsistent_repeat"] },
           "description": "One code per blocking reason, in the same order."
         },
         "flags": { "type": "array", "items": { "type": "string" } },
@@ -548,6 +566,21 @@
         "late": { "$ref": "#/$defs/window", "description": "This run's own last five clean-length laps from lap 6 on; not measured below eight clean laps." },
         "fall_off": { "$ref": "#/$defs/fallOff" },
         "noise": { "$ref": "#/$defs/noise" },
+        "consistency": {
+          "type": ["object", "null"],
+          "description": "Whether this run repeated its garage setup's pace. Null when no other comparable run of the day used the setup.",
+          "properties": {
+            "status": { "enum": ["consistent", "inconsistent_repeat", "not_checked"], "description": "inconsistent_repeat: with three or more runs of the setup, laps 2-5 sat more than four lap noises from the setup's median; the run sets no threshold and no setup decision. not_checked: fewer than three runs of the setup measured laps 2-5, or no lap noise." },
+            "setup_runs": { "type": "array", "items": { "type": "integer" } },
+            "early_median_s": { "type": ["number", "null"] },
+            "setup_median_s": { "type": ["number", "null"] },
+            "delta_s": { "type": ["number", "null"] },
+            "limit_s": { "type": ["number", "null"] },
+            "noise_s": { "type": ["number", "null"] },
+            "reason": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        },
         "setup_change": { "$ref": "#/$defs/setupChange" },
         "comparison": { "$ref": "#/$defs/comparison" },
         "tires": { "$ref": "#/$defs/tires" },

@@ -691,32 +691,57 @@ IRP_LAPS = {
 IRP_HOURS = {"22:43": 3 + 43 / 60, "23:44": 4 + 44 / 60, "00:03": 5 + 3 / 60, "00:13": 5 + 13 / 60, "D": 5 + 19 / 60,
              "E": 5 + 32 / 60, "F": 5 + 45 / 60, "G": 5 + 57 / 60}
 IRP_SAME_SETUP = ("22:43", "23:44", "00:03", "00:13", "D")
+# The same day's last three recordings (9/25 02:11, 02:28, 02:41 local; sim copies, SHA-256 checked):
+# H returned to v3 after v4, I is v5 (RR track bar 13 -> 12 in), and J returned to v3 again at another
+# pace: laps 2-5 23.83-23.97 s against 22.93-23.51 s for F and H, then 24.5-24.7 s late.
+IRP_LATER_LAPS = {
+    "H": [23.765, 23.512, 23.299, 23.077, 22.936, 22.931, 22.933, 22.944, 22.991, 23.185, 23.383, 23.21, 23.362, 23.338,
+          23.248, 23.239, 23.284, 23.452, 23.464],
+    "I": [23.782, 23.514, 23.303, 23.078, 22.943, 22.95, 23.377, 23.344, 23.392, 23.281, 23.18, 23.401, 23.452, 23.47,
+          23.53, 23.526, 23.472, 23.42, 23.41],
+    "J": [23.783, 23.873, 23.826, 23.969, 23.902, 24.009, 23.954, 24.226, 24.463, 24.466, 24.574, 24.629, 24.642, 24.627,
+          24.59, 24.566, 24.58, 24.626, 24.731],
+}
+IRP_LATER_HOURS = {"H": 7 + 11 / 60, "I": 7 + 28 / 60, "J": 7 + 41 / 60}
+IRP_SETUP_NAMES = {"E": "claude IRP test v2 LFcamber.sto", "F": "claude IRP test v3 steer10.sto",
+                   "G": "claude IRP test v4 wedge515.sto", "H": "claude IRP test v3 steer10.sto",
+                   "I": "claude IRP test v5 RR trackbar 12.sto", "J": "claude IRP test v3 steer10.sto"}
 
 
 def irp_setup(name: str) -> dict:
-    """The day's garage setups: baseline through D, then v2 (LF camber), v3 (steering 10:1), v4 (wedge)."""
+    """The day's garage setups: baseline through D, v2 (LF camber), v3 (steering 10:1), v4 (wedge), v3, v5 (RR track bar), v3."""
 
     setup = car_setup()
     chassis = setup["Chassis"]
     chassis["Front"]["SteeringRatio"] = "12:1"
     chassis["LeftFront"].update(Camber="+6.0 deg", SpringPerchOffset="-95 mm")
     chassis["RightFront"].update(Camber="-3.3 deg", SpringPerchOffset="-95 mm")
-    chassis["LeftRear"]["SpringPerchOffset"] = "-76 mm"
+    chassis["LeftRear"].update(SpringPerchOffset="-76 mm", ToeIn="+5 mm", TrackBarHeight="+159 mm")
+    chassis["RightRear"].update(ToeIn="-5 mm", TrackBarHeight="+330 mm")
     if name == "E":
         chassis["LeftFront"].update(Camber="+5.2 deg", SpringPerchOffset="-98 mm")
-    if name in ("F", "G"):
+    if name in ("F", "G", "H", "I", "J"):
         chassis["Front"]["SteeringRatio"] = "10:1"
     if name == "G":
         chassis["LeftRear"]["SpringPerchOffset"] = "-79 mm"
         chassis["RightFront"].update(Camber="-3.2 deg", SpringPerchOffset="-98 mm")
+    if name == "I":
+        # Recorded v5 against v3: the RR track bar the file is named for, and three smaller moves.
+        chassis["LeftFront"]["SpringPerchOffset"] = "-96 mm"
+        chassis["LeftRear"]["ToeIn"] = "+4 mm"
+        chassis["RightRear"].update(ToeIn="-4 mm", TrackBarHeight="+305 mm")
     return setup
 
 
 def irp_recording(name: str) -> dict:
     """One recording of the IRP day with its runs split at pit visits, lap times as recorded."""
 
-    runs = [*IRP_STUBS, IRP_LAPS[name]] if name == "22:43" else [IRP_LAPS[name]]
-    analysis = stint_analysis(f"irp-{name}", IRP_HOURS[name], laps=sum(len(times) for times in runs), setup=irp_setup(name))
+    laps = {**IRP_LAPS, **IRP_LATER_LAPS}
+    runs = [*IRP_STUBS, laps[name]] if name == "22:43" else [laps[name]]
+    analysis = stint_analysis(f"irp-{name}", {**IRP_HOURS, **IRP_LATER_HOURS}[name], laps=sum(len(times) for times in runs),
+                              setup=irp_setup(name))
+    if name in IRP_SETUP_NAMES:
+        analysis["identity"]["setup_name"] = IRP_SETUP_NAMES[name]
     entries, start = [], 1
     for number, times in enumerate(runs, start=1):
         for offset, time in enumerate(times):
@@ -808,6 +833,109 @@ class TestDayRealDayTests(unittest.TestCase):
         plotted = [lap["lap_time_s"] for row in day["runs"] for lap in row["laps"] if lap["plotted"]]
         self.assertLess(max(plotted), 24.0)
         self.assertTrue(all(row["comparison"]["verdict"] != "not_comparable" for row in day["runs"][1:]))
+
+
+IRP_FULL_DAY = (*IRP_LAPS, *IRP_LATER_LAPS)
+
+
+class TestDayInconsistentRepeatTests(unittest.TestCase):
+    """IRP 9/25 real lap times: one repeat driven at another pace must not set every threshold of the day."""
+
+    def day(self, *names: str) -> tuple[dict, dict[str, dict]]:
+        result = review(*(irp_recording(name) for name in names or IRP_FULL_DAY))
+        return result, {row["analysis_id"].removeprefix("irp-"): row for row in result["runs"]}
+
+    def test_an_inconsistent_repeat_is_flagged_and_sets_no_threshold(self) -> None:
+        # Before: run 11 (J, v3 again at another pace) against run 7 or 9 set the same-setup floor for every
+        # comparison of the day: ±0.701 s on laps 2-5 and ±1.306/±1.404 s late, with lap noise 0.10-0.14 s.
+        result, rows = self.day()
+        consistency = rows["J"]["consistency"]
+        self.assertEqual(consistency["status"], "inconsistent_repeat")
+        self.assertEqual((consistency["setup_runs"], consistency["delta_s"]), ([7, 9, 11], 0.7))
+        self.assertGreater(consistency["delta_s"], consistency["limit_s"])
+        self.assertIn("The driver's pace changed", consistency["reason"])
+        for name in ("F", "H"):
+            self.assertEqual(rows[name]["consistency"]["status"], "consistent")
+        self.assertEqual(rows["D"]["consistency"]["status"], "consistent")  # 22:43's laps 2-5 are 0.091 s off: not flagged
+        comparison = rows["J"]["comparison"]
+        self.assertEqual((comparison["verdict"], comparison["blocked_by"], comparison["reason_codes"]),
+                         ("not_comparable", "inconsistent_repeat", ["inconsistent_repeat"]))
+        for row in result["runs"][1:-1]:
+            for key, window in row["comparison"]["windows"].items():
+                if window["status"] != "measured":
+                    continue
+                with self.subTest(run=row["run"], window=key):
+                    self.assertLess(window["threshold_s"], 0.5)
+                    self.assertLessEqual(window["threshold_s"], 2 * window["statistical_threshold_s"] + 0.001)
+                    spread = window["same_setup_spread"]
+                    self.assertNotIn(11, spread["runs"] if spread else [])
+        # With five baseline runs on laps 2-5 the floor is their median pairwise difference, not the largest.
+        early = rows["E"]["comparison"]["windows"]["early"]["same_setup_spread"]
+        self.assertEqual((early["method"], early["runs"]), ("median_of_pairs", [1, 2, 3, 4, 5]))
+        self.assertLess(early["spread_s"], 0.01)
+
+    def test_no_same_setup_pair_of_the_real_day_reads_significant(self) -> None:
+        import itertools
+
+        # Each same-setup pair alone (no other run widens its threshold), then within the whole day.
+        for earlier, later in [*itertools.combinations(IRP_SAME_SETUP, 2), ("F", "H")]:
+            with self.subTest(f"{later} vs {earlier}"):
+                row = review(irp_recording(earlier), irp_recording(later))["runs"][-1]
+                self.assertEqual(row["setup_change"]["status"], "unchanged")
+                TestDayRealDayTests.assert_within(self, row["comparison"], f"{later} vs {earlier}")
+        result, _ = self.day()
+        for row in result["runs"][1:]:
+            if row["setup_change"]["status"] == "unchanged":
+                TestDayRealDayTests.assert_within(self, row["comparison"], f"day run {row['run']}")
+
+    def test_two_same_setup_runs_cap_their_difference_with_a_note(self) -> None:
+        # Only H and J on v3: the review cannot tell which one moved, so neither is flagged, but their 1.306 s
+        # late difference counts no more than twice the lap-noise threshold for run I's verdict.
+        result, rows = self.day("H", "I", "J")
+        self.assertEqual(rows["J"]["consistency"]["status"], "not_checked")
+        late = rows["I"]["comparison"]["windows"]["late"]
+        spread = late["same_setup_spread"]
+        self.assertEqual((spread["method"], spread["uncapped_spread_s"], spread["runs"]), ("single_pair_capped", 1.306, [1, 3]))
+        self.assertEqual(late["threshold_s"], round(2 * late["statistical_threshold_s"], 3))
+        self.assertIn("with only two such runs", rows["I"]["comparison"]["summary"])
+
+    def test_a_return_to_a_driven_setup_is_a_repeat_not_a_new_experiment(self) -> None:
+        # Before: "Test left front spring perch offset alone" (first in garage order) with a check of beating
+        # 23.472 s by 1.306 s, as if run 11 were a new four-setting change from v5.
+        result, rows = self.day()
+        self.assertEqual(rows["J"]["setup_change"]["returned_to_runs"], [7, 9])
+        self.assertEqual(rows["H"]["setup_change"]["returned_to_runs"], [7])
+        self.assertEqual(rows["I"]["setup_change"]["returned_to_runs"], [])
+        card = result["next_change"]
+        self.assertEqual((card["kind"], card["title"]), ("repeat", "Repeat run 11's setup at the pace of runs 7 and 9"))
+        self.assertEqual(card["based_on_runs"], [7, 9, 11])
+        self.assertEqual(card["changes"], [])
+        rule = card["success_rule"]
+        self.assertEqual((rule["direction"], rule["reference_run"], rule["window_label"], rule["reference_median_s"]),
+                         ("within", 9, "Laps 2–5", 23.188))
+        self.assertLess(rule["threshold_s"], 0.5)
+        # Returning to v3 at the same pace is a control for the next change.
+        control, _ = self.day(*IRP_LAPS, "H")
+        self.assertEqual((control["next_change"]["kind"], control["next_change"]["title"]), ("repeat", "Run 9 repeated run 7's setup"))
+
+    def test_the_headline_change_is_the_one_the_setup_was_built_around(self) -> None:
+        # Before: v5's first listed change, a 1 mm LF perch move, headed the row in mm; the file is named for the
+        # RR track bar, which moved 13 -> 12 in (+330 -> +305 mm as recorded).
+        _, rows = self.day("H", "I")
+        change = rows["I"]["setup_change"]
+        headline = change["changes"][change["headline"]["index"]]
+        self.assertEqual((headline["field"], change["headline"]["basis"]), ("chassis.right_rear.track_bar_height", "setup_name"))
+        self.assertEqual((headline["short_label"], headline["garage_previous"], headline["garage_current"]),
+                         ("RR track bar", "+13.00 in", "+12.00 in"))
+        self.assertEqual((headline["previous"], headline["current"]), ("+330 mm", "+305 mm"))
+        unnamed = irp_recording("I")
+        unnamed["identity"]["setup_name"] = "v5.sto"
+        change = review(irp_recording("H"), unnamed)["runs"][1]["setup_change"]
+        self.assertEqual((change["changes"][change["headline"]["index"]]["field"], change["headline"]["basis"]),
+                         ("chassis.right_rear.track_bar_height", "largest_step"))
+        camber = self.day("D", "E")[1]["E"]["setup_change"]
+        first = camber["changes"][camber["headline"]["index"]]
+        self.assertEqual(f"{first['short_label']} {first['garage_previous']} → {first['garage_current']}", "LF camber +6.0 deg → +5.2 deg")
 
 
 class TestDaySetupChangeTests(unittest.TestCase):
@@ -1028,10 +1156,12 @@ class TestDayNextChangeTests(unittest.TestCase):
         both_pairs["Chassis"]["LeftFront"]["Packer"] = "0.50 in"
         both_pairs["Chassis"]["RightFront"]["Packer"] = "0.50 in"
         card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=both_pairs))
-        self.assertEqual(card["title"], "Test rear track bar pair alone")
-        self.assertIn("with only rear track bar pair at 9.75 in; run 2 changed 2 settings at once", card["instruction"])
+        # The packers moved four sixteenth-inch steps, the track bars two eighth-inch steps: the larger change
+        # is tested first, whatever order the ruleset or the garage lists them in.
+        self.assertEqual(card["title"], "Test front packer pair alone")
+        self.assertIn("with only front packer pair at 0.50 in; run 2 changed 2 settings at once", card["instruction"])
         self.assertEqual({item["field"] for item in card["changes"]},
-                         {"chassis.left_front.packer", "chassis.right_front.packer"})
+                         {"chassis.left_rear.track_bar_height", "chassis.right_rear.track_bar_height"})
 
     def test_a_faster_wedge_keeps_cross_weight_with_the_rulesets_step(self) -> None:
         card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=wedge(car_setup())))

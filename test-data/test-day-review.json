@@ -90,6 +90,19 @@
         },
         "track_temp_f": 81.0
       },
+      "consistency": {
+        "delta_s": null,
+        "early_median_s": 24.052,
+        "limit_s": null,
+        "noise_s": null,
+        "reason": "Only 2 runs of this garage setup measured laps 2–5; 3 are needed to tell which one did not repeat.",
+        "setup_median_s": null,
+        "setup_runs": [
+          1,
+          2
+        ],
+        "status": "not_checked"
+      },
       "early": {
         "clean_lap_count": 4,
         "first_run_lap": 2,
@@ -376,9 +389,11 @@
         "changes": [],
         "compared_with_run": null,
         "complete": true,
+        "headline": null,
         "readout_count": 0,
         "readouts": [],
         "reason": null,
+        "returned_to_runs": [],
         "status": "first_run",
         "unknown_count": 0,
         "unknown_fields": []
@@ -1056,6 +1071,19 @@
         },
         "track_temp_f": 81.0
       },
+      "consistency": {
+        "delta_s": null,
+        "early_median_s": 24.062,
+        "limit_s": null,
+        "noise_s": null,
+        "reason": "Only 2 runs of this garage setup measured laps 2–5; 3 are needed to tell which one did not repeat.",
+        "setup_median_s": null,
+        "setup_runs": [
+          1,
+          2
+        ],
+        "status": "not_checked"
+      },
       "early": {
         "clean_lap_count": 4,
         "first_run_lap": 2,
@@ -1322,9 +1350,11 @@
         "changes": [],
         "compared_with_run": 1,
         "complete": true,
+        "headline": null,
         "readout_count": 0,
         "readouts": [],
         "reason": null,
+        "returned_to_runs": [],
         "status": "unchanged",
         "unknown_count": 0,
         "unknown_fields": []
@@ -1886,12 +1916,14 @@
           "previous_slope_s_per_lap": 0.0116,
           "reason": null,
           "same_setup_spread": {
+            "method": "single_pair",
             "pair_count": 1,
             "runs": [
               1,
               2
             ],
-            "spread_s_per_lap": 0.0
+            "spread_s_per_lap": 0.0,
+            "uncapped_spread_s_per_lap": null
           },
           "standard_error_s_per_lap": 0.00283,
           "statistical_threshold_s_per_lap": 0.0057,
@@ -1969,6 +2001,7 @@
               5
             ],
             "same_setup_spread": {
+              "method": "single_pair",
               "pair_count": 1,
               "run_laps": [
                 2,
@@ -1980,7 +2013,8 @@
                 1,
                 2
               ],
-              "spread_s": 0.01
+              "spread_s": 0.01,
+              "uncapped_spread_s": null
             },
             "standard_error_s": 0.0186,
             "statistical_threshold_s": 0.037,
@@ -2020,6 +2054,7 @@
               16
             ],
             "same_setup_spread": {
+              "method": "single_pair",
               "pair_count": 1,
               "run_laps": [
                 12,
@@ -2032,7 +2067,8 @@
                 1,
                 2
               ],
-              "spread_s": 0.01
+              "spread_s": 0.01,
+              "uncapped_spread_s": null
             },
             "standard_error_s": 0.0166,
             "statistical_threshold_s": 0.033,
@@ -2052,6 +2088,7 @@
         },
         "track_temp_f": 81.0
       },
+      "consistency": null,
       "early": {
         "clean_lap_count": 4,
         "first_run_lap": 2,
@@ -2300,16 +2337,26 @@
             "current": "56.5%",
             "delta": 0.5,
             "field": "chassis.front.front_brake_bias",
+            "garage_current": "56.5%",
+            "garage_previous": "56.0%",
             "label": "Front brake bias",
             "previous": "56.0%",
+            "short_label": "Brake bias",
             "unit": "%"
           }
         ],
         "compared_with_run": 2,
         "complete": true,
+        "headline": {
+          "basis": "largest_step",
+          "field": "chassis.front.front_brake_bias",
+          "index": 0,
+          "steps": 5.0
+        },
         "readout_count": 0,
         "readouts": [],
         "reason": null,
+        "returned_to_runs": [],
         "status": "changed",
         "unknown_count": 0,
         "unknown_fields": []

@@ -102,6 +102,14 @@ MAD_TO_STANDARD_DEVIATION = 1.4826
 # consecutive clean laps, and capped so a window keeps some weight.
 MINIMUM_AUTOCORRELATION_PAIRS = 8
 MAXIMUM_AUTOCORRELATION = 0.9
+# Same-setup floor. With three or more runs of one garage setup on a window's laps, the floor is
+# the median of their pairwise differences, so one odd repeat cannot set it; with only two, their
+# one difference is used but never above SINGLE_PAIR_CAP_MULTIPLE times the lap-noise threshold.
+# A run whose laps 2-5 sit more than INCONSISTENT_NOISE_MULTIPLE lap noises from its setup's
+# median (three or more runs) is an inconsistent repeat and is left out of both.
+INCONSISTENT_MINIMUM_RUNS = 3
+INCONSISTENT_NOISE_MULTIPLE = 4.0
+SINGLE_PAIR_CAP_MULTIPLE = 2.0
 # A stall pressure this close to the set cold pressure is that setting, not a hot reading.
 COLD_SETTING_MATCH_PSI = 0.25
 USED_TIRE_ODOMETER_M = 250.0
@@ -683,9 +691,81 @@ def _day_context(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         for second in members[index + 1:]:
             if _setup_change(first, second)["status"] == "unchanged" and not _comparability(first, second)[0]:
                 same_setup.append((first, second))
+    _mark_inconsistent_repeats(members, same_setup)
+    # An inconsistent repeat measured the driver, not the setup: it never sets a threshold.
+    same_setup = [pair for pair in same_setup if not any(_inconsistent(item) for item in pair)]
     return {"differences": [value for item in members for value in _differences(item)],
             "residual_s": residual, "residual_lap_count": residual_count,
             "autocorrelation": autocorrelation, "autocorrelation_pairs": pairs, "same_setup": same_setup}
+
+
+def _inconsistent(stint: Mapping[str, Any]) -> bool:
+    return (stint.get("consistency") or {}).get("status") == "inconsistent_repeat"
+
+
+def _setup_groups(pairs: Sequence[tuple[Mapping[str, Any], Mapping[str, Any]]]) -> list[list[Mapping[str, Any]]]:
+    """Runs joined by same-setup pairs, each group in run order."""
+
+    groups: list[list[Mapping[str, Any]]] = []
+    for first, second in pairs:
+        joined = [group for group in groups if any(item is first or item is second for item in group)]
+        merged = [item for group in joined for item in group]
+        for item in (first, second):
+            if not any(member is item for member in merged):
+                merged.append(item)
+        groups = [group for group in groups if not any(group is other for other in joined)] + [merged]
+    return [sorted(group, key=lambda item: item["number"]) for group in groups]
+
+
+def _mark_inconsistent_repeats(members: Sequence[Mapping[str, Any]],
+                               pairs: Sequence[tuple[Mapping[str, Any], Mapping[str, Any]]]) -> None:
+    """Flag a run of one garage setup whose laps 2-5 left its other runs far behind: the driver's pace changed.
+
+    With three or more runs of one setup, each run's laps 2-5 median is set
+    against the median of all of them. A run further away than
+    ``INCONSISTENT_NOISE_MULTIPLE`` times the setup's median lap noise (the
+    same noise the verdicts use) did not repeat the setup: IRP 9/25 run 11
+    returned to v3 at 23.888 s against 23.187 s and 23.188 s for runs 7 and 9
+    (lap noise 0.10-0.14 s). With two runs the review cannot say which one
+    moved, so neither is flagged.
+    """
+
+    for stint in members:
+        stint["consistency"] = None
+    for group in _setup_groups(pairs):
+        numbers = [item["number"] for item in group]
+        timed = [item for item in group if item["early"]["status"] == "measured"]
+        if len(timed) < INCONSISTENT_MINIMUM_RUNS:
+            for item in group:
+                item["consistency"] = {
+                    "status": "not_checked", "setup_runs": numbers, "early_median_s": item["early"]["median_s"],
+                    "setup_median_s": None, "delta_s": None, "limit_s": None, "noise_s": None,
+                    "reason": (f"Only {len(timed)} run{'s' if len(timed) != 1 else ''} of this garage setup measured laps "
+                               f"{EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}; {INCONSISTENT_MINIMUM_RUNS} are needed to tell which one did not repeat.")}
+            continue
+        center = statistics.median(item["early"]["median_s"] for item in timed)
+        noises = [item["noise"]["noise_s"] for item in group if item["noise"]["status"] == "measured"]
+        noise = statistics.median(noises) if noises else None
+        # Never below the verdicts' own minimum: a noiseless run does not make a 0.05 s shift a new driver.
+        limit = INCONSISTENT_NOISE_MULTIPLE * max(noise, MINIMUM_THRESHOLD_S) if noise is not None else None
+        for item in group:
+            median = item["early"]["median_s"]
+            delta = round(median - center, 3) + 0.0 if median is not None else None
+            others = [number for number in numbers if number != item["number"]]
+            flagged = delta is not None and limit is not None and abs(delta) > limit
+            reason = None
+            if flagged:
+                reason = (f"Inconsistent repeat: run {item['number']} used the garage setup of run{'s' if len(others) != 1 else ''} "
+                          f"{_joined([str(number) for number in others])} but its laps {EARLY_WINDOW[0]}–{EARLY_WINDOW[1]} were "
+                          f"{abs(delta):.3f} s {'slower' if delta > 0 else 'faster'} than that setup's median ({center:.3f} s), "
+                          f"more than {INCONSISTENT_NOISE_MULTIPLE:.0f} × its {noise:.3f} s lap noise. The driver's pace changed, "
+                          "so this run sets no threshold and no setup decision.")
+            elif limit is None:
+                reason = "Lap noise is not measured for this garage setup's runs, so their repeatability is not checked."
+            item["consistency"] = {
+                "status": "inconsistent_repeat" if flagged else "consistent" if limit is not None and delta is not None else "not_checked",
+                "setup_runs": numbers, "early_median_s": median, "setup_median_s": _round(center),
+                "delta_s": delta, "limit_s": _round(limit, 3), "noise_s": _round(noise, 4), "reason": reason}
 
 
 def _pair_noise(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, Any]:
@@ -750,12 +830,40 @@ def _same_pair(first: Mapping[str, Any], second: Mapping[str, Any], pair: tuple[
     return {first["number"], second["number"]} == {pair[0]["number"], pair[1]["number"]}
 
 
-def _same_setup_spread(day: Mapping[str, Any], first: int, last: int,
-                       exclude: tuple[Mapping[str, Any], Mapping[str, Any]] | None = None) -> dict[str, Any] | None:
-    """The largest median difference between two other same-setup runs of the day on laps ``first``-``last``."""
+def _group_spread(measured: Sequence[tuple[float, Mapping[str, Any], Mapping[str, Any], Any]], cap: float | None,
+                  digits: int) -> dict[str, Any] | None:
+    """The same-setup floor from each garage setup's pairs: the largest of the setups' robust spreads.
 
-    best: tuple[float, Mapping[str, Any], Mapping[str, Any], list[int]] | None = None
-    count = 0
+    A setup with three or more runs on these laps gives the median of its
+    pairwise differences; a setup with two gives their one difference, capped
+    at ``cap`` (``SINGLE_PAIR_CAP_MULTIPLE`` times the lap-noise threshold).
+    """
+
+    best: dict[str, Any] | None = None
+    for group in _setup_groups([(earlier, later) for _, earlier, later, _ in measured]):
+        inside = [item for item in measured if any(member is item[1] for member in group)]
+        runs = sorted({number for _, earlier, later, _ in inside for number in (earlier["number"], later["number"])})
+        values = [value for value, *_ in inside]
+        if len(runs) >= INCONSISTENT_MINIMUM_RUNS:
+            spread, method, uncapped = statistics.median(values), "median_of_pairs", None
+        else:
+            spread, method, uncapped = values[0], "single_pair", None
+            if cap is not None and spread > cap:
+                spread, method, uncapped = cap, "single_pair_capped", values[0]
+        candidate = {"spread": round(spread, digits), "runs": runs, "pair_count": len(inside), "method": method,
+                     "uncapped": round(uncapped, digits) if uncapped is not None else None,
+                     "run_laps": inside[0][3] if len(inside) == 1 else None}
+        if best is None or candidate["spread"] > best["spread"]:
+            best = candidate
+    return best
+
+
+def _same_setup_spread(day: Mapping[str, Any], first: int, last: int,
+                       exclude: tuple[Mapping[str, Any], Mapping[str, Any]] | None = None,
+                       statistical: float | None = None) -> dict[str, Any] | None:
+    """What runs of the day on one garage setup differed by on laps ``first``-``last`` (``_group_spread``)."""
+
+    measured = []
     for earlier, later in day.get("same_setup") or ():
         if exclude is not None and _same_pair(earlier, later, exclude):
             continue
@@ -763,35 +871,34 @@ def _same_setup_spread(day: Mapping[str, Any], first: int, last: int,
         shared = sorted(set(before) & set(after))
         if len(shared) < MINIMUM_WINDOW_LAPS:
             continue
-        count += 1
         spread = abs(statistics.median(after[age]["lap_time_s"] for age in shared)
                      - statistics.median(before[age]["lap_time_s"] for age in shared))
-        if best is None or spread > best[0]:
-            best = (spread, earlier, later, shared)
+        measured.append((spread, earlier, later, shared))
+    best = _group_spread(measured, SINGLE_PAIR_CAP_MULTIPLE * statistical if statistical is not None else None, 3)
     if best is None:
         return None
-    return {"spread_s": round(best[0], 3), "runs": [best[1]["number"], best[2]["number"]], "run_laps": best[3], "pair_count": count}
+    return {"spread_s": best["spread"], "runs": best["runs"], "run_laps": best["run_laps"], "pair_count": best["pair_count"],
+            "method": best["method"], "uncapped_spread_s": best["uncapped"]}
 
 
 def _same_setup_slope_spread(day: Mapping[str, Any], length: int,
-                             exclude: tuple[Mapping[str, Any], Mapping[str, Any]]) -> dict[str, Any] | None:
-    """The largest fall-off difference between two other same-setup runs of the day over laps 6..``length``."""
+                             exclude: tuple[Mapping[str, Any], Mapping[str, Any]],
+                             statistical: float | None = None) -> dict[str, Any] | None:
+    """What same-setup runs of the day differed by in fall-off over laps 6..``length`` (``_group_spread``)."""
 
-    best: tuple[float, Mapping[str, Any], Mapping[str, Any]] | None = None
-    count = 0
+    measured = []
     for earlier, later in day.get("same_setup") or ():
         if _same_pair(earlier, later, exclude):
             continue
         fits = [_fit(_clean_rows(item, FALL_OFF_FIRST_RUN_LAP, length), MINIMUM_FIT_LAPS) for item in (earlier, later)]
         if length < MINIMUM_FALL_OFF_RUN_LAPS or any(fit is None for fit in fits):
             continue
-        count += 1
-        spread = abs(fits[1]["slope"] - fits[0]["slope"])
-        if best is None or spread > best[0]:
-            best = (spread, earlier, later)
+        measured.append((abs(fits[1]["slope"] - fits[0]["slope"]), earlier, later, None))
+    best = _group_spread(measured, SINGLE_PAIR_CAP_MULTIPLE * statistical if statistical is not None else None, 4)
     if best is None:
         return None
-    return {"spread_s_per_lap": round(best[0], 4), "runs": [best[1]["number"], best[2]["number"]], "pair_count": count}
+    return {"spread_s_per_lap": best["spread"], "runs": best["runs"], "pair_count": best["pair_count"],
+            "method": best["method"], "uncapped_spread_s_per_lap": best["uncapped"]}
 
 
 def _window_threshold(noise: Mapping[str, Any], count: int, first: int, last: int, day: Mapping[str, Any],
@@ -799,7 +906,7 @@ def _window_threshold(noise: Mapping[str, Any], count: int, first: int, last: in
     """The verdict threshold for ``count`` laps of laps ``first``-``last``: the noise's, or the same-setup spread when larger."""
 
     combined, statistical, effective = _threshold(noise, count)
-    spread = _same_setup_spread(day, first, last, exclude)
+    spread = _same_setup_spread(day, first, last, exclude, statistical)
     threshold = max(statistical, spread["spread_s"] if spread else 0.0)
     return {"standard_error_s": _round(combined, 4), "statistical_threshold_s": statistical, "threshold_s": round(threshold, 3),
             "effective_lap_count": round(effective, 1), "same_setup_spread": spread}
@@ -881,7 +988,7 @@ def _pair_fall_off(previous: Mapping[str, Any], current: Mapping[str, Any], leng
     inflation = math.sqrt((1.0 + autocorrelation) / (1.0 - autocorrelation))
     error = float(noise["noise_s"]) * inflation * math.sqrt(1.0 / before["sxx"] + 1.0 / after["sxx"])
     statistical = round(max(MINIMUM_SLOPE_THRESHOLD_S, STANDARD_ERROR_MULTIPLIER * error), 4)
-    spread = _same_setup_slope_spread(current.get("day") or {}, length, (previous, current))
+    spread = _same_setup_slope_spread(current.get("day") or {}, length, (previous, current), statistical)
     threshold = round(max(statistical, spread["spread_s_per_lap"] if spread else 0.0), 4)
     result.update(status="measured", threshold_s_per_lap=threshold, statistical_threshold_s_per_lap=statistical,
                   standard_error_s_per_lap=_round(error, 5), same_setup_spread=spread,
@@ -951,8 +1058,13 @@ def _threshold_sentence(window: Mapping[str, Any]) -> str:
     spread = window.get("same_setup_spread")
     if not spread or spread["spread_s"] < (window.get("statistical_threshold_s") or 0.0):
         return ""
-    first, second = spread["runs"]
-    return f" Runs {first} and {second} used one garage setup and differed by {spread['spread_s']:.3f} s on these laps."
+    runs = _joined([str(number) for number in spread["runs"]])
+    if spread.get("method") == "median_of_pairs":
+        return f" Runs {runs} used one garage setup; their median difference on these laps was {spread['spread_s']:.3f} s."
+    if spread.get("method") == "single_pair_capped":
+        return (f" Runs {runs} used one garage setup and differed by {spread['uncapped_spread_s']:.3f} s on these laps; with only "
+                f"two such runs that counts up to {spread['spread_s']:.3f} s ({SINGLE_PAIR_CAP_MULTIPLE:.0f} × the lap-noise threshold).")
+    return f" Runs {runs} used one garage setup and differed by {spread['spread_s']:.3f} s on these laps."
 
 
 def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, Any]:
@@ -975,6 +1087,13 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
                               "common_run_laps": length, "noise": None, "windows": None, "fall_off": None}
     if reasons:
         result.update(blocked_by="conditions", summary=f"Not comparable with run {previous['number']}: " + " ".join(reasons))
+        return result
+    odd = [item for item in (previous, current) if _inconsistent(item)]
+    if odd:
+        # The driver's pace moved: a lap-time difference with this run is not a setup result.
+        texts = [item["consistency"]["reason"] for item in odd]
+        result.update(blocked_by="inconsistent_repeat", reasons=texts, reason_codes=["inconsistent_repeat"],
+                      summary=f"Not a setup result against run {previous['number']}: " + " ".join(texts))
         return result
     noise = _pair_noise(previous, current)
     span = _late_span(length)
@@ -1018,10 +1137,106 @@ def _compare(previous: Mapping[str, Any], current: Mapping[str, Any]) -> dict[st
 # --------------------------------------------------------------------------
 
 
+_CORNERS = {"left_front": "LF", "right_front": "RF", "left_rear": "LR", "right_rear": "RR"}
+_SHORT_WORDS = {"spring perch offset": "perch", "track bar height": "track bar", "toe in": "toe", "steering ratio": "steering",
+                "front brake bias": "brake bias", "anti roll bar": "ARB"}
+
+
+def _short_label(field: str) -> str:
+    """'LF camber' for chassis.left_front.camber: the corner abbreviated as the garage tabs name it."""
+
+    parts = field.split(".")
+    corner = next((_CORNERS[part] for part in parts if part in _CORNERS), None)
+    label = _field_label(field)
+    if corner is not None:
+        words = " ".join(part.replace("_", " ") for part in parts[parts.index(next(p for p in parts if p in _CORNERS)) + 1:])
+        label = f"{corner} {_SHORT_WORDS.get(words, words)}"
+    else:
+        label = _SHORT_WORDS.get(label.casefold(), label)
+        label = label[0].upper() + label[1:]
+    return label
+
+
+# The recording's CarSetup stores lengths in mm, rates in N/mm, loads in N and pressures in kPa.
+# The garage with English display units (the units the IRP 9/24 driver reads) shows inches,
+# lb/in, lbs and psi; the recorded metric value stays beside it. A length within the recorded
+# 1 mm rounding (±0.5 mm) of a sixteenth of an inch is that sixteenth: +330 mm is 13.00 in.
+_ENGLISH = {"mm": ("in", 1 / 25.4, 2), "N/mm": ("lb/in", 5.710147162769, 0), "N": ("lbs", 0.224808943871, 0),
+            "kPa": ("psi", 0.145037737730, 1)}
+_SIXTEENTH_MM = 25.4 / 16
+
+
+def _garage_display(record: Mapping[str, Any] | None) -> str | None:
+    """A garage value in English display units, from its recorded metric string; the recorded text otherwise."""
+
+    raw = _display(record)
+    if not isinstance(record, Mapping) or raw is None:
+        return raw
+    unit, value = record.get("unit"), _number(record.get("value"))
+    if unit not in _ENGLISH or value is None or not any(token in raw for token in ("mm", "N", "kPa")):
+        return raw
+    name, factor, digits = _ENGLISH[unit]
+    if unit == "mm":
+        nearest = round(value / _SIXTEENTH_MM) * _SIXTEENTH_MM
+        if abs(nearest - value) <= 0.5:
+            value = nearest
+    converted = round(value * factor, digits) + 0.0
+    sign = "+" if raw.lstrip().startswith("+") and converted > 0 else ""
+    return f"{sign}{converted:.{digits}f} {name}"
+
+
+# A typical garage step for each adjustment, in the recorded unit, so a change is ranked by how
+# many steps it moved (25 mm of track bar is eight steps; 1 mm of spring perch is under one).
+_TYPICAL_STEP = {"track_bar_height": 25.4 / 8, "spring_perch_offset": _SIXTEENTH_MM, "packer": _SIXTEENTH_MM,
+                 "toe_in": 25.4 / 32, "camber": 0.1, "caster": 0.1, "steering_ratio": 1.0, "cross_weight": 0.1,
+                 "front_brake_bias": 0.1, "brake_bias": 0.1}
+_UNIT_STEP = {"deg": 0.1, "kPa": 3.45, "ratio": 1.0}
+# Words a setup's file name uses for an adjustment ("v5 RR trackbar 12", "v4 wedge515", "v3 steer10").
+_NAME_WORDS = {"track_bar_height": ("trackbar", "tbar"), "spring_perch_offset": ("perch", "wedge"), "toe_in": ("toe",),
+               "camber": ("camber",), "caster": ("caster",), "steering_ratio": ("steer",), "cross_weight": ("wedge", "cross"),
+               "front_brake_bias": ("bias",), "packer": ("packer",), "ballast": ("ballast",)}
+
+
+def _compact(text: str | None) -> str:
+    return "".join(character for character in (text or "").casefold() if character.isalnum())
+
+
+def _significance(item: Mapping[str, Any], setup_name: str | None) -> tuple[int, float]:
+    """(named, steps): whether the setup's file name names this adjustment, and how many typical steps it moved."""
+
+    leaf = item["field"].rsplit(".", 1)[-1]
+    name = _compact((setup_name or "").removesuffix(".sto"))
+    named = 0
+    words = _NAME_WORDS.get(leaf) or tuple(word for word in leaf.split("_") if len(word) >= 4)
+    if name and any(word in name for word in words):
+        named = 1
+        corner = next((abbreviation for part, abbreviation in _CORNERS.items() if part in item["field"]), None)
+        if corner is not None and corner.casefold() in _compact(" ".join(
+                token for token in (setup_name or "").split() if len(token) == 2)):
+            named = 2
+    delta = _number(item.get("delta"))
+    step = _TYPICAL_STEP.get(leaf) or _UNIT_STEP.get(item.get("unit") or "")
+    # An adjustment without a known step counts as one step: its size in mm or % says nothing on its own.
+    return named, abs(delta) / step if delta is not None and step else 1.0
+
+
+def _headline(changes: Sequence[Mapping[str, Any]], setup_name: str | None) -> dict[str, Any] | None:
+    """The change the run was built around: the one its setup name names, else the most garage steps moved."""
+
+    if not changes:
+        return None
+    ranked = sorted(range(len(changes)), key=lambda index: tuple(-value for value in _significance(changes[index], setup_name)) + (index,))
+    best = changes[ranked[0]]
+    named, steps = _significance(best, setup_name)
+    return {"index": ranked[0], "field": best["field"], "basis": "setup_name" if named else "largest_step",
+            "steps": _round(steps, 1)}
+
+
 def _setting_entry(item: Mapping[str, Any]) -> dict[str, Any]:
     delta = item.get("delta_left_minus_right")
-    return {"field": item["field"], "label": _field_label(item["field"]),
+    return {"field": item["field"], "label": _field_label(item["field"]), "short_label": _short_label(item["field"]),
             "previous": _display(item["left"]), "current": _display(item["right"]),
+            "garage_previous": _garage_display(item["left"]), "garage_current": _garage_display(item["right"]),
             "delta": _round(-delta, 4) if _number(delta) is not None else None,
             "unit": item["right"].get("unit") if isinstance(item.get("right"), Mapping) else None}
 
@@ -1035,7 +1250,7 @@ def _setup_change(previous: Mapping[str, Any] | None, current: Mapping[str, Any]
     """
 
     empty = {"change_count": 0, "changes": [], "readout_count": 0, "readouts": [],
-             "unknown_count": 0, "unknown_fields": []}
+             "unknown_count": 0, "unknown_fields": [], "headline": None, "returned_to_runs": []}
     if previous is None:
         return {"status": "first_run", "compared_with_run": None, **empty, "complete": True, "reason": None}
     result = {"status": "unknown", "compared_with_run": previous["number"], **empty, "complete": False, "reason": None}
@@ -1071,8 +1286,20 @@ def _setup_change(previous: Mapping[str, Any] | None, current: Mapping[str, Any]
                   f"{previous['run_count']} runs; a change made between those runs is not recorded.")
     result.update(status=status, change_count=len(changes), changes=changes, readout_count=len(readouts),
                   readouts=readouts, unknown_count=unknown_count, unknown_fields=unknown,
-                  complete=not comparison["output_truncated"], reason=reason)
+                  complete=not comparison["output_truncated"], reason=reason,
+                  headline=_headline(changes, current.get("setup_name")))
     return result
+
+
+def _returned_to(stints: Sequence[Mapping[str, Any]], current: Mapping[str, Any]) -> list[int]:
+    """Earlier runs (before the previous one) on exactly this garage setup: a return, not a new experiment."""
+
+    fingerprint = current.get("garage_fingerprint")
+    position = next(index for index, item in enumerate(stints) if item is current)
+    if not fingerprint or position < 2 or stints[position - 1].get("garage_fingerprint") == fingerprint:
+        return []
+    return [item["number"] for item in stints[:position - 1]
+            if item.get("garage_fingerprint") == fingerprint and item["index"] != current["index"]]
 
 
 def _ruleset_settings(rules: Mapping[str, Any] | None, car_path: str | None) -> list[dict[str, Any]]:
@@ -1102,8 +1329,9 @@ def _values(changes: Sequence[Mapping[str, Any]], key: str) -> str:
     return ", ".join(dict.fromkeys(str(item.get(key) or "?") for item in changes))
 
 
-def _setting_units(rules: Mapping[str, Any] | None, car_path: str | None, change: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """The settings the driver changed, in the ruleset's order.
+def _setting_units(rules: Mapping[str, Any] | None, car_path: str | None, change: Mapping[str, Any],
+                   setup_name: str | None = None) -> list[dict[str, Any]]:
+    """The settings the driver changed, the one the run was built around first.
 
     A ruleset pair changed at both ends (the rear track bars, the front
     packers) is one setting and is never split. The adjustments that set a
@@ -1144,7 +1372,11 @@ def _setting_units(rules: Mapping[str, Any] | None, car_path: str | None, change
                 unit.update(rank=rank, setting=setting)
                 break
         units.append(unit)
-    units.sort(key=lambda unit: (unit["rank"], unit["changes"][0]["field"]))
+    # The setting the setup's name names, else the one moved by the most garage steps, comes first;
+    # the ruleset's order only breaks ties, and garage order never decides.
+    def significance(unit: Mapping[str, Any]) -> tuple[int, float]:
+        return max(_significance(item, setup_name) for item in unit["changes"])
+    units.sort(key=lambda unit: (-significance(unit)[0], -significance(unit)[1], unit["rank"], unit["changes"][0]["field"]))
     return units
 
 
@@ -1215,8 +1447,11 @@ def _revert(item: Mapping[str, Any]) -> dict[str, Any]:
 def _pair_reference(comparison: Mapping[str, Any], side: str) -> dict[str, Any]:
     """The compared window, with one run's median there, as a success rule's reference."""
 
+    basis = {"late_window": "late", "early_window": "early"}.get(comparison.get("basis") or "")
+    window = ((comparison.get("windows") or {}).get(basis) or {}) if basis else {}
     return {"label": comparison.get("window_label"), "first_run_lap": comparison.get("first_run_lap"),
-            "last_run_lap": comparison.get("last_run_lap"), "median_s": comparison.get(f"{side}_median_s")}
+            "last_run_lap": comparison.get("last_run_lap"), "median_s": comparison.get(f"{side}_median_s"),
+            "statistical_threshold_s": window.get("statistical_threshold_s")}
 
 
 def _rule_window(comparison: Mapping[str, Any], reference: Mapping[str, Any], side: str) -> tuple[dict[str, Any], float | None]:
@@ -1236,7 +1471,7 @@ def _rule_window(comparison: Mapping[str, Any], reference: Mapping[str, Any], si
     if late["status"] == "measured" and noise.get("status") == "measured" and late["clean_lap_count"]:
         rule = _window_threshold(noise, late["clean_lap_count"], late["first_run_lap"], late["last_run_lap"], reference.get("day") or {})
         return ({"label": late["label"], "first_run_lap": late["first_run_lap"], "last_run_lap": late["last_run_lap"],
-                 "median_s": late["median_s"]}, rule["threshold_s"])
+                 "median_s": late["median_s"], "statistical_threshold_s": rule["statistical_threshold_s"]}, rule["threshold_s"])
     return _pair_reference(comparison, side), comparison.get("threshold_s")
 
 
@@ -1264,6 +1499,16 @@ def _success(reference: Mapping[str, Any], window: Mapping[str, Any] | str | Non
     median = window.get("median_s")
     limit = round(threshold if threshold is not None else MINIMUM_THRESHOLD_S, 3)
     label = window.get("label") or _window_label(*EARLY_WINDOW)
+    statistical = _number(window.get("statistical_threshold_s"))
+    if (median is not None and direction in ("faster", "within") and statistical is not None
+            and limit > SINGLE_PAIR_CAP_MULTIPLE * statistical + 0.0005):
+        # Same-setup runs differed by more than a change could be shown to beat: repeat to measure first.
+        text = (f"Repeat to measure: runs of one setup differed by up to {limit:.3f} s on {label.lower()}, over "
+                f"{SINGLE_PAIR_CAP_MULTIPLE:.0f} × the {statistical:.3f} s lap-noise threshold. Drive run {reference['number']}'s "
+                f"setup again with {MINIMUM_WINDOW_LAPS}+ clean laps on {label.lower()}{_reach(window)} before judging a change.")
+        return {"direction": "measure", "reference_run": reference["number"], "reference_median_s": median,
+                "window_label": label, "first_run_lap": window.get("first_run_lap"), "last_run_lap": window.get("last_run_lap"),
+                "threshold_s": limit, "minimum_clean_laps": MINIMUM_WINDOW_LAPS, "text": text}
     if median is None or direction == "measure":
         text = (f"Record {MINIMUM_WINDOW_LAPS}+ clean laps on {label.lower()} with starting fuel within "
                 f"{MATERIAL_FUEL_GAL:.0f} gal and track temperature within {MATERIAL_TEMPERATURE_F:.0f} °F of run {reference['number']}"
@@ -1379,6 +1624,65 @@ def _return_card(stints: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
                  evidence, [_revert(item) for item in target["changes"]])
 
 
+def _setup_label(stint: Mapping[str, Any]) -> str:
+    name = stint.get("setup_name")
+    return f" ({name.removesuffix('.sto')})" if name else ""
+
+
+def _inconsistent_card(stints: Sequence[Mapping[str, Any]], latest: Mapping[str, Any]) -> dict[str, Any]:
+    """The latest run repeated a setup at another pace: ask for the repeat, not a setup change."""
+
+    consistency = latest["consistency"]
+    by_number = {item["number"]: item for item in stints}
+    others = [by_number[number] for number in consistency["setup_runs"]
+              if number != latest["number"] and number in by_number and not _inconsistent(by_number[number])]
+    reference = others[-1]
+    names = _joined([str(item["number"]) for item in others])
+    noise = _pair_noise(reference, latest)
+    window = dict(reference["early"])
+    threshold = None
+    if noise["status"] == "measured" and window["status"] == "measured":
+        rule = _window_threshold(noise, window["clean_lap_count"], EARLY_WINDOW[0], EARLY_WINDOW[1], reference.get("day") or {})
+        threshold, window["statistical_threshold_s"] = rule["threshold_s"], rule["statistical_threshold_s"]
+    runs = "runs " + names if len(others) > 1 else "run " + names
+    evidence = [consistency["reason"]]
+    previous = stints[-2]
+    if previous["comparison"] is not None and not _inconsistent(previous) and previous["comparison"].get("summary"):
+        evidence.append(f"Run {previous['number']} against run {previous['comparison']['compared_with_run']}: "
+                        + previous["comparison"]["summary"])
+    return _card("repeat", f"Repeat run {latest['number']}'s setup at the pace of {runs}",
+                 f"Run {latest['number']} returned to the garage setup of {runs}{_setup_label(latest)} but was "
+                 f"{abs(consistency['delta_s']):.3f} s {'slower' if consistency['delta_s'] > 0 else 'faster'} on laps "
+                 f"{EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}: the pace changed, not the setup. Drive this setup again, unchanged, "
+                 f"and match {runs} before the next change.",
+                 [*[item["number"] for item in others], latest["number"]],
+                 _success(reference, window, threshold, "within"), evidence)
+
+
+def _control_card(stints: Sequence[Mapping[str, Any]], latest: Mapping[str, Any]) -> dict[str, Any]:
+    """The latest run went back to an earlier run's garage setup: a control, never a new experiment."""
+
+    by_number = {item["number"]: item for item in stints}
+    earlier = [by_number[number] for number in latest["setup_change"]["returned_to_runs"]
+               if number in by_number and not _inconsistent(by_number[number])]
+    reference = earlier[-1]
+    control = _compare(reference, latest)
+    previous = stints[-2]
+    evidence = [f"Run {latest['number']} against run {reference['number']} (same garage setup): "
+                + (control["summary"] or "not compared.")]
+    if previous["comparison"] is not None and previous["comparison"].get("summary"):
+        evidence.append(f"Run {previous['number']} against run {previous['comparison']['compared_with_run']}: "
+                        + previous["comparison"]["summary"])
+    if control["verdict"] == "not_comparable":
+        success = _success(latest, None, None, "measure")
+    else:
+        success = _success(latest, *_rule_window(control, latest, "current"), "within")
+    return _card("repeat", f"Run {latest['number']} repeated run {reference['number']}'s setup",
+                 f"Run {latest['number']} went back to run {reference['number']}'s garage setup{_setup_label(latest)}: a control, "
+                 f"not a new change. Make the next change from this setup and compare it with run {latest['number']}.",
+                 [reference["number"], latest["number"]], success, evidence)
+
+
 def _next_change(stints: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] | None) -> dict[str, Any]:
     latest, previous = stints[-1], stints[-2]
     comparison = latest["comparison"]
@@ -1386,12 +1690,16 @@ def _next_change(stints: Sequence[Mapping[str, Any]], rules: Mapping[str, Any] |
     known = change["status"] == "changed" and change["complete"] and not change["unknown_count"]
     number, before = latest["number"], previous["number"]
 
+    if _inconsistent(latest):
+        return _inconsistent_card(stints, latest)
     if comparison["verdict"] == "not_comparable":
         if comparison["blocked_by"] == "measurement":
             return _measurement_card(previous, latest, comparison)
         return _conditions_card(previous, latest, comparison)
+    if any(not _inconsistent(item) for item in stints if item["number"] in (change.get("returned_to_runs") or ())):
+        return _control_card(stints, latest)
 
-    units = _setting_units(rules, latest["car_path"], change) if change["status"] == "changed" else []
+    units = _setting_units(rules, latest["car_path"], change, latest.get("setup_name")) if change["status"] == "changed" else []
     if comparison["verdict"] == "slower" and units:
         reverts = [_revert(item) for unit in units for item in unit["changes"]]
         title = (f"Revert {units[0]['label'].lower()} to {_unit_value(units[0], 'previous')}" if len(units) == 1
@@ -1511,6 +1819,7 @@ def _row(stint: Mapping[str, Any], previous: Mapping[str, Any] | None) -> dict[s
         "conditions": {"track_temp_f": stint["track_temp_f"], "start_fuel_gal": stint["start_fuel_gal"],
                        "tire_compound": stint["compound"], "tire_start": stint["tire_start"]},
         "early": stint["early"], "late": stint["late"], "fall_off": stint["fall_off"], "noise": stint["noise"],
+        "consistency": stint.get("consistency"),
         "setup_change": stint["setup_change"], "comparison": stint["comparison"],
         "tires": _tires(stint, previous),
         "laps": [{key: row[key] for key in ("lap", "run_lap", "lap_time_s", "eligible", "plotted", "exclusion_reasons")}
@@ -1596,13 +1905,15 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
     first = stints[0]
     members = [item for item in stints if item["car_path"] == first["car_path"]
                and item["configuration_key"] == first["configuration_key"]]
-    day = _day_context(members)
     lengths = [_clean_length(item) for item in members]
     for stint in stints:
         stint["early"] = _window(stint, *EARLY_WINDOW)
         stint["late"] = _own_late(stint)
         stint["fall_off"] = _fall_off(stint)
         stint["noise"] = _run_noise(stint)
+        stint["consistency"] = None
+    day = _day_context(members)
+    for stint in stints:
         stint["day"] = day if any(item is stint for item in members) else {}
     if any(length >= MINIMUM_LATE_RUN_LAPS for length in lengths):
         late = {"status": "available", "first_run_lap": None, "last_run_lap": None, "label": "Last 5 laps", "reason": None,
@@ -1615,6 +1926,7 @@ def build_test_day_review(analyses: Sequence[Mapping[str, Any]], rules: Mapping[
     previous = None
     for stint in stints:
         stint["setup_change"] = _setup_change(previous, stint)
+        stint["setup_change"]["returned_to_runs"] = _returned_to(stints, stint) if stint["setup_change"]["status"] == "changed" else []
         stint["comparison"] = _compare(previous, stint) if previous is not None else None
         previous = stint
 
