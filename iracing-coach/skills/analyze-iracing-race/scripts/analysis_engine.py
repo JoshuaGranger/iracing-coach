@@ -33,6 +33,7 @@ try:  # Package import and direct script loading are both supported.
     from . import pit_loss
     from . import race_plan_decision
     from .race_investigation import build_race_investigation
+    from .setup_catalog import garage_setup_fingerprint
     from . import strategy_model
     from . import time_loss
     from . import tire_energy
@@ -44,6 +45,7 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     import pit_loss
     import race_plan_decision
     from race_investigation import build_race_investigation
+    from setup_catalog import garage_setup_fingerprint
     import strategy_model
     import time_loss
     import tire_energy
@@ -83,6 +85,7 @@ ANALYZER_SOURCE_FILES = (
     "race_inspection.py",
     "race_investigation.py",
     "review_sections.v1.json",
+    "setup_catalog.py",
     "strategy_model.py",
     "time_loss.py",
     "tire_energy.py",
@@ -1257,6 +1260,11 @@ def _identity(table: TelemetryTable) -> dict[str, Any]:
         setup_fingerprint = hashlib.sha256(
             json.dumps(car_setup, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
         ).hexdigest()[:16]
+    # `setup_fingerprint` covers the whole sheet, including the last-stop tire
+    # temperatures, tread and hot pressures, so it differs between two runs of
+    # one garage setup. It stays unchanged because recorded tuning evidence is
+    # verified against it; this one identifies the garage setup itself.
+    garage_fingerprint = garage_setup_fingerprint(car_setup) if isinstance(car_setup, Mapping) else None
     fixed_value = options.get("IsFixedSetup")
     if fixed_value is None:
         fixed_value = weekend.get("IsFixedSetup")
@@ -1317,6 +1325,7 @@ def _identity(table: TelemetryTable) -> dict[str, Any]:
         "setup_load_type": driver_info.get("DriverSetupLoadType"),
         "setup_modified": driver_info.get("DriverSetupIsModified"),
         "setup_fingerprint": setup_fingerprint,
+        "garage_setup_fingerprint": garage_fingerprint[:16] if garage_fingerprint else None,
         "setup_parameter_count": _leaf_count(car_setup),
         "tire_compound": tire_compound,
         "setup": car_setup,

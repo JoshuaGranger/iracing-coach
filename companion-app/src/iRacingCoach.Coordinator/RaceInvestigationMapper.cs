@@ -29,7 +29,7 @@ public static class RaceInvestigationMapper
                 Array(source, "timeline").Select(item => new RaceInvestigationEvent(RequiredInt(item, "lap"), RequiredText(item, "kind"),
                     RequiredText(item, "label"), Text(item, "detail") ?? "", Number(item, "value"), Text(item, "unit"))).ToArray(),
                 Track(Property(source, "track_evolution")), Strings(source, "limitations"), retained,
-                Runs: current ? Array(source, "runs").Select(Run).ToArray() : null,
+                Runs: current ? Array(source, "runs").Select(RunView).ToArray() : null,
                 Sections: current ? Sections(Property(source, "sections")) : null,
                 ProjectionVersion: current ? RequiredText(source, "projection_version") : null);
         }
@@ -80,7 +80,8 @@ public static class RaceInvestigationMapper
             Text(item, "usage_source"), Strings(item, "limitations"));
     }
 
-    private static RaceRunView Run(JsonElement item)
+    /// <summary>Maps one run's observed trend and screened fit; also read by the test-day review.</summary>
+    public static RaceRunView RunView(JsonElement item)
     {
         var trend = Property(item, "trend");
         var fit = Property(item, "fit");

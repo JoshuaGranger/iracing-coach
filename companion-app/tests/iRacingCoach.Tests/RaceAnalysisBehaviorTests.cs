@@ -421,8 +421,11 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(technical, "new(\"Most wear\", MostTireWearReading");
         Assert.DoesNotContain("new(\"Lowest\", LowestTireReading", technical);
         StringAssert.Contains(technical, "PredictionUnavailableReason");
-        Assert.AreEqual(3, technical.Split("class=\"technical-tire-vital\"", StringSplitOptions.None).Length - 1,
-            "The measured tire snapshot must keep carcass, surface, and pressure in three stable compact cells.");
+        // Each band tile carries its wear and its carcass/surface temperature; pressure sits in the card header.
+        // A separate footer row did not fit the grid cell at 1280x720 and was clipped.
+        StringAssert.Contains(technical, "<em class=\"technical-band-temperature\">@BandTemperatures(tire, band.Label)</em>");
+        StringAssert.Contains(technical, "<span class=\"technical-tire-pressure\">@Pressure(tire.PressurePsi)</span>");
+        Assert.DoesNotContain("technical-tire-vital", technical);
 
         StringAssert.Contains(unavailable, "data-technical-unavailable-reason");
         StringAssert.Contains(unavailable, "data-technical-unavailable-action");
@@ -434,9 +437,8 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(css, ".race-technical-data { height: 100%; min-height: 0; }");
         StringAssert.Contains(css, "grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-rows: repeat(2,minmax(0,1fr));");
         StringAssert.Contains(css, ".technical-investigation { height:100%;min-height:0;");
-        StringAssert.Contains(css, ".tire-investigation .technical-tire-card{grid-template-rows:auto minmax(28px,1fr) auto;");
-        StringAssert.Contains(css, ".tire-investigation .technical-tire-card footer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));");
-        StringAssert.Contains(css, ".tire-investigation .technical-tire-vital b{min-width:0;margin:0;overflow:hidden;font:600 var(--font-size-min)");
+        StringAssert.Contains(css, ".tire-investigation .technical-tire-card{grid-template-rows:auto minmax(28px,1fr);");
+        Assert.DoesNotContain(".technical-tire-card footer{", css, "No footer row below the bands: it was clipped at 1280x720.");
         StringAssert.Contains(technical, "data-technical-complete-findings");
         StringAssert.Contains(technical, "@foreach (var metric in ActiveMetrics)");
         Assert.DoesNotContain("Metrics.Take(3)", technical,
@@ -1434,6 +1436,18 @@ public sealed class RaceAnalysisBehaviorTests
         StringAssert.Contains(telemetry, "else if (TraceExpanded) await ToggleTraceExpanded(true);");
         StringAssert.Contains(telemetry, "else if (restoreKeyboardFocus) await TraceExpandButtonElement.FocusAsync();");
         StringAssert.Contains(css, ".analysis-trace-studio:focus { outline: none; }");
+    }
+
+    [TestMethod]
+    public void TireManagementShowsBandTemperaturesAndGradesTreadRemaining()
+    {
+        var technical = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.UI", "RaceTechnicalData.razor"));
+        // Each band tile shows that band's carcass/surface temperature, so the spread reads across the tiles.
+        StringAssert.Contains(technical, "var carcass = Band(tire.CarcassTemperatureF, band);");
+        StringAssert.Contains(technical, "var surface = Band(tire.SurfaceTemperatureF, band);");
+        Assert.DoesNotContain("AverageBand(", technical, "An average hides the inside-to-outside spread.");
+        StringAssert.Contains(technical, "TreadColor(Remaining(band.Value))",
+            "Bands carry wear; the tread scale reads remaining, so a fresh tire must not show red.");
     }
 
     private static string CompanionRoot() => TestRepositoryPaths.CompanionAppRoot;

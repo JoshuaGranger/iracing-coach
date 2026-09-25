@@ -876,6 +876,20 @@ def embedded_setup_fingerprint(setup: Mapping[str, Any] | None) -> str | None:
     ).hexdigest()
 
 
+def embedded_garage_setup_fingerprint(setup: Mapping[str, Any] | None) -> str | None:
+    """Like :func:`embedded_setup_fingerprint`, without the sheet's tire readings.
+
+    The whole-setup fingerprint above stays the verification gate for a
+    recorded ``setup_fingerprint``. This one identifies the garage setup the
+    driver chose, so a repeat run of the same setup is recognized as one.
+    """
+    try:
+        from .setup_catalog import garage_setup_fingerprint
+    except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+        from setup_catalog import garage_setup_fingerprint
+    return garage_setup_fingerprint(setup)
+
+
 def _analysis_track_key(analysis: Mapping[str, Any]) -> str:
     geometry = analysis.get("track_geometry")
     if isinstance(geometry, Mapping) and geometry.get("track_configuration_key"):
@@ -2009,6 +2023,7 @@ __all__ = [
     "build_candidate_whitelist",
     "build_structured_tuning_evidence",
     "choose_oreilly_donor",
+    "embedded_garage_setup_fingerprint",
     "embedded_setup_fingerprint",
     "load_structured_tuning_rules",
     "map_annotation_hash",

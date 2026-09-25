@@ -61,12 +61,21 @@ public sealed record RecentRace(
     string Series = "",
     string Season = "",
     string Selector = "",
-    RaceOverview? Overview = null)
+    RaceOverview? Overview = null,
+    string? TestDayId = null,
+    int? TestDayRunNumber = null,
+    int? TestDayRunCount = null)
 {
     public bool IsRace => string.Equals(SessionType, "Race", StringComparison.OrdinalIgnoreCase);
     public bool IsQualifying => SessionType?.Contains("Qual", StringComparison.OrdinalIgnoreCase) == true;
     public bool Reconnected => FileCount > 1;
     public string EffectiveSelector => string.IsNullOrWhiteSpace(Selector) ? Id ?? string.Empty : Selector;
+    /// <summary>
+    /// Discovery tags consecutive offline stints of one car and layout with a shared
+    /// test day. The tag groups rows only; each stint keeps its own Id and EventKey,
+    /// because a shared EventKey would make two stints the same recording.
+    /// </summary>
+    public bool IsTestDayStint => !string.IsNullOrWhiteSpace(TestDayId);
 }
 
 public sealed record RaceOverview(
@@ -100,6 +109,20 @@ public sealed record RaceEventGroup(
 {
     public bool Reconnected => Sessions?.OfType<RecentRace>().Any(session => session.Reconnected) == true;
     public bool Analyzed => Sessions?.OfType<RecentRace>().Any(session => session.Analyzed) == true;
+    /// <summary>The shared test-day tag when this group is two or more stints of one day.</summary>
+    public string? TestDayId => Sessions is { Count: >= 2 } sessions
+        && sessions[0]?.TestDayId is { Length: > 0 } id
+        && sessions.All(session => string.Equals(session?.TestDayId, id, StringComparison.OrdinalIgnoreCase))
+            ? id
+            : null;
+    public bool IsTestDay => TestDayId is not null;
+    /// <summary>
+    /// Set on the one-recording group of a practice or test session reviewed run by run
+    /// (a run is the laps between pit visits); null otherwise.
+    /// </summary>
+    public string? SingleRecordingKey { get; init; }
+    /// <summary>The key a test-day review is kept under: the day's tag, or the single recording's key.</summary>
+    public string? TestDayKey => TestDayId ?? SingleRecordingKey;
 }
 
 public enum RaceBrowserFilter

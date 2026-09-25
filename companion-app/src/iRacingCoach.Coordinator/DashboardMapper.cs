@@ -50,12 +50,19 @@ public static class DashboardMapper
         return mapped.OrderByDescending(SortTime).ToArray();
     }
 
+    /// <summary>
+    /// One row group per event. Offline stints of one test day group by their shared
+    /// test-day tag, oldest stint first; the tag is never copied into EventKey, which
+    /// identifies a single recording (see <see cref="RecentRace.IsTestDayStint"/>).
+    /// </summary>
     public static IReadOnlyList<RaceEventGroup> GroupEvents(IEnumerable<RecentRace> sessions) =>
         sessions
-            .GroupBy(session => string.IsNullOrWhiteSpace(session.EventKey) ? session.Id : session.EventKey, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(GroupKey, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
-                var ordered = group.OrderBy(SessionOrder).ThenByDescending(SortTime).ToArray();
+                var ordered = group.All(session => session.IsTestDayStint)
+                    ? group.OrderBy(session => session.TestDayRunNumber ?? int.MaxValue).ThenBy(SortTime).ToArray()
+                    : group.OrderBy(SessionOrder).ThenByDescending(SortTime).ToArray();
                 var primary = ordered.FirstOrDefault(session => session.IsRace) ?? ordered[0];
                 return new RaceEventGroup(
                     group.Key,
@@ -70,7 +77,13 @@ public static class DashboardMapper
             .OrderByDescending(group => group.Sessions.Max(SortTime))
             .ToArray();
 
-    private static string? RealIdentifier(string? value) =>
+    private static string GroupKey(RecentRace session) =>
+        session.IsTestDayStint ? session.TestDayId!
+        : string.IsNullOrWhiteSpace(session.EventKey) ? session.Id
+        : session.EventKey;
+
+    /// <summary>A subsession or session id that names a real event; offline recordings report 0 (or -1).</summary>
+    internal static string? RealIdentifier(string? value) =>
         string.IsNullOrWhiteSpace(value) || value.Trim() is "0" or "-1" ? null : value.Trim();
 
     private static RecentRace MapSession(JsonElement session, JsonElement dashboardRace)
@@ -137,7 +150,10 @@ public static class DashboardMapper
                 PaceSlopeSecondsPerLap: Number(summary, "pace_slope_s_per_lap"),
                 PaceConsistencyPercent: Number(summary, "pace_consistency_percent"),
                 FuelUsedGallons: Number(summary, "fuel_used_gal"),
-                BestCleanLapSeconds: Number(summary, "best_clean_lap_s")));
+                BestCleanLapSeconds: Number(summary, "best_clean_lap_s")),
+            TestDayId: isRace ? null : Text(session, "test_day_id"),
+            TestDayRunNumber: isRace ? null : OptionalInteger(session, "test_day_run"),
+            TestDayRunCount: isRace ? null : OptionalInteger(session, "test_day_run_count"));
     }
 
     private static JsonElement MatchDashboardRace(JsonElement session, IReadOnlyList<JsonElement> dashboardRaces)
@@ -230,6 +246,12 @@ public static class DashboardMapper
             ? (int)Math.Round(number, MidpointRounding.AwayFromZero)
             : 0;
     }
+
+    private static int? OptionalInteger(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
+            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var integer) && integer > 0
+            ? integer
+            : null;
 
     private static double? Number(JsonElement element, string property)
     {

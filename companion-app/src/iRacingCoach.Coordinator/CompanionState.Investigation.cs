@@ -248,24 +248,7 @@ public sealed partial class CompanionState
     {
         await RunJobAsync($"Check test · {session.Track}", $"trial:{trial.TrialId}:{session.Id}", "Reading the later recording", async token =>
         {
-            var analysisPath = !string.IsNullOrWhiteSpace(session.AnalysisPath) && File.Exists(session.AnalysisPath) ? session.AnalysisPath : string.Empty;
-            if (analysisPath.Length == 0)
-            {
-                var analysis = await CallBackendAsync("analyze_iracing_race", new
-                {
-                    selector = session.EffectiveSelector,
-                    iracing_root = Settings.IRacingRoot,
-                    archive_root = Settings.ArchiveRoot,
-                    target_hz = (double?)null
-                }, token);
-                EnsureResponseMatchesSession(session, analysis);
-                SaveUiAnalysisCache(session, analysis);
-                analysisPath = AnalysisPathFromResponse(analysis);
-                var mapped = RuntimeMapper.Analysis(analysis);
-                ApplySuccessfulRaceAnalysis(session, mapped, analysisPath);
-                if (mapped.VectorGeometry is { TrackConfigurationKey.Length: > 0 } geometry)
-                    _geometryByConfiguration[geometry.TrackConfigurationKey] = geometry;
-            }
+            var analysisPath = await EnsureAnalyzedAsync(session, token);
             if (string.IsNullOrWhiteSpace(analysisPath)) throw new InvalidOperationException("The later recording has no saved analysis to measure.");
             var result = await CallBackendAsync("evaluate_driving_trial", new
             {

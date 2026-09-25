@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import datetime as _datetime
+import hashlib
 import importlib
 import itertools
 import math
@@ -1842,6 +1843,96 @@ def _group_id(key: tuple[Any, ...]) -> str:
     return ":".join("unknown" if value is None else str(value) for value in key)
 
 
+#: Offline stints of one car at one track configuration belong to the same test
+#: day when each starts no more than this long after the previous one ended.
+TEST_DAY_MAX_GAP_S = 2 * 60 * 60
+
+
+def _server_event(group: Mapping[str, Any]) -> tuple[str, int] | None:
+    """The hosted/official event a group belongs to (subsession, else server session), or None offline."""
+
+    subsession = _as_int(group.get("subsession_id"))
+    if subsession not in {None, 0}:
+        return ("subsession", subsession)
+    session = _as_int(group.get("session_id"))
+    return ("session", session) if session not in {None, 0} else None
+
+
+def _is_race_or_qualifying(group: Mapping[str, Any]) -> bool:
+    kind = (_as_text(group.get("sim_session_type")) or _as_text(group.get("event_type")) or "").casefold()
+    return bool(group.get("is_race")) or "race" in kind or "qualify" in kind
+
+
+def _test_day_key(group: Mapping[str, Any], event_sessions: frozenset[tuple[str, int]] = frozenset()) -> tuple[Any, ...] | None:
+    """Exact car/track identity of a practice or test recording, else None.
+
+    Offline groups qualify, and so does a hosted or official practice whose
+    event has no race or qualifying session in the recordings (a standalone
+    practice is a test day too). A practice that belongs to a recorded race
+    event stays with that event. A Race or any qualifying session never
+    qualifies, and neither does a group whose kind is unknown or whose times
+    come from file modification alone.
+    """
+
+    if group.get("kind") != "session" or group.get("is_race"):
+        return None
+    event = _server_event(group)
+    if event is not None and event in event_sessions:
+        return None
+    if group.get("time_source") == "mtime":
+        return None
+    kind = (_as_text(group.get("sim_session_type")) or _as_text(group.get("event_type")) or "").casefold()
+    if not kind or "race" in kind or "qualify" in kind:
+        return None
+    start, end = group.get("start_time_unix"), group.get("end_time_unix")
+    if not all(isinstance(value, (int, float)) and math.isfinite(value) for value in (start, end)):
+        return None
+    car_path = _as_text(group.get("car_path"))
+    track = group.get("track_id") if group.get("track_id") is not None else _as_text(group.get("track_name"))
+    if not car_path or track is None:
+        return None
+    return (str(track), (_as_text(group.get("track_config_name")) or "").casefold(), car_path)
+
+
+def _assign_test_days(groups: Sequence[dict[str, Any]]) -> None:
+    """Tag practice and test recordings that form one test day, in place.
+
+    Stints of the same car path at the same track configuration join while
+    each starts within :data:`TEST_DAY_MAX_GAP_S` of the previous stint's end.
+    Only days with two or more stints are tagged: ``test_day_id`` (stable, from
+    the first stint), ``test_day_run`` (1 = oldest) and ``test_day_run_count``.
+    Every stint keeps its own ``group_id``; the tag never merges recordings.
+    """
+
+    event_sessions = frozenset(event for group in groups if group.get("kind") == "session"
+                               and _is_race_or_qualifying(group) and (event := _server_event(group)) is not None)
+    by_key: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for group in groups:
+        key = _test_day_key(group, event_sessions)
+        if key is not None:
+            by_key.setdefault(key, []).append(group)
+    for members in by_key.values():
+        members.sort(key=lambda item: (float(item["start_time_unix"]), str(item.get("group_id") or "")))
+        days: list[list[dict[str, Any]]] = []
+        for group in members:
+            if days and float(group["start_time_unix"]) - max(
+                float(item["end_time_unix"]) for item in days[-1]
+            ) <= TEST_DAY_MAX_GAP_S:
+                days[-1].append(group)
+            else:
+                days.append([group])
+        for day in days:
+            if len(day) < 2:
+                continue
+            identifier = "test-day-" + hashlib.sha256(
+                str(day[0].get("group_id")).encode("utf-8")
+            ).hexdigest()[:16]
+            for number, group in enumerate(day, start=1):
+                group["test_day_id"] = identifier
+                group["test_day_run"] = number
+                group["test_day_run_count"] = len(day)
+
+
 def discover_sessions(
     root: os.PathLike[str] | str,
     latest_only: bool = False,
@@ -1852,6 +1943,10 @@ def discover_sessions(
     session IDs, simulator IDs, and metadata timestamps are progressively used
     for offline sessions.  Disk/session metadata determines recency; mtime is
     used only when those timestamps are unavailable.
+
+    Offline practice/test stints stay separate groups; consecutive stints of
+    one car at one track configuration additionally carry optional
+    ``test_day_id``/``test_day_run``/``test_day_run_count`` tags.
 
     With ``latest_only=True`` only the newest group identified as a Race is
     returned.  A full discovery appends malformed-file records with
@@ -1948,6 +2043,7 @@ def discover_sessions(
             }
         )
 
+    _assign_test_days(groups)
     groups.sort(
         key=lambda item: (
             float(item.get("end_time_unix") or 0.0),

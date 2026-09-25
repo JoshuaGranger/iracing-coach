@@ -1038,6 +1038,32 @@
       "name": "evaluate_driving_trial"
     },
     {
+      "description": "Read-only review of the runs in 1-12 archived test-day recordings (offline stints or practice sessions; a run is the laps between pit visits) in time order: equal-age pace windows, fall-off, garage-setup changes without tire readings or computed readouts, comparability, source-labelled tire readings, and exactly one next-change card. Needs two or more runs. Verdicts are faster, slower, within scatter or not comparable; never unchanged. Writes nothing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_paths": {
+            "description": "Archived analysis.json paths, one per recording, in any order.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "archive_root": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "analysis_paths"
+        ],
+        "type": "object"
+      },
+      "name": "review_test_day"
+    },
+    {
       "description": "Return season/car/track-scoped open-setup experiments and their recorded outcomes.",
       "inputSchema": {
         "additionalProperties": false,

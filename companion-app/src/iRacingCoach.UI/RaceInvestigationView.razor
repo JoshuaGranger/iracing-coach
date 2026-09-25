@@ -15,7 +15,14 @@
         }
         else
         {
-            <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" /></div>
+            @if (OfflineTesting)
+            {
+                <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" EmptyTitle="No green laps to place here" EmptyDetail="@OfflineRunsDetail" /></div>
+            }
+            else
+            {
+                <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" /></div>
+            }
         }
     }
     else if (View == "sections")
@@ -23,6 +30,7 @@
         @if (!Investigation.HasSectionInspection || Selected?.Inspection is null)
         {
             @if (Investigation.Runs is null) { <LegacyNotice OnRefresh="OnRefresh" /> }
+            else if (OfflineTesting && Selected is null) { <div class="ri-empty ri-panel"><strong>No green-lap comparison to inspect</strong><span>@OfflineSectionsDetail</span></div> }
             else { <div class="ri-empty ri-panel"><strong>No track sections to inspect</strong><span>@(Investigation.Sections?.UnavailableReason ?? "Select a comparison with recorded traces.")</span></div> }
         }
         else
@@ -127,10 +135,22 @@
 
 @code {
     [Parameter, EditorRequired] public RaceInvestigation Investigation { get; set; } = null!;
+    private string OfflineRunsDetail => "Offline Testing holds iRacing's one-lap-to-green flag for the whole session, and this recording's analysis reads those laps as caution, so none is placed on the green-lap axis."
+        + (TestDayAvailable ? " Test day compares them by lap of run." : "");
+    private string OfflineSectionsDetail => "Section comparisons pair green laps, and this recording's analysis reads Offline Testing laps as caution."
+        + (TestDayAvailable ? " Test day compares them by lap of run." : "");
     [Parameter] public AnalysisTrackGeometry? Geometry { get; set; }
     [Parameter] public CompanionState? State { get; set; }
     [Parameter] public string AnalysisId { get; set; } = "";
     [Parameter] public string View { get; set; } = "race";
+    /// <summary>
+    /// An Offline Testing recording: iRacing holds the one-lap-to-green flag for the whole
+    /// session and the recording analysis reads its laps as caution, so empty views say so
+    /// instead of blaming the laps.
+    /// </summary>
+    [Parameter] public bool OfflineTesting { get; set; }
+    /// <summary>The recording belongs to a test day whose Test day view compares these laps.</summary>
+    [Parameter] public bool TestDayAvailable { get; set; }
     [Parameter] public string? ComparisonId { get; set; }
     [Parameter] public string? SectionId { get; set; }
     [Parameter] public EventCallback<(string View, string? ComparisonId, string? SectionId)> OnSelectionChanged { get; set; }

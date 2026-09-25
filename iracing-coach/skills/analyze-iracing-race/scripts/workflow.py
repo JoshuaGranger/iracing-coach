@@ -1660,8 +1660,24 @@ def _analysis_pipeline_sha256() -> str:
 # retained default and ranked slots prefer usable comparisons. Cross-run
 # windows stay exposure-matched across a stop. Cached analyses rebuild it
 # through refresh_race_investigation.
+# Review 2026-09-25: v19 answers are unchanged. identity gains the optional
+# garage_setup_fingerprint (the embedded CarSetup without last-stop tire
+# readings or UpdateCount), so setup_catalog.py joins the bundle. Every existing
+# field, including setup_fingerprint, is byte-identical; a cached analysis
+# without the new key is not wrong, and consumers derive it from identity.setup.
+# Review 2026-09-25: ibt_reader discovery tags offline test-day stints with
+# optional test_day_* fields after grouping. Group keys, member files and every
+# analysis input are unchanged, so cached analyses remain valid.
+# Review 2026-09-25 (test-day fixes): v19 answers are unchanged. The optional
+# identity.garage_setup_fingerprint now also leaves out computed garage readouts
+# (corner/cross/nose weight, ride heights, truck-arm preload), so one .sto whose
+# readouts drift by a unit keeps one fingerprint. Only this unreleased branch
+# ever emitted the key, and no consumer reads it: the test-day review recomputes
+# it from identity.setup. Discovery also tags standalone hosted/official
+# practice with the optional test_day_* fields; group keys, member files and
+# every analysis input are unchanged, so cached analyses remain valid.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "be04555772f7fdfda2d8601aec330fdc34b01b09defa1b85a77dc3cdf793b6a3"
+    "0b1a14fca8cf4abdcca8bc400c13bc04f708d1141a7f44063da1ff9d222ad478"
 )
 
 

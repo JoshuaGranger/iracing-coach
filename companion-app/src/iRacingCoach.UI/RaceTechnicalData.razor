@@ -248,7 +248,7 @@
                     <div class="technical-investigation-body tire-investigation">
                         <div class="technical-tire-investigation-shell @(TireDriverMetrics.Count > 0 ? "with-dynamics" : null)">
                             <section class="technical-tire-source measured" data-tire-source="measured">
-                                <header><strong>Tire condition at stop</strong></header>
+                                <header><strong>Tire condition at stop</strong>@if (TireStops.Count > 0) { <small class="technical-tire-key">Each band: wear · carcass/surface °F</small> }</header>
                                 @if (TireStops.Count == 0)
                                 {
                                     <TechnicalUnavailable Title="No tire condition available" Detail="This race did not produce a completed outer, middle, and inner tire reading." Action="Use the dynamics panel for immediate technique review; a completed stop will add physical tire condition next time." />
@@ -266,19 +266,16 @@
                                         <div class="technical-tire-grid">
                                             @foreach (var tire in TireConditions(pit))
                                             {
+                                                @* Each band tile holds that band's wear and its carcass/surface temperature, so the
+                                                   card fits its grid cell at 1280x720 without clipping a footer. *@
                                                 <article class="technical-tire-card">
-                                                    <header><strong>@tire.Corner</strong><span>@(ChangedAtStop(SelectedTireRun, tire.Corner) ? "Changed" : "Kept")</span></header>
-                                                    <div class="technical-tire-bands" aria-label="@tire.Corner wear outer middle inner">
+                                                    <header><strong>@tire.Corner</strong><span class="technical-tire-pressure">@Pressure(tire.PressurePsi)</span><span>@(ChangedAtStop(SelectedTireRun, tire.Corner) ? "Changed" : "Kept")</span></header>
+                                                    <div class="technical-tire-bands" aria-label="@tire.Corner wear and carcass/surface temperature by band">
                                                         @foreach (var band in TireBands(tire))
                                                         {
-                                                            <span style="--tread-color:@TreadColor(band.Value)"><small>@band.Label</small><b>@Percent(band.Value)</b></span>
+                                                            <span style="--tread-color:@TreadColor(Remaining(band.Value))" title="@BandTitle(tire, band.Label, band.Value)"><small>@band.Label <b>@Percent(band.Value)</b></small><em class="technical-band-temperature">@BandTemperatures(tire, band.Label)</em></span>
                                                         }
                                                     </div>
-                                                    <footer>
-                                                        <span class="technical-tire-vital"><small>Carcass</small><b>@Temperature(AverageBand(tire.CarcassTemperatureF))</b></span>
-                                                        <span class="technical-tire-vital"><small>Surface</small><b>@Temperature(AverageBand(tire.SurfaceTemperatureF))</b></span>
-                                                        <span class="technical-tire-vital"><small>Pressure</small><b>@Pressure(tire.PressurePsi)</b></span>
-                                                    </footer>
                                                 </article>
                                             }
                                         </div>
@@ -751,12 +748,39 @@
         return "hsl(" + hue.ToString(System.Globalization.CultureInfo.InvariantCulture) + " 64% 54%)";
     }
     private static string Pressure(double? value) => value.HasValue ? $"{value.Value:0.0} psi" : "—";
-    private static string Temperature(double? value) => value.HasValue ? $"{value.Value:0}°F" : "—";
-    private static double? AverageBand(AnalysisTireBands bands)
+    // Bands carry wear (100 - tread remaining); the tread scale above reads remaining.
+    private static double? Remaining(double? wear) => wear.HasValue ? Math.Clamp(100d - wear.Value, 0d, 100d) : null;
+
+    /// <summary>
+    /// One band's carcass/surface temperature, never an average: with each band in
+    /// its tile, the spread across the tread reads across the three tiles.
+    /// </summary>
+    private static string BandTemperatures(AnalysisTireCondition tire, string band)
     {
-        var values = new[] { bands.Outer, bands.Middle, bands.Inner }.Where(value => value.HasValue).Select(value => value!.Value).ToArray();
-        return values.Length == 0 ? null : values.Average();
+        var carcass = Band(tire.CarcassTemperatureF, band);
+        var surface = Band(tire.SurfaceTemperatureF, band);
+        if (!carcass.HasValue && !surface.HasValue) return "—";
+        static string Value(double? value) => value.HasValue ? value.Value.ToString("0", System.Globalization.CultureInfo.CurrentCulture) : "—";
+        return $"{Value(carcass)}/{Value(surface)}°";
     }
+
+    private static string BandTitle(AnalysisTireCondition tire, string band, double? wear)
+    {
+        var name = band switch { "O" => "Outside", "M" => "Middle", "I" => "Inside", _ => "Average" };
+        static string Degrees(double? value) => value.HasValue ? $"{value.Value:0} °F" : "not measured";
+        var text = $"{name}: {Percent(wear)} worn; carcass {Degrees(Band(tire.CarcassTemperatureF, band))}, surface {Degrees(Band(tire.SurfaceTemperatureF, band))}.";
+        return tire.CarcassTemperatureF is { Inner: { } inside, Outer: { } outside }
+            ? $"{text} Carcass inside minus outside {inside - outside:+0;−0;0} °F."
+            : text;
+    }
+
+    private static double? Band(AnalysisTireBands bands, string band) => band switch
+    {
+        "O" => bands.Outer,
+        "M" => bands.Middle,
+        "I" => bands.Inner,
+        _ => null
+    };
     private static string LapTime(double? value) => value.HasValue ? TimeSpan.FromSeconds(value.Value).ToString(@"m\:ss\.fff") : "—";
     private static string Delta(double? value) => value.HasValue ? $"{value.Value:+0.000;-0.000;0.000} s" : "—";
     private static string PaceTrend(AnalysisRun run) => run.PaceSlopeSecondsPerLap switch { > .01 => $"+{run.PaceSlopeSecondsPerLap:0.000} s/lap", < -.01 => $"{run.PaceSlopeSecondsPerLap:0.000} s/lap", not null => "Stable", _ => "—" };

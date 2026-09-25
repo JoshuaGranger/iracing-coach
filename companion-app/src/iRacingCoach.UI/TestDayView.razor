@@ -1,0 +1,519 @@
+@using System.Globalization
+@using static iRacingCoach.UI.InvestigationPresentation
+
+<section class="ri-view td-view" data-test-day="@Group.TestDayKey" aria-label="Test day">
+    @if (Review is null)
+    {
+        <div class="ri-empty ri-panel td-empty" data-test-day-state="@(Loading ? "loading" : "idle")">
+            @if (Loading)
+            {
+                <strong>Comparing the day's runs</strong>
+                <span>@(Message.Length > 0 ? Message : "Reading the day's runs…")</span>
+            }
+            else
+            {
+                <strong>@(Group.IsTestDay ? $"{Group.Sessions.Count} recordings" : "One recording") · @Group.Car</strong>
+                <span>@(Message.Length > 0 ? Message : "Compare every run of this test day at the same laps into the run.")</span>
+                @if (OnLoad.HasDelegate) { <button type="button" class="ri-button" @onclick="() => OnLoad.InvokeAsync()">Compare runs</button> }
+            }
+        </div>
+    }
+    else
+    {
+        var review = Review;
+        <div class="td-top">
+            <div class="ri-panel td-chart">
+                @* Lap dots are not tab stops here: the run table below is the keyboard path. *@
+                <RunOverlayChart Investigation="Projection" Selected="SelectedComparison" XAxisTitle="Lap of run" RunCaption="RunCaption" Hint="Point to a lap for its time"
+                                 FitToggleLabel="Fall-off fit" FitToggleTitle="The table's fall-off: least-squares line through the clean laps 2..N of each run"
+                                 FitCaption="FitCaption" FocusableLaps="false"
+                                 FootNote="Rings mark the laps compared for the selected run. Lines are a five-lap median of recorded laps; hollow dots are excluded from clean laps." />
+            </div>
+            <aside class="ri-panel td-next" data-next-change="@review.NextChange.Kind" aria-label="Next change">
+                <span class="ri-label">Next change</span>
+                <h2>@review.NextChange.Title</h2>
+                <p>@review.NextChange.Instruction</p>
+                @if (review.NextChange.Changes.Count > 0)
+                {
+                    <ul class="td-next-changes">
+                        @foreach (var change in review.NextChange.Changes)
+                        {
+                            <li><span>@change.Label</span><b>@ChangeValue(change)</b></li>
+                        }
+                    </ul>
+                }
+                <div class="td-success" data-success-direction="@review.NextChange.SuccessRule.Direction"><span>Check</span><b>@review.NextChange.SuccessRule.Text</b></div>
+                <small class="td-basis">@BasedOn(review.NextChange)@(review.NextChange.RulesetStep is { StepVerified: false } ? " · garage step size not verified" : "")</small>
+                @if (HandlingTarget is { } target && State is { } state)
+                {
+                    <button type="button" class="ri-link td-handling" title="Open Progressive Tuning with the latest run's setup" @onclick="() => state.BeginSetupTuningAsync(target.SetupId, target.RaceId)">Describe handling</button>
+                }
+                @if (review.NextChange.Evidence.Count > 0 || review.NextChange.Note is { Length: > 0 })
+                {
+                    <small class="td-evidence">@string.Join(" ", review.NextChange.Evidence.Append(review.NextChange.Note ?? "").Where(text => text.Length > 0))</small>
+                }
+            </aside>
+        </div>
+
+        <div class="ri-panel td-table-panel">
+            <table class="td-table" aria-label="Runs of the test day">
+                @if (Message.Length > 0) { <caption class="td-note">@Message</caption> }
+                <thead>
+                    <tr>
+                        <th scope="col">Run</th>
+                        <th scope="col">Setup change</th>
+                        <th scope="col" class="num">@(review.Windows.Early.Label ?? "Early laps")</th>
+                        <th scope="col" class="num" title="@LateTitle(review.Windows.Late)">@(review.Windows.Late.Label ?? "Late laps")</th>
+                        <th scope="col" class="num" title="Least-squares slope of clean lap times over @(review.Windows.FallOff.Label?.ToLowerInvariant() ?? "the run")">Fall-off</th>
+                        <th scope="col">vs previous run</th>
+                        <th scope="col" title="Telemetry pit-stall reading at the end of the run: inside minus outside carcass temperature and lowest tread">Tires at stop · carcass I−O, tread</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var run in review.Runs)
+                    {
+                        var number = run.Run;
+                        var selected = number == SelectedRunNumber;
+                        var session = Session(run);
+                        var open = session is not null && session.Id == OpenSessionId;
+                        <tr @ref="_rows[number]" class="@(selected ? "selected" : null)" data-run="@number" tabindex="0" aria-selected="@(selected ? "true" : "false")"
+                            @onclick="() => Select(number)" @onkeydown="args => RowKey(args, number)">
+                            <th scope="row" class="td-run">
+                                <svg width="18" height="8" aria-hidden="true"><line x1="0" y1="4" x2="18" y2="4" stroke="@RunColor(number)" stroke-width="2.5" stroke-dasharray="@RunDash(number)" /></svg>
+                                <span><span><b>Run @number</b>@if (open) { <em class="td-open" title="This run's recording is open in Runs, Sections and Traces">open</em> }</span><small title="@MeasuredTitle(run)">@RunDetail(run)</small></span>
+                            </th>
+                            <td class="td-setup" title="@SetupTitle(run.SetupChange)">@SetupCell(run.SetupChange)@if (run.SetupChange.Changes.Count > 1) { <em class="td-more">+@(run.SetupChange.Changes.Count - 1)</em> }</td>
+                            <td class="num">@WindowCell(run.Early)</td>
+                            <td class="num">@WindowCell(run.Late)</td>
+                            <td class="num" title="@FallOffTitle(run.FallOff)">
+                                @if (run.FallOff.Measured)
+                                {
+                                    <b class="@SlopeClass(run.FallOff.SlopeSecondsPerLap)">@Signed(run.FallOff.SlopeSecondsPerLap) s/lap</b><small>@(run.FallOff.EqualAge ? $"{run.FallOff.FitLapCount} laps" : "short run")</small>
+                                }
+                                else
+                                {
+                                    <span class="td-missing">Not measured</span>
+                                }
+                            </td>
+                            <td class="td-verdict-cell" title="@ComparisonTitle(run.Comparison)">
+                                @if (run.Comparison is { } comparison)
+                                {
+                                    <span class="td-verdict @comparison.Verdict">@VerdictLabel(comparison)</span>
+                                    @* Ahead of the detail, which the cell may truncate: select the row to read them. *@
+                                    @if (NoteCount(comparison) is > 0 and var notes)
+                                    {
+                                        <small class="td-notes">+@notes note@(notes == 1 ? "" : "s")</small>
+                                    }
+                                    <small>@VerdictDetail(comparison)</small>
+                                }
+                                else
+                                {
+                                    <span class="td-missing">First run</span>
+                                }
+                            </td>
+                            <td class="td-tire-cell" title="@TireTitle(run.Tires)">
+                                @if (!run.Tires.StopReading.Measured)
+                                {
+                                    <span class="td-missing">Not measured</span>
+                                }
+                                else
+                                {
+                                    <span class="td-mini-tires">
+                                        @foreach (var corner in CornerOrder)
+                                        {
+                                            var stop = run.Tires.Corners.GetValueOrDefault(corner)?.Stop;
+                                            <span><i>@corner</i><b>@Degrees(stop?.SpreadF)</b><small>@Tread(stop?.MinimumTreadPercent)</small></span>
+                                        }
+                                    </span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (SelectedRun is { } chosen)
+        {
+            var session = Session(chosen);
+            <section class="ri-panel td-tires" data-tires-run="@chosen.Run" aria-label="Run @chosen.Run">
+                <header>
+                    <strong>Run @chosen.Run</strong>
+                    <span class="td-tire-actions">
+                        @if (session is not null && session.Id != OpenSessionId && OnOpenRun.HasDelegate)
+                        {
+                            <button type="button" class="ri-link" title="Open this run's recording and show its laps in Runs" @onclick="() => OnOpenRun.InvokeAsync(session)">Show run @chosen.Run's laps in Runs</button>
+                        }
+                        <button type="button" class="ri-link" @onclick="() => Close(chosen.Run)">Close</button>
+                    </span>
+                </header>
+                @if (chosen.Comparison is { } versus)
+                {
+                    @* Every reason and caution for the verdict, visible without hovering. *@
+                    <div class="td-compare-notes" data-compare-notes>
+                        <strong>vs run @versus.ComparedWithRun</strong>
+                        @* The summary states the verdict and, when not comparable, every reason. *@
+                        <p>@(versus.Summary ?? string.Join(" ", versus.Reasons))</p>
+                        @if (versus.Flags.Count > 0)
+                        {
+                            <ul>
+                                @foreach (var flag in versus.Flags) { <li>@flag</li> }
+                            </ul>
+                        }
+                    </div>
+                }
+                @if (chosen.SetupChange.Changes.Count > 0 || chosen.SetupChange.Readouts.Count > 0 || chosen.SetupChange.Reason is { Length: > 0 })
+                {
+                    <div class="td-compare-notes" data-setup-notes>
+                        <strong>Setup</strong>
+                        @if (chosen.SetupChange.Changes.Count > 0)
+                        {
+                            <p>@string.Join(" · ", chosen.SetupChange.Changes.Select(Setting))</p>
+                        }
+                        @if (chosen.SetupChange.Readouts.Count > 0)
+                        {
+                            <p class="td-readouts">Garage readouts moved with @(chosen.SetupChange.Changes.Count == 1 ? "it" : "them"): @string.Join(" · ", chosen.SetupChange.Readouts.Select(Setting))</p>
+                        }
+                        @if (chosen.SetupChange.Reason is { Length: > 0 } setupReason) { <p>@setupReason</p> }
+                    </div>
+                }
+                <div class="td-tire-head">
+                    <span class="td-source @(chosen.Tires.StopReading.Measured ? "measured" : "missing")" title="@(chosen.Tires.StopReading.Reason ?? "")">
+                        Tires at stop · pit-stall telemetry@(chosen.Tires.StopReading.Measured ? "" : " · Not measured")
+                    </span>
+                    @if (chosen.Comparison is { } comparedTo && chosen.Tires.Corners.Values.Any(corner => corner.ChangeFromPreviousStop is not null))
+                    {
+                        <small>"vs prev" is against run @comparedTo.ComparedWithRun's stop.</small>
+                    }
+                </div>
+                @if (!chosen.Tires.StopReading.Measured && chosen.Tires.StopReading.Reason is { Length: > 0 } reason)
+                {
+                    <p class="td-missing-note">@reason</p>
+                }
+                <div class="td-tire-grid">
+                    @foreach (var corner in CornerOrder)
+                    {
+                        var tire = chosen.Tires.Corners.GetValueOrDefault(corner);
+                        var right = corner.StartsWith('R');
+                        <article class="td-tire" data-corner="@corner">
+                            <header><strong>@corner</strong><span>@(right ? "I · M · O" : "O · M · I")</span></header>
+                            <dl>
+                                @if (tire?.Stop is { } stop)
+                                {
+                                    <div><dt>@TemperatureLabel(chosen.Tires.StopReading)</dt><dd>@Bands(stop.TemperatureF, right, "0") <em title="Inside minus outside">I−O @Degrees(stop.SpreadF)</em></dd></div>
+                                    @if (tire.ChangeFromPreviousStop?.TemperatureF is { } temperatureChange)
+                                    {
+                                        <div class="td-change"><dt>vs prev</dt><dd>@SignedBands(temperatureChange, right, "0")</dd></div>
+                                    }
+                                    <div><dt>Tread %</dt><dd>@Bands(stop.TreadPercent, right, "0.0")</dd></div>
+                                    <div><dt>psi</dt><dd>@Pressure(stop.PressurePsi)</dd></div>
+                                }
+                                else
+                                {
+                                    <div><dt>At stop</dt><dd class="td-missing">Not measured</dd></div>
+                                }
+                            </dl>
+                        </article>
+                    }
+                </div>
+                @if (chosen.Tires.SheetReading.Recorded)
+                {
+                    @* The garage sheet is kept apart from the stop's cards: it carries no time and is never this run's reading. *@
+                    <p class="td-sheet-line" data-sheet title="@chosen.Tires.SheetReading.TimingNote">
+                        <span class="td-source sheet">Garage sheet · timing unverified</span>
+                        @if (chosen.Tires.SheetReading.Uniform)
+                        {
+                            <span>An untouched garage state (every band equal); not a reading of this run.</span>
+                        }
+                        else
+                        {
+                            <span>Not attributed to this stop:</span>
+                            @foreach (var corner in CornerOrder)
+                            {
+                                if (chosen.Tires.Corners.GetValueOrDefault(corner) is not { Sheet: { } sheet } sheetTire) continue;
+                                <span class="td-sheet-corner" title="@Agreement(sheetTire.SheetVsStop, "this stop") @Agreement(sheetTire.SheetVsPreviousStop, "the previous stop")">
+                                    <i>@corner</i> @Bands(sheet.TemperatureF, corner.StartsWith('R'), "0") °F <em>@AgreementShort(sheetTire.SheetVsStop)</em>
+                                </span>
+                            }
+                        }
+                    </p>
+                }
+            </section>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public RaceEventGroup Group { get; set; } = null!;
+    [Parameter] public TestDayReview? Review { get; set; }
+    [Parameter] public CompanionState? State { get; set; }
+    [Parameter] public string? OpenSessionId { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public EventCallback OnLoad { get; set; }
+    [Parameter] public EventCallback<RecentRace> OnOpenRun { get; set; }
+    /// <summary>The selected row; the page keeps it so it survives opening another run's recording.</summary>
+    [Parameter] public int? SelectedRunNumber { get; set; }
+    [Parameter] public EventCallback<int?> SelectedRunNumberChanged { get; set; }
+
+    private static readonly string[] CornerOrder = ["LF", "RF", "LR", "RR"];
+    private TestDayReview? _projected;
+    private RaceInvestigation Projection { get; set; } = EmptyProjection;
+    private IReadOnlyDictionary<int, TestDayRun> _runs = new Dictionary<int, TestDayRun>();
+    private readonly Dictionary<int, ElementReference> _rows = [];
+    private int? _focusRow;
+
+    private static readonly RaceInvestigation EmptyProjection = new(2, "measured", "", null, [], [], [], null, [], default, Runs: []);
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_projected, Review)) return;
+        _projected = Review;
+        if (Review is null) { Projection = EmptyProjection; _runs = new Dictionary<int, TestDayRun>(); return; }
+        _runs = Review.Runs.ToDictionary(run => run.Run);
+        // Lap of run is the shared axis; each lap keeps its own run so repeated lap numbers stay distinct.
+        Projection = EmptyProjection with
+        {
+            Laps = Review.Runs.SelectMany(run => run.Laps
+                .Where(lap => lap.Plotted && lap.RunLap is > 0 && lap.LapTimeSeconds is > 0)
+                .Select(lap => new RaceInvestigationLap(lap.Lap, lap.LapTimeSeconds, null, "green", lap.Eligible, lap.ExclusionReasons,
+                    run.Run, PlotPace: true, GreenExposure: lap.RunLap, Label: lap.Label))).ToArray(),
+            Runs = Review.Runs.Select(run => run.Trend).OfType<RaceRunView>().ToArray()
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusRow is not { } run || !_rows.TryGetValue(run, out var row)) return;
+        _focusRow = null;
+        // Closing the detail returns the keyboard to the row it belongs to.
+        try { await row.FocusAsync(); }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException or TaskCanceledException) { }
+    }
+
+    private TestDayRun? SelectedRun => SelectedRunNumber is { } number ? _runs.GetValueOrDefault(number) : null;
+
+    /// <summary>Rings exactly the laps the backend compared: the same laps of the run, clean in both runs.</summary>
+    private RaceInvestigationComparison? SelectedComparison
+    {
+        get
+        {
+            if (SelectedRun is not { Comparison: { Basis: { } basis } comparison } run) return null;
+            if (!_runs.TryGetValue(comparison.ComparedWithRun, out var previous)) return null;
+            var late = basis == "late_window";
+            var before = late ? previous.Late : previous.Early;
+            var after = late ? run.Late : run.Early;
+            RaceInvestigationCohort Cohort(TestDayRun source, TestDayWindow window, IReadOnlyList<int> matched)
+            {
+                var laps = matched.Count > 0 ? matched : window.Laps;
+                return new($"Run {source.Run}", source.Run, laps, laps.Count, laps, [], null,
+                    comparison.FirstRunLap, comparison.LastRunLap, source.Conditions.StartFuelGallons, source.Conditions.TrackTemperatureF, null);
+            }
+            return new RaceInvestigationComparison($"test-day-run-{run.Run}", "test_day", $"Run {run.Run} vs run {previous.Run}",
+                comparison.Summary ?? "", Cohort(previous, before, comparison.PreviousLaps), Cohort(run, after, comparison.CurrentLaps),
+                comparison.DeltaSeconds, "eligible", [], [], [], []);
+        }
+    }
+
+    private string RunCaption(RaceRunView view) => _runs.GetValueOrDefault(view.RunNumber) is { } run
+        ? $"{Time(run.RecordedAt)} · {run.MeasuredRun?.RunLaps.ToString(CultureInfo.CurrentCulture) ?? "?"} laps{InRecording(run)}"
+        : $"{view.PlottedLapCount} plotted";
+
+    /// <summary>" · 2 of 3 in recording" when the run shares its recording with others.</summary>
+    private static string InRecording(TestDayRun run) => run.Recording is { RunsInRecording: > 1, RunInRecording: { } place } recording
+        ? $" · {place} of {recording.RunsInRecording} in recording"
+        : "";
+
+    /// <summary>The same figure as the table's Fall-off column, over the same laps.</summary>
+    private static string FitCaption(RaceRunFit fit) =>
+        $"fall-off {Signed(fit.SlopeSecondsPerGreenLap)} s/lap · {fit.EligibleCount} clean laps · laps {fit.DomainStart:0}–{fit.DomainEnd:0}";
+
+    private Task Select(int run) => SetSelection(SelectedRunNumber == run ? null : run);
+
+    private Task Close(int run)
+    {
+        _focusRow = run;
+        return SetSelection(null);
+    }
+
+    private async Task SetSelection(int? run)
+    {
+        SelectedRunNumber = run;
+        if (SelectedRunNumberChanged.HasDelegate) await SelectedRunNumberChanged.InvokeAsync(run);
+    }
+
+    private Task RowKey(KeyboardEventArgs args, int run) => args.Key is "Enter" or " " ? Select(run) : Task.CompletedTask;
+
+    private RecentRace? Session(TestDayRun run) => State?.TestDaySession(Group, run);
+
+    private TestDayHandlingTarget? HandlingTarget => Review is { } review && State is { } state
+        ? state.HandlingTargetFor(review.Runs.LastOrDefault())
+        : null;
+
+    private static string Time(string? recordedAt) =>
+        DateTimeOffset.TryParse(recordedAt, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var value)
+            ? value.ToLocalTime().ToString("h:mm tt", CultureInfo.CurrentCulture)
+            : "time unknown";
+
+    private static string RunDetail(TestDayRun run) => run.MeasuredRun is { } measured
+        ? $"{Time(run.RecordedAt)} · {measured.RunLaps} laps{InRecording(run)}"
+        : $"{Time(run.RecordedAt)} · no timed run";
+
+    private static string MeasuredTitle(TestDayRun run)
+    {
+        var parts = new List<string>();
+        if (run.Setup.Name is { Length: > 0 } name) parts.Add($"Setup {name}");
+        if (run.MeasuredRun is { } measured)
+        {
+            parts.Add($"Laps {measured.FirstLap}–{measured.LastLap} of the recording");
+            if (run.Recording is { RunsInRecording: > 1, RunInRecording: { } place } recording)
+                parts.Add($"Run {place} of {recording.RunsInRecording} in this recording, split by pit visits");
+        }
+        if (run.Conditions.TrackTemperatureF is { } track) parts.Add($"Track {track.ToString("0", CultureInfo.CurrentCulture)} °F");
+        if (run.Conditions.StartFuelGallons is { } fuel) parts.Add($"Start fuel {fuel.ToString("0.0", CultureInfo.CurrentCulture)} gal");
+        if (run.Conditions.TireStart.Detail is { Length: > 0 } detail) parts.Add(detail);
+        return string.Join(". ", parts) + (parts.Count > 0 ? "." : "");
+    }
+
+    private static string SetupCell(TestDaySetupChange change) => change.Status switch
+    {
+        "first_run" => "First run",
+        "unchanged" => "No change",
+        "changed" when change.Changes.FirstOrDefault() is { } first => Setting(first),
+        "not_recorded" => "Not recorded · same recording",
+        "unknown" => "Not recorded",
+        _ => "Not recorded"
+    };
+
+    private static string Setting(TestDaySettingChange item) => $"{item.Label} {item.Previous ?? "—"} → {item.Current ?? "—"}";
+
+    private static string SetupTitle(TestDaySetupChange change)
+    {
+        var lines = change.Changes.Select(Setting).ToList();
+        if (change.Readouts.Count > 0) lines.Add($"Garage readouts moved: {string.Join(", ", change.Readouts.Select(Setting))}");
+        if (change.UnknownCount > 0) lines.Add($"{change.UnknownCount} setting{(change.UnknownCount == 1 ? "" : "s")} could not be compared: {string.Join(", ", change.UnknownFields)}");
+        if (change.Reason is { Length: > 0 } reason) lines.Add(reason);
+        return string.Join("\n", lines);
+    }
+
+    private static RenderFragment WindowCell(TestDayWindow window) => builder =>
+    {
+        if (window.Measured)
+        {
+            builder.OpenElement(0, "b");
+            builder.AddContent(1, LapTime(window.MedianSeconds));
+            builder.CloseElement();
+            builder.OpenElement(2, "small");
+            builder.AddContent(3, $"{window.CleanLapCount} laps");
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(4, "span");
+            builder.AddAttribute(5, "class", "td-missing");
+            builder.AddAttribute(6, "title", window.Reason ?? "");
+            builder.AddContent(7, "Not measured");
+            builder.CloseElement();
+        }
+    };
+
+    private static string LateTitle(TestDayLateWindow late) => late.Available
+        ? late.Basis ?? ""
+        : late.Reason ?? "No late window";
+
+    private static string FallOffTitle(TestDayFallOff fallOff) => fallOff.Measured
+        ? $"Slope over laps {fallOff.FirstRunLap}–{fallOff.LastRunLap} of the run from {fallOff.FitLapCount} clean laps; scatter {Seconds(fallOff.ScatterSeconds)} s.{(fallOff.EqualAge ? "" : " This run is shorter than the day's window, so it is not at equal age.")}"
+        : fallOff.Reason ?? "Not measured";
+
+    private static string SlopeClass(double? slope) => slope switch { > .02 => "loss", < -.005 => "gain", _ => "" };
+
+    private static string VerdictLabel(TestDayComparison comparison) => comparison.Verdict switch
+    {
+        "faster" => "Faster",
+        "slower" => "Slower",
+        "within_scatter" => "Within scatter",
+        _ => "Not comparable"
+    };
+
+    private static string VerdictDetail(TestDayComparison comparison) => comparison.Verdict switch
+    {
+        "faster" or "slower" => $"{Signed(comparison.DeltaSeconds)} s · {comparison.WindowLabel}",
+        "within_scatter" => $"±{Seconds(comparison.ThresholdSeconds)} s · {comparison.WindowLabel}",
+        _ => comparison.Reasons.FirstOrDefault() ?? ""
+    };
+
+    /// <summary>Reasons and cautions the cell cannot show; selecting the row lists them.</summary>
+    private static int NoteCount(TestDayComparison comparison) =>
+        comparison.Flags.Count + (comparison.Verdict == "not_comparable" ? Math.Max(0, comparison.Reasons.Count - 1) : comparison.Reasons.Count);
+
+    private static string ComparisonTitle(TestDayComparison? comparison) => comparison is null
+        ? "The first run of the day has nothing earlier to compare with."
+        : string.Join("\n", new[] { comparison.Summary ?? "" }.Concat(comparison.Reasons).Concat(comparison.Flags).Where(text => text.Length > 0));
+
+    private static string TireTitle(TestDayTires tires) => tires.StopReading.Measured
+        ? "Pit-stall telemetry at the end of the run. Each tire: inside minus outside carcass °F, then lowest tread."
+        : tires.StopReading.Reason ?? "No pit-stall reading.";
+
+    private static string TemperatureLabel(TestDayStopReading reading) =>
+        string.Equals(reading.Temperature, "carcass", StringComparison.Ordinal) ? "Carcass °F" : "°F";
+
+    private static string ChangeValue(TestDayNextChangeSetting change) => (change.From, change.To) switch
+    {
+        ({ } from, { } to) => $"{from} → {to}",
+        ({ } from, null) => $"now {from}",
+        (null, { } to) => $"to {to}",
+        _ => ""
+    };
+
+    private static string BasedOn(TestDayNextChange next) => next.BasedOnRuns.Count switch
+    {
+        0 => "",
+        1 => $"Based on run {next.BasedOnRuns[0]}",
+        _ => $"Based on runs {string.Join(", ", next.BasedOnRuns.Take(next.BasedOnRuns.Count - 1))} and {next.BasedOnRuns[^1]}"
+    };
+
+    /// <summary>Left tires read outside → inside across the car; right tires inside → outside.</summary>
+    private static string Bands(TestDayBands? bands, bool right, string format)
+    {
+        if (bands is null || (bands.Inside is null && bands.Middle is null && bands.Outside is null)) return "Not measured";
+        string Value(double? value) => value is { } number ? number.ToString(format, CultureInfo.CurrentCulture) : "—";
+        var ordered = right ? new[] { bands.Inside, bands.Middle, bands.Outside } : new[] { bands.Outside, bands.Middle, bands.Inside };
+        return string.Join(" · ", ordered.Select(Value));
+    }
+
+    private static string SignedBands(TestDayBands bands, bool right, string format)
+    {
+        string Value(double? value) => value is { } number
+            ? (number > 0 ? "+" : number < 0 ? "−" : "") + Math.Abs(number).ToString(format, CultureInfo.CurrentCulture)
+            : "—";
+        var ordered = right ? new[] { bands.Inside, bands.Middle, bands.Outside } : new[] { bands.Outside, bands.Middle, bands.Inside };
+        return string.Join(" · ", ordered.Select(Value));
+    }
+
+    private static string Degrees(double? value) => value is { } number
+        ? (number > 0 ? "+" : number < 0 ? "−" : "") + Math.Abs(number).ToString("0", CultureInfo.CurrentCulture) + "°"
+        : "—";
+
+    private static string Tread(double? value) => value is { } number ? number.ToString("0.#", CultureInfo.CurrentCulture) + "%" : "—";
+    private static string Pressure(double? value) => value is { } number ? number.ToString("0.0", CultureInfo.CurrentCulture) : "—";
+
+    /// <summary>Names what differs: a tread-only difference never reads as a temperature one.</summary>
+    private static string AgreementShort(TestDayAgreement agreement)
+    {
+        if (agreement.Status == "agree") return "matches stop";
+        if (agreement.Status != "disagree") return "no stop to check";
+        var temperature = agreement.DisagreesOn.Contains("temperature") || agreement.DisagreesOn.Count == 0;
+        var tread = agreement.DisagreesOn.Contains("tread");
+        var parts = new List<string>();
+        if (temperature) parts.Add($"{agreement.MaxTemperatureDeltaF?.ToString("0", CultureInfo.CurrentCulture) ?? "?"}°");
+        if (tread) parts.Add($"tread {agreement.MaxTreadDeltaPercent?.ToString("0.#", CultureInfo.CurrentCulture) ?? "?"}%");
+        return "differs " + string.Join(", ", parts);
+    }
+
+    private static string Agreement(TestDayAgreement agreement, string what) => agreement.Status switch
+    {
+        "agree" => $"It matches {what}.",
+        "disagree" => $"It differs from {what} by up to {agreement.MaxTemperatureDeltaF?.ToString("0.#", CultureInfo.CurrentCulture) ?? "?"} °F and {agreement.MaxTreadDeltaPercent?.ToString("0.#", CultureInfo.CurrentCulture) ?? "?"}% tread.",
+        _ => $"It was not compared with {what}."
+    };
+}

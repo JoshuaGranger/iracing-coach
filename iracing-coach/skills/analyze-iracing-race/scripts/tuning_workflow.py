@@ -11,7 +11,9 @@ from typing import Any, Mapping, Sequence
 try:  # Package import and direct script execution are both supported.
     from . import backend_roots
     from .path_security import local_path, path_is_within
-    from .setup_catalog import HARD_MAX_ENTRIES, catalog_setups, compare_setups, normalize_embedded_setup
+    from .setup_catalog import (
+        HARD_MAX_ENTRIES, catalog_setups, compare_setups, is_transient_setup_field, normalize_embedded_setup,
+    )
     from .storage import ArchiveStore, _atomic_copy_verified, _atomic_write_text, file_sha256, safe_slug, stable_hash, utc_now
     from .tuning_engine import (
         STRUCTURED_TUNING_RULESET_ID,
@@ -27,7 +29,9 @@ try:  # Package import and direct script execution are both supported.
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     import backend_roots
     from path_security import local_path, path_is_within
-    from setup_catalog import HARD_MAX_ENTRIES, catalog_setups, compare_setups, normalize_embedded_setup
+    from setup_catalog import (
+        HARD_MAX_ENTRIES, catalog_setups, compare_setups, is_transient_setup_field, normalize_embedded_setup,
+    )
     from storage import ArchiveStore, _atomic_copy_verified, _atomic_write_text, file_sha256, safe_slug, stable_hash, utc_now
     from tuning_engine import (
         STRUCTURED_TUNING_RULESET_ID,
@@ -625,19 +629,14 @@ def build_open_setup_package_workflow(
     }
 
 
-_TRANSIENT_FIELD_TERMS = (
-    "last_hot_pressure",
-    "last_temps",
-    "tread_remaining",
-)
-
-
 def _comparable_snapshot(value: Mapping[str, Any]) -> dict[str, Any]:
+    # Tire readings and the sheet's refresh counter are not garage settings;
+    # setup_catalog.TRANSIENT_FIELD_TERMS is the single list of them.
     fields = value.get("fields") if isinstance(value.get("fields"), Mapping) else {}
     return {
         "fields": {
             key: item for key, item in fields.items()
-            if not any(term in str(key) for term in _TRANSIENT_FIELD_TERMS)
+            if not is_transient_setup_field(key)
         }
     }
 

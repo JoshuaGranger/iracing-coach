@@ -41,6 +41,7 @@ REQUIRED_FILES = (
     CONTRACT_ROOT / "tuning-recommendation-v1.schema.json",
     CONTRACT_ROOT / "garage61-auth-status-v1.schema.json",
     CONTRACT_ROOT / "theme-v1.schema.json",
+    CONTRACT_ROOT / "test-day-review-v1.schema.json",
     CONFIG_ROOT / "theme.dark.json",
     PLUGIN_ROOT / ".codex-plugin" / "plugin.json",
     SCRIPT_ROOT / "mcp_server.py",
@@ -376,6 +377,17 @@ def _validate_backend_fixture_shapes() -> None:
     for state in garage.values():
         _require(all(key in state for key in ("ok", "configured", "status", "credential_storage", "archive_root", "api_request")), "Garage61 auth fixture lacks backend fields")
 
+    if str(TOOL_ROOT) not in sys.path:
+        sys.path.insert(0, str(TOOL_ROOT))
+    import contract_validation
+
+    test_day = _load_json(FIXTURE_ROOT / "test-day-review.json")
+    contract_validation.assert_valid(
+        test_day, _load_json(CONTRACT_ROOT / "test-day-review-v1.schema.json"), "test-day-review fixture"
+    )
+    _require(test_day.get("read_only") is True and len(test_day.get("runs") or []) == test_day.get("run_count"),
+             "test-day-review fixture must be a read-only review with one row per stint")
+
     jobs = _load_json(FIXTURE_ROOT / "ui-job-states.json")
     _require(jobs.get("fixture_kind") == "companion-ui-projection" and isinstance(jobs.get("states"), dict), "job-state projection must be explicitly marked as UI-only")
 
@@ -632,6 +644,7 @@ def main() -> int:
         "garage61-auth-status-states.json": ("unconfigured", "pending", "offline", "permission_error"),
         "ui-job-states.json": ("fixture_kind", "projection", "states"),
         "mcp-tool-error.json": ("jsonrpc", "id", "result"),
+        "test-day-review.json": ("ok", "contract", "run_count", "windows", "runs", "next_change"),
     }
     for name, required in fixture_expectations.items():
         _validate_fixture_shape(FIXTURE_ROOT / name, required)

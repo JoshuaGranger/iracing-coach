@@ -182,6 +182,7 @@ public sealed class LocalOnlyBackendClient : IBackendClient
         "recommend_open_setup_tuning",
         "recommend_structured_open_setup_tuning",
         "record_open_setup_feedback",
+        "review_test_day",
         "save_driving_trial"
     };
 

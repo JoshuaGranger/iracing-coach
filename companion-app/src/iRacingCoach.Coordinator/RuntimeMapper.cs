@@ -32,9 +32,13 @@ public static class RuntimeMapper
         var identity = Object(report, "identity");
         var selection = Object(Object(report, "source"), "selection");
         var summary = Object(report, "race_summary");
-        var eventKey = Text(selection, "subsession_id") ?? Text(identity, "subsession_id") ?? Text(report, "analysis_id") ?? analysisPath;
         var groupId = SelectionGroup(selection, identity);
         var id = groupId ?? Text(report, "analysis_id") ?? Path.GetFileName(Path.GetDirectoryName(analysisPath)) ?? analysisPath;
+        // Offline recordings report subsession 0. That is not an event: as a shared event key it made
+        // every archived offline recording "the same race" and stamped one's analysis onto the others.
+        var eventKey = DashboardMapper.RealIdentifier(Text(selection, "subsession_id"))
+            ?? DashboardMapper.RealIdentifier(Text(identity, "subsession_id"))
+            ?? id;
         var sessionType = Text(selection, "sim_session_type") ?? Text(identity, "event_type") ?? "Race";
         var start = Text(identity, "session_start") ?? Text(report, "analyzed_at") ?? string.Empty;
         var date = DateTimeOffset.TryParse(start, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
