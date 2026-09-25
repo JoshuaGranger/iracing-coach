@@ -1054,6 +1054,7 @@ public sealed partial class CompanionState : IDisposable
             return;
         }
         SelectRaceSession(race);
+        if (force) InvalidateTestDay(race);
 
         // Progressive Tuning and Race Analysis share one analysis workspace. When the
         // requested race is already the loaded one, opening it is a pointer check - not a
@@ -1164,6 +1165,11 @@ public sealed partial class CompanionState : IDisposable
         Navigate("analysis");
         SelectRaceSession(session);
         await AnalyzeRaceAsync(session, cancellationToken);
+        // Opening a stint of a test day also reviews the day. Navigation and
+        // bookmark restore never start this work.
+        if (CurrentAnalysis is not null && string.Equals(SelectedRaceSessionId, session.Id, StringComparison.Ordinal)
+            && TestDayGroupFor(session) is { } day)
+            await LoadTestDayAsync(day, cancellationToken);
     }
 
     public void SelectRaceSession(RecentRace session)

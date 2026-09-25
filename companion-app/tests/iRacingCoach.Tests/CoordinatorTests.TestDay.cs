@@ -1,10 +1,14 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using iRacingCoach.Contracts;
 using iRacingCoach.Coordinator;
 
 namespace iRacingCoach.Tests;
 
 /// <summary>
-/// Test day in the coordinator: discovery tags group stints without merging them.
+/// Test day in the coordinator: discovery tags group stints without merging them,
+/// and opening a stint opens that stint and reviews its day.
 /// </summary>
 public sealed partial class CoordinatorTests
 {
@@ -49,5 +53,75 @@ public sealed partial class CoordinatorTests
         Assert.HasCount(3, day.Sessions.Select(session => session.EventKey).Distinct().ToArray());
         Assert.IsNull(sessions.Single(session => session.IsRace).TestDayId, "A race is never part of a test day, even if tagged.");
         Assert.IsFalse(groups.Single(group => group.Sessions.Any(session => session.Id == "local:lone")).IsTestDay);
+    }
+
+    [TestMethod]
+    public async Task OpeningTestDayRunTwoOpensRunTwoAndReviewsTheDayInRunOrder()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-open", Guid.NewGuid().ToString("N"));
+        var reports = Path.Combine(root, "data", "reports");
+        string PathFor(string selector) => Path.Combine(reports, selector.Replace(':', '-'), "analysis.json");
+        var analyzed = new ConcurrentQueue<string>();
+        JsonElement? reviewArguments = null;
+        var backend = new FakeBackend(
+            discovery: TestDayDiscovery(
+                OfflineStint("local:run-1", "2026-08-06T23:00:00Z", 1, 2),
+                OfflineStint("local:run-2", "2026-08-06T23:50:00Z", 2, 2)),
+            responseOverride: (tool, _, arguments) =>
+            {
+                var args = JsonSerializer.SerializeToElement(arguments);
+                if (tool == "analyze_iracing_race")
+                {
+                    var selector = args.GetProperty("selector").GetString()!;
+                    analyzed.Enqueue(selector);
+                    Directory.CreateDirectory(Path.GetDirectoryName(PathFor(selector))!);
+                    File.WriteAllText(PathFor(selector), "{}");
+                    return HomeAnalysisResponse(PathFor(selector), "Offline Testing", selector);
+                }
+                if (tool == "review_test_day")
+                {
+                    reviewArguments = args;
+                    return TestDayReviewFor(args.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()!).ToArray());
+                }
+                return null;
+            });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        await state.RefreshDashboardAsync();
+        var runTwo = state.EventSessions.Single(session => session.Id == "local:run-2");
+
+        await state.OpenRaceFromHomeAsync(runTwo);
+
+        Assert.AreEqual("local:run-2", state.SelectedRaceSessionId, "Opening run 2 must open run 2, not the day's first stint.");
+        Assert.IsNotNull(state.CurrentAnalysis);
+        Assert.IsTrue(analyzed.Contains("local:run-2"));
+        Assert.IsNotNull(state.CurrentTestDay, state.TestDayMessage);
+        Assert.AreEqual(TestDayTag, state.CurrentTestDayId);
+        CollectionAssert.AreEqual(new[] { PathFor("local:run-1"), PathFor("local:run-2") },
+            reviewArguments!.Value.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()).ToArray(),
+            "The review receives every stint's own analysis, oldest first.");
+        var runOne = state.EventSessions.Single(session => session.Id == "local:run-1");
+        runTwo = state.EventSessions.Single(session => session.Id == "local:run-2");
+        Assert.AreEqual(PathFor("local:run-1"), runOne.AnalysisPath, "Run 2's analysis must not be stamped onto run 1.");
+        Assert.AreEqual(PathFor("local:run-2"), runTwo.AnalysisPath);
+        var day = state.TestDayGroupFor(runTwo)!;
+        Assert.AreEqual("local:run-1", state.TestDaySession(day, state.CurrentTestDay!.Runs[0])?.Id);
+        Assert.AreEqual("local:run-2", state.TestDaySession(day, state.CurrentTestDay.Runs[1])?.Id);
+
+        var reviews = backend.CallsFor("review_test_day");
+        await state.OpenRaceFromHomeAsync(state.EventSessions.Single(session => session.Id == "local:run-1"));
+        Assert.AreEqual("local:run-1", state.SelectedRaceSessionId);
+        Assert.AreEqual(reviews, backend.CallsFor("review_test_day"), "Switching stints of an unchanged day keeps the loaded review.");
+    }
+
+    /// <summary>The backend fixture cut to one row per requested stint, pointing at those stints' analyses.</summary>
+    private static JsonElement TestDayReviewFor(IReadOnlyList<string> analysisPaths)
+    {
+        var review = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "test-day-review.json")))!.AsObject();
+        var runs = review["runs"]!.AsArray();
+        while (runs.Count > analysisPaths.Count) runs.RemoveAt(runs.Count - 1);
+        for (var index = 0; index < runs.Count; index++) runs[index]!["analysis_path"] = analysisPaths[index];
+        review["run_count"] = runs.Count;
+        return JsonSerializer.SerializeToElement(review);
     }
 }
