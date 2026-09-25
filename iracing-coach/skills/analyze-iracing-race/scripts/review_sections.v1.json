@@ -15,6 +15,22 @@
         {"id": "D", "label": "D", "start_pct": 0.625, "end_pct": 0.77, "boundary_status": "detected_section", "provenance": "Detected region 4; not a verified turn boundary."},
         {"id": "E", "label": "E", "start_pct": 0.775, "end_pct": 0.86, "boundary_status": "driver_confirmed_grouping", "provenance": "Detected regions 5-7 (77.5-82%, 82.5-83.5%, 84-86%) grouped by driver confirmation; times are recomputed across the full interval, including the gaps between the former regions."}
       ]
+    },
+    {
+      "track_configuration_key": "232-irp",
+      "track": "Lucas Oil Indianapolis Raceway Park",
+      "layout": "Oval (the recordings carry no TrackConfigName; the key uses the short name IRP)",
+      "version": "232-irp/2026-09-24.1",
+      "provenance": "Bounds derived from racing-line geometry (Lat/Lon curvature against LapDistPct) over 62 clean laps in six recordings from 2026-09-20 and 2026-09-23, with lift, brake and minimum-speed positions as supporting evidence. The lap is two corner complexes of about 180 degrees each, separated by straights that turn less than 3 degrees. Turns 1-2 and 3-4 name those complexes in lap order from the start/finish line; the entry/exit split is each complex's geometric mid-point, not an official turn boundary. Sections tile the lap except 0.5% either side of the start/finish line, because a section cannot wrap. Derivation: docs/05-quality/irp-review-sections-2026-09-24.md.",
+      "sections": [
+        {"id": "A", "label": "A", "name": "Frontstretch, from the line", "start_pct": 0.005, "end_pct": 0.045, "boundary_status": "geometry_derived_section", "provenance": "Frontstretch, from the line: full throttle from the start/finish line to the Turns 1-2 lift point. Review section, not an official turn boundary."},
+        {"id": "B", "label": "B", "name": "Turns 1-2 entry", "start_pct": 0.045, "end_pct": 0.25, "boundary_status": "geometry_derived_section", "provenance": "Turns 1-2 entry: lift, braking and turn-in to the mid-point of the corner complex. Review section, not an official turn boundary."},
+        {"id": "C", "label": "C", "name": "Turns 1-2 exit", "start_pct": 0.25, "end_pct": 0.455, "boundary_status": "geometry_derived_section", "provenance": "Turns 1-2 exit: mid-point of the corner complex to where the line straightens onto the backstretch. Review section, not an official turn boundary."},
+        {"id": "D", "label": "D", "name": "Backstretch", "start_pct": 0.455, "end_pct": 0.535, "boundary_status": "geometry_derived_section", "provenance": "Backstretch: full throttle to the Turns 3-4 lift point. Review section, not an official turn boundary."},
+        {"id": "E", "label": "E", "name": "Turns 3-4 entry", "start_pct": 0.535, "end_pct": 0.75, "boundary_status": "geometry_derived_section", "provenance": "Turns 3-4 entry: lift, braking and turn-in to the mid-point of the corner complex. Review section, not an official turn boundary."},
+        {"id": "F", "label": "F", "name": "Turns 3-4 exit", "start_pct": 0.75, "end_pct": 0.955, "boundary_status": "geometry_derived_section", "provenance": "Turns 3-4 exit: mid-point of the corner complex to where the line straightens onto the frontstretch. Review section, not an official turn boundary."},
+        {"id": "G", "label": "G", "name": "Frontstretch, to the line", "start_pct": 0.955, "end_pct": 0.995, "boundary_status": "geometry_derived_section", "provenance": "Frontstretch, to the line: full throttle from the Turns 3-4 exit to the start/finish line. Review section, not an official turn boundary."}
+      ]
     }
   ]
 }

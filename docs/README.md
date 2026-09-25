@@ -56,6 +56,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
   - [UI, accessibility, and performance](05-quality/ui-accessibility-and-performance.md)
   - [Race Analysis geometry and performance evidence](05-quality/race-analysis-geometry-and-performance.md)
   - [Technical strategy corpus evidence](05-quality/technical-strategy-corpus-check-2026-08-11.md)
+  - [IRP review sections: derivation](05-quality/irp-review-sections-2026-09-24.md)
 - [Race Analysis overhaul acceptance matrix](05-quality/race-analysis-overhaul-acceptance-matrix.md)
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
