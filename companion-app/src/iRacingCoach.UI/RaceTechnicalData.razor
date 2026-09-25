@@ -271,12 +271,12 @@
                                                     <div class="technical-tire-bands" aria-label="@tire.Corner wear outer middle inner">
                                                         @foreach (var band in TireBands(tire))
                                                         {
-                                                            <span style="--tread-color:@TreadColor(band.Value)"><small>@band.Label</small><b>@Percent(band.Value)</b></span>
+                                                            <span style="--tread-color:@TreadColor(Remaining(band.Value))"><small>@band.Label</small><b>@Percent(band.Value)</b></span>
                                                         }
                                                     </div>
                                                     <footer>
-                                                        <span class="technical-tire-vital"><small>Carcass</small><b>@Temperature(AverageBand(tire.CarcassTemperatureF))</b></span>
-                                                        <span class="technical-tire-vital"><small>Surface</small><b>@Temperature(AverageBand(tire.SurfaceTemperatureF))</b></span>
+                                                        <span class="technical-tire-vital" title="@TemperatureTitle("Carcass", tire, tire.CarcassTemperatureF)"><small>Carcass °F</small><b>@TemperatureBands(tire, tire.CarcassTemperatureF)</b></span>
+                                                        <span class="technical-tire-vital" title="@TemperatureTitle("Surface", tire, tire.SurfaceTemperatureF)"><small>Surface °F</small><b>@TemperatureBands(tire, tire.SurfaceTemperatureF)</b></span>
                                                         <span class="technical-tire-vital"><small>Pressure</small><b>@Pressure(tire.PressurePsi)</b></span>
                                                     </footer>
                                                 </article>
@@ -751,12 +751,31 @@
         return "hsl(" + hue.ToString(System.Globalization.CultureInfo.InvariantCulture) + " 64% 54%)";
     }
     private static string Pressure(double? value) => value.HasValue ? $"{value.Value:0.0} psi" : "—";
-    private static string Temperature(double? value) => value.HasValue ? $"{value.Value:0}°F" : "—";
-    private static double? AverageBand(AnalysisTireBands bands)
+    // Bands carry wear (100 - tread remaining); the tread scale above reads remaining.
+    private static double? Remaining(double? wear) => wear.HasValue ? Math.Clamp(100d - wear.Value, 0d, 100d) : null;
+
+    /// <summary>
+    /// The three band temperatures in the tiles' order (outside first on the left
+    /// tires, inside first on the right), never an average: the spread across the
+    /// tread is the reading, and an average hides it.
+    /// </summary>
+    private static string TemperatureBands(AnalysisTireCondition tire, AnalysisTireBands bands)
     {
-        var values = new[] { bands.Outer, bands.Middle, bands.Inner }.Where(value => value.HasValue).Select(value => value!.Value).ToArray();
-        return values.Length == 0 ? null : values.Average();
+        if (!bands.Outer.HasValue && !bands.Middle.HasValue && !bands.Inner.HasValue) return "—";
+        static string Value(double? value) => value.HasValue ? value.Value.ToString("0", System.Globalization.CultureInfo.CurrentCulture) : "—";
+        var ordered = IsRightSide(tire) ? new[] { bands.Inner, bands.Middle, bands.Outer } : new[] { bands.Outer, bands.Middle, bands.Inner };
+        return string.Join("·", ordered.Select(Value));
     }
+
+    private static string TemperatureTitle(string label, AnalysisTireCondition tire, AnalysisTireBands bands)
+    {
+        var order = IsRightSide(tire) ? "inside · middle · outside" : "outside · middle · inside";
+        return bands.Inner is { } inside && bands.Outer is { } outside
+            ? $"{label} temperature, {order}. Inside minus outside {inside - outside:+0;−0;0} °F."
+            : $"{label} temperature, {order}.";
+    }
+
+    private static bool IsRightSide(AnalysisTireCondition tire) => tire.Corner is "RF" or "RR";
     private static string LapTime(double? value) => value.HasValue ? TimeSpan.FromSeconds(value.Value).ToString(@"m\:ss\.fff") : "—";
     private static string Delta(double? value) => value.HasValue ? $"{value.Value:+0.000;-0.000;0.000} s" : "—";
     private static string PaceTrend(AnalysisRun run) => run.PaceSlopeSecondsPerLap switch { > .01 => $"+{run.PaceSlopeSecondsPerLap:0.000} s/lap", < -.01 => $"{run.PaceSlopeSecondsPerLap:0.000} s/lap", not null => "Stable", _ => "—" };

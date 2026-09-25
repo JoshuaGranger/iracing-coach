@@ -2579,7 +2579,7 @@ label.theme-color-custom.active { border-color:var(--focus);box-shadow:inset 0 0
 .tire-investigation .technical-tire-bands>span{min-height:28px;gap:1px;padding:2px}
 .tire-investigation .technical-tire-bands small{font-size:var(--font-size-min);line-height:1}
 .tire-investigation .technical-tire-bands b{font-size:var(--font-size-min);line-height:1.05}
-.tire-investigation .technical-tire-card footer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:3px;overflow:visible}
+.tire-investigation .technical-tire-card footer{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.3fr) minmax(0,.9fr);align-items:start;gap:3px;overflow:visible}
 .tire-investigation .technical-tire-vital{min-width:0;display:grid;gap:0;text-transform:none}
 .tire-investigation .technical-tire-vital small{overflow:hidden;color:var(--text-muted);font-size:var(--font-size-min);line-height:1.05;text-overflow:ellipsis;white-space:nowrap;text-transform:uppercase}
 .tire-investigation .technical-tire-vital b{min-width:0;margin:0;overflow:hidden;font:600 var(--font-size-min)/1.15 var(--metric-font,Consolas,monospace);text-overflow:ellipsis;white-space:nowrap}
