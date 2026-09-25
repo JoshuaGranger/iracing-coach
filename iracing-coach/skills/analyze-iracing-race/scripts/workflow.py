@@ -1616,8 +1616,13 @@ def _analysis_pipeline_sha256() -> str:
 # Review 2026-09-23 (performance): per-sample finite checks take an exact-float
 # fast path and unit conversions resolve once per channel. A cold NH race
 # (203 MB) produced an identical analysis view; timing fell 24.8 s -> 21.9 s.
+# Review 2026-09-25: v19 answers are unchanged. identity gains the optional
+# garage_setup_fingerprint (the embedded CarSetup without last-stop tire
+# readings or UpdateCount), so setup_catalog.py joins the bundle. Every existing
+# field, including setup_fingerprint, is byte-identical; a cached analysis
+# without the new key is not wrong, and consumers derive it from identity.setup.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "8437019a8303207614831a9f245f103f0facfab7740f9ca8649adaaa582c6dc2"
+    "725bcbc88bcec5ce4f794f8a15fddada0e73e5211b16f17cf7dd5bcf3fd83167"
 )
 
 

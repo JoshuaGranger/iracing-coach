@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 import hashlib
 import html
+import json
 import math
 import os
 import re
@@ -832,6 +833,186 @@ def normalize_embedded_setup(
     }
 
 
+#: Garage-sheet readings iRacing writes into ``CarSetup`` after the car stops,
+#: plus the sheet's refresh counter. They describe the tires, not a setting the
+#: driver chose, so two loads of an identical garage setup can differ only here.
+#: A field is transient when its canonical key contains any of these terms.
+TRANSIENT_FIELD_TERMS = (
+    "last_hot_pressure",
+    "last_temps",
+    "tread_remaining",
+    "update_count",
+)
+_DROPPED = object()
+
+
+def is_transient_setup_field(key: Any) -> bool:
+    """Whether a canonical setup key is a tire reading rather than a setting."""
+
+    text = str(key)
+    return any(term in text for term in TRANSIENT_FIELD_TERMS)
+
+
+def garage_setup_fields(
+    car_setup: Mapping[str, Any], *, max_fields: int = DEFAULT_MAX_FIELDS
+) -> dict[str, Any]:
+    """Comparable garage settings from embedded ``CarSetup``, without tire readings.
+
+    The result has the same shape as :func:`normalize_embedded_setup`, so it can
+    be passed straight to :func:`compare_setups`. Excluded keys are listed so a
+    caller can say what was left out.
+    """
+
+    normalized = normalize_embedded_setup(car_setup, max_fields=max_fields)
+    fields = normalized["fields"]
+    kept = {key: value for key, value in fields.items() if not is_transient_setup_field(key)}
+    return {
+        **normalized,
+        "source": "embedded_car_setup_garage_fields",
+        "fields": kept,
+        "field_count": len(kept),
+        "excluded_fields": sorted(key for key in fields if is_transient_setup_field(key)),
+    }
+
+
+def _garage_setup_mapping(car_setup: Mapping[str, Any]) -> dict[str, Any]:
+    """The raw ``CarSetup`` mapping with every transient leaf removed."""
+
+    def strip(value: Any, path: tuple[str, ...]) -> Any:
+        if isinstance(value, Mapping):
+            kept: dict[str, Any] = {}
+            for key in value:
+                child = strip(value[key], (*path, str(key)))
+                if child is not _DROPPED:
+                    kept[str(key)] = child
+            return kept if kept or not path else _DROPPED
+        key = _normalize_embedded_path(path)
+        if not key or is_transient_setup_field(key):
+            return _DROPPED
+        return value
+
+    stripped = strip(_unwrap_embedded_setup(car_setup), ())
+    return stripped if isinstance(stripped, dict) else {}
+
+
+def garage_setup_fingerprint(car_setup: Mapping[str, Any] | None) -> str | None:
+    """SHA-256 of the garage setup the driver loaded, ignoring tire readings.
+
+    ``setup_fingerprint`` hashes the whole embedded ``CarSetup``, including the
+    last-stop temperatures, tread and hot pressures, so the same garage setup
+    run twice gets two fingerprints. This one hashes the same raw mapping with
+    those readings removed, serialized exactly like ``setup_fingerprint``.
+    """
+
+    if not isinstance(car_setup, Mapping) or not car_setup:
+        return None
+    mapping = _garage_setup_mapping(car_setup)
+    if not mapping:
+        return None
+    return hashlib.sha256(
+        json.dumps(mapping, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+
+
+_SETUP_CORNERS = (
+    ("LF", "left_front"),
+    ("RF", "right_front"),
+    ("LR", "left_rear"),
+    ("RR", "right_rear"),
+)
+#: Listing order of the three tread bands for each corner. iRacing labels the
+#: left tires' temperatures "O M I" and the right tires' "I M O"; the tread
+#: values on the same sheet follow the same order (both checked against the
+#: pit-stall telemetry of recorded New Hampshire races).
+_BAND_ORDER = {
+    "omi": ("outside", "middle", "inside"),
+    "imo": ("inside", "middle", "outside"),
+}
+_KPA_TO_PSI = 0.14503773773020923
+_TIRE_READING_LEAVES = frozenset(
+    {"last_temps_omi", "last_temps_imo", "tread_remaining", "last_hot_pressure", "cold_pressure"}
+)
+
+
+def _corner_of(key: str) -> str | None:
+    segments = key.split(".")[:-1]
+    for corner, token in _SETUP_CORNERS:
+        if any(segment == token or segment.startswith(token + "_") for segment in segments):
+            return corner
+    return None
+
+
+def _banded(record: Mapping[str, Any] | None, order: tuple[str, str, str], unit: str,
+            convert: Any) -> dict[str, float] | None:
+    if not isinstance(record, Mapping) or record.get("kind") != "number_list" or record.get("unit") != unit:
+        return None
+    values = list(record.get("value") or ())
+    if len(values) != 3:
+        return None
+    try:
+        return {band: convert(float(value)) for band, value in zip(order, values)}
+    except (TypeError, ValueError):
+        return None
+
+
+def _scalar(record: Mapping[str, Any] | None, unit: str) -> float | None:
+    if not isinstance(record, Mapping) or record.get("kind") != "number" or record.get("unit") != unit:
+        return None
+    try:
+        value = float(record["value"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def tire_readings_from_setup(car_setup: Mapping[str, Any]) -> dict[str, Any]:
+    """Per-corner garage-sheet tire readings with inside/middle/outside bands.
+
+    The band order comes from the sheet's own label (``LastTempsOMI`` or
+    ``LastTempsIMO``); a corner without a temperature label uses the side's
+    iRacing listing order (left O-M-I, right I-M-O) and says so. A reading that
+    is absent or not a three-value list is ``None``, never zero. The sheet does
+    not say when it was taken.
+    """
+
+    fields = normalize_embedded_setup(car_setup)["fields"]
+    by_corner: dict[str, dict[str, Any]] = {corner: {} for corner, _ in _SETUP_CORNERS}
+    for key, record in fields.items():
+        leaf = key.rsplit(".", 1)[-1]
+        corner = _corner_of(key) if leaf in _TIRE_READING_LEAVES else None
+        if corner is not None:
+            by_corner[corner][leaf] = (key, record)
+    result: dict[str, Any] = {}
+    for corner, _ in _SETUP_CORNERS:
+        leaves = by_corner[corner]
+        temperature_leaf = next((leaf for leaf in ("last_temps_omi", "last_temps_imo") if leaf in leaves), None)
+        if temperature_leaf is not None:
+            order_label = temperature_leaf.rsplit("_", 1)[-1]
+            basis = "sheet_label"
+        else:
+            order_label = "omi" if corner in ("LF", "LR") else "imo"
+            basis = "corner_side"
+        order = _BAND_ORDER[order_label]
+        temperatures = _banded(leaves.get(temperature_leaf, (None, None))[1] if temperature_leaf else None,
+                               order, "C", lambda celsius: round(celsius * 9.0 / 5.0 + 32.0, 1))
+        tread = _banded(leaves.get("tread_remaining", (None, None))[1], order, "%", lambda value: round(value, 1))
+        hot = _scalar(leaves.get("last_hot_pressure", (None, None))[1], "kPa")
+        cold = _scalar(leaves.get("cold_pressure", (None, None))[1], "kPa")
+        if temperatures is None and tread is None and hot is None and cold is None:
+            result[corner] = None
+            continue
+        result[corner] = {
+            "temperature_f": temperatures,
+            "tread_percent": tread,
+            "hot_pressure_psi": round(hot * _KPA_TO_PSI, 2) if hot is not None else None,
+            "cold_pressure_psi": round(cold * _KPA_TO_PSI, 2) if cold is not None else None,
+            "band_order": order_label.upper(),
+            "band_order_basis": basis,
+            "source_fields": sorted(key for key, _ in leaves.values()),
+        }
+    return result
+
+
 def _comparison_fields(value: Mapping[str, Any], max_fields: int) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise SetupCatalogError("Each setup supplied to compare_setups must be a mapping.")
@@ -1093,8 +1274,13 @@ __all__ = [
     "SetupCatalogError",
     "SetupLimitError",
     "SetupParseError",
+    "TRANSIENT_FIELD_TERMS",
     "catalog_setups",
     "compare_setups",
+    "garage_setup_fields",
+    "garage_setup_fingerprint",
+    "is_transient_setup_field",
     "normalize_embedded_setup",
     "parse_setup_html",
+    "tire_readings_from_setup",
 ]
