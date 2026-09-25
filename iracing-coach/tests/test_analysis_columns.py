@@ -14,6 +14,7 @@ and the same set of channels recorded as analysed.
 from __future__ import annotations
 
 import functools
+import gc
 import itertools
 import math
 import pickle
@@ -36,6 +37,7 @@ import analysis_engine_reference as reference  # noqa: E402
 import ibt_reader  # noqa: E402
 import race_foundations  # noqa: E402
 import race_foundations_reference as foundations_reference  # noqa: E402
+import workflow  # noqa: E402
 
 NAN = float("nan")
 INF = float("inf")
@@ -685,6 +687,26 @@ class TypedViewDecoderTests(unittest.TestCase):
                                     self.assertFalse(all(math.isfinite(value) for value in expected))
                                     continue
                                 assert_identical(self, expected, actual)
+
+
+class CollectorPauseTests(unittest.TestCase):
+    def test_pause_restores_the_previous_collector_state(self) -> None:
+        was_enabled = gc.isenabled()
+        try:
+            gc.enable()
+            with workflow._automatic_gc_paused():
+                self.assertFalse(gc.isenabled())
+            self.assertTrue(gc.isenabled())
+            with self.assertRaises(RuntimeError):
+                with workflow._automatic_gc_paused():
+                    raise RuntimeError("analysis failed")
+            self.assertTrue(gc.isenabled())
+            gc.disable()
+            with workflow._automatic_gc_paused():
+                self.assertFalse(gc.isenabled())
+            self.assertFalse(gc.isenabled())
+        finally:
+            (gc.enable if was_enabled else gc.disable)()
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience runner

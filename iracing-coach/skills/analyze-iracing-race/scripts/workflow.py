@@ -9,7 +9,9 @@ the explicit status and sync workflows.
 from __future__ import annotations
 
 from collections import Counter
+import contextlib
 import datetime as _datetime
+import gc
 import hashlib
 import json
 import math
@@ -18,7 +20,7 @@ import re
 import statistics
 import time
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 try:  # Package import and direct script execution are both supported.
     from . import backend_roots
@@ -1830,6 +1832,28 @@ def _reject_nonfinite_json(value: str) -> None:
     raise ValueError(f"Non-finite number in cached analysis: {value}")
 
 
+@contextlib.contextmanager
+def _automatic_gc_paused() -> Iterator[None]:
+    """Pause automatic cyclic garbage collection for one analysis.
+
+    A decoded race is millions of samples held in long lists, plus per-column
+    views of them. Every automatic collection re-traverses the young ones, and
+    a cold 203 MB race triggered about 900 collections costing 1.3-1.7 s while
+    finding almost nothing: one analysis leaves roughly 12,000 small cyclic
+    objects. Reference counting still frees all acyclic data immediately; the
+    collector resumes on return or error, and only if it was running before.
+    Collection timing cannot change any computed value.
+    """
+
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+
+
 def analyze_race_workflow(
     *,
     selector: str = "latest",
@@ -1839,6 +1863,22 @@ def analyze_race_workflow(
 ) -> dict[str, Any]:
     """Resolve, analyze, report, and archive one local recording offline."""
 
+    with _automatic_gc_paused():
+        return _analyze_race_workflow(
+            selector=selector,
+            iracing_root=iracing_root,
+            archive_root=archive_root,
+            target_hz=target_hz,
+        )
+
+
+def _analyze_race_workflow(
+    *,
+    selector: str,
+    iracing_root: str | os.PathLike[str] | None,
+    archive_root: str | os.PathLike[str] | None,
+    target_hz: float | None,
+) -> dict[str, Any]:
     workflow_started = time.perf_counter()
     rate = None if target_hz is None else _target_rate(target_hz)
     selection = _resolve_session_selection(selector, iracing_root)
