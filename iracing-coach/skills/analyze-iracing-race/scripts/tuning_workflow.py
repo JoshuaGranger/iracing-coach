@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -14,6 +15,7 @@ try:  # Package import and direct script execution are both supported.
     from .setup_catalog import (
         HARD_MAX_ENTRIES, catalog_setups, compare_setups, is_transient_setup_field, normalize_embedded_setup,
     )
+    from .setup_recordings import MAX_RECORDINGS, link_recorded_setups, read_recording_setup_uses
     from .storage import ArchiveStore, _atomic_copy_verified, _atomic_write_text, file_sha256, safe_slug, stable_hash, utc_now
     from .tuning_engine import (
         STRUCTURED_TUNING_RULESET_ID,
@@ -32,6 +34,7 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from setup_catalog import (
         HARD_MAX_ENTRIES, catalog_setups, compare_setups, is_transient_setup_field, normalize_embedded_setup,
     )
+    from setup_recordings import MAX_RECORDINGS, link_recorded_setups, read_recording_setup_uses
     from storage import ArchiveStore, _atomic_copy_verified, _atomic_write_text, file_sha256, safe_slug, stable_hash, utc_now
     from tuning_engine import (
         STRUCTURED_TUNING_RULESET_ID,
@@ -238,6 +241,32 @@ def _entry_warnings(entry: Mapping[str, Any]) -> list[str]:
     return result
 
 
+def _link_recorded_setups(
+    store: ArchiveStore,
+    entries: Sequence[Mapping[str, Any]],
+    catalog: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Attach the analysed recordings that loaded each returned setup file.
+
+    ``catalog`` is every scanned entry, so a duplicate file name on another page
+    or outside the filters still makes the name ambiguous.
+    """
+
+    try:
+        analyses = store.recent_analyses(limit=MAX_RECORDINGS)
+    except (sqlite3.Error, OSError) as exc:
+        return link_recorded_setups(entries, [], catalog=catalog), {"available": False, "message": str(exc)}
+    uses, counts = read_recording_setup_uses(analyses)
+    linked = link_recorded_setups(entries, uses, catalog=catalog)
+    return linked, {
+        "available": True,
+        **counts,
+        "linked_entries": sum(
+            1 for entry in linked if (entry.get("recorded_setup") or {}).get("status") == "linked"
+        ),
+    }
+
+
 def catalog_iracing_setups_workflow(
     *,
     root: str | os.PathLike[str] | None = None,
@@ -261,10 +290,9 @@ def catalog_iracing_setups_workflow(
     catalog["cataloged_at"] = utc_now()
     store = ArchiveStore(archive_root)
     index_path = store.save_tuning_catalog(catalog)
-    filtered = _filter_entries(
-        catalog.get("entries") or [], car=car, track=track, season=season, role=role
-    )
-    page = filtered[start:start + maximum]
+    all_entries = catalog.get("entries") or []
+    filtered = _filter_entries(all_entries, car=car, track=track, season=season, role=role)
+    page, recordings = _link_recorded_setups(store, filtered[start:start + maximum], all_entries)
     next_offset = start + len(page) if start + len(page) < len(filtered) else None
     return {
         "ok": True,
@@ -280,6 +308,7 @@ def catalog_iracing_setups_workflow(
         },
         "filters": {"car": car, "track": track, "season": season, "role": role},
         "entries": page,
+        "recordings": recordings,
         "catalog_revision": revision,
         "offset": start,
         "next_offset": next_offset,

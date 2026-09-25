@@ -41,7 +41,7 @@ else
                         <button class="setup-library-row @(selectedSetup?.Id == setup.Id ? "selected" : null)" aria-pressed="@(selectedSetup?.Id == setup.Id ? "true" : "false")" @onclick="() => Select(setup)">
                             <span class="setup-library-row-top"><strong>@setup.Name</strong><small>@SourceLabel(setup)</small></span>
                             <span>@setup.Car · @(setup.Track.Length > 0 ? setup.Track : "Track unspecified")</span>
-                            <small>@setup.Fields.Count values · @evidence.Count linked recording@(evidence.Count == 1 ? "" : "s") · @(setup.Season.Length > 0 ? setup.Season : "Season unknown")</small>
+                            <small>@ValuesSummary(setup) · @evidence.Count linked recording@(evidence.Count == 1 ? "" : "s") · @(setup.Season.Length > 0 ? setup.Season : "Season unknown")</small>
                         </button>
                     }
                 </section>
@@ -68,10 +68,15 @@ else
                         {
                             <div class="setup-evidence-empty"><strong>No recording uses this setup yet</strong><p>Record a run with this setup, then analyze it to compare handling and pace.</p><button class="button secondary compact" @onclick='() => State.Navigate("analysis")'>Review a recording</button></div>
                         }
-                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId"><option value="">No comparison</option>@foreach (var candidate in Comparable(selected)) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</select></label></div>
-                        @if (selected.Fields.Count == 0)
+                        @{ var values = SetupReadings.Values(selected); var readings = SetupReadings.Readings(selected); }
+                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId" disabled="@(values.Count == 0)" title="@(values.Count == 0 ? "This setup's values are unknown, so it can't be compared." : null)"><option value="">No comparison</option>@foreach (var candidate in CompareCandidates(State.Setups, selected)) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</select></label></div>
+                        @if (values.Count > 0 && selected.ValuesNote.Length > 0)
                         {
-                            <p class="setup-source-note">This .sto has no readable export yet. Export its setup sheet from iRacing or analyze a recorded run to see the numeric settings.</p>
+                            <p class="setup-source-note" data-values-source="@selected.ValuesSource">@selected.ValuesNote</p>
+                        }
+                        @if (values.Count == 0)
+                        {
+                            <p class="setup-source-note" data-values-unknown>@(selected.ValuesNote.Length > 0 ? selected.ValuesNote : "Values unknown for this setup.")</p>
                         }
                         else if (Comparison(selected) is { } comparison)
                         {
@@ -87,13 +92,25 @@ else
                             @if (_showIdentical) { foreach (var row in identical) { <tr data-row="identical"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> } }
                             </tbody></table>
                             @if (changed.Length == 0 && unknown.Length == 0) { <p class="setup-source-note">Every readable setting matches.</p> }
+                            @if (readings.Count > 0 || SetupReadings.Readings(comparison).Count > 0) { <p class="setup-source-note">Tire readings from a recorded run are not setup values and are not compared.</p> }
                         }
                         else
                         {
-                            @foreach (var group in selected.Fields.GroupBy(field => field.Group))
+                            @foreach (var group in values.GroupBy(field => field.Group))
                             {
                                 <details class="setup-values-group" open><summary>@group.Key <span>@group.Count()</span></summary><dl>@foreach (var field in group) { <div><dt>@field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
                             }
+                            @if (readings.Count > 0)
+                            {
+                                <details class="setup-values-group" data-run-readings><summary>Run readings, not setup values <span>@readings.Count</span></summary>
+                                    <p class="setup-source-note">Last-run tire readings saved with this setup. They change every run and are never compared.</p>
+                                    <dl>@foreach (var field in readings) { <div><dt>@field.Group · @field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
+                            }
+                        }
+                        @if (CompareExclusions(State.Setups, selected) is { Count: > 0 } excluded)
+                        {
+                            <details class="setup-values-group" data-compare-excluded open="@(excluded.Count <= 3)"><summary>Not offered for comparison <span>@excluded.Count same-car setup@(excluded.Count == 1 ? "" : "s")</span></summary>
+                                <dl>@foreach (var item in excluded) { <div data-excluded-setup="@item.Setup.Id"><dt>@item.Setup.Name</dt><dd>@item.Reason</dd></div> }</dl></details>
                         }
                     </section>
                 }
@@ -117,14 +134,44 @@ else
     private void ClearFilters() { State.SetupSearch = State.SetupCarFilter = State.SetupTrackFilter = State.SetupSeasonFilter = string.Empty; }
     private void ShowSource(LocalSetup setup) { State.SelectedSetupId = setup.Id; State.OpenSelectedSetupFolder(); }
     private Task SaveCopy(LocalSetup setup) { State.SelectedSetupId = setup.Id; return State.CopySelectedSetupAsync(); }
-    private async Task Tune(LocalSetup setup) { _tuning = true; try { await State.BeginSetupTuningAsync(setup.Id); } finally { _tuning = false; } }
+    private async Task Tune(LocalSetup setup)
+    {
+        _tuning = true;
+        try
+        {
+            // The recording whose values this setup shows, so tuning and the values agree.
+            var race = State.SetupTuningRace(setup);
+            var target = race is null ? setup : TuningSetup(State.Setups, setup, race.AnalysisPath);
+            await State.BeginSetupTuningAsync(target.Id, race is null || target.Id == setup.Id ? null : race.Id);
+        }
+        finally { _tuning = false; }
+    }
+
+    /// <summary>
+    /// Tuning starts from a recording's own embedded setup. A setup file linked to
+    /// that recording tunes through the recording's setup, whose fingerprint the
+    /// analysis carries; the file's bytes are never the tuning baseline.
+    /// </summary>
+    public static LocalSetup TuningSetup(IEnumerable<LocalSetup> setups, LocalSetup setup, string? analysisPath) =>
+        !IsSetupFile(setup) || string.IsNullOrWhiteSpace(analysisPath) ? setup
+        : setups.FirstOrDefault(item => item.Id != setup.Id && !IsSetupFile(item)
+            && (item.AnalysisPaths ?? []).Any(path => string.Equals(path, analysisPath, StringComparison.OrdinalIgnoreCase))) ?? setup;
+
+    // Run readings are not setup values, so they never count toward "N values".
+    public static string ValuesSummary(LocalSetup setup) => SetupReadings.Values(setup).Count is var count && count == 0 ? "Values unknown"
+        : setup.ValuesSource == "recording" ? $"{count} values from a recording" : $"{count} values";
+
+    /// <summary>Other setups of the same car whose values are known and comparable with this one's.</summary>
+    public static IReadOnlyList<LocalSetup> CompareCandidates(IEnumerable<LocalSetup> setups, LocalSetup setup) => SetupComparability.Candidates(setups, setup);
+
+    /// <summary>Every other setup of this car that is not offered for comparison, named with its reason (SU-011).</summary>
+    public static IReadOnlyList<SetupComparisonExclusion> CompareExclusions(IEnumerable<LocalSetup> setups, LocalSetup setup) => SetupComparability.Exclusions(setups, setup);
     private static bool IsSetupFile(LocalSetup setup) => System.IO.Path.GetExtension(setup.StoPath).Equals(".sto", StringComparison.OrdinalIgnoreCase);
     private static string SourceLabel(LocalSetup setup) => IsSetupFile(setup) ? "Local .sto" : "Recorded telemetry";
     private static string Seconds(double? value) => value is { } v ? $"{v:0.000}s" : "—";
     private static string Signed(double? value) => value is { } v ? $"{v:+0.000;-0.000;0.000}s/lap" : "—";
     private static string Percent(double? value) => value is { } v ? $"{v:0.0}%" : "—";
-    private IEnumerable<LocalSetup> Comparable(LocalSetup setup) => State.Setups.Where(item => item.Id != setup.Id && item.Car.Equals(setup.Car, StringComparison.OrdinalIgnoreCase) && item.Track.Equals(setup.Track, StringComparison.OrdinalIgnoreCase) && item.Fields.Count > 0);
-    private LocalSetup? Comparison(LocalSetup setup) => Comparable(setup).FirstOrDefault(item => item.Id == State.CompareSetupId);
+    private LocalSetup? Comparison(LocalSetup setup) => CompareCandidates(State.Setups, setup).FirstOrDefault(item => item.Id == State.CompareSetupId);
     private string ComparisonLabel(LocalSetup setup)
     {
         var dates = State.SetupEvidenceRaces(setup).Select(race => race.Date)
@@ -140,7 +187,9 @@ else
     /// </summary>
     public static IEnumerable<(string Label, string Left, string Right, RowKind Kind)> Differences(LocalSetup left, LocalSetup right)
     {
-        var keys = left.Fields.Select(field => field.Key).Concat(right.Fields.Select(field => field.Key)).Distinct();
+        // A recording's tire readings describe its run, not the garage setup.
+        var keys = left.Fields.Select(field => field.Key).Concat(right.Fields.Select(field => field.Key)).Distinct()
+            .Where(key => !SetupReadings.IsRunReading(key));
         foreach (var key in keys)
         {
             var a = left.Fields.FirstOrDefault(field => field.Key == key); var b = right.Fields.FirstOrDefault(field => field.Key == key);

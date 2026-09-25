@@ -9,8 +9,11 @@ namespace iRacingCoach.Coordinator;
 // projection separate from the immutable report and invalidate it on changes.
 internal sealed class ArchivedRaceCatalog
 {
-    // 2: an offline recording's EventKey is its own id, never the shared subsession "0".
-    private const int ProjectionVersion = 2;
+    // 2: an offline recording's EventKey is its own id, never the shared subsession "0" (test day).
+    // 3 (setups branch 2): recorded setups carry the recording's car path (CarKey) for same-car comparison.
+    // 4 (setups branch 3): and the report their values came from (ValuesAnalysisPath), which tuning starts from.
+    // 5: run readings (last hot pressures, temperatures, tread) are kept apart from Fields; both lines merged.
+    private const int ProjectionVersion = 5;
     private const int UnreadableLedgerVersion = 1;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly object _gate = new();

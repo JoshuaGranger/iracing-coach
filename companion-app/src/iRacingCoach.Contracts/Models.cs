@@ -153,7 +153,21 @@ public sealed record LocalSetup(
     string Note,
     IReadOnlyList<SetupField> Fields,
     string Season = "",
-    IReadOnlyList<string>? AnalysisPaths = null);
+    IReadOnlyList<string>? AnalysisPaths = null,
+    // Where Fields came from for a setup file: "export" (its setup sheet),
+    // "recording" (an unmodified recording that loaded it) or "" (unknown).
+    string ValuesSource = "",
+    // The source label for known values, or the plain reason none are known.
+    string ValuesNote = "",
+    // The iRacing car path (the setups car folder, or a recording's CarPath), when
+    // known; setups compare only within one car.
+    string CarKey = "",
+    // The analysis whose recording supplied Fields, when they came from one.
+    string ValuesAnalysisPath = "",
+    // Tire readings from the last run (hot pressures, temperatures, tread) and the
+    // revision counter that iRacing stores beside the garage values. They describe a
+    // run, not the setup, so they are kept out of Fields and shown on their own.
+    IReadOnlyList<SetupField>? RunReadings = null);
 
 public sealed record EvidenceText(EvidenceKind Kind, string Text)
 {

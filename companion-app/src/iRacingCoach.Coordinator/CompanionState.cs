@@ -274,12 +274,26 @@ public sealed partial class CompanionState : IDisposable
         !string.IsNullOrWhiteSpace(race.AnalysisPath) && (setup.AnalysisPaths ?? []).Append(setup.StoPath)
             .Any(path => string.Equals(path, race.AnalysisPath, StringComparison.OrdinalIgnoreCase))).ToArray();
 
+    /// <summary>
+    /// The linked recording that tuning a setup starts from: the one whose values the
+    /// setup shows (for a linked file, its newest unmodified recording), otherwise the
+    /// newest linked recording. Never whichever happens to be listed first.
+    /// </summary>
+    public RecentRace? SetupTuningRace(LocalSetup setup)
+    {
+        var evidence = SetupEvidenceRaces(setup);
+        return evidence.FirstOrDefault(race => setup.ValuesAnalysisPath.Length > 0
+                && string.Equals(race.AnalysisPath, setup.ValuesAnalysisPath, StringComparison.OrdinalIgnoreCase))
+            ?? evidence.OrderByDescending(race => DateTimeOffset.TryParse(race.StartTimeUtc, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out var start) ? start : DateTimeOffset.MinValue).FirstOrDefault();
+    }
+
     public async Task BeginSetupTuningAsync(string setupId, string? raceId = null, CancellationToken cancellationToken = default)
     {
         var setup = Setups.FirstOrDefault(item => item.Id == setupId);
         if (setup is null) return;
         var evidence = SetupEvidenceRaces(setup);
-        var race = raceId is null ? evidence.FirstOrDefault() : evidence.FirstOrDefault(item => item.Id == raceId);
+        var race = raceId is null ? SetupTuningRace(setup) : evidence.FirstOrDefault(item => item.Id == raceId);
         if (race is null) { Notify("Record and analyze a run with this setup to attach driving evidence."); return; }
         SelectedSetupId = setup.Id;
         TuningSourceSetupId = setup.Id;

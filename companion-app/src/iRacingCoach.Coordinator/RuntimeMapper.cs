@@ -208,12 +208,24 @@ public static class RuntimeMapper
         var fields = new List<SetupField>();
         FlattenSetup(setup, string.Empty, fields);
         if (fields.Count == 0) return null;
+        var (values, readings) = SplitRunReadings(fields);
         var fingerprint = Text(identity, "setup_fingerprint") ?? Text(report, "analysis_id") ?? analysisPath;
         return new LocalSetup(fingerprint, Text(identity, "setup_name") ?? "Recorded setup",
             DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
             string.Join(" · ", new[] { DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")), Text(identity, "track_config") }.Where(value => !string.IsNullOrWhiteSpace(value))), "Recorded race", analysisPath, fingerprint,
-            "Linked to archived race", "Setup parameters recorded by iRacing; the archived report remains read only.", fields,
-            Text(identity, "season_name") ?? Text(identity, "season_key") ?? (Integer(identity, "season_year") > 0 && Integer(identity, "season_quarter") > 0 ? $"{Integer(identity, "season_year")}S{Integer(identity, "season_quarter")}" : string.Empty), [analysisPath]);
+            "Linked to archived race", "Setup parameters recorded by iRacing; the archived report remains read only.", values,
+            Text(identity, "season_name") ?? Text(identity, "season_key") ?? (Integer(identity, "season_year") > 0 && Integer(identity, "season_quarter") > 0 ? $"{Integer(identity, "season_year")}S{Integer(identity, "season_quarter")}" : string.Empty), [analysisPath],
+            // The recording's CarPath names the same car as a setups folder; its screen
+            // name ("NASCAR Xfinity Chevrolet Camaro") and the folder's display name
+            // ("Camaro 2019") do not match.
+            CarKey: Text(identity, "car_path") ?? string.Empty, ValuesAnalysisPath: analysisPath, RunReadings: readings);
+    }
+
+    /// <summary>Separates a setup's garage values from the run readings stored beside them.</summary>
+    private static (IReadOnlyList<SetupField> Values, IReadOnlyList<SetupField> Readings) SplitRunReadings(IEnumerable<SetupField> fields)
+    {
+        var all = fields.ToArray();
+        return (all.Where(field => !SetupReadings.IsRunReading(field.Key)).ToArray(), all.Where(field => SetupReadings.IsRunReading(field.Key)).ToArray());
     }
 
     private static void FlattenSetup(JsonElement element, string prefix, List<SetupField> fields)
@@ -243,8 +255,6 @@ public static class RuntimeMapper
             var sources = Object(entry, "sources");
             var sto = Array(sources, "sto").FirstOrDefault();
             var identity = Object(entry, "filename_identity");
-            var parsed = Object(entry, "parsed_html");
-            var fieldsObject = Object(parsed, "fields");
             var path = Text(sto, "path");
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -253,6 +263,7 @@ public static class RuntimeMapper
 
             var stem = Text(entry, "stem") ?? Path.GetFileNameWithoutExtension(path);
             var warning = Object(Object(Object(entry, "parsed_html"), "identity"), "mismatches");
+            var values = SetupFileValues(entry);
             result.Add(new LocalSetup(
                 // Equal bytes can legitimately exist under different cars or
                 // filenames. Selection identifies the file, not its contents;
@@ -268,17 +279,69 @@ public static class RuntimeMapper
                 Boolean(warning, "has_mismatch") == true
                     ? "The filename and exported setup details disagree. Verify it in iRacing before use."
                     : "Local setup file; the original remains unchanged.",
-                fieldsObject.ValueKind == JsonValueKind.Object
-                    ? fieldsObject.EnumerateObject().Select(property =>
-                    {
-                        var field = property.Value;
-                        var raw = field.TryGetProperty("raw", out var rawValue) ? DisplayJson(rawValue) : string.Empty;
-                        var unit = Text(field, "unit");
-                        return new SetupField(property.Name, Text(field, "label") ?? Humanize(property.Name.Split('.').Last()) ?? property.Name,
-                            Text(field, "section") ?? Humanize(property.Name.Split('.').First()) ?? "Setup", string.IsNullOrWhiteSpace(unit) || raw.Contains(unit, StringComparison.OrdinalIgnoreCase) ? raw : $"{raw} {unit}");
-                    }).ToArray() : [], Text(identity, "season_key") ?? string.Empty));
+                values.Fields, Text(identity, "season_key") ?? string.Empty, values.AnalysisPaths,
+                values.Source, values.Note, Text(entry, "car_folder") ?? string.Empty, values.AnalysisPath, values.Readings));
         }
         return result;
+    }
+
+    private sealed record SetupFileValueSet(IReadOnlyList<SetupField> Fields, IReadOnlyList<string> AnalysisPaths, string Source, string Note,
+        string AnalysisPath = "", IReadOnlyList<SetupField>? Readings = null);
+
+    /// <summary>
+    /// A .sto is encrypted, so its values come from its exported setup sheet or,
+    /// as the backend attributes them, from an unmodified recording that loaded it.
+    /// Recorded values are flattened exactly like a recording's own setup so the
+    /// two compare field for field.
+    /// </summary>
+    private static SetupFileValueSet SetupFileValues(JsonElement entry)
+    {
+        var recorded = Object(entry, "recorded_setup");
+        var analysisPaths = Array(recorded, "uses").Select(use => Text(use, "analysis_path"))
+            .OfType<string>().Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var fieldsObject = Object(Object(entry, "parsed_html"), "fields");
+        if (fieldsObject.ValueKind == JsonValueKind.Object)
+        {
+            // An exported sheet also lists the last run's tire readings; they are not setup values.
+            var (sheetValues, sheetReadings) = SplitRunReadings(fieldsObject.EnumerateObject().Select(property =>
+            {
+                var field = property.Value;
+                var raw = field.TryGetProperty("raw", out var rawValue) ? DisplayJson(rawValue) : string.Empty;
+                var unit = Text(field, "unit");
+                // "unit" is the backend's canonical unit; a sheet value such as "15.0 psi"
+                // already shows its own, so only a bare number takes the canonical unit.
+                var bare = double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+                return new SetupField(property.Name, Text(field, "label") ?? Humanize(property.Name.Split('.').Last()) ?? property.Name,
+                    Text(field, "section") ?? Humanize(property.Name.Split('.').First()) ?? "Setup", string.IsNullOrWhiteSpace(unit) || !bare ? raw : $"{raw} {unit}");
+            }));
+            if (sheetValues.Count > 0) return new(sheetValues, analysisPaths, "export", "From its exported setup sheet.", Readings: sheetReadings);
+        }
+        var values = Object(recorded, "values");
+        var setup = Object(values, "setup");
+        if (setup.ValueKind == JsonValueKind.Object)
+        {
+            var fields = new List<SetupField>();
+            FlattenSetup(setup, string.Empty, fields);
+            // The backend takes these values from the newest unmodified recording and
+            // already leaves out its run readings; any that remain are still set apart.
+            var (recordedValues, recordedReadings) = SplitRunReadings(fields);
+            if (recordedValues.Count > 0)
+                return new(recordedValues, analysisPaths, "recording", RecordedValuesNote(values), Text(values, "analysis_path") ?? string.Empty, recordedReadings);
+        }
+        return new([], analysisPaths, string.Empty, Text(Object(entry, "values_status"), "reason")
+            ?? "Values unknown: .sto files are encrypted. Analyze a recording that loaded this file unchanged, or export its setup sheet from iRacing.");
+    }
+
+    private static string RecordedValuesNote(JsonElement values)
+    {
+        var start = Text(values, "session_start");
+        var date = DateTimeOffset.TryParse(start, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.CurrentCulture) : "an analyzed session";
+        var session = Text(values, "session_type");
+        var note = $"From recording {date}{(string.IsNullOrWhiteSpace(session) ? string.Empty : $" · {session}")}.";
+        if (Boolean(values, "file_saved_after_recording") == true) note += " The file was saved after that recording, so its values may have changed.";
+        else if (Boolean(values, "recordings_agree") == false) note += " Earlier recordings of this file had different values.";
+        return note;
     }
 
     public static Garage61Connection Garage61(JsonElement response, Garage61Connection? previous = null)

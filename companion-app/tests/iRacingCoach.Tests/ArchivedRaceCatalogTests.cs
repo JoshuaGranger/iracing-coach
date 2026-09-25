@@ -49,6 +49,60 @@ public sealed class ArchivedRaceCatalogTests
     }
 
     [TestMethod]
+    public void ProjectionOfAnOlderRecordedSetupShape_IsRebuilt()
+    {
+        // A projection written before recorded setups carried CarKey would keep them
+        // from ever matching their own linked setup files for comparison; one without
+        // ValuesAnalysisPath would let tuning start from another recording; one with
+        // run readings among Fields would list them as setup values.
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-catalog-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var report = Path.Combine(root, "analysis.json");
+        var cache = Path.Combine(root, "cache");
+        try
+        {
+            File.WriteAllText(report, JsonSerializer.Serialize(new
+            {
+                analysis_id = "camaro", identity = new
+                {
+                    track_name = "Lucas Oil Indianapolis Raceway Park", car_name = "NASCAR Xfinity Chevrolet Camaro", car_path = "stockcars2 camaro2019",
+                    setup_fingerprint = "camaro-setup", setup = new { Chassis = new { Front = new { CrossWeight = "50.9%" } }, Tires = new { LeftFront = new { LastHotPressure = "128 kPa" } } }
+                },
+                race_summary = new { recorded_laps = 10 }
+            }));
+            var fresh = new ArchivedRaceCatalog().Read(report, cache, () => { })!.Setup!;
+            Assert.AreEqual("stockcars2 camaro2019", fresh.CarKey);
+            Assert.AreEqual(Path.GetFullPath(report), fresh.ValuesAnalysisPath);
+            Assert.AreEqual("Chassis.Front.CrossWeight", fresh.Fields.Single().Key);
+            Assert.AreEqual("Tires.LeftFront.LastHotPressure", fresh.RunReadings!.Single().Key);
+
+            // Version 1 lacked CarKey; version 2 the report the values came from; version 3
+            // kept run readings among the setup values.
+            var cachedPath = Directory.GetFiles(cache).Single();
+            foreach (var (version, missing) in new[] { (1, new[] { "carKey", "valuesAnalysisPath" }), (2, new[] { "valuesAnalysisPath" }), (3, Array.Empty<string>()) })
+            {
+                var older = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(cachedPath))!.AsObject();
+                var setup = older["setup"]!.AsObject();
+                older["version"] = version;
+                foreach (var name in missing) setup.Remove(name);
+                var readings = setup["runReadings"]!.AsArray();
+                foreach (var reading in readings.ToArray()) { readings.Remove(reading); setup["fields"]!.AsArray().Add(reading); }
+                setup.Remove("runReadings");
+                File.WriteAllText(cachedPath, older.ToJsonString());
+
+                var writes = 0;
+                var reread = new ArchivedRaceCatalog().Read(report, cache, () => writes++)!.Setup!;
+                Assert.AreEqual("stockcars2 camaro2019", reread.CarKey, $"version {version}");
+                Assert.AreEqual(Path.GetFullPath(report), reread.ValuesAnalysisPath, $"version {version}");
+                Assert.HasCount(1, reread.Fields, $"version {version}");
+                Assert.HasCount(1, reread.RunReadings!, $"version {version}");
+                Assert.AreEqual(1, writes, $"A version {version} projection is rebuilt from the report, not reused.");
+            }
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [TestMethod]
     public void InvalidReportIsReadOnceUntilItsRevisionChanges()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-catalog-" + Guid.NewGuid().ToString("N"));

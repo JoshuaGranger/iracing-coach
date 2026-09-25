@@ -13,6 +13,8 @@
 | `SU-007` | Readable setups MAY be compared internally by normalized field, but comparison MUST retain provenance and uncertainty. |
 | `SU-008` | No workflow may overwrite the source setup. |
 | `SU-009` | Raw folder identifiers and fingerprints belong only in technical details. |
+| `SU-010` | A setup file MAY show garage values from an analyzed recording only when that recording's session info names the same file (`DriverInfo.DriverSetupName`) for the same car folder (the driver's `CarPath`), loaded from the user's library (`DriverSetupLoadTypeName: user`) and unchanged (`DriverSetupIsModified: 0`). The values MUST name the recording and its date, MUST exclude the run's tire readings, and MUST NOT be presented as decoded from the file. A file name that exists in more than one folder for the car, a changed or unverifiable load, or a recording that is no longer present supplies no values. |
+| `SU-011` | A setup whose values are unknown MUST say so plainly and MUST NOT be offered for comparison. Comparison is offered between setups of the same car whose values share one naming and unit scheme (recorded values, or exported setup sheets). Same car means the same iRacing car path (a setups car folder, or a recording's `CarPath`), never a display name, which differs between a setup folder and a recording of the same car. Each same-car setup that is not offered MUST be named with its reason, and the setup-comparison capability MUST follow the same rule. |
 
 Version 0.11.0 removes the user-facing Setup Library because it did not support a useful decision. Real local indexing remains available to Starting Tune and analysis.
 
