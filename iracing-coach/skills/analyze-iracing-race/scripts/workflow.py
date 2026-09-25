@@ -40,6 +40,7 @@ try:  # Support package imports and direct execution from the scripts folder.
         SCHEMA_VERSION as RACE_INVESTIGATION_SCHEMA_VERSION,
         build_race_investigation,
     )
+    from .race_inspection import review_sections
     from .garage61_client import (
         Garage61AuthError,
         Garage61Client,
@@ -78,6 +79,7 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
         SCHEMA_VERSION as RACE_INVESTIGATION_SCHEMA_VERSION,
         build_race_investigation,
     )
+    from race_inspection import review_sections
     from garage61_client import (
         Garage61AuthError,
         Garage61Client,
@@ -175,13 +177,18 @@ def refresh_race_investigation(analysis: dict[str, Any]) -> bool:
     """Rebuild a cached investigation whose projection predates this backend.
 
     The investigation is derived from the analysis document alone, so a newer
-    projection never requires decoding the recording again. Returns True when
-    the stored projection was replaced.
+    projection never requires decoding the recording again. A review-section
+    catalog entry added or re-versioned after the analysis was cached also
+    counts as stale: the stored section version must equal the one the current
+    catalog yields, or the recording would keep its old bounds. Returns True
+    when the stored projection was replaced.
     """
     current = analysis.get("race_investigation")
     if (isinstance(current, Mapping)
             and current.get("schema_version") == RACE_INVESTIGATION_SCHEMA_VERSION
-            and current.get("projection_version") == RACE_INVESTIGATION_PROJECTION_VERSION):
+            and current.get("projection_version") == RACE_INVESTIGATION_PROJECTION_VERSION
+            and isinstance(current.get("sections"), Mapping)
+            and current["sections"].get("version") == review_sections(analysis).get("version")):
         return False
     analysis["race_investigation"] = build_race_investigation(
         analysis, lap_exclusions=investigation_lap_exclusions(analysis)
@@ -1616,8 +1623,16 @@ def _analysis_pipeline_sha256() -> str:
 # Review 2026-09-23 (performance): per-sample finite checks take an exact-float
 # fast path and unit conversions resolve once per channel. A cold NH race
 # (203 MB) produced an identical analysis view; timing fell 24.8 s -> 21.9 s.
+# Review 2026-09-24: v19 core answers are unchanged. review_sections.v1.json
+# adds IRP (232-irp/2026-09-24.1) and sections may carry a driver-readable
+# name; only the race investigation of an exact catalogued configuration
+# changes. A cached investigation whose section version differs from the
+# catalog's is rebuilt without decoding (refresh_race_investigation). Real IRP
+# race/practice analyses matched pre-change output outside race_investigation
+# (archive paths, timestamps and archive-derived observation ids aside), and a
+# refreshed cache hit equalled a cold build.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "8437019a8303207614831a9f245f103f0facfab7740f9ca8649adaaa582c6dc2"
+    "e76756c04165f0c31754c99e4142e6bad9f8a025d77fc473f32765e41425484f"
 )
 
 
