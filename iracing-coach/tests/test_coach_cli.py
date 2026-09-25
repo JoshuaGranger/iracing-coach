@@ -298,6 +298,27 @@ class CoachCLITests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(json.loads(stdout.getvalue())["state"], "missing")
 
+    def test_report_storage_measures_duplicates_read_only(self) -> None:
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temporary:
+            for stamp in ("2026-09-21t00-07-38-00-00", "2026-09-21t00-07-43-00-00"):
+                directory = Path(temporary) / "reports" / "season-6079" / "race" / stamp
+                directory.mkdir(parents=True)
+                (directory / "analysis.json").write_text(
+                    '{"analysis_id":"same","analyzed_at":"' + stamp + '"}\n',
+                    encoding="utf-8",
+                )
+            with redirect_stdout(stdout):
+                status = coach_cli.main(["report-storage", "--archive-root", temporary])
+            created = sorted(item.name for item in Path(temporary).iterdir())
+
+        self.assertEqual(status, 0)
+        usage = json.loads(stdout.getvalue())
+        self.assertTrue(usage["read_only"])
+        self.assertEqual(usage["reclaimable_directory_count"], 1)
+        self.assertGreater(usage["reclaimable_bytes"], 0)
+        self.assertEqual(created, ["reports"])
+
     def test_operational_errors_are_json_and_nonzero(self) -> None:
         stdout = io.StringIO()
         stderr = io.StringIO()

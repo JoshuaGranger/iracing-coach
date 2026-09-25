@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -438,6 +439,103 @@ class WorkflowLocalTests(unittest.TestCase):
             discover.assert_not_called()
             self.assertEqual(result["selection"]["selector_type"], "file")
             self.assertFalse(result["selection"]["is_race"])
+
+    def _analyze_explicit_file(self, path: Path, archive_root: Path, *, now: str | None = None) -> dict:
+        metadata = {
+            "subsession_id": 77,
+            "sim_session_type": "Race",
+            "is_race": True,
+            "variables": [{"name": "SessionTime"}, {"name": "Lap"}],
+        }
+        loaded = {
+            "metadata": {},
+            "session_info": {},
+            "variables": [],
+            "samples": {"SessionTime": [0.0, 0.05], "Lap": [1, 1]},
+            "sample_rate_hz": 20.0,
+            "native_tick_rate_hz": 60,
+            "sample_count": 2,
+            "source_record_count": 2,
+        }
+        patches = [
+            mock.patch.object(workflow, "scan_ibt", return_value=metadata),
+            mock.patch.object(workflow, "load_telemetry", return_value=loaded),
+            mock.patch.object(workflow, "analyze_telemetry", return_value=_analysis()),
+            mock.patch.object(workflow, "render_visuals", return_value={}),
+        ]
+        if now is not None:
+            patches.append(mock.patch.object(workflow, "utc_now", return_value=now))
+        for patch in patches:
+            patch.start()
+        try:
+            return workflow.analyze_race_workflow(selector=str(path), archive_root=archive_root)
+        finally:
+            for patch in reversed(patches):
+                patch.stop()
+
+    def test_raw_copy_failure_keeps_analysis_and_records_non_durable_state(self) -> None:
+        # TD-008: a failed raw copy may not stop the analysis, must leave the
+        # original untouched, and must record that raw reanalysis is not durable.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "race.ibt"
+            path.write_bytes(b"recording")
+            archive_root = Path(directory) / "archive"
+            digest = hashlib.sha256(b"recording").hexdigest()
+            blocked = archive_root / "telemetry-traces" / "raw" / digest
+            blocked.parent.mkdir(parents=True)
+            # A stray file where the content-addressed directory belongs makes
+            # the copy fail on the destination side only.
+            blocked.write_bytes(b"not a directory")
+
+            result = self._analyze_explicit_file(path, archive_root)
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(path.read_bytes(), b"recording")
+            self.assertEqual(blocked.read_bytes(), b"not a directory")
+            summary = result["raw_archive"]
+            self.assertFalse(summary["durably_copied"])
+            self.assertEqual(summary["failed_count"], 1)
+            failure = summary["failures"][0]
+            self.assertTrue(failure["retryable"])
+            self.assertEqual(failure["archive_path"], str(blocked / "telemetry.ibt"))
+            self.assertTrue(failure["message"].endswith(str(blocked / "telemetry.ibt")))
+            saved = json.loads(Path(result["analysis_path"]).read_text(encoding="utf-8"))
+            policy = saved["source"]["raw_source_policy"]
+            self.assertFalse(policy["durably_copied"])
+            self.assertFalse(policy["raw_reanalysis_durable"])
+            self.assertIn("not yet durable", policy["note"])
+            self.assertIn(str(blocked / "telemetry.ibt"), policy["note"])
+            report = Path(result["report_path"]).read_text(encoding="utf-8")
+            self.assertIn("not yet durable", report)
+
+            # The retryable state clears on the next analysis once the
+            # destination is usable again.
+            blocked.unlink()
+            retried = self._analyze_explicit_file(path, archive_root)
+            self.assertTrue(retried["raw_archive"]["durably_copied"])
+            self.assertEqual(retried["raw_archive"]["failures"], [])
+            saved = json.loads(Path(retried["analysis_path"]).read_text(encoding="utf-8"))
+            self.assertTrue(saved["source"]["raw_source_policy"]["raw_reanalysis_durable"])
+
+    def test_repeated_analysis_of_one_recording_keeps_one_report_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "race.ibt"
+            path.write_bytes(b"recording")
+            archive_root = Path(directory) / "archive"
+
+            first = self._analyze_explicit_file(path, archive_root, now="2026-09-21T00:07:38+00:00")
+            second = self._analyze_explicit_file(path, archive_root, now="2026-09-21T00:07:43+00:00")
+            third = self._analyze_explicit_file(path, archive_root, now="2026-09-21T03:54:20+00:00")
+
+            self.assertFalse(first["analysis_cache"]["hit"])
+            self.assertTrue(second["analysis_cache"]["hit"])
+            self.assertEqual(first["analysis_path"], second["analysis_path"])
+            self.assertEqual(second["analysis_path"], third["analysis_path"])
+            reports = sorted((archive_root / "reports").rglob("analysis.json"))
+            self.assertEqual(reports, [Path(third["analysis_path"])])
+            saved = json.loads(reports[0].read_text(encoding="utf-8"))
+            self.assertEqual(saved["analyzed_at"], "2026-09-21T03:54:20+00:00")
+            self.assertEqual(saved["analysis_id"], third["analysis_id"])
 
     def test_read_only_inventory_counts_artifacts_and_safe_app_settings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
