@@ -54,7 +54,8 @@ public static class RaceInvestigationMapper
         Array(item, "actions").Select(action => new RaceInvestigationAction(RequiredInt(action, "priority"), RequiredText(action, "title"),
             RequiredText(action, "instruction"), Strings(action, "evidence"), Text(action, "limitation"), Integers(action, "lap_numbers"),
             Number(action, "start_pct"), Number(action, "end_pct"), Strings(action, "signal_keys"),
-            current ? Text(action, "section_id") : null, current ? TrialSpec(Property(action, "trial")) : null)).ToArray(),
+            current ? Text(action, "section_id") : null, current ? TrialSpec(Property(action, "trial")) : null,
+            current ? TrialReference(Property(action, "early_run_version")) : null)).ToArray(),
         current ? Inspection(Property(item, "inspection")) : null,
         // Absent before sections-trials-v2; present, it must be a boolean.
         Boolean(item, "pace_comparable") ?? true,
@@ -163,8 +164,28 @@ public static class RaceInvestigationMapper
             RequiredNumber(success, "threshold_s"), RequiredInt(success, "minimum_laps"), RequiredText(success, "rule"),
             conditions.ValueKind == JsonValueKind.Object ? Number(conditions, "fuel_start_gal") : null,
             conditions.ValueKind == JsonValueKind.Object ? Number(conditions, "track_temp_f") : null,
-            Property(item, "annotation").ValueKind == JsonValueKind.Object ? Text(Property(item, "annotation"), "version") : null);
+            Property(item, "annotation").ValueKind == JsonValueKind.Object ? Text(Property(item, "annotation"), "version") : null,
+            Reach(Property(item, "reachability")));
     }
+
+    /// <summary>Optional before sections-trials-v5; present, every field is required.</summary>
+    private static RaceTrialReach? Reach(JsonElement item) => item.ValueKind switch
+    {
+        JsonValueKind.Null or JsonValueKind.Undefined => null,
+        JsonValueKind.Object => new(PositiveInt(item, "run_laps_needed"), PositiveInt(item, "test_day_run_laps"),
+            Boolean(item, "test_day_reachable") ?? throw new JsonException("Missing or invalid investigation flag: test_day_reachable.")),
+        _ => throw new JsonException("Invalid investigation object: reachability.")
+    };
+
+    private static RaceTrialReference? TrialReference(JsonElement item) => item.ValueKind switch
+    {
+        JsonValueKind.Null or JsonValueKind.Undefined => null,
+        JsonValueKind.Object => new(RequiredText(item, "comparison_id"), RequiredInt(item, "action_priority")),
+        _ => throw new JsonException("Invalid investigation object: early_run_version.")
+    };
+
+    private static int PositiveInt(JsonElement item, string name) => RequiredInt(item, name) is var value and > 0
+        ? value : throw new JsonException($"Invalid investigation count: {name}.");
 
     /// <summary>Maps a saved trial summary or full record from the trial tools.</summary>
     public static DrivingTrial Trial(JsonElement item, JsonElement? evaluations = null)

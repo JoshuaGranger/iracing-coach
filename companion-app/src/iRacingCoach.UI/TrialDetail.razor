@@ -10,10 +10,15 @@
             <p>@Trial.Instruction</p>
             <small>
                 From @Trial.Source.Track @Trial.Source.Layout · @DateLabel(Trial.Source.RecordedAt) · @Trial.Source.Car ·
+                @if (Trial.ComparisonTitle.Length > 0) { @($"{Trial.ComparisonTitle} · ") }
                 @Spec.MetricLabel @Percent(Spec.MetricStartPct)–@Percent(Spec.MetricEndPct)% (section @Spec.SectionLabel) ·
                 to beat: @Seconds(Spec.BaselineMedianSeconds) s median of laps @Laps(Spec.BaselineLaps) · earlier reference @Seconds(Spec.ReferenceMedianSeconds) s ·
                 success: @Spec.MinimumLaps screened laps at @Window at least @Seconds(Spec.ThresholdSeconds) s faster
             </small>
+            @if (Reach(Spec) is { Length: > 0 } reach)
+            {
+                <p class="trial-reach" data-test-day-reachable="@(Spec.Reach!.TestDayReachable ? "true" : "false")">@reach</p>
+            }
         </div>
     </header>
 
@@ -44,7 +49,7 @@
             }
             else if (Trial.Evaluations.Count == 0)
             {
-                <span>Waiting for a later recording of the @Trial.Source.Car at @Trial.Source.Track @Trial.Source.Layout. Drive @Spec.MinimumLaps clear laps at @Window.</span>
+                <span>Waiting for a later recording of the @Trial.Source.Car at @Trial.Source.Track @Trial.Source.Layout. Drive @Spec.MinimumLaps clear laps at @Window@(Spec.Reach is { TestDayReachable: false } needed ? $" in one run of about {needed.RunLapsNeeded} green laps without a pit stop" : "").</span>
             }
         </div>
     </div>

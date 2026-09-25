@@ -31,18 +31,21 @@ else
                     <span class="test-status">
                         @if (trial.LatestEvaluation is { } latest)
                         {
+                            var checkedText = $"{latest.Reasons.FirstOrDefault() ?? ""} · {DateLabel(latest.Recording.RecordedAt)}";
                             <span class="verdict @VerdictTone(latest.Verdict)">@Verdict(latest.Verdict)</span>
-                            <small>@(latest.Reasons.FirstOrDefault() ?? "") · @DateLabel(latest.Recording.RecordedAt)</small>
+                            <small title="@checkedText">@checkedText</small>
                         }
                         else if (candidate is not null)
                         {
+                            var readyText = $"{candidate.SessionType} · {candidate.Date}{(trial.Spec.Reach is { TestDayReachable: false } reach ? $" · needs a run of about {reach.RunLapsNeeded} green laps" : "")}";
                             <span class="verdict waiting">Ready to check</span>
-                            <small>@candidate.SessionType · @candidate.Date</small>
+                            <small title="@readyText">@readyText</small>
                         }
                         else
                         {
+                            var waitingText = Waiting(trial.Spec);
                             <span class="verdict waiting">Waiting</span>
-                            <small>Record the same car and layout, then drive @Window(trial.Spec)</small>
+                            <small title="@waitingText">@waitingText</small>
                         }
                     </span>
                     <span class="test-actions">
@@ -208,4 +211,12 @@ else
     private static string Window(RaceTrialSpec spec) => spec.ExposureStart is { } start && spec.ExposureEnd is { } end
         ? $"{spec.MinimumLaps} clear laps at {start.ToString("0", CultureInfo.CurrentCulture)}–{end.ToString("0", CultureInfo.CurrentCulture)} green laps into a run"
         : $"{spec.MinimumLaps} clear laps";
+
+    /// <summary>What the next recording needs, the run length first because a test day cannot always give it.</summary>
+    private static string Waiting(RaceTrialSpec spec) => spec.Reach switch
+    {
+        { TestDayReachable: false } reach => $"Needs a run of about {reach.RunLapsNeeded} green laps without a pit stop: {Window(spec)}",
+        { } reach => $"Drive {Window(spec)}; a {reach.TestDayRunLaps}-lap test run can check it",
+        null => $"Record the same car and layout, then drive {Window(spec)}"
+    };
 }

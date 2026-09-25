@@ -37,6 +37,7 @@
         {
             var section = SelectedSection;
             var action = section is null ? null : Selected.Actions.FirstOrDefault(item => item.SectionId == section.Id);
+            var early = action is null ? null : Investigation.EarlyRunVersion(action);
             <SectionInspectionPanel Pair="SelectedPair" SectionLabel="@(section?.Label ?? "")" Sections="SectionChoices"
                                     SelectedSectionId="@section?.Id" OnSelectSection="SelectSection" Geometry="Geometry"
                                     ModeNote="@ModeNote" EmptyDetail="@PairUnavailable">
@@ -44,7 +45,10 @@
                     <div class="ri-test-strip">
                         @if (action is not null)
                         {
-                            <TrialAction Action="action" ComparisonId="@Selected.Id" Eligibility="@Selected.Eligibility" State="State" AnalysisId="@AnalysisId" Compact="true" />
+                            @* A late-run test a test day cannot reach is offered as its early-run version when the backend found one. *@
+                            <TrialAction Action="@(early?.Action ?? action)" ComparisonId="@(early?.Comparison.Id ?? Selected.Id)"
+                                         Eligibility="@(early?.Comparison.Eligibility ?? Selected.Eligibility)" LateVersion="@(early is null ? null : action)"
+                                         State="State" AnalysisId="@AnalysisId" Compact="true" />
                         }
                         else
                         {
@@ -123,8 +127,12 @@
                         }
                         @if (comparison.Actions.OrderBy(item => item.Priority).FirstOrDefault() is { } lead)
                         {
-                            <TrialAction Action="lead" ComparisonId="@comparison.Id" Eligibility="@comparison.Eligibility" State="State" AnalysisId="@AnalysisId"
-                                         OnInspect="() => InspectAction(lead)" />
+                            var early = Investigation.EarlyRunVersion(lead);
+                            var offeredId = early?.Comparison.Id ?? comparison.Id;
+                            var offered = early?.Action ?? lead;
+                            <TrialAction Action="offered" ComparisonId="@offeredId" Eligibility="@(early?.Comparison.Eligibility ?? comparison.Eligibility)"
+                                         LateVersion="@(early is null ? null : lead)" State="State" AnalysisId="@AnalysisId"
+                                         OnInspect="() => InspectAction(offeredId, offered)" />
                         }
                     </section>
                 }
@@ -200,8 +208,9 @@
     private Task SelectComparison(string id) => Notify(View, id, SectionId);
     private Task SelectSection(string id) => Notify("sections", Selected?.Id, id);
 
-    private Task InspectAction(RaceInvestigationAction action) =>
-        action.SectionId is { } section ? Notify("sections", Selected?.Id, section) : OnOpenTraces.InvokeAsync(new RaceInvestigationInspection(action.LapNumbers, action.StartPct, action.EndPct, action.SignalKeys));
+    /// <summary>Opens the offered test's own evidence: an early-run version inspects the early-run comparison.</summary>
+    private Task InspectAction(string comparisonId, RaceInvestigationAction action) =>
+        action.SectionId is { } section ? Notify("sections", comparisonId, section) : OnOpenTraces.InvokeAsync(new RaceInvestigationInspection(action.LapNumbers, action.StartPct, action.EndPct, action.SignalKeys));
 
     private Task OpenTracesForSection()
     {

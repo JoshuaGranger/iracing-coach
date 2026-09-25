@@ -86,6 +86,17 @@ public static class InvestigationPresentation
 
     public static string Reasons(IReadOnlyList<string> codes) => string.Join(", ", codes.Select(Reason).Distinct());
 
+    /// <summary>
+    /// How the backend says a test can be checked: the run length without a pit stop its
+    /// window needs, against the test-day run length it assumed. Empty when not reported.
+    /// </summary>
+    public static string Reach(RaceTrialSpec spec) => spec.Reach switch
+    {
+        null => "",
+        { TestDayReachable: true } reach => $"Can be checked in a {reach.TestDayRunLaps}-lap test run (needs about {reach.RunLapsNeeded} green laps without a pit stop).",
+        { } reach => $"Needs a run of about {reach.RunLapsNeeded} green laps without a pit stop; a {reach.TestDayRunLaps}-lap test run cannot check it."
+    };
+
     public static string Verdict(string verdict) => verdict switch
     {
         "improved" => "Improved",

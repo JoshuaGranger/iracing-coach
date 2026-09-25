@@ -1,15 +1,23 @@
 @using System.Globalization
 @using static iRacingCoach.UI.InvestigationPresentation
 
-<div class="ri-test @(Compact ? "compact" : null)" data-test-action="@Action.Priority">
+<div class="ri-test @(Compact ? "compact" : null)" data-test-action="@Action.Priority" data-test-comparison="@ComparisonId" data-test-version="@(LateVersion is null ? null : "early-run")">
     <div class="ri-test-copy">
-        <span class="ri-label">Test</span>
+        <span class="ri-label">@(LateVersion is null ? "Test" : "Early-run test")</span>
         <strong>@Action.Title</strong>
         @if (!Compact) { <p>@Action.Instruction</p> }
+        @if (!Compact && LateVersion is not null && Action.Trial is { } early)
+        {
+            <p class="ri-test-version">@VersionNote(early)</p>
+        }
         @if (Action.Trial is { } trial)
         {
             @* The success rule is its own unit so a narrow strip wraps before it instead of cutting it. *@
             <small class="ri-test-terms"><span>@trial.MetricLabel @Percent(trial.MetricStartPct)–@Percent(trial.MetricEndPct)% · @Window(trial) ·</span> <span class="ri-test-rule">success: @trial.MinimumLaps screened laps at least @Seconds(trial.ThresholdSeconds) s under @Seconds(trial.BaselineMedianSeconds) s</span></small>
+            @if (Reach(trial) is { Length: > 0 } reach)
+            {
+                <small class="ri-test-reach" data-test-day-reachable="@(trial.Reach!.TestDayReachable ? "true" : "false")">@reach</small>
+            }
         }
         else if (Eligibility != "eligible")
         {
@@ -33,19 +41,32 @@
 </div>
 
 @code {
+    /// <summary>The offered action; for an early-run version, the early-run comparison's own action.</summary>
     [Parameter, EditorRequired] public RaceInvestigationAction Action { get; set; } = null!;
+    /// <summary>The comparison that owns <see cref="Action"/>; saving uses it.</summary>
     [Parameter, EditorRequired] public string ComparisonId { get; set; } = "";
     [Parameter] public string Eligibility { get; set; } = "eligible";
     [Parameter] public CompanionState? State { get; set; }
     [Parameter] public string AnalysisId { get; set; } = "";
     [Parameter] public bool Compact { get; set; }
     [Parameter] public EventCallback OnInspect { get; set; }
+    /// <summary>
+    /// The late-run action this early-run test is offered in place of, because the backend
+    /// found its own test needs a longer run than a test day gives. Null for an ordinary test.
+    /// </summary>
+    [Parameter] public RaceInvestigationAction? LateVersion { get; set; }
 
     private Task Save() => State?.SaveDrivingTrialAsync(ComparisonId, Action.Priority) ?? Task.CompletedTask;
 
     private static string Window(RaceTrialSpec trial) => trial.ExposureStart is { } start && trial.ExposureEnd is { } end
         ? $"{start.ToString("0.0", CultureInfo.CurrentCulture)}–{end.ToString("0.0", CultureInfo.CurrentCulture)} green laps into a run"
         : "any run age";
+
+    private string VersionNote(RaceTrialSpec early) =>
+        $"Early-run version: the same section, laps {Laps(early.BaselineLaps)} against laps {Laps(early.ReferenceLaps)}."
+        + (LateVersion?.Trial?.Reach is { TestDayReachable: false } late
+            ? $" The late-run test needs a run of about {late.RunLapsNeeded} green laps without a pit stop."
+            : "");
 
     private static string SavedStatus(DrivingTrial trial) => trial.LatestEvaluation is { } latest
         ? $"Saved · last check: {Verdict(latest.Verdict)}"

@@ -119,6 +119,102 @@ public sealed class RaceInvestigationMapperTests
         Assert.IsTrue(finish.Actions.All(action => action.Trial is null), "Traffic-affected windows must never become a test baseline.");
     }
 
+    /// <summary>
+    /// IRP 9/23: the race's test needed three clear laps at 77.5–81.5 green laps into a run.
+    /// The backend now states how long a run each test needs and may point a late-run action
+    /// at an early-run test of the same section; the fixture's finish window points at the
+    /// clean window's test here to exercise that path.
+    /// </summary>
+    private static string FixtureWithEarlyRunVersion()
+    {
+        var text = File.ReadAllText(Path.Combine(TestRepositoryPaths.RepositoryRoot, "test-data", "race-investigation.json"));
+        var marker = "\"early_run_version\": null";
+        var second = text.IndexOf(marker, text.IndexOf(marker, StringComparison.Ordinal) + 1, StringComparison.Ordinal);
+        Assert.IsGreaterThan(0, second, "The finish window's action carries early_run_version.");
+        return string.Concat(text.AsSpan(0, second), "\"early_run_version\": {\"comparison_id\": \"run-1-clean\", \"action_priority\": 1}", text.AsSpan(second + marker.Length));
+    }
+
+    [TestMethod]
+    public void CurrentProjectionMapsHowLongARunEachTestNeedsAndItsEarlyRunVersion()
+    {
+        var investigation = CurrentFixture();
+        var clean = investigation.Comparisons.Single(item => item.Id == "run-1-clean");
+        Assert.AreEqual(new RaceTrialReach(7, 20, true), clean.Actions.Single().Trial!.Reach);
+        Assert.IsTrue(investigation.Comparisons.SelectMany(item => item.Actions).All(action => action.EarlyRunVersion is null));
+        Assert.IsNull(investigation.EarlyRunVersion(clean.Actions.Single()));
+
+        using var document = JsonDocument.Parse(FixtureWithEarlyRunVersion());
+        var linked = RaceInvestigationMapper.Map(document.RootElement)!;
+        Assert.IsNull(linked.UnavailableReason, linked.UnavailableReason);
+        var finish = linked.Comparisons.Single(item => item.Id == "run-1-finish").Actions.First();
+        Assert.AreEqual(new RaceTrialReference("run-1-clean", 1), finish.EarlyRunVersion);
+        var offered = linked.EarlyRunVersion(finish);
+        Assert.IsNotNull(offered);
+        Assert.AreEqual("run-1-clean", offered.Value.Comparison.Id);
+        Assert.IsNotNull(offered.Value.Action.Trial);
+
+        // A reference to a comparison the investigation does not hold offers nothing.
+        using var dangling = JsonDocument.Parse(FixtureWithEarlyRunVersion().Replace("\"comparison_id\": \"run-1-clean\"", "\"comparison_id\": \"run-9-early\"", StringComparison.Ordinal));
+        var missing = RaceInvestigationMapper.Map(dangling.RootElement)!;
+        Assert.IsNull(missing.EarlyRunVersion(missing.Comparisons.Single(item => item.Id == "run-1-finish").Actions.First()));
+    }
+
+    [TestMethod]
+    public void MalformedReachabilityOrEarlyRunVersionFailsClearly()
+    {
+        var text = File.ReadAllText(Path.Combine(TestRepositoryPaths.RepositoryRoot, "test-data", "race-investigation.json"));
+        foreach (var input in new[]
+        {
+            text.Replace("\"test_day_reachable\": true", "\"test_day_reachable\": \"yes\"", StringComparison.Ordinal),
+            text.Replace("\"run_laps_needed\": 7", "\"run_laps_needed\": 0", StringComparison.Ordinal),
+            text.Replace("\"reachability\": {", "\"reachability\": \"short\", \"unused\": {", StringComparison.Ordinal),
+            FixtureWithEarlyRunVersion().Replace("\"action_priority\": 1}", "\"action_priority\": \"first\"}", StringComparison.Ordinal)
+        })
+        {
+            Assert.AreNotEqual(text, input, "The fixture edit must apply.");
+            using var document = JsonDocument.Parse(input);
+            var investigation = RaceInvestigationMapper.Map(document.RootElement)!;
+            Assert.AreEqual("unavailable", investigation.Status);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(investigation.UnavailableReason));
+        }
+    }
+
+    [TestMethod]
+    public async Task RaceCardOffersTheEarlyRunVersionLabelledAsSuch()
+    {
+        using var document = JsonDocument.Parse(FixtureWithEarlyRunVersion());
+        var investigation = RaceInvestigationMapper.Map(document.RootElement)!;
+        var html = await RaceInvestigationPerformanceTests.Render<RaceInvestigationView>(new()
+        {
+            [nameof(RaceInvestigationView.Investigation)] = investigation,
+            [nameof(RaceInvestigationView.ComparisonId)] = "run-1-finish"
+        });
+        StringAssert.Contains(html, "data-test-comparison=\"run-1-clean\"", "Saving uses the comparison that owns the offered test.");
+        StringAssert.Contains(html, "data-test-version=\"early-run\"");
+        StringAssert.Contains(html, "Early-run test");
+        StringAssert.Contains(html, "Early-run version: the same section, laps 7, 8, 9 against laps 1, 2, 3.");
+        StringAssert.Contains(html, "Can be checked in a 20-lap test run (needs about 7 green laps without a pit stop).");
+        Assert.DoesNotContain("cannot be saved as a test", html, "A saveable early-run test replaces the unsaveable late one.");
+
+        var sections = await RaceInvestigationPerformanceTests.Render<RaceInvestigationView>(new()
+        {
+            [nameof(RaceInvestigationView.Investigation)] = investigation,
+            [nameof(RaceInvestigationView.View)] = "sections",
+            [nameof(RaceInvestigationView.ComparisonId)] = "run-1-finish",
+            [nameof(RaceInvestigationView.SectionId)] = "A"
+        });
+        StringAssert.Contains(sections, "data-test-comparison=\"run-1-clean\"");
+        StringAssert.Contains(sections, "Early-run test");
+
+        var plain = await RaceInvestigationPerformanceTests.Render<RaceInvestigationView>(new()
+        {
+            [nameof(RaceInvestigationView.Investigation)] = CurrentFixture(),
+            [nameof(RaceInvestigationView.ComparisonId)] = "run-1-finish"
+        });
+        Assert.DoesNotContain("data-test-version", plain, "Without a backend reference the card keeps its own action.");
+        StringAssert.Contains(plain, "cannot be saved as a test");
+    }
+
     [TestMethod]
     public void LegacyProjectionStillMapsButDoesNotClaimSectionInspection()
     {

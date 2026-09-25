@@ -279,6 +279,8 @@
 .test-row .test-title b { overflow: hidden; color: var(--text-primary); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
 .test-row .test-title small, .test-row .test-status small { color: var(--text-muted); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .test-row .test-status { display: grid; min-width: 0; font-size: 12px; }
+/* A status sentence carries its numbers at the end ("longest clean run 20 laps; needs ~78"), so it wraps to a second line instead of cutting them. */
+.test-row .test-status small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 16px; }
 .test-row .test-actions { display: flex; gap: 6px; }
 .verdict { display: inline-flex; align-items: center; width: fit-content; padding: 1px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .verdict.good { border-color: var(--success); color: var(--success); }

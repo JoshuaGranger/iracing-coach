@@ -20,6 +20,19 @@ public sealed record RaceInvestigation(
 {
     /// <summary>Schema 1 predates run views, review sections and pass inspection.</summary>
     public bool HasSectionInspection => SchemaVersion >= 2 && Sections is { Sections.Count: > 0 };
+
+    /// <summary>
+    /// The early-run test the backend offers in place of <paramref name="action"/>'s own,
+    /// when that one needs a longer run than a test day gives; null when none is offered
+    /// or the referenced comparison or action is absent.
+    /// </summary>
+    public (RaceInvestigationComparison Comparison, RaceInvestigationAction Action)? EarlyRunVersion(RaceInvestigationAction action)
+    {
+        if (action.EarlyRunVersion is not { } reference) return null;
+        var comparison = Comparisons.FirstOrDefault(item => item.Id == reference.ComparisonId);
+        var offered = comparison?.Actions.FirstOrDefault(item => item.Priority == reference.ActionPriority);
+        return comparison is not null && offered?.Trial is not null ? (comparison, offered) : null;
+    }
 }
 
 /// <summary>
@@ -59,7 +72,13 @@ public sealed record RaceInvestigationReference(string Title, string Url);
 public sealed record RaceInvestigationAction(int Priority, string Title, string Instruction,
     IReadOnlyList<string> Evidence, string? Limitation, IReadOnlyList<int> LapNumbers,
     double? StartPct, double? EndPct, IReadOnlyList<string> SignalKeys,
-    string? SectionId = null, RaceTrialSpec? Trial = null);
+    string? SectionId = null, RaceTrialSpec? Trial = null, RaceTrialReference? EarlyRunVersion = null);
+/// <summary>
+/// A test in another comparison of the same investigation, by comparison id and action
+/// priority. Set by the backend on a late-run action whose own test needs a longer run
+/// than a test day gives, pointing at the early-run test of the same section.
+/// </summary>
+public sealed record RaceTrialReference(string ComparisonId, int ActionPriority);
 /// <summary>
 /// One lap on the investigation charts. <see cref="Label"/> is set by projections
 /// whose lap numbers repeat across runs (a test day's "Run 3 · lap 14").
@@ -110,7 +129,14 @@ public sealed record RaceTrialSpec(string MetricKey, string MetricLabel, double 
     string SectionId, string SectionLabel, double SectionStartPct, double SectionEndPct,
     double BaselineMedianSeconds, IReadOnlyList<int> BaselineLaps, double ReferenceMedianSeconds, IReadOnlyList<int> ReferenceLaps,
     double? ExposureStart, double? ExposureEnd, double ThresholdSeconds, int MinimumLaps, string Rule,
-    double? FuelStartGallons, double? TrackTemperatureF, string? AnnotationVersion);
+    double? FuelStartGallons, double? TrackTemperatureF, string? AnnotationVersion, RaceTrialReach? Reach = null);
+
+/// <summary>
+/// How a test can be checked, decided by the backend: the run length without pitting its
+/// exposure window needs, and whether a test-day run of up to <see cref="TestDayRunLaps"/>
+/// laps reaches it. Absent from projections before sections-trials-v5.
+/// </summary>
+public sealed record RaceTrialReach(int RunLapsNeeded, int TestDayRunLaps, bool TestDayReachable);
 
 public sealed record RaceInvestigationInspection(IReadOnlyList<int> LapNumbers,
     double? StartPct = null, double? EndPct = null, IReadOnlyList<string>? SignalKeys = null);
