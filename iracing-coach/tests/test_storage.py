@@ -793,6 +793,34 @@ class StorageReportUsageTests(unittest.TestCase):
             self.assertEqual(usage["duplicate_group_count"], 2)
             self.assertEqual(usage["groups"][0]["analysis_id"], "ae7b1748175fa9e9f5c6ae52")
 
+    def test_references_still_protect_copies_after_the_documents_home_moves(self) -> None:
+        # A copied or migrated Documents home keeps absolute paths to the old
+        # location in its history index and saved records (31 of 34 index rows
+        # in the DESKTOP-SIM QA profile). They must still identify the copy.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "moved" / "data"
+            store = ArchiveStore(root)
+            old_reports = r"C:\Users\someone\Documents\iRacing Coach\data\reports\season-6079\bristol"
+            same = _report_analysis("moved-analysis", "2026-09-21T00:07:38+00:00")
+            base_ns = 1_790_000_000_000_000_000
+            by_trial = self._legacy_copy(store, "bristol", "t1", same, modified=base_ns)
+            indexed = self._legacy_copy(store, "bristol", "t2", same, modified=base_ns + 1)
+            newest = self._legacy_copy(store, "bristol", "t3", same, modified=base_ns + 2)
+            store.record_analysis(same, old_reports + r"\T2\report.md")
+            (root / "trials").mkdir()
+            (root / "trials" / "trial-1.json").write_text(
+                json.dumps({"source": {"analysis_path": old_reports + r"\t1\analysis.json"}}),
+                encoding="utf-8",
+            )
+
+            group = store.report_storage_usage()["groups"][0]
+
+            self.assertEqual(group["retained"], {
+                "path": str(indexed), "bytes": self._bytes(indexed), "reason": "history-index",
+            })
+            self.assertEqual([item["path"] for item in group["kept"]], [str(by_trial)])
+            self.assertEqual([item["path"] for item in group["reclaimable"]], [str(newest)])
+
     def test_unreadable_history_index_offers_nothing_for_removal(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

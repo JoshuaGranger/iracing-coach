@@ -824,10 +824,23 @@ def _report_analysis_id(path: str, size: int) -> str | None:
     return str(value) if isinstance(value, (str, int)) and str(value).strip() else None
 
 
-def _path_key(path: str | os.PathLike[str]) -> str:
-    """Case- and spelling-insensitive identity for comparing local paths."""
+def _report_directory_keys(path: str | os.PathLike[str]) -> set[str]:
+    """Identities under which a stored path may name a report directory.
 
-    return os.path.normcase(os.path.abspath(_ordinary_path(os.fspath(path))))
+    The history index and saved records hold absolute paths. After the
+    Documents home is copied or migrated (PORT-002) those still name the old
+    location, so a directory also matches by its path below ``reports``.
+    """
+
+    absolute = os.path.normcase(os.path.abspath(_ordinary_path(os.fspath(path))))
+    keys = {"abs:" + absolute}
+    parts = [part for part in absolute.replace("/", "\\").split("\\") if part]
+    folded = [part.casefold() for part in parts]
+    if "reports" in folded:
+        below = parts[len(folded) - 1 - folded[::-1].index("reports") + 1:]
+        if below:
+            keys.add("rel:" + "\\".join(below).casefold())
+    return keys
 
 
 def _referenced_report_directories(value: Any, found: set[str]) -> None:
@@ -841,7 +854,7 @@ def _referenced_report_directories(value: Any, found: set[str]) -> None:
             _referenced_report_directories(item, found)
     elif isinstance(value, str) and value.casefold().endswith(_REPORT_ARTIFACT_NAMES):
         try:
-            found.add(_path_key(os.path.dirname(value)))
+            found.update(_report_directory_keys(os.path.dirname(value)))
         except (OSError, ValueError):
             pass
 
@@ -1863,11 +1876,9 @@ class ArchiveStore:
                     rows = connection.execute("SELECT report_path FROM sessions").fetchall()
                 finally:
                     connection.close()
-                indexed = {
-                    _path_key(os.path.dirname(str(row[0])))
-                    for row in rows
-                    if row and row[0]
-                }
+                for row in rows:
+                    if row and row[0]:
+                        indexed.update(_report_directory_keys(os.path.dirname(str(row[0]))))
                 index_status = "read"
             except sqlite3.Error:
                 index_status = "unreadable"
@@ -1899,6 +1910,15 @@ class ArchiveStore:
             if directory["analysis_id"] is not None:
                 groups.setdefault(directory["analysis_id"], []).append(directory)
 
+        def reference_reason(path: str) -> str | None:
+            labels = {
+                referenced[key] for key in _report_directory_keys(path) if key in referenced
+            }
+            return next(
+                (label for label in ("history-index", "trials", "tuning") if label in labels),
+                None,
+            )
+
         # An index that exists but cannot be read might name any copy, so no
         # copy is offered for removal until it can be read again.
         measurable = index_status != "unreadable"
@@ -1908,7 +1928,7 @@ class ArchiveStore:
                 continue
             copies.sort(
                 key=lambda item: (
-                    _path_key(item["path"]) in indexed,
+                    bool(_report_directory_keys(item["path"]) & indexed),
                     item["modified_ns"],
                 ),
                 reverse=True,
@@ -1917,7 +1937,7 @@ class ArchiveStore:
             kept: list[dict[str, Any]] = []
             reclaimable: list[dict[str, Any]] = []
             for copy in others:
-                reason = referenced.get(_path_key(copy["path"]))
+                reason = reference_reason(copy["path"])
                 if reason or not measurable:
                     kept.append(
                         {
@@ -1935,7 +1955,7 @@ class ArchiveStore:
                     "retained": {
                         "path": retained["path"],
                         "bytes": retained["bytes"],
-                        "reason": referenced.get(_path_key(retained["path"]), "newest"),
+                        "reason": reference_reason(retained["path"]) or "newest",
                     },
                     "kept": kept,
                     "reclaimable": reclaimable,
