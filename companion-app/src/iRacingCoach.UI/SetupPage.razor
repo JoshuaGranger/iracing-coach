@@ -73,10 +73,6 @@ else
                         {
                             <p class="setup-source-note" data-values-source="@selected.ValuesSource">@selected.ValuesNote</p>
                         }
-                        @if (selected.Fields.Count > 0 && CompareExclusions(State.Setups, selected) is { Length: > 0 } excluded)
-                        {
-                            <p class="setup-source-note" data-compare-excluded>@excluded</p>
-                        }
                         @if (selected.Fields.Count == 0)
                         {
                             <p class="setup-source-note" data-values-unknown>@(selected.ValuesNote.Length > 0 ? selected.ValuesNote : "Values unknown for this setup.")</p>
@@ -103,6 +99,11 @@ else
                             {
                                 <details class="setup-values-group" open><summary>@group.Key <span>@group.Count()</span></summary><dl>@foreach (var field in group) { <div><dt>@field.Label</dt><dd>@field.Value</dd></div> }</dl></details>
                             }
+                        }
+                        @if (CompareExclusions(State.Setups, selected) is { Count: > 0 } excluded)
+                        {
+                            <details class="setup-values-group" data-compare-excluded open="@(excluded.Count <= 3)"><summary>Not offered for comparison <span>@excluded.Count same-car setup@(excluded.Count == 1 ? "" : "s")</span></summary>
+                                <dl>@foreach (var item in excluded) { <div data-excluded-setup="@item.Setup.Id"><dt>@item.Setup.Name</dt><dd>@item.Reason</dd></div> }</dl></details>
                         }
                     </section>
                 }
@@ -151,32 +152,11 @@ else
     private static string ValuesSummary(LocalSetup setup) => setup.Fields.Count == 0 ? "Values unknown"
         : setup.ValuesSource == "recording" ? $"{setup.Fields.Count} values from a recording" : $"{setup.Fields.Count} values";
 
-    // Recorded values use iRacing's garage names and units; an exported setup
-    // sheet uses its own names and display units, so the two never compare as equal.
-    private static string ValueScheme(LocalSetup setup) => setup.ValuesSource == "export" ? "export" : "recording";
-
-    private static bool SameCar(LocalSetup left, LocalSetup right) =>
-        left.CarKey.Length > 0 && right.CarKey.Length > 0
-            ? string.Equals(left.CarKey, right.CarKey, StringComparison.OrdinalIgnoreCase)
-            : string.Equals(left.Car, right.Car, StringComparison.OrdinalIgnoreCase);
-
     /// <summary>Other setups of the same car whose values are known and comparable with this one's.</summary>
-    public static IReadOnlyList<LocalSetup> CompareCandidates(IEnumerable<LocalSetup> setups, LocalSetup setup) => setup.Fields.Count == 0 ? []
-        : setups.Where(item => item.Id != setup.Id && SameCar(item, setup) && item.Fields.Count > 0 && ValueScheme(item) == ValueScheme(setup)).ToArray();
+    public static IReadOnlyList<LocalSetup> CompareCandidates(IEnumerable<LocalSetup> setups, LocalSetup setup) => SetupComparability.Candidates(setups, setup);
 
-    /// <summary>Why other setups of this car are not offered for comparison.</summary>
-    public static string CompareExclusions(IEnumerable<LocalSetup> setups, LocalSetup setup)
-    {
-        var sameCar = setups.Where(item => item.Id != setup.Id && SameCar(item, setup)).ToArray();
-        var unknown = sameCar.Count(item => item.Fields.Count == 0);
-        var otherScheme = sameCar.Count(item => item.Fields.Count > 0 && ValueScheme(item) != ValueScheme(setup));
-        var reasons = new List<string>();
-        if (unknown > 0) reasons.Add($"{unknown} setup{(unknown == 1 ? " has" : "s have")} unknown values");
-        if (otherScheme > 0) reasons.Add(ValueScheme(setup) == "export"
-            ? $"{otherScheme} {(otherScheme == 1 ? "has" : "have")} recorded values in iRacing's garage units"
-            : $"{otherScheme} {(otherScheme == 1 ? "has" : "have")} values only from an exported setup sheet in different units");
-        return reasons.Count == 0 ? string.Empty : $"Not offered for comparison: {string.Join("; ", reasons)}.";
-    }
+    /// <summary>Every other setup of this car that is not offered for comparison, named with its reason (SU-011).</summary>
+    public static IReadOnlyList<SetupComparisonExclusion> CompareExclusions(IEnumerable<LocalSetup> setups, LocalSetup setup) => SetupComparability.Exclusions(setups, setup);
     private static bool IsSetupFile(LocalSetup setup) => System.IO.Path.GetExtension(setup.StoPath).Equals(".sto", StringComparison.OrdinalIgnoreCase);
     private static string SourceLabel(LocalSetup setup) => IsSetupFile(setup) ? "Local .sto" : "Recorded telemetry";
     private static string Seconds(double? value) => value is { } v ? $"{v:0.000}s" : "—";

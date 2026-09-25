@@ -136,7 +136,8 @@ public sealed record LocalSetup(
     string ValuesSource = "",
     // The source label for known values, or the plain reason none are known.
     string ValuesNote = "",
-    // The iRacing car folder, when known; setups compare only within one car.
+    // The iRacing car path (the setups car folder, or a recording's CarPath), when
+    // known; setups compare only within one car.
     string CarKey = "");
 
 public sealed record EvidenceText(EvidenceKind Kind, string Text)

@@ -49,6 +49,42 @@ public sealed class ArchivedRaceCatalogTests
     }
 
     [TestMethod]
+    public void ProjectionSavedBeforeRecordedSetupsCarriedTheirCarPath_IsRebuilt()
+    {
+        // A projection written before recorded setups carried CarKey would keep them
+        // from ever matching their own linked setup files for comparison.
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-catalog-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var report = Path.Combine(root, "analysis.json");
+        var cache = Path.Combine(root, "cache");
+        try
+        {
+            File.WriteAllText(report, JsonSerializer.Serialize(new
+            {
+                analysis_id = "camaro", identity = new
+                {
+                    track_name = "Lucas Oil Indianapolis Raceway Park", car_name = "NASCAR Xfinity Chevrolet Camaro", car_path = "stockcars2 camaro2019",
+                    setup_fingerprint = "camaro-setup", setup = new { Chassis = new { Front = new { CrossWeight = "50.9%" } } }
+                },
+                race_summary = new { recorded_laps = 10 }
+            }));
+            Assert.AreEqual("stockcars2 camaro2019", new ArchivedRaceCatalog().Read(report, cache, () => { })!.Setup!.CarKey);
+
+            var cachedPath = Directory.GetFiles(cache).Single();
+            var older = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(cachedPath))!.AsObject();
+            older["version"] = 1;
+            older["setup"]!.AsObject().Remove("carKey");
+            File.WriteAllText(cachedPath, older.ToJsonString());
+
+            var writes = 0;
+            var reread = new ArchivedRaceCatalog().Read(report, cache, () => writes++);
+            Assert.AreEqual("stockcars2 camaro2019", reread!.Setup!.CarKey);
+            Assert.AreEqual(1, writes, "The older projection is rebuilt from the report, not reused.");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [TestMethod]
     public void InvalidReportIsReadOnceUntilItsRevisionChanges()
     {
         var root = Path.Combine(Path.GetTempPath(), "iracing-coach-catalog-" + Guid.NewGuid().ToString("N"));

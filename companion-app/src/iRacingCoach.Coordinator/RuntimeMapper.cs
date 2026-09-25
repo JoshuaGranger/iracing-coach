@@ -209,7 +209,11 @@ public static class RuntimeMapper
             DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
             string.Join(" · ", new[] { DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")), Text(identity, "track_config") }.Where(value => !string.IsNullOrWhiteSpace(value))), "Recorded race", analysisPath, fingerprint,
             "Linked to archived race", "Setup parameters recorded by iRacing; the archived report remains read only.", fields,
-            Text(identity, "season_name") ?? Text(identity, "season_key") ?? (Integer(identity, "season_year") > 0 && Integer(identity, "season_quarter") > 0 ? $"{Integer(identity, "season_year")}S{Integer(identity, "season_quarter")}" : string.Empty), [analysisPath]);
+            Text(identity, "season_name") ?? Text(identity, "season_key") ?? (Integer(identity, "season_year") > 0 && Integer(identity, "season_quarter") > 0 ? $"{Integer(identity, "season_year")}S{Integer(identity, "season_quarter")}" : string.Empty), [analysisPath],
+            // The recording's CarPath names the same car as a setups folder; its screen
+            // name ("NASCAR Xfinity Chevrolet Camaro") and the folder's display name
+            // ("Camaro 2019") do not match.
+            CarKey: Text(identity, "car_path") ?? string.Empty);
     }
 
     private static void FlattenSetup(JsonElement element, string prefix, List<SetupField> fields)

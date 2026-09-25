@@ -161,8 +161,13 @@ public sealed class SetupRecordingLinkTests
         var candidates = SetupPage.CompareCandidates(setups, irp).Select(setup => setup.Name).ToArray();
         CollectionAssert.AreEquivalent(new[] { "NOAPS_MaconiSetupShop Bristol 26S4 R", "NOAPS_MaconiSetupShop IRP 26S4 R.sto" }, candidates,
             "Another track's recorded setup and the recording's own setup are both comparable.");
-        Assert.AreEqual("Not offered for comparison: 1 setup has unknown values; 1 has values only from an exported setup sheet in different units.",
-            SetupPage.CompareExclusions(setups, irp));
+        CollectionAssert.AreEquivalent(new[]
+            {
+                $"NOAPS_MaconiSetupShop IRP 26S4 Q: {SetupComparability.UnknownValuesReason}",
+                $"NOAPS_MaconiSetupShop Iowa 26S3 R: {SetupComparability.ExportSchemeReason}"
+            },
+            SetupPage.CompareExclusions(setups, irp).Select(item => $"{item.Setup.Name}: {item.Reason}").ToArray(),
+            "Each excluded same-car setup is named with its reason; the other car's file of the same name is not this car's.");
 
         var bristol = setups.Single(setup => setup.Name == "NOAPS_MaconiSetupShop Bristol 26S4 R");
         var rows = SetupPage.Differences(irp, bristol).ToArray();
@@ -174,6 +179,53 @@ public sealed class SetupRecordingLinkTests
         Assert.HasCount(7, againstRecording);
         Assert.IsTrue(againstRecording.All(row => row.Kind == SetupPage.RowKind.Identical),
             "The file's recorded values and the recording's own setup share every garage field; run readings are not compared.");
+    }
+
+    [TestMethod]
+    [DataRow("stockcars2 camaro2019", "NASCAR Xfinity Chevrolet Camaro")]
+    [DataRow("bmwm4gt3", "BMW M4 GT3")]
+    public void CompareMatchesRecordingsAndSetupFilesByCarPath_NotByDisplayName(string carPath, string screenName)
+    {
+        // A linked .sto shows the folder's display name; its recording shows iRacing's
+        // screen name. Only the car path says they are the same car.
+        var catalog = JsonSerializer.SerializeToElement(new
+        {
+            entries = new[]
+            {
+                Entry(carPath, "Linked", new
+                {
+                    schema_version = 1, status = "linked",
+                    uses = new[] { new { analysis_path = RacePath, session_start = RaceStart, session_type = "Race" } },
+                    values = new { source = "recording", analysis_path = RacePath, session_start = RaceStart, session_type = "Race", setup = Garage(), recordings_agree = true }
+                }, new { available = true, source = "recording" }),
+                Entry(carPath, "Unknown", new { schema_version = 1, status = "none" }, new { available = false, reason = "Values unknown." }),
+                Entry(carPath, "Sheet", new { schema_version = 1, status = "none" }, new { available = true, source = "setup_export" },
+                    new { fields = new Dictionary<string, object> { ["chassis.rear.rear_end_ratio"] = new { raw = "4.57", label = "Rear end ratio", section = "REAR" } } })
+            }
+        });
+        var recording = RuntimeMapper.ArchivedSetup(JsonSerializer.SerializeToElement(new
+        {
+            identity = new { setup = RecordedCarSetup(), setup_fingerprint = "recorded-" + carPath, setup_name = "Linked.sto", car_name = screenName, car_path = carPath }
+        }), RacePath)!;
+        var setups = RuntimeMapper.Setups(catalog).Append(recording).ToArray();
+        var linked = setups.Single(setup => setup.Name == "Linked");
+        Assert.AreNotEqual(linked.Car, recording.Car, "The display names differ; that must not matter.");
+        Assert.AreEqual(carPath, recording.CarKey);
+
+        CollectionAssert.AreEqual(new[] { recording.Id }, SetupPage.CompareCandidates(setups, linked).Select(setup => setup.Id).ToArray());
+        CollectionAssert.AreEqual(new[] { linked.Id }, SetupPage.CompareCandidates(setups, recording).Select(setup => setup.Id).ToArray());
+        CollectionAssert.AreEquivalent(new[] { $"Unknown: {SetupComparability.UnknownValuesReason}", $"Sheet: {SetupComparability.ExportSchemeReason}" },
+            SetupPage.CompareExclusions(setups, recording).Select(item => $"{item.Setup.Name}: {item.Reason}").ToArray());
+        var sheet = setups.Single(setup => setup.Name == "Sheet");
+        CollectionAssert.AreEquivalent(new[] { $"Linked: {SetupComparability.RecordingSchemeReason}", "Unknown: " + SetupComparability.UnknownValuesReason, $"{recording.Name}: {SetupComparability.RecordingSchemeReason}" },
+            SetupPage.CompareExclusions(setups, sheet).Select(item => $"{item.Setup.Name}: {item.Reason}").ToArray());
+
+        // The capability gate offers comparison exactly when the Compare list has a candidate.
+        foreach (var setup in setups)
+            Assert.AreEqual(SetupPage.CompareCandidates(setups, setup).Count > 0, CapabilityRegistry.HasSetupComparison(setups, setup.Id), setup.Name);
+        Assert.IsTrue(CapabilityRegistry.HasSetupComparison(setups));
+        Assert.IsFalse(CapabilityRegistry.HasSetupComparison([sheet, recording]), "An exported sheet and a recording use different value schemes.");
+        Assert.IsFalse(CapabilityRegistry.HasSetupComparison([sheet, recording], sheet.Id));
     }
 
     [TestMethod]

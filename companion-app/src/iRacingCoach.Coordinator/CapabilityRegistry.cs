@@ -244,14 +244,9 @@ public static class CapabilityRegistry
     private static CapabilityDefinition NotImplemented(ProductCapability id, string name, string value, string source) =>
         new(id, name, value, source, CapabilityClass.NotImplemented, "No complete validated production implementation", "Production absence test", "Not exposed as a temporary state", "Omit until implementation and validation are complete", "Development inventory only", false);
 
-    public static bool HasSetupComparison(IEnumerable<LocalSetup> setups, string? selectedSetupId = null)
-    {
-        var readable = setups.Where(setup => setup.Fields.Count > 0).ToArray();
-        if (string.IsNullOrWhiteSpace(selectedSetupId))
-            return readable.GroupBy(setup => setup.Car, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() >= 2);
-        var selected = readable.FirstOrDefault(setup => string.Equals(setup.Id, selectedSetupId, StringComparison.Ordinal));
-        return selected is not null && readable.Any(setup => setup.Id != selected.Id && setup.Car.Equals(selected.Car, StringComparison.OrdinalIgnoreCase));
-    }
+    // The same rule as the Setups page's Compare list: same car path, known values, one value scheme.
+    public static bool HasSetupComparison(IEnumerable<LocalSetup> setups, string? selectedSetupId = null) =>
+        SetupComparability.Any(setups, selectedSetupId);
 
     public static bool HasTrackView(AnalysisWorkspace? workspace) => workspace?.Traces.Count > 0;
 }
