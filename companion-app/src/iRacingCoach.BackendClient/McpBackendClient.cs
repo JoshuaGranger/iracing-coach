@@ -281,6 +281,9 @@ public sealed record McpBackendDeadlines(
     public TimeSpan ForTool(string toolName) => toolName switch
     {
         "analyze_iracing_race" => Analysis,
+        // Reads every older report's source section and re-checks each copy before it
+        // moves; a large archive on a slow disk must not be cut off part-way.
+        "reclaim_report_storage" => Analysis,
         "sync_garage61_references" => OptionalNetwork,
         _ => LocalRead
     };

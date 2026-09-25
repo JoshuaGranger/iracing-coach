@@ -45,6 +45,23 @@
             <div><span>Coach folder</span><strong title="@State.Settings.CoachHome">@CoachFolderName</strong></div>
             <div><span>iRacing files</span><strong>@(State.IRacingDetected ? "Found" : "Not found")</strong></div>
         </div>
+        @* Shown only when the backend's plan lists copies that can go; the review decides nothing. *@
+        @if (State.ReportStorage is { HasReclaimable: true } storage)
+        {
+            <div class="settings-storage-row" data-report-storage>
+                <span><span>Older copies of saved analyses</span><strong>@ReportStoragePresentation.Reclaimable(storage)</strong></span>
+                <button type="button" class="button secondary compact" disabled="@State.ReportStorageBusy" @onclick="State.ReviewReportStorage">Review and remove</button>
+            </div>
+        }
+        @if (ReportStoragePresentation.RecoveryLine(State.ReportStorage?.Recovery) is { } recoveryLine)
+        {
+            <small class="settings-footnote" data-report-recovery>@recoveryLine
+                @if (State.CanOpenFolders)
+                {
+                    <button type="button" class="text-button" @onclick="State.OpenRemovedReportsFolder">Open folder</button>
+                }
+            </small>
+        }
         <details class="settings-disclosure" open="@_foldersOpen">
             <summary>Folder locations</summary>
             <div class="settings-rows compact-paths">
@@ -203,6 +220,62 @@ else
     </div>
 }
 
+@if (State.ReportStorageReview is { } review)
+{
+    var outcome = State.ReportStorageOutcome;
+    <div class="settings-guide-backdrop" role="presentation" @onclick="State.CloseReportStorageReview">
+        <section class="settings-guide" role="dialog" aria-modal="true" aria-labelledby="report-storage-title" data-report-storage-review @onclick:stopPropagation="true">
+            <header>
+                <div><ProductIcon Name="setup" Size="19" /><div><span class="eyebrow">Storage</span><h2 id="report-storage-title">Remove older copies of saved analyses</h2></div></div>
+                <button class="icon-button" aria-label="Close" disabled="@State.ReportStorageBusy" @onclick="State.CloseReportStorageReview"><ProductIcon Name="close" Size="17" /></button>
+            </header>
+            @if (outcome is null)
+            {
+                <div class="settings-reclaim-summary">
+                    <div data-reclaim-remove><span>Remove</span><strong>@ReportStoragePresentation.RemoveHeadline(review)</strong><small>@ReportStoragePresentation.RemoveDetail(review)</small></div>
+                    <div data-reclaim-keep><span>Keep</span><strong>@ReportStoragePresentation.KeepHeadline(review)</strong><small>@ReportStoragePresentation.KeepDetail</small></div>
+                </div>
+                <p>@ReportStoragePresentation.Untouched</p>
+            }
+            else
+            {
+                <div class="settings-result @(outcome.MovedCount > 0 ? "success" : "warning")" data-reclaim-result role="status">
+                    <ProductIcon Name="@(outcome.MovedCount > 0 ? "check" : "info")" Size="16" />
+                    <div><strong>@ReportStoragePresentation.ResultHeadline(outcome)</strong><span>@ReportStoragePresentation.ResultDetail(outcome)</span></div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(State.ReportStorageMessage))
+            {
+                <div class="settings-result warning" data-reclaim-message role="alert">
+                    <ProductIcon Name="info" Size="16" />
+                    <div><span>@State.ReportStorageMessage</span></div>
+                </div>
+            }
+            <footer>
+                @if (outcome is null)
+                {
+                    <button class="button secondary" disabled="@State.ReportStorageBusy" @onclick="State.CloseReportStorageReview">Cancel</button>
+                    <button class="button primary" data-reclaim-confirm disabled="@State.ReportStorageBusy" @onclick="ConfirmRemoval">
+                        @(State.ReportStorageBusy ? "Removing…" : $"Remove {ReportStoragePresentation.Copies(review.Remove.Count)}")
+                    </button>
+                }
+                else
+                {
+                    @if (outcome.MovedCount > 0 && State.CanOpenFolders)
+                    {
+                        <button class="button secondary" @onclick="State.OpenRemovedReportsFolder">Open folder</button>
+                    }
+                    else
+                    {
+                        <span></span>
+                    }
+                    <button class="button primary" @onclick="State.CloseReportStorageReview">Close</button>
+                }
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     [Parameter, EditorRequired] public CompanionState State { get; set; } = null!;
 
@@ -218,6 +291,11 @@ else
     {
         if (State.ConsumeConnectionsNavigationRequest()) _connectionsOpen = true;
     }
+
+    // Read in the background; the storage line appears only if the plan lists copies.
+    protected override void OnInitialized() => _ = State.RefreshReportStorageAsync();
+
+    private Task ConfirmRemoval() => State.ConfirmReportStorageRemovalAsync();
 
     private void ToggleConnections() => _connectionsOpen = !_connectionsOpen;
     private void ShowFolders() => _foldersOpen = true;

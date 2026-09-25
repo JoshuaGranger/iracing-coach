@@ -45,6 +45,12 @@ Connections manages optional services, not application users.
 
 Preparing a copy must checkpoint relevant databases, reject active durable jobs, recompute the portable manifest/integrity hash, and mark the archive safe to copy. Ordinary app activity marks it active again. Credentials and private Coach Engine state are never included.
 
+## Older copies of saved analyses
+
+| ID | Requirement |
+| --- | --- |
+| `SET-011` | The Data card MUST show reclaimable saved-analysis storage only when the backend's plan lists copies that can go, as one line ("Older copies of saved analyses · 2.3 GB can be removed") with one **Review and remove** action; otherwise it shows nothing. The review MUST state what moves (copies, size, the dates they were saved, how many are from an older analyzer version and how many repeat a kept analysis) and what stays (count, size, and the rule: each recording's latest analysis and every copy the race history, a saved test, a tuning record or an open test day uses), and that recordings and setups are untouched. Nothing moves until **Remove N copies** is clicked in that review, and the confirmation sends exactly the plan the review shows. The result names what moved and how many copies stayed because they were in use or changed. While removed copies wait in `removed-reports`, the card says how much space they hold and offers **Open folder** where the host may open folders. Eligibility and the move belong to the backend (`PORT-011`). |
+
 ## Current implementation note
 
 Version 0.14.0 source presents four compact primary cards for Data, Backup or move PCs, App behavior, and Telemetry popout. Folder locations, Connections, and detailed Troubleshooting are disclosures; the portable-preferences save bar remains directly available. Garage61 and ChatGPT connection controls are still embedded and functional inside Settings rather than removed or moved back into primary navigation.
