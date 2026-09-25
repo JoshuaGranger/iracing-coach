@@ -24,7 +24,8 @@ public static class InvestigationPresentation
     public static string Number(double? value, int digits = 1) => value is { } number && double.IsFinite(number)
         ? (number < 0 ? "−" : "") + Math.Abs(number).ToString("F" + digits, CultureInfo.CurrentCulture) : "—";
     public static string Percent(double fraction) => (fraction * 100).ToString("0.0", CultureInfo.CurrentCulture);
-    public static string Exposure(double? value) => value is { } number ? $"{number.ToString("0.0", CultureInfo.CurrentCulture)} green" : "exposure unknown";
+    /// <summary>"3.0 green"; outside a race no lap is green, so the caller passes "clean".</summary>
+    public static string Exposure(double? value, string word = "green") => value is { } number ? $"{number.ToString("0.0", CultureInfo.CurrentCulture)} {word}" : "exposure unknown";
 
     /// <summary>True only when the backend reports a usable, finite median pace change.</summary>
     public static bool HasPaceResult(RaceInvestigationComparison comparison) =>
@@ -59,8 +60,9 @@ public static class InvestigationPresentation
         return $"{run} · {cohort.LapCount} lap{(cohort.LapCount == 1 ? "" : "s")} · {Laps(cohort.LapNumbers)}";
     }
 
-    public static string CohortExposure(RaceInvestigationCohort cohort) => cohort.GreenAgeStart is { } start && cohort.GreenAgeEnd is { } end
-        ? $"{start.ToString("0.0", CultureInfo.CurrentCulture)}–{end.ToString("0.0", CultureInfo.CurrentCulture)} green"
+    /// <summary>"1.0–5.0 green"; outside a race the caller passes "clean".</summary>
+    public static string CohortExposure(RaceInvestigationCohort cohort, string word = "green") => cohort.GreenAgeStart is { } start && cohort.GreenAgeEnd is { } end
+        ? $"{start.ToString("0.0", CultureInfo.CurrentCulture)}–{end.ToString("0.0", CultureInfo.CurrentCulture)} {word}"
         : "exposure unknown";
 
     public static string PassIdentity(RacePass pass) =>
