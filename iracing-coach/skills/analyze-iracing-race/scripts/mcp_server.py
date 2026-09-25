@@ -859,6 +859,33 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "reclaim_report_storage",
+        "description": "Older copies of saved analyses (repeats of a kept analysis, and copies from an older analyzer revision). Without confirm: a read-only plan of what would move and what is kept. With confirm: true, the plan_id and exact directories of a reviewed plan: re-checks each directory under the history-index lock and moves only those still eligible into removed-reports beside reports, reporting every skip. Never moves a copy the history index, a saved test, a tuning record or the app names, nor the latest analysis of a recording; never deletes, and never touches anything outside reports.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "confirm": {"type": "boolean", "default": False},
+                "plan_id": {"type": "string", "maxLength": 64},
+                "directories": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5000,
+                    "uniqueItems": True,
+                    "items": {"type": "string", "maxLength": 1024},
+                    "description": "The reviewed plan's report directories, relative to reports.",
+                },
+                "keep_analysis_paths": {
+                    "type": "array",
+                    "maxItems": 500,
+                    "items": {"type": "string"},
+                    "description": "Archived analysis.json paths the app has open or its own tuning drafts name; their copies are kept.",
+                },
+                "archive_root": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "iracing_setup_history",
         "description": "Return season/car/track-scoped open-setup experiments and their recorded outcomes.",
         "inputSchema": {
@@ -1146,6 +1173,33 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
         return test_day.review_test_day_workflow(
             analysis_paths=[str(_analysis_path(item, archive_root)) for item in raw_paths],
             archive_root=str(archive_root))
+    if name == "reclaim_report_storage":
+        import report_reclaim
+        unexpected = sorted(
+            str(key) for key in set(arguments).difference(
+                {"confirm", "plan_id", "directories", "keep_analysis_paths", "archive_root"}
+            )
+        )
+        if unexpected:
+            raise ValueError("reclaim_report_storage received unsupported argument(s): " + ", ".join(unexpected))
+        confirm = arguments.get("confirm", False)
+        if not isinstance(confirm, bool):
+            raise ValueError("confirm must be true or false.")
+        raw_keep = arguments.get("keep_analysis_paths") or []
+        if not isinstance(raw_keep, list) or len(raw_keep) > report_reclaim.MAX_KEEP_PATHS:
+            raise ValueError(f"keep_analysis_paths must list at most {report_reclaim.MAX_KEEP_PATHS} analysis.json paths.")
+        if any(not isinstance(item, str) for item in raw_keep):
+            raise ValueError("Each keep_analysis_paths entry must be a string.")
+        plan_id = arguments.get("plan_id")
+        if plan_id is not None and not isinstance(plan_id, str):
+            raise ValueError("plan_id must be a string.")
+        return report_reclaim.reclaim_report_storage_workflow(
+            archive_root=str(archive_root),
+            confirm=confirm,
+            plan_id=plan_id,
+            directories=arguments.get("directories"),
+            keep_analysis_paths=[str(_analysis_path(item, archive_root)) for item in raw_keep],
+        )
     if name == "iracing_setup_history":
         analysis_path = (
             str(_analysis_path(arguments["analysis_path"], archive_root))

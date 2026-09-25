@@ -1418,6 +1418,101 @@ def _test_day_fixture() -> dict[str, Any]:
     return result
 
 
+def _report_reclaim_fixtures() -> tuple[dict[str, Any], dict[str, Any]]:
+    """A backend-built plan and its confirmed move, on a synthetic archive.
+
+    Bristol holds three copies of one analysis (the index names the middle
+    one); Iowa holds two copies of an older analyzer revision beside the
+    indexed current one, and one older copy a saved test names. File times
+    and the clock are fixed, and the temporary archive root is replaced by
+    %ARCHIVE_ROOT%, so the output does not depend on the machine.
+    """
+
+    import os
+    import tempfile
+
+    import report_reclaim
+    from storage import ArchiveStore, _json_text
+
+    second = 1_000_000_000
+    base_ns = 1_785_000_000 * second
+    clock = lambda: base_ns + 30 * 86_400 * second  # noqa: E731
+
+    def analysis(identifier: str, subsession: int, recording: str) -> dict[str, Any]:
+        return {
+            "analysis_id": identifier,
+            "analyzed_at": "2026-07-25T00:00:00+00:00",
+            "identity": {"subsession_id": subsession, "season_year": 2026, "season_quarter": 3,
+                         "car_name": "Synthetic car", "track_name": "Synthetic Speedway", "is_fixed_setup": True},
+            "source": {
+                "telemetry_files": [f"C:\\iRacing\\telemetry\\{recording}"],
+                "selection": {"group_id": f"subsession:{subsession}:2", "subsession_id": subsession,
+                              "sim_session_num": 2, "sim_session_type": "Race"},
+            },
+            "runs": [],
+        }
+
+    def copy(store: ArchiveStore, session: str, leaf: str, value: dict[str, Any], modified_ns: int,
+             padding: int) -> Path:
+        directory = store.reports_dir / "season-fixture" / session / leaf
+        (directory / "visuals").mkdir(parents=True)
+        (directory / "analysis.json").write_text(_json_text(value), encoding="utf-8")
+        (directory / "report.md").write_text("#" * padding, encoding="utf-8")
+        (directory / "visuals" / "lap-trend.svg").write_text("<svg/>", encoding="utf-8")
+        age(directory, modified_ns)
+        return directory
+
+    def age(directory: Path, modified_ns: int) -> None:
+        for item in [*sorted(directory.rglob("*"), reverse=True), directory]:
+            os.utime(item, ns=(modified_ns, modified_ns))
+
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder) / "archive"
+        store = ArchiveStore(root)
+        bristol = analysis("fixture-bristol-v21", 90000001, "bristol.ibt")
+        copy(store, "bristol", "copy-1", bristol, base_ns, 40_000)
+        indexed = copy(store, "bristol", "copy-2", bristol, base_ns + second, 40_000)
+        store.record_analysis(bristol, str(indexed / "report.md"))
+        copy(store, "bristol", "copy-3", bristol, base_ns - second, 40_000)
+        current = analysis("fixture-iowa-v21", 90000002, "iowa.ibt")
+        current_dir = copy(store, "iowa", "fixture-iowa-v21", current, base_ns + 86_400 * second, 60_000)
+        store.record_analysis(current, str(current_dir / "report.md"))
+        older = analysis("fixture-iowa-v19", 90000002, "iowa.ibt")
+        copy(store, "iowa", "copy-1", older, base_ns, 55_000)
+        copy(store, "iowa", "copy-2", older, base_ns + 3_600 * second, 55_000)
+        saved = copy(store, "iowa", "saved-test", analysis("fixture-iowa-v18", 90000002, "iowa.ibt"),
+                     base_ns - 86_400 * second, 50_000)
+        (root / "trials").mkdir()
+        (root / "trials" / "trial-1.json").write_text(
+            json.dumps({"baseline": {"analysis_path": str(saved / "analysis.json")}}), encoding="utf-8"
+        )
+
+        plan = report_reclaim.plan_report_reclaim(store, clock_ns=clock)
+        result = report_reclaim.execute_report_reclaim(
+            store,
+            plan_id=plan["plan_id"],
+            directories=[item["directory"] for item in plan["remove"]["directories"]],
+            clock_ns=clock,
+            batch_suffix=lambda: "fixture",
+        )
+        prefix = str(root)
+
+        def portable(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {key: portable(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [portable(item) for item in value]
+            if isinstance(value, str) and value.startswith(prefix):
+                return "%ARCHIVE_ROOT%" + value[len(prefix):]
+            return value
+
+        metadata = {"synthetic": True, "real_driver_or_setup_data": False, "production_use_allowed": False}
+        return (
+            {**portable(plan), "fixture_metadata": metadata},
+            {**portable(result), "fixture_metadata": metadata},
+        )
+
+
 def main() -> int:
     card = _race_card()
     damage = _damage_repair()
@@ -1638,6 +1733,9 @@ def main() -> int:
     _write_json("race-card.json", card)
     _write_json("race-investigation.json", _race_investigation_fixture())
     _write_json("test-day-review.json", _test_day_fixture())
+    reclaim_plan, reclaim_result = _report_reclaim_fixtures()
+    _write_json("report-storage-reclaim-plan.json", reclaim_plan)
+    _write_json("report-storage-reclaim-result.json", reclaim_result)
     _write_json("track-phase-visualization.json", _visualization_fixture())
     _write_json(
         "track-phase-visualization-unavailable.json",

@@ -709,6 +709,18 @@ label.theme-color-custom.active { border-color:var(--focus);box-shadow:inset 0 0
 .settings-guide-location { min-width:0;display:grid;gap:3px;padding:10px 12px;background:var(--surface-1);border-radius:var(--radius-control); }
 .settings-guide-location span { color:var(--text-muted);font-size:var(--font-size-min); }
 .settings-guide-location strong { overflow:hidden;color:var(--text-primary);font:600 12px var(--metric-font,Consolas,monospace);text-overflow:ellipsis;white-space:nowrap; }
+.settings-storage-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; padding: 8px 9px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: 5px; }
+.settings-storage-row > span { min-width: 0; display: grid; gap: 1px; }
+.settings-storage-row > span > span { color: var(--text-muted); font-size: var(--font-size-min); }
+.settings-storage-row strong { color: var(--text-primary); font-size: 12px; font-weight: 600; }
+.settings-storage-row .button { flex: none; }
+.settings-footnote .text-button { margin-left: 4px; padding: 0 4px; font-size: var(--font-size-min); }
+.settings-reclaim-summary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.settings-reclaim-summary > div { min-width: 0; display: grid; align-content: start; gap: 3px; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-control); }
+.settings-reclaim-summary span { color: var(--text-muted); font-size: var(--font-size-min); }
+.settings-reclaim-summary strong { color: var(--text-primary); font-size: 14px; }
+.settings-reclaim-summary small { color: var(--text-secondary); line-height: 16px; }
+@media (max-width: 720px) { .settings-reclaim-summary { grid-template-columns: 1fr; } }
 .settings-connections-disclosure { margin-top: 12px; padding: 0; overflow: hidden; }
 .settings-connections-disclosure > summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; color: var(--text-primary); cursor: pointer; list-style-position: inside; }
 .settings-connections-disclosure > summary:hover { background: color-mix(in srgb,var(--surface-hover) 72%,transparent); }

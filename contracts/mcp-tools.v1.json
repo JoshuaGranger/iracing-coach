@@ -1113,6 +1113,46 @@
       "name": "review_test_day"
     },
     {
+      "description": "Older copies of saved analyses (repeats of a kept analysis, and copies from an older analyzer revision). Without confirm: a read-only plan of what would move and what is kept. With confirm: true, the plan_id and exact directories of a reviewed plan: re-checks each directory under the history-index lock and moves only those still eligible into removed-reports beside reports, reporting every skip. Never moves a copy the history index, a saved test, a tuning record or the app names, nor the latest analysis of a recording; never deletes, and never touches anything outside reports.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_root": {
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "type": "boolean"
+          },
+          "directories": {
+            "description": "The reviewed plan's report directories, relative to reports.",
+            "items": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "keep_analysis_paths": {
+            "description": "Archived analysis.json paths the app has open or its own tuning drafts name; their copies are kept.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "plan_id": {
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "reclaim_report_storage"
+    },
+    {
       "description": "Return season/car/track-scoped open-setup experiments and their recorded outcomes.",
       "inputSchema": {
         "additionalProperties": false,

@@ -42,6 +42,7 @@ REQUIRED_FILES = (
     CONTRACT_ROOT / "garage61-auth-status-v1.schema.json",
     CONTRACT_ROOT / "theme-v1.schema.json",
     CONTRACT_ROOT / "test-day-review-v1.schema.json",
+    CONTRACT_ROOT / "report-storage-reclaim-v1.schema.json",
     CONFIG_ROOT / "theme.dark.json",
     PLUGIN_ROOT / ".codex-plugin" / "plugin.json",
     SCRIPT_ROOT / "mcp_server.py",
@@ -388,6 +389,20 @@ def _validate_backend_fixture_shapes() -> None:
     _require(test_day.get("read_only") is True and len(test_day.get("runs") or []) == test_day.get("run_count"),
              "test-day-review fixture must be a read-only review with one row per stint")
 
+    reclaim_schema = _load_json(CONTRACT_ROOT / "report-storage-reclaim-v1.schema.json")
+    reclaim_plan = _load_json(FIXTURE_ROOT / "report-storage-reclaim-plan.json")
+    reclaim_result = _load_json(FIXTURE_ROOT / "report-storage-reclaim-result.json")
+    contract_validation.assert_valid(reclaim_plan, reclaim_schema, "report-storage-reclaim plan fixture")
+    contract_validation.assert_valid(reclaim_result, reclaim_schema, "report-storage-reclaim result fixture")
+    _require(reclaim_plan.get("mode") == "plan" and reclaim_plan.get("read_only") is True
+             and sum(reclaim_plan["kept"]["by_reason"].values()) == reclaim_plan["kept"]["count"],
+             "report-storage-reclaim plan fixture must be read-only and account for every kept copy")
+    _require(reclaim_result.get("mode") == "execute" and reclaim_result.get("read_only") is False
+             and reclaim_result.get("confirmed_plan_id") == reclaim_plan.get("plan_id")
+             and [item["directory"] for item in reclaim_result["moved"]["directories"]]
+             == [item["directory"] for item in reclaim_plan["remove"]["directories"]],
+             "report-storage-reclaim result fixture must move exactly the confirmed plan")
+
     jobs = _load_json(FIXTURE_ROOT / "ui-job-states.json")
     _require(jobs.get("fixture_kind") == "companion-ui-projection" and isinstance(jobs.get("states"), dict), "job-state projection must be explicitly marked as UI-only")
 
@@ -645,6 +660,8 @@ def main() -> int:
         "ui-job-states.json": ("fixture_kind", "projection", "states"),
         "mcp-tool-error.json": ("jsonrpc", "id", "result"),
         "test-day-review.json": ("ok", "contract", "run_count", "windows", "runs", "next_change"),
+        "report-storage-reclaim-plan.json": ("contract", "mode", "status", "plan_id", "remove", "kept", "recovery"),
+        "report-storage-reclaim-result.json": ("contract", "mode", "status", "plan_id", "confirmed_plan_id", "moved", "skipped", "recovery"),
     }
     for name, required in fixture_expectations.items():
         _validate_fixture_shape(FIXTURE_ROOT / name, required)

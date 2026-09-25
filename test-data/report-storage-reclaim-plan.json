@@ -1,0 +1,79 @@
+{
+  "contract": "report-storage-reclaim-v1",
+  "fixture_metadata": {
+    "production_use_allowed": false,
+    "real_driver_or_setup_data": false,
+    "synthetic": true
+  },
+  "kept": {
+    "by_reason": {
+      "deferred": 0,
+      "history-index": 1,
+      "latest-analysis": 0,
+      "only-copy": 1,
+      "open-in-app": 0,
+      "recent": 0,
+      "saved-test": 1,
+      "tuning": 0,
+      "unverified": 0
+    },
+    "bytes": 151323,
+    "count": 3
+  },
+  "mode": "plan",
+  "plan_id": "78dd8976d07ef4e2e40cb3eb2809d1ff",
+  "read_only": true,
+  "recovery": {
+    "batch_count": 0,
+    "bytes": 0,
+    "path": "%ARCHIVE_ROOT%\\removed-reports"
+  },
+  "recovery_root": "%ARCHIVE_ROOT%\\removed-reports",
+  "remove": {
+    "bytes": 191768,
+    "count": 4,
+    "directories": [
+      {
+        "analysis_id": "fixture-bristol-v21",
+        "bytes": 40445,
+        "directory": "season-fixture\\bristol\\copy-1",
+        "kept_copy": "season-fixture\\bristol\\copy-2",
+        "kind": "duplicate",
+        "modified_utc": "2026-07-25T17:20:00+00:00"
+      },
+      {
+        "analysis_id": "fixture-bristol-v21",
+        "bytes": 40445,
+        "directory": "season-fixture\\bristol\\copy-3",
+        "kept_copy": "season-fixture\\bristol\\copy-2",
+        "kind": "duplicate",
+        "modified_utc": "2026-07-25T17:19:59+00:00"
+      },
+      {
+        "analysis_id": "fixture-iowa-v19",
+        "bytes": 55439,
+        "directory": "season-fixture\\iowa\\copy-1",
+        "kept_copy": "season-fixture\\iowa\\fixture-iowa-v21",
+        "kind": "superseded",
+        "modified_utc": "2026-07-25T17:20:00+00:00"
+      },
+      {
+        "analysis_id": "fixture-iowa-v19",
+        "bytes": 55439,
+        "directory": "season-fixture\\iowa\\copy-2",
+        "kept_copy": "season-fixture\\iowa\\fixture-iowa-v21",
+        "kind": "superseded",
+        "modified_utc": "2026-07-25T18:20:00+00:00"
+      }
+    ],
+    "duplicate_bytes": 80890,
+    "duplicate_count": 2,
+    "newest_utc": "2026-07-25T18:20:00+00:00",
+    "oldest_utc": "2026-07-25T17:19:59+00:00",
+    "superseded_bytes": 110878,
+    "superseded_count": 2
+  },
+  "reports_root": "%ARCHIVE_ROOT%\\reports",
+  "schema_version": 1,
+  "status": "ready"
+}

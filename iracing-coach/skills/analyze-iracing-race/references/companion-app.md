@@ -56,6 +56,7 @@ Avoid coupling the product contract to one UI framework or an exact runtime vers
 - **Seasonal knowledge:** `iracing_knowledge_cache_status`, `archive_iracing_knowledge`.
 - **Setup work:** `catalog_iracing_setups`, `compare_iracing_setups` (two setups of one car as the garage displays them; computed readouts listed apart, never counted), `build_open_setup_package`, `recommend_open_setup_tuning`, `record_open_setup_feedback`, `iracing_setup_history`.
 - **Garage61:** `garage61_auth_status`, `sync_garage61_references`.
+- **Archive upkeep:** `reclaim_report_storage` (older copies of saved analyses: a read-only plan, then, only with `confirm: true` and the reviewed plan's `plan_id` and directories, a move of each still-eligible copy into `removed-reports`; write authority, never offered to the coach).
 
 Treat tool results as authoritative structured data. For `analyze_iracing_race`, render the inline `race_card.markdown` first and retain its `path`, `timing`, evidence tags, phase model, and omitted-row count. Render `analysis_path`, `race_card_path`, `report_path`, and visual artifact paths returned by the backend; do not reconstruct archive paths in the UI. After resolving `latest`, pin subsequent calls to the exact session/source returned by discovery or analysis. For an "important transients" action, call `find_iracing_telemetry_events` with `selection_mode: "severity"` and display its scan/candidate/omission metadata; use chronological mode for a user-selected lap or record window.
 

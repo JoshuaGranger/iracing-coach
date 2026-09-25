@@ -4259,7 +4259,7 @@ public sealed partial class CompanionState : IDisposable
     private async Task WaitForHomeAnalysisWindowAsync()
     {
         while (!_homeAnalysisCancellation.IsCancellationRequested &&
-               (AnalysisLoading || TestDayLoading || LiveState.Snapshot.Connected))
+               (AnalysisLoading || TestDayLoading || ReportStorageBusy || LiveState.Snapshot.Connected))
         {
             try
             {
