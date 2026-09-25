@@ -60,7 +60,7 @@ else
                             <div class="setup-linked-races"><h3>Recorded performance</h3><p>Values from each linked recording. Weather, fuel, traffic and driving can affect comparisons.</p>
                             @foreach (var race in linked)
                             {
-                                <article><div><strong>@race.Track · @race.Date</strong><small>@race.SetupType setup · @race.Layout</small></div><div><span>Clean best</span><b>@Seconds(race.Overview?.BestCleanLapSeconds)</b></div><div><span>Pace change</span><b>@Signed(race.Overview?.PaceSlopeSecondsPerLap)</b></div><div><span>Lowest tire</span><b>@Percent(race.Overview?.LowestTireRemainingPercent)</b></div><button class="button secondary compact" @onclick="() => State.OpenRaceFromHomeAsync(race)">Analyze</button></article>
+                                <article><div><strong>@race.Track · @race.Date</strong><small>@race.SetupType setup · @race.Layout</small></div><div><span>Clean best</span><b>@Seconds(race.Overview?.BestCleanLapSeconds)</b></div><div title="Lap-time slope of the run: seconds added per lap"><span>Fall-off</span><b>@Signed(race.Overview?.PaceSlopeSecondsPerLap)</b></div><div><span>Lowest tire</span><b>@Percent(race.Overview?.LowestTireRemainingPercent)</b></div><button class="button secondary compact" @onclick="() => State.OpenRaceFromHomeAsync(race)">Analyze</button></article>
                             }
                             </div>
                         }
@@ -69,7 +69,7 @@ else
                             <div class="setup-evidence-empty"><strong>No recording uses this setup yet</strong><p>Record a run with this setup, then analyze it to compare handling and pace.</p><button class="button secondary compact" @onclick='() => State.Navigate("analysis")'>Review a recording</button></div>
                         }
                         @{ var values = SetupReadings.Values(selected); var readings = SetupReadings.Readings(selected); }
-                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId" disabled="@(values.Count == 0)" title="@(values.Count == 0 ? "This setup's values are unknown, so it can't be compared." : null)"><option value="">No comparison</option>@foreach (var candidate in CompareCandidates(State.Setups, selected)) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</select></label></div>
+                        <div class="setup-values-heading"><h3>Setup values</h3><label>Compare with<select @bind="State.CompareSetupId" @bind:after="() => CompareSelectedAsync(selected)" disabled="@(values.Count == 0)" title="@(values.Count == 0 ? "This setup's values are unknown, so it can't be compared." : null)"><option value="">No comparison</option>@foreach (var group in CompareGroups(State.Setups, selected)) { <optgroup label="@group.Label">@foreach (var candidate in group.Setups) { <option value="@candidate.Id">@ComparisonLabel(candidate)</option> }</optgroup> }</select></label></div>
                         @if (values.Count > 0 && selected.ValuesNote.Length > 0)
                         {
                             <p class="setup-source-note" data-values-source="@selected.ValuesSource">@selected.ValuesNote</p>
@@ -80,19 +80,36 @@ else
                         }
                         else if (Comparison(selected) is { } comparison)
                         {
-                            var rows = Differences(selected, comparison).ToArray();
-                            var changed = rows.Where(row => row.Kind == RowKind.Changed).ToArray();
-                            var unknown = rows.Where(row => row.Kind == RowKind.Unknown).ToArray();
-                            var identical = rows.Where(row => row.Kind == RowKind.Identical).ToArray();
-                            <p class="setup-diff-summary" data-setup-diff><b>@changed.Length changed</b> · <b>@unknown.Length unknown</b> · @identical.Length identical
-                                <button type="button" class="ri-link" aria-pressed="@(_showIdentical ? "true" : "false")" @onclick="() => _showIdentical = !_showIdentical">@(_showIdentical ? "Hide identical" : "Show all values")</button></p>
-                            <table class="setup-values-table"><thead><tr><th>Setting</th><th>Selected setup<br />@ComparisonLabel(selected)</th><th>Comparison setup<br />@ComparisonLabel(comparison)</th></tr></thead><tbody>
-                            @foreach (var row in changed) { <tr class="changed" data-row="changed"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
-                            @foreach (var row in unknown) { <tr class="unknown" data-row="unknown" title="Missing or unreadable on one side; never treated as equal."><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
-                            @if (_showIdentical) { foreach (var row in identical) { <tr data-row="identical"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> } }
-                            </tbody></table>
-                            @if (changed.Length == 0 && unknown.Length == 0) { <p class="setup-source-note">Every readable setting matches.</p> }
-                            @if (readings.Count > 0 || SetupReadings.Readings(comparison).Count > 0) { <p class="setup-source-note">Tire readings from a recorded run are not setup values and are not compared.</p> }
+                            @if (State.SetupComparisonFor(selected, comparison) is { } result)
+                            {
+                                var rows = Differences(selected, comparison, result).ToArray();
+                                var changed = rows.Where(row => row.Kind == RowKind.Changed).ToArray();
+                                var unknown = rows.Where(row => row.Kind == RowKind.Unknown).ToArray();
+                                var readouts = rows.Where(row => row.Kind == RowKind.Readout).ToArray();
+                                var identical = rows.Where(row => row.Kind == RowKind.Identical).ToArray();
+                                <p class="setup-diff-summary" data-setup-diff><b>@changed.Length changed</b> · <b>@unknown.Length unknown</b> · @identical.Length identical@(readouts.Length > 0 ? $" · {readouts.Length} garage readout{(readouts.Length == 1 ? "" : "s")} moved" : "")
+                                    <button type="button" class="ri-link" aria-pressed="@(_showIdentical ? "true" : "false")" @onclick="() => _showIdentical = !_showIdentical">@(_showIdentical ? "Hide identical" : "Show all values")</button></p>
+                                <table class="setup-values-table"><thead><tr><th>Setting</th><th>Selected setup<br />@ComparisonLabel(selected)</th><th>Comparison setup<br />@ComparisonLabel(comparison)</th></tr></thead><tbody>
+                                @foreach (var row in changed) { <tr class="changed" data-row="changed"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
+                                @foreach (var row in unknown) { <tr class="unknown" data-row="unknown" title="Missing or unreadable on one side; never treated as equal."><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
+                                @if (readouts.Length > 0)
+                                {
+                                    <tr class="readout-heading" data-readout-heading><th colspan="3">Garage readouts <small>Computed by the garage from the settings; not counted as changes.</small></th></tr>
+                                    @foreach (var row in readouts) { <tr class="readout" data-row="readout"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> }
+                                }
+                                @if (_showIdentical) { foreach (var row in identical) { <tr data-row="identical"><th>@row.Label</th><td>@row.Left</td><td>@row.Right</td></tr> } }
+                                </tbody></table>
+                                @if (changed.Length == 0 && unknown.Length == 0) { <p class="setup-source-note">Every readable setting matches.</p> }
+                                @if (readings.Count > 0 || SetupReadings.Readings(comparison).Count > 0) { <p class="setup-source-note">Tire readings from a recorded run are not setup values and are not compared.</p> }
+                            }
+                            else if (State.SetupComparisonFailed(selected, comparison))
+                            {
+                                <p class="status-label warning" role="status" data-setup-compare-error>@State.SetupComparisonError</p>
+                            }
+                            else
+                            {
+                                <p class="setup-source-note" role="status" data-setup-comparing>Comparing…</p>
+                            }
                         }
                         else
                         {
@@ -128,7 +145,17 @@ else
     private IEnumerable<string> Cars => State.Setups.Select(item => item.Car).Where(value => value.Length > 0).Distinct().Order();
     private IEnumerable<string> Tracks => State.Setups.Select(item => item.Track).Where(value => value.Length > 0).Distinct().Order();
     private IEnumerable<string> Seasons => State.Setups.Select(item => item.Season.Length > 0 ? item.Season : "Unknown").Distinct().OrderDescending();
-    protected override void OnParametersSet() { if (Selected is { } setup) State.SelectedSetupId = setup.Id; }
+    protected override void OnParametersSet()
+    {
+        if (Selected is not { } setup) return;
+        State.SelectedSetupId = setup.Id;
+        // A comparison chosen earlier (or restored) is read once for the current values.
+        if (Comparison(setup) is { } comparison && State.SetupComparisonFor(setup, comparison) is null
+            && !State.IsSetupComparisonPending(setup, comparison) && !State.SetupComparisonFailed(setup, comparison))
+            _ = State.CompareSetupsAsync(setup, comparison);
+    }
+    private Task CompareSelectedAsync(LocalSetup selected) =>
+        Comparison(selected) is { } comparison ? State.CompareSetupsAsync(selected, comparison) : Task.CompletedTask;
     private void Select(LocalSetup setup) { State.SelectedSetupId = setup.Id; State.CompareSetupId = string.Empty; }
     private void NewSetup() { if (Selected is { } setup) State.SelectedSetupId = setup.Id; State.OpenStartingTune(); _creating = true; }
     private void ClearFilters() { State.SetupSearch = State.SetupCarFilter = State.SetupTrackFilter = State.SetupSeasonFilter = string.Empty; }
@@ -164,6 +191,9 @@ else
     /// <summary>Other setups of the same car whose values are known and comparable with this one's.</summary>
     public static IReadOnlyList<LocalSetup> CompareCandidates(IEnumerable<LocalSetup> setups, LocalSetup setup) => SetupComparability.Candidates(setups, setup);
 
+    /// <summary>The Compare list in its groups: same track first, newest first, one entry per set of adjustments.</summary>
+    public static IReadOnlyList<SetupCandidateGroup> CompareGroups(IEnumerable<LocalSetup> setups, LocalSetup setup) => SetupComparability.Groups(setups, setup);
+
     /// <summary>Every other setup of this car that is not offered for comparison, named with its reason (SU-011).</summary>
     public static IReadOnlyList<SetupComparisonExclusion> CompareExclusions(IEnumerable<LocalSetup> setups, LocalSetup setup) => SetupComparability.Exclusions(setups, setup);
     private static bool IsSetupFile(LocalSetup setup) => System.IO.Path.GetExtension(setup.StoPath).Equals(".sto", StringComparison.OrdinalIgnoreCase);
@@ -172,38 +202,34 @@ else
     private static string Signed(double? value) => value is { } v ? $"{v:+0.000;-0.000;0.000}s/lap" : "—";
     private static string Percent(double? value) => value is { } v ? $"{v:0.0}%" : "—";
     private LocalSetup? Comparison(LocalSetup setup) => CompareCandidates(State.Setups, setup).FirstOrDefault(item => item.Id == State.CompareSetupId);
+    /// <summary>A setup's name with its newest linked recording, never a list of every date.</summary>
     private string ComparisonLabel(LocalSetup setup)
     {
-        var dates = State.SetupEvidenceRaces(setup).Select(race => race.Date)
-            .Where(date => !string.IsNullOrWhiteSpace(date)).Distinct().ToArray();
-        return dates.Length > 0 ? $"{setup.Name} · {string.Join(" / ", dates)}" : $"{setup.Name} · {SourceLabel(setup)}";
+        var recordings = State.SetupEvidenceRaces(setup)
+            .OrderByDescending(race => DateTimeOffset.TryParse(race.StartTimeUtc, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var start) ? start : DateTimeOffset.MinValue)
+            .Where(race => !string.IsNullOrWhiteSpace(race.Date)).ToArray();
+        if (recordings.Length == 0) return $"{setup.Name} · {SourceLabel(setup)}";
+        return recordings.Length == 1 ? $"{setup.Name} · {recordings[0].Date}" : $"{setup.Name} · {recordings[0].Date} · {recordings.Length} recordings";
     }
     private bool _showIdentical;
-    public enum RowKind { Changed, Unknown, Identical }
+    public enum RowKind { Changed, Unknown, Readout, Identical }
 
     /// <summary>
-    /// Changed and unknown settings lead; a value missing or unreadable on either side
-    /// is unknown, never equal. Values are compared as displayed, units included.
+    /// The backend comparison, labelled with this page's own field names. Changed and unknown
+    /// settings lead; computed garage readouts that moved follow as their own group and are
+    /// never counted as changes; a value missing or unreadable on a side is unknown, never equal.
     /// </summary>
-    public static IEnumerable<(string Label, string Left, string Right, RowKind Kind)> Differences(LocalSetup left, LocalSetup right)
+    public static IEnumerable<(string Label, string Left, string Right, RowKind Kind)> Differences(LocalSetup left, LocalSetup right, SetupValueComparison comparison)
     {
-        // A recording's tire readings describe its run, not the garage setup.
-        var keys = left.Fields.Select(field => field.Key).Concat(right.Fields.Select(field => field.Key)).Distinct()
-            .Where(key => !SetupReadings.IsRunReading(key));
-        foreach (var key in keys)
+        foreach (var row in comparison.Rows)
         {
-            var a = left.Fields.FirstOrDefault(field => field.Key == key); var b = right.Fields.FirstOrDefault(field => field.Key == key);
-            var leftValue = Normalized(a?.Value);
-            var rightValue = Normalized(b?.Value);
-            var kind = leftValue is null || rightValue is null ? RowKind.Unknown
-                : string.Equals(leftValue, rightValue, StringComparison.OrdinalIgnoreCase) ? RowKind.Identical : RowKind.Changed;
-            yield return ($"{(a ?? b)!.Group} · {(a ?? b)!.Label}", a?.Value is { Length: > 0 } shownLeft ? shownLeft : "—", b?.Value is { Length: > 0 } shownRight ? shownRight : "—", kind);
+            var field = left.Fields.FirstOrDefault(item => item.Key == row.Key) ?? right.Fields.FirstOrDefault(item => item.Key == row.Key);
+            var label = field is null ? row.Field : $"{field.Group} · {field.Label}";
+            var kind = row.Status == "identical" ? RowKind.Identical
+                : row.Readout ? RowKind.Readout
+                : row.Status == "unknown" ? RowKind.Unknown : RowKind.Changed;
+            yield return (label, row.Left is { Length: > 0 } shownLeft ? shownLeft : "—", row.Right is { Length: > 0 } shownRight ? shownRight : "—", kind);
         }
-    }
-
-    private static string? Normalized(string? value)
-    {
-        var text = string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        return text.Length == 0 || text is "—" or "-" or "n/a" or "N/A" ? null : text;
     }
 }

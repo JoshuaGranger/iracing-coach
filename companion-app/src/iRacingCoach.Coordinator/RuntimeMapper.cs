@@ -200,7 +200,11 @@ public static class RuntimeMapper
         return new RaceCard("Recorded race", new EvidenceText(EvidenceKind.Measured, bottomText ?? "The saved analysis is available."), actions, [], [], []);
     }
 
-    public static LocalSetup? ArchivedSetup(JsonElement report, string analysisPath)
+    /// <param name="sessionType">
+    /// The recorded session type when the caller holds it (an analysis_view carries no
+    /// source selection); otherwise the saved report's own selection or event type.
+    /// </param>
+    public static LocalSetup? ArchivedSetup(JsonElement report, string analysisPath, string? sessionType = null)
     {
         var identity = Object(report, "identity");
         var setup = Object(identity, "setup");
@@ -210,16 +214,36 @@ public static class RuntimeMapper
         if (fields.Count == 0) return null;
         var (values, readings) = SplitRunReadings(fields);
         var fingerprint = Text(identity, "setup_fingerprint") ?? Text(report, "analysis_id") ?? analysisPath;
+        // The badge names the session the setup was recorded in; an Offline Testing
+        // recording was badged "Recorded race".
+        var recordedSession = SessionTypeLabel(sessionType
+            ?? Text(Object(Object(report, "source"), "selection"), "sim_session_type")
+            ?? Text(identity, "sim_session_type")
+            ?? Text(identity, "event_type"));
         return new LocalSetup(fingerprint, Text(identity, "setup_name") ?? "Recorded setup",
             DisplayCar(Text(identity, "car_name") ?? Text(identity, "car_path")) ?? "Recorded car",
-            string.Join(" · ", new[] { DisplayTrack(Text(identity, "track_name") ?? Text(identity, "track_path")), Text(identity, "track_config") }.Where(value => !string.IsNullOrWhiteSpace(value))), "Recorded race", analysisPath, fingerprint,
+            RecordedTrack(Text(identity, "track_name") ?? Text(identity, "track_path"), Text(identity, "track_config")), recordedSession, analysisPath, fingerprint,
             "Linked to archived race", "Setup parameters recorded by iRacing; the archived report remains read only.", values,
             Text(identity, "season_name") ?? Text(identity, "season_key") ?? (Integer(identity, "season_year") > 0 && Integer(identity, "season_quarter") > 0 ? $"{Integer(identity, "season_year")}S{Integer(identity, "season_quarter")}" : string.Empty), [analysisPath],
             // The recording's CarPath names the same car as a setups folder; its screen
             // name ("NASCAR Xfinity Chevrolet Camaro") and the folder's display name
             // ("Camaro 2019") do not match.
-            CarKey: Text(identity, "car_path") ?? string.Empty, ValuesAnalysisPath: analysisPath, RunReadings: readings);
+            CarKey: Text(identity, "car_path") ?? string.Empty, ValuesAnalysisPath: analysisPath, RunReadings: readings,
+            GarageFingerprint: Text(identity, "garage_setup_fingerprint") ?? string.Empty,
+            RecordedUtc: Text(identity, "session_start") ?? string.Empty);
     }
+
+    /// <summary>The recorded session type in sentence case ("Offline Testing" reads "Offline testing").</summary>
+    internal static string SessionTypeLabel(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+        if (text.Length == 0) return "Recorded session";
+        return char.ToUpperInvariant(text[0]) + text[1..].ToLowerInvariant();
+    }
+
+    /// <summary>A recorded track and layout, joined the way every recorded setup names them.</summary>
+    internal static string RecordedTrack(string? trackName, string? trackConfig) =>
+        string.Join(" · ", new[] { DisplayTrack(trackName), trackConfig }.Where(value => !string.IsNullOrWhiteSpace(value)));
 
     /// <summary>Separates a setup's garage values from the run readings stored beside them.</summary>
     private static (IReadOnlyList<SetupField> Values, IReadOnlyList<SetupField> Readings) SplitRunReadings(IEnumerable<SetupField> fields)
@@ -264,6 +288,7 @@ public static class RuntimeMapper
             var stem = Text(entry, "stem") ?? Path.GetFileNameWithoutExtension(path);
             var warning = Object(Object(Object(entry, "parsed_html"), "identity"), "mismatches");
             var values = SetupFileValues(entry);
+            var recordedValues = Object(Object(entry, "recorded_setup"), "values");
             result.Add(new LocalSetup(
                 // Equal bytes can legitimately exist under different cars or
                 // filenames. Selection identifies the file, not its contents;
@@ -271,7 +296,7 @@ public static class RuntimeMapper
                 "file:" + path.Replace('\\', '/').ToUpperInvariant(),
                 stem,
                 DisplayCar(Text(entry, "car_folder")) ?? string.Empty,
-                DisplayTrack(Text(identity, "track_hint")) ?? string.Empty,
+                SetupFileTrack(entry, identity),
                 DisplaySetupRole(Text(identity, "role")),
                 path,
                 Text(sto, "sha256") ?? string.Empty,
@@ -280,9 +305,59 @@ public static class RuntimeMapper
                     ? "The filename and exported setup details disagree. Verify it in iRacing before use."
                     : "Local setup file; the original remains unchanged.",
                 values.Fields, Text(identity, "season_key") ?? string.Empty, values.AnalysisPaths,
-                values.Source, values.Note, Text(entry, "car_folder") ?? string.Empty, values.AnalysisPath, values.Readings));
+                values.Source, values.Note, Text(entry, "car_folder") ?? string.Empty, values.AnalysisPath, values.Readings,
+                GarageFingerprint: values.Source == "recording" ? Text(recordedValues, "garage_fingerprint") ?? string.Empty : string.Empty,
+                RecordedUtc: values.Source == "recording" ? Text(recordedValues, "session_start") ?? string.Empty : string.Empty));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Reads a compare_iracing_setups response. The backend decides every status and
+    /// which settings are computed readouts; nothing here re-derives either.
+    /// </summary>
+    public static SetupValueComparison SetupComparison(JsonElement response, string leftId, string rightId)
+    {
+        if (response.ValueKind != JsonValueKind.Object || response.TryGetProperty("schema_version", out var schema) is false
+            || schema.ValueKind != JsonValueKind.Number || schema.GetInt32() != 1)
+            throw new InvalidDataException("The setup comparison response has an incompatible schema version.");
+        var counts = Object(response, "counts");
+        if (counts.ValueKind != JsonValueKind.Object || !response.TryGetProperty("rows", out var rows) || rows.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("The setup comparison response did not include its counts and rows.");
+        var mapped = rows.EnumerateArray().Select(row => new SetupComparisonRow(
+            Text(row, "key") ?? throw new InvalidDataException("A setup comparison row has no key."),
+            Text(row, "field") ?? string.Empty,
+            Boolean(row, "readout") == true,
+            Status(row),
+            DisplayValue(row, "left"),
+            DisplayValue(row, "right"))).ToArray();
+        return new SetupValueComparison(leftId, rightId, Integer(counts, "changed"), Integer(counts, "unknown"), Integer(counts, "identical"),
+            Integer(counts, "readouts_changed"), mapped, Text(response, "equality_rule") ?? string.Empty, Text(response, "readout_rule") ?? string.Empty);
+
+        static string Status(JsonElement row) => Text(row, "status") is { } status && status is "changed" or "unknown" or "identical"
+            ? status
+            : throw new InvalidDataException($"Unknown setup comparison status '{Text(row, "status")}'.");
+
+        static string? DisplayValue(JsonElement row, string property) =>
+            row.TryGetProperty(property, out var value) && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) ? DisplayJson(value) : null;
+    }
+
+    /// <summary>
+    /// A setup file's name is free text ("claude IRP test v2 LFcamber" read as the track
+    /// "Claude IRP Test V2 Lfcamber"). A recording that loaded the file names its track,
+    /// so that wins; otherwise only a shop-style file name ("vendor track season role")
+    /// gives the backend a track hint, and without either the track stays unspecified.
+    /// </summary>
+    private static string SetupFileTrack(JsonElement entry, JsonElement filenameIdentity)
+    {
+        var recorded = Object(entry, "recorded_setup");
+        foreach (var source in new[] { Object(recorded, "values") }
+            .Concat(Array(recorded, "uses")).Concat(Array(recorded, "modified_uses")))
+        {
+            var track = RecordedTrack(Text(source, "track_name"), Text(source, "track_config"));
+            if (track.Length > 0) return track;
+        }
+        return DisplayTrack(Text(filenameIdentity, "track_hint")) ?? string.Empty;
     }
 
     private sealed record SetupFileValueSet(IReadOnlyList<SetupField> Fields, IReadOnlyList<string> AnalysisPaths, string Source, string Note,
