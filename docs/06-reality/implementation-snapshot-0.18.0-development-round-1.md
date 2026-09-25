@@ -1,5 +1,7 @@
 # iRacing Coach 0.18.0 development round 1: one investigation, one saved test, one plan
 
+Successor: [0.18.0 development round 2](implementation-snapshot-0.18.0-development-round-2.md) (September 24–25, 2026) is the current snapshot. This record stays as round 1's evidence.
+
 Date: September 23, 2026. Branch `codex/development-round-1`, from handoff baseline `4c98a46` through the commit that adds this record. Application source version stays **0.18.0**; analysis profile stays **post-race-foundations-v19**. The race investigation moves to **schema 2**, projection `sections-trials-v1`. This follows the [0.18.0 development snapshot](implementation-snapshot-0.18.0-development.md) and turns the September 22 [compact study](../01-product/visual-companion-redesign-2026-09-22.md) from a prototype into application behavior.
 
 The governing test is Joshua's: five features that win races beat a thousand that do not. This round therefore added one connected loop (find the loss, try one change, check it on a later recording) and removed or folded surfaces that did not serve it.
