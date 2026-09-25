@@ -59,10 +59,10 @@
                     {
                         var selected = choice.Id == Selected?.Id;
                         <button type="button" class="ri-comparison @(selected ? "selected" : null)" aria-pressed="@(selected ? "true" : "false")"
-                                data-comparison="@choice.Id" @onclick="() => SelectComparison(choice.Id)">
+                                data-comparison="@choice.Id" title="@(choice.PaceComparable ? null : choice.Summary)" @onclick="() => SelectComparison(choice.Id)">
                             <span class="ri-comparison-title">@choice.Title</span>
-                            <span class="ri-comparison-laps">@Laps(choice.Baseline.LapNumbers) → @Laps(choice.Compared.LapNumbers)@if (choice.Eligibility != "eligible") { <em> · @ExcludedSummary(choice)</em> }</span>
-                            <strong class="@(choice.DeltaSeconds > 0 ? "loss" : "gain")">@Signed(choice.DeltaSeconds)</strong>
+                            <span class="ri-comparison-laps">@Laps(choice.Baseline.LapNumbers) → @Laps(choice.Compared.LapNumbers)@if (!choice.PaceComparable) { <em> · no pace result</em> } else if (choice.Eligibility != "eligible") { <em> · @ExcludedSummary(choice)</em> }</span>
+                            <strong class="@PaceTone(choice)">@(HasPaceResult(choice) ? Signed(choice.DeltaSeconds) : "—")</strong>
                         </button>
                     }
                     @if (Investigation.Comparisons.Count == 0) { <p class="ri-muted">@Investigation.Summary</p> }
@@ -70,7 +70,11 @@
                 @if (Selected is { } comparison)
                 {
                     <section class="ri-panel ri-card" data-selected-comparison="@comparison.Id">
-                        <header><h2>@comparison.Title</h2><strong class="@(comparison.DeltaSeconds > 0 ? "loss" : "gain")">@Signed(comparison.DeltaSeconds) s/lap</strong></header>
+                        <header><h2>@comparison.Title</h2><strong class="@PaceTone(comparison)">@PaceResult(comparison)</strong></header>
+                        @if (!comparison.PaceComparable)
+                        {
+                            <p class="ri-unusable" data-pace-unusable>@comparison.Summary</p>
+                        }
                         <div class="ri-cohorts">
                             @foreach (var (cohort, role) in new[] { (comparison.Baseline, "Earlier"), (comparison.Compared, "Later") })
                             {
@@ -92,20 +96,23 @@
                         {
                             <div class="ri-changes"><span>Changed</span>@foreach (var metric in changes) { <b title="@metric.Detail">@metric.Label @Number(metric.Baseline, Digits(metric.Unit)) → @Number(metric.Compared, Digits(metric.Unit)) @metric.Unit</b> }</div>
                         }
-                        <div class="ri-explanations">
-                            <span>Explanations</span>
-                            @foreach (var hypothesis in comparison.Hypotheses)
-                            {
-                                <b class="ri-hypothesis @hypothesis.Status" title="@HypothesisTitle(hypothesis)">@hypothesis.Label<small>@HypothesisStatus(hypothesis.Status)</small></b>
-                            }
-                            <details><summary>Evidence</summary>
+                        @if (comparison.PaceComparable && comparison.Hypotheses.Count > 0)
+                        {
+                            <div class="ri-explanations">
+                                <span>Explanations</span>
                                 @foreach (var hypothesis in comparison.Hypotheses)
                                 {
-                                    <p><b>@hypothesis.Label.</b> @string.Join(" ", hypothesis.Supporting.Concat(hypothesis.Contradicting).Concat(hypothesis.Unknown))</p>
+                                    <b class="ri-hypothesis @hypothesis.Status" title="@HypothesisTitle(hypothesis)">@hypothesis.Label<small>@HypothesisStatus(hypothesis.Status)</small></b>
                                 }
-                                @if (Investigation.TrackEvolution is { } track) { <p><b>Track.</b> @track.Summary</p> }
-                            </details>
-                        </div>
+                                <details><summary>Evidence</summary>
+                                    @foreach (var hypothesis in comparison.Hypotheses)
+                                    {
+                                        <p><b>@hypothesis.Label.</b> @string.Join(" ", hypothesis.Supporting.Concat(hypothesis.Contradicting).Concat(hypothesis.Unknown))</p>
+                                    }
+                                    @if (Investigation.TrackEvolution is { } track) { <p><b>Track.</b> @track.Summary</p> }
+                                </details>
+                            </div>
+                        }
                         @if (comparison.Actions.OrderBy(item => item.Priority).FirstOrDefault() is { } lead)
                         {
                             <TrialAction Action="lead" ComparisonId="@comparison.Id" Eligibility="@comparison.Eligibility" State="State" AnalysisId="@AnalysisId"

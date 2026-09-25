@@ -22,6 +22,12 @@ public sealed record RaceInvestigation(
     public bool HasSectionInspection => SchemaVersion >= 2 && Sections is { Sections.Count: > 0 };
 }
 
+/// <summary>
+/// One backend window comparison. <see cref="PaceComparable"/> false means the backend
+/// withheld the pace result (for example a caution between or inside the windows, or no
+/// screened lap); <see cref="Summary"/> then states why. Projections before
+/// sections-trials-v2 carry no flag and read as comparable.
+/// </summary>
 public sealed record RaceInvestigationComparison(
     string Id, string Kind, string Title, string Summary,
     RaceInvestigationCohort Baseline, RaceInvestigationCohort Compared,
@@ -30,7 +36,9 @@ public sealed record RaceInvestigationComparison(
     IReadOnlyList<RaceInvestigationCorner> Corners,
     IReadOnlyList<RaceInvestigationHypothesis> Hypotheses,
     IReadOnlyList<RaceInvestigationAction> Actions,
-    RaceInspection? Inspection = null);
+    RaceInspection? Inspection = null,
+    bool PaceComparable = true,
+    IReadOnlyList<string>? PaceUnusableReasons = null);
 
 public sealed record RaceInvestigationCohort(
     string Label, int? RunNumber, IReadOnlyList<int> LapNumbers, int LapCount,

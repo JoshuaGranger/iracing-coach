@@ -55,7 +55,10 @@ public static class RaceInvestigationMapper
             RequiredText(action, "instruction"), Strings(action, "evidence"), Text(action, "limitation"), Integers(action, "lap_numbers"),
             Number(action, "start_pct"), Number(action, "end_pct"), Strings(action, "signal_keys"),
             current ? Text(action, "section_id") : null, current ? TrialSpec(Property(action, "trial")) : null)).ToArray(),
-        current ? Inspection(Property(item, "inspection")) : null);
+        current ? Inspection(Property(item, "inspection")) : null,
+        // Absent before sections-trials-v2; present, it must be a boolean.
+        Boolean(item, "pace_comparable") ?? true,
+        Property(item, "pace_unusable_reasons").ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? [] : Strings(item, "pace_unusable_reasons"));
 
     private static RaceInvestigationCohort Cohort(JsonElement item) => new(
         RequiredText(item, "label"), Integer(item, "run_number"), Integers(item, "lap_numbers"), RequiredInt(item, "lap_count"),

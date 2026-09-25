@@ -76,7 +76,7 @@
     @if (Selected is { } selected)
     {
         <div class="ri-runs-foot">
-            <strong>@selected.Title <b class="@(selected.DeltaSeconds > 0 ? "loss" : "gain")">@Signed(selected.DeltaSeconds) s/lap</b></strong>
+            <strong>@selected.Title <b class="@PaceTone(selected)">@PaceResult(selected)</b></strong>
             @foreach (var cohort in new[] { selected.Baseline, selected.Compared })
             {
                 <span class="ri-cohort-key">

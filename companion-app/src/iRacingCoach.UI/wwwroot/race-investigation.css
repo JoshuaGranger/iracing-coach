@@ -70,6 +70,8 @@
 .ri-link:hover { background: var(--surface-2); }
 .loss { color: var(--telemetry-slower); }
 .gain { color: var(--accent); }
+/* A withheld pace result reads neither as a loss nor as a gain. */
+.ri-comparison strong.neutral, .ri-card header strong.neutral, .ri-runs-foot b.neutral { color: var(--text-secondary); font-weight: 600; }
 
 /* Charts */
 .ri-runs, .ri-progress { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
@@ -133,6 +135,7 @@
 .ri-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .ri-card h2 { margin: 0; font-size: 15px; font-weight: 650; }
 .ri-card header strong { font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ri-unusable { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-secondary); }
 .ri-cohorts { display: grid; gap: 4px; }
 .ri-cohort { display: flex; align-items: baseline; gap: 4px 14px; flex-wrap: wrap; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ri-cohort b { color: var(--text-primary); font-size: 13px; font-weight: 600; }

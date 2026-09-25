@@ -175,7 +175,9 @@ internal static class RaceCoachPacketBuilder
             coverage = new { recorded_lap_count = investigation.Laps.Count, included_lap_count = laps.Count,
                 complete_lap_series = laps.Count == investigation.Laps.Count,
                 sample_policy = "All laps up to 512; longer recordings retain the first 256 and last 256. Every numeric sample has an exact lap identifier.",
-                comparison_count = investigation.Comparisons.Count, included_comparison_count = comparisons.Count },
+                comparison_count = investigation.Comparisons.Count, included_comparison_count = comparisons.Count,
+                withheld_comparison_count = investigation.Comparisons.Count(comparison => !comparison.PaceComparable),
+                comparison_policy = "Comparisons the backend marks as not a usable pace result (a caution between or inside the windows, or no screened lap) are withheld; the summary states why when one leads." },
             comparisons,
             laps,
             timeline = investigation.Timeline.Take(128).ToArray(),
@@ -193,8 +195,11 @@ internal static class RaceCoachPacketBuilder
     private static RaceInvestigation? UsableInvestigation(AnalysisWorkspace analysis) =>
         analysis.Investigation is { SchemaVersion: >= 1 and <= RaceInvestigationMapper.CurrentSchemaVersion, UnavailableReason: null } investigation ? investigation : null;
 
+    // A comparison without a usable pace result carries medians and area deltas
+    // across a caution or from excluded laps only; the coach never receives them.
     private static IReadOnlyList<RaceInvestigationComparison> InvestigationComparisons(RaceInvestigation investigation) =>
-        investigation.Comparisons.OrderByDescending(comparison => comparison.Id == investigation.DefaultComparisonId).Take(MaximumComparisons).ToArray();
+        investigation.Comparisons.Where(comparison => comparison.PaceComparable)
+            .OrderByDescending(comparison => comparison.Id == investigation.DefaultComparisonId).Take(MaximumComparisons).ToArray();
 
     private static IReadOnlyList<RaceInvestigationLap> BoundLaps(IReadOnlyList<RaceInvestigationLap> laps) =>
         laps.Count <= MaximumLapSamples ? laps : laps.Take(MaximumLapSamples / 2).Concat(laps.TakeLast(MaximumLapSamples / 2)).ToArray();
