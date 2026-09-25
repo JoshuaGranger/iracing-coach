@@ -32,12 +32,14 @@ try:  # Package import and direct script loading are both supported.
         _covered, _pair_rows, _points, _slip_summary, configuration_key, run_exposure, section_elapsed,
     )
     from .race_investigation import TRIAL_EXPOSURE_TOLERANCE, _number, _path, _round, trial_reachability
+    from .steering_basis import SteeringBasis, basis_of, comparable_across_recordings, pair_descriptor
     from .storage import _atomic_write_text, stable_hash, utc_now
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from race_inspection import (
         _covered, _pair_rows, _points, _slip_summary, configuration_key, run_exposure, section_elapsed,
     )
     from race_investigation import TRIAL_EXPOSURE_TOLERANCE, _number, _path, _round, trial_reachability
+    from steering_basis import SteeringBasis, basis_of, comparable_across_recordings, pair_descriptor
     from storage import _atomic_write_text, stable_hash, utc_now
 
 
@@ -135,6 +137,10 @@ def create_trial(analysis: Mapping[str, Any], *, analysis_path: str | None, comp
         "conditions": dict(spec.get("conditions") or {}),
         "success": dict(spec["success"]),
         "baseline_pass": {"lap": lap, "section_s": _round(seconds), "green_exposure": exposure.get(lap),
+                          # What the stored steering_rad values mean; a later
+                          # recording's steering is drawn beside them only
+                          # when both are road-wheel angle.
+                          "steering": basis_of(analysis).describe(),
                           "points": _pass_points(traces.get(lap), metric["start_pct"], metric["end_pct"])},
         "evaluations": [],
     }
@@ -233,6 +239,22 @@ def evaluate_trial(trial: Mapping[str, Any], analysis: Mapping[str, Any], *, ana
     context_start = metric["start_pct"]
     timing = _covered(base_points, context_start, section["end_pct"]) and _covered(later_points, context_start, section["end_pct"])
     rows = _pair_rows(base_points, later_points, context_start, section["start_pct"], section["end_pct"], timing)
+    # The two passes come from different recordings. Their steering is drawn
+    # together only as road-wheel angle; otherwise it is withheld, not mixed.
+    saved_steering = SteeringBasis.from_descriptor(trial["baseline_pass"].get("steering"))
+    later_steering = basis_of(analysis)
+    if comparable_across_recordings(saved_steering, later_steering):
+        steering_pair = pair_descriptor(later_steering)
+    else:
+        for row in rows:
+            row["a"]["steering"] = row["b"]["steering"] = None
+        steering_pair = pair_descriptor(
+            later_steering, comparable=False,
+            reason=("Steering is not compared: "
+                    + ("the saved test's steering is steering-wheel angle without a recorded steering ratio."
+                       if not saved_steering.road_wheel
+                       else "this recording's steering ratio is not recorded, so its steering-wheel angle cannot be matched to road-wheel steering.")),
+        )
     result["pair"] = {
         "section_id": section["id"], "start_pct": section["start_pct"], "end_pct": section["end_pct"],
         "context_start_pct": context_start, "timing_complete": timing,
@@ -242,6 +264,7 @@ def evaluate_trial(trial: Mapping[str, Any], analysis: Mapping[str, Any], *, ana
         "slip": {"basis": "chassis_velocity_angle", "unit": "deg",
                  "a": _slip_summary(base_points, section["start_pct"], section["end_pct"]),
                  "b": _slip_summary(later_points, section["start_pct"], section["end_pct"])},
+        "steering": steering_pair,
         "rows": rows,
     }
     if len(measured) < int(success["minimum_laps"]):

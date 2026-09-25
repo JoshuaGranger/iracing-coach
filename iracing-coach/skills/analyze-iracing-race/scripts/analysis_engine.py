@@ -34,6 +34,7 @@ try:  # Package import and direct script loading are both supported.
     from . import race_plan_decision
     from .race_investigation import build_race_investigation
     from .setup_catalog import garage_setup_fingerprint
+    from .steering_basis import SteeringBasis, resolve_steering_basis
     from . import strategy_model
     from . import time_loss
     from . import tire_energy
@@ -46,6 +47,7 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     import race_plan_decision
     from race_investigation import build_race_investigation
     from setup_catalog import garage_setup_fingerprint
+    from steering_basis import SteeringBasis, resolve_steering_basis
     import strategy_model
     import time_loss
     import tire_energy
@@ -73,7 +75,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v22"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v23"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -86,6 +88,7 @@ ANALYZER_SOURCE_FILES = (
     "race_investigation.py",
     "review_sections.v1.json",
     "setup_catalog.py",
+    "steering_basis.py",
     "strategy_model.py",
     "time_loss.py",
     "tire_energy.py",
@@ -854,6 +857,55 @@ class TelemetryTable:
         return self.channel_units.get(channel) if channel else None
 
 
+def _steering_basis(table: TelemetryTable) -> SteeringBasis:
+    """What this recording's steering means: road-wheel angle or, failing a
+    stated and stable steering ratio, the labelled steering-wheel angle.
+
+    SteeringWheelAngleMax is the wheel's lock (road-wheel lock x ratio), never
+    a steering trace; it is read only to catch a ratio change mid-recording.
+    """
+
+    def build() -> SteeringBasis:
+        wheel_max = None
+        if "SteeringWheelAngleMax" in table.channels:
+            table.accessed_channels.add("SteeringWheelAngleMax")
+            wheel_max = table._finite_for("SteeringWheelAngleMax")[0]
+        return resolve_steering_basis(
+            table.session_info,
+            wheel_angle_recorded="SteeringWheelAngle" in table.channels,
+            wheel_angle_max=wheel_max,
+        )
+
+    return table._cached("steering-basis", None, build)
+
+
+def _steering_column(
+    table: TelemetryTable, steering: SteeringBasis | None = None
+) -> tuple[list[float | None], bool]:
+    """Recorded SteeringWheelAngle in the recording's steering basis (radians).
+
+    Road-wheel angle is the wheel angle divided by the recorded ratio; without
+    one the recorded column is returned unchanged.
+    """
+
+    basis = steering or _steering_basis(table)
+    values, complete = table.normalized("SteeringWheelAngle")
+    if not basis.road_wheel or basis.ratio is None:
+        return values, complete
+    ratio = basis.ratio
+    return table._cached(
+        "steering-road-wheel",
+        ratio,
+        lambda: (_apply_steps(values, complete, ((truediv, ratio),)), complete),
+    )
+
+
+def _steering_digits(steering: SteeringBasis, wheel_digits: int) -> int:
+    """Road-wheel radians are about a twelfth of wheel radians: one more digit."""
+
+    return wheel_digits + 1 if steering.road_wheel else wheel_digits
+
+
 @lru_cache(maxsize=128)
 def _normalized_unit(value: str | None) -> str:
     return str(value or "").strip().lower().replace("°", "").replace(" ", "")
@@ -1544,7 +1596,13 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     brake = table.fractions("Brake", "BrakeRaw")[0]
     # SteeringWheelAngleMax is the configured range/limit, not a measured
     # steering trace, so it must never stand in for SteeringWheelAngle.
-    steering = table.normalized("SteeringWheelAngle")[0]
+    # Steering is the recording's basis: road-wheel angle when the setup states
+    # a stable ratio, otherwise the steering-wheel angle, with thresholds to match.
+    steering_basis = _steering_basis(table)
+    steering = _steering_column(table, steering_basis)[0]
+    material_steering = steering_basis.threshold(0.08)
+    correction_step = steering_basis.threshold(0.025)
+    steering_mean_digits = _steering_digits(steering_basis, 3)
     lat_accel = table.normalized("LatAccel")[0]
     long_accel = table.normalized("LongAccel")[0]
     fuel = table.normalized("FuelLevel")[0]
@@ -1637,7 +1695,7 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     brake_or_zero = [value if value else 0.0 for value in brake]  # _fraction(v) or 0.0
     steering_abs = [abs(value) if value else 0.0 for value in steering]  # abs(_finite(v) or 0.0)
     lateral_abs = [abs(value) if value else 0.0 for value in lat_accel]
-    overlap = [b >= 0.08 and s >= 0.08 for b, s in zip(brake_or_zero, steering_abs)]
+    overlap = [b >= 0.08 and s >= material_steering for b, s in zip(brake_or_zero, steering_abs)]
     wheel_tires = [tire for tire in TIRES if f"{tire}speed" in table.channels]
     speed_key = table._column_key(("Speed",), None)
     dynamics_samples = (
@@ -1793,11 +1851,13 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
                     "brake_mean": _round(_mean(brake_values)),
                     "brake_max": _round(max(brake_values) if brake_values else None),
                     "throttle_mean": _round(_mean(throttle_values)),
-                    "steering_abs_mean_rad": _round(_mean(abs(value) for value in steering_values)),
+                    "steering_abs_mean_rad": _round(
+                        _mean(abs(value) for value in steering_values), steering_mean_digits
+                    ),
                     "brake_energy_proxy": _round(brake_energy),
                     "steering_work_proxy": _round(steering_work),
                     "brake_steer_overlap_s": _round(overlap_time),
-                    "steering_corrections": _count_corrections(steering_values),
+                    "steering_corrections": _count_corrections(steering_values, correction_step),
                     "lateral_g_exposure_proxy": _round(lateral_exposure / 9.80665),
                     "long_accel_mean_mps2": _round(
                         _mean([value for value in take(long_accel) if value is not None])
@@ -1841,12 +1901,15 @@ def _additional_trace_sources(
     table: TelemetryTable,
     *,
     completeness: dict[str, bool] | None = None,
+    steering: SteeringBasis | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, list[float | None]], dict[str, str], dict[str, int]]:
     """Resolve optional distance-domain signals without manufacturing gaps.
 
     The catalog contains only channels that are actually present and contain at
     least one finite value. Derived wheel slip is published only when both the
-    individual wheel-speed channel and vehicle speed were recorded.
+    individual wheel-speed channel and vehicle speed were recorded. When the
+    primary steering trace is road-wheel angle, the recorded steering-wheel
+    angle stays available here as a secondary signal.
 
     Each series is exactly ``[_finite(transform(value)) for value in raw]`` of
     its recorded channel, built a column at a time. ``completeness``, when
@@ -2031,6 +2094,21 @@ def _additional_trace_sources(
     add("abs-cut", "ABS intervention", "%", "Controls", ("BrakeABScutPct",), percent, reducer="max", precision=2, description="Recorded ABS brake-cut percentage.")
     add("brake-bias", "Brake bias", "%", "Controls", ("dcBrakeBias",), percent, precision=2, description="Recorded in-car brake-bias setting.")
     add("steering-torque", "Steering torque", "Nm", "Controls", ("SteeringWheelTorque",), reducer="signed_peak", description="Recorded steering-wheel torque.")
+    if steering is not None and steering.road_wheel:
+        add(
+            "steering-wheel-angle",
+            "Steering wheel angle",
+            "deg",
+            "Controls",
+            ("SteeringWheelAngle",),
+            degrees,
+            reducer="signed_peak",
+            precision=2,
+            description=(
+                f"Recorded steering-wheel angle before dividing by the {steering.ratio_text} steering ratio. "
+                "It depends on the ratio; Steering (road wheel) is the comparable value."
+            ),
+        )
 
     add("vertical-g", "Vertical G", "g", "Vehicle", ("VertAccel",), acceleration_g, reducer="signed_peak", description="Recorded vertical acceleration.")
     add("pitch", "Pitch", "deg", "Vehicle", ("Pitch",), degrees, reducer="signed_peak", description="Recorded chassis pitch angle.")
@@ -2151,6 +2229,7 @@ def _lap_trace_payload(
     laps: Sequence[Mapping[str, Any]],
     *,
     maximum_bins: int = 160,
+    steering_basis: SteeringBasis | None = None,
 ) -> dict[str, Any]:
     """Build bounded distance-domain traces for local interactive rendering.
 
@@ -2158,6 +2237,8 @@ def _lap_trace_payload(
     short brake application, throttle lift, or steering correction is not
     erased by screen-oriented downsampling.  This is presentation data; the
     full recorded source remains available for bounded native-rate queries.
+    Steering values are in the recording's steering basis, which the payload
+    declares under ``steering``.
     """
 
     # Normalised column views (recording access exactly as get() did); each
@@ -2166,7 +2247,10 @@ def _lap_trace_payload(
     speed = table.normalized("Speed")
     throttle = table.fractions("Throttle", "ThrottleRaw")
     brake = table.fractions("Brake", "BrakeRaw")
-    steering = table.normalized("SteeringWheelAngle")
+    basis = steering_basis or _steering_basis(table)
+    steering = _steering_column(table, basis)
+    steering_stress_scale = basis.threshold(0.35)
+    steering_digits = _steering_digits(basis, 5)
     gear = table.normalized("Gear")
     rpm = table.normalized("RPM")
     yaw_rate = table.normalized("YawRate")
@@ -2195,7 +2279,7 @@ def _lap_trace_payload(
 
     completeness: dict[str, bool] = {}
     additional_catalog, additional_series, additional_reducers, additional_digits = (
-        _additional_trace_sources(table, completeness=completeness)
+        _additional_trace_sources(table, completeness=completeness, steering=basis)
     )
     additional = [
         (
@@ -2267,7 +2351,7 @@ def _lap_trace_payload(
             speed_scale = min(1.5, max(0.0, (representative_speed or 0.0) / 80.0))
             stress_terms = [
                 min(1.0, (brake_peak or 0.0) * speed_scale),
-                min(1.0, abs(representative_steering or 0.0) / 0.35 * speed_scale),
+                min(1.0, abs(representative_steering or 0.0) / steering_stress_scale * speed_scale),
                 min(1.0, abs(representative_lateral_g or 0.0) / 2.0),
             ]
             points.append(
@@ -2281,8 +2365,8 @@ def _lap_trace_payload(
                     "throttle_min": _round(throttle_minimum, 4),
                     "brake": _round(brake_peak, 4),
                     "brake_mean": _round(statistics.fmean(brakes) if brakes else None, 4),
-                    "steering_rad": _round(representative_steering, 5),
-                    "steering_abs_peak_rad": _round(max(map(abs, steerings), default=None), 5),
+                    "steering_rad": _round(representative_steering, steering_digits),
+                    "steering_abs_peak_rad": _round(max(map(abs, steerings), default=None), steering_digits),
                     "gear": int(round(statistics.median(gears))) if gears else None,
                     "rpm": _round(median(rpms), 0),
                     "slip_angle_deg": _round(signed_peak(sideslips), 3),
@@ -2362,6 +2446,7 @@ def _lap_trace_payload(
             "lap-distance bins retain representative values plus speed range, "
             "minimum throttle, peak brake, and peak absolute steering"
         ),
+        "steering": basis.describe(),
         "tire_stress": {
             "evidence_class": "proxy",
             "version": "controls-load-proxy-v1",
@@ -4068,6 +4153,7 @@ def _runs(table: TelemetryTable, laps: list[dict[str, Any]]) -> list[dict[str, A
         race_laps = [lap for lap in laps if (_finite(lap.get("lap")) or 0.0) > 0.0]
     if not race_laps:
         return []
+    steering_kind = _steering_basis(table).kind
     events = _service_events(table)
     first_index = race_laps[0]["start_index"]
     last_index = race_laps[-1]["end_index"]
@@ -4298,6 +4384,10 @@ def _runs(table: TelemetryTable, laps: list[dict[str, Any]]) -> list[dict[str, A
                         if early_steer not in (None, 0.0) and late_steer not in (None, 0.0) else None,
                         1,
                     ),
+                    # The steering-work proxies above are in this basis; a
+                    # persisted tire observation keeps it so another
+                    # recording's work is compared only on road-wheel angle.
+                    "steering_basis": steering_kind,
                 },
                 "vehicle_dynamics": {
                     "scope": "green complete laps when available",
@@ -4653,7 +4743,9 @@ def _track_profile(
     speed = table.normalized("Speed")[0]
     brake = table.fractions("Brake", "BrakeRaw")[0]
     throttle = table.fractions("Throttle", "ThrottleRaw")[0]
-    steering = table.normalized("SteeringWheelAngle")[0]
+    steering_basis = _steering_basis(table)
+    steering = _steering_column(table, steering_basis)[0]
+    steering_digits = _steering_digits(steering_basis, 3)
     lat_accel = table.normalized("LatAccel")[0]
     flags = _caution_flag_series(table)
     pit = table.booleans("OnPitRoad", default=False)
@@ -4749,7 +4841,7 @@ def _track_profile(
             "speed_mph": _round(_median(fields["speed"][index])),
             "brake": _round(_median(fields["brake"][index])),
             "throttle": _round(_median(fields["throttle"][index])),
-            "steering_abs_rad": _round(_median(fields["steering"][index])),
+            "steering_abs_rad": _round(_median(fields["steering"][index]), steering_digits),
             "lateral_g": _round(_median(fields["lat_accel"][index])),
             "lat": _round(_median(fields["lat"][index]), 6),
             "lon": _round(_median(fields["lon"][index]), 6),
@@ -4837,7 +4929,9 @@ def _track_profile(
                 "minimum_speed_mph": minimum["speed_mph"],
                 "minimum_speed_pct": minimum["lap_pct"],
                 "median_brake": _round(_median(item["brake"] for item in records)),
-                "median_steering_rad": _round(_median(item["steering_abs_rad"] for item in records)),
+                "median_steering_rad": _round(
+                    _median(item["steering_abs_rad"] for item in records), steering_digits
+                ),
                 "median_lateral_g": _round(_median(item["lateral_g"] for item in records)),
             }
         )
@@ -5074,8 +5168,17 @@ def _zone_lap_metric(
     series: Mapping[str, Sequence[Any]],
     dts: Sequence[float],
     require_next_lap: bool,
+    steering: SteeringBasis | None = None,
 ) -> dict[str, Any] | None:
-    """Summarize one clean lap through a telemetry-derived load zone."""
+    """Summarize one clean lap through a telemetry-derived load zone.
+
+    ``series["steering"]`` is in the ``steering`` basis (steering-wheel angle
+    when none is given); its thresholds are converted to the same basis.
+    """
+
+    basis = steering or SteeringBasis("steering_wheel", "not_recorded")
+    material_steering = basis.threshold(0.08)
+    correction_step = basis.threshold(0.025)
 
     start = _finite(zone.get("start_pct"))
     end = _finite(zone.get("end_pct"))
@@ -5245,7 +5348,7 @@ def _zone_lap_metric(
         if item["relative"] <= -max(0.01, entry_margin * 0.35)
     ]
     steering_baseline = _median(item.get("steering_rad") for item in baseline_records)
-    turn_threshold_rad = 0.05
+    turn_threshold_rad = basis.threshold(0.05)
     turn_records = [
         {
             **item,
@@ -5273,9 +5376,9 @@ def _zone_lap_metric(
         if (
             turn_in is None
             and steering_records
-            and (steering_records[0].get("steering_abs_rad") or 0.0) >= 0.08
+            and (steering_records[0].get("steering_abs_rad") or 0.0) >= material_steering
             and (abs(steering_baseline) if steering_baseline is not None else 0.0)
-            >= 0.08
+            >= material_steering
         ):
             turn_in_boundary_censored = True
 
@@ -5293,14 +5396,14 @@ def _zone_lap_metric(
         "brake_onset_boundary_censored": brake_onset_boundary_censored,
         "brake_release_lap_pct": _round(brake_release.get("lap_pct"), 5) if brake_release else None,
         "brake_release_offset_lap_pct": _round(brake_release.get("relative"), 5) if brake_release else None,
-        "steering_average_abs_rad": _round(_mean(steering), 4),
+        "steering_average_abs_rad": _round(_mean(steering), _steering_digits(basis, 4)),
         "steering_work_proxy": _round(steering_work, 3) if steering else None,
-        "steering_corrections": _count_corrections(steering_signed),
+        "steering_corrections": _count_corrections(steering_signed, correction_step),
         "turn_in_lap_pct": _round(turn_in.get("lap_pct"), 5) if turn_in else None,
         "turn_in_offset_lap_pct": _round(turn_in.get("relative"), 5) if turn_in else None,
         "turn_in_boundary_censored": turn_in_boundary_censored,
-        "turn_in_steering_baseline_rad": _round(steering_baseline, 5),
-        "turn_in_demand_threshold_rad": turn_threshold_rad,
+        "turn_in_steering_baseline_rad": _round(steering_baseline, _steering_digits(basis, 5)),
+        "turn_in_demand_threshold_rad": _round(turn_threshold_rad, 7),
         "throttle_pickup_lap_pct": _round(throttle_pickup.get("lap_pct"), 5) if throttle_pickup else None,
         "throttle_pickup_offset_lap_pct": _round(throttle_pickup.get("relative"), 5) if throttle_pickup else None,
         "throttle_pickup_boundary_censored": throttle_pickup_boundary_censored,
@@ -5648,8 +5751,8 @@ def _corner_tire_age_summary(
             "brake_average_peak": {"evidence_class": "derived_from_measured_Brake", "aggregation": "median of per-lap average/peak fractions"},
             "brake_energy_proxy": {"evidence_class": "derived_proxy", "definition": "integral of brake fraction x vehicle speed through the zone"},
             "brake_onset_release": {"evidence_class": "derived_routine_sample_threshold", "definition": "0.05 brake-fraction crossings; omitted when the transition is not observed"},
-            "steering_amount_work": {"evidence_class": "derived_from_measured_SteeringWheelAngle", "definition": "mean absolute angle, sign-change corrections, and integral of absolute angle x speed"},
-            "turn_in": {"evidence_class": "derived_routine_sample_threshold", "definition": "first SteeringWheelAngle demand crossing 0.05 rad above the pre-zone signed steering baseline; absolute-angle fallback when no baseline exists; omitted and boundary-censored when the crossing predates the analysis window"},
+            "steering_amount_work": {"evidence_class": "derived_from_measured_SteeringWheelAngle", "definition": "mean absolute angle, sign-change corrections, and integral of absolute angle x speed, on the recording's steering basis (lap_traces.steering: road-wheel angle when the setup states the steering ratio)"},
+            "turn_in": {"evidence_class": "derived_routine_sample_threshold", "definition": "first steering demand crossing 0.05 rad of steering-wheel angle (0.05/12 rad of road-wheel angle) above the pre-zone signed steering baseline; absolute-angle fallback when no baseline exists; omitted and boundary-censored when the crossing predates the analysis window"},
             "throttle_pickup_exit": {"evidence_class": "derived_from_measured_Throttle", "definition": "first 0.75 throttle sample after minimum speed plus zone-exit throttle"},
             "coaching": {"evidence_class": "inferred", "target_rule": "no exact target without a valid aligned representative-lap comparison"},
         },
@@ -5680,12 +5783,13 @@ def _corner_tire_age_summary(
     times = table.get("SessionTime", "SessionTimeOfDay", default=None)
     sample_rate = _finite(table.metadata.get("sample_rate") or table.metadata.get("tick_rate")) or 20.0
     dts = _dt_series(times, sample_rate)
+    steering_basis = _steering_basis(table)
     series: dict[str, Sequence[Any]] = {
         "pct": table.get("LapDistPct", default=None),
         "speed": table.get("Speed", default=None),
         "brake": table.get("Brake", "BrakeRaw", default=None),
         "throttle": table.get("Throttle", "ThrottleRaw", default=None),
-        "steering": table.get("SteeringWheelAngle", default=None),
+        "steering": _steering_column(table, steering_basis)[0],
         "flags": _caution_flag_series(table),
         "pit": table.get("OnPitRoad", default=False),
         "track_location": table.get("PlayerTrackSurface", default=None) if table.has("PlayerTrackSurface") else (),
@@ -5802,6 +5906,7 @@ def _corner_tire_age_summary(
                     series=series,
                     dts=dts,
                     require_next_lap=wraps,
+                    steering=steering_basis,
                 )
                 if metric is not None:
                     metrics_by_lap[lap_number] = metric
@@ -6209,13 +6314,18 @@ def build_technical_insights(
     damage: Mapping[str, Any],
     tire_learning: Mapping[str, Any],
     race_investigation: Mapping[str, Any] | None = None,
+    steering: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Build compact, event-specific findings from recorded or bounded evidence.
 
     With the race investigation, a run's early-versus-late pace is the one Runs
     shows (median of the run's last clean laps minus its first); without it, the
     run's average late minus average early clean pace, labelled as an average.
+    ``steering`` is the analysis's steering descriptor; lap steering values are
+    in that basis (steering-wheel angle when it is absent).
     """
+
+    steering_basis = SteeringBasis.from_descriptor(steering)
 
     def metric(
         label: str,
@@ -7455,7 +7565,11 @@ def build_technical_insights(
                 round(float(_median(brake_steer_overlap) or 0.0), 2),
                 "s/lap",
                 "derived",
-                detail="Median time per lap with simultaneous braking and material steering input.",
+                detail=(
+                    "Median time per lap with at least 8% brake and at least "
+                    f"{steering_basis.degrees_text(steering_basis.threshold(0.08))} "
+                    f"{'of road-wheel steering' if steering_basis.road_wheel else 'of steering-wheel angle'}."
+                ),
                 action="Compare overlap locations with the faster laps; the measurement describes technique and does not prove that overlap is harmful.",
                 group="driver execution",
             )
@@ -7473,15 +7587,30 @@ def build_technical_insights(
             )
         )
     if steering_angles:
+        median_steering = float(_median(steering_angles) or 0.0)
+        if steering_basis.road_wheel:
+            steering_label = "Average steering (road wheel)"
+            steering_detail = (
+                "Median lap-level mean absolute road-wheel steer angle: steering-wheel angle "
+                f"÷ the {steering_basis.ratio_text} steering ratio, so setups with other ratios compare directly. "
+                f"At the steering wheel: {math.degrees(median_steering / steering_basis.scale):.1f}°."
+            )
+        else:
+            steering_label = "Average steering-wheel angle"
+            steering_detail = (
+                "Median lap-level mean absolute steering-wheel angle. The steering ratio was not recorded, "
+                "so this is not comparable with a setup that uses another ratio."
+            )
         racecraft_metrics.append(
             metric(
-                "Average steering load",
-                round(math.degrees(float(_median(steering_angles) or 0.0)), 1),
+                steering_label,
+                round(math.degrees(median_steering), steering_basis.degree_digits),
                 "deg",
                 "derived",
-                detail="Median lap-level mean absolute steering-wheel angle.",
+                detail=steering_detail,
                 action="Compare this value by race phase; an increase can reflect line, traffic, or correction changes and is not a balance diagnosis by itself.",
                 group="driver execution",
+                decimals=steering_basis.degree_digits,
             )
         )
     if top_speeds and minimum_speeds:
@@ -8545,6 +8674,9 @@ def analyze_telemetry(
     race_session = _find_race_session(
         table.session_info, table.metadata.get("sim_session_num")
     )
+    # Every steering value below is on this one basis; see steering_basis.py.
+    steering_basis = _steering_basis(table)
+    steering = steering_basis.describe()
     laps = _lap_summaries(table)
     runs = _runs(table, laps)
     _annotate_tire_set_lifecycle(runs)
@@ -8552,7 +8684,7 @@ def analyze_telemetry(
     setup_series = _setup_channel_series(table)
     setup_telemetry = _setup_telemetry(table, setup_series)
     track_profile = _track_profile(table, setup_series=setup_series)
-    lap_traces = _lap_trace_payload(table, laps)
+    lap_traces = _lap_trace_payload(table, laps, steering_basis=steering_basis)
     groove_channel_names = (
         "Lat",
         "Lon",
@@ -8769,6 +8901,7 @@ def analyze_telemetry(
         strategy,
         damage_repair,
         tire_learning,
+        steering=steering,
     )
     catalog = table.available_catalog()
     loaded_names = sorted(table.channels)
@@ -8830,6 +8963,7 @@ def analyze_telemetry(
             },
         },
         "identity": identity,
+        "steering": steering,
         "race_summary": race_summary,
         "race_grades": _race_grades(laps, runs, race_summary, damage_repair),
         "race_timeline": _race_evidence_timeline(laps, runs),
@@ -8877,7 +9011,7 @@ def analyze_telemetry(
     # A run's early-versus-late pace is the investigation's (the one Runs shows).
     analysis["technical_insights"] = build_technical_insights(
         laps, runs, race_summary, strategy, damage_repair, tire_learning,
-        race_investigation=analysis["race_investigation"],
+        race_investigation=analysis["race_investigation"], steering=steering,
     )
     return analysis
 

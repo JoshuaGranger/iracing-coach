@@ -20,8 +20,10 @@ from typing import Any, Mapping, Sequence
 
 try:  # Package import and direct script loading are both supported.
     from .race_investigation import _corner_lap, _crossing, _metric, _number, _path, _round
+    from .steering_basis import SteeringBasis, pair_descriptor
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from race_investigation import _corner_lap, _crossing, _metric, _number, _path, _round
+    from steering_basis import SteeringBasis, pair_descriptor
 
 
 SECTION_CATALOG = Path(__file__).resolve().parent / "review_sections.v1.json"
@@ -45,7 +47,9 @@ CHANNELS = (
     ("speed", ("speed_mph",), 1.0, 1),
     ("throttle", ("throttle",), 100.0, 1),
     ("brake", ("brake_mean", "brake"), 100.0, 1),
-    ("steering", ("steering_rad",), 180.0 / math.pi, 1),
+    # Degrees in the recording's steering basis; a pair declares it under
+    # "steering". Road-wheel angles are about a twelfth of wheel angles.
+    ("steering", ("steering_rad",), 180.0 / math.pi, 2),
     ("slip", ("slip_angle_deg",), 1.0, 2),
 )
 SECTION_METRICS = (
@@ -55,7 +59,8 @@ SECTION_METRICS = (
     ("exit_speed", "Exit speed", "mph", 1.0),
     ("brake", "Brake demand", "%", 100.0),
     ("throttle", "Throttle demand", "%", 100.0),
-    ("steering", "Steering demand", "deg", 180.0 / math.pi),
+    # The label is the recording's steering basis (see comparison_sections).
+    ("steering", "Steering", "deg", 180.0 / math.pi),
     ("brake_release", "Brake release", "% lap", 1.0),
     ("throttle_pickup", "Throttle pickup", "% lap", 1.0),
 )
@@ -294,13 +299,15 @@ def section_elapsed(trace: Mapping[str, Any] | None, start: float, end: float) -
 
 
 def comparison_sections(baseline: Sequence[int], compared: Sequence[int], traces: Mapping[int, Mapping[str, Any]],
-                        sections: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+                        sections: Sequence[Mapping[str, Any]], *, steering: SteeringBasis | None = None) -> list[dict[str, Any]]:
     """Group-median section metrics over explicit bounds.
 
     Merged sections are recomputed across their full interval, including the
     distance between the former regions; medians are never added together.
     Each cohort needs two covered laps; timing gaps disqualify a lap.
+    Steering is the traces' basis, named by ``steering``.
     """
+    steering_label = (steering or SteeringBasis.from_descriptor(None)).short_label
     result = []
     for section in sections:
         start, end = section["start_pct"], section["end_pct"]
@@ -323,6 +330,8 @@ def comparison_sections(baseline: Sequence[int], compared: Sequence[int], traces
             two = [m[key] for m in second if m[key] is not None]
             if len(one) < 2 or len(two) < 2:
                 continue
+            if key == "steering":
+                label = steering_label
             metrics.append(_metric(key, label, unit, statistics.median(one) * multiplier, statistics.median(two) * multiplier,
                                    f"{len(one)} earlier and {len(two)} later laps; distance-binned traces."))
         elapsed = next((metric for metric in metrics if metric["key"] == "elapsed"), {})
@@ -405,7 +414,8 @@ def approach_start(ordered: Sequence[Mapping[str, Any]], index: int, recorded_st
 def comparison_inspection(comparison: Mapping[str, Any], laps: Mapping[int, Mapping[str, Any]],
                           exposure: Mapping[int, float | None], run_for_lap: Mapping[int, int],
                           exclusions: Mapping[int, Sequence[str]], traces: Mapping[int, Mapping[str, Any]],
-                          sections: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+                          sections: Sequence[Mapping[str, Any]], *,
+                          steering: SteeringBasis | None = None) -> dict[str, Any]:
     """Two actual passes per section, with their bounded approach (approach_start).
 
     A matched pool (all laps screened and within three green-lap equivalents)
@@ -422,6 +432,8 @@ def comparison_inspection(comparison: Mapping[str, Any], laps: Mapping[int, Mapp
     matched = (bool(pool) and all(not exclusions.get(lap, ["eligibility_unknown"]) for lap in pool)
                and all(age is not None for age in ages) and max(ages) - min(ages) <= MATCHED_POOL_SPAN)
     ordered = sorted(sections, key=lambda item: item["start_pct"])
+    # Both passes come from this recording, so their steering shares its basis.
+    steering_pair = pair_descriptor(steering or SteeringBasis.from_descriptor(None))
     result: dict[str, Any] = {
         "mode": "matched_pool_extremes" if matched else "cohort_median_passes",
         "pool_laps": pool,
@@ -476,6 +488,7 @@ def comparison_inspection(comparison: Mapping[str, Any], laps: Mapping[int, Mapp
             "entry_speed_difference_mph": _round(entry_speeds[1] - entry_speeds[0], 1) if None not in entry_speeds else None,
             "slip": {"basis": "chassis_velocity_angle", "unit": "deg",
                      "a": _slip_summary(first_points, start, end), "b": _slip_summary(second_points, start, end)},
+            "steering": dict(steering_pair),
             "rows": rows,
         }
     return result

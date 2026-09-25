@@ -112,7 +112,9 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
 SCRIPT_DIR = Path(__file__).resolve().parent
 PLUGIN_ROOT = SCRIPT_DIR.parents[2]
 DEFAULTS_PATH = PLUGIN_ROOT / "config" / "defaults.json"
-_GARAGE61_TARGET_DERIVATION_VERSION = "explicit-analysis-paths-v1"
+# v2: reference steering-wheel angle is never compared with this recording's
+# steering (the reference's steering ratio is unknown), so v1 steering deltas are retired.
+_GARAGE61_TARGET_DERIVATION_VERSION = "explicit-analysis-paths-v2"
 
 # The `analysis_view` envelope is this module's product, and this is its only
 # version authority. It is deliberately separate from
@@ -1732,8 +1734,24 @@ def _analysis_pipeline_sha256() -> str:
 # either lacks the other's change (main's v21 still sends the IRP 9/24 19-lap
 # run after an Offline Testing reset to manual review). v22 retires both v21
 # lines; the combined answers are exactly the two v21 changes together.
+# Review 2026-09-25 (steering applied): v23 retires v22 because steering is
+# now the steering applied at the front wheels, independent of the steering
+# ratio (Joshua: "all 'steering' references ... the amount of steering applied
+# (normalized/irrespective of turning ratio)"). steering_basis.py joins the
+# bundle: road-wheel angle = SteeringWheelAngle / the ratio the recording's
+# CarSetup states (Chassis.Front.SteeringRatio on the Supra, Truck and Taurus;
+# fixed setups state it too); an absent, unreadable or ambiguous ratio, or a
+# SteeringWheelAngleMax change mid-recording, keeps the labelled wheel angle
+# and never guesses. Thresholds (material 0.08, correction step 0.025, turn-in
+# 0.05, stress scale 0.35 rad; investigation 2 deg) are divided by 12 on
+# road-wheel angle, so 12:1 recordings keep every count (Joshua's IRP 22.434
+# lap: 1 correction, 6.367 s overlap before and after) while 10:1 counts now
+# match 12:1 for the same steering applied. Traces, laps, profile, zones,
+# investigation, insights and the tire-learning load match state the basis;
+# the raw wheel angle stays as the steering-wheel-angle trace. Real IRP peaks:
+# Joshua 12:1 71.53 deg wheel -> 5.96 deg road; bot 10:1 53.92 -> 5.39.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "7e7d84e9043a7923e2d88162f4bfc1d3a901f783554713fb6c1996a305597dc1"
+    "8147a52f23c4a376b16d6f14b469d6c8387a43bcc1b4a7e44b4d5eb261a01b1b"
 )
 
 
@@ -2217,6 +2235,7 @@ def _analyze_race_workflow(
             analysis.get("damage_repair") or {},
             tire_learning,
             race_investigation=analysis.get("race_investigation"),
+            steering=analysis.get("steering"),
         )
     analysis_finished = time.perf_counter()
     context = store.context_from_analysis(analysis)
@@ -3524,7 +3543,10 @@ _CSV_SIGNAL_ALIASES: dict[str, tuple[str, ...]] = {
         "throttlepercent",
         "throttleposition",
     ),
-    "steering_abs_rad": (
+    # The reference lap's steering-wheel angle. Its steering ratio is not in the
+    # export, so it is kept under its own name and never compared with this
+    # recording's steering (steering_basis.comparable_across_recordings).
+    "steering_wheel_abs_rad": (
         "steeringwheelangle",
         "steeringangle",
         "steerangle",
@@ -3532,6 +3554,12 @@ _CSV_SIGNAL_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "lateral_g": ("lataccel", "lateralaccel", "lateralg", "latg"),
 }
+
+_REFERENCE_STEERING_NOT_COMPARED = (
+    "Steering is not compared with a Garage61 reference: the export does not record the "
+    "reference car's steering ratio, so its steering-wheel angle cannot be converted to "
+    "road-wheel steering."
+)
 
 
 def _csv_header_key(value: Any) -> str:
@@ -3632,14 +3660,15 @@ def _reference_csv_profile(path: Path, bins: int) -> dict[str, Any]:
         if signal in indices and scale == 0.01:
             assumptions.append(f"{signal.title()} was normalized from percent to 0-1.")
 
-    steering_header = _csv_header_key(mapped_headers.get("steering_abs_rad"))
+    steering_header = _csv_header_key(mapped_headers.get("steering_wheel_abs_rad"))
     steering_scale = math.pi / 180.0 if "deg" in steering_header else 1.0
-    if "steering_abs_rad" in indices:
+    if "steering_wheel_abs_rad" in indices:
         assumptions.append(
-            "Steering was converted from degrees to radians."
+            "Steering-wheel angle was converted from degrees to radians."
             if steering_scale != 1.0
-            else "Steering angle was treated as radians."
+            else "Steering-wheel angle was treated as radians."
         )
+        assumptions.append(_REFERENCE_STEERING_NOT_COMPARED)
     lateral_header = _csv_header_key(mapped_headers.get("lateral_g"))
     lateral_scale = 1.0 if lateral_header.endswith("g") else 1.0 / 9.80665
 
@@ -3670,7 +3699,7 @@ def _reference_csv_profile(path: Path, bins: int) -> dict[str, Any]:
             elif signal in fraction_scales:
                 value *= fraction_scales[signal]
                 value = max(0.0, min(1.0, value))
-            elif signal == "steering_abs_rad":
+            elif signal == "steering_wheel_abs_rad":
                 value = abs(value * steering_scale)
             elif signal == "lateral_g":
                 value = abs(value * lateral_scale)
@@ -3798,11 +3827,11 @@ def _aligned_reference_comparison(
         local_bin = local[bin_index]
         reference_bin = reference_bins[bin_index]
         deltas = {}
+        # Steering is not a delta: the reference's steering ratio is unknown.
         for signal in (
             "speed_mph",
             "brake",
             "throttle",
-            "steering_abs_rad",
             "lateral_g",
         ):
             local_value = _finite_number(local_bin.get(signal))
@@ -3838,6 +3867,7 @@ def _aligned_reference_comparison(
         "minimum_aligned_bins": minimum_bins,
         "coverage_fraction": round(coverage, 4),
         "delta_definition": "local minus reference; positive speed means local is faster",
+        "steering_comparison": {"compared": False, "reason": _REFERENCE_STEERING_NOT_COMPARED},
     }
     summary["aligned_bins"] = aligned
     summary["_reference_profile"] = reference_bins
@@ -3946,8 +3976,6 @@ def _zone_coaching_target(
         (value for item in reference if (value := _finite_number(item.get("brake"))) is not None),
         default=None,
     )
-    local_steering = _median_value(item.get("steering_abs_rad") for item in local)
-    reference_steering = _median_value(item.get("steering_abs_rad") for item in reference)
     local_throttle = _event_pct(local, "throttle", 0.75, "minimum_speed")
     reference_throttle = _event_pct(reference, "throttle", 0.75, "minimum_speed")
     local_onset = _event_pct(local, "brake", 0.05, "zone_start")
@@ -3968,11 +3996,6 @@ def _zone_coaching_target(
     brake_delta = (
         local_peak_brake - reference_peak_brake
         if local_peak_brake is not None and reference_peak_brake is not None
-        else None
-    )
-    steering_delta = (
-        local_steering - reference_steering
-        if local_steering is not None and reference_steering is not None
         else None
     )
     def timing_delta(local_value: float | None, reference_value: float | None) -> float | None:
@@ -4012,8 +4035,6 @@ def _zone_coaching_target(
         actions.append("delay initial brake application toward the reference onset")
     if release_delta is not None and release_delta > 0.01:
         actions.append("finish brake release earlier")
-    if steering_delta is not None and steering_delta > 0.02:
-        actions.append("use less steering angle through the loaded phase")
     if throttle_delta is not None and throttle_delta > 0.01:
         actions.append("begin the 75% throttle pickup earlier")
     if not actions:
@@ -4031,7 +4052,8 @@ def _zone_coaching_target(
         "entry_speed_delta_mph": _round_delta(entry_delta, 2),
         "minimum_speed_delta_mph": _round_delta(minimum_delta, 2),
         "peak_brake_delta": _round_delta(brake_delta, 4),
-        "steering_delta_rad": _round_delta(steering_delta, 4),
+        # Withheld, never guessed: see _REFERENCE_STEERING_NOT_COMPARED.
+        "steering_delta_rad": None,
         "throttle_pickup_delta_lap_pct": _round_delta(throttle_delta, 5),
         "brake_onset_delta_lap_pct": _round_delta(onset_delta, 5),
         "brake_release_delta_lap_pct": _round_delta(release_delta, 5),
@@ -4046,6 +4068,7 @@ def _zone_coaching_target(
             "alignment": "lap-distance-bin median",
             "delta_definition": "local minus reference",
             "brake_onset_definition": "first aligned zone bin with brake >= 0.05",
+            "steering_comparison": _REFERENCE_STEERING_NOT_COMPARED,
             "local_brake_onset_boundary_censored": (
                 (_finite_number(local[0].get("brake")) or 0.0) >= 0.05
             ),
@@ -4088,7 +4111,6 @@ def _comparison_analysis(
             "speed_mph",
             "brake",
             "throttle",
-            "steering_abs_rad",
             "lateral_g",
         ):
             value = _median_value(profile.get(signal) for profile in profiles)

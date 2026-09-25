@@ -10,10 +10,20 @@ import math
 import statistics
 from typing import Any, Mapping, Sequence
 
+try:  # Package import and direct script loading are both supported.
+    from .steering_basis import SteeringBasis, basis_of, pair_descriptor
+except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+    from steering_basis import SteeringBasis, basis_of, pair_descriptor
+
 
 SCHEMA_VERSION = 2
 # Bump when any projection below changes; cached analyses rebuild it without decoding.
-PROJECTION_VERSION = "sections-trials-v6"
+# v7: steering is road-wheel angle when the recording states its steering ratio
+# (labelled steering-wheel angle otherwise), with steering thresholds to match.
+PROJECTION_VERSION = "sections-trials-v7"
+# A steering change worth naming, stated on steering-wheel angle (degrees) and
+# converted to the recording's basis (road wheel: 2/12 deg).
+STEERING_CHANGE_DEG = 2.0
 MAX_COMPARISONS = 24
 # A saved test is checked on screened laps within this many green laps of its
 # exposure window, and needs this many of them (driving_trials.evaluate_trial).
@@ -206,12 +216,15 @@ def _cohort(laps: Sequence[Mapping[str, Any]], run: Mapping[str, Any], exclusion
     }
 
 
-def _cohort_metrics(before: Sequence[Mapping[str, Any]], after: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _cohort_metrics(before: Sequence[Mapping[str, Any]], after: Sequence[Mapping[str, Any]],
+                    steering: SteeringBasis | None = None) -> list[dict[str, Any]]:
+    basis = steering or SteeringBasis.from_descriptor(None)
     definitions = (
         ("pace", "Lap time", "s", ("lap_time_s",), 1.0),
         ("brake", "Average brake", "%", ("controls", "brake_mean"), 100.0),
         ("throttle", "Average throttle", "%", ("controls", "throttle_mean"), 100.0),
-        ("steering", "Steering demand", "deg", ("controls", "steering_abs_mean_rad"), 180.0 / math.pi),
+        ("steering", f"Average {basis.short_label.lower() if basis.road_wheel else 'steering-wheel angle'}", "deg",
+         ("controls", "steering_abs_mean_rad"), 180.0 / math.pi),
         ("corrections", "Steering corrections", "per lap", ("controls", "steering_corrections"), 1.0),
         ("brake_work", "Braking work", "proxy", ("controls", "brake_energy_proxy"), 1.0),
         ("steering_work", "Steering work", "proxy", ("controls", "steering_work_proxy"), 1.0),
@@ -276,7 +289,9 @@ def _corner_lap(trace: Mapping[str, Any], start: float, end: float) -> dict[str,
     }
 
 
-def _corners(before: Sequence[int], after: Sequence[int], traces: Mapping[int, Mapping[str, Any]], profile: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _corners(before: Sequence[int], after: Sequence[int], traces: Mapping[int, Mapping[str, Any]], profile: Mapping[str, Any],
+             steering: SteeringBasis | None = None) -> list[dict[str, Any]]:
+    steering_label = (steering or SteeringBasis.from_descriptor(None)).short_label
     result = []
     for index, segment in enumerate(profile.get("detected_corner_segments") or (), 1):
         start, end = _number(segment.get("start_pct")), _number(segment.get("end_pct"))
@@ -294,7 +309,7 @@ def _corners(before: Sequence[int], after: Sequence[int], traces: Mapping[int, M
             ("exit_speed", "Exit speed", "mph", 1.0),
             ("brake", "Brake demand", "%", 100.0),
             ("throttle", "Throttle demand", "%", 100.0),
-            ("steering", "Steering demand", "deg", 180.0 / math.pi),
+            ("steering", steering_label, "deg", 180.0 / math.pi),
             ("brake_release", "Brake release", "% lap", 1.0),
             ("throttle_pickup", "Throttle pickup", "% lap", 1.0),
         ):
@@ -386,7 +401,8 @@ def _hypotheses(comparison: Mapping[str, Any], analysis: Mapping[str, Any], trac
     def text(key: str) -> str:
         item = metrics[key]
         return f"{item['label']}: {item['baseline']:.2f} → {item['compared']:.2f} {item['unit']}."
-    controls = [text(key) for key, threshold in (("brake", 1.0), ("throttle", 2.0), ("steering", 2.0), ("corrections", 1.0), ("brake_bias", 0.1)) if changed(key, threshold)]
+    steering_change = basis_of(analysis).threshold(STEERING_CHANGE_DEG)
+    controls = [text(key) for key, threshold in (("brake", 1.0), ("throttle", 2.0), ("steering", steering_change), ("corrections", 1.0), ("brake_bias", 0.1)) if changed(key, threshold)]
     comparable_controls = any(metrics.get(key, {}).get("delta") is not None for key in ("brake", "throttle", "steering", "corrections", "brake_bias"))
     result = [_hypothesis("driving", "Driving inputs", "supported" if controls else "unresolved", controls,
                           ["No large change was found in the available whole-lap control summaries."] if comparable_controls and not controls else [],
@@ -496,7 +512,10 @@ def _trial(comparison: Mapping[str, Any], corner: Mapping[str, Any], section_set
     }
 
 
-def _actions(comparison: Mapping[str, Any], section_set: Mapping[str, Any] | None = None, traces: Mapping[int, Mapping[str, Any]] | None = None) -> list[dict[str, Any]]:
+def _actions(comparison: Mapping[str, Any], section_set: Mapping[str, Any] | None = None, traces: Mapping[int, Mapping[str, Any]] | None = None,
+             steering: SteeringBasis | None = None) -> list[dict[str, Any]]:
+    steering_basis = steering or SteeringBasis.from_descriptor(None)
+    steering_change = steering_basis.threshold(STEERING_CHANGE_DEG)
     result = []
     section_set = section_set or {}
     traces = traces or {}
@@ -552,10 +571,11 @@ def _actions(comparison: Mapping[str, Any], section_set: Mapping[str, Any] | Non
             instruction = f"At {name}, keep the entry controlled and release brake pressure progressively. Check whether minimum speed recovers without adding steering correction or sacrificing exit speed."
             evidence.append(f"Brake demand rose {brake:.1f} percentage points while minimum speed fell {abs(minimum):.1f} mph.")
             signals = ["speed", "brake", "steering", "delta"]
-        elif steer is not None and steer > 2.0:
+        elif steer is not None and steer > steering_change:
             title = "Test a smoother steering arc"
             instruction = f"At {name}, test a small entry-speed margin and one smoother steering arc. Compare section time and exit speed; retain the change only if it reduces correction without worsening pace."
-            evidence.append(f"Steering demand increased {steer:.1f}° in the same section.")
+            applied = "road-wheel steering" if steering_basis.road_wheel else "steering-wheel angle"
+            evidence.append(f"Median {applied} increased {steer:.{steering_basis.degree_digits}f}° in the same section.")
             signals = ["speed", "steering", "throttle", "delta"]
         elif throttle is not None and throttle < -2.0:
             title = "Test the exit-throttle transition"
@@ -618,11 +638,12 @@ def _comparison(identifier: str, kind: str, before: Sequence[Mapping[str, Any]],
              "within_run": f"Run {after_run.get('run_number')}: clean early versus late",
              "early_run": f"Run {after_run.get('run_number')}: first {TEST_DAY_RUN_LAPS} green laps",
              }.get(kind, f"Runs {before_run.get('run_number')} and {after_run.get('run_number')}: similar green exposure")
+    steering = basis_of(analysis)
     result = {"id": identifier, "kind": kind, "title": title, "summary": summary,
               "pace_comparable": not unusable, "pace_unusable_reasons": unusable,
               "baseline": baseline, "compared": compared, "delta_s": _round(delta), "eligibility": eligibility,
-              "metrics": _cohort_metrics(before, after),
-              "corners": _section_metrics(baseline["lap_numbers"], compared["lap_numbers"], traces, sections),
+              "metrics": _cohort_metrics(before, after, steering),
+              "corners": _section_metrics(baseline["lap_numbers"], compared["lap_numbers"], traces, sections, steering),
               "hypotheses": [], "actions": []}
     # Explanations describe a pace change; an unusable comparison claims none,
     # so it carries no explanation statuses to read as evidence.
@@ -630,12 +651,13 @@ def _comparison(identifier: str, kind: str, before: Sequence[Mapping[str, Any]],
     return result
 
 
-def _section_metrics(before: Sequence[int], after: Sequence[int], traces: Mapping[int, Mapping[str, Any]], sections: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _section_metrics(before: Sequence[int], after: Sequence[int], traces: Mapping[int, Mapping[str, Any]], sections: Sequence[Mapping[str, Any]],
+                     steering: SteeringBasis | None = None) -> list[dict[str, Any]]:
     try:
         from .race_inspection import comparison_sections
     except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
         from race_inspection import comparison_sections
-    return comparison_sections(before, after, traces, sections)
+    return comparison_sections(before, after, traces, sections, steering=steering)
 
 
 def _timeline(analysis: Mapping[str, Any], laps: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -813,13 +835,15 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
     section_set = review_sections(analysis)
     sections = section_set["sections"]
     by_number = {int(lap["lap"]): lap for lap in laps}
+    steering = basis_of(analysis)
     comparisons = []
     for identifier, kind, before, after, before_run, after_run in candidates:
         comparison = _comparison(identifier, kind, before, after, before_run, after_run, lap_exclusions, ages, traces, analysis, track, sections)
         if kind == "cross_run" and comparison["pace_comparable"]:
             comparison["summary"] += " Pairs are within two sampled green-lap equivalents since their run starts; tire age, fuel, cautions and conditions are not controlled."
-        comparison["inspection"] = comparison_inspection(comparison, by_number, ages, run_for_lap, lap_exclusions, traces, sections)
-        comparison["actions"] = _actions(comparison, section_set, traces)
+        comparison["inspection"] = comparison_inspection(comparison, by_number, ages, run_for_lap, lap_exclusions, traces, sections,
+                                                         steering=steering)
+        comparison["actions"] = _actions(comparison, section_set, traces, steering=steering)
         comparisons.append(comparison)
     early_runs = {item["compared"]["run_number"]: item for item in comparisons if item["kind"] == "early_run"}
     for comparison in comparisons:
@@ -834,6 +858,7 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
                  "green_exposure": _round(ages.get(int(lap["lap"])), 3)} for lap in laps]
     return {
         "schema_version": SCHEMA_VERSION, "projection_version": PROJECTION_VERSION,
+        "steering": steering.describe(),
         "status": "available" if comparisons else "insufficient_evidence",
         "summary": default["summary"] if default else "No two usable multi-lap windows are available yet; the recorded lap timeline remains inspectable.",
         "default_comparison_id": default["id"] if default else None,
@@ -848,5 +873,7 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
                         "Cross-run exposure uses sampled green-time fractions from complete laps, not measured tire wear or exact physical green distance.",
                         f"A saved test needs one run long enough to reach its exposure window; a test day is assumed to give runs of up to {TEST_DAY_RUN_LAPS} laps. A run whose late laps need a longer run adds a first-{TEST_DAY_RUN_LAPS}-green-lap window of its own clean laps, which offers a test only when it passes the same screens.",
                         "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
-                        "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."],
+                        "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."]
+                       + ([f"Steering is steering-wheel angle, not road-wheel steering: {steering.reason or 'the steering ratio was not recorded.'}"]
+                          if not steering.road_wheel else []),
     }

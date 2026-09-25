@@ -210,13 +210,13 @@
               "unit": "%"
             },
             {
-              "baseline": 11.459,
-              "compared": 11.459,
+              "baseline": 0.955,
+              "compared": 0.955,
               "delta": 0.0,
               "detail": "3 earlier and 3 later laps; distance-binned traces.",
               "evidence": "derived",
               "key": "steering",
-              "label": "Steering demand",
+              "label": "Steering (road wheel)",
               "unit": "deg"
             }
           ],
@@ -363,14 +363,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0,
@@ -381,14 +381,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0006,
@@ -399,14 +399,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0036,
@@ -417,14 +417,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0066,
@@ -435,14 +435,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0096,
@@ -453,14 +453,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0126,
@@ -471,14 +471,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0156,
@@ -489,14 +489,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0186,
@@ -507,14 +507,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0216,
@@ -525,14 +525,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0246,
@@ -543,14 +543,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0276,
@@ -561,14 +561,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0306,
@@ -579,14 +579,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0336,
@@ -597,14 +597,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0366,
@@ -615,14 +615,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0396,
@@ -633,14 +633,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0426,
@@ -651,14 +651,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "gap": 0.0456,
@@ -682,6 +682,15 @@
               "unit": "deg"
             },
             "start_pct": 0.1,
+            "steering": {
+              "basis": "road_wheel",
+              "comparable": true,
+              "degree_digits": 2,
+              "label": "Steering (road wheel)",
+              "reason": null,
+              "short_label": "Steering (road wheel)",
+              "unit": "deg"
+            },
             "timing_complete": true
           }
         }
@@ -719,13 +728,13 @@
           "unit": "%"
         },
         {
-          "baseline": 11.459,
-          "compared": 11.459,
+          "baseline": 0.955,
+          "compared": 0.955,
           "delta": 0.0,
           "detail": "Median of per-lap observations; later window minus earlier window.",
           "evidence": "derived",
           "key": "steering",
-          "label": "Steering demand",
+          "label": "Average steering (road wheel)",
           "unit": "deg"
         },
         {
@@ -933,13 +942,13 @@
               "unit": "%"
             },
             {
-              "baseline": 11.459,
-              "compared": 17.189,
-              "delta": 5.73,
+              "baseline": 0.955,
+              "compared": 1.432,
+              "delta": 0.477,
               "detail": "4 earlier and 4 later laps; distance-binned traces.",
               "evidence": "derived",
               "key": "steering",
-              "label": "Steering demand",
+              "label": "Steering (road wheel)",
               "unit": "deg"
             }
           ],
@@ -960,7 +969,7 @@
           "supporting": [
             "Average brake: 10.00 → 20.00 %.",
             "Average throttle: 80.00 → 60.00 %.",
-            "Steering demand: 11.46 → 17.19 deg."
+            "Average steering (road wheel): 0.95 → 1.43 deg."
           ],
           "unknown": [
             "Changed inputs describe what happened; they do not establish whether the driver, grip, traffic or setup caused the change. Mental focus is not measured."
@@ -1093,14 +1102,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.0,
@@ -1111,14 +1120,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.0058,
@@ -1129,14 +1138,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.0348,
@@ -1147,14 +1156,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.0638,
@@ -1165,14 +1174,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.0928,
@@ -1183,14 +1192,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.1218,
@@ -1201,14 +1210,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.1508,
@@ -1219,14 +1228,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.1798,
@@ -1237,14 +1246,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.2088,
@@ -1255,14 +1264,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.2378,
@@ -1273,14 +1282,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.2668,
@@ -1291,14 +1300,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.2958,
@@ -1309,14 +1318,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.3248,
@@ -1327,14 +1336,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.3538,
@@ -1345,14 +1354,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.3828,
@@ -1363,14 +1372,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.4118,
@@ -1381,14 +1390,14 @@
                   "brake": 10.0,
                   "slip": null,
                   "speed": 100.0,
-                  "steering": 11.5,
+                  "steering": 0.95,
                   "throttle": 80.0
                 },
                 "b": {
                   "brake": 20.0,
                   "slip": null,
                   "speed": 95.0,
-                  "steering": 17.2,
+                  "steering": 1.43,
                   "throttle": 60.0
                 },
                 "gap": 0.4408,
@@ -1412,6 +1421,15 @@
               "unit": "deg"
             },
             "start_pct": 0.1,
+            "steering": {
+              "basis": "road_wheel",
+              "comparable": true,
+              "degree_digits": 2,
+              "label": "Steering (road wheel)",
+              "reason": null,
+              "short_label": "Steering (road wheel)",
+              "unit": "deg"
+            },
             "timing_complete": true
           }
         }
@@ -1449,13 +1467,13 @@
           "unit": "%"
         },
         {
-          "baseline": 11.459,
-          "compared": 17.189,
-          "delta": 5.73,
+          "baseline": 0.955,
+          "compared": 1.432,
+          "delta": 0.477,
           "detail": "Median of per-lap observations; later window minus earlier window.",
           "evidence": "derived",
           "key": "steering",
-          "label": "Steering demand",
+          "label": "Average steering (road wheel)",
           "unit": "deg"
         },
         {
@@ -1650,7 +1668,7 @@
     "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
     "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."
   ],
-  "projection_version": "sections-trials-v6",
+  "projection_version": "sections-trials-v7",
   "runs": [
     {
       "first_lap": 1,
@@ -1857,6 +1875,27 @@
     "version": "detected/7954afe534d4"
   },
   "status": "available",
+  "steering": {
+    "basis": "road_wheel",
+    "definition": "Recorded SteeringWheelAngle divided by the recording's 12:1 steering ratio: the steer applied at the front wheels, comparable across steering ratios.",
+    "degree_digits": 2,
+    "evidence_class": "derived",
+    "label": "Steering (road wheel)",
+    "ratio_source": "CarSetup.Chassis.Front.SteeringRatio",
+    "raw_channel": "SteeringWheelAngle",
+    "reason": null,
+    "schema_version": 1,
+    "setup_steering_offset": null,
+    "short_label": "Steering (road wheel)",
+    "status": "recorded",
+    "steering_offset_applied": false,
+    "steering_ratio": 12.0,
+    "steering_ratio_text": "12:1",
+    "steering_wheel_angle_recorded": true,
+    "threshold_reference_ratio": 12.0,
+    "unit": "deg",
+    "value_unit": "rad"
+  },
   "summary": "Laps 7–9: median lap 0.120 s slower than laps 1–3.",
   "timeline": [],
   "track_evolution": {

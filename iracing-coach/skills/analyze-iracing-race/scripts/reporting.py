@@ -18,8 +18,10 @@ from typing import Any
 
 try:  # Package import and direct script loading are both supported.
     from . import race_plan_decision
+    from .steering_basis import SteeringBasis, basis_of
 except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     import race_plan_decision
+    from steering_basis import SteeringBasis, basis_of
 
 
 TIRES = ("LF", "RF", "LR", "RR")
@@ -760,7 +762,7 @@ def _knowledge_target_line(target: Mapping[str, Any]) -> str:
     entry_delta = _number(target.get("entry_speed_delta_mph"))
     minimum_delta = _number(target.get("minimum_speed_delta_mph"))
     brake_delta = _number(target.get("peak_brake_delta"))
-    steering_delta = _number(target.get("steering_delta_rad"))
+    # Steering is never compared with a reference whose steering ratio is unknown.
     throttle_delta = _number(target.get("throttle_pickup_delta_lap_pct"))
     onset_delta = _number(target.get("brake_onset_delta_lap_pct"))
     release_delta = _number(target.get("brake_release_delta_lap_pct"))
@@ -770,8 +772,6 @@ def _knowledge_target_line(target: Mapping[str, Any]) -> str:
         details.append(f"minimum {minimum_delta:+.1f} mph local-reference")
     if brake_delta is not None:
         details.append(f"peak brake {brake_delta * 100:+.1f} points")
-    if steering_delta is not None:
-        details.append(f"steering {steering_delta:+.3f} rad")
     if throttle_delta is not None:
         timing = "later" if throttle_delta > 0 else "earlier" if throttle_delta < 0 else "matched"
         details.append(
@@ -816,13 +816,15 @@ def _reference_line(reference: Mapping[str, Any]) -> str:
     return ", ".join(parts) or "Comparable Garage61 reference selected"
 
 
-def _load_zone_action(segment: Mapping[str, Any]) -> str:
+def _load_zone_action(segment: Mapping[str, Any], steering_basis: SteeringBasis | None = None) -> str:
     brake = _number(segment.get("median_brake")) or 0.0
     steering = _number(segment.get("median_steering_rad")) or 0.0
     lateral = _number(segment.get("median_lateral_g")) or 0.0
+    # 0.18 rad of steering-wheel angle; the same demand on road-wheel angle is 0.18/12.
+    heavy_steering = (steering_basis or SteeringBasis.from_descriptor(None)).threshold(0.18)
     if brake >= 0.12:
         return "Complete the main brake release before peak steering; avoid carrying extra pedal into the loaded phase."
-    if steering >= 0.18 or lateral >= 0.75:
+    if steering >= heavy_steering or lateral >= 0.75:
         return "Use one clean steering arc and unwind before adding throttle; corrections add tire load without speed."
     return "Prioritize a stable entry and an early, smooth throttle pickup."
 
@@ -924,6 +926,7 @@ def render_report(
     if not isinstance(analysis, Mapping):
         raise TypeError("analysis must be a mapping")
     identity = _mapping(analysis.get("identity"))
+    steering_basis = basis_of(analysis)
     race = _mapping(analysis.get("race_summary"))
     strategy = _mapping(analysis.get("strategy"))
     quality = _mapping(analysis.get("data_quality"))
@@ -1354,7 +1357,8 @@ def render_report(
                             ),
                             _corner_phase_timing(metrics, availability),
                             (
-                                f"steer {_fmt(metrics.get('steering_average_abs_rad'), 3, ' rad')}; "
+                                f"{'steer (road wheel)' if steering_basis.road_wheel else 'steering-wheel angle'} "
+                                f"{_fmt(math.degrees(value) if (value := _number(metrics.get('steering_average_abs_rad'))) is not None else None, steering_basis.degree_digits, '°')}; "
                                 f"work {_fmt(metrics.get('steering_work_proxy'), 1)}; "
                                 f"corrections {_fmt(metrics.get('steering_corrections'), 1)}; "
                                 f"exit throttle {_fmt(exit_throttle * 100.0 if exit_throttle is not None else None, 0, '%')}"
@@ -1499,7 +1503,7 @@ def render_report(
                 _fmt(segment.get("minimum_speed_mph"), 1, " mph"),
                 _fmt(median_brake * 100.0 if median_brake is not None else None, 0, "%"),
                 _fmt(segment.get("median_lateral_g"), 2, " g"),
-                _load_zone_action(segment),
+                _load_zone_action(segment, steering_basis),
             ])
         lines.extend(_table(("Zone", "Lap distance", "Minimum speed", "Median brake", "Load", "Action (inference)"), zone_rows))
         lines.append("")

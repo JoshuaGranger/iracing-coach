@@ -1346,6 +1346,14 @@ _PHASE_METRICS = {
 }
 
 
+def _steering_label(analysis: Mapping[str, Any]) -> str:
+    try:
+        from .steering_basis import basis_of
+    except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+        from steering_basis import basis_of
+    return basis_of(analysis).label
+
+
 def build_feedback_observations(
     analysis: Mapping[str, Any],
     feedback: Sequence[Mapping[str, Any]],
@@ -1409,23 +1417,26 @@ def build_feedback_observations(
                 },
                 20,
             )
-            observations.append(
-                {
-                    "evidence_id": evidence_id,
-                    "feedback_id": report["feedback_id"],
-                    "run_id": selected["run_id"],
-                    "corner_id": report["corner_id"],
-                    "corner_label": report["corner_label"],
-                    "run_phase": report["run_phase"],
-                    "corner_phases": report["corner_phases"],
-                    "lap_numbers": list(phase.get("lap_numbers") or ()),
-                    "lap_count": phase.get("lap_count"),
-                    "metrics": compact,
-                    "source": "derived-from-recorded-telemetry",
-                    "causal_claim": False,
-                    "limitation": "These measurements locate and describe the reported symptom; they do not prove a setup cause.",
-                }
-            )
+            observation = {
+                "evidence_id": evidence_id,
+                "feedback_id": report["feedback_id"],
+                "run_id": selected["run_id"],
+                "corner_id": report["corner_id"],
+                "corner_label": report["corner_label"],
+                "run_phase": report["run_phase"],
+                "corner_phases": report["corner_phases"],
+                "lap_numbers": list(phase.get("lap_numbers") or ()),
+                "lap_count": phase.get("lap_count"),
+                "metrics": compact,
+                "source": "derived-from-recorded-telemetry",
+                "causal_claim": False,
+                "limitation": "These measurements locate and describe the reported symptom; they do not prove a setup cause.",
+            }
+            if "steering_average_abs_rad" in compact:
+                # Steering metrics are road-wheel angle only when the recording
+                # stated its steering ratio; say which, so they are not mixed.
+                observation["steering_label"] = _steering_label(analysis)
+            observations.append(observation)
     return observations, list(dict.fromkeys(limitations))
 
 

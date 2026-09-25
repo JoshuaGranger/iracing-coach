@@ -1304,7 +1304,11 @@ def _garage61_auth_states_fixture() -> dict[str, Any]:
 def _race_investigation_fixture() -> dict[str, Any]:
     from analysis_engine import investigation_lap_exclusions
     from race_investigation import build_race_investigation
+    from steering_basis import resolve_steering_basis
 
+    # Steering is road-wheel angle: the synthetic setup states a 12:1 ratio, so
+    # these values are the old steering-wheel fixture values divided by 12.
+    steering = resolve_steering_basis({"CarSetup": {"Chassis": {"Front": {"SteeringRatio": "12:1"}}}})
     laps, traces = [], []
     for number in range(1, 13):
         late = number >= 10
@@ -1316,17 +1320,18 @@ def _race_investigation_fixture() -> dict[str, Any]:
             "conditions": {"track_temperature_f": 80.0, "track_usage": "moderate usage", "track_usage_percent": None},
             "clean_context": {"on_track_fraction": 1.0, "traffic_proximity_fraction": 0.3 if late else 0.0},
             "controls": {"brake_mean": 0.2 if late else 0.1, "throttle_mean": 0.6 if late else 0.8,
-                         "steering_abs_mean_rad": 0.3 if late else 0.2},
+                         "steering_abs_mean_rad": (0.3 if late else 0.2) / 12},
             "fuel": {"start_l": 40.0 - number * 0.2},
         })
         traces.append({"lap": number, "points": [
             {"lap_pct": index / 40.0, "session_time_s": number * 40 + index / 40.0 * seconds,
              "speed_mph": 95.0 if late else 100.0, "brake": 0.2 if late else 0.1,
-             "throttle": 0.6 if late else 0.8, "steering_rad": 0.3 if late else 0.2}
+             "throttle": 0.6 if late else 0.8, "steering_rad": (0.3 if late else 0.2) / 12}
             for index in range(41)
         ]})
     analysis = {
-        "laps": laps, "lap_traces": {"traces": traces},
+        "steering": steering.describe(),
+        "laps": laps, "lap_traces": {"traces": traces, "steering": steering.describe()},
         "runs": [{"run_number": 1, "start_lap": 1, "end_lap": 12}],
         "track_profile": {"detected_corner_segments": [{"start_pct": 0.1, "end_pct": 0.4}]},
         "track_usage_context": {"session_states": [

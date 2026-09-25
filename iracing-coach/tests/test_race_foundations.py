@@ -522,7 +522,7 @@ class RaceFoundationTests(unittest.TestCase):
         self.assertGreater(predicted["laps_remaining"], 0)
         self.assertEqual(predicted["capability_status"], "predicted")
         self.assertIn("track_temp_c", predicted["feature_match"])
-        self.assertEqual(predicted["model_version"], "nascar-tire-condition-load-match-v1")
+        self.assertEqual(predicted["model_version"], "nascar-tire-condition-load-match-v2")
         self.assertEqual(len(predicted["observation_set_fingerprint"]), 64)
         reversed_prediction = build_tire_prediction(
             [observation("three", 22), observation("two", 24), observation("one", 20)],

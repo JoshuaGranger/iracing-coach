@@ -38,7 +38,8 @@ TRACK_SURFACES = {
     2: "approaching_pits",
     3: "on_track",
 }
-TIRE_MODEL_VERSION = "nascar-tire-condition-load-match-v1"
+# v2: steering work enters the load match only as road-wheel work (steering_basis).
+TIRE_MODEL_VERSION = "nascar-tire-condition-load-match-v2"
 MIN_MAIN_LOOP_LAP_PERCENT_COVERAGE = 0.95
 MAX_MAIN_LOOP_LAP_PERCENT_GAP = 0.05
 MAX_MAIN_LOOP_CLOSURE_DISTANCE = 0.15
@@ -1095,6 +1096,43 @@ def build_tire_learning(
     return result
 
 
+def tire_feature_values(value: Mapping[str, Any]) -> dict[str, float]:
+    """Recorded conditions, dynamics and controls/load a tire observation is matched on."""
+
+    conditions = value.get("conditions") or {}
+    load = value.get("load") or {}
+    dynamics = value.get("vehicle_dynamics") or {}
+    result: dict[str, float] = {}
+    direct = {
+        "track_temp_c": conditions.get("track_temp_c"),
+        "air_temp_c": conditions.get("air_temp_c"),
+        "track_usage": conditions.get("track_usage"),
+        "track_wetness": conditions.get("track_wetness"),
+        "caution_fraction": conditions.get("caution_fraction"),
+        "wheel_lock_s": dynamics.get("braking_wheel_lock_proxy_s"),
+        "wheelspin_s": dynamics.get("rear_wheelspin_proxy_s"),
+        "abs_active_s": dynamics.get("abs_active_s"),
+        "yaw_p95_deg_s": dynamics.get("yaw_rate_abs_p95_deg_s_mean"),
+    }
+    for name, raw in direct.items():
+        if (number := _finite(raw)) is not None:
+            result[name] = number
+    for name, early_key, late_key in (
+        ("brake_energy", "early_brake_energy_proxy", "late_brake_energy_proxy"),
+        ("steering_work", "early_steering_work_proxy", "late_steering_work_proxy"),
+    ):
+        # Steering work matches another recording only as road-wheel work:
+        # steering-wheel work (an unknown or older basis) scales with the
+        # car's steering ratio, so it never enters the distance.
+        if name == "steering_work" and load.get("steering_basis") != "road_wheel":
+            continue
+        values = [_finite(load.get(early_key)), _finite(load.get(late_key))]
+        finite = [number for number in values if number is not None]
+        if finite:
+            result[name] = float(statistics.mean(finite))
+    return result
+
+
 def build_tire_prediction(
     observations: Sequence[Mapping[str, Any]],
     current_tire_age: Mapping[str, Any],
@@ -1156,37 +1194,8 @@ def build_tire_prediction(
             "matched_features": [],
         }
 
-    def feature_values(value: Mapping[str, Any]) -> dict[str, float]:
-        conditions = value.get("conditions") or {}
-        load = value.get("load") or {}
-        dynamics = value.get("vehicle_dynamics") or {}
-        result: dict[str, float] = {}
-        direct = {
-            "track_temp_c": conditions.get("track_temp_c"),
-            "air_temp_c": conditions.get("air_temp_c"),
-            "track_usage": conditions.get("track_usage"),
-            "track_wetness": conditions.get("track_wetness"),
-            "caution_fraction": conditions.get("caution_fraction"),
-            "wheel_lock_s": dynamics.get("braking_wheel_lock_proxy_s"),
-            "wheelspin_s": dynamics.get("rear_wheelspin_proxy_s"),
-            "abs_active_s": dynamics.get("abs_active_s"),
-            "yaw_p95_deg_s": dynamics.get("yaw_rate_abs_p95_deg_s_mean"),
-        }
-        for name, raw in direct.items():
-            if (number := _finite(raw)) is not None:
-                result[name] = number
-        for name, early_key, late_key in (
-            ("brake_energy", "early_brake_energy_proxy", "late_brake_energy_proxy"),
-            ("steering_work", "early_steering_work_proxy", "late_steering_work_proxy"),
-        ):
-            values = [_finite(load.get(early_key)), _finite(load.get(late_key))]
-            finite = [number for number in values if number is not None]
-            if finite:
-                result[name] = float(statistics.mean(finite))
-        return result
-
-    target_features = feature_values(prediction_context)
-    observation_features = [feature_values(item) for item in eligible]
+    target_features = tire_feature_values(prediction_context)
+    observation_features = [tire_feature_values(item) for item in eligible]
     scales: dict[str, float] = {}
     for name in sorted(target_features):
         values = [features[name] for features in observation_features if name in features] + [target_features[name]]

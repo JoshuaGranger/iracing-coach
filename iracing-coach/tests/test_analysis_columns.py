@@ -518,6 +518,11 @@ class StageEquivalenceTests(unittest.TestCase):
                 for bins in (160, 16, 7):
                     old_traces = reference._lap_trace_payload(old_table, old_laps, maximum_bins=bins)
                     new_traces = engine._lap_trace_payload(new_table, new_laps, maximum_bins=bins)
+                    # The steering declaration is new. These races state no
+                    # steering ratio, so steering stays steering-wheel angle
+                    # and every other byte of the payload is unchanged.
+                    steering = new_traces.pop("steering")
+                    self.assertEqual((steering["basis"], steering["status"]), ("steering_wheel", "not_recorded"))
                     self.assertGreater(old_traces["trace_count"], 3)
                     self.assert_stage(f"lap_traces[{bins}]", old_traces, new_traces, old_table, new_table)
                 self.assert_stage(

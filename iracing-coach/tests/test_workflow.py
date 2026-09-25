@@ -38,7 +38,7 @@ def _analysis() -> dict:
         )
     return {
         "schema_version": 1,
-        "analysis_profile_version": "post-race-foundations-v22",
+        "analysis_profile_version": "post-race-foundations-v23",
         "analysis_id": "workflow-test-analysis",
         "analyzed_at": "2026-08-01T12:00:00+00:00",
         "source": {
@@ -392,7 +392,7 @@ class WorkflowLocalTests(unittest.TestCase):
             self.assertEqual(result["analysis_view"]["schema_version"], 1)
             self.assertEqual(
                 result["analysis_view"]["analysis_profile_version"],
-                "post-race-foundations-v22",
+                "post-race-foundations-v23",
             )
             self.assertEqual(result["analysis_view"]["track_profile"], analysis["track_profile"])
             self.assertEqual(result["analysis_view"]["laps"], analysis["laps"])
