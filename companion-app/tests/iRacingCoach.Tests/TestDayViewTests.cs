@@ -433,7 +433,7 @@ public sealed class TestDayViewTests
 
         StringAssert.Contains(detail, "Hot psi · garage sheet loaded with run 2, matched to this stop");
         StringAssert.Contains(detail, "<dt>Hot psi</dt><dd>20.2 · sheet</dd></div>");
-        StringAssert.Contains(detail, "<dt>Cold set psi</dt><dd>17.0 set</dd></div>");
+        StringAssert.Contains(detail, "<dt>Cold set psi</dt><dd>17.0</dd></div>");
         Assert.DoesNotContain("<dt>psi</dt>", detail, "A cold setting is never shown as the pressure at the stop.");
 
         var fixture = Fixture();
@@ -489,6 +489,81 @@ public sealed class TestDayViewTests
         StringAssert.Contains(three, "data-inconsistent-repeat");
         StringAssert.Contains(three, "Inconsistent repeat · pace changed");
         Assert.DoesNotContain("+1 more", three);
+    }
+
+    [TestMethod]
+    public async Task AnInconsistentRepeatSaysWhyInItsVerdictCell()
+    {
+        // IRP 9/25 run 11: the "vs previous run" cell read "Not comparable Inconsistent repeat…", cut before the reason.
+        const string reason = "Inconsistent repeat: run 3 used the garage setup of run 1 but its laps 2–5 were 0.701 s slower than that setup's median (23.188 s), "
+            + "more than 3 × its 0.120 s lap noise. The driver's pace changed, so this run sets no threshold and no setup decision.";
+        var fixture = Fixture();
+        fixture["runs"]![2]!["consistency"] = new JsonObject
+        {
+            ["status"] = "inconsistent_repeat", ["setup_runs"] = new JsonArray(1, 3), ["delta_s"] = 0.701, ["limit_s"] = 0.36, ["reason"] = reason
+        };
+        var comparison = fixture["runs"]![2]!["comparison"]!.AsObject();
+        comparison["verdict"] = "not_comparable";
+        comparison["blocked_by"] = "inconsistent_repeat";
+        comparison["reasons"] = new JsonArray(reason);
+        comparison["summary"] = "Not a setup result against run 2: " + reason;
+
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(fixture)
+        });
+
+        var three = Row(html, 3);
+        StringAssert.Contains(three, "<span class=\"td-verdict-line td-verdict-stack\"><span class=\"td-verdict not_comparable\">Not comparable</span>");
+        StringAssert.Contains(three, "<small class=\"td-verdict-reason\" data-not-comparable-reason>Inconsistent repeat · laps 2–5 0.70 s slower than this setup</small></span>");
+        var review = Map(fixture);
+        var withPrevious = review.Runs[2] with { Consistency = null };
+        Assert.AreEqual("Run 3 was an inconsistent repeat · laps 2–5 0.70 s slower than its setup",
+            TestDayView.NotComparableReason(review.Runs[2].Comparison!, withPrevious, review.Runs[2]), "The run after an inconsistent repeat names it.");
+        var css = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.UI", "wwwroot", "race-investigation.css"));
+        StringAssert.Contains(css, ".td-table td.td-verdict-cell .td-verdict-stack small.td-verdict-reason { display: -webkit-box; flex-basis: 100%; overflow: hidden; line-height: 1.3; white-space: normal;",
+            "The reason wraps under the verdict rather than being cut.");
+    }
+
+    [TestMethod]
+    public async Task ALongSetupNameWrapsUnderItsRunAndKeepsItsFullNameInTheTitle()
+    {
+        // IRP 9/25: "NOAPS_MaconiSetupShop I…" and "claude IRP test v5 RR trackb…", cut shorter once "Open recording" showed.
+        var fixture = Fixture();
+        fixture["runs"]![1]!["setup"]!["name"] = "claude IRP test v5 RR trackbar 12in LF camber.sto";
+
+        var row = Row(await RenderSelected(fixture, 2), 2);
+
+        StringAssert.Contains(row, "<b>Run 2</b><span class=\"td-run-setup\" title=\"claude IRP test v5 RR trackbar 12in LF camber.sto\">claude IRP test v5 RR trackbar 12in LF camber</span>");
+        var css = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.UI", "wwwroot", "race-investigation.css"));
+        StringAssert.Contains(css, ".td-run-name { display: grid; grid-template-columns: auto minmax(0, 1fr);");
+        StringAssert.Contains(css, "white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }",
+            "The name wraps to two lines instead of one cut line.");
+        StringAssert.Contains(css, ".td-run-name > .td-open, .td-run-name > .td-row-open { grid-column: 2; justify-self: start; margin-left: 0; }",
+            "\"Open recording\" sits under the name rather than beside it.");
+        Assert.DoesNotContain(".td-run-setup { min-width: 0; overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; }", css);
+    }
+
+    [TestMethod]
+    public async Task MoreChangesKeepsTheRowSelected()
+    {
+        // IRP 9/25: clicking "+3 more" in the setup-change column deselected the row it belongs to.
+        var fixture = Fixture();
+        var change = fixture["runs"]![1]!["setup_change"]!.AsObject();
+        change["status"] = "changed";
+        change["changes"] = new JsonArray(
+            Setting("chassis.left_front.spring_perch_offset", "Left front spring perch offset", "LF perch", "-95 mm", "-96 mm", "-3.75 in", "-3.78 in"),
+            Setting("chassis.right_rear.track_bar_height", "Right rear track bar height", "RR track bar", "+330 mm", "+305 mm", "+13.00 in", "+12.00 in"));
+        change["change_count"] = 2;
+
+        var two = Row(await RenderSelected(fixture, 2), 2);
+
+        StringAssert.Contains(two, "<button type=\"button\" class=\"ri-link td-more\" data-more-changes=\"2\" title=\"List all 2 changes of run 2 below\" "
+            + "__internal_stopPropagation_onclick __internal_stopPropagation_ondblclick __internal_stopPropagation_onkeydown>+1 more</button>");
+        var view = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.UI", "TestDayView.razor"));
+        StringAssert.Contains(view, "data-more-changes=\"@number\" title=\"List all @run.SetupChange.Changes.Count changes of run @number below\" @onclick=\"() => SetSelection(number)\" @onclick:stopPropagation=\"true\"",
+            "The click selects its run and never reaches the row, whose click would clear the selection.");
     }
 
     private static JsonObject Setting(string field, string label, string shortLabel, string previous, string current, string garagePrevious, string garageCurrent) => new()
@@ -595,7 +670,7 @@ public sealed class TestDayViewTests
         StringAssert.Contains(css, ".td-table { width: 100%; table-layout: fixed;");
         Assert.DoesNotContain("max-height: 42vh", css);
         var index = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.App", "wwwroot", "index.html"));
-        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=18");
+        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=19");
     }
 
     private static string Row(string html, int run)

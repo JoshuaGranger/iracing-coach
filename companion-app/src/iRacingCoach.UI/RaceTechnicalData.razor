@@ -332,7 +332,7 @@
                     <div class="technical-investigation-body fuel-investigation">
                         @if (FuelRuns.Count == 0 && !Workspace.Strategy.GreenFuelGallonsPerLap.HasValue)
                         {
-                            <TechnicalUnavailable Title="Fuel use unavailable" Detail="No stint consumption or per-lap fuel estimate is available for this race." Action="Complete green-flag laps with fuel level available to calculate consumption and range." />
+                            <TechnicalUnavailable Title="Fuel use unavailable" Detail="@Wording("No stint consumption or per-lap fuel estimate is available for this race.")" Action="@Wording("Complete green-flag laps with fuel level available to calculate consumption and range.")" />
                         }
                         else
                         {
@@ -489,19 +489,29 @@
 
     /// <summary>
     /// Outside a race no lap counts as green (Runs reads Offline Testing laps as caution), so the
-    /// backend's green-lap wording reads as clean laps there; its figures are unchanged.
+    /// backend's green-lap wording reads as clean laps there, and "this race" as this session;
+    /// its figures are unchanged.
     /// </summary>
     private static AnalysisTechnicalInsight CleanLapInsight(AnalysisTechnicalInsight insight) => insight with
     {
-        Takeaway = CleanLapWording(insight.Takeaway),
+        Takeaway = SessionWording(insight.Takeaway),
         Metrics = insight.Metrics.Select(metric => metric with
         {
-            Label = CleanLapWording(metric.Label), Detail = CleanLapWording(metric.Detail), Action = CleanLapWording(metric.Action)
+            Label = SessionWording(metric.Label), Detail = SessionWording(metric.Detail), Action = SessionWording(metric.Action)
         }).ToArray(),
-        Evidence = insight.Evidence.Select(CleanLapWording).ToArray()
+        Evidence = insight.Evidence.Select(SessionWording).ToArray()
     };
 
-    private string Wording(string text) => IsRaceSession ? text : CleanLapWording(text);
+    private string Wording(string text) => IsRaceSession ? text : SessionWording(text);
+
+    private static readonly System.Text.RegularExpressions.Regex RaceWords =
+        new(@"\b(during the|for this|in this|this) race\b(?!-)", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Wording outside a race: clean laps (<see cref="CleanLapWording"/>), and "during the race",
+    /// "for this race", "in this race" or "this race's" read as the session.
+    /// </summary>
+    public static string SessionWording(string? text) => RaceWords.Replace(CleanLapWording(text), match => match.Groups[1].Value + " session");
 
     private static readonly System.Text.RegularExpressions.Regex GreenLapWords =
         new(@"\b([Gg])reen(?=[- ](?:laps?|runs?)\b)", System.Text.RegularExpressions.RegexOptions.CultureInvariant);

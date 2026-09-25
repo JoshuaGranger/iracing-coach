@@ -17,7 +17,7 @@
         {
             @if (OfflineTesting)
             {
-                <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" XAxisTitle="Clean laps into run" EmptyTitle="No clean laps to place here" EmptyDetail="@OfflineRunsDetail" /></div>
+                <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" XAxisTitle="Clean laps into run" ExposureWord="clean" EmptyTitle="No clean laps to place here" EmptyDetail="@OfflineRunsDetail" /></div>
             }
             else
             {
@@ -93,7 +93,7 @@
                                 <div class="ri-cohort">
                                     <span class="ri-role"><svg width="14" height="8" aria-hidden="true"><line x1="0" y1="4" x2="14" y2="4" stroke="@RunColor(cohort.RunNumber)" stroke-width="2.5" stroke-dasharray="@RunDash(cohort.RunNumber)" /></svg>@role</span>
                                     <b>@CohortIdentity(cohort)</b>
-                                    <span>@CohortExposure(cohort)</span>
+                                    <span>@CohortExposure(cohort, OfflineTesting ? "clean" : "green")</span>
                                     <span>@(cohort.FuelStartGallons is { } fuel ? fuel.ToString("0.0", CultureInfo.CurrentCulture) + " gal" : "fuel —")</span>
                                     <span>@(cohort.TrackTemperatureF is { } temperature ? temperature.ToString("0", CultureInfo.CurrentCulture) + " °F track" : "track °F —")</span>
                                     <span class="ri-median">@LapTime(cohort.MedianLapSeconds) s</span>

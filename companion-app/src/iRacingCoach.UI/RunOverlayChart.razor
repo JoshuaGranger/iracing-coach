@@ -92,7 +92,7 @@
             {
                 <span class="ri-cohort-key">
                     <svg width="16" height="8" aria-hidden="true"><line x1="0" y1="4" x2="16" y2="4" stroke="@RunColor(cohort.RunNumber)" stroke-width="2.5" stroke-dasharray="@RunDash(cohort.RunNumber)" /></svg>
-                    <b>@CohortIdentity(cohort)</b> · @CohortExposure(cohort)@if (cohort.FuelStartGallons is { } fuel) { <text> · @fuel.ToString("0.0", CultureInfo.CurrentCulture) gal</text> }
+                    <b>@CohortIdentity(cohort)</b> · @CohortExposure(cohort, ExposureWord)@if (cohort.FuelStartGallons is { } fuel) { <text> · @fuel.ToString("0.0", CultureInfo.CurrentCulture) gal</text> }
                 </span>
             }
             <small>Rings mark the compared laps. Lines are a five-lap median of recorded laps, including traffic; hollow dots are excluded from clean comparison.</small>
@@ -105,6 +105,8 @@
     [Parameter] public RaceInvestigationComparison? Selected { get; set; }
     /// <summary>X-axis meaning; a test day plots lap of run rather than green-lap exposure.</summary>
     [Parameter] public string XAxisTitle { get; set; } = "Green laps into run";
+    /// <summary>What a lap's exposure counts: "green" in a race, "clean" where no lap is green.</summary>
+    [Parameter] public string ExposureWord { get; set; } = "green";
     /// <summary>Replaces the legend's "laps a–b · n plotted" caption for a run.</summary>
     [Parameter] public Func<RaceRunView, string>? RunCaption { get; set; }
     /// <summary>Readout text before a lap is pointed at.</summary>
@@ -198,9 +200,9 @@
 
     private string Readout => _hover is { } lap ? LapLabel(lap) : Hint;
 
-    private static string LapLabel(RaceInvestigationLap lap) => lap.Label is { Length: > 0 } label
+    private string LapLabel(RaceInvestigationLap lap) => lap.Label is { Length: > 0 } label
         ? $"{label} · {LapTime(lap.LapTimeSeconds)} s{(lap.Eligible ? "" : " · " + Reasons(lap.ExclusionReasons))}"
-        : $"Lap {lap.Lap} · Run {lap.RunNumber} · {LapTime(lap.LapTimeSeconds)} s · {Exposure(lap.GreenExposure)}{(lap.Eligible ? "" : " · " + Reasons(lap.ExclusionReasons))}";
+        : $"Lap {lap.Lap} · Run {lap.RunNumber} · {LapTime(lap.LapTimeSeconds)} s · {Exposure(lap.GreenExposure, ExposureWord)}{(lap.Eligible ? "" : " · " + Reasons(lap.ExclusionReasons))}";
 
     private static string RunTitle(RaceRunView run) =>
         $"Observed trend covers {run.Trend.CoveredLapCount} of {run.PlottedLapCount} plotted laps; breaks at {string.Join(", ", run.Trend.Gaps.Select(gap => $"{gap.AfterLap}–{gap.BeforeLap} ({gap.Reason.Replace('_', ' ')})"))}."

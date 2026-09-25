@@ -272,6 +272,24 @@ public sealed class RaceInvestigationMapperTests
     }
 
     [TestMethod]
+    public async Task OfflineTestingRunsViewCountsCleanNotGreenExposure()
+    {
+        // IRP 9/25 Offline Testing: the Runs view's window chips read "1.0–5.0 green" where no lap is green.
+        using var document = JsonDocument.Parse(InvestigationJson);
+        var investigation = RaceInvestigationMapper.Map(document.RootElement)!;
+        var html = await RaceInvestigationPerformanceTests.Render<RaceInvestigationView>(new()
+        {
+            [nameof(RaceInvestigationView.Investigation)] = investigation,
+            [nameof(RaceInvestigationView.OfflineTesting)] = true
+        });
+        StringAssert.Contains(html, "27.0–30.0 clean");
+        Assert.DoesNotContain("27.0–30.0 green", html);
+        Assert.DoesNotContain(" green</", html, "No exposure reads green outside a race.");
+        Assert.AreEqual("3.0 clean", InvestigationPresentation.Exposure(3.0, "clean"));
+        Assert.AreEqual("3.0 green", InvestigationPresentation.Exposure(3.0), "A race keeps green exposure.");
+    }
+
+    [TestMethod]
     public async Task SectionsViewShowsSixChannelsPassIdentityAndSplitTiming()
     {
         var investigation = CurrentFixture();

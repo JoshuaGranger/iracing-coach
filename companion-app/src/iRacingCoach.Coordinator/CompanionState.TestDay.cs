@@ -225,7 +225,7 @@ public sealed partial class CompanionState
                 : "time unknown";
             return IsTestDayStub(session) ? $"{at} (no timed lap)" : at;
         }
-        return $"Showing {kept} of {kept + leftOut.Count} recordings, the most one review compares. "
+        return $"Showing {kept} of {kept + leftOut.Count} recordings, the most one review can compare. "
             + $"Left out: {string.Join(", ", leftOut.Select(Describe))}.";
     }
 

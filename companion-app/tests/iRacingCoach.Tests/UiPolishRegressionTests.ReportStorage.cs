@@ -224,6 +224,40 @@ public sealed partial class UiPolishRegressionTests
     }
 
     [TestMethod]
+    public async Task SettingsCoachDataCountsDropAfterCopiesMove()
+    {
+        string? reports = null;
+        var backend = new ReclaimBackend(ReclaimPlan(status: "ready", sizes: [GiB, GiB]))
+        {
+            OnMove = moved =>
+            {
+                foreach (var directory in moved)
+                    Directory.Delete(Path.Combine(reports!, directory), recursive: true);
+            }
+        };
+        using var state = NewState(backend);
+        reports = Path.Combine(state.Settings.ArchiveRoot, "reports");
+        foreach (var copy in new[] { "copy-0", "copy-1", "current" })
+        {
+            var directory = Path.Combine(reports, "season-6361", "iowa", copy);
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "analysis.json"), "{}");
+        }
+        state.DetectIRacing();
+        Assert.AreEqual(3, state.Archive!.Restored.Reports);
+        StringAssert.Contains(await RenderSettings(state), "3 reports");
+        await state.RefreshReportStorageAsync(force: true);
+        state.ReviewReportStorage();
+
+        await state.ConfirmReportStorageRemovalAsync();
+
+        Assert.AreEqual(1, state.Archive!.Restored.Reports, "Settings counts the reports left in the folder.");
+        var html = await RenderSettings(state);
+        StringAssert.Contains(html, "1 report");
+        Assert.DoesNotContain("3 reports", html);
+    }
+
+    [TestMethod]
     public async Task RemovedCopiesWaitingToBeDeletedAreStatedQuietly()
     {
         var backend = new ReclaimBackend(ReclaimPlan(status: "nothing", sizes: [], recoveryBytes: 2_472_354_627));
@@ -335,6 +369,8 @@ public sealed partial class UiPolishRegressionTests
     {
         public JsonObject Plan { get; set; } = plan;
         public (string Directory, string Reason)[] Skip { get; init; } = [];
+        /// <summary>Moves the copies on disk as the backend would; called with the directories it moves.</summary>
+        public Action<IReadOnlyList<string>>? OnMove { get; init; }
         public ConcurrentQueue<string> Calls { get; } = new();
         public int Executions;
         public JsonElement? LastExecution { get; private set; }
@@ -369,6 +405,7 @@ public sealed partial class UiPolishRegressionTests
                 movedBytes += bytes;
                 moved.Add(new JsonObject { ["directory"] = directory, ["bytes"] = bytes, ["kind"] = "superseded", ["analysis_id"] = "a", ["kept_copy"] = null });
             }
+            OnMove?.Invoke(directories.Where(directory => !Skip.Any(item => item.Directory == directory)).ToArray());
             var skipped = new JsonArray(Skip.Select(item => (JsonNode)new JsonObject { ["directory"] = item.Directory, ["reason"] = item.Reason }).ToArray());
             return Task.FromResult(JsonSerializer.SerializeToElement(new JsonObject
             {

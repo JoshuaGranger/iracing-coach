@@ -136,7 +136,7 @@ public sealed partial class CoordinatorTests
         CollectionAssert.AreEqual(day.Where(session => session.Id != "local:run-3").Select(session => session.Id).ToArray(),
             kept.Select(session => session.Id).ToArray(), "Kept recordings stay in driving order.");
         var message = CompanionState.TestDayLeftOutMessage(kept.Count, leftOut);
-        StringAssert.StartsWith(message, "Showing 12 of 13 recordings");
+        StringAssert.StartsWith(message, "Showing 12 of 13 recordings, the most one review can compare. ");
         StringAssert.Contains(message, "(no timed lap)", "The message names what was left out and why.");
 
         var noStubs = Enumerable.Range(1, 13).Select(run => CappedStint(run, 20)).ToArray();

@@ -167,8 +167,25 @@ public sealed partial class CompanionState
         }
         if (!refresh) return;
         // The library and setups no longer see moved copies, and Settings shows what remains.
+        await RecountArchiveAsync();
         _ = RefreshDataAsync(showToast: false, CancellationToken.None);
         _ = RefreshReportStorageAsync(force: true);
+    }
+
+    /// <summary>
+    /// Settings' Coach data counts were read when the folder opened; after copies move out
+    /// of reports they are read again so the items and reports shown match the folder.
+    /// </summary>
+    private async Task RecountArchiveAsync()
+    {
+        if (Archive is not { } archive) return;
+        try
+        {
+            if (await Task.Run(() => _archive.CountItems(archive.Root)) is not { } counts) return;
+            Archive = archive with { Restored = counts with { UnresolvedSources = archive.Restored.UnresolvedSources } };
+            RaiseChanged();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException) { }
     }
 
     public void OpenRemovedReportsFolder()
