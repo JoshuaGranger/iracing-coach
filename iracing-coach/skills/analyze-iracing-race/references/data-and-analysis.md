@@ -159,6 +159,21 @@ Use native-rate targeted passes for brake onset/release, brief wheel-speed diver
 
 On NASCAR ovals, pay special attention to right-front remaining wear, RF inner/middle/outer distribution, excessive entry speed, late/heavy brake release, sustained wheel angle, and throttle timing. Do not assume an RF cause merely because the event is an oval; require measured pattern plus trace evidence.
 
+## Test day review
+
+Discovery keeps every offline stint as its own group and additionally tags consecutive local practice/test stints of one exact car path at one track configuration, each starting within two hours of the previous stint's end, with `test_day_id`, `test_day_run` (1 = oldest) and `test_day_run_count`. Races, qualifying, hosted sessions and mtime-only groups are never tagged.
+
+`review_test_day` (2-12 archived `analysis.json` paths, read-only) returns one row per stint in recording order:
+
+- equal run-age windows: laps 2-5 and the last five laps up to N, where N is the shortest stint of at least eight laps (withheld when none reaches eight); a window needs 3+ clean laps and reports a median;
+- least-squares fall-off over laps 2..N with its residual scatter;
+- the garage-setup change from the previous stint with tire readings and `UpdateCount` excluded (`garage_setup_fields`); a setting present in only one stint is unknown, never a change;
+- comparability with the previous stint (exact car path and configuration, open setup, track temperature under 5 °F apart, starting fuel under 2 gal apart, same compound when recorded) and a Faster / Slower / Within scatter / Not comparable verdict against `max(0.03 s, 2 × combined median standard error)`;
+- tires at the stop from the pit-stall telemetry and from the garage sheet, oriented inside/middle/outside (sheet: left tires O-M-I, right tires I-M-O; telemetry bands run across the car from its left side), cross-checked, with missing readings null;
+- exactly one next-change card: revert a slower change, return to an earlier stint that still has the best late pace, keep one faster change (quoting the O'Reilly ruleset's one-step instruction, effect and risk only when the ruleset names that direction), isolate several changes, otherwise repeat; a not-comparable pair asks for a comparable repeat. No card is derived from tire temperatures.
+
+Two recording facts shape it. Offline Testing holds iRacing's one-lap-to-green bit (`0x0200`) in `SessionFlags` for the whole session (every on-track sample of the three local Offline Testing recordings carried it, almost all as `0x10040200`), so the recording analysis classifies every lap as caution; the review ignores only the caution and restart reasons for Offline Testing stints and says so. The garage sheet's `LastTemps*`, `TreadRemaining` and `LastHotPressure` carry no timestamp: in the checked Iowa/New Hampshire recordings they matched the recording's first telemetry sample in two races, showed an older uniform garage state in five others, and never matched the stint's own final stall reading, so the review marks their timing unverified and never attributes them to the stint's stop.
+
 ## Fuel and strategy
 
 Compute fuel used from negative `FuelLevel` deltas and exclude refuel jumps. Separate green and caution burn. Treat requested pit-service fuel as a request, not guaranteed delivered fuel.
