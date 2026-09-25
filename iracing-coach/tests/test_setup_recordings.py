@@ -255,6 +255,37 @@ class SetupRecordingLinkTests(unittest.TestCase):
             self.assertIsNone(entry["recorded_setup"]["values"])
             self.assertEqual(entry["values_status"]["reason_code"], "ambiguous_file_name")
 
+    def test_a_duplicate_name_on_another_catalog_page_still_makes_the_link_ambiguous(self) -> None:
+        # The app reads the catalog in pages; each page used to be checked alone,
+        # so the copy on one page was linked because its duplicate was on another.
+        nested = self.setups / "stockcars2 supra2019" / "Garage 61"
+        nested.mkdir()
+        (nested / IRP_R).write_bytes(b"\x03\x00\x00\x00another copy")
+        self._record("race.ibt", _session_info_yaml(), subsession=88866363, start="2026-09-24T02:09:03+00:00")
+
+        whole = self._catalog()
+        expected = [entry["recorded_setup"]["status"] for entry in whole["entries"]
+                    if entry["car_folder"] == "stockcars2 supra2019" and entry["stem"] == IRP_R[:-4]]
+        self.assertEqual(expected, ["ambiguous", "ambiguous"])
+        for page_size in (1, 2):
+            with self.subTest(maximum_entries=page_size):
+                statuses: list[str] = []
+                offset: int | None = 0
+                while offset is not None:
+                    page = tuning_workflow.catalog_iracing_setups_workflow(
+                        root=self.iracing, archive_root=self.archive, maximum_entries=page_size, offset=offset
+                    )
+                    statuses += [entry["recorded_setup"]["status"] for entry in page["entries"]
+                                 if entry["car_folder"] == "stockcars2 supra2019" and entry["stem"] == IRP_R[:-4]]
+                    self.assertEqual(page["recordings"]["linked_entries"], 0)
+                    offset = page["next_offset"]
+                self.assertEqual(statuses, ["ambiguous", "ambiguous"])
+        filtered = tuning_workflow.catalog_iracing_setups_workflow(
+            root=self.iracing, archive_root=self.archive, car="supra", track="IRP", maximum_entries=1
+        )
+        self.assertEqual(filtered["entries"][0]["recorded_setup"]["status"], "ambiguous",
+                         "A filter narrows what is shown, not which names are unique.")
+
     def test_a_file_saved_after_its_newest_recording_is_flagged(self) -> None:
         catalog = tuning_workflow.catalog_setups(self.setups)
         entry = next(item for item in catalog["entries"]

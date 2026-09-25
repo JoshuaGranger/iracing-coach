@@ -253,10 +253,16 @@ def _named_file(setup_name: str) -> tuple[str, bool]:
 def link_recorded_setups(
     entries: Sequence[Mapping[str, Any]],
     uses: Sequence[Mapping[str, Any]],
+    *,
+    catalog: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Annotate catalog entries with the analysed recordings that loaded them.
 
     Returns deep copies; each carries ``recorded_setup`` and ``values_status``.
+    ``catalog`` is the whole catalog ``entries`` were taken from (it defaults to
+    ``entries``). A file name is ambiguous when it occurs more than once for a
+    car anywhere in it, so one page of the catalog never links a name whose
+    duplicate is on another page.
     """
 
     annotated = [copy.deepcopy(dict(entry)) for entry in entries]
@@ -266,6 +272,13 @@ def link_recorded_setups(
         for source, car, within in _source_names(entry):
             by_name.setdefault((car, PurePosixPath(within).name), []).append((index, source))
             by_path.setdefault((car, within), []).append((index, source))
+    name_counts: dict[tuple[str, str], int] = {}
+    path_counts: dict[tuple[str, str], int] = {}
+    for entry in annotated if catalog is None else catalog:
+        for _source, car, within in _source_names(entry):
+            name_key, path_key = (car, PurePosixPath(within).name), (car, within)
+            name_counts[name_key] = name_counts.get(name_key, 0) + 1
+            path_counts[path_key] = path_counts.get(path_key, 0) + 1
 
     buckets = ("uses", "modified", "unverified", "ambiguous")
     linked: dict[int, dict[str, list[Mapping[str, Any]]]] = {}
@@ -274,10 +287,12 @@ def link_recorded_setups(
         if use.get("load_type") != "user" or not setup_name or not car_path:
             continue  # iRacing baseline and fixed setups are not library files.
         name, has_folder = _named_file(setup_name)
-        candidates = (by_path if has_folder else by_name).get((car_path.casefold(), name), [])
+        key = (car_path.casefold(), name)
+        candidates = (by_path if has_folder else by_name).get(key, [])
         if not candidates:
             continue
-        if len(candidates) > 1:
+        occurrences = max(len(candidates), (path_counts if has_folder else name_counts).get(key, 0))
+        if occurrences > 1:
             bucket = "ambiguous"
         elif use.get("modified") is False:
             bucket = "uses"

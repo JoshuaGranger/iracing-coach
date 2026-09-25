@@ -238,16 +238,22 @@ def _entry_warnings(entry: Mapping[str, Any]) -> list[str]:
 
 
 def _link_recorded_setups(
-    store: ArchiveStore, entries: Sequence[Mapping[str, Any]]
+    store: ArchiveStore,
+    entries: Sequence[Mapping[str, Any]],
+    catalog: Sequence[Mapping[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Attach the analysed recordings that loaded each returned setup file."""
+    """Attach the analysed recordings that loaded each returned setup file.
+
+    ``catalog`` is every scanned entry, so a duplicate file name on another page
+    or outside the filters still makes the name ambiguous.
+    """
 
     try:
         analyses = store.recent_analyses(limit=MAX_RECORDINGS)
     except (sqlite3.Error, OSError) as exc:
-        return link_recorded_setups(entries, []), {"available": False, "message": str(exc)}
+        return link_recorded_setups(entries, [], catalog=catalog), {"available": False, "message": str(exc)}
     uses, counts = read_recording_setup_uses(analyses)
-    linked = link_recorded_setups(entries, uses)
+    linked = link_recorded_setups(entries, uses, catalog=catalog)
     return linked, {
         "available": True,
         **counts,
@@ -280,10 +286,9 @@ def catalog_iracing_setups_workflow(
     catalog["cataloged_at"] = utc_now()
     store = ArchiveStore(archive_root)
     index_path = store.save_tuning_catalog(catalog)
-    filtered = _filter_entries(
-        catalog.get("entries") or [], car=car, track=track, season=season, role=role
-    )
-    page, recordings = _link_recorded_setups(store, filtered[start:start + maximum])
+    all_entries = catalog.get("entries") or []
+    filtered = _filter_entries(all_entries, car=car, track=track, season=season, role=role)
+    page, recordings = _link_recorded_setups(store, filtered[start:start + maximum], all_entries)
     next_offset = start + len(page) if start + len(page) < len(filtered) else None
     return {
         "ok": True,
