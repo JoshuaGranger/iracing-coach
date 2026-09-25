@@ -17,7 +17,7 @@
         {
             @if (OfflineTesting)
             {
-                <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" EmptyTitle="No green laps to place here" EmptyDetail="@OfflineRunsDetail" /></div>
+                <div class="ri-panel ri-fill"><RunOverlayChart Investigation="Investigation" Selected="Selected" XAxisTitle="Clean laps into run" EmptyTitle="No clean laps to place here" EmptyDetail="@OfflineRunsDetail" /></div>
             }
             else
             {
@@ -30,7 +30,7 @@
         @if (!Investigation.HasSectionInspection || Selected?.Inspection is null)
         {
             @if (Investigation.Runs is null) { <LegacyNotice OnRefresh="OnRefresh" /> }
-            else if (OfflineTesting && Selected is null) { <div class="ri-empty ri-panel"><strong>No green-lap comparison to inspect</strong><span>@OfflineSectionsDetail</span></div> }
+            else if (OfflineTesting && Selected is null) { <div class="ri-empty ri-panel"><strong>No clean-lap comparison to inspect</strong><span>@OfflineSectionsDetail</span></div> }
             else { <div class="ri-empty ri-panel"><strong>No track sections to inspect</strong><span>@(Investigation.Sections?.UnavailableReason ?? "Select a comparison with recorded traces.")</span></div> }
         }
         else
@@ -143,9 +143,9 @@
 
 @code {
     [Parameter, EditorRequired] public RaceInvestigation Investigation { get; set; } = null!;
-    private string OfflineRunsDetail => "Offline Testing holds iRacing's one-lap-to-green flag for the whole session, and this recording's analysis reads those laps as caution, so none is placed on the green-lap axis."
+    private string OfflineRunsDetail => "This recording has no run with complete clean laps to place on the run axis."
         + (TestDayAvailable ? " Test day compares them by lap of run." : "");
-    private string OfflineSectionsDetail => "Section comparisons pair green laps, and this recording's analysis reads Offline Testing laps as caution."
+    private string OfflineSectionsDetail => "Section comparisons pair clean laps from two parts of a run, and this recording has no such pair."
         + (TestDayAvailable ? " Test day compares them by lap of run." : "");
     [Parameter] public AnalysisTrackGeometry? Geometry { get; set; }
     [Parameter] public CompanionState? State { get; set; }

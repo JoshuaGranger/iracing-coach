@@ -233,11 +233,11 @@ public sealed class TestDayViewTests
         });
 
         var runs = await Render("runs", offline: true);
-        StringAssert.Contains(runs, "No green laps to place here");
-        StringAssert.Contains(runs, "one-lap-to-green flag");
+        StringAssert.Contains(runs, "No clean laps to place here");
+        StringAssert.Contains(runs, "no run with complete clean laps");
         StringAssert.Contains(runs, "Test day compares them by lap of run.");
         Assert.DoesNotContain("Runs need complete green laps", runs);
-        StringAssert.Contains(await Render("sections", offline: true), "No green-lap comparison to inspect");
+        StringAssert.Contains(await Render("sections", offline: true), "No clean-lap comparison to inspect");
         StringAssert.Contains(await Render("runs", offline: false), "Runs need complete green laps", "A race keeps its own wording.");
     }
 
