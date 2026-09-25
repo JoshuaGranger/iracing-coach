@@ -10,7 +10,7 @@
         <AppTopBar State="State" />
     }
     <main class="workspace" id="main-content" tabindex="-1">
-        <section class="page-frame @(State.CurrentPage == "analysis" ? "analysis-page-frame" : null)" aria-live="polite">
+        <section class="@PageFrameClass(State.CurrentPage, State.AnalysisWorkspaceOpen)" aria-live="polite">
             <CoachErrorBoundary @ref="_errorBoundary">
                 <ChildContent>
                     @switch (State.CurrentPage)
@@ -97,4 +97,11 @@
         StateHasChanged();
     });
     public void Dispose() => State.Changed -= OnStateChanged;
+
+    /// <summary>
+    /// The edge-to-edge investigation frame belongs to an open race only. Leaving a race keeps
+    /// the analysis page and shows Sessions inside it, which must keep the standard page gutter.
+    /// </summary>
+    public static string PageFrameClass(string page, bool analysisWorkspaceOpen) =>
+        page == "analysis" && analysisWorkspaceOpen ? "page-frame analysis-page-frame" : "page-frame";
 }
