@@ -24,7 +24,7 @@
         <div class="td-top">
             <div class="ri-panel td-chart">
                 @* Lap dots are not tab stops here: the run table below is the keyboard path. *@
-                <RunOverlayChart Investigation="Projection" Selected="SelectedComparison" XAxisTitle="Lap of run" RunCaption="RunCaption" Hint="Point to a lap for its time"
+                <RunOverlayChart Investigation="Projection" Selected="SelectedComparison" XAxisTitle="Lap of run" ExposureWord="clean" RunCaption="RunCaption" Hint="Point to a lap for its time"
                                  FitToggleLabel="Fall-off fit" FitToggleTitle="The table's fall-off: least-squares line through each run's clean laps from lap 6, after laps 2–5 where the tires come in, to its last clean lap"
                                  FitCaption="FitCaption" FocusableLaps="false" ScaleToEligible="true" UnscaledRuns="InconsistentRuns"
                                  FootNote="@ChartFootNote(InconsistentRuns)" />
@@ -115,7 +115,8 @@
                                 {
                                     <span class="td-setup-first">@SetupCell(run.SetupChange)</span>
                                 }
-                                @if (run.SetupChange.Changes.Count > 1 && ReturnedTo(run.SetupChange) is null) { <small class="td-more">+@(run.SetupChange.Changes.Count - 1) more</small> }
+                                @* Selects the run (never clears it) so its setup notes below list every change. *@
+                                @if (run.SetupChange.Changes.Count > 1 && ReturnedTo(run.SetupChange) is null) { <button type="button" class="ri-link td-more" data-more-changes="@number" title="List all @run.SetupChange.Changes.Count changes of run @number below" @onclick="() => SetSelection(number)" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true" @onkeydown:stopPropagation="true">+@(run.SetupChange.Changes.Count - 1) more</button> }
                             </td>
                             <td class="num">@WindowCell(run.Early, false)</td>
                             <td class="num">@WindowCell(run.Late, true)</td>
@@ -132,10 +133,21 @@
                             <td class="td-verdict-cell" title="@ComparisonTitle(run.Comparison)">
                                 @if (run.Comparison is { } comparison)
                                 {
-                                    <span class="td-verdict-line">
-                                        <span class="td-verdict @comparison.Verdict">@VerdictLabel(comparison)</span>
-                                        <small>@VerdictDetail(comparison)</small>
-                                    </span>
+                                    @if (comparison.Verdict == "not_comparable")
+                                    {
+                                        @* The reason on its own line, wrapping: "Inconsistent repeat…" alone said nothing. *@
+                                        <span class="td-verdict-line td-verdict-stack">
+                                            <span class="td-verdict @comparison.Verdict">@VerdictLabel(comparison)</span>
+                                            <small class="td-verdict-reason" data-not-comparable-reason>@NotComparableReason(comparison, run, _runs.GetValueOrDefault(comparison.ComparedWithRun))</small>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="td-verdict-line">
+                                            <span class="td-verdict @comparison.Verdict">@VerdictLabel(comparison)</span>
+                                            <small>@VerdictDetail(comparison)</small>
+                                        </span>
+                                    }
                                     @if (WindowLine(comparison) is { Length: > 0 } windows) { <small class="td-other-window">@windows</small> }
                                     @* Ahead of the detail, which the cell may truncate: select the row to read them. *@
                                     @if (NoteCount(comparison) is > 0 and var notes)
@@ -662,6 +674,26 @@
     };
 
     /// <summary>
+    /// Why the table cannot compare a run, short enough to read in the cell. An inconsistent repeat
+    /// says how far its laps 2–5 were from the other runs of its setup ("Inconsistent repeat · laps 2–5
+    /// 0.70 s slower than this setup"); the full sentence is in the cell's title and the run's notes.
+    /// Any other block keeps the backend's first reason.
+    /// </summary>
+    public static string NotComparableReason(TestDayComparison comparison, TestDayRun run, TestDayRun? previous)
+    {
+        if (comparison.BlockedBy == "inconsistent_repeat")
+        {
+            if (run.Consistency is { Inconsistent: true, DeltaSeconds: { } delta })
+                return $"Inconsistent repeat · laps 2–5 {PaceShift(delta)} than this setup";
+            if (previous?.Consistency is { Inconsistent: true, DeltaSeconds: { } before })
+                return $"Run {previous.Run} was an inconsistent repeat · laps 2–5 {PaceShift(before)} than its setup";
+        }
+        return comparison.Reasons.FirstOrDefault() ?? "";
+
+        static string PaceShift(double delta) => $"{Seconds(Math.Abs(delta), 2)} s {(delta > 0 ? "slower" : "faster")}";
+    }
+
+    /// <summary>
     /// The verdict's window, then the one it did not use: "Laps 10–14 · laps 2–5 −0.007 ±0.100",
     /// or "Laps 2–5 · no late window (7 laps)".
     /// </summary>
@@ -762,10 +794,13 @@
         ? $"Hot psi · garage sheet loaded with run {hot.MatchedRun?.ToString(CultureInfo.CurrentCulture) ?? "?"}, matched to this stop"
         : "Hot psi · Not measured";
 
-    /// <summary>The set cold pressure; a stall value equal to it is that setting, never an at-stop reading.</summary>
+    /// <summary>
+    /// The set cold pressure; a stall value equal to it is that setting, never an at-stop reading.
+    /// Its label already says "Cold set psi", so the value is the number alone.
+    /// </summary>
     private static string ColdPressure(TestDayStopCorner stop) => stop.ColdPressurePsi is { } cold
-        ? $"{Pressure(cold)} set"
-        : stop is { PressureIsColdSetting: true, PressurePsi: { } setting } ? $"{Pressure(setting)} set" : "—";
+        ? Pressure(cold)
+        : stop is { PressureIsColdSetting: true, PressurePsi: { } setting } ? Pressure(setting) : "—";
 
     /// <summary>
     /// A next-change setting names the value to set, with the current one beside it, so no
