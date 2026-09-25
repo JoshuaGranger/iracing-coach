@@ -154,6 +154,7 @@ public sealed partial class CompanionState : IDisposable
         Settings = settingsStore?.Load() ?? new CompanionSettings(_pathProvider);
         _settingsDataRoots = new(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
         Settings.LiveMonitor ??= new LiveMonitorLayout();
+        MarkSettingsSaved();
         if (!Settings.Compatibility.Writable) SettingsMessage = Settings.Compatibility.Message;
         CurrentPage = Settings.FirstRunComplete ? "home" : "first-run";
         _liveTelemetry = new LiveTelemetryService(liveTelemetrySource, Settings.LiveMonitor);
@@ -507,7 +508,7 @@ public sealed partial class CompanionState : IDisposable
         if (!Directory.Exists(Settings.IRacingInstallRoot))
         {
             var detectedInstall = new CompanionSettings().IRacingInstallRoot;
-            if (Directory.Exists(detectedInstall)) Settings.IRacingInstallRoot = detectedInstall;
+            if (Directory.Exists(detectedInstall)) { Settings.IRacingInstallRoot = detectedInstall; AdoptDetectedInstallRoot(); }
         }
         _settingsDataRoots = new(Settings.IRacingRoot, Settings.ArchiveRoot, Settings.IRacingInstallRoot);
         try
@@ -2512,6 +2513,7 @@ public sealed partial class CompanionState : IDisposable
 
     public void SaveSettings()
     {
+        MarkSettingsSaveAttempt();
         if (!SettingsWritable)
         {
             SettingsMessage = Settings.Compatibility.Message;
@@ -4497,7 +4499,10 @@ public sealed partial class CompanionState : IDisposable
     private void SaveSettingsToStore()
     {
         lock (_settingsPersistenceGate)
+        {
             _settingsStore?.Save(Settings);
+            MarkSettingsSaved();
+        }
     }
 
     private void PersistSettingsQuietly()
@@ -4508,6 +4513,7 @@ public sealed partial class CompanionState : IDisposable
             {
                 _archive.MarkActive(Settings.CoachHome);
                 _settingsStore?.Save(Settings);
+                MarkSettingsSaved();
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { }

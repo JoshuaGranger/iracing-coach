@@ -150,10 +150,21 @@
     </div>
 </section>
 
-<div class="settings-savebar compact-savebar">
-    <div><strong>Settings</strong><span>@State.SettingsMessage</span></div>
-    <div class="settings-save-actions"><button class="button secondary" disabled="@(!State.SettingsWritable)" @onclick="State.ResetSettings">Restore defaults</button><button class="button primary" disabled="@(!State.SettingsWritable)" @onclick="State.SaveSettings">Save</button></div>
-</div>
+@* The save bar appears only for real edits; folder and restore status stays a quiet line. *@
+@if (State.SettingsDirty)
+{
+    <div class="settings-savebar compact-savebar" data-settings-savebar role="region" aria-label="Unsaved settings">
+        <div><strong>Unsaved changes</strong><span>@State.SettingsEditMessage</span></div>
+        <div class="settings-save-actions"><button class="button secondary" disabled="@(!State.SettingsWritable)" @onclick="State.ResetSettings">Restore defaults</button><button class="button primary" disabled="@(!State.SettingsWritable)" @onclick="State.SaveSettings">Save</button></div>
+    </div>
+}
+else
+{
+    <div class="settings-quiet-status" data-settings-quiet role="status">
+        <span>@State.SettingsMessage</span>
+        <button type="button" class="text-button" disabled="@(!State.SettingsWritable)" @onclick="State.ResetSettings">Restore defaults</button>
+    </div>
+}
 
 <DiagnosticsPage State="State" />
 
