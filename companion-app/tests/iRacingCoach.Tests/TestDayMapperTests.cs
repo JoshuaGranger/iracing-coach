@@ -25,7 +25,7 @@ public sealed class TestDayMapperTests
         Assert.AreEqual(3, review.RunCount);
         Assert.AreEqual("test-day-0123456789abcdef", review.TestDayId);
         Assert.IsTrue(review.Windows.Late.Available);
-        Assert.AreEqual("Laps 12–16", review.Windows.Late.Label);
+        Assert.AreEqual("Last 5 laps", review.Windows.Late.Label, "Each run and each pair has its own late window.");
         Assert.IsNull(review.Runs[0].Comparison, "Run 1 has nothing earlier to compare with.");
         Assert.AreEqual("within_scatter", review.Runs[1].Comparison!.Verdict);
         Assert.AreEqual("faster", review.Runs[2].Comparison!.Verdict);
@@ -34,10 +34,11 @@ public sealed class TestDayMapperTests
         Assert.AreEqual("Front brake bias", review.Runs[2].SetupChange.Changes.Single().Label);
         Assert.AreEqual("keep_and_step", review.NextChange.Kind);
         Assert.IsFalse(review.NextChange.RulesetStep!.StepVerified);
-        StringAssert.StartsWith(review.NextChange.SuccessRule.Text, "Beat 24.068 s median on laps 12–16");
+        StringAssert.StartsWith(review.NextChange.SuccessRule.Text, "Beat 24.068 s median on laps 12–16 by at least 0.033 s");
         Assert.AreEqual(3, review.Runs[2].Trend!.RunNumber, "The chart trend belongs to the day's run, not the recording's run.");
         Assert.AreEqual("Run 3 · lap 14", review.Runs[2].Laps.Single(lap => lap.Lap == 14).Label);
-        Assert.AreEqual(new TestDayRecording(3, "fixture-stint-3", review.Runs[2].AnalysisPath, "2026-08-04T19:25:00+00:00", 1, 1), review.Runs[2].Recording);
+        Assert.AreEqual(new TestDayRecording(4, "fixture-stint-3", review.Runs[2].AnalysisPath, "2026-08-04T19:25:00+00:00", 1, 1), review.Runs[2].Recording,
+            "Recording 1 of the day has no timed lap; it is listed apart and never a run.");
 
         var lastStop = review.Runs[2].Tires;
         Assert.IsFalse(lastStop.StopReading.Measured);
@@ -45,6 +46,53 @@ public sealed class TestDayMapperTests
         Assert.AreEqual("unverified", lastStop.SheetReading.Timing);
         Assert.AreEqual(176.0, review.Runs[1].Tires.Corners["LF"].Sheet!.TemperatureF!.Outside);
         Assert.AreEqual("disagree", review.Runs[0].Tires.Corners["LF"].SheetVsStop.Status);
+    }
+
+    [TestMethod]
+    public void MapperReadsTheCommonLengthWindowsNoiseHotPressuresAndGarageOnlyRecordings()
+    {
+        var review = Map(Fixture());
+
+        var garage = review.UntimedRecordings.Single();
+        Assert.AreEqual((1, "fixture-garage-only", "No timed lap was recorded."), (garage.Recording, garage.AnalysisId, garage.Reason));
+        Assert.IsTrue(review.Runs[0].Noise!.Measured);
+        Assert.AreEqual(0.021, review.Runs[0].Noise!.NoiseSeconds!.Value, 1e-9);
+        var comparison = review.Runs[2].Comparison!;
+        Assert.AreEqual(16, comparison.CommonRunLaps);
+        Assert.AreEqual(("late", "Laps 12–16", "faster"), (comparison.LateWindow!.Key, comparison.LateWindow.Label, comparison.LateWindow.Verdict));
+        Assert.AreEqual(("early", "faster"), (comparison.EarlyWindow!.Key, comparison.EarlyWindow.Verdict));
+        Assert.IsTrue(comparison.FallOff!.Measured);
+        Assert.AreEqual("these_runs", comparison.Noise!.Basis);
+        var stop = review.Runs[0].Tires;
+        Assert.IsTrue(stop.StopReading.HotPressure!.Measured);
+        Assert.AreEqual(2, stop.StopReading.HotPressure.MatchedRun);
+        var lf = stop.Corners["LF"].Stop!;
+        Assert.AreEqual((20.16, 16.97), (lf.HotPressurePsi, lf.ColdPressurePsi));
+        Assert.IsTrue(lf.PressureIsColdSetting, "The stall channel read the set cold pressure; it is never a hot reading.");
+
+        // A v1 backend from before these fields: absent reads as missing, never as zero or a failure.
+        var older = Fixture();
+        older.Remove("untimed_recordings");
+        foreach (var run in older["runs"]!.AsArray())
+        {
+            run!.AsObject().Remove("noise");
+            if (run["comparison"] is JsonObject compared) { compared.Remove("windows"); compared.Remove("fall_off"); compared.Remove("noise"); compared.Remove("common_run_laps"); }
+            run["tires"]!["stop_reading"]!.AsObject().Remove("hot_pressure");
+            foreach (var corner in run["tires"]!["corners"]!.AsObject())
+                if (corner.Value!["stop"] is JsonObject stopCorner) { stopCorner.Remove("hot_pressure_psi"); stopCorner.Remove("cold_pressure_psi"); }
+        }
+        var mapped = Map(older);
+        Assert.IsEmpty(mapped.UntimedRecordings);
+        Assert.IsNull(mapped.Runs[0].Noise);
+        Assert.IsNull(mapped.Runs[2].Comparison!.LateWindow);
+        Assert.IsNull(mapped.Runs[2].Comparison!.FallOff);
+        Assert.IsNull(mapped.Runs[2].Comparison!.CommonRunLaps);
+        Assert.IsNull(mapped.Runs[0].Tires.StopReading.HotPressure);
+        Assert.IsNull(mapped.Runs[0].Tires.Corners["LF"].Stop!.HotPressurePsi);
+
+        var wrong = Fixture();
+        wrong["runs"]![2]!["comparison"]!["windows"]!["late"]!["run_laps"] = "12-16";
+        StringAssert.Contains(Assert.ThrowsExactly<JsonException>(() => Map(wrong)).Message, "runs[2].comparison.windows.late.run_laps");
     }
 
     [TestMethod]

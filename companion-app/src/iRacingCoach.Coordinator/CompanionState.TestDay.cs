@@ -79,15 +79,19 @@ public sealed partial class CompanionState
     }
 
     /// <summary>
-    /// Where "Describe handling" opens Progressive Tuning for a stint: the library
-    /// setup the stint ran and that stint's own analyzed recording. Null when the
-    /// setup library has no tuning evidence for it, so no dead link is shown.
+    /// Where "Describe handling" opens Progressive Tuning for a stint: the setup the
+    /// stint recorded and that stint's own analyzed recording. Tuning checks the
+    /// recording's setup fingerprint, so the recorded setup is the target; a .sto
+    /// library file linked to the same recording carries only its file's fingerprint
+    /// and would stop at "fingerprint changed" (IRP 9/24). Null when no recorded
+    /// setup has tuning evidence for it, so no dead link is shown.
     /// </summary>
     public TestDayHandlingTarget? HandlingTargetFor(TestDayRun? run)
     {
         if (run?.AnalysisPath is not { Length: > 0 } path) return null;
         foreach (var setup in Setups.OfType<LocalSetup>())
         {
+            if (Path.GetExtension(setup.StoPath).Equals(".sto", StringComparison.OrdinalIgnoreCase)) continue;
             if (!(setup.AnalysisPaths ?? []).Any(candidate => SameFile(candidate, path))) continue;
             var evidence = SetupEvidenceRaces(setup);
             if (evidence.Count == 0) continue;
@@ -228,6 +232,7 @@ public sealed partial class CompanionState
                 archive_root = Settings.ArchiveRoot
             }, token);
             review = TestDayMapper.Map(response);
+            AdoptArchivedStints(paths);
         }, cancellationToken, error => failure = error);
         return new TestDayReadResult(review, failure);
     }
@@ -244,6 +249,39 @@ public sealed partial class CompanionState
     }
 
     private bool TestDayStillCurrent(long epoch) => Volatile.Read(ref _testDayEpoch) == epoch;
+
+    /// <summary>
+    /// The inventory lists archived analyses as tuning evidence only at its next refresh, so a
+    /// stint this job just analyzed was not evidence for "Describe handling". Each stint's
+    /// archived entry and recorded setup join the lists now, exactly as a refresh would add them.
+    /// </summary>
+    private void AdoptArchivedStints(IReadOnlyList<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            ArchivedRaceCatalog.Entry? entry;
+            try { entry = File.Exists(path) ? ReadArchivedCatalog(path) : null; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException or InvalidOperationException)
+            {
+                continue;
+            }
+            if (entry is null) continue;
+            lock (_inventoryGate)
+            {
+                if (entry.Race is { } race && !Races.Any(item => !string.IsNullOrWhiteSpace(item.AnalysisPath) && SameFile(item.AnalysisPath, path)))
+                    Races.Add(race);
+                if (entry.Setup is { } setup)
+                {
+                    var index = Setups.FindIndex(item => string.Equals(item.Id, setup.Id, StringComparison.OrdinalIgnoreCase));
+                    if (index < 0) Setups.Add(setup);
+                    else Setups[index] = Setups[index] with
+                    {
+                        AnalysisPaths = (Setups[index].AnalysisPaths ?? []).Concat(setup.AnalysisPaths ?? []).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+                    };
+                }
+            }
+        }
+    }
 
     /// <summary>A forced re-analysis of a stint makes the loaded day stale; the next open re-reads it.</summary>
     private void InvalidateTestDay(RecentRace race)

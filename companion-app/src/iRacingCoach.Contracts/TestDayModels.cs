@@ -23,7 +23,14 @@ public sealed record TestDayReview(
 {
     public const string Contract = "test-day-review-v1";
     public const int CurrentSchemaVersion = 1;
+
+    /// <summary>Recordings of the day with no timed lap, listed once apart from the runs; empty from an older backend.</summary>
+    public IReadOnlyList<TestDayUntimedRecording> UntimedRecordings { get; init; } = [];
 }
+
+/// <summary>A recording of the day without a timed lap (garage only). It is never a run and never compared.</summary>
+public sealed record TestDayUntimedRecording(int Recording, string? AnalysisId, string? AnalysisPath, string? RecordedAt,
+    string? SessionType, string? SetupName, string Reason);
 
 public sealed record TestDayCar(string? CarPath, string? CarName, string? CarId);
 public sealed record TestDayTrack(string? TrackName, string? TrackConfig, string? ConfigurationKey);
@@ -61,13 +68,25 @@ public sealed record TestDayRun(
 {
     /// <summary>The recording this run is in and its place there; null from an older backend.</summary>
     public TestDayRecording? Recording { get; init; }
+    /// <summary>The run's lap-to-lap noise after the warm-up; null from an older backend.</summary>
+    public TestDayNoise? Noise { get; init; }
+}
+
+/// <summary>Lap-to-lap noise: the spread of consecutive clean-lap differences, in seconds.</summary>
+public sealed record TestDayNoise(string Status, double? NoiseSeconds, int DifferenceCount, string? Basis, string? Reason)
+{
+    public bool Measured => string.Equals(Status, "measured", StringComparison.Ordinal) && NoiseSeconds.HasValue;
 }
 
 /// <summary>A run's recording: several runs, split by pit visits, can share one.</summary>
 public sealed record TestDayRecording(int Number, string? AnalysisId, string? AnalysisPath, string? RecordedAt, int? RunInRecording, int RunsInRecording);
 
 public sealed record TestDaySetup(string? Name, bool? Fixed, bool Embedded, string? GarageFingerprint);
-public sealed record TestDayMeasuredRun(int? AnalysisRun, int FirstLap, int LastLap, int RunLaps, int OtherRunCount);
+public sealed record TestDayMeasuredRun(int? AnalysisRun, int FirstLap, int LastLap, int RunLaps, int OtherRunCount)
+{
+    /// <summary>The run's last clean lap; null from an older backend.</summary>
+    public int? CleanRunLaps { get; init; }
+}
 public sealed record TestDayConditions(double? TrackTemperatureF, double? StartFuelGallons, string? TireCompound, TestDayTireStart TireStart);
 public sealed record TestDayTireStart(string Status, IReadOnlyDictionary<string, double> InitialOdometerMeters, string? Detail);
 
@@ -105,6 +124,31 @@ public sealed record TestDayComparison(int ComparedWithRun, string Verdict, stri
     public IReadOnlyList<int> PreviousLaps { get; init; } = [];
     /// <summary>This run's recording laps at <see cref="RunLaps"/>.</summary>
     public IReadOnlyList<int> CurrentLaps { get; init; } = [];
+    /// <summary>N: the shorter of the two runs' last clean laps; the windows below end there.</summary>
+    public int? CommonRunLaps { get; init; }
+    /// <summary>The lap-to-lap noise the thresholds use.</summary>
+    public TestDayNoise? Noise { get; init; }
+    /// <summary>Laps 2–5 at equal age; null from an older backend or when conditions block the comparison.</summary>
+    public TestDayPairWindow? EarlyWindow { get; init; }
+    /// <summary>The last five laps up to <see cref="CommonRunLaps"/>, or withheld with a reason.</summary>
+    public TestDayPairWindow? LateWindow { get; init; }
+    /// <summary>Both runs' fall-off over laps 2..N.</summary>
+    public TestDayPairFallOff? FallOff { get; init; }
+}
+
+/// <summary>One window of a comparison: both runs' medians on the laps clean in both, with its own verdict.</summary>
+public sealed record TestDayPairWindow(string Key, string Status, string? Label, int? FirstRunLap, int? LastRunLap, string? Verdict,
+    IReadOnlyList<int> RunLaps, double? PreviousMedianSeconds, double? CurrentMedianSeconds, double? DeltaSeconds,
+    double? ThresholdSeconds, string? Reason)
+{
+    public bool Measured => string.Equals(Status, "measured", StringComparison.Ordinal) && DeltaSeconds.HasValue;
+}
+
+/// <summary>Both runs' fall-off over the same laps 2..N.</summary>
+public sealed record TestDayPairFallOff(string Status, string? Label, double? PreviousSlopeSecondsPerLap, double? CurrentSlopeSecondsPerLap,
+    double? DeltaSecondsPerLap, double? ThresholdSecondsPerLap, string? Verdict, string? Reason)
+{
+    public bool Measured => string.Equals(Status, "measured", StringComparison.Ordinal) && DeltaSecondsPerLap.HasValue;
 }
 
 public sealed record TestDayTires(TestDayStopReading StopReading, TestDaySheetReading SheetReading,
@@ -114,6 +158,14 @@ public sealed record TestDayStopReading(string Status, string Source, string? Me
     public bool Measured => string.Equals(Status, "measured", StringComparison.Ordinal);
     /// <summary>Which temperature the stall reading carries ("carcass"); null from an older backend.</summary>
     public string? Temperature { get; init; }
+    /// <summary>Where this stop's hot pressures come from; null from an older backend.</summary>
+    public TestDayHotPressure? HotPressure { get; init; }
+}
+
+/// <summary>Hot pressures at a stop, read from the next recording's garage sheet when it matches this stop.</summary>
+public sealed record TestDayHotPressure(string Status, string? Source, int? MatchedRun, string? Reason)
+{
+    public bool Measured => string.Equals(Status, "measured", StringComparison.Ordinal);
 }
 public sealed record TestDaySheetReading(string Status, string Source, string Timing, string TimingNote)
 {
@@ -127,7 +179,15 @@ public sealed record TestDayTireCorner(TestDayStopCorner? Stop, TestDaySheetCorn
 /// <summary>Inside/middle/outside of one tire, already oriented by the backend.</summary>
 public sealed record TestDayBands(double? Inside, double? Middle, double? Outside);
 public sealed record TestDayStopCorner(TestDayBands? TemperatureF, TestDayBands? TreadPercent, double? PressurePsi, string? PressureKind,
-    double? SpreadF, double? MinimumTreadPercent);
+    double? SpreadF, double? MinimumTreadPercent)
+{
+    /// <summary>The run's set cold pressure from its garage sheet.</summary>
+    public double? ColdPressurePsi { get; init; }
+    /// <summary>Hot pressure at this stop from a matching later garage sheet; null when not measured.</summary>
+    public double? HotPressurePsi { get; init; }
+    /// <summary>The stall channel read the set cold pressure: it is that setting, never a stop reading.</summary>
+    public bool PressureIsColdSetting => string.Equals(PressureKind, "cold_setting", StringComparison.Ordinal);
+}
 public sealed record TestDaySheetCorner(TestDayBands? TemperatureF, TestDayBands? TreadPercent, double? HotPressurePsi, double? ColdPressurePsi,
     double? SpreadF, double? MinimumTreadPercent);
 public sealed record TestDayAgreement(string Status, double? MaxTemperatureDeltaF, double? MaxTreadDeltaPercent)

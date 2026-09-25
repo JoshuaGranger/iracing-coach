@@ -63,10 +63,11 @@
                     var color = RunColor(point.RunNumber);
                     var chosen = IsChosen(point);
                     var x = plot.X(point.GreenExposure!.Value);
+                    var offScale = point.LapTimeSeconds!.Value > plot.YMax || point.LapTimeSeconds!.Value < plot.YMin;
                     var y = plot.Y(Math.Clamp(point.LapTimeSeconds!.Value, plot.YMin, plot.YMax));
                     if (chosen) { <circle cx="@N(x)" cy="@N(y)" r="7" class="ri-ring" stroke="@color" /> }
                     <circle cx="@N(x)" cy="@N(y)" r="@(chosen ? "4" : "2.8")" fill="@(point.Eligible ? color : "var(--surface-1)")" stroke="@color"
-                            class="ri-dot @(point.Eligible ? null : "excluded")" tabindex="@(FocusableLaps ? "0" : "-1")" data-lap="@point.Lap"
+                            class="ri-dot @(point.Eligible ? null : "excluded") @(offScale ? "off-scale" : null)" tabindex="@(FocusableLaps ? "0" : "-1")" data-lap="@point.Lap"
                             @onmouseenter="() => _hover = point" @onfocus="() => _hover = point"
                             aria-label="@LapLabel(point)"><title>@LapLabel(point)</title></circle>
                 }
@@ -111,6 +112,11 @@
     [Parameter] public Func<RaceRunFit, string>? FitCaption { get; set; }
     /// <summary>False when another control (a test day's run table) is the keyboard path, so each lap is not a tab stop.</summary>
     [Parameter] public bool FocusableLaps { get; set; } = true;
+    /// <summary>
+    /// Scale the time axis to eligible laps only, so one excluded outlier (a 62 s lap where the car
+    /// stopped) cannot squash every clean lap into a flat line; excluded laps beyond it sit on the edge.
+    /// </summary>
+    [Parameter] public bool ScaleToEligible { get; set; }
     [Parameter] public string EmptyTitle { get; set; } = "No plotted laps with known run exposure";
     [Parameter] public string EmptyDetail { get; set; } = "Runs need complete green laps to place them on a shared axis.";
 
@@ -131,7 +137,8 @@
     {
         get
         {
-            var times = Points.Select(point => point.LapTimeSeconds!.Value).ToArray();
+            var eligible = ScaleToEligible ? Points.Where(point => point.Eligible).ToArray() : [];
+            var times = (eligible.Length > 0 ? eligible : Points).Select(point => point.LapTimeSeconds!.Value).ToArray();
             var min = times.Min();
             var max = times.Max();
             var pad = Math.Max(.08, (max - min) * .06);

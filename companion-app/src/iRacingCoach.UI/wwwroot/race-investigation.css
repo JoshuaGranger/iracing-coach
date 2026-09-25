@@ -397,17 +397,30 @@
 .reduced-motion .ri-dot, .reduced-motion .ri-tab, .reduced-motion .app-topnav button { transition: none; }
 
 /* ---------- Test day: one chart, one table, one next change ---------- */
-.td-view { display: grid; grid-template-rows: minmax(220px, 1fr) auto auto; gap: 8px; min-height: 0; height: 100%; }
+.td-view { display: flex; flex-direction: column; gap: 8px; min-height: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.td-view > * { flex: none; }
 .td-view:has(> .td-empty) { display: block; }
 .td-empty { height: auto; min-height: 240px; }
-.td-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 8px; min-height: 0; }
-.td-chart { min-height: 0; }
+/* The chart keeps its height whatever the table, the fit captions or the run detail add below it;
+   the tab scrolls as one page instead of squeezing the chart or boxing the table. */
+.td-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 8px; height: clamp(300px, 44vh, 420px); min-height: 0; }
+.td-chart { min-height: 0; overflow: hidden; }
+.td-chart .ri-chart-head { flex-wrap: nowrap; align-items: flex-start; }
+.td-chart .ri-run-legend { flex: 1 1 auto; max-height: 58px; overflow-y: auto; gap: 2px 14px; }
+.td-chart .ri-run-key { flex-wrap: nowrap; white-space: nowrap; }
+.td-chart .ri-toggle, .td-chart .ri-readout { flex: none; }
+.td-chart .ri-readout { max-width: 260px; }
+.td-chart .ri-plot { min-height: 150px; }
+.ri-dot.off-scale { stroke-dasharray: 2 2; }
 .td-next { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; overflow: auto; }
+.td-untimed { margin: 0; padding: 0 2px; color: var(--text-muted); font-size: 12px; }
 .td-next h2 { margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 650; line-height: 1.3; }
 .td-next p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
 .td-next-changes { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
-.td-next-changes li { display: flex; justify-content: space-between; gap: 8px; color: var(--text-muted); }
-.td-next-changes b { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.td-next-changes li { display: flex; align-items: baseline; gap: 8px; color: var(--text-muted); }
+.td-next-changes li > span { flex: 1 1 auto; min-width: 0; }
+.td-next-changes b { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.td-next-changes small { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 .td-success { display: grid; gap: 2px; padding: 6px 9px; border-left: 3px solid var(--accent); border-radius: 0 var(--radius-control) var(--radius-control) 0; background: var(--accent-subtle); }
 .td-success span { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .td-success b { color: var(--text-primary); font-size: 13px; font-weight: 600; line-height: 1.4; font-variant-numeric: tabular-nums; }
@@ -415,10 +428,15 @@
 .td-success[data-success-direction="measure"] span { color: var(--info); }
 .td-basis, .td-evidence { color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 .td-handling { align-self: flex-start; padding-left: 0; }
-.td-table-panel { max-height: 42vh; overflow: auto; }
-.td-table { width: 100%; border-collapse: collapse; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
-.td-table th, .td-table td { padding: 5px 10px; border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: middle; white-space: nowrap; }
-.td-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-1); color: var(--text-muted); font-weight: 600; }
+.td-table-panel { overflow: visible; }
+.td-table { width: 100%; table-layout: fixed; border-collapse: collapse; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.td-table th, .td-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-col-run { width: 20%; }
+.td-col-setup { width: 16%; }
+.td-col-num { width: 8%; }
+.td-col-verdict { width: 20%; }
+.td-col-tires { width: 20%; }
+.td-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-1); color: var(--text-muted); font-weight: 600; white-space: normal; line-height: 1.25; vertical-align: bottom; }
 .td-table .num { text-align: right; }
 .td-note { caption-side: top; padding: 5px 10px; color: var(--text-muted); font-size: 12px; text-align: left; }
 .td-table tbody tr { cursor: pointer; }
@@ -430,22 +448,32 @@
 .td-table td small { display: block; color: var(--text-muted); font-size: 12px; }
 .td-run { font-weight: 400; }
 .td-run svg { margin-right: 8px; vertical-align: middle; }
-.td-run > span { display: inline-grid; vertical-align: middle; }
-.td-run small { color: var(--text-muted); font-size: 12px; }
+.td-run-box { display: flex; align-items: center; min-width: 0; }
+.td-run-box svg { flex: none; }
+.td-run-box > span { display: grid; min-width: 0; }
+.td-run small { overflow: hidden; color: var(--text-muted); font-size: 12px; text-overflow: ellipsis; }
+.td-run-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.td-run-name b { flex: none; }
+.td-run-setup { min-width: 0; overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; }
+.td-run small.td-excluded { color: var(--warning); }
 .td-open { margin-left: 6px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--text-secondary); font-size: 12px; font-style: normal; }
-.td-setup { max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+.td-setup { color: var(--text-primary); }
+.td-setup-first { display: block; overflow: hidden; text-overflow: ellipsis; }
+.td-table td small.td-more { color: var(--info); font-weight: 600; }
 .td-more { margin-left: 6px; color: var(--info); font-style: normal; font-weight: 600; }
 .td-missing { color: var(--text-muted); }
-.td-verdict-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
-.td-table td.td-verdict-cell small { display: inline; margin-left: 6px; }
-.td-verdict { display: inline-flex; padding: 1px 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); color: var(--text-secondary); font-weight: 700; }
+.td-verdict-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.td-verdict-line > small { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.td-table td.td-verdict-cell small { overflow: hidden; text-overflow: ellipsis; }
+.td-table td.td-verdict-cell .td-verdict-line small { display: inline; }
+.td-verdict { display: inline-flex; flex: none; padding: 1px 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); color: var(--text-secondary); font-weight: 700; }
 .td-verdict.faster { border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle)); color: var(--accent); }
 .td-verdict.slower { border-color: color-mix(in srgb, var(--telemetry-slower) 55%, var(--border-subtle)); color: var(--telemetry-slower); }
 .td-verdict.not_comparable { border-color: color-mix(in srgb, var(--warning) 45%, var(--border-subtle)); color: var(--warning); }
-.td-mini-tires { display: inline-grid; grid-template-columns: repeat(2, auto); gap: 0 12px; }
+.td-mini-tires { display: inline-grid; grid-template-columns: repeat(2, auto); gap: 0 10px; }
 .td-mini-tires > span { display: inline-flex; align-items: baseline; gap: 4px; }
 .td-mini-tires i { color: var(--text-muted); font-style: normal; }
-.td-mini-tires b { min-width: 34px; text-align: right; }
+.td-mini-tires b { min-width: 44px; text-align: right; }
 .td-table td .td-mini-tires small { display: inline; }
 .td-tires { display: grid; gap: 6px; padding: 8px 10px; }
 .td-tires > header { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; color: var(--text-muted); font-size: 12px; }
@@ -461,7 +489,7 @@
 .td-tire header { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 12px; }
 .td-tire header strong { color: var(--text-primary); font-size: 13px; }
 .td-tire dl { display: grid; gap: 1px; margin: 4px 0 0; }
-.td-tire dl > div { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 6px; font-size: 12px; }
+.td-tire dl > div { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 6px; font-size: 12px; }
 .td-tire dt { color: var(--text-muted); }
 .td-tire dd { margin: 0; overflow: hidden; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
 .td-tire .td-change dd { color: var(--text-secondary); }
@@ -471,6 +499,14 @@
 .td-compare-notes strong { color: var(--text-primary); font-size: 12px; }
 .td-compare-notes p { margin: 0; }
 .td-compare-notes ul { margin: 0; padding-left: 16px; color: var(--warning); }
+.td-pair { width: 100%; max-width: 820px; margin: 4px 0 2px; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.td-pair th, .td-pair td { padding: 2px 8px 2px 0; border-bottom: 1px solid var(--border-subtle); text-align: left; font-weight: 400; white-space: nowrap; }
+.td-pair thead th { color: var(--text-muted); font-weight: 600; }
+.td-pair tbody th { color: var(--text-primary); }
+.td-pair tbody th small { color: var(--text-muted); }
+.td-pair .num { text-align: right; }
+.td-pair td:last-child { white-space: normal; }
+.td-noise { color: var(--text-muted); }
 .td-readouts { color: var(--text-muted); }
 .td-tire-head { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; color: var(--text-muted); font-size: 12px; }
 .td-sheet-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -481,6 +517,6 @@
   .td-tire-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
-  .td-view { height: auto; grid-template-rows: none; }
-  .td-top { grid-template-columns: 1fr; grid-template-rows: 300px auto; }
+  .td-view { height: auto; }
+  .td-top { height: auto; grid-template-columns: 1fr; grid-template-rows: 300px auto; }
 }

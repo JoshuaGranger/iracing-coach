@@ -61,10 +61,11 @@ public sealed class TestDayViewTests
         StringAssert.Contains(html, "Run 3 · lap 14 · ");
         StringAssert.Contains(html, "Within scatter");
         StringAssert.Contains(html, "Faster</span>");
-        StringAssert.Contains(html, "−0.110 s · Laps 12–16");
+        StringAssert.Contains(html, "<small>−0.110 s</small>");
+        StringAssert.Contains(html, "Laps 12–16 · laps 2–5 −0.110 ±0.037", "The row states both windows of the comparison.");
         StringAssert.Contains(html, "Front brake bias 56.0% → 56.5%");
         StringAssert.Contains(html, "Keep front brake bias at 56.5%; try one more step");
-        StringAssert.Contains(html, "Beat 24.068 s median on laps 12–16 by at least 0.030 s with 3+ clean laps.");
+        StringAssert.Contains(html, "Beat 24.068 s median on laps 12–16 by at least 0.033 s with 3+ clean laps in a run of 16+ laps.");
         StringAssert.Contains(html, "garage step size not verified");
         Assert.DoesNotContain("data-tires-run", html, "Tire detail appears only for a selected run.");
         Assert.DoesNotContain("Describe handling", html, "No handling link without a tunable setup.");
@@ -152,7 +153,7 @@ public sealed class TestDayViewTests
     public async Task StopTemperaturesAreLabelledCarcass()
     {
         var html = await RenderSelected(Fixture(), 2);
-        StringAssert.Contains(html, "Tires at stop · carcass I−O, tread");
+        StringAssert.Contains(html, "Tires at stop · I−O °F, tread");
         StringAssert.Contains(Tires(html), "<dt>Carcass °F</dt>");
     }
 
@@ -272,6 +273,171 @@ public sealed class TestDayViewTests
         var workspace = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.UI", "AnalysisWorkspacePage.razor"));
         StringAssert.Contains(workspace, """: Workspace.SessionType?.Contains("Qual", StringComparison.OrdinalIgnoreCase) != true);""");
         Assert.DoesNotContain(""": string.Equals(Workspace.SessionType, "Race", StringComparison.OrdinalIgnoreCase));""", workspace);
+    }
+
+    [TestMethod]
+    public async Task EachRowNamesItsSetupAndSaysWhichLapsWereExcludedAndWhy()
+    {
+        // Track A 4 and 9, IRP 9/24: a 19-lap run excluded on every lap said so only on chart hover,
+        // and rows read "Run 12" with no setup name.
+        var fixture = Fixture();
+        foreach (var lap in fixture["runs"]![1]!["laps"]!.AsArray().Skip(1))
+        {
+            lap!["eligible"] = false;
+            lap["exclusion_reasons"] = new JsonArray("damage_repair_context");
+        }
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(fixture)
+        });
+
+        var row = Row(html, 2);
+        StringAssert.Contains(row, "<b>Run 2</b><span class=\"td-run-setup\" title=\"fixture-stint-2.sto\">fixture-stint-2</span>");
+        StringAssert.Contains(row, "17 of 18 laps excluded · tow/repair review");
+        StringAssert.Contains(row, "Excluded from clean laps: tow/repair review (17 laps).");
+        Assert.DoesNotContain("data-excluded", Row(html, 1), "Lap 1 of every run is excluded and is not repeated.");
+        var detail = Tires(await RenderSelected(fixture, 2));
+        StringAssert.Contains(detail, "<strong>Excluded laps</strong>");
+    }
+
+    [TestMethod]
+    public async Task GarageOnlyRecordingsAreOneQuietLineNotRows()
+    {
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(Fixture())
+        });
+
+        StringAssert.Contains(html, "data-untimed=\"1\"");
+        StringAssert.Contains(html, "1 recording without a timed lap (");
+        StringAssert.Contains(html, ") is not compared.");
+        Assert.AreEqual(3, Count(html, "<tr data-run="), "The garage-only recording is not a run row.");
+        Assert.DoesNotContain("no timed run", html);
+    }
+
+    [TestMethod]
+    public async Task TiresShowHotPressureFromTheMatchingSheetAndColdPressureAsTheSetting()
+    {
+        // Track A 5, IRP 9/24: "psi at stop" read 14.0/28.0, the set cold pressures; the stop's hot pressures
+        // (16.7/34.2/17.7/33.8 psi) were in the next recording's garage sheet.
+        var detail = Tires(await RenderSelected(Fixture(), 1));
+
+        StringAssert.Contains(detail, "Hot psi · garage sheet loaded with run 2, matched to this stop");
+        StringAssert.Contains(detail, "<div data-hot-psi><dt>Hot psi</dt><dd>20.2</dd></div>");
+        StringAssert.Contains(detail, "<div data-cold-psi><dt>Cold psi</dt><dd>17.0 set</dd></div>");
+        Assert.DoesNotContain("<dt>psi</dt>", detail, "A cold setting is never shown as the pressure at the stop.");
+
+        var fixture = Fixture();
+        var hot = fixture["runs"]![0]!["tires"]!["stop_reading"]!["hot_pressure"]!.AsObject();
+        hot["status"] = "not_measured";
+        hot["source"] = null;
+        hot["matched_run"] = null;
+        hot["reason"] = "The next recording's garage sheet does not match this stop's temperatures and tread, so its hot pressures are not attributed here.";
+        foreach (var corner in fixture["runs"]![0]!["tires"]!["corners"]!.AsObject()) corner.Value!["stop"]!["hot_pressure_psi"] = null;
+        var missing = Tires(await RenderSelected(fixture, 1));
+        StringAssert.Contains(missing, "Hot psi · Not measured");
+        StringAssert.Contains(missing, "<div data-hot-psi><dt>Hot psi</dt><dd>Not measured</dd></div>");
+    }
+
+    [TestMethod]
+    public async Task TheNextChangeNamesTheValueToSetSoNoArrowPointsBack()
+    {
+        // Track A 6, IRP 9/24: the revert list read "-98 mm → -95 mm" beside evidence reading "-95 → -98".
+        var fixture = Fixture();
+        var next = fixture["next_change"]!.AsObject();
+        next["kind"] = "revert";
+        next["changes"] = new JsonArray(new JsonObject
+        {
+            ["field"] = "chassis.right_front.spring_perch_offset", ["label"] = "Right front spring perch offset", ["from"] = "-98 mm", ["to"] = "-95 mm"
+        });
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(fixture)
+        });
+
+        StringAssert.Contains(html, "<li><span>Right front spring perch offset</span><b>set -95 mm</b><small>now -98 mm</small></li>");
+        Assert.DoesNotContain("-98 mm → -95 mm", html);
+        var kept = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(Fixture())
+        });
+        StringAssert.Contains(kept, "<li><span>Front brake bias</span><b>keep 56.5%</b></li>");
+    }
+
+    [TestMethod]
+    public async Task InsideMinusOutsideCarriesItsUnitEverywhere()
+    {
+        // Track A 10: the table's inside-outside figure read only "°".
+        var html = await RenderSelected(Fixture(), 1);
+        StringAssert.Contains(Row(html, 1), "<i>LF</i><b>−69 °F</b>");
+        StringAssert.Contains(Tires(html), "I−O −69 °F");
+        Assert.DoesNotContain("°<", Row(html, 1).Replace("°F<", "", StringComparison.Ordinal), "No bare degree sign.");
+        Assert.AreEqual("+7 °F", TestDayView.Degrees(7.2));
+    }
+
+    [TestMethod]
+    public async Task TheDetailComparesBothWindowsAndTheFallOffAtEqualAge()
+    {
+        // Track A 2 and 3: the verdict used one window of laps 2-10; the detail now shows laps 2-5, the last
+        // five laps both runs reached, the fall-off over the same laps and the noise the thresholds use.
+        var detail = Tires(await RenderSelected(Fixture(), 3));
+
+        StringAssert.Contains(detail, "data-pair-window=\"early\"");
+        StringAssert.Contains(detail, "data-pair-window=\"late\"");
+        StringAssert.Contains(detail, "data-pair-window=\"fall_off\"");
+        StringAssert.Contains(detail, "Laps 12–16<small> · 5 laps</small>");
+        StringAssert.Contains(detail, "Faster · beyond ±0.033");
+        StringAssert.Contains(detail, "Lap-to-lap noise 0.021 s from 22 pairs of consecutive clean laps of both runs after lap 5");
+
+        var fixture = Fixture();
+        var fallOff = fixture["runs"]![2]!["fall_off"]!.AsObject();
+        fallOff["status"] = "not_measured";
+        fallOff["slope_s_per_lap"] = null;
+        fallOff["reason"] = "Too short for fall-off: the last clean lap is lap 7; 8 are needed so laps 2–5, where the tires come in, are not read as fall-off.";
+        StringAssert.Contains(Row(await RenderSelected(fixture, 3), 3), ">Too short</span>", "A short run's warm-up is not reported as fall-off.");
+    }
+
+    [TestMethod]
+    public async Task TheChartScalesTimeToCleanLapsSoOneExcludedLapCannotFlattenIt()
+    {
+        // Track A 7, IRP 9/24: an excluded 62.5 s lap stretched the time axis to 0–60 s.
+        var fixture = Fixture();
+        var laps = fixture["runs"]![2]!["laps"]!.AsArray();
+        var slow = laps[4]!.AsObject();
+        slow["lap_time_s"] = 62.558;
+        slow["eligible"] = false;
+        slow["exclusion_reasons"] = new JsonArray("stopped_on_track");
+        var html = await RaceInvestigationPerformanceTests.Render<TestDayView>(new()
+        {
+            [nameof(TestDayView.Group)] = Day(),
+            [nameof(TestDayView.Review)] = Map(fixture)
+        });
+
+        var axis = System.Text.RegularExpressions.Regex.Matches(html, "class=\"ri-axis\">([0-9.]+)</text>")
+            .Select(match => double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)).Where(value => value > 20).ToArray();
+        Assert.IsNotEmpty(axis);
+        Assert.IsLessThan(25.0, axis.Max(), "The time axis spans the clean laps, not the excluded 62.5 s lap.");
+        StringAssert.Contains(html, "off-scale", "The excluded lap sits on the edge, marked as off the scale.");
+    }
+
+    [TestMethod]
+    public void TheTabScrollsAsOnePageWithAFixedChartAndNoBoxedTable()
+    {
+        // Track A 7 and 8: the chart shrank to ~20 px when the fit or a run's detail opened, the table sat in a
+        // 42vh box with both scrollbars, and the detail was cut off at 1280x800.
+        var css = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.UI", "wwwroot", "race-investigation.css"));
+        StringAssert.Contains(css, ".td-view { display: flex; flex-direction: column; gap: 8px; min-height: 0; height: 100%; overflow-y: auto;");
+        StringAssert.Contains(css, "height: clamp(300px, 44vh, 420px);");
+        StringAssert.Contains(css, ".td-chart .ri-plot { min-height: 150px; }");
+        StringAssert.Contains(css, ".td-chart .ri-run-legend { flex: 1 1 auto; max-height: 58px; overflow-y: auto;");
+        StringAssert.Contains(css, ".td-table { width: 100%; table-layout: fixed;");
+        Assert.DoesNotContain("max-height: 42vh", css);
+        var index = File.ReadAllText(Path.Combine(TestRepositoryPaths.CompanionAppRoot, "src", "iRacingCoach.App", "wwwroot", "index.html"));
+        StringAssert.Contains(index, "race-investigation.css?v=0.18.0&amp;build=13");
     }
 
     private static string Row(string html, int run)

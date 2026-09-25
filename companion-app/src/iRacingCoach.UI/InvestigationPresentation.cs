@@ -81,6 +81,9 @@ public static class InvestigationPresentation
         "lap_timing_unavailable" => "timing unavailable",
         "not_racing_state" => "not racing",
         "recorded_repair_disruption" => "repair",
+        "damage_repair_context" => "tow/repair review",
+        "first_lap_of_run" => "first lap of run",
+        "stopped_on_track" => "stopped on track",
         _ => code.Replace('_', ' ')
     };
 

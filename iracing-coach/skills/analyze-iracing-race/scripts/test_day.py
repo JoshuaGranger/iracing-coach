@@ -694,7 +694,8 @@ def _pair_fall_off(previous: Mapping[str, Any], current: Mapping[str, Any], leng
                               "previous_slope_s_per_lap": None, "current_slope_s_per_lap": None, "delta_s_per_lap": None,
                               "threshold_s_per_lap": None, "verdict": None, "reason": None}
     if length < MINIMUM_FALL_OFF_RUN_LAPS:
-        result.update(status="withheld", reason="One of the runs has no clean lap." if not length else (
+        # No label: "laps 2–5" would read as a fall-off measured over the warm-up.
+        result.update(status="withheld", label=None, reason="One of the runs has no clean lap." if not length else (
             f"Too short for fall-off: the shorter run's last clean lap is lap {length}; {MINIMUM_FALL_OFF_RUN_LAPS} are needed "
             f"so laps {EARLY_WINDOW[0]}–{EARLY_WINDOW[1]}, where the tires come in, are not read as fall-off."))
         return result

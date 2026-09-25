@@ -452,6 +452,61 @@ public sealed partial class CoordinatorTests
     }
 
     /// <summary>The backend fixture cut to one row per requested stint, pointing at those stints' analyses.</summary>
+    [TestMethod]
+    public async Task DescribeHandlingOpensTheLatestStintsRecordedSetupOnceTheDaysJobHasAnalyzedIt()
+    {
+        // Track A 9, IRP 9/24: the link was missing because the stints the day's job analyzed joined the
+        // tuning evidence only at the next inventory refresh, and when it did appear it chose the .sto
+        // file, whose file fingerprint stopped tuning at "The race setup fingerprint changed".
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-test-day-handling", Guid.NewGuid().ToString("N"));
+        var reports = Path.Combine(root, "data", "reports");
+        string PathFor(string selector) => Path.Combine(reports, selector.Replace(':', '-'), "analysis.json");
+        var backend = new FakeBackend(
+            discovery: TestDayDiscovery(
+                OfflineStint("local:run-1", "2026-08-06T23:00:00Z", 1, 2),
+                OfflineStint("local:run-2", "2026-08-06T23:50:00Z", 2, 2)),
+            responseOverride: (tool, _, arguments) =>
+            {
+                var args = JsonSerializer.SerializeToElement(arguments);
+                if (tool == "analyze_iracing_race")
+                {
+                    var selector = args.GetProperty("selector").GetString()!;
+                    Directory.CreateDirectory(Path.GetDirectoryName(PathFor(selector))!);
+                    File.WriteAllText(PathFor(selector), JsonSerializer.Serialize(new
+                    {
+                        analysis_id = selector, analysis_profile_version = "post-race-foundations-v21",
+                        identity = new
+                        {
+                            track_name = "New Hampshire Motor Speedway", event_type = "Test", car_path = "stockcars2 supra2019",
+                            setup_name = "claude test v4.sto", setup_fingerprint = "recorded-" + selector,
+                            setup = new { Chassis = new { Front = new { CrossWeight = "51.5%" } } }
+                        },
+                        race_summary = new { recorded_laps = 7 }
+                    }));
+                    return HomeAnalysisResponse(PathFor(selector), "Offline Testing", selector);
+                }
+                if (tool == "review_test_day")
+                    return TestDayReviewFor(args.GetProperty("analysis_paths").EnumerateArray().Select(path => path.GetString()!).ToArray());
+                return null;
+            });
+        using var state = new CompanionState(backend, new JsonSettingsStore(Path.Combine(root, "settings.json")));
+        state.Settings.CoachHome = root;
+        await state.RefreshDashboardAsync();
+        // The library's .sto file linked to the same recording carries only its file bytes' fingerprint.
+        state.Setups.Add(new LocalSetup("file:C:/SETUPS/CLAUDE TEST V4.STO", "claude test v4", "Supra", "New Hampshire", "User",
+            @"C:\setups\claude test v4.sto", "sto-file-sha256", "sto_only", "Local setup file.", [], AnalysisPaths: [PathFor("local:run-2")]));
+
+        await state.OpenRaceFromHomeAsync(state.EventSessions.Single(session => session.Id == "local:run-2"));
+
+        Assert.IsNotNull(state.CurrentTestDay, state.TestDayMessage);
+        var target = state.HandlingTargetFor(state.CurrentTestDay.Runs[^1]);
+        Assert.IsNotNull(target, "The day's job makes its analyzed stints tuning evidence without waiting for a refresh.");
+        Assert.AreEqual("recorded-local:run-2", target.SetupId, "The recorded setup, whose fingerprint tuning checks, not the .sto file.");
+        Assert.IsTrue(state.Races.Any(race => race.AnalysisPath == PathFor("local:run-2")));
+        Assert.IsNull(state.HandlingTargetFor(state.CurrentTestDay.Runs[^1] with { AnalysisPath = @"C:\elsewhere\analysis.json" }),
+            "No dead link for a run without recorded evidence.");
+    }
+
     private static JsonElement TestDayReviewFor(IReadOnlyList<string> analysisPaths)
     {
         var review = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "test-day-review.json")))!.AsObject();

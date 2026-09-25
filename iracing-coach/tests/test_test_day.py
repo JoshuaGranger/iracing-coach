@@ -439,7 +439,7 @@ class TestDayWindowTests(unittest.TestCase):
         self.assertTrue(fall_off["reason"].startswith("Too short for fall-off: the last clean lap is lap 7; 8 are needed"))
         self.assertIsNone(result["runs"][1]["trend"]["fit"])
         pair = result["runs"][1]["comparison"]["fall_off"]
-        self.assertEqual(pair["status"], "withheld")
+        self.assertEqual((pair["status"], pair["label"], pair["previous_slope_s_per_lap"]), ("withheld", None, None))
         self.assertIn("Too short for fall-off", pair["reason"])
 
     def test_the_late_window_never_shares_a_lap_with_laps_two_to_five(self) -> None:

@@ -47,7 +47,16 @@ public static class TestDayMapper
             runs,
             NextChange(RequiredObject(response, "next_change", "$")),
             Strings(response, "limitations", "$"),
-            response.Clone());
+            response.Clone())
+        {
+            UntimedRecordings = ArrayIfPresent(response, "untimed_recordings", "$").Select((item, index) =>
+            {
+                var at = $"untimed_recordings[{index}]";
+                return new TestDayUntimedRecording(RequiredInt(item, "recording", at), OptionalText(item, "analysis_id", at),
+                    OptionalText(item, "analysis_path", at), OptionalText(item, "recorded_at", at), OptionalText(item, "session_type", at),
+                    OptionalText(item, "setup_name", at), RequiredText(item, "reason", at));
+            }).ToArray()
+        };
     }
 
     private static TestDayWindows Windows(JsonElement item)
@@ -77,6 +86,7 @@ public static class TestDayMapper
         var tireStart = RequiredObject(conditions, "tire_start", $"{path}.conditions");
         var trend = NullableObject(item, "trend", path);
         var recording = item.TryGetProperty("recording", out _) ? RequiredObject(item, "recording", path) : default;
+        var noise = item.TryGetProperty("noise", out _) ? NullableObject(item, "noise", path) : default;
         RaceRunView? trendView;
         try { trendView = trend.ValueKind == JsonValueKind.Object ? RaceInvestigationMapper.RunView(trend) : null; }
         catch (JsonException exception) { throw new JsonException($"Invalid test-day trend at {path}.trend: {exception.Message}", exception); }
@@ -95,6 +105,9 @@ public static class TestDayMapper
                 ? new TestDayMeasuredRun(OptionalInt(measured, "analysis_run", $"{path}.measured_run"), RequiredInt(measured, "first_lap", $"{path}.measured_run"),
                     RequiredInt(measured, "last_lap", $"{path}.measured_run"), RequiredInt(measured, "run_laps", $"{path}.measured_run"),
                     RequiredInt(measured, "other_run_count", $"{path}.measured_run"))
+                {
+                    CleanRunLaps = measured.TryGetProperty("clean_run_laps", out _) ? OptionalInt(measured, "clean_run_laps", $"{path}.measured_run") : null
+                }
                 : null,
             new TestDayConditions(OptionalNumber(conditions, "track_temp_f", $"{path}.conditions"),
                 OptionalNumber(conditions, "start_fuel_gal", $"{path}.conditions"),
@@ -114,9 +127,31 @@ public static class TestDayMapper
             Recording = recording.ValueKind != JsonValueKind.Object ? null : new TestDayRecording(
                 RequiredInt(recording, "number", $"{path}.recording"), OptionalText(recording, "analysis_id", $"{path}.recording"),
                 OptionalText(recording, "analysis_path", $"{path}.recording"), OptionalText(recording, "recorded_at", $"{path}.recording"),
-                OptionalInt(recording, "run_in_recording", $"{path}.recording"), RequiredInt(recording, "runs_in_recording", $"{path}.recording"))
+                OptionalInt(recording, "run_in_recording", $"{path}.recording"), RequiredInt(recording, "runs_in_recording", $"{path}.recording")),
+            Noise = Noise(noise, $"{path}.noise")
         };
     }
+
+    private static TestDayNoise? Noise(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
+        RequiredText(item, "status", path), OptionalNumber(item, "noise_s", path),
+        item.TryGetProperty("difference_count", out _) ? RequiredInt(item, "difference_count", path) : 0,
+        item.TryGetProperty("basis", out _) ? OptionalText(item, "basis", path) : null,
+        item.TryGetProperty("reason", out _) ? OptionalText(item, "reason", path) : null);
+
+    private static TestDayPairWindow? PairWindow(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
+        RequiredText(item, "key", path), RequiredText(item, "status", path), OptionalText(item, "label", path),
+        OptionalInt(item, "first_run_lap", path), OptionalInt(item, "last_run_lap", path), OptionalText(item, "verdict", path),
+        Ints(item, "run_laps", path), OptionalNumber(item, "previous_median_s", path), OptionalNumber(item, "current_median_s", path),
+        OptionalNumber(item, "delta_s", path), OptionalNumber(item, "threshold_s", path), OptionalText(item, "reason", path));
+
+    private static TestDayPairFallOff? PairFallOff(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
+        RequiredText(item, "status", path), OptionalText(item, "label", path), OptionalNumber(item, "previous_slope_s_per_lap", path),
+        OptionalNumber(item, "current_slope_s_per_lap", path), OptionalNumber(item, "delta_s_per_lap", path),
+        OptionalNumber(item, "threshold_s_per_lap", path), OptionalText(item, "verdict", path), OptionalText(item, "reason", path));
+
+    /// <summary>An optional object added after v1 shipped: absent or null is default; present must be an object.</summary>
+    private static JsonElement ObjectIfPresent(JsonElement item, string name, string path) =>
+        item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out _) ? NullableObject(item, name, path) : default;
 
     private static TestDayWindow Window(JsonElement item, string path) => new(
         RequiredText(item, "status", path), OptionalInt(item, "first_run_lap", path), OptionalInt(item, "last_run_lap", path),
@@ -146,17 +181,27 @@ public static class TestDayMapper
             OptionalText(change, "unit", at));
     }).ToArray();
 
-    private static TestDayComparison? Comparison(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
-        RequiredInt(item, "compared_with_run", path), RequiredText(item, "verdict", path), OptionalText(item, "blocked_by", path),
-        OptionalText(item, "basis", path), OptionalText(item, "window_label", path), OptionalInt(item, "first_run_lap", path),
-        OptionalInt(item, "last_run_lap", path), OptionalNumber(item, "previous_median_s", path), OptionalNumber(item, "current_median_s", path),
-        OptionalNumber(item, "delta_s", path), OptionalNumber(item, "threshold_s", path), OptionalNumber(item, "standard_error_s", path),
-        Strings(item, "reasons", path), Strings(item, "flags", path), OptionalText(item, "summary", path))
+    private static TestDayComparison? Comparison(JsonElement item, string path)
     {
-        RunLaps = IntsIfPresent(item, "run_laps", path),
-        PreviousLaps = IntsIfPresent(item, "previous_laps", path),
-        CurrentLaps = IntsIfPresent(item, "current_laps", path)
-    };
+        if (item.ValueKind != JsonValueKind.Object) return null;
+        var windows = ObjectIfPresent(item, "windows", path);
+        return new(
+            RequiredInt(item, "compared_with_run", path), RequiredText(item, "verdict", path), OptionalText(item, "blocked_by", path),
+            OptionalText(item, "basis", path), OptionalText(item, "window_label", path), OptionalInt(item, "first_run_lap", path),
+            OptionalInt(item, "last_run_lap", path), OptionalNumber(item, "previous_median_s", path), OptionalNumber(item, "current_median_s", path),
+            OptionalNumber(item, "delta_s", path), OptionalNumber(item, "threshold_s", path), OptionalNumber(item, "standard_error_s", path),
+            Strings(item, "reasons", path), Strings(item, "flags", path), OptionalText(item, "summary", path))
+        {
+            RunLaps = IntsIfPresent(item, "run_laps", path),
+            PreviousLaps = IntsIfPresent(item, "previous_laps", path),
+            CurrentLaps = IntsIfPresent(item, "current_laps", path),
+            CommonRunLaps = item.TryGetProperty("common_run_laps", out _) ? OptionalInt(item, "common_run_laps", path) : null,
+            Noise = Noise(ObjectIfPresent(item, "noise", path), $"{path}.noise"),
+            EarlyWindow = PairWindow(ObjectIfPresent(windows, "early", $"{path}.windows"), $"{path}.windows.early"),
+            LateWindow = PairWindow(ObjectIfPresent(windows, "late", $"{path}.windows"), $"{path}.windows.late"),
+            FallOff = PairFallOff(ObjectIfPresent(item, "fall_off", path), $"{path}.fall_off")
+        };
+    }
 
     private static TestDayTires Tires(JsonElement item, string path)
     {
@@ -167,7 +212,12 @@ public static class TestDayMapper
             new TestDayStopReading(RequiredText(stop, "status", $"{path}.stop_reading"), RequiredText(stop, "source", $"{path}.stop_reading"),
                 OptionalText(stop, "measurement_status", $"{path}.stop_reading"), OptionalText(stop, "reason", $"{path}.stop_reading"))
             {
-                Temperature = stop.TryGetProperty("temperature", out _) ? OptionalText(stop, "temperature", $"{path}.stop_reading") : null
+                Temperature = stop.TryGetProperty("temperature", out _) ? OptionalText(stop, "temperature", $"{path}.stop_reading") : null,
+                HotPressure = ObjectIfPresent(stop, "hot_pressure", $"{path}.stop_reading") is { ValueKind: JsonValueKind.Object } hot
+                    ? new TestDayHotPressure(RequiredText(hot, "status", $"{path}.stop_reading.hot_pressure"),
+                        OptionalText(hot, "source", $"{path}.stop_reading.hot_pressure"), OptionalInt(hot, "matched_run", $"{path}.stop_reading.hot_pressure"),
+                        OptionalText(hot, "reason", $"{path}.stop_reading.hot_pressure"))
+                    : null
             },
             new TestDaySheetReading(RequiredText(sheet, "status", $"{path}.sheet_reading"), RequiredText(sheet, "source", $"{path}.sheet_reading"),
                 RequiredText(sheet, "timing", $"{path}.sheet_reading"), RequiredText(sheet, "timing_note", $"{path}.sheet_reading"))
@@ -188,7 +238,11 @@ public static class TestDayMapper
                 Bands(NullableObject(stop, "temperature_f", $"{path}.stop"), $"{path}.stop.temperature_f"),
                 Bands(NullableObject(stop, "tread_percent", $"{path}.stop"), $"{path}.stop.tread_percent"),
                 OptionalNumber(stop, "pressure_psi", $"{path}.stop"), OptionalText(stop, "pressure_kind", $"{path}.stop"),
-                OptionalNumber(stop, "spread_f", $"{path}.stop"), OptionalNumber(stop, "minimum_tread_percent", $"{path}.stop")),
+                OptionalNumber(stop, "spread_f", $"{path}.stop"), OptionalNumber(stop, "minimum_tread_percent", $"{path}.stop"))
+            {
+                ColdPressurePsi = stop.TryGetProperty("cold_pressure_psi", out _) ? OptionalNumber(stop, "cold_pressure_psi", $"{path}.stop") : null,
+                HotPressurePsi = stop.TryGetProperty("hot_pressure_psi", out _) ? OptionalNumber(stop, "hot_pressure_psi", $"{path}.stop") : null
+            },
             sheet.ValueKind != JsonValueKind.Object ? null : new TestDaySheetCorner(
                 Bands(NullableObject(sheet, "temperature_f", $"{path}.sheet"), $"{path}.sheet.temperature_f"),
                 Bands(NullableObject(sheet, "tread_percent", $"{path}.sheet"), $"{path}.sheet.tread_percent"),
