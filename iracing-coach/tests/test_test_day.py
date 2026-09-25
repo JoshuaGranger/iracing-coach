@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import analysis_engine  # noqa: E402
 import ibt_reader  # noqa: E402
 import setup_catalog  # noqa: E402
+import test_day  # noqa: E402
 import tuning_engine  # noqa: E402
 import tuning_workflow  # noqa: E402
 from test_ibt_reader import build_ibt  # noqa: E402
@@ -231,6 +232,467 @@ class TestDayGroupingTests(unittest.TestCase):
             self.assertNotIn("test_day_id", by_file["later.ibt"])
             self.assertNotIn("test_day_id", by_file["offline-race.ibt"])
             self.assertTrue(by_file["offline-race.ibt"]["is_race"])
+
+
+RULES = tuning_engine.load_structured_tuning_rules()
+
+
+def stall_observation(*, lf_outside: float = 176.0) -> dict:
+    """Pit-stall telemetry equal to `car_setup()`'s sheet: bands in car-left order."""
+
+    return {"tires": {
+        "LF": {"remaining_percent": {"L": 97.0, "M": 98.0, "R": 100.0},
+               "carcass_temperature_f": {"CL": lf_outside, "CM": 147.2, "CR": 105.8},
+               "pressure": {"psi": 17.0, "kind": "live"}},
+        "RF": {"remaining_percent": {"L": 95.0, "M": 95.0, "R": 98.0},
+               "carcass_temperature_f": {"CL": 224.6, "CM": 210.2, "CR": 188.6},
+               "pressure": {"psi": 28.0, "kind": "live"}},
+        "LR": {"remaining_percent": {"L": 99.0, "M": 99.0, "R": 100.0},
+               "carcass_temperature_f": {"CL": 174.2, "CM": 168.8, "CR": 158.0}},
+        "RR": {"remaining_percent": {"L": 99.0, "M": 99.0, "R": 99.0},
+               "carcass_temperature_f": {"CL": 165.2, "CM": 161.6, "CR": 156.2}},
+    }}
+
+
+def stint_analysis(identifier: str, hour: float, *, laps: int = 20, base: float = 24.0, slope: float = 0.01,
+                   noise: float = 0.0, setup: dict | None = None, fixed: bool | None = False,
+                   track_temp: float | None = 80.0, fuel_l: float | None = 60.0, car_path: str = "stockcars2 supra2019",
+                   track_id: int = 559, config: str = "Oval", compound: str | None = None,
+                   session_type: str = "Offline Testing", flag_state: str = "caution",
+                   stop_status: str = "measured_at_stop", observation: dict | None = None) -> dict:
+    """One synthetic stint shaped like a real Offline Testing analysis.
+
+    Lap time is `base + slope * run_lap`, alternately +/- `noise`, so every
+    median, fit and scatter below is known exactly. Laps are "caution" by
+    default because Offline Testing recordings are classified that way.
+    """
+
+    moment = f"2026-08-04T{int(hour):02d}:{int(round((hour % 1) * 60)):02d}:00+00:00"
+    rows = []
+    for number in range(1, laps + 1):
+        rows.append({
+            "lap": number, "complete": True, "flag_state": flag_state, "green_fraction": 0.0 if flag_state == "caution" else 1.0,
+            "pit_time_s": 0.0, "racing_state_fraction": 1.0,
+            "lap_time_s": round(base + slope * number + (noise if number % 2 else -noise), 3),
+            "clean_context": {"on_track_fraction": 1.0, "traffic_proximity_fraction": 0.0},
+            "conditions": {"track_temperature_f": track_temp},
+            "fuel": {"start_l": fuel_l - 0.75 * (number - 1) if fuel_l is not None else None},
+            "speed": {"minimum_mph": 118.0},
+        })
+    return {
+        "analysis_id": identifier,
+        "identity": {"session_start": moment, "event_type": "Test" if session_type == "Offline Testing" else session_type,
+                     "track_id": track_id, "track_name": "Iowa Speedway", "track_config": config,
+                     "car_id": 116, "car_name": "Toyota Supra", "car_path": car_path, "is_fixed_setup": fixed,
+                     "setup_name": f"{identifier}.sto", "tire_compound": compound,
+                     "setup": setup if setup is not None else car_setup()},
+        "source": {"selection": {"sim_session_type": session_type}},
+        "laps": rows,
+        "runs": [{"run_number": 1, "start_lap": 1, "end_lap": laps, "fuel": {"start_l": fuel_l},
+                  "tire_measurement_status": stop_status,
+                  "tire_observation": observation if observation is not None else (stall_observation() if stop_status == "measured_at_stop" else None)}],
+        "damage_repair": {"incident_points": {"events": []}},
+    }
+
+
+def review(*analyses: dict) -> dict:
+    return test_day.build_test_day_review(list(analyses), RULES)
+
+
+class TestDayWindowTests(unittest.TestCase):
+    """Backend 3: equal-age windows, fall-off and the screen behind them."""
+
+    def test_twenty_and_fifteen_lap_runs_share_laps_eleven_to_fifteen(self) -> None:
+        result = review(stint_analysis("a", 9, laps=20), stint_analysis("b", 10, laps=15))
+        self.assertEqual(result["windows"]["late"]["label"], "Laps 11–15")
+        self.assertEqual(result["windows"]["fall_off"]["last_run_lap"], 15)
+        first, second = result["runs"]
+        for row in (first, second):
+            self.assertEqual(row["early"]["laps"], [2, 3, 4, 5])  # lap 1 is never a pace sample
+            self.assertEqual(row["late"]["laps"], [11, 12, 13, 14, 15])
+            self.assertEqual(row["late"]["status"], "measured")
+            self.assertEqual(row["laps"][0]["exclusion_reasons"], ["first_lap_of_run"])
+            self.assertFalse(row["laps"][0]["eligible"])
+            self.assertEqual(row["fall_off"]["laps"], list(range(2, 16)))
+        self.assertEqual(first["early"]["median_s"], 24.035)
+        self.assertEqual(first["late"]["median_s"], 24.13)
+        self.assertEqual(first["fall_off"]["slope_s_per_lap"], 0.01)
+        self.assertEqual(first["laps"][13]["label"], "Run 1 · lap 14")
+        self.assertEqual(first["trend"]["x_axis"], "run_lap")
+        self.assertEqual(first["trend"]["fit"]["eligible_count"], 19)
+
+    def test_late_window_is_withheld_when_no_run_reaches_eight_laps(self) -> None:
+        result = review(stint_analysis("a", 9, laps=7), stint_analysis("b", 10, laps=6))
+        self.assertEqual(result["windows"]["late"]["status"], "withheld")
+        self.assertEqual(result["windows"]["fall_off"]["label"], "Laps 2–5")
+        second = result["runs"][1]
+        self.assertEqual(second["late"]["status"], "not_measured")
+        self.assertIsNone(second["late"]["median_s"])
+        self.assertEqual(second["comparison"]["basis"], "early_window")
+
+    def test_a_short_run_does_not_shorten_the_late_window_for_everyone(self) -> None:
+        result = review(stint_analysis("a", 9, laps=20), stint_analysis("b", 10, laps=6), stint_analysis("c", 11, laps=18))
+        self.assertEqual(result["windows"]["late"]["label"], "Laps 14–18")
+        short = result["runs"][1]
+        self.assertEqual(short["late"]["reason"], "The run ended at lap 6, before lap 18.")
+        self.assertFalse(short["fall_off"]["equal_age"])
+        self.assertEqual(result["runs"][2]["comparison"]["basis"], "early_window")
+
+    def test_a_window_needs_three_clean_laps(self) -> None:
+        analysis = stint_analysis("b", 10)
+        for lap in analysis["laps"][2:4]:  # laps 3 and 4
+            lap["clean_context"]["traffic_proximity_fraction"] = 0.4
+        row = review(stint_analysis("a", 9), analysis)["runs"][1]
+        self.assertEqual(row["early"]["laps"], [2, 5])
+        self.assertEqual(row["early"]["status"], "not_measured")
+        self.assertIsNone(row["early"]["median_s"])
+        self.assertEqual(row["early"]["reason"], "2 clean laps in laps 2–5; 3 are needed.")
+
+    def test_offline_testing_caution_classification_is_ignored_but_not_elsewhere(self) -> None:
+        offline = review(stint_analysis("a", 9), stint_analysis("b", 10))
+        self.assertEqual(offline["screening"]["offline_flag_rule_runs"], [1, 2])
+        self.assertEqual(offline["runs"][0]["early"]["status"], "measured")
+        self.assertIn("one-lap-to-green", offline["screening"]["offline_flag_rule"])
+        hosted = review(stint_analysis("a", 9, session_type="Practice"), stint_analysis("b", 10, session_type="Practice"))
+        self.assertEqual(hosted["screening"]["offline_flag_rule_runs"], [])
+        self.assertEqual(hosted["runs"][0]["early"]["status"], "not_measured")
+        self.assertIn("caution_or_mixed", hosted["runs"][0]["laps"][3]["exclusion_reasons"])
+        green = review(stint_analysis("a", 9, session_type="Practice", flag_state="green"),
+                       stint_analysis("b", 10, session_type="Practice", flag_state="green"))
+        self.assertEqual(green["runs"][0]["early"]["status"], "measured")
+
+    def test_a_car_stopped_on_track_is_not_a_pace_sample(self) -> None:
+        analysis = stint_analysis("b", 10)
+        analysis["laps"][3]["speed"]["minimum_mph"] = 0.0
+        analysis["laps"][3]["lap_time_s"] = 138.419
+        row = review(stint_analysis("a", 9), analysis)["runs"][1]
+        self.assertIn("stopped_on_track", row["laps"][3]["exclusion_reasons"])
+        self.assertEqual(row["early"]["laps"], [2, 3, 5])
+        self.assertNotIn(4, row["fall_off"]["laps"])
+
+    def test_missing_conditions_are_not_measured_never_zero(self) -> None:
+        result = review(stint_analysis("a", 9), stint_analysis("b", 10, track_temp=None, fuel_l=None))
+        conditions = result["runs"][1]["conditions"]
+        self.assertIsNone(conditions["track_temp_f"])
+        self.assertIsNone(conditions["start_fuel_gal"])
+        self.assertIsNone(result["runs"][1]["comparison"]["delta_s"])
+
+
+class TestDayVerdictTests(unittest.TestCase):
+    def test_faster_slower_and_the_threshold_edge(self) -> None:
+        # Perfectly linear laps have no scatter, so the threshold is the 0.03 s floor.
+        edge = review(stint_analysis("a", 9), stint_analysis("b", 10, base=23.97))["runs"][1]["comparison"]
+        self.assertEqual((edge["delta_s"], edge["threshold_s"]), (-0.03, 0.03))
+        self.assertEqual(edge["verdict"], "within_scatter")
+        self.assertEqual(edge["basis"], "late_window")
+        self.assertEqual(edge["window_label"], "Laps 16–20")
+        past = review(stint_analysis("a", 9), stint_analysis("b", 10, base=23.969))["runs"][1]["comparison"]
+        self.assertEqual((past["verdict"], past["delta_s"]), ("faster", -0.031))
+        slower = review(stint_analysis("a", 9), stint_analysis("b", 10, base=24.031))["runs"][1]["comparison"]
+        self.assertEqual((slower["verdict"], slower["delta_s"]), ("slower", 0.031))
+        self.assertIn("0.031 s slower than run 1", slower["summary"])
+        verdicts = {row["comparison"]["verdict"] for row in review(
+            stint_analysis("a", 9), stint_analysis("b", 10), stint_analysis("c", 11, base=23.8),
+            stint_analysis("d", 12, base=24.2), stint_analysis("e", 13, fuel_l=40.0))["runs"][1:]}
+        self.assertEqual(verdicts, {"within_scatter", "faster", "slower", "not_comparable"})
+
+    def test_scatter_widens_the_threshold(self) -> None:
+        result = review(stint_analysis("a", 9, noise=0.1), stint_analysis("b", 10, base=23.9, noise=0.1))
+        comparison = result["runs"][1]["comparison"]
+        scatter = result["runs"][0]["fall_off"]["scatter_s"]
+        self.assertGreater(scatter, 0.09)
+        expected = round(2 * ((test_day.MEDIAN_STANDARD_ERROR_FACTOR * scatter / 5 ** 0.5) ** 2 * 2) ** 0.5, 3)
+        self.assertAlmostEqual(comparison["threshold_s"], expected, places=2)
+        self.assertEqual(comparison["verdict"], "within_scatter")
+        self.assertGreater(comparison["threshold_s"], 0.1)
+
+    def test_every_not_comparable_reason_is_stated(self) -> None:
+        cases = {
+            "different car": ({"car_path": "stockcars2 camaro2019"}, "different car"),
+            "configuration": ({"config": "Road"}, "another track configuration"),
+            "fixed setup": ({"fixed": True}, "not recorded on an open setup"),
+            "unknown setup type": ({"fixed": None}, "does not record whether its setup was open"),
+            "track temperature": ({"track_temp": 86.0}, "Track temperature 80 → 86 °F"),
+            "track temperature missing": ({"track_temp": None}, "Track temperature was not recorded for run 2"),
+            "fuel": ({"fuel_l": 52.0}, "Starting fuel 15.8 → 13.7 gal"),
+            "fuel missing": ({"fuel_l": None}, "Starting fuel was not recorded for run 2"),
+            "compound": ({"compound": "wet"}, "Tire compound dry → wet"),
+        }
+        for name, (changes, expected) in cases.items():
+            with self.subTest(name):
+                first = stint_analysis("a", 9, compound="dry" if name == "compound" else None)
+                comparison = review(first, stint_analysis("b", 10, **changes))["runs"][1]["comparison"]
+                self.assertEqual(comparison["verdict"], "not_comparable")
+                self.assertEqual(comparison["blocked_by"], "conditions")
+                self.assertTrue(any(expected in reason for reason in comparison["reasons"]), comparison["reasons"])
+                self.assertIsNone(comparison["delta_s"])
+        # Just inside both limits is comparable.
+        near = review(stint_analysis("a", 9), stint_analysis("b", 10, track_temp=84.9, fuel_l=53.0))["runs"][1]["comparison"]
+        self.assertNotEqual(near["verdict"], "not_comparable")
+        short = review(stint_analysis("a", 9, laps=4), stint_analysis("b", 10))["runs"][1]["comparison"]
+        self.assertEqual((short["verdict"], short["blocked_by"]), ("not_comparable", "measurement"))
+
+    def test_unrecorded_compound_and_used_tires_are_flags_not_blocks(self) -> None:
+        second = stint_analysis("b", 10)
+        second["corner_tire_age"] = {"runs": [{"tire_age_basis": {"initial_zero_evidence": {
+            "initial_odometer_m": {"LF": 1400.0, "RF": 1400.0, "LR": 1400.0, "RR": 1400.0}}}}]}
+        comparison = review(stint_analysis("a", 9), second)["runs"][1]["comparison"]
+        self.assertNotEqual(comparison["verdict"], "not_comparable")
+        self.assertTrue(any("compound is not recorded" in flag for flag in comparison["flags"]))
+        self.assertTrue(any("may have started on used tires" in flag and "1,400 m" in flag for flag in comparison["flags"]))
+
+    def test_stints_are_ordered_by_recording_time(self) -> None:
+        result = review(stint_analysis("late", 11), stint_analysis("early", 9))
+        self.assertEqual([row["analysis_id"] for row in result["runs"]], ["early", "late"])
+        self.assertIsNone(result["runs"][0]["comparison"])
+        self.assertEqual(result["runs"][0]["setup_change"]["status"], "first_run")
+
+
+def json_text(value: dict) -> str:
+    import json
+
+    return json.dumps(value, ensure_ascii=False, allow_nan=False)
+
+
+class TestDaySetupChangeTests(unittest.TestCase):
+    def test_new_sheet_readings_on_the_same_setup_are_no_change(self) -> None:
+        repeat = car_setup(update_count=9, lf_temps="60C, 48C, 38C", rf_tread="99%, 99%, 99%")
+        change = review(stint_analysis("a", 9), stint_analysis("b", 10, setup=repeat))["runs"][1]["setup_change"]
+        self.assertEqual(change["status"], "unchanged")
+        self.assertEqual(change["changes"], [])
+
+    def test_a_changed_setting_is_listed_with_both_values(self) -> None:
+        change = review(stint_analysis("a", 9), stint_analysis("b", 10, setup=car_setup(cross_weight="50.4%")))["runs"][1]["setup_change"]
+        self.assertEqual(change["status"], "changed")
+        self.assertEqual(change["change_count"], 1)
+        item = change["changes"][0]
+        self.assertEqual((item["field"], item["previous"], item["current"]), ("chassis.front.cross_weight", "50.0%", "50.4%"))
+        self.assertAlmostEqual(item["delta"], 0.4, places=4)
+        self.assertEqual(item["label"], "Front cross weight")
+
+    def test_a_setting_in_only_one_run_is_unknown_not_a_change(self) -> None:
+        setup = car_setup()
+        setup["Chassis"]["Rear"] = {"RearEndRatio": "4.11"}
+        change = review(stint_analysis("a", 9), stint_analysis("b", 10, setup=setup))["runs"][1]["setup_change"]
+        self.assertEqual(change["status"], "unknown")
+        self.assertEqual(change["unknown_fields"], ["chassis.rear.rear_end_ratio"])
+        missing = stint_analysis("b", 10)
+        missing["identity"]["setup"] = {}
+        change = review(stint_analysis("a", 9), missing)["runs"][1]["setup_change"]
+        self.assertEqual(change["status"], "unknown")
+        self.assertIn("run 2", change["reason"])
+
+
+class TestDayTireTests(unittest.TestCase):
+    def test_stall_readings_are_oriented_and_agree_with_a_matching_sheet(self) -> None:
+        corners = review(stint_analysis("a", 9), stint_analysis("b", 10))["runs"][1]["tires"]["corners"]
+        lf, rf = corners["LF"], corners["RF"]
+        self.assertEqual(lf["stop"]["temperature_f"], {"inside": 105.8, "middle": 147.2, "outside": 176.0})
+        self.assertEqual(rf["stop"]["temperature_f"], {"inside": 224.6, "middle": 210.2, "outside": 188.6})
+        self.assertEqual(lf["stop"]["tread_percent"], {"inside": 100.0, "middle": 98.0, "outside": 97.0})
+        self.assertEqual(rf["stop"]["tread_percent"], {"inside": 95.0, "middle": 95.0, "outside": 98.0})
+        self.assertEqual(lf["stop"]["spread_f"], -70.2)
+        self.assertEqual(rf["stop"]["minimum_tread_percent"], 95.0)
+        self.assertEqual(lf["sheet_vs_stop"]["status"], "agree")
+        self.assertEqual(rf["sheet_vs_stop"]["status"], "agree")
+        self.assertEqual(lf["change_from_previous_stop"]["temperature_f"], {"inside": 0.0, "middle": 0.0, "outside": 0.0})
+
+    def test_a_sheet_that_disagrees_is_shown_as_disagreeing_and_never_attributed(self) -> None:
+        result = review(stint_analysis("a", 9), stint_analysis("b", 10, observation=stall_observation(lf_outside=150.0)))
+        tires = result["runs"][1]["tires"]
+        self.assertEqual(tires["corners"]["LF"]["sheet_vs_stop"],
+                         {"status": "disagree", "max_temperature_delta_f": 26.0, "max_tread_delta_percent": 0.0})
+        self.assertEqual(tires["corners"]["LF"]["change_from_previous_stop"]["temperature_f"]["outside"], -26.0)
+        self.assertEqual(tires["sheet_reading"]["timing"], "unverified")
+        self.assertEqual(tires["sheet_reading"]["source"], "garage_sheet")
+        self.assertEqual(tires["stop_reading"]["source"], "telemetry_pit_stall")
+
+    def test_a_run_ending_on_track_is_not_measured(self) -> None:
+        result = review(stint_analysis("a", 9), stint_analysis("b", 10, stop_status="unmeasured_final_run"))
+        tires = result["runs"][1]["tires"]
+        self.assertEqual(tires["stop_reading"]["status"], "not_measured")
+        self.assertEqual(tires["stop_reading"]["reason"], "The run ended on track; there is no stall reading.")
+        self.assertTrue(all(corner["stop"] is None for corner in tires["corners"].values()))
+        self.assertEqual(tires["corners"]["LF"]["sheet_vs_stop"]["status"], "not_compared")
+        self.assertIsNone(tires["corners"]["LF"]["change_from_previous_stop"])
+        stale = review(stint_analysis("a", 9), stint_analysis("b", 10, stop_status="stale_or_unconfirmed_at_stop"))
+        self.assertEqual(stale["runs"][1]["tires"]["stop_reading"]["status"], "not_measured")
+
+
+class TestDayNextChangeTests(unittest.TestCase):
+    """Exactly one card, by the approved priority order."""
+
+    def card(self, *analyses: dict) -> dict:
+        result = review(*analyses)
+        self.assertIsInstance(result["next_change"], dict)
+        self.assertIn("text", result["next_change"]["success_rule"])
+        return result["next_change"]
+
+    def test_a_slower_change_is_reverted_to_the_exact_previous_value(self) -> None:
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=24.2, setup=car_setup(cross_weight="50.4%")))
+        self.assertEqual(card["kind"], "revert")
+        self.assertEqual(card["changes"], [{"field": "chassis.front.cross_weight", "label": "Front cross weight", "from": "50.4%", "to": "50.0%"}])
+        self.assertEqual(card["title"], "Revert front cross weight to 50.0%")
+        self.assertEqual(card["success_rule"]["text"], "Beat 24.380 s median on laps 16–20 by at least 0.030 s with 3+ clean laps.")
+
+    def test_an_earlier_best_setup_is_returned_to(self) -> None:
+        card = self.card(stint_analysis("a", 9),
+                         stint_analysis("b", 10, base=24.3, setup=car_setup(cross_weight="50.4%")),
+                         stint_analysis("c", 11, base=24.2, setup=car_setup(cross_weight="50.4%", brake_bias="56.5%")))
+        self.assertEqual(card["kind"], "return_to_setup")
+        self.assertEqual(card["based_on_runs"], [1, 3])
+        self.assertEqual({item["field"]: item["to"] for item in card["changes"]},
+                         {"chassis.front.cross_weight": "50.0%", "chassis.front.front_brake_bias": "56.0%"})
+        self.assertIn("Run 1 still has the best late pace", card["evidence"][0])
+
+    def test_one_faster_ruleset_change_is_kept_with_one_more_quoted_step(self) -> None:
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=car_setup(brake_bias="56.5%")))
+        self.assertEqual(card["kind"], "keep_and_step")
+        step = card["ruleset_step"]
+        rule = next(item for item in RULES["settings"] if item["setting_id"] == "front-brake-bias")["directions"]["forward"]
+        self.assertEqual((step["setting_id"], step["direction"]), ("front-brake-bias", "forward"))
+        self.assertEqual((step["instruction"], step["expected_effect"], step["risk"]),
+                         (rule["instruction"], rule["expected_effect"], rule["risk"]))
+        self.assertFalse(step["step_verified"])
+        self.assertEqual(card["title"], "Keep front brake bias; try one more step")
+        self.assertEqual(card["success_rule"]["direction"], "faster")
+
+    def test_a_faster_change_outside_the_ruleset_is_kept_without_a_step(self) -> None:
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=nose_weight(car_setup(), "51.5%")))
+        self.assertEqual(card["kind"], "keep")
+        self.assertIsNone(card["ruleset_step"])
+        self.assertEqual(card["success_rule"]["direction"], "within")
+        # A rear track-bar pair raised together is one setting; the ruleset has no raise direction.
+        raised = car_setup()
+        raised["Chassis"]["LeftRear"]["TrackBarHeight"] = "10.25 in"
+        raised["Chassis"]["RightRear"]["TrackBarHeight"] = "10.25 in"
+        pair = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=raised))
+        self.assertEqual((pair["kind"], pair["ruleset_step"]), ("keep", None))
+        lowered = car_setup()
+        lowered["Chassis"]["LeftRear"]["TrackBarHeight"] = "9.75 in"
+        lowered["Chassis"]["RightRear"]["TrackBarHeight"] = "9.75 in"
+        step = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=lowered))
+        self.assertEqual((step["kind"], step["ruleset_step"]["direction"]), ("keep_and_step", "lower-equal"))
+
+    def test_several_changes_are_isolated_one_at_a_time(self) -> None:
+        both = nose_weight(car_setup(cross_weight="50.4%"), "51.5%")
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=both))
+        self.assertEqual(card["kind"], "isolate")
+        self.assertEqual(card["title"], "Test front cross weight alone")
+        self.assertEqual(card["changes"], [{"field": "chassis.front.nose_weight", "label": "Front nose weight", "from": "51.5%", "to": "51.0%"}])
+        self.assertEqual(card["success_rule"]["reference_run"], 1)
+
+    def test_within_scatter_repeats_unchanged(self) -> None:
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.99))
+        self.assertEqual(card["kind"], "repeat")
+        self.assertEqual(card["success_rule"]["text"], "Repeat 24.170 s median on laps 16–20 within ±0.030 s with 3+ clean laps.")
+        self.assertTrue(any("No garage setting changed" in item for item in card["evidence"]))
+
+    def test_not_comparable_asks_for_a_comparable_repeat(self) -> None:
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, fuel_l=45.0, setup=car_setup(cross_weight="50.4%")))
+        self.assertEqual(card["kind"], "repeat_comparable")
+        self.assertEqual(card["success_rule"]["direction"], "measure")
+        self.assertIn("within 2 gal", card["success_rule"]["text"])
+        short = self.card(stint_analysis("a", 9, laps=3), stint_analysis("b", 10))
+        self.assertEqual((short["kind"], short["success_rule"]["reference_run"]), ("repeat_comparable", 2))
+
+    def test_no_card_is_derived_from_tire_temperatures(self) -> None:
+        hot = stall_observation(lf_outside=260.0)
+        card = self.card(stint_analysis("a", 9), stint_analysis("b", 10, base=23.99, observation=hot))
+        self.assertEqual(card["kind"], "repeat")
+        self.assertIn("No setup direction is inferred from tire temperatures", card["note"])
+
+
+def nose_weight(setup: dict, value: str) -> dict:
+    setup["Chassis"]["Front"]["NoseWeight"] = value
+    return setup
+
+
+class TestDayInputTests(unittest.TestCase):
+    def test_the_review_needs_two_to_twelve_distinct_stints(self) -> None:
+        with self.assertRaisesRegex(test_day.TestDayError, "2–12 stints; 1"):
+            review(stint_analysis("a", 9))
+        with self.assertRaisesRegex(test_day.TestDayError, "2–12 stints; 13"):
+            review(*[stint_analysis(f"s{index}", 1 + index * 0.5) for index in range(13)])
+        with self.assertRaisesRegex(test_day.TestDayError, "more than once"):
+            review(stint_analysis("a", 9), stint_analysis("a", 10))
+
+    def test_missing_required_fields_fail_clearly(self) -> None:
+        for field, message in (("identity", "no identity"), ("laps", "no laps list"), ("runs", "no runs list")):
+            with self.subTest(field):
+                broken = stint_analysis("b", 10)
+                del broken[field]
+                with self.assertRaisesRegex(test_day.TestDayError, f"Stint 2 has {message}"):
+                    review(stint_analysis("a", 9), broken)
+        undated = stint_analysis("b", 10)
+        undated["identity"]["session_start"] = None
+        with self.assertRaisesRegex(test_day.TestDayError, "no recording time"):
+            review(stint_analysis("a", 9), undated)
+
+    def test_unknown_optional_fields_do_not_disturb_the_review(self) -> None:
+        extended = stint_analysis("b", 10)
+        extended["future_block"] = {"anything": [1, 2, 3]}
+        extended["laps"][4]["future_lap_field"] = "kept"
+        self.assertEqual(review(stint_analysis("a", 9), extended)["runs"][1]["early"]["status"], "measured")
+
+    def test_the_result_is_strict_json(self) -> None:
+        result = review(stint_analysis("a", 9), stint_analysis("b", 10, base=23.9, setup=car_setup(brake_bias="56.5%")))
+        self.assertEqual(result["contract"], "test-day-review-v1")
+        self.assertTrue(result["read_only"])
+        json_text(result)
+
+
+class TestDayWorkflowTests(unittest.TestCase):
+    """Backend 4: read-only and confined to archived analyses."""
+
+    def setUp(self) -> None:
+        import json
+        import tempfile
+
+        self.temporary = tempfile.TemporaryDirectory()
+        self.archive = Path(self.temporary.name) / "archive"
+        self.paths = []
+        for name, hour in (("stint-b", 10), ("stint-a", 9)):
+            path = self.archive / "reports" / name / "analysis.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(stint_analysis(name, hour)), encoding="utf-8")
+            self.paths.append(str(path))
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def snapshot(self) -> dict:
+        return {str(path): (path.stat().st_size, path.stat().st_mtime_ns) for path in Path(self.temporary.name).rglob("*")}
+
+    def test_the_workflow_reviews_archived_stints_without_writing(self) -> None:
+        before = self.snapshot()
+        result = test_day.review_test_day_workflow(analysis_paths=self.paths, archive_root=str(self.archive))
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual([row["analysis_id"] for row in result["runs"]], ["stint-a", "stint-b"])
+        self.assertEqual(result["runs"][0]["analysis_path"], str(Path(self.paths[1]).resolve()))
+        self.assertNotIn("The tuning ruleset is unavailable", " ".join(result["limitations"]))
+
+    def test_paths_must_be_distinct_archived_analysis_files(self) -> None:
+        outside = Path(self.temporary.name) / "elsewhere" / "analysis.json"
+        outside.parent.mkdir()
+        outside.write_text("{}", encoding="utf-8")
+        renamed = self.archive / "reports" / "stint-a" / "copy.json"
+        renamed.write_text("{}", encoding="utf-8")
+        broken = self.archive / "reports" / "broken" / "analysis.json"
+        broken.parent.mkdir()
+        broken.write_text("{not json", encoding="utf-8")
+        cases = (
+            ([self.paths[0], str(outside)], "within"),
+            ([self.paths[0], str(renamed)], "within"),
+            ([self.paths[0], self.paths[0]], "more than once"),
+            ([self.paths[0]], "2–12 stints; 1"),
+            (self.paths[0], "must be a list"),
+            ([self.paths[0], str(broken)], "could not be read"),
+        )
+        for paths, message in cases:
+            with self.subTest(message):
+                with self.assertRaisesRegex(test_day.TestDayError, message):
+                    test_day.review_test_day_workflow(analysis_paths=paths, archive_root=str(self.archive))
 
 
 if __name__ == "__main__":
