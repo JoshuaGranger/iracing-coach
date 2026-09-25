@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using iRacingCoach.BackendClient;
 using iRacingCoach.Contracts;
@@ -160,6 +161,38 @@ public sealed class SavedAnalysisLibraryTests
             Assert.AreEqual(1, status.Restored.UnresolvedSources);
             StringAssert.Contains(File.ReadAllText(Path.Combine(root, DurableArchiveService.ManifestFileName)), "race-3.ibt");
             CollectionAssert.AreEqual(original, File.ReadAllBytes(report));
+        }
+        finally
+        {
+            try { Directory.Delete(Path.GetDirectoryName(root)!, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    // Reading raw bytes made one invalid UTF-8 byte in a string throw
+    // InvalidOperationException from GetString, which escaped the per-file catch and
+    // aborted the whole backup check.
+    [TestMethod]
+    public void ArchiveScanSkipsAReportWithInvalidUtf8InsteadOfAbortingTheCheck()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "iracing-coach-tests", Guid.NewGuid().ToString("N"), "iRacing Coach");
+        var broken = Path.Combine(root, "data", "reports", "race-4", "analysis.json");
+        var good = Path.Combine(root, "data", "reports", "race-5", "analysis.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(broken)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(good)!);
+        var bytes = new List<byte>(Encoding.UTF8.GetBytes("{\"note\":\"bad "));
+        bytes.Add(0xFF);
+        bytes.AddRange(Encoding.UTF8.GetBytes("\",\"source\":\"Z:\\\\gone\\\\race-4.ibt\"}"));
+        File.WriteAllBytes(broken, bytes.ToArray());
+        File.WriteAllText(good, "{\"source\":\"Z:\\\\gone\\\\race-5.ibt\"}");
+        try
+        {
+            var service = new DurableArchiveService();
+            _ = service.PrepareForCopy(root, "0.18.0", "test");
+            var status = service.Initialize(root, "0.18.0", "test");
+
+            Assert.AreEqual(1, status.Restored.UnresolvedSources);
+            StringAssert.Contains(File.ReadAllText(Path.Combine(root, DurableArchiveService.ManifestFileName)), "race-5.ibt");
         }
         finally
         {

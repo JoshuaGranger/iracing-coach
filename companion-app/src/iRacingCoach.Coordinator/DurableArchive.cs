@@ -442,7 +442,7 @@ public sealed class DurableArchiveService : IDurableArchiveService
                         results.TryAdd(id, new(id, name, "Original iRacing telemetry is not present on this PC. Archived reports remain available; native-rate queries need the source file to be located."));
                     });
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException) { }
             }
         }
         return results.Values.OrderBy(item => item.FileName, StringComparer.OrdinalIgnoreCase).ToList();
