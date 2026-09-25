@@ -124,22 +124,32 @@ public static class TestDayMapper
 
     private static TestDaySetupChange SetupChange(JsonElement item, string path) => new(
         RequiredText(item, "status", path), OptionalInt(item, "compared_with_run", path), RequiredInt(item, "change_count", path),
-        Array(item, "changes", path).Select((change, index) =>
-        {
-            var at = $"{path}.changes[{index}]";
-            return new TestDaySettingChange(RequiredText(change, "field", at), RequiredText(change, "label", at),
-                OptionalScalar(change, "previous", at), OptionalScalar(change, "current", at), OptionalNumber(change, "delta", at),
-                OptionalText(change, "unit", at));
-        }).ToArray(),
+        Settings(Array(item, "changes", path), $"{path}.changes"),
         RequiredInt(item, "unknown_count", path), Strings(item, "unknown_fields", path), RequiredBoolean(item, "complete", path),
-        OptionalText(item, "reason", path));
+        OptionalText(item, "reason", path))
+    {
+        Readouts = Settings(ArrayIfPresent(item, "readouts", path), $"{path}.readouts")
+    };
+
+    private static TestDaySettingChange[] Settings(IReadOnlyList<JsonElement> items, string path) => items.Select((change, index) =>
+    {
+        var at = $"{path}[{index}]";
+        return new TestDaySettingChange(RequiredText(change, "field", at), RequiredText(change, "label", at),
+            OptionalScalar(change, "previous", at), OptionalScalar(change, "current", at), OptionalNumber(change, "delta", at),
+            OptionalText(change, "unit", at));
+    }).ToArray();
 
     private static TestDayComparison? Comparison(JsonElement item, string path) => item.ValueKind != JsonValueKind.Object ? null : new(
         RequiredInt(item, "compared_with_run", path), RequiredText(item, "verdict", path), OptionalText(item, "blocked_by", path),
         OptionalText(item, "basis", path), OptionalText(item, "window_label", path), OptionalInt(item, "first_run_lap", path),
         OptionalInt(item, "last_run_lap", path), OptionalNumber(item, "previous_median_s", path), OptionalNumber(item, "current_median_s", path),
         OptionalNumber(item, "delta_s", path), OptionalNumber(item, "threshold_s", path), OptionalNumber(item, "standard_error_s", path),
-        Strings(item, "reasons", path), Strings(item, "flags", path), OptionalText(item, "summary", path));
+        Strings(item, "reasons", path), Strings(item, "flags", path), OptionalText(item, "summary", path))
+    {
+        RunLaps = IntsIfPresent(item, "run_laps", path),
+        PreviousLaps = IntsIfPresent(item, "previous_laps", path),
+        CurrentLaps = IntsIfPresent(item, "current_laps", path)
+    };
 
     private static TestDayTires Tires(JsonElement item, string path)
     {
@@ -148,9 +158,15 @@ public static class TestDayMapper
         var corners = RequiredObject(item, "corners", path);
         return new TestDayTires(
             new TestDayStopReading(RequiredText(stop, "status", $"{path}.stop_reading"), RequiredText(stop, "source", $"{path}.stop_reading"),
-                OptionalText(stop, "measurement_status", $"{path}.stop_reading"), OptionalText(stop, "reason", $"{path}.stop_reading")),
+                OptionalText(stop, "measurement_status", $"{path}.stop_reading"), OptionalText(stop, "reason", $"{path}.stop_reading"))
+            {
+                Temperature = stop.TryGetProperty("temperature", out _) ? OptionalText(stop, "temperature", $"{path}.stop_reading") : null
+            },
             new TestDaySheetReading(RequiredText(sheet, "status", $"{path}.sheet_reading"), RequiredText(sheet, "source", $"{path}.sheet_reading"),
-                RequiredText(sheet, "timing", $"{path}.sheet_reading"), RequiredText(sheet, "timing_note", $"{path}.sheet_reading")),
+                RequiredText(sheet, "timing", $"{path}.sheet_reading"), RequiredText(sheet, "timing_note", $"{path}.sheet_reading"))
+            {
+                Uniform = sheet.TryGetProperty("uniform", out _) && RequiredBoolean(sheet, "uniform", $"{path}.sheet_reading")
+            },
             Corners.ToDictionary(corner => corner, corner => Corner(RequiredObject(corners, corner, $"{path}.corners"), $"{path}.corners.{corner}"),
                 StringComparer.Ordinal));
     }
@@ -182,7 +198,10 @@ public static class TestDayMapper
         : new TestDayBands(OptionalNumber(item, "inside", path), OptionalNumber(item, "middle", path), OptionalNumber(item, "outside", path));
 
     private static TestDayAgreement Agreement(JsonElement item, string path) => new(RequiredText(item, "status", path),
-        OptionalNumber(item, "max_temperature_delta_f", path), OptionalNumber(item, "max_tread_delta_percent", path));
+        OptionalNumber(item, "max_temperature_delta_f", path), OptionalNumber(item, "max_tread_delta_percent", path))
+    {
+        DisagreesOn = item.TryGetProperty("disagrees_on", out _) ? Strings(item, "disagrees_on", path) : []
+    };
 
     private static TestDayLap Lap(JsonElement item, string path) => new(
         RequiredInt(item, "lap", path), OptionalInt(item, "run_lap", path), OptionalNumber(item, "lap_time_s", path),
@@ -310,6 +329,13 @@ public static class TestDayMapper
         var value = Required(item, name, path);
         return value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().ToArray() : throw new JsonException($"Invalid test-day list: {path}.{name}.");
     }
+
+    /// <summary>An optional list added after v1 shipped: absent is empty; present must be a list.</summary>
+    private static IReadOnlyList<JsonElement> ArrayIfPresent(JsonElement item, string name, string path) =>
+        item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out _) ? Array(item, name, path) : [];
+
+    private static IReadOnlyList<int> IntsIfPresent(JsonElement item, string name, string path) =>
+        item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out _) ? Ints(item, name, path) : [];
 
     private static IReadOnlyList<string> Strings(JsonElement item, string name, string path) => Array(item, name, path)
         .Select(value => value.ValueKind == JsonValueKind.String ? value.GetString()! : throw new JsonException($"Invalid test-day text in {path}.{name}."))

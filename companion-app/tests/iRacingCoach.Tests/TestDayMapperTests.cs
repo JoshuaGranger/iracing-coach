@@ -88,6 +88,49 @@ public sealed class TestDayMapperTests
         Assert.AreEqual(1.5, review.Source.GetProperty("runs")[0].GetProperty("tires").GetProperty("corners").GetProperty("LF").GetProperty("future_band").GetDouble());
     }
 
+    [TestMethod]
+    public void MapperReadsTheFieldsAddedForDisplayAndToleratesTheirAbsence()
+    {
+        var fixture = Fixture();
+        var comparison = fixture["runs"]![2]!["comparison"]!.AsObject();
+        comparison["previous_laps"] = new JsonArray(13, 14, 15);
+        comparison["current_laps"] = new JsonArray(12, 14, 16);
+        fixture["runs"]![2]!["setup_change"]!["readouts"] = new JsonArray(new JsonObject
+        {
+            ["field"] = "chassis.front.cross_weight", ["label"] = "Front cross weight", ["previous"] = "52.1%", ["current"] = "52.4%",
+            ["delta"] = 0.3, ["unit"] = "%"
+        });
+
+        var review = Map(fixture);
+
+        CollectionAssert.AreEqual(new[] { 12, 13, 14, 15, 16 }, review.Runs[2].Comparison!.RunLaps.ToArray());
+        CollectionAssert.AreEqual(new[] { 13, 14, 15 }, review.Runs[2].Comparison!.PreviousLaps.ToArray());
+        Assert.AreEqual("Front cross weight", review.Runs[2].SetupChange.Readouts.Single().Label);
+        Assert.AreEqual("carcass", review.Runs[0].Tires.StopReading.Temperature);
+        Assert.IsFalse(review.Runs[0].Tires.SheetReading.Uniform);
+        CollectionAssert.AreEqual(new[] { "temperature" }, review.Runs[0].Tires.Corners["LF"].SheetVsStop.DisagreesOn.ToArray());
+
+        // A v1 backend from before these fields: absent reads as empty, never as a failure.
+        var older = Fixture();
+        foreach (var run in older["runs"]!.AsArray())
+        {
+            run!["setup_change"]!.AsObject().Remove("readouts");
+            if (run["comparison"] is JsonObject compared) { compared.Remove("run_laps"); compared.Remove("previous_laps"); compared.Remove("current_laps"); }
+            run["tires"]!["stop_reading"]!.AsObject().Remove("temperature");
+            run["tires"]!["sheet_reading"]!.AsObject().Remove("uniform");
+            foreach (var corner in run["tires"]!["corners"]!.AsObject()) corner.Value!["sheet_vs_stop"]!.AsObject().Remove("disagrees_on");
+        }
+        var mapped = Map(older);
+        Assert.IsEmpty(mapped.Runs[2].Comparison!.RunLaps);
+        Assert.IsEmpty(mapped.Runs[2].SetupChange.Readouts);
+        Assert.IsNull(mapped.Runs[0].Tires.StopReading.Temperature);
+        Assert.IsEmpty(mapped.Runs[0].Tires.Corners["LF"].SheetVsStop.DisagreesOn);
+
+        var wrong = Fixture();
+        wrong["runs"]![2]!["comparison"]!["run_laps"] = "12-16";
+        StringAssert.Contains(Assert.ThrowsExactly<JsonException>(() => Map(wrong)).Message, "runs[2].comparison.run_laps");
+    }
+
     private static void Remove(JsonObject root, string path)
     {
         JsonNode node = root;
