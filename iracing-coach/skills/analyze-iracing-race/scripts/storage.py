@@ -1541,8 +1541,15 @@ class ArchiveStore:
             if session_identity["session_phase"] not in (None, "", "unknown")
             else str(subsession)
         )
-        stamp = safe_slug(analysis.get("analyzed_at") or utc_now())
-        return self.reports_dir / context["season_key"] / safe_slug(session_key) / stamp
+        # analysis_id hashes the source bytes, analyzer revision, profile and
+        # exact session, so it names one analysis of one recording. Keying the
+        # directory by it makes re-analysis replace that report in place; the
+        # former analyzed_at stamp wrote a new full copy on every open (about
+        # 42 MB per Bristol race, 20 copies on 2026-09-21).
+        leaf = safe_slug(analysis.get("analysis_id"), "") or safe_slug(
+            analysis.get("analyzed_at") or utc_now()
+        )
+        return self.reports_dir / context["season_key"] / safe_slug(session_key) / leaf
 
     def save_report_artifacts(
         self,

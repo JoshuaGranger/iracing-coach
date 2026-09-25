@@ -517,6 +517,26 @@ class WorkflowLocalTests(unittest.TestCase):
             saved = json.loads(Path(retried["analysis_path"]).read_text(encoding="utf-8"))
             self.assertTrue(saved["source"]["raw_source_policy"]["raw_reanalysis_durable"])
 
+    def test_repeated_analysis_of_one_recording_keeps_one_report_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "race.ibt"
+            path.write_bytes(b"recording")
+            archive_root = Path(directory) / "archive"
+
+            first = self._analyze_explicit_file(path, archive_root, now="2026-09-21T00:07:38+00:00")
+            second = self._analyze_explicit_file(path, archive_root, now="2026-09-21T00:07:43+00:00")
+            third = self._analyze_explicit_file(path, archive_root, now="2026-09-21T03:54:20+00:00")
+
+            self.assertFalse(first["analysis_cache"]["hit"])
+            self.assertTrue(second["analysis_cache"]["hit"])
+            self.assertEqual(first["analysis_path"], second["analysis_path"])
+            self.assertEqual(second["analysis_path"], third["analysis_path"])
+            reports = sorted((archive_root / "reports").rglob("analysis.json"))
+            self.assertEqual(reports, [Path(third["analysis_path"])])
+            saved = json.loads(reports[0].read_text(encoding="utf-8"))
+            self.assertEqual(saved["analyzed_at"], "2026-09-21T03:54:20+00:00")
+            self.assertEqual(saved["analysis_id"], third["analysis_id"])
+
     def test_read_only_inventory_counts_artifacts_and_safe_app_settings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

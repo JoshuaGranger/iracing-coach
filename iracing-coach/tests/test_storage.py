@@ -618,5 +618,81 @@ class StorageRecentAnalysesTests(unittest.TestCase):
             self.assertEqual(rows[0]["session_group_id"], "subsession:42:1")
 
 
+def _report_analysis(identifier: str, analyzed_at: str, *, green_laps: int = 10) -> dict:
+    return {
+        "analysis_id": identifier,
+        "analyzed_at": analyzed_at,
+        "identity": {
+            "session_start": "2026-09-20T23:00:00+00:00",
+            "subsession_id": 88628993,
+            "session_id": 84,
+            "season_year": 2026,
+            "season_quarter": 3,
+            "car_name": "Toyota Supra",
+            "track_name": "Bristol",
+            "is_fixed_setup": True,
+        },
+        "race_summary": {"scheduled_laps": 250, "recorded_laps": 250},
+        "source": {
+            "telemetry_files": ["race.ibt"],
+            "selection": {
+                "group_id": "subsession:88628993:2",
+                "subsession_id": 88628993,
+                "sim_session_num": 2,
+                "sim_session_type": "Race",
+            },
+        },
+        "runs": [{"run_number": 1, "green_laps": green_laps}],
+    }
+
+
+class StorageReportDeduplicationTests(unittest.TestCase):
+    def test_reanalysis_of_one_recording_replaces_its_report_in_place(self) -> None:
+        # The app re-analyzes a recording on every open. Each run used to add a
+        # full report directory named by analyzed_at: 20 copies of one Bristol
+        # race (~42 MB each) accumulated on 2026-09-21.
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArchiveStore(directory)
+            first = _report_analysis("ae7b1748175fa9e9f5c6ae52", "2026-09-21T00:07:38+00:00")
+            second = _report_analysis("ae7b1748175fa9e9f5c6ae52", "2026-09-21T00:07:43+00:00")
+
+            one = store.save_report_artifacts(first, "# first", {"race-card.md": "card one"})
+            store.record_analysis(first, one["report"])
+            two = store.save_report_artifacts(second, "# second", {"race-card.md": "card two"})
+            store.record_analysis(second, two["report"])
+
+            self.assertEqual(one, two)
+            session_dir = Path(one["analysis"]).parent.parent
+            self.assertEqual([item.name for item in session_dir.iterdir()], ["ae7b1748175fa9e9f5c6ae52"])
+            self.assertEqual(Path(two["report"]).read_text(encoding="utf-8"), "# second\n")
+            self.assertEqual(Path(two["race-card.md"]).read_text(encoding="utf-8"), "card two")
+            saved = json.loads(Path(two["analysis"]).read_text(encoding="utf-8"))
+            self.assertEqual(saved["analyzed_at"], "2026-09-21T00:07:43+00:00")
+            self.assertEqual(
+                [
+                    path.name
+                    for path in session_dir.rglob("*")
+                    if path.is_file() and path.name.startswith(".")
+                ],
+                [],
+            )
+            rows = store.recent_analyses(limit=10)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["report_path"], two["report"])
+            self.assertTrue(rows[0]["report_available"])
+
+    def test_a_new_analyzer_revision_keeps_its_own_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArchiveStore(directory)
+            old = store.save_report_artifacts(
+                _report_analysis("revision-old", "2026-09-21T00:07:38+00:00"), "# old"
+            )
+            new = store.save_report_artifacts(
+                _report_analysis("revision-new", "2026-09-22T00:07:38+00:00"), "# new"
+            )
+            self.assertNotEqual(Path(old["analysis"]).parent, Path(new["analysis"]).parent)
+            self.assertEqual(Path(old["report"]).read_text(encoding="utf-8"), "# old\n")
+
+
 if __name__ == "__main__":
     unittest.main()
