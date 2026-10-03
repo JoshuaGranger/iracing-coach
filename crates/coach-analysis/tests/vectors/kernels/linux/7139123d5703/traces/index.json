@@ -1,0 +1,15 @@
+{
+ "calls": {
+  "analysis_engine._lap_trace_payload": 1,
+  "analysis_engine._track_profile": 1
+ },
+ "files": {
+  "analysis_engine._lap_trace_payload/00000.json": "91affc9dd71d483d6f54c08ee00bc1c1478ea0eb9bbee7542933a3bd66354a5d",
+  "analysis_engine._track_profile/00000.json": "b6ed6dd3c551a04e82208cd40e0b218b99b4de4884a91d9e9bbb056a725ad326"
+ },
+ "platform": "linux",
+ "python": "3.12.3",
+ "recording": "synthetic:review-unicode-text",
+ "sha256": "7139123d570359141770ce45fde069d11139ab0a4182a7dea723e7de3f4c0be2",
+ "target_hz": null
+}

@@ -17,7 +17,7 @@ Date 2026-10-03. Authority: owner decision D2 (staged Rust port, byte-identical 
 
 ### Hand-off
 
-`workflow._load_analysis_telemetry` reads `IRACING_COACH_NATIVE_STAGES` once per job through `native_stages.requested_stages()` and calls `native_stages.load_telemetry` instead of `ibt_reader.load_telemetry` when it names `decode` (two import lines and seven lines in `workflow.py`; `workflow.py` and the new `native_stages.py` are outside the analyzer bundle, so `analysis_id` is unchanged). `native_stages.load_telemetry` scans the recording in Python, starts `coach-analysis decode` with a JSON request on standard input, reads the store from a temporary directory, checks the store's source layout and columns against its own scan, and builds the reader's mapping key for key. An unknown stage name, a stage this build does not provide (`kernels`, `json_writer`), a missing executable, a failed decode or an inconsistent store fails the job with `NativeStageError`; nothing falls back to Python.
+`workflow._load_analysis_telemetry` reads `IRACING_COACH_NATIVE_STAGES` once per job through `native_stages.requested_stages()` and calls `native_stages.load_telemetry` instead of `ibt_reader.load_telemetry` when it names `decode` (two import lines and seven lines in `workflow.py`; `workflow.py` and the new `native_stages.py` are outside the analyzer bundle, so `analysis_id` is unchanged). `native_stages.load_telemetry` scans the recording in Python, starts `coach-analysis decode` with a JSON request on standard input, reads the store from a temporary directory, checks it against its own scan and request (below), and builds the reader's mapping key for key. An unknown stage name, a stage this build does not provide (`kernels`, `json_writer`), a missing executable, a failed decode or an inconsistent store fails the job with `NativeStageError`; nothing falls back to Python.
 
 The contract named a PyO3 module (`coach_native`) for every phase and left the column format open. Phase 1 uses an executable and a file instead, recorded in `worker-interface.md` section 7 through the contract change log:
 
@@ -25,7 +25,7 @@ The contract named a PyO3 module (`coach_native`) for every phase and left the c
 - the executable links no Python ABI, so the image needs no Python headers or matching interpreter at build time, and Windows and Linux builds are plain `cargo build`;
 - coach-server can write the same store at ingest later, and phase-2 kernels read it directly.
 
-PyO3 remains the plan for phase 2, where boundary B must return Python objects in process. `architecture.md` section 12 still describes phase 1 as PyO3; its owner should align that sentence with the contract.
+`architecture.md` section 12 now describes phase 1 as this executable and column store. Phase 2 keeps the process and file instead of PyO3 (`phase2-plan.md` section 4 gives the reason and the contract change it needs).
 
 ### Shared parsing
 
@@ -37,11 +37,13 @@ Per SDK type (`worker-interface.md` section 7 has the full table): bool as one b
 
 ### Coach column store
 
-Format version 1, `.ccs`: magic `COACHCS\0`, u32 version, u32 header length, a JSON header (source layout, sampling, channel mode, the sample-index block and one entry per column with its type, count, row offset, element and data block), then 8-byte-aligned blocks. Readers reject another magic or version, an unknown element, a block outside the file, and a column that does not match the scanned variable; unknown header fields are ignored. Rust: `coach_analysis::store` (writer and `ColumnStore` reader); Python: `native_stages.read_store`.
+Format version 1, `.ccs`: magic `COACHCS\0`, u32 version, u32 header length, a JSON header (source layout, sampling, channel mode, the sample-index block and one entry per column with its type, count, row offset, element and data block), then 8-byte-aligned blocks. Unknown header fields are ignored. Rust: `coach_analysis::store` (writer and `ColumnStore` reader); Python: `native_stages.read_store`.
+
+Validation (after the Codex Sol review, `reviews/port-phase1-review-codex-sol.md` findings 3 to 7 and 12). Both readers reject another magic, version or stage than `decode`, an unknown element or one that is not its type code's, and every block that is not wholly inside the data section, 8-byte aligned and exactly the length the header implies: `4 * sample_count` index bytes, `sample_count * count * width` per numeric column, `8 * (sample_count + 1)` offset bytes per text column with offsets rising from 0 to the text length over valid UTF-8 (Rust `ColumnStore::parse`; the Python reader also requires integer, non-boolean, non-negative offsets and lengths). Rust also requires `count > 0`, unique non-empty names and `text_offsets` exactly on `utf8` columns. The seam then requires the column names to equal `_normalise_channels`' selection in order (the whole catalogue in file order for `None`, else the requested names in caller order without repeats), each column's type, count and offset to equal the scanned variable, the source layout to equal the scan, and `target_hz`, `step`, `integral_step`, `sample_rate_hz` and every sample index to equal the reader's own `_sampling_plan` and `_iter_sample_indices`, bit for bit. Array columns are rebuilt 4,096 samples at a time, so no flat list of a whole column lives beside its rows.
 
 ### Float semantics
 
-The stage's only arithmetic is the sampling plan: `step = tick_rate / target` (one IEEE division of two exact doubles) and `position += step` with `int(position)` truncation. Rust `f64` does the same operations, so no compensated sum, `fsum` or `repr` is needed and `crates/coach-numerics` is not used (it was not present when this phase was built; nothing here needs consolidating into it). `crates/coach-analysis/tests/vectors/sampling.json` holds 510 cases produced by the oracle's own `_sampling_plan` and `_iter_sample_indices` with CPython 3.12.14 (five tick rates, seventeen targets including `30.000000000000004`, `59.99999999999999`, `1e-05`, zero and negative, six record counts up to 216,001), compared bit for bit on the step and output rate and by SHA-256 on the indices. The decode golden's matrix hash re-packs floats as Python's `struct.pack("<f", float(x))` does, which quiets a signalling NaN; the store itself keeps the stored bits.
+The stage's only arithmetic is the sampling plan: `step = tick_rate / target` (one IEEE division of two exact doubles) and `position += step` with `int(position)` truncation. Rust `f64` does the same operations, so no compensated sum, `fsum` or `repr` is needed and `crates/coach-numerics` is not used (it was not present when this phase was built; nothing here needs consolidating into it). `crates/coach-analysis/tests/vectors/sampling.json` holds 600 cases produced by the oracle's own `_sampling_plan` and `_iter_sample_indices` with CPython 3.12.14 (five tick rates, twenty targets including `30.000000000000004`, `59.99999999999999`, `1e-05`, zero, negative and the three that make the step huge or infinite, `1e-300`, `1e-307` and `5e-324`, six record counts up to 216,001), compared bit for bit on the step and output rate and by SHA-256 on the indices. An infinite position is the oracle's `OverflowError: cannot convert float infinity to integer` (40 of the 600 cases): the decoder fails with that message and writes no store, and the seam raises it as `NativeStageError` (the worker clamps `target_hz` to 1..60, so no job reaches it). The decode golden's matrix hash re-packs floats as Python's `struct.pack("<f", float(x))` does, which quiets a signalling NaN; the store itself keeps the stored bits.
 
 ### Files
 
@@ -67,7 +69,13 @@ $env:COACH_PRIVATE_CORPUS = '<scratch copies of Documents\iRacing\telemetry and 
 & $py tools\parity\analysis_parity.py corpus --native-stages decode --native-bin target\port-decode\release\coach-analysis.exe --out target\port-decode\gp
 ```
 
-For every recording: the decode golden (`emit_ibt_golden.emit`, all channels, at native rate and 20 Hz) against `coach-analysis golden` on every field (sample indices, variables with offsets and units, rates, counts, `matrix_sha256`); one cold `analyze_race_workflow` capture with no native stage and one with `decode`, compared in raw mode (persisted bytes after the documented allowlist: `*_at` instants, the report-directory timestamp slug, `*_ms` and `elapsed_seconds`, the timestamp-derived `analysis_sha256`, the root prefixes) and in parsed mode (including the engine's in-memory output in insertion order); and a check that the native capture's own stage timings contain `native_stages.load_telemetry` and the oracle's do not. The fixtures add the four worker-interface cases (`synthetic`, `reconnect` with two overlapping files, `restaged`, `local-file`) driven through `mcp_server.py`, compared raw and parsed with equal `analysis_id`. A recording both sides reject must fail with the same exception line.
+For every recording: the decode golden (`emit_ibt_golden.emit`, all channels, at native rate and 20 Hz) against `coach-analysis golden` on every field (sample indices, variables with offsets and units, rates, counts, `matrix_sha256`); one cold `analyze_race_workflow` capture with no native stage and one with `decode`, compared in raw mode (persisted bytes after the documented allowlist: `*_at` instants, the report-directory timestamp slug, `*_ms` and `elapsed_seconds`, the timestamp-derived `analysis_sha256`, the root prefixes) and in parsed mode (including the engine's in-memory output in insertion order); and a check that the native capture's own stage timings contain `native_stages.load_telemetry` and the oracle's do not. The fixtures add the four worker-interface cases (`synthetic`, `reconnect` with two overlapping files, `restaged`, `local-file`) driven through `mcp_server.py`, compared raw and parsed with equal `analysis_id`.
+
+Gate rules (tightened after the Codex Sol review, findings 8 to 10):
+
+- **Rejections.** A recording passes as "both reject" only when the oracle's golden raises and `coach-analysis golden` exits 1 having printed its rejection on standard output with the oracle's exception class (coach-ibt's YAML and `OSError` equivalences allowed), the oracle's text verbatim for the messages coach-analysis writes itself (`IbtChannelError`, `ValueError`, `OverflowError`), and, for `IbtTruncatedError`, the same region, start, end and available bytes. A panic (exit 101), a usage error, an unrecorded failure or another class fails the gate.
+- **Native execution.** In-process captures: the native capture's stage timings contain `native_stages.load_telemetry` and the oracle's do not. Worker cases: every worker call runs through `tools/parity/worker_trace.py`, which starts `mcp_server.py` unchanged and logs each `native_stages.load_telemetry` call; the gate requires no call on the oracle side and exactly one successful call per recording on the native side (`reconnect`: 2).
+- **SQLite.** Raw mode compares each SQLite file as a row dump with only the raw allowlist applied to each value (`contracts/worker-interface.md` section 8); parsed mode's normalisation is a diagnostic. Captures are format 3.
 
 Run 2026-10-03 on DESKTOP-JOSHUA, `coach-analysis` release build SHA-256 `8ee8396c58103cf4`, 18 min 30 s for the whole corpus. `=` is identical on every golden field; analysis times are the workflow wall times of the two output runs while other jobs shared the machine, so they rank, they do not measure (section 4 measures). Every native capture's timings contain `native_stages.load_telemetry` and no oracle capture's do. The final build (SHA-256 `5a4e758eeb707914`, after clippy-only changes in `golden.rs` and `store.rs`) was re-run on the fixtures, the worker cases and recordings 8, 9 and 50: identical. Recordings are the copies in the dev-PC scratch folder, never committed; rows 3 to 17 come from the old app's raw archive, the rest from `Documents\iRacing\telemetry`.
 
@@ -161,7 +169,7 @@ The P1 profile attributes the 2.3 GiB peak almost entirely to per-sample Python 
 | Site | What it holds | Needed change (phase) |
 |---|---|---|
 | `native_stages.read_store` (was `ibt_reader._strided_scalar_column`) | one Python value per sample and channel, the decode lists (840 MB in the P1 snapshot, mostly the float objects themselves) | hand `TelemetryTable` typed buffers instead of lists (phase 2: needs `TelemetryTable` to accept them, an analyzer-bundle change) |
-| `workflow._load_analysis_telemetry`, `sample_provenance` | one dict per sample (189,857 on the race) | keep as indices plus a file table, or build it natively; it is written into the analysis, so the JSON must not change (phase 2 or 3) |
+| `workflow._load_analysis_telemetry`, `sample_provenance` | one dict per sample (189,857 on the race) | keep as indices plus a file table (phase 2). Nothing in the analysis reads it: only the multi-file merge and `test_full_telemetry_contract.py` (its length) do, so no persisted byte depends on it (checked 2026-10-03, `phase2-plan.md` section 4) |
 | `workflow._load_analysis_telemetry`, multi-file merge | a merged list per channel and merged provenance while every per-file table is alive (why section 6 admits groups at 1.5x) | merge natively in the store by `SessionTime` with the same duplicate rule (phase 2) |
 | `TelemetryTable.__init__` | `list(values)` per channel (254 MB in P1) | read store columns; no copy (phase 2, analyzer bundle) |
 | `_normalize_column`, `_finite_values` | `list(map(float, ...))` per channel read (225 MB in P1) | native finite/complete columns (phase 2 kernel) |
@@ -177,14 +185,17 @@ The P1 profile attributes the 2.3 GiB peak almost entirely to per-sample Python 
 
 ## 7. Acceptance
 
+After the review resolution (re-run 2026-10-03, `coach-analysis` release SHA-256 `41ec0b38d231`; the first run's figures were 12 Rust tests, 11 seam tests and 1,383 repository tests):
+
 | Command | Result |
 |---|---|
-| `cargo test -p coach-analysis` (Windows) | 12 passed (3 unit, 9 integration, the edge-type oracle comparison running the bundled Python) |
-| `cargo clippy -p coach-analysis --all-targets -- -D warnings` | clean |
-| `analysis_parity.py corpus --native-stages decode` with `COACH_PRIVATE_CORPUS` | PASS: 52/52 recordings, 4/4 worker cases |
-| `analysis_parity.py corpus --fixtures-only` in WSL (Linux build, python3.12) | PASS: 2/2 recordings, 4/4 worker cases |
-| `tools/verify-repository.ps1 -PythonPath <bundled 3.12.14>` | exit 0; 1,383 passed, 0 failed, 9 skipped (the two executable-dependent `test_native_stages` cases skip without `IRACING_COACH_NATIVE_BIN`) |
-| `test_native_stages` with `IRACING_COACH_NATIVE_BIN` (Windows and Linux) | 11 passed |
-| `wsl -d Ubuntu -- bash tools/wsl/check.sh rust` (workspace clippy and tests, `coach-analysis` included) | WSL check passed |
+| `cargo test -p coach-analysis` (Windows; WSL) | 14 passed each (4 unit, 10 integration, the edge-type oracle comparison running the bundled Python) |
+| `cargo clippy -p coach-analysis --all-targets -- -D warnings` (Windows; WSL); `cargo fmt -p coach-analysis --check` | clean |
+| `analysis_parity.py corpus --native-stages decode` with `COACH_PRIVATE_CORPUS` | PASS: 52/52 recordings, 4/4 worker cases; native decode traced 1/2/1/1 calls in the worker cases, 0 on the oracle side |
+| `analysis_parity.py corpus --fixtures-only --native-stages decode` in WSL (Linux build, python3.12) | PASS: 2/2 recordings, 4/4 worker cases, same `analysis_id` values as Windows |
+| `tools/parity/test_analysis_parity.py` with the executable (Windows; WSL) | 8 passed each |
+| `tools/verify-repository.ps1 -PythonPath <bundled 3.12.14>` | exit 0; 1,390 passed, 0 failed, 10 skipped (the executable-dependent `test_native_stages` cases skip without `IRACING_COACH_NATIVE_BIN`) |
+| `test_native_stages` with `IRACING_COACH_NATIVE_BIN` (Windows 3.12.14; WSL 3.12.3) | 19 passed each |
+| `wsl -d Ubuntu -- bash tools/wsl/check.sh rust` (workspace clippy and tests, `coach-analysis` included) | WSL check passed (first run; not repeated after the review) |
 
-Not done here: the N100 measurement and the image change (deploy step), the Codex Sol review of the contract change (D15), and the `architecture.md` section 12 sentence that still names PyO3 for phase 1.
+Not done here: the N100 measurement and the image change (deploy step).

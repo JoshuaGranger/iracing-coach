@@ -146,3 +146,18 @@ Reason: the end-to-end runs left test entries in the owner's live library (`acce
 - `SessionSummary.analysis_reason` (no schema change): besides `failed` and `deferred`, a `ready` session reports the reason when a newer analysis of its current recordings (or of a newer profile) is deferred, for example `exceeds_memory_budget`; null otherwise.
 - Regenerated: `node tools/wire/gen-wire.mjs` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
 - Proof: `cargo test -p coach-server` (`tests/admin.rs`, the contract-coverage test in `tests/api.rs`, `tests/jobs.rs`); `node tools/wire/gen-wire.mjs --check` reports no drift.
+
+### 2026-10-03, port phase 1 follow-up: SQLite in raw mode (p2-plan; clarification of the gate that landed with the review resolution, reviewed there: Codex Sol 6.1 finding 10)
+
+Reason: `reviews/port-phase1-review-codex-sol.md` finding 10 made raw mode compare SQLite files as row dumps under the raw allowlist (`tools/parity/analysis_parity.py`, capture format 3); `worker-interface.md` section 8 still said raw mode compared SQLite only as parsed row dumps.
+
+- `worker-interface.md` section 8: raw mode compares each SQLite file as a raw row dump (`raw/<name>.dump.json`) with only the raw allowlist applied value by value (ISO instant in a `*_at` column, `*_ms` or `elapsed_seconds` number, 64-hex `analysis_sha256`, the text rules inside other strings); the parsed row dumps stay a diagnostic. No code changes.
+
+### 2026-10-03, port phase 2: the kernels stage (port-integration; review: Codex Sol 6.1 pending, D15, before the kernels land)
+
+Reason: `port/phase2-plan.md` sections 4.2 to 4.7. Boundary B was PyO3 in process; the units return an ordered value tree the codec serialises, the measured JSON hand-off is 0.3 s against about 6 s of kernels on the 203 MB race, and a child process keeps the build free of a Python ABI and releases its memory on exit.
+
+- `worker-interface.md` section 7, boundary B: `coach-analysis kernels`, a child process per analysis speaking JSON lines (start with the store, the table fields and the steering basis; one call per entry point; `result`, `raises` or `error`; `{"$handle": n}` for the setup series), codec version 1 (`scripts/native_codec.py`, moved from `crates/coach-analysis/tools/kernel_codec.py`); `kernels` requires `decode`; an entry point the build does not provide fails the job; `StoreColumn` sequences over the mapped store and `StoreTable` instead of list copies, the entry points rebound for one analysis without changing the analyzer bundle (`analysis_id` unchanged); the `merge` store (decode layout, `stage: "merge"`, `provenance` blocks, optional per-column `present`) and its `coach-analysis merge` request. Phase 1's sentence that deferred PyO3 to phase 2 is replaced.
+- `worker-interface.md` section 6: the orphan rule also covers `coach-merge-*`.
+- `worker-interface.md` section 8: the kernel-call count rule.
+- Integration (p2-integrate): the child serves `_setup_channel_series` as the handle the contract names (`dispatch::HANDOFF`; the vectors' replay entry still returns the dict); the boundary-B cost sentence now cites the measured race hand-off (`port/phase2-kernels.md`). Proof: `crates/coach-analysis/tests/kernels_handoff.rs`, the `decode,kernels` corpus gate on Windows and WSL.

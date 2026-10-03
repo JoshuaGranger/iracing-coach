@@ -1,0 +1,1 @@
+{"codec":1,"entry":"analysis_engine._driver_adjustments_summary","call":0,"args":[{"$table":1}],"kwargs":{},"result":{"dcBrakeBias":{"channel":"dcBrakeBias","source_unit":null,"start":0.5,"end":0.503,"minimum":0.5,"median":0.5015,"maximum":0.503,"changed":true,"semantics":"in-car driver control setting"}},"accessed":["dcBrakeBias"]}

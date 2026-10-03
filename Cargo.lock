@@ -217,6 +217,7 @@ name = "coach-analysis"
 version = "0.19.0"
 dependencies = [
  "coach-ibt",
+ "coach-numerics",
  "serde",
  "serde_json",
  "sha2",

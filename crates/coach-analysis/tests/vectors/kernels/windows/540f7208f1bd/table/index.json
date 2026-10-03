@@ -1,0 +1,30 @@
+{
+ "calls": {
+  "analysis_engine._caution_flag_series": 5,
+  "analysis_engine._conditions_summary": 1,
+  "analysis_engine._driver_adjustments_summary": 1,
+  "analysis_engine._dt_series": 3,
+  "analysis_engine._setup_channel_series": 1,
+  "analysis_engine._setup_telemetry": 1
+ },
+ "files": {
+  "analysis_engine._caution_flag_series/00000.json": "8d26f1398278f557c5e38a50505ac69a7c6a36fddeccff1946d57bbcaa99e7d1",
+  "analysis_engine._caution_flag_series/00001.json": "a91315ede7828dc33050b5a783541e1887f9fa8fe5db2ca36da3d2ee81e6f936",
+  "analysis_engine._caution_flag_series/00002.json": "4439f8dc84c3f34b3b5f198fa02dd34431eb21bb5323691f75229a105ce9c249",
+  "analysis_engine._caution_flag_series/00003.json": "eded06caec270786223651b1b1f328928b963290f82cc685599aeeaa51c1a636",
+  "analysis_engine._caution_flag_series/00004.json": "367afdf9c5ee777d7bce3061aa310372733b5b872fdb5e58eef1949e72d2d323",
+  "analysis_engine._conditions_summary/00000.json": "c49805f1b7cdad71c16ff17dcbb70f3cfb4bf4b10735d6873677853f50143af7",
+  "analysis_engine._driver_adjustments_summary/00000.json": "10c070429179a42de740ce30fdeae8d821bfabe5682030790cc16d308f4aec1c",
+  "analysis_engine._dt_series/00000.json": "d0ff88ac72cbd57067fa7ea3fb9379375e008e516ffec2bf20c0aeaecff6a1cb",
+  "analysis_engine._dt_series/00001.json": "52bb02062658f5854966fa57b778b16576b967703097b831ecb758607ccd34a2",
+  "analysis_engine._dt_series/00002.json": "1703bd5d38d9b1a560af70c76ef5574687d28bf6e0c328fad49df57ca79cfcfd",
+  "analysis_engine._setup_channel_series/00000.json": "2a0a9ce0c205e478ac361db9432d3477697e18b14c30f5f1cb95aacdfbf700b1",
+  "analysis_engine._setup_telemetry/00000.json": "c07d1cea334aeb7e62b3ae907bdfd33ce317a22d1458aa50adef906f3792b4fe",
+  "probes/views.json": "e04b167b7a2b659321a141e89da6ddbcdebdd6ee0a52f2cf0c968abfb1983cac"
+ },
+ "platform": "windows",
+ "python": "3.12.14",
+ "recording": "synthetic-race.ibt",
+ "sha256": "540f7208f1bdc25fe36ac0830d041e655826b89e910feadf2097bdf99eb92a81",
+ "target_hz": null
+}

@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
-"""Run ``mcp_server.py`` as the worker runs it and record every native decode call.
+"""Run ``mcp_server.py`` as the worker runs it and record every native stage call.
 
 Usage: ``python -X utf8 -u worker_trace.py <trace.jsonl>`` with the worker's own
 environment and standard input. The server runs as ``__main__`` with the
 scripts folder as ``sys.path[0]``, exactly as ``python mcp_server.py`` would;
-the only addition is a wrapper on ``native_stages.load_telemetry`` that appends
-one JSON line per call to the trace (the recording's file name and the
-exception type, null on success). The seam has no Python fallback, so a
-successful call is a native decode.
+the only additions are a wrapper on ``native_stages.load_telemetry`` that
+appends one JSON line per call to the trace (the recording's file name and the
+exception type, null on success) and the kernel-call counters
+(``native_stages.install_call_counters``), written as one
+``{"kernel_calls": ...}`` line when a process that counted a call ends. The seam has no Python
+fallback, so a successful call is a native decode and a counted kernel call
+ran in ``coach-analysis kernels``.
 
 ``analysis_parity.py capture-worker`` starts every worker call through this
-shim on both sides; the corpus gate then requires no call on the oracle side
-and one successful call per recording on the native side, so a worker launch
-that loses ``IRACING_COACH_NATIVE_STAGES`` cannot compare Python with Python.
+shim on both sides; the corpus gate then requires no native call on the oracle
+side, one successful decode per recording on the native side and, with
+``kernels``, one kernel call per oracle entry-point call, count for count, so a
+worker launch that loses ``IRACING_COACH_NATIVE_STAGES`` cannot compare Python
+with Python.
 """
 
 from __future__ import annotations
@@ -51,7 +56,13 @@ def main() -> None:
         return result
 
     native_stages.load_telemetry = traced
-    runpy.run_path(str(server), run_name="__main__")
+    counts, _uninstall = native_stages.install_call_counters()
+    try:
+        runpy.run_path(str(server), run_name="__main__")
+    finally:
+        if counts["native"] or counts["oracle"]:  # a process that analysed nothing adds nothing
+            with trace.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"kernel_calls": counts}) + "\n")
 
 
 if __name__ == "__main__":

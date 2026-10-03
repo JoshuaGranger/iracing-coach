@@ -14,6 +14,15 @@
 //! another magic, version or stage, a column whose element is not its type's, and any block
 //! outside the data section, unaligned, or not exactly the length the header implies; unknown
 //! header fields are ignored.
+//!
+//! Two stages share the layout. `decode` (one recording, `coach-analysis decode`) has no
+//! missing cell. `merge` (a multi-file group, `docs/08-rewrite/port/phase2-plan.md` section 2,
+//! unit U1) adds, per column with a missing cell, a `present` block (one byte per sample, 1
+//! when the cell holds a value, 0 for Python's `None`; a missing cell's data is zero, or empty
+//! text), and `provenance.file_index` (u16 per sample: the source file's position among the
+//! merged files); its sample-index block holds each merged sample's native record index in
+//! that file. A decode-stage reader (`native_stages.read_store`) rejects a `merge` store by its
+//! stage.
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -60,7 +69,23 @@ pub struct ColumnHeader {
     /// `utf8` only: `sample_count + 1` u64 offsets into `data`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_offsets: Option<Block>,
+    /// `merge` stage only: one byte per sample, 1 when the cell holds a value. Absent when
+    /// every cell does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub present: Option<Block>,
 }
+
+/// `merge` stage: where each merged sample came from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Provenance {
+    /// u16 LE per sample: the source file's position among the merged files.
+    pub file_index: Block,
+}
+
+/// Stage `decode`: one recording as decoded.
+pub const STAGE_DECODE: &str = "decode";
+/// Stage `merge`: a multi-file group merged by `SessionTime`.
+pub const STAGE_MERGE: &str = "merge";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StoreHeader {
@@ -75,6 +100,9 @@ pub struct StoreHeader {
     pub channel_mode: String,
     /// u32 LE native record indices, one per sample.
     pub sample_indices: Block,
+    /// `merge` stage only (required there).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
     pub columns: Vec<ColumnHeader>,
 }
 
@@ -136,6 +164,7 @@ fn layout(decoded: &Decoded) -> (StoreHeader, Vec<PlacedBlock<'_>>) {
                 element: column.element.name().to_owned(),
                 data,
                 text_offsets,
+                present: None,
             }
         })
         .collect();
@@ -159,6 +188,7 @@ fn layout(decoded: &Decoded) -> (StoreHeader, Vec<PlacedBlock<'_>>) {
         }
         .to_owned(),
         sample_indices,
+        provenance: None,
         columns,
     };
     (header, blocks.blocks)
@@ -167,7 +197,84 @@ fn layout(decoded: &Decoded) -> (StoreHeader, Vec<PlacedBlock<'_>>) {
 /// Writes `decoded` to `path` (created or truncated) and returns the bytes written.
 pub fn write(decoded: &Decoded, path: &Path) -> Result<u64, DecodeError> {
     let (header, blocks) = layout(decoded);
-    let header_json = serde_json::to_vec(&header)
+    write_blocks(&header, &blocks, path)
+}
+
+/// A merged group ready to write as a `merge`-stage store (`kernels::table::merge`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Merged {
+    pub source: SourceLayout,
+    pub sampling: Sampling,
+    /// Native record index of each merged sample in its source file.
+    pub sample_indices: Vec<u32>,
+    /// Source file of each merged sample (position among the merged files).
+    pub file_index: Vec<u16>,
+    /// Columns in merged order; a missing cell holds zeros (or empty text).
+    pub columns: Vec<Column>,
+    /// Per column: `Some` (one byte per sample, 1 = value) when a cell is missing.
+    pub present: Vec<Option<Vec<u8>>>,
+}
+
+fn le_words<const N: usize, T: Copy>(values: &[T], bytes: impl Fn(T) -> [u8; N]) -> Vec<u8> {
+    values.iter().flat_map(|&value| bytes(value)).collect()
+}
+
+/// Writes `merged` as a `merge`-stage store and returns the bytes written.
+pub fn write_merged(merged: &Merged, path: &Path) -> Result<u64, DecodeError> {
+    if merged.present.len() != merged.columns.len() {
+        return Err(DecodeError::Store(
+            "one presence entry per merged column".to_owned(),
+        ));
+    }
+    let mut blocks = Blocks {
+        cursor: 0,
+        blocks: Vec::new(),
+    };
+    let sample_indices = blocks.place(Cow::Owned(le_words(
+        &merged.sample_indices,
+        u32::to_le_bytes,
+    )));
+    let file_index = blocks.place(Cow::Owned(le_words(&merged.file_index, u16::to_le_bytes)));
+    let mut columns = Vec::with_capacity(merged.columns.len());
+    for (column, present) in merged.columns.iter().zip(&merged.present) {
+        let data = blocks.place(Cow::Borrowed(&column.data));
+        let text_offsets = (column.element == Element::Utf8)
+            .then(|| blocks.place(Cow::Owned(le_words(&column.text_offsets, u64::to_le_bytes))));
+        let present = present
+            .as_ref()
+            .map(|bytes| blocks.place(Cow::Borrowed(bytes.as_slice())));
+        columns.push(ColumnHeader {
+            name: column.name.clone(),
+            type_code: column.var_type as i32,
+            count: column.count as u32,
+            var_offset: column.var_offset,
+            element: column.element.name().to_owned(),
+            data,
+            text_offsets,
+            present,
+        });
+    }
+    let header = StoreHeader {
+        format: FORMAT_NAME.to_owned(),
+        version: FORMAT_VERSION,
+        stage: STAGE_MERGE.to_owned(),
+        producer: format!("coach-analysis {}", env!("CARGO_PKG_VERSION")),
+        source: merged.source,
+        sampling: merged.sampling.clone(),
+        channel_mode: "selected".to_owned(),
+        sample_indices,
+        provenance: Some(Provenance { file_index }),
+        columns,
+    };
+    write_blocks(&header, &blocks.blocks, path)
+}
+
+fn write_blocks(
+    header: &StoreHeader,
+    blocks: &[PlacedBlock<'_>],
+    path: &Path,
+) -> Result<u64, DecodeError> {
+    let header_json = serde_json::to_vec(header)
         .map_err(|error| DecodeError::Store(format!("header: {error}")))?;
     let header_len = u32::try_from(header_json.len())
         .map_err(|_| DecodeError::Store("header longer than 4 GiB".to_owned()))?;
@@ -185,7 +292,7 @@ pub fn write(decoded: &Decoded, path: &Path) -> Result<u64, DecodeError> {
         out.write_all(&zeros[..gap])
     };
     pad_to(data_start, &mut position, &mut out)?;
-    for (offset, bytes) in &blocks {
+    for (offset, bytes) in blocks {
         pad_to(data_start + offset, &mut position, &mut out)?;
         out.write_all(bytes)?;
         position += bytes.len() as u64;
@@ -227,9 +334,9 @@ impl ColumnStore {
         if header.format != FORMAT_NAME || header.version != FORMAT_VERSION {
             return Err(bad("header format or version does not match the file"));
         }
-        if header.stage != "decode" {
+        if header.stage != STAGE_DECODE && header.stage != STAGE_MERGE {
             return Err(DecodeError::Store(format!(
-                "stage {:?} is not decode",
+                "stage {:?} is not decode or merge",
                 header.stage
             )));
         }
@@ -275,6 +382,20 @@ impl ColumnStore {
             self.header.sample_indices,
             samples.checked_mul(4),
         )?;
+        let merged = self.header.stage == STAGE_MERGE;
+        match (&self.header.provenance, merged) {
+            (Some(provenance), true) => {
+                block(
+                    "provenance",
+                    "file index",
+                    provenance.file_index,
+                    samples.checked_mul(2),
+                )?;
+            }
+            (None, true) => return fail("a merge store without provenance".to_owned()),
+            (Some(_), false) => return fail("provenance in a decode store".to_owned()),
+            (None, false) => {}
+        }
         let mut names = std::collections::HashSet::new();
         for column in &self.header.columns {
             let name = format!("column {:?}", column.name);
@@ -295,6 +416,15 @@ impl ColumnStore {
             }
             if column.count == 0 {
                 return fail(format!("{name}: count 0"));
+            }
+            if let Some(present) = column.present {
+                if !merged {
+                    return fail(format!("{name}: present block in a decode store"));
+                }
+                let bytes = block(&name, "present", present, Some(samples))?;
+                if bytes.iter().any(|&flag| flag > 1) {
+                    return fail(format!("{name}: present bytes must be 0 or 1"));
+                }
             }
             if element == Element::Utf8 {
                 let Some(offsets_block) = column.text_offsets else {
@@ -361,6 +491,30 @@ impl ColumnStore {
             .iter()
             .map(|word| u32::from_le_bytes(*word))
             .collect()
+    }
+
+    /// `decode` or `merge`.
+    pub fn stage(&self) -> &str {
+        &self.header.stage
+    }
+
+    /// Column `index`'s presence bytes (1 = value), or None when every cell holds a value;
+    /// [`ColumnStore::parse`] checked the block is exactly one 0/1 byte per sample.
+    pub fn present(&self, index: usize) -> Option<&[u8]> {
+        self.block(self.header.columns.get(index)?.present?)
+    }
+
+    /// `merge` stage: each sample's source-file position; None for a decode store.
+    pub fn file_indices(&self) -> Option<Vec<u16>> {
+        let block = self.block(self.header.provenance.as_ref()?.file_index)?;
+        Some(
+            block
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|word| u16::from_le_bytes(*word))
+                .collect(),
+        )
     }
 
     /// Column `index` as a decoded [`Column`].

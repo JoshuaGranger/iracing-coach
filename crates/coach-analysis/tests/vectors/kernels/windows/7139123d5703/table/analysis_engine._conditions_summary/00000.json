@@ -1,0 +1,1 @@
+{"codec":1,"entry":"analysis_engine._conditions_summary","call":0,"args":[{"$table":1}],"kwargs":{},"result":{"air_temperature_f":{"channel":"AirTemp","source_unit":"C","start":70.7,"end":69.8,"minimum":50.0,"median":70.2,"maximum":73.4,"changed":true},"player_tire_compound":2},"accessed":["AirTemp","PlayerTireCompound"]}

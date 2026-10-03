@@ -7,10 +7,14 @@
 //! (`docs/08-rewrite/contracts/worker-interface.md` section 7,
 //! `docs/08-rewrite/port/phase1-decode.md`). Header, variable table and bounds come from
 //! `coach_ibt`; nothing here parses them again.
+//!
+//! Phase 2: [`kernels`], the per-sample analysis kernels over the store
+//! (`docs/08-rewrite/port/phase2-plan.md`).
 #![forbid(unsafe_code)]
 
 pub mod decode;
 pub mod golden;
+pub mod kernels;
 pub mod request;
 pub mod sampling;
 pub mod store;

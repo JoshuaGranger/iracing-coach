@@ -13,6 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 coach-ibt.workspace = true
+# Port phase 2: CPython-3.12-exact numeric primitives for the kernels.
+coach-numerics = { path = "../coach-numerics" }
 serde.workspace = true
 # float_roundtrip: request and store headers carry Python floats that must parse exactly.
 serde_json = { workspace = true, features = ["float_roundtrip"] }

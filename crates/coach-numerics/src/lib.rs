@@ -19,13 +19,16 @@ mod repr;
 mod round;
 mod stats;
 mod sum;
+pub mod unicode;
+mod unicode_tables;
 
 pub use error::{PyError, PyErrorKind, PyResult};
 pub use exact::int_true_div;
 pub use format::{format_float, format_int, format_num};
 pub use num::{
     Num, abs, add, cmp_int_float, divmod, float_divmod, float_mod, floordiv, int_from_float,
-    modulo, mul, neg, py_cmp, py_eq, py_ge, py_gt, py_le, py_lt, sub, truediv,
+    int_from_float_low64, modulo, mul, neg, py_cmp, py_eq, py_ge, py_gt, py_le, py_lt, sub,
+    truediv,
 };
 pub use order::{
     bisect_left, bisect_left_by, bisect_right, bisect_right_by, heap_pop, heap_push, heap_replace,

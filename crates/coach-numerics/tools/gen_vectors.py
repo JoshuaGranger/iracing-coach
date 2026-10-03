@@ -594,6 +594,47 @@ def fam_parse(rng: random.Random, count: int) -> list[dict]:
     return [{"text": t, "float": run(float, t), "int": run(int, t)} for t in texts]
 
 
+def fam_parse_unicode(rng: random.Random, count: int) -> list[dict]:
+    """``float``/``int`` of non-ASCII text: every decimal digit of every script (category Nd),
+    digits that are not decimal, Unicode spaces and characters near them."""
+
+    import unicodedata
+
+    texts = [
+        "٠", "١٢", "-٣.٥e١", " ١　", " १_२ ",
+        "²", "½", "Ⅷ", "١²", "​1", "1﻿", "᠎1", "\x1c1٠", "1٠\x1f",
+        "\x85١", "١ ٢", "１０", "\U0001d7ce\U0001d7ff", "\U0001fbf9", "๑.๕",
+        "١e٢٢٢", "inf ", " nan", "١_٢", "١__٢", "İ",
+        "é", "1é", "٣٣٣٣٣٣٣٣٣٣٣٣٣٣٣٣٣٣٣٣",
+    ]
+    for code in range(0x110000):
+        if unicodedata.decimal(chr(code), -1) >= 0 and code > 0x7F:
+            texts.append(chr(code))
+    pool = [chr(code) for code in range(0x80, 0x3100) if not 0xD800 <= code < 0xE000]
+    for _ in range(count):
+        texts.append("".join(rng.choice(pool) if rng.random() < 0.3 else rng.choice("0123456789._e- ")
+                             for _ in range(rng.randrange(1, 8))))
+    return [{"text": t, "float": run(float, t), "int": run(int, t)} for t in texts]
+
+
+def fam_int_low64(rng: random.Random, count: int) -> list[dict]:
+    """``int(x) & (2**64 - 1)`` as a signed 64-bit value, for floats of every magnitude."""
+
+    def low64(x: float) -> int:
+        value = int(x) & (2**64 - 1)
+        return value - 2**64 if value >= 2**63 else value
+
+    xs = [2.0**63, -(2.0**63), 2.0**64, -(2.0**64), 2.0**63 + 2048.0, -(2.0**63) - 2048.0, 2.0**70 + 2.0**18,
+          1.7976931348623157e308, -1.7976931348623157e308, 9223372036854774784.0, -9223372036854775808.0,
+          0.0, -0.0, 1.5, -1.5, 4.2e18, 1.8446744073709552e19, 1.8446744073709550e19, float("nan"),
+          float("inf"), float("-inf")]
+    for _ in range(count):
+        xs.append(any_float(rng))
+        exponent = rng.randrange(60, 130)
+        xs.append(rng.choice((-1.0, 1.0)) * rng.random() * 2.0**exponent)
+    return [{"x": enc_in(x), "out": run(low64, x)} for x in xs]
+
+
 COMMON = {
     "fsum": (fam_fsum, 300),
     "stats": (fam_stats, 500),
@@ -604,12 +645,20 @@ COMMON = {
     "arith": (fam_arith, 250),
     "order": (fam_order, 220),
     "parse": (fam_parse, 300),
+    "parse_unicode": (fam_parse_unicode, 300),
+    "int_low64": (fam_int_low64, 300),
 }
 PLATFORM_FAMILIES = {
     "sum": (fam_sum, 400),
     "libm": (fam_libm, 2000),
 }
-SEEDS = {name: 20261003 + index for index, name in enumerate(sorted({**COMMON, **PLATFORM_FAMILIES}))}
+# Families added later take seeds after the first set, so the first set's files never change.
+LATER_FAMILIES = ("parse_unicode", "int_low64")
+SEEDS = {
+    name: 20261003 + index
+    for index, name in enumerate(sorted((set(COMMON) | set(PLATFORM_FAMILIES)) - set(LATER_FAMILIES)))
+}
+SEEDS.update({name: 20261003 + len(SEEDS) + index for index, name in enumerate(LATER_FAMILIES)})
 
 
 def render(family: str, cases: list[dict], platform: str | None) -> str:

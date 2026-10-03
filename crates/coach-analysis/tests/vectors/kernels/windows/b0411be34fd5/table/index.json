@@ -1,0 +1,40 @@
+{
+ "calls": {
+  "analysis_engine._caution_flag_series": 5,
+  "analysis_engine._conditions_summary": 1,
+  "analysis_engine._driver_adjustments_summary": 1,
+  "analysis_engine._dt_series": 3,
+  "analysis_engine._setup_channel_series": 1,
+  "analysis_engine._setup_telemetry": 1
+ },
+ "files": {
+  "analysis_engine._caution_flag_series/00000.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00000.json": "05ac470254b4c1b0badde241c8371f53539083ab0c0bb891dce8f4831dc35d4d",
+  "analysis_engine._caution_flag_series/00001.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00001.json": "aee7a4dc4e92e9e9bbecc9d8504c432962c4b9dde01c8b86d7a57d05903fce66",
+  "analysis_engine._caution_flag_series/00002.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00002.json": "d7ef7f2d2dd86ebd8b7033a36a47086628ebb93f198da159fbfcbb823d8ecfe2",
+  "analysis_engine._caution_flag_series/00003.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00003.json": "51d883bc8aed1e6bb96dfe4b55893491076dd8bae230a0dfef6cfb66c47d5622",
+  "analysis_engine._caution_flag_series/00004.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00004.json": "1851d264b94b3be7962b95ea837a095bf6669f2c6f97263dadc8d81bdde728f1",
+  "analysis_engine._conditions_summary/00000.json": "c3733eaae8951aee70837e0f6bccd5f681dbd52288c30595739c618ac80fca17",
+  "analysis_engine._driver_adjustments_summary/00000.json": "0efc86fac58f842d69bb487ba25a07dc40b2091809e8d4d5ba9991accd11c8bd",
+  "analysis_engine._dt_series/00000.ccs": "c390886cb76f67475d80374b4da5429440708fdf09c6cb1e0166ec211400c7d9",
+  "analysis_engine._dt_series/00000.json": "38dd5323cdf68a040f8a5b86d51b4440133277267599a5c851491e9cf6e9e7ad",
+  "analysis_engine._dt_series/00001.ccs": "c390886cb76f67475d80374b4da5429440708fdf09c6cb1e0166ec211400c7d9",
+  "analysis_engine._dt_series/00001.json": "32e4430292fea07b22bcac1d4e6e4c364f1823a54cd85f7e5a9a6fdcdbcc85fd",
+  "analysis_engine._dt_series/00002.ccs": "c390886cb76f67475d80374b4da5429440708fdf09c6cb1e0166ec211400c7d9",
+  "analysis_engine._dt_series/00002.json": "919b570d1b9a9d120c19efb12abd55daebb4c233c2c6e1c293f1621413fdae1e",
+  "analysis_engine._setup_channel_series/00000.ccs": "f3306aca27eeabb5c72997f72e1f831562cb5c63fff23443c6ea59b04701fb7d",
+  "analysis_engine._setup_channel_series/00000.json": "fa2fba34cc6f7a87e1571c129a895f2bb0eb28de1e4adb85048b50db66b07ce9",
+  "analysis_engine._setup_telemetry/00000.ccs": "f3306aca27eeabb5c72997f72e1f831562cb5c63fff23443c6ea59b04701fb7d",
+  "analysis_engine._setup_telemetry/00000.json": "de12179bf7492f5de5ea54c1e974225da65a1942b2975d25087ff147fbd2d000",
+  "probes/views.json": "bc2f33531962247b72b725464bac94b8803663f5c502fd29eefd24e572ee24d1"
+ },
+ "platform": "windows",
+ "python": "3.12.14",
+ "recording": "synthetic:table-merged",
+ "sha256": "b0411be34fd545eb20995660fbd8a504fa9c77fafddef992484d7ee52c2376fe",
+ "target_hz": null
+}

@@ -1,0 +1,43 @@
+{
+ "calls": {
+  "analysis_engine._caution_flag_series": 6,
+  "analysis_engine._conditions_summary": 1,
+  "analysis_engine._driver_adjustments_summary": 1,
+  "analysis_engine._dt_series": 6,
+  "analysis_engine._setup_channel_series": 1,
+  "analysis_engine._setup_telemetry": 1
+ },
+ "files": {
+  "analysis_engine._caution_flag_series/00000.ccs": "c0e1625ae3a6be688eaed981836889dab54007c8756e9804782a9eb78366a7c0",
+  "analysis_engine._caution_flag_series/00000.json": "23051375425f3ff69c3d3865b51fc1bc32ffe3f38e99a821052006ff08924720",
+  "analysis_engine._caution_flag_series/00001.ccs": "c0e1625ae3a6be688eaed981836889dab54007c8756e9804782a9eb78366a7c0",
+  "analysis_engine._caution_flag_series/00001.json": "ee75fa713fd5ee97e1eeda646ecde6bdb79dbeb6783aef6fcfde1e465d965ff0",
+  "analysis_engine._caution_flag_series/00002.ccs": "c0e1625ae3a6be688eaed981836889dab54007c8756e9804782a9eb78366a7c0",
+  "analysis_engine._caution_flag_series/00002.json": "8a9fb6bcb754eac899b483bd635c4a07d922dba192688fe38855eeadc3756369",
+  "analysis_engine._caution_flag_series/00003.ccs": "c0e1625ae3a6be688eaed981836889dab54007c8756e9804782a9eb78366a7c0",
+  "analysis_engine._caution_flag_series/00003.json": "0f3ab4069b7d68523d4b71f698ab3608227c3373f0ab396bb2bc274549906227",
+  "analysis_engine._caution_flag_series/00004.ccs": "c0e1625ae3a6be688eaed981836889dab54007c8756e9804782a9eb78366a7c0",
+  "analysis_engine._caution_flag_series/00004.json": "1d597cb697ae39e612d2358a79e6b17e3af01f2f13e9df95bd722a5b3898c28d",
+  "analysis_engine._caution_flag_series/00005.ccs": "c0e1625ae3a6be688eaed981836889dab54007c8756e9804782a9eb78366a7c0",
+  "analysis_engine._caution_flag_series/00005.json": "77c16f146dc2971f83445adbb66fef40a4516d62fcf399b647acec932d82a211",
+  "analysis_engine._conditions_summary/00000.json": "6444dfa5f44c212a27974e890039f172bfde7f5f96b06e6526eed6e25dbef162",
+  "analysis_engine._driver_adjustments_summary/00000.json": "fd9e939485c671e21bd9d4de66071d740c27f0586242630755313ae3bdd3fd6a",
+  "analysis_engine._dt_series/00000.ccs": "04a2c7cd3609588f36bed066ec1672a0ccaebc9419c504286b7b6b81bbc2489e",
+  "analysis_engine._dt_series/00000.json": "38dd5323cdf68a040f8a5b86d51b4440133277267599a5c851491e9cf6e9e7ad",
+  "analysis_engine._dt_series/00001.ccs": "04a2c7cd3609588f36bed066ec1672a0ccaebc9419c504286b7b6b81bbc2489e",
+  "analysis_engine._dt_series/00001.json": "32e4430292fea07b22bcac1d4e6e4c364f1823a54cd85f7e5a9a6fdcdbcc85fd",
+  "analysis_engine._dt_series/00002.ccs": "04a2c7cd3609588f36bed066ec1672a0ccaebc9419c504286b7b6b81bbc2489e",
+  "analysis_engine._dt_series/00002.json": "919b570d1b9a9d120c19efb12abd55daebb4c233c2c6e1c293f1621413fdae1e",
+  "analysis_engine._dt_series/00003.json": "7a6250e52471a634dbac9892596647b52cf418a7b0456b3560bfecb807e67309",
+  "analysis_engine._dt_series/00004.json": "425170a847fd99044bfa68115830257c10f21aab9604991db35b3e7f923da462",
+  "analysis_engine._dt_series/00005.json": "3da8cc4fe9997083599b562d54a2095adfff8d5a5613ef1059ccccbf0f045fa7",
+  "analysis_engine._setup_channel_series/00000.json": "2a0a9ce0c205e478ac361db9432d3477697e18b14c30f5f1cb95aacdfbf700b1",
+  "analysis_engine._setup_telemetry/00000.json": "73a4d0cd1ae9221e3580cc1d26842e9762f5e4ba12dd9bde5e63cbffb111dab4",
+  "probes/views.json": "d000f68a0d00b2032b41b22149505602e0e26c1f5e15f1de7f88ce8175d9d0d4"
+ },
+ "platform": "linux",
+ "python": "3.12.3",
+ "recording": "synthetic:review-unicode-text",
+ "sha256": "7139123d570359141770ce45fde069d11139ab0a4182a7dea723e7de3f4c0be2",
+ "target_hz": null
+}

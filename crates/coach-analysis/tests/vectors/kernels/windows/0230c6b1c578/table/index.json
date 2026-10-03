@@ -1,0 +1,38 @@
+{
+ "calls": {
+  "analysis_engine._caution_flag_series": 5,
+  "analysis_engine._conditions_summary": 1,
+  "analysis_engine._driver_adjustments_summary": 1,
+  "analysis_engine._dt_series": 3,
+  "analysis_engine._setup_channel_series": 1,
+  "analysis_engine._setup_telemetry": 1
+ },
+ "files": {
+  "analysis_engine._caution_flag_series/00000.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00000.json": "05ac470254b4c1b0badde241c8371f53539083ab0c0bb891dce8f4831dc35d4d",
+  "analysis_engine._caution_flag_series/00001.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00001.json": "aee7a4dc4e92e9e9bbecc9d8504c432962c4b9dde01c8b86d7a57d05903fce66",
+  "analysis_engine._caution_flag_series/00002.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00002.json": "d7ef7f2d2dd86ebd8b7033a36a47086628ebb93f198da159fbfcbb823d8ecfe2",
+  "analysis_engine._caution_flag_series/00003.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00003.json": "51d883bc8aed1e6bb96dfe4b55893491076dd8bae230a0dfef6cfb66c47d5622",
+  "analysis_engine._caution_flag_series/00004.ccs": "24b9902f83a64d88c26876ea74e8391c0c2337c13e9081c86a3162606f7ee5ef",
+  "analysis_engine._caution_flag_series/00004.json": "1851d264b94b3be7962b95ea837a095bf6669f2c6f97263dadc8d81bdde728f1",
+  "analysis_engine._conditions_summary/00000.json": "625e3d42038810aa5c805fac8bc0b786b43f9ac07da4e365f0354577aa75f165",
+  "analysis_engine._driver_adjustments_summary/00000.json": "51207d1706895a901fc143ccb9e6a6a7e16b7772526104acf029ab21df5370a1",
+  "analysis_engine._dt_series/00000.ccs": "5caaae10ba8438e77be95b35af7f1f404b00321826f9b89d2427fd89465f3137",
+  "analysis_engine._dt_series/00000.json": "38dd5323cdf68a040f8a5b86d51b4440133277267599a5c851491e9cf6e9e7ad",
+  "analysis_engine._dt_series/00001.ccs": "5caaae10ba8438e77be95b35af7f1f404b00321826f9b89d2427fd89465f3137",
+  "analysis_engine._dt_series/00001.json": "32e4430292fea07b22bcac1d4e6e4c364f1823a54cd85f7e5a9a6fdcdbcc85fd",
+  "analysis_engine._dt_series/00002.ccs": "5caaae10ba8438e77be95b35af7f1f404b00321826f9b89d2427fd89465f3137",
+  "analysis_engine._dt_series/00002.json": "919b570d1b9a9d120c19efb12abd55daebb4c233c2c6e1c293f1621413fdae1e",
+  "analysis_engine._setup_channel_series/00000.json": "2a0a9ce0c205e478ac361db9432d3477697e18b14c30f5f1cb95aacdfbf700b1",
+  "analysis_engine._setup_telemetry/00000.json": "001ab1efc43362a4bd341241299cc2c55855b41f43be5ba55b34dd1fbbf544e5",
+  "probes/views.json": "c9f85c9aeffae77b7c90dac675067a93b1aaec0e8890f906b40048fd82607cef"
+ },
+ "platform": "windows",
+ "python": "3.12.14",
+ "recording": "synthetic:table-conditions",
+ "sha256": "0230c6b1c578567edb111452af7adab0f8687c3e84ce76daf32bc2c1c24d2932",
+ "target_hz": null
+}

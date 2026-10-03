@@ -4,13 +4,19 @@
 Drives ``mcp_server.py`` as coach-server does (``worker-interface.md``
 sections 2 to 4: complete environment, a job root holding the recording, the
 discovered group id as selector, ``target_hz: null``), one cold process per
-run in a fresh archive, alternating Python and native runs. Peak memory is the
+run in a fresh archive, alternating baseline and native runs (the baseline is
+pure Python unless ``--baseline-stages`` names stages, such as ``decode`` to
+measure the Python kernels against ``decode,kernels``). Peak memory is the
 worker process's own peak working set (Windows, ``GetProcessMemoryInfo``) or
-``ru_maxrss`` (Linux, ``wait4``). With native decode the worker starts
-``coach-analysis decode`` as a child, whose peak is not part of the worker's;
-the decoder is therefore also measured alone on the same request.
+``ru_maxrss`` (Linux, ``wait4``). With native stages the worker starts
+``coach-analysis decode`` and ``coach-analysis kernels`` as children, whose
+peaks are not part of the worker's: on Windows each run is a job object, whose
+accounting adds the tree's peak committed memory (every process of the run at
+the same moment) and its process count; the decoder is also measured alone on
+the same request.
 
     python tools/parity/measure_worker.py --source RACE.ibt --native-bin target/release/coach-analysis.exe --runs 3 --base SCRATCH --out report.json
+    python tools/parity/measure_worker.py --source RACE.ibt --native-bin ... --baseline-stages decode --native-stages decode,kernels --runs 5 ...
 """
 
 from __future__ import annotations
@@ -65,13 +71,97 @@ def _peak_after_exit(process: subprocess.Popen[bytes]) -> int:
     raise RuntimeError("use _run_linux on POSIX")
 
 
-def _run(command: list[str], environment: dict[str, str], stdin: bytes) -> tuple[bytes, bytes, int, float, int]:
+class _Job:
+    """A Windows job object around one worker and every process it starts.
+
+    Its accounting gives the tree's peak committed memory (the worker and its
+    ``coach-analysis`` children together, at the same moment) and the number
+    of processes that ran in it. The worker is assigned right after it starts,
+    before it can start a child (its interpreter is still importing).
+    """
+
+    def __init__(self) -> None:
+        import ctypes  # noqa: PLC0415
+        from ctypes import wintypes  # noqa: PLC0415
+
+        self.ctypes, self.wintypes = ctypes, wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.QueryInformationJobObject.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p
+        ]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        self.kernel32 = kernel32
+        self.handle = kernel32.CreateJobObjectW(None, None)
+        if not self.handle:
+            raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+
+    def assign(self, process: subprocess.Popen[bytes]) -> None:
+        handle = self.wintypes.HANDLE(int(process._handle))  # type: ignore[attr-defined]
+        if not self.kernel32.AssignProcessToJobObject(self.handle, handle):
+            raise OSError(self.ctypes.get_last_error(), "AssignProcessToJobObject failed")
+
+    def accounting(self) -> dict[str, int]:
+        ctypes, wintypes = self.ctypes, self.wintypes
+
+        class Basic(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", Basic), ("IoInfo", ctypes.c_uint64 * 6),
+                ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        class Accounting(ctypes.Structure):
+            _fields_ = [
+                ("TotalUserTime", ctypes.c_int64), ("TotalKernelTime", ctypes.c_int64),
+                ("ThisPeriodTotalUserTime", ctypes.c_int64), ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+                ("TotalPageFaultCount", wintypes.DWORD), ("TotalProcesses", wintypes.DWORD),
+                ("ActiveProcesses", wintypes.DWORD), ("TotalTerminatedProcesses", wintypes.DWORD),
+            ]
+
+        extended, accounting = Extended(), Accounting()
+        for kind, value in ((9, extended), (1, accounting)):  # JobObjectExtendedLimitInformation, BasicAccounting
+            if not self.kernel32.QueryInformationJobObject(self.handle, kind, ctypes.byref(value), ctypes.sizeof(value), None):
+                raise OSError(ctypes.get_last_error(), "QueryInformationJobObject failed")
+        return {
+            "tree_peak_commit_bytes": int(extended.PeakJobMemoryUsed),
+            "process_peak_commit_bytes": int(extended.PeakProcessMemoryUsed),
+            "processes": int(accounting.TotalProcesses),
+        }
+
+    def close(self) -> None:
+        self.kernel32.CloseHandle(self.handle)
+
+
+def _run(command: list[str], environment: dict[str, str], stdin: bytes, tree: dict[str, int] | None = None) -> tuple[bytes, bytes, int, float, int]:
+    """Run one process; ``tree`` (Windows) receives its process tree's job accounting."""
+
     started = time.perf_counter()
     if os.name == "nt":
-        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
-        out, err = process.communicate(stdin)
-        wall = time.perf_counter() - started
-        return out, err, process.returncode, wall, _peak_after_exit(process)
+        job = _Job() if tree is not None else None
+        try:
+            process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
+            if job is not None:
+                job.assign(process)
+            out, err = process.communicate(stdin)
+            wall = time.perf_counter() - started
+            if job is not None:
+                tree.update(job.accounting())  # type: ignore[union-attr]
+            return out, err, process.returncode, wall, _peak_after_exit(process)
+        finally:
+            if job is not None:
+                job.close()
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
     assert process.stdin and process.stdout and process.stderr
     process.stdin.write(stdin)
@@ -112,6 +202,11 @@ def main() -> int:
     parser.add_argument("--source", required=True)
     parser.add_argument("--native-bin", required=True)
     parser.add_argument("--native-stages", default="decode")
+    parser.add_argument(
+        "--baseline-stages",
+        default="",
+        help="Stages of the comparison side (default empty: pure Python; 'decode' measures the Python kernels).",
+    )
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--base", required=True, help="Harness-owned scratch (wiped).")
     parser.add_argument("--out", required=True)
@@ -140,8 +235,9 @@ def main() -> int:
     command = [parity._python(), "-X", "utf8", "-u", str(parity.SCRIPTS / "mcp_server.py")]
 
     runs: list[dict[str, Any]] = []
+    modes = (("python", args.baseline_stages), ("native", args.native_stages))
     for index in range(args.runs):
-        for mode, stages in (("python", ""), ("native", args.native_stages)):
+        for mode, stages in modes:
             worker = job(stages)
             if worker.archive.exists():
                 shutil.rmtree(worker.archive)
@@ -150,13 +246,19 @@ def main() -> int:
                 "analyze_iracing_race",
                 {"selector": selector, "iracing_root": str(root), "archive_root": str(worker.archive), "target_hz": None},
             )
-            out, err, code, wall, peak = _run(command, worker.environment(root), stdin)
+            tree: dict[str, int] | None = {} if os.name == "nt" else None
+            out, err, code, wall, peak = _run(command, worker.environment(root), stdin, tree)
             if code != 0:
                 raise SystemExit(f"{mode} run {index + 1}: exit {code}\n{err.decode('utf-8', 'replace')[-2000:]}")
             payload = _result(out, f"{mode} run {index + 1}")
-            runs.append({"mode": mode, "run": index + 1, "wall_s": round(wall, 3), "peak_bytes": peak,
-                         "analysis_id": payload.get("analysis_id")})
-            print(f"{mode} run {index + 1}: wall {wall:.2f} s, peak {peak / 2**30:.3f} GiB, {payload.get('analysis_id')}", flush=True)
+            runs.append({"mode": mode, "stages": stages, "run": index + 1, "wall_s": round(wall, 3), "peak_bytes": peak,
+                         **(tree or {}), "analysis_id": payload.get("analysis_id")})
+            print(
+                f"{mode} ({stages or 'python'}) run {index + 1}: wall {wall:.2f} s, worker peak {peak / 2**30:.3f} GiB"
+                + (f", tree peak commit {tree['tree_peak_commit_bytes'] / 2**30:.3f} GiB in {tree['processes']} processes" if tree else "")
+                + f", {payload.get('analysis_id')}",
+                flush=True,
+            )
 
     available = {variable["name"] for variable in ibt_reader.scan_ibt(recording)["variables"]}
     channels = [name for name in workflow.ANALYSIS_CHANNELS if name in available]
@@ -173,6 +275,24 @@ def main() -> int:
     def median(mode: str, key: str) -> float:
         return statistics.median(run[key] for run in runs if run["mode"] == mode)
 
+    def span(mode: str, key: str, scale: float = 1.0) -> list[float]:
+        values = [run[key] / scale for run in runs if run["mode"] == mode]
+        return [round(min(values), 3), round(max(values), 3)]
+
+    def summary(mode: str) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "stages": dict(modes)[mode],
+            "wall_s": median(mode, "wall_s"),
+            "wall_s_range": span(mode, "wall_s"),
+            "peak_gib": round(median(mode, "peak_bytes") / 2**30, 3),
+            "peak_gib_range": span(mode, "peak_bytes", 2**30),
+        }
+        if os.name == "nt":
+            out["tree_peak_commit_gib"] = round(median(mode, "tree_peak_commit_bytes") / 2**30, 3)
+            out["tree_peak_commit_gib_range"] = span(mode, "tree_peak_commit_bytes", 2**30)
+            out["processes"] = sorted({run["processes"] for run in runs if run["mode"] == mode})
+        return out
+
     report = {
         "source": source.name,
         "source_bytes": source.stat().st_size,
@@ -183,10 +303,7 @@ def main() -> int:
         "channels": len(channels),
         "runs": runs,
         "decoder_alone": decoder,
-        "median": {
-            mode: {"wall_s": median(mode, "wall_s"), "peak_gib": round(median(mode, "peak_bytes") / 2**30, 3)}
-            for mode in ("python", "native")
-        },
+        "median": {mode: summary(mode) for mode in ("python", "native")},
         "decoder_median": {
             "wall_s": statistics.median(item["wall_s"] for item in decoder),
             "peak_mib": round(statistics.median(item["peak_bytes"] for item in decoder) / 2**20, 1),

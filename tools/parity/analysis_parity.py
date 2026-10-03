@@ -38,8 +38,11 @@ checkable (``docs/08-rewrite/contracts/worker-interface.md`` section 8):
     parsed mode; for the fixtures it also runs the four worker-interface
     cases both ways. Exit status 0 only when every comparison is identical,
     the native decode demonstrably ran on the native side only (in-process
-    stage timings; one successful traced call per worker recording), and a
-    recording rejected by the oracle is rejected natively with the same
+    stage timings; one successful traced call per worker recording), with
+    ``kernels`` one ``native_stages.kernel_call`` per oracle call of each
+    ported entry point, count for count, and none on the oracle side
+    (``native_stages.install_call_counters``; worker-interface.md section 8),
+    and a recording rejected by the oracle is rejected natively with the same
     exception class and stated facts (never a crash or an unrelated failure).
 
 ``compare``
@@ -123,7 +126,7 @@ WORKER_TRACE = Path(__file__).resolve().parent / "worker_trace.py"
 EXCEPTION_LINE = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Exit|Interrupt)\b.*")
 PINNED_ANALYZER_SHA256 = "0" * 64
 NATIVE_STAGES = ("decode", "kernels", "json_writer")
-CAPTURE_FORMAT = 3  # 3: raw SQLite row dumps, worker native-decode trace
+CAPTURE_FORMAT = 4  # 3: raw SQLite row dumps, worker native-decode trace; 4: kernel-call counts
 
 TIMESTAMP_KEYS = frozenset(
     {
@@ -620,6 +623,9 @@ def run_once(
     # Present in stages_ms only when the native decode ran: the corpus gate
     # checks it, so a native capture can never silently be Python.
     _instrument(native_stages, "load_telemetry", stages, NATIVE_DECODE_STAGE)
+    # Kernel calls on the native side, entry-point calls on the oracle side:
+    # the corpus gate compares them count for count (kernels stage).
+    kernel_calls, _uninstall = native_stages.install_call_counters()
 
     engine_output: list[str] = []
     roots = Roots((("<archive_root>", archive.resolve()), ("<iracing_root>", iracing_root.resolve())))
@@ -652,6 +658,7 @@ def run_once(
                 "wall_ms": round(wall_ms, 1),
                 "workflow_timing": result.get("timing"),
                 "stages_ms": {key: round(value, 1) for key, value in stages.items()},
+                "kernel_calls": kernel_calls,
                 "analysis_cache_hit": (result.get("analysis_cache") or {}).get("hit"),
             },
             indent=2,
@@ -960,11 +967,17 @@ def command_capture_worker(args: argparse.Namespace) -> int:
     )
     (out / "timings").mkdir(exist_ok=True)
     (out / "timings" / "output-run.json").write_text(json.dumps({"analyze_wall_ms": round(wall_ms, 1)}, indent=2), encoding="utf-8")
-    native_calls = (
+    trace = (
         [json.loads(line) for line in job.trace.read_text(encoding="utf-8").splitlines() if line.strip()]
         if job.trace.is_file()
         else []
     )
+    native_calls = [item for item in trace if "source" in item]
+    kernel_calls: dict[str, dict[str, int]] = {"native": {}, "oracle": {}}
+    for item in trace:  # one record per worker process
+        for side, counts in (item.get("kernel_calls") or {}).items():
+            for label, count in counts.items():
+                kernel_calls[side][label] = kernel_calls[side].get(label, 0) + count
     _capture_metadata(
         out,
         "worker",
@@ -972,6 +985,7 @@ def command_capture_worker(args: argparse.Namespace) -> int:
         recordings=[{"name": name, "sha256": spooled.name} for name, spooled in members],
         server_group_key=server_key,
         native_decode_calls=native_calls,
+        kernel_calls=kernel_calls,
         analysis_id=result.get("analysis_id"),
         analyzer_digest="unpinned",
         native_stages=args.native_stages,
@@ -1292,7 +1306,26 @@ def _analysis_parity(path: Path, dest: Path, stages: str, raw_archive: str) -> d
         if ran != expected:
             result["identical"] = False
             result.setdefault("differences", []).append(f"native decode ran {ran}, expected {expected}")
+        calls = {side: _output_run(dest / side).get("kernel_calls") for side in sides}
+        result["kernel_calls"] = (calls["native"] or {}).get("native")
+        problems = _kernel_call_problems(calls["oracle"], calls["native"], stages)
+        if problems:
+            result["identical"] = False
+            result.setdefault("differences", []).extend(problems)
     return result
+
+
+def _kernel_call_problems(oracle: Any, native: Any, stages: str) -> list[str]:
+    """The section 8 count rule over two captures' ``kernel_calls`` records."""
+
+    if not isinstance(oracle, dict) or not isinstance(native, dict):
+        return ["a capture has no kernel-call counts (capture format older than 4)"]
+    if str(SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS))
+    import native_stages  # noqa: PLC0415
+
+    kernels = "kernels" in [item.strip() for item in stages.split(",")]
+    return native_stages.kernel_call_problems(oracle, native, kernels)
 
 
 def _worker_parity(case: str, dest: Path, stages: str, raw_archive: str) -> dict[str, Any]:
@@ -1318,6 +1351,11 @@ def _worker_parity(case: str, dest: Path, stages: str, raw_archive: str) -> dict
         result["analysis_id"] = metadata["native"].get("analysis_id")
         result["native_decode_calls"] = {side: len(meta.get("native_decode_calls") or []) for side, meta in metadata.items()}
         problems = worker_native_decode_problems(metadata["oracle"], metadata["native"], "decode" in stages)
+        if not problems:
+            result["kernel_calls"] = (metadata["native"].get("kernel_calls") or {}).get("native")
+            problems = _kernel_call_problems(
+                metadata["oracle"].get("kernel_calls"), metadata["native"].get("kernel_calls"), stages
+            )
         if problems:
             result["identical"] = False
             result.setdefault("differences", []).extend(problems)

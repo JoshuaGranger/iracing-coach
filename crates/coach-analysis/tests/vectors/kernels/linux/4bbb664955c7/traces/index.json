@@ -1,0 +1,20 @@
+{
+ "calls": {
+  "analysis_engine._lap_trace_payload": 6,
+  "analysis_engine._track_profile": 1
+ },
+ "files": {
+  "analysis_engine._lap_trace_payload/00000.json": "3cb2fb998b2f3dca884ba8fdf2755ac7224a6e053bcdaf184062184b17d6884b",
+  "analysis_engine._lap_trace_payload/00001.json": "3260dbfc14b0b6f200b4e809e74a05fa0ca0accaf233921c59c002b8a9e7b01b",
+  "analysis_engine._lap_trace_payload/00002.json": "28215845979a905da3493703b5e02378ff83159cacc8c184a112b94386828ee1",
+  "analysis_engine._lap_trace_payload/00003.json": "0152ae6410f129150603f6742de7c958887a1f120a171930538548b5f68437f1",
+  "analysis_engine._lap_trace_payload/00004.json": "8e5a49f4a7bd2090634adb497e4e2e92ad6ad788550a63f3853023c8dd13a783",
+  "analysis_engine._lap_trace_payload/00005.json": "b8d45e2a06f1afc5fa080417d8ce9340f136c3cc0046fef1b5586834c6aceb90",
+  "analysis_engine._track_profile/00000.json": "6a8dd0118c4ccf3c0c00ff4a4c525f6aacb160b3663cedba27eb8ce8b3a6f2ed"
+ },
+ "platform": "linux",
+ "python": "3.12.3",
+ "recording": "synthetic:review-track-id",
+ "sha256": "4bbb664955c798f4a18f9fcc56334048b716394da0297c0a41b312ce0bf2c091",
+ "target_hz": null
+}

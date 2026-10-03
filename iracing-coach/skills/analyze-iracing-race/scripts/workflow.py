@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 import contextlib
 import datetime as _datetime
+import functools
 import gc
 import hashlib
 import json
@@ -1382,11 +1383,17 @@ def _load_analysis_telemetry(
 
     if not source_paths:
         raise SessionSelectionError("The selected session contains no IBT files.")
-    # Port phase 1 (worker-interface.md section 7): the native decode stage
-    # returns the same table; IRACING_COACH_NATIVE_STAGES is read once per job.
+    # Port phases 1 and 2 (worker-interface.md section 7): the native decode
+    # stage returns the same table; with kernels its samples stay in the mapped
+    # store as read-only sequences and a group is merged natively.
+    # IRACING_COACH_NATIVE_STAGES is read once per job.
+    stages = native_stages.requested_stages()
+    kernels = "kernels" in stages
     decode = (
-        native_stages.load_telemetry
-        if "decode" in native_stages.requested_stages()
+        functools.partial(native_stages.load_telemetry, columns="store")
+        if kernels
+        else native_stages.load_telemetry
+        if "decode" in stages
         else load_telemetry
     )
     loaded: list[dict[str, Any]] = []
@@ -1414,18 +1421,24 @@ def _load_analysis_telemetry(
             table["source_signatures"] = [
                 {"path": source_catalog["path"], "size": after[0], "modified_ns": after[1]}
             ]
-            table["sample_provenance"] = [
-                {
-                    "source_file_index": 0,
-                    "source_path": source_catalog["path"],
-                    "native_record_index": int(native_index),
-                }
-                for native_index in (
-                    table.get("sample_indices")
-                    or range(int(table.get("sample_count") or 0))
-                )
-            ]
+            table["sample_provenance"] = (
+                native_stages.ProvenanceSequence(table["sample_indices"], [source_catalog["path"]])
+                if kernels
+                else [
+                    {
+                        "source_file_index": 0,
+                        "source_path": source_catalog["path"],
+                        "native_record_index": int(native_index),
+                    }
+                    for native_index in (
+                        table.get("sample_indices")
+                        or range(int(table.get("sample_count") or 0))
+                    )
+                ]
+            )
             loaded.append(table)
+        else:
+            native_stages.release(table.get("samples"))
     if not loaded:
         raise WorkflowError("The selected IBT recording contains no telemetry samples.")
     if len(loaded) == 1:
@@ -1439,6 +1452,16 @@ def _load_analysis_telemetry(
         for name in (table.get("samples") or {}):
             if name not in channel_names:
                 channel_names.append(str(name))
+
+    if kernels:
+        try:
+            merged, merged_provenance = native_stages.merge_stores(
+                loaded, channel_names, [table["source_catalogs"][0]["path"] for table in loaded]
+            )
+        finally:
+            for table in loaded:
+                native_stages.release(table.get("samples"))
+        return _merged_telemetry(loaded, merged, merged_provenance, target_hz)
 
     references: list[tuple[int, float, int, int]] = []
     for file_index, table in enumerate(loaded):
@@ -1514,6 +1537,16 @@ def _load_analysis_telemetry(
         )
         contributor["source_file_index"] = file_index
         merged_provenance[previous_output_index].setdefault("contributors", []).append(contributor)
+    return _merged_telemetry(loaded, merged, merged_provenance, target_hz)
+
+
+def _merged_telemetry(
+    loaded: Sequence[Mapping[str, Any]],
+    merged: Mapping[str, Sequence[Any]],
+    merged_provenance: Sequence[Any],
+    target_hz: float | None,
+) -> dict[str, Any]:
+    """The group's table from its merged columns: metadata of the representative file, catalogues of all."""
 
     def info_size(table: Mapping[str, Any]) -> int:
         return len(json.dumps(table.get("session_info") or {}, default=str))
@@ -2189,30 +2222,39 @@ def _analyze_race_workflow(
         analysis_cache_hit = True
     else:
         telemetry = _load_analysis_telemetry(source_paths, rate)
-        for signature in telemetry.get("source_signatures", ()) or ():
-            if not isinstance(signature, Mapping) or not signature.get("path"):
-                continue
-            path = str(Path(str(signature["path"])).resolve())
-            fingerprint_record = fingerprints_by_path.get(path)
-            if fingerprint_record is None or (
-                int(fingerprint_record.get("size") or -1)
-                != int(signature.get("size") or -2)
-                or int(fingerprint_record.get("modified_ns") or -1)
-                != int(signature.get("modified_ns") or -2)
-            ):
-                raise WorkflowError(
-                    "The selected IBT changed between SHA-256 verification and "
-                    f"telemetry decoding: {path}. No analysis artifact was written."
-                )
-        analysis = analyze_telemetry(
-            telemetry,
-            source_paths=source_paths,
-            source_fingerprints=source_fingerprints,
-            analysis_profile={
-                "target_hz": rate,
-                "pipeline_sha256": pipeline_sha256,
-            },
-        )
+        # Port phase 2: a store-backed table (the kernels stage) runs the
+        # analysis with its per-sample entry points in coach-analysis kernels;
+        # the session releases the store whatever happens below.
+        with (
+            native_stages.kernel_session(telemetry)
+            if native_stages.store_of(telemetry.get("samples")) is not None
+            else contextlib.nullcontext()
+        ):
+            for signature in telemetry.get("source_signatures", ()) or ():
+                if not isinstance(signature, Mapping) or not signature.get("path"):
+                    continue
+                path = str(Path(str(signature["path"])).resolve())
+                fingerprint_record = fingerprints_by_path.get(path)
+                if fingerprint_record is None or (
+                    int(fingerprint_record.get("size") or -1)
+                    != int(signature.get("size") or -2)
+                    or int(fingerprint_record.get("modified_ns") or -1)
+                    != int(signature.get("modified_ns") or -2)
+                ):
+                    raise WorkflowError(
+                        "The selected IBT changed between SHA-256 verification and "
+                        f"telemetry decoding: {path}. No analysis artifact was written."
+                    )
+            analysis = analyze_telemetry(
+                telemetry,
+                source_paths=source_paths,
+                source_fingerprints=source_fingerprints,
+                analysis_profile={
+                    "target_hz": rate,
+                    "pipeline_sha256": pipeline_sha256,
+                },
+            )
+        del telemetry
         if not isinstance(analysis, Mapping):
             raise WorkflowError("The telemetry analysis engine returned an invalid result.")
         analysis = dict(analysis)

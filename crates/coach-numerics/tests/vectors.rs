@@ -354,3 +354,36 @@ fn parse() {
     }
     report.finish("parse");
 }
+
+#[test]
+fn parse_unicode() {
+    let mut report = Report::default();
+    for case in load("common", "parse_unicode") {
+        let t = case.get("text").str();
+        report.check(
+            || format!("float({t:?})"),
+            &encode(py::parse_float(t), enc_float),
+            case.get("float").str(),
+        );
+        report.check(
+            || format!("int({t:?})"),
+            &encode(py::parse_int(t), |i| format!("i:{i}")),
+            case.get("int").str(),
+        );
+    }
+    report.finish("parse_unicode");
+}
+
+#[test]
+fn int_low64() {
+    let mut report = Report::default();
+    for case in load("common", "int_low64") {
+        let x = float(case.get("x"));
+        report.check(
+            || format!("int({x:?}) & (2**64 - 1)"),
+            &encode(py::int_from_float_low64(x), |i| format!("i:{i}")),
+            case.get("out").str(),
+        );
+    }
+    report.finish("int_low64");
+}

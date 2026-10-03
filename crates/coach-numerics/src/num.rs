@@ -270,3 +270,30 @@ pub fn int_from_float(x: f64) -> PyResult<i64> {
         Err(INT_BEYOND_I64)
     }
 }
+
+/// The low 64 bits of `int(x)` in two's complement, as an `i64`: `int(x) & (2**64 - 1)`
+/// reinterpreted. Exact for any finite float, so `&`, `|` and `^` with masks below `2**63`
+/// give Python's result for an int of any size (an int from a float of magnitude `2**63` or
+/// more is a multiple of `2**11`).
+pub fn int_from_float_low64(x: f64) -> PyResult<i64> {
+    match int_from_float(x) {
+        Err(error) if error.kind == PyErrorKind::IntBeyondI64 => {
+            let bits = x.to_bits();
+            let exponent = ((bits >> 52) & 0x7FF) as i64 - 1075;
+            let mantissa = (bits & ((1 << 52) - 1)) | (1 << 52);
+            // |x| >= 2**63, so exponent >= 11: an exact shift, nothing below bit 0.
+            let magnitude = if exponent >= 64 {
+                0
+            } else {
+                mantissa.wrapping_shl(exponent as u32)
+            };
+            let low = if x < 0.0 {
+                magnitude.wrapping_neg()
+            } else {
+                magnitude
+            };
+            Ok(low as i64)
+        }
+        other => other,
+    }
+}

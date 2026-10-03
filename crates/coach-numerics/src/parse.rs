@@ -2,37 +2,35 @@
 //! whitespace, a sign, single underscores between digits, `inf`, `infinity` and `nan` in
 //! any case.
 //!
-//! Whitespace follows `_PyUnicode_TransformDecimalAndSpaceToASCII`: an all-ASCII string is
-//! stripped of ASCII whitespace only (`\x1c`-`\x1f` stay and fail), while a string with any
-//! non-ASCII character first has every `str.isspace` character turned into a space. A
-//! non-ASCII digit (which Python accepts, for example `'١'`) is `Unsupported` here.
+//! A string with any non-ASCII character first goes through
+//! `_PyUnicode_TransformDecimalAndSpaceToASCII`: characters below U+007F stay, every other
+//! `str.isspace` character becomes a space, every decimal digit (category Nd, for example
+//! `'١'`) its ASCII digit, and any other character ends the text with `?`, which no number
+//! accepts (`ValueError`). Then ASCII whitespace is stripped (`\x1c`-`\x1f` stay and fail).
+//! The character tables are CPython's own (`unicode.rs`).
 
 use crate::error::{INT_BEYOND_I64, PyError, PyErrorKind, PyResult};
+use crate::unicode::{decimal_digit, is_space};
 
 /// `Py_ISSPACE`: the C locale whitespace set.
 fn is_ascii_space(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\n' | '\x0b' | '\x0c' | '\r')
 }
 
-/// `str.isspace()` for one character.
-fn is_unicode_space(c: char) -> bool {
-    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
-}
-
-/// The ASCII text CPython parses, already stripped; `Err` for a non-ASCII character that is
-/// neither whitespace nor (possibly) a decimal digit, `Unsupported` for a non-ASCII digit.
+/// The ASCII text CPython parses, already stripped; `Err(error)` for a non-ASCII character that
+/// is neither whitespace nor a decimal digit.
 fn ascii_text(text: &str, error: PyError) -> PyResult<String> {
     let mapped: String = if text.is_ascii() {
         text.to_owned()
     } else {
         let mut out = String::with_capacity(text.len());
         for c in text.chars() {
-            if is_unicode_space(c) {
-                out.push(' ');
-            } else if c.is_ascii() {
+            if (c as u32) < 0x7F {
                 out.push(c);
-            } else if c.is_numeric() {
-                return Err(PyError::new(PyErrorKind::Unsupported, "non-ASCII digit"));
+            } else if is_space(c) {
+                out.push(' ');
+            } else if let Some(digit) = decimal_digit(c) {
+                out.push(char::from(b'0' + digit));
             } else {
                 return Err(error);
             }

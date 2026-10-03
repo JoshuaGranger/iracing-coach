@@ -1,0 +1,17 @@
+{
+ "calls": {
+  "analysis_engine._disrupted_sample_indices": 1,
+  "analysis_engine._lap_summaries": 1,
+  "analysis_engine._service_events": 1
+ },
+ "files": {
+  "analysis_engine._disrupted_sample_indices/00000.json": "3e5768969beed18e75cc37a73c210b58c06ef3ca06c310cab22ffea32b8e8c3d",
+  "analysis_engine._lap_summaries/00000.json": "129fab6e32c78306ebbbaf8bd84b361b94d9a1243aacf36453d789266fdbf500",
+  "analysis_engine._service_events/00000.json": "a837a89b039e73deac866e78016cc58155b57002baff07f105e3682d07dcf6f1"
+ },
+ "platform": "windows",
+ "python": "3.12.14",
+ "recording": "synthetic:laps-offline-text",
+ "sha256": "eba0a0bac6e77e308a326625d7bb763defb0fd3f8e1a5b4c99793eaf6f1f7eb7",
+ "target_hz": null
+}

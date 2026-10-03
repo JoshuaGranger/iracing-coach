@@ -1,0 +1,18 @@
+{
+ "calls": {
+  "analysis_engine._clean_lap_traces": 1,
+  "analysis_engine._corner_tire_age_summary": 1,
+  "analysis_engine._pace_attribution": 1,
+  "pit_loss.measure_pit_loss": 0
+ },
+ "files": {
+  "analysis_engine._clean_lap_traces/00000.json": "9983ee9d617eabcdebde5e060da783e863148f71c00a84e968f972856bba78c5",
+  "analysis_engine._corner_tire_age_summary/00000.json": "9d5dba8fee75bc2ea77cd03c69d69ca533d5dfeadd9df6840a5b33f13f7dec83",
+  "analysis_engine._pace_attribution/00000.json": "6eb9569b70f182ce23b78fc256d57208d2eb974353be64cbd70511efeb4209e5"
+ },
+ "platform": "linux",
+ "python": "3.12.3",
+ "recording": "synthetic:review-unicode-text",
+ "sha256": "7139123d570359141770ce45fde069d11139ab0a4182a7dea723e7de3f4c0be2",
+ "target_hz": null
+}

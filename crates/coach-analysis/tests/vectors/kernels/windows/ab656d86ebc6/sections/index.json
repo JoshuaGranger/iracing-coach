@@ -1,0 +1,19 @@
+{
+ "calls": {
+  "analysis_engine._clean_lap_traces": 1,
+  "analysis_engine._corner_tire_age_summary": 1,
+  "analysis_engine._pace_attribution": 1,
+  "pit_loss.measure_pit_loss": 1
+ },
+ "files": {
+  "analysis_engine._clean_lap_traces/00000.json": "f0c034580faae3171230fc6da651b3cff00ae879071ff29fe010f4b36cad9740",
+  "analysis_engine._corner_tire_age_summary/00000.json": "fd40ecf4716e18f336141978c4c703fbe778655740a3e4e7f5604efd3c4c71b1",
+  "analysis_engine._pace_attribution/00000.json": "1f336a9f474d6fe9f8f53913050e9c2889df79e7dc46297bc924807dff5ebc03",
+  "pit_loss.measure_pit_loss/00000.json": "74dbb14250b3c13bd5e0857927f5195ddd0f9daab8df6665cbb4c0910846c1cb"
+ },
+ "platform": "windows",
+ "python": "3.12.14",
+ "recording": "synthetic:sections-road-wheel",
+ "sha256": "ab656d86ebc61c23ea1822bf91a66648afa3c594e6c52e6c11f61de3cf45d72f",
+ "target_hz": null
+}

@@ -191,11 +191,11 @@ contracts/             Python MCP contracts (oracle); rewrite contracts are in d
 
 ## 12. Analysis port plan (P1 FAIL -> staged Rust port, D2 ruling)
 
-v1 ships with the Python worker. The port starts after v1 is accepted and proceeds in phases, each merged only when the parity gate passes. Python stays the orchestrator and the oracle; Rust stages substitute in process through a PyO3 module `coach_native`, selected per stage by `IRACING_COACH_NATIVE_STAGES` (`contracts/worker-interface.md` section 6).
+v1 ships with the Python worker. The port started on 2026-10-03 (owner ruling of that morning: v1 acceptance is not a gate) and proceeds in phases, each merged only when the parity gate passes. Python stays the orchestrator and the oracle; a Rust stage is selected per stage by `IRACING_COACH_NATIVE_STAGES` (`contracts/worker-interface.md` section 7). Phase 1 is not in-process: it is the executable `coach-analysis decode` (crate `crates/coach-analysis`), started by the worker per recording, which writes a coach column store file (`.ccs`, format version 1) that the Python seam `native_stages.py` reads. The PyO3 module `coach_native` this section first named is deferred; phase 2 keeps a process and the store as well (`port/phase2-plan.md` section 4).
 
 | Phase | Stage | Profile share | Gate |
 |---|---|---|---|
-| 1 | IBT column decode into a Rust column store (boundary A: `_load_analysis_telemetry` -> `TelemetryTable`) | 11.8 % time, 42 % peak (85 % with column copies) | decoded-matrix hash equal (`tools/parity/emit_ibt_golden.py`) and full `analysis.json` byte parity |
+| 1 | IBT column decode by the executable `coach-analysis decode` into a coach column store file (boundary A: `_load_analysis_telemetry` -> `TelemetryTable`); landed 2026-10-03 (`port/phase1-decode.md`) | 11.8 % time, 42 % peak (85 % with column copies) | decoded-matrix hash equal (`tools/parity/emit_ibt_golden.py`) and full `analysis.json` byte parity |
 | 2 | Per-sample kernels on Rust columns: `_normalize_column`, `_apply_steps`, `_lap_trace_payload`, `_lap_summaries`, `_additional_trace_sources`, `_track_profile`, `_setup_channel_series`, `_setup_telemetry` | 71.5 % time | per-stage insertion-order output equal (`engine-output.insertion-order.json`) and full byte parity |
 | 3 | `analysis.json` writer (`storage._json_text`, Python `repr` floats) | 6.2 % time | byte parity of every persisted file |
 

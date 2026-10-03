@@ -1,0 +1,31 @@
+{
+ "calls": {
+  "analysis_engine._caution_flag_series": 5,
+  "analysis_engine._conditions_summary": 1,
+  "analysis_engine._driver_adjustments_summary": 1,
+  "analysis_engine._dt_series": 2,
+  "analysis_engine._setup_channel_series": 1,
+  "analysis_engine._setup_telemetry": 1
+ },
+ "files": {
+  "analysis_engine._caution_flag_series/00000.json": "bab122f8147e1dbb20e7799c890badb46a95984d2b93a8b021e492926d421002",
+  "analysis_engine._caution_flag_series/00001.json": "f5659bb595fcc0d752781900a17021c7457b9b10dc97c7c7668e0a2ea3af45b5",
+  "analysis_engine._caution_flag_series/00002.json": "522bd640cad4de657c34fe7dd9aaec30866ddff1df35c29f7cf0753c651d3955",
+  "analysis_engine._caution_flag_series/00003.json": "491005fbd93caf92b89e32d94b0b4971297933907ce3bceec70d79396356c466",
+  "analysis_engine._caution_flag_series/00004.json": "7da7a6eaf07e0b8e2c4faaf9c3b282caf1d059b29b35f0ded106ab8ebe938702",
+  "analysis_engine._conditions_summary/00000.json": "c5e3248fa72a5fdce6ec364fc5ea0d2f599353530de78616c36e31059be5558f",
+  "analysis_engine._driver_adjustments_summary/00000.json": "10c070429179a42de740ce30fdeae8d821bfabe5682030790cc16d308f4aec1c",
+  "analysis_engine._dt_series/00000.ccs": "5caaae10ba8438e77be95b35af7f1f404b00321826f9b89d2427fd89465f3137",
+  "analysis_engine._dt_series/00000.json": "38dd5323cdf68a040f8a5b86d51b4440133277267599a5c851491e9cf6e9e7ad",
+  "analysis_engine._dt_series/00001.ccs": "5caaae10ba8438e77be95b35af7f1f404b00321826f9b89d2427fd89465f3137",
+  "analysis_engine._dt_series/00001.json": "32e4430292fea07b22bcac1d4e6e4c364f1823a54cd85f7e5a9a6fdcdbcc85fd",
+  "analysis_engine._setup_channel_series/00000.json": "2a0a9ce0c205e478ac361db9432d3477697e18b14c30f5f1cb95aacdfbf700b1",
+  "analysis_engine._setup_telemetry/00000.json": "74c28fd26072720e388afc7225f20d8645181cff27fd0078129b8c7fa38158dd",
+  "probes/views.json": "ea3b450280bbc043fcf48bad1cfeae7f01d2a5de40256126043fdc6aded1a464"
+ },
+ "platform": "windows",
+ "python": "3.12.14",
+ "recording": "synthetic:review-big-ints",
+ "sha256": "2db0393bcdbd11109a9277e1ec7d43759f8b2fb635115b70c0b01f188f66d0b3",
+ "target_hz": null
+}

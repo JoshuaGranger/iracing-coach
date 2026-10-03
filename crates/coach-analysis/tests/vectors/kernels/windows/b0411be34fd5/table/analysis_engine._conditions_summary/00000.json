@@ -1,0 +1,1 @@
+{"codec":1,"entry":"analysis_engine._conditions_summary","call":0,"args":[{"$table":1}],"kwargs":{},"result":{"air_temperature_f":{"channel":"AirTemp","source_unit":"C","start":70.7,"end":71.0,"minimum":68.9,"median":70.1,"maximum":71.6,"changed":true},"weather_declared_wet":true},"accessed":["AirTemp","WeatherDeclaredWet"]}

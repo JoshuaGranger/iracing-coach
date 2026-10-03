@@ -1,0 +1,17 @@
+{
+ "calls": {
+  "analysis_engine._disrupted_sample_indices": 1,
+  "analysis_engine._lap_summaries": 1,
+  "analysis_engine._service_events": 1
+ },
+ "files": {
+  "analysis_engine._disrupted_sample_indices/00000.json": "e1b1a49ecd502d038479f329bca6702db9b2d59e72653b296583a4b884103b9b",
+  "analysis_engine._lap_summaries/00000.json": "914974ff53ff7fa6702432586593425f99ddea68af2529e760baf1b1974f54ec",
+  "analysis_engine._service_events/00000.json": "c09c104643d14d048aa01e331658bed9ad832def56748c229dd897e59fd2d15c"
+ },
+ "platform": "linux",
+ "python": "3.12.3",
+ "recording": "synthetic:review-big-ints",
+ "sha256": "2db0393bcdbd11109a9277e1ec7d43759f8b2fb635115b70c0b01f188f66d0b3",
+ "target_hz": null
+}
