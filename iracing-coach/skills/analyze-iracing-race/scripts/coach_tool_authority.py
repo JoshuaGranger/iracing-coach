@@ -55,6 +55,8 @@ TOOL_CAPABILITIES: Mapping[str, str] = {
     "evaluate_driving_trial": CAPABILITY_WRITE,
     "find_iracing_telemetry_events": CAPABILITY_READ_ANALYSIS,
     "garage61_auth_status": CAPABILITY_CREDENTIAL,
+    # D12 migration: writes migrated experiments into the archive.
+    "import_legacy_tuning_experiments": CAPABILITY_WRITE,
     "inventory_iracing_data": CAPABILITY_INVENTORY,
     "iracing_companion_dashboard": CAPABILITY_READ_ANALYSIS,
     "iracing_knowledge_cache_status": CAPABILITY_READ_ANALYSIS,

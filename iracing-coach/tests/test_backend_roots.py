@@ -29,6 +29,12 @@ def _normcase(path: Path) -> str:
     return os.path.normcase(str(path))
 
 
+#: Cases written with drive-letter literals. On POSIX `Path(r"E:\chosen")` is a
+#: relative name and `normcase` folds nothing, so they state Windows rules only;
+#: `PosixRootTests` states the same precedence with POSIX roots.
+WINDOWS_LITERALS = unittest.skipUnless(os.name == "nt", "drive-letter path literals are Windows paths")
+
+
 class UserProfileResolutionTests(unittest.TestCase):
     def test_a_redirected_profile_is_followed(self) -> None:
         environ = {"USERPROFILE": r"D:\redirected\someone-else"}
@@ -63,6 +69,7 @@ class UserProfileResolutionTests(unittest.TestCase):
 
 
 class PrecedenceTests(unittest.TestCase):
+    @WINDOWS_LITERALS
     def test_an_explicit_argument_outranks_every_other_source(self) -> None:
         resolved = backend_roots.resolve_iracing_root(
             r"E:\chosen",
@@ -72,6 +79,7 @@ class PrecedenceTests(unittest.TestCase):
         self.assertEqual(resolved.source, backend_roots.SOURCE_ARGUMENT)
         self.assertEqual(_normcase(resolved.path), _normcase(Path(r"E:\chosen")))
 
+    @WINDOWS_LITERALS
     def test_the_environment_outranks_configuration_and_the_default(self) -> None:
         resolved = backend_roots.resolve_iracing_root(
             environ={"USERPROFILE": r"C:\Users\alice", "IRACING_COACH_IRACING_ROOT": r"F:\env"},
@@ -87,6 +95,7 @@ class PrecedenceTests(unittest.TestCase):
         )
         self.assertTrue(resolved.is_default)
 
+    @WINDOWS_LITERALS
     def test_the_archive_root_uses_its_own_variable(self) -> None:
         resolved = backend_roots.resolve_archive_root(
             environ={"USERPROFILE": r"C:\Users\alice", "IRACING_COACH_DATA": r"F:\data"},
@@ -94,6 +103,7 @@ class PrecedenceTests(unittest.TestCase):
         self.assertEqual(resolved.variable, backend_roots.ARCHIVE_ROOT_VARIABLE)
         self.assertEqual(_normcase(resolved.path), _normcase(Path(r"F:\data")))
 
+    @WINDOWS_LITERALS
     def test_the_iracing_variable_does_not_move_the_archive_root(self) -> None:
         # The two roots are independent. A single shared variable would let a
         # simulator relocation silently move race history.
@@ -110,6 +120,7 @@ class PrecedenceTests(unittest.TestCase):
 class GeneratedDefaultTests(unittest.TestCase):
     """The rule that distinguishes a stale literal from a real choice."""
 
+    @WINDOWS_LITERALS
     def test_another_accounts_generated_default_is_not_honored(self) -> None:
         resolved = backend_roots.resolve_iracing_root(
             environ={"USERPROFILE": r"C:\Users\alice"},
@@ -122,6 +133,7 @@ class GeneratedDefaultTests(unittest.TestCase):
             _normcase(Path(r"C:\Users\alice").joinpath(*backend_roots.IRACING_ROOT_RELATIVE)),
         )
 
+    @WINDOWS_LITERALS
     def test_the_running_accounts_generated_default_resolves_to_the_same_place(self) -> None:
         resolved = backend_roots.resolve_iracing_root(
             environ={"USERPROFILE": r"C:\Users\alice"},
@@ -132,6 +144,7 @@ class GeneratedDefaultTests(unittest.TestCase):
             _normcase(Path(r"C:\Users\alice").joinpath(*backend_roots.IRACING_ROOT_RELATIVE)),
         )
 
+    @WINDOWS_LITERALS
     def test_a_generated_archive_default_is_recognised_by_its_longer_tail(self) -> None:
         resolved = backend_roots.resolve_archive_root(
             environ={"USERPROFILE": r"C:\Users\alice"},
@@ -140,6 +153,7 @@ class GeneratedDefaultTests(unittest.TestCase):
         self.assertTrue(resolved.is_default)
         self.assertIsNotNone(resolved.ignored_configuration)
 
+    @WINDOWS_LITERALS
     def test_a_deliberate_non_default_root_is_preserved_exactly(self) -> None:
         # The whole point of the narrow shape rule. This user moved the
         # simulator to another volume and that choice must survive.
@@ -151,6 +165,7 @@ class GeneratedDefaultTests(unittest.TestCase):
         self.assertIsNone(resolved.ignored_configuration)
         self.assertEqual(_normcase(resolved.path), _normcase(Path(r"D:\sim\iRacing")))
 
+    @WINDOWS_LITERALS
     def test_a_matching_tail_without_a_profile_head_is_still_a_real_choice(self) -> None:
         # `D:\Backup\Documents\iRacing` ends with the generated tail but has no
         # `Users\<name>` head, so it is a deliberate location, not a literal
@@ -162,6 +177,7 @@ class GeneratedDefaultTests(unittest.TestCase):
         self.assertEqual(resolved.source, backend_roots.SOURCE_CONFIGURATION)
         self.assertEqual(_normcase(resolved.path), _normcase(Path(r"D:\Backup\Documents\iRacing")))
 
+    @WINDOWS_LITERALS
     def test_a_generated_default_on_a_different_drive_is_still_recognised(self) -> None:
         resolved = backend_roots.resolve_iracing_root(
             environ={"USERPROFILE": r"C:\Users\alice"},
@@ -169,6 +185,7 @@ class GeneratedDefaultTests(unittest.TestCase):
         )
         self.assertTrue(resolved.is_default)
 
+    @WINDOWS_LITERALS
     def test_an_explicit_argument_is_never_discarded_as_a_stale_literal(self) -> None:
         # The stale rule applies only to shipped configuration. A caller that
         # names a path means it, even if the path has the generated shape.
@@ -198,6 +215,7 @@ class InstallRootTests(unittest.TestCase):
         # directory. `None` is the truthful answer.
         self.assertIsNone(backend_roots.resolve_install_root(environ={}))
 
+    @WINDOWS_LITERALS
     def test_the_program_files_variable_supplies_the_default(self) -> None:
         resolved = backend_roots.resolve_install_root(
             environ={"PROGRAMFILES(X86)": r"E:\Program Files (x86)"}
@@ -209,6 +227,7 @@ class InstallRootTests(unittest.TestCase):
             _normcase(resolved.path), _normcase(Path(r"E:\Program Files (x86)\iRacing"))
         )
 
+    @WINDOWS_LITERALS
     def test_a_generated_install_literal_from_another_machine_is_ignored(self) -> None:
         resolved = backend_roots.resolve_install_root(
             environ={"PROGRAMFILES(X86)": r"E:\Program Files (x86)"},
@@ -222,6 +241,7 @@ class InstallRootTests(unittest.TestCase):
             _normcase(resolved.path), _normcase(Path(r"E:\Program Files (x86)\iRacing"))
         )
 
+    @WINDOWS_LITERALS
     def test_a_deliberate_install_root_is_preserved(self) -> None:
         resolved = backend_roots.resolve_install_root(
             environ={"PROGRAMFILES(X86)": r"E:\Program Files (x86)"},
@@ -232,6 +252,7 @@ class InstallRootTests(unittest.TestCase):
         self.assertEqual(resolved.source, backend_roots.SOURCE_CONFIGURATION)
         self.assertEqual(_normcase(resolved.path), _normcase(Path(r"D:\Games\iRacing")))
 
+    @WINDOWS_LITERALS
     def test_the_environment_override_outranks_the_program_files_default(self) -> None:
         resolved = backend_roots.resolve_install_root(
             environ={
@@ -243,6 +264,49 @@ class InstallRootTests(unittest.TestCase):
         assert resolved is not None
         self.assertEqual(resolved.source, backend_roots.SOURCE_ENVIRONMENT)
         self.assertEqual(_normcase(resolved.path), _normcase(Path(r"F:\iRacing")))
+
+
+@unittest.skipUnless(os.name == "posix", "POSIX roots")
+class PosixRootTests(unittest.TestCase):
+    """The worker's roots on Linux: environment variables name absolute directories."""
+
+    def test_an_explicit_argument_outranks_every_other_source(self) -> None:
+        resolved = backend_roots.resolve_iracing_root(
+            "/srv/chosen",
+            environ={"HOME": "/home/alice", "IRACING_COACH_IRACING_ROOT": "/data/py/1/jobs/7"},
+            defaults={"iracing_root": "/srv/configured"},
+        )
+        self.assertEqual(resolved.source, backend_roots.SOURCE_ARGUMENT)
+        self.assertEqual(str(resolved.path), "/srv/chosen")
+
+    def test_the_job_root_variable_outranks_configuration_and_the_default(self) -> None:
+        resolved = backend_roots.resolve_iracing_root(
+            environ={"HOME": "/home/alice", "IRACING_COACH_IRACING_ROOT": "/data/py/1/jobs/7"},
+            defaults={"iracing_root": "/srv/configured"},
+        )
+        self.assertEqual(resolved.source, backend_roots.SOURCE_ENVIRONMENT)
+        self.assertEqual(str(resolved.path), "/data/py/1/jobs/7")
+
+    def test_the_archive_root_uses_its_own_variable(self) -> None:
+        resolved = backend_roots.resolve_archive_root(
+            environ={"HOME": "/home/alice", "IRACING_COACH_DATA": "/data/py/1/archive"},
+        )
+        self.assertEqual(resolved.variable, backend_roots.ARCHIVE_ROOT_VARIABLE)
+        self.assertEqual(str(resolved.path), "/data/py/1/archive")
+
+    def test_the_job_root_variable_does_not_move_the_archive_root(self) -> None:
+        resolved = backend_roots.resolve_archive_root(
+            environ={"HOME": "/home/alice", "IRACING_COACH_IRACING_ROOT": "/data/py/1/jobs/7"},
+        )
+        self.assertNotEqual(str(resolved.path), "/data/py/1/jobs/7")
+        self.assertTrue(resolved.is_default)
+
+    def test_no_install_root_is_invented_without_program_files(self) -> None:
+        self.assertIsNone(backend_roots.resolve_install_root(environ={"HOME": "/home/alice"}))
+        resolved = backend_roots.resolve_install_root(environ={"IRACING_COACH_INSTALL_ROOT": "/opt/iracing"})
+        assert resolved is not None
+        self.assertEqual(resolved.source, backend_roots.SOURCE_ENVIRONMENT)
+        self.assertEqual(str(resolved.path), "/opt/iracing")
 
 
 class RejectionTests(unittest.TestCase):

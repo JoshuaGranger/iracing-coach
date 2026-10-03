@@ -2646,7 +2646,15 @@ class ArchiveStore:
             / f"{safe_slug(experiment_id)}.json"
         )
 
-    def record_tuning_experiment(self, experiment: Mapping[str, Any]) -> dict[str, Any]:
+    def record_tuning_experiment(
+        self, experiment: Mapping[str, Any], *, updated_at: str | None = None
+    ) -> dict[str, Any]:
+        """Write one experiment record and its index row (``updated_at`` defaults to now).
+
+        A migrated experiment passes its legacy ``updated_at`` so its history
+        keeps the original times.
+        """
+
         payload = dict(experiment)
         context = payload.get("context")
         if not isinstance(context, Mapping):
@@ -2665,7 +2673,7 @@ class ArchiveStore:
                 },
                 20,
             )
-        now = utc_now()
+        now = updated_at or utc_now()
         payload.setdefault("schema_version", 1)
         payload.setdefault("created_at", now)
         payload["updated_at"] = now

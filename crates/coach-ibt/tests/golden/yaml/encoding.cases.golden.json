@@ -1,0 +1,2893 @@
+{
+ "golden": 1,
+ "kind": "cases",
+ "source": "crates/coach-ibt/tests/yaml-cases/encoding.cases",
+ "source_sha256": "7140acbfae858053619a3c6d17487d38f4857deecad4ac74c49deb3901d7233e",
+ "python": "3.12.14",
+ "platform": "win32",
+ "case_mtime": {
+  "float": "1500000000.25"
+ },
+ "cases": [
+  {
+   "name": "bom_utf8",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "bd366fc2e585f4b061dbe1d5ab33db32007cd2624e5ca4022db717c7296101e5",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "WeekendInfo",
+      {
+       "map": [
+        [
+         "TrackName",
+         "bom \u2206"
+        ]
+       ]
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       "bom \u2206"
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      "bom \u2206"
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "cp1252_fallback",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "0372656683da9ffd94005e786548515394bca8407b26150e9682411930f11cf9",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "DriverInfo",
+      {
+       "map": [
+        [
+         "DriverCarIdx",
+         {
+          "int": "0"
+         }
+        ],
+        [
+         "Drivers",
+         [
+          {
+           "map": [
+            [
+             "CarIdx",
+             {
+              "int": "0"
+             }
+            ],
+            [
+             "UserName",
+             "Jos\u00e9 \u20ac \ufffd \ufffd \ufffd \ufffd \ufffd \u0178"
+            ]
+           ]
+          }
+         ]
+        ]
+       ]
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": {
+     "map": [
+      [
+       "car_idx",
+       {
+        "int": "0"
+       }
+      ],
+      [
+       "user_id",
+       null
+      ],
+      [
+       "user_name",
+       "Jos\u00e9 \u20ac \ufffd \ufffd \ufffd \ufffd \ufffd \u0178"
+      ],
+      [
+       "irating",
+       null
+      ],
+      [
+       "car_id",
+       null
+      ],
+      [
+       "car_path",
+       null
+      ],
+      [
+       "car_screen_name",
+       null
+      ]
+     ]
+    },
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "bom_then_invalid_utf8",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "49d91ebc73aa4cefcc8585756ec5624c20cf20805864a1dcf1f08ccd04e9e163",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "\u00ef\u00bb\u00bfA",
+      "\u00e9"
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "surrogate_bytes_invalid_utf8",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "b4935755ff035809a92d5e9668125de74b1fb9008490977f4fcec04a454c7118",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "A",
+      "\u00ed\u00a0\u20ac"
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "nul_cut",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "7224f9ec8113e3b042c7415a50604bd45e49fd16e3a8235ed397c24dda9f4126",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "A",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "B",
+      {
+       "int": "2"
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "crlf",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "4e51d859d1c8ddd2815c431bd5a23869a04e576461f0359745e1114287785b85",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "WeekendInfo",
+      {
+       "map": [
+        [
+         "TrackName",
+         "crlf"
+        ],
+        [
+         "TrackID",
+         {
+          "int": "7"
+         }
+        ]
+       ]
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       "crlf"
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       {
+        "int": "7"
+       }
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "track_name",
+      "crlf"
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "python_line_boundaries",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "1ab5472b43750e19772ad0db8c14194c2630dd2a9f1500f99f2d0ec7b358498f",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "A",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "B",
+      {
+       "int": "2"
+      }
+     ],
+     [
+      "C",
+      {
+       "int": "3"
+      }
+     ],
+     [
+      "D",
+      {
+       "int": "4"
+      }
+     ],
+     [
+      "E",
+      {
+       "int": "5"
+      }
+     ],
+     [
+      "F",
+      {
+       "int": "6"
+      }
+     ],
+     [
+      "G",
+      {
+       "int": "7"
+      }
+     ],
+     [
+      "H",
+      {
+       "int": "8"
+      }
+     ],
+     [
+      "I",
+      {
+       "int": "9"
+      }
+     ],
+     [
+      "J",
+      {
+       "int": "10"
+      }
+     ],
+     [
+      "K",
+      {
+       "int": "11"
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "python_whitespace_strip",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "7ce348df417f858fcd62611bbdf8d57d92ffffb4e1bb5021bae16a869362fd3f",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "A",
+      "x"
+     ],
+     [
+      "B",
+      "y"
+     ],
+     [
+      "C",
+      "z"
+     ],
+     [
+      "D",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "E",
+      {
+       "int": "2"
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "form_feed_blank_lines",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "a8fbd6eba12cc257224524f8ca6c577b397431fb928d4e193ee979c19fed6287",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "A",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "B",
+      {
+       "int": "2"
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "unicode_values",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "d7df3e2e74a4c039f01c2c99a02c3b29f3b602f27943fcbf6f93d3adc9476a66",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": [
+     [
+      "WeekendInfo",
+      {
+       "map": [
+        [
+         "TrackName",
+         "N\u00fcrburgring \u6f22\u5b57 \ud83c\udfc1"
+        ]
+       ]
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       "N\u00fcrburgring \u6f22\u5b57 \ud83c\udfc1"
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      "N\u00fcrburgring \u6f22\u5b57 \ud83c\udfc1"
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "only_bom",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": []
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "only_nul",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": null,
+   "unsupported": null,
+   "literals": [],
+   "session_info": {
+    "map": []
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  }
+ ]
+}

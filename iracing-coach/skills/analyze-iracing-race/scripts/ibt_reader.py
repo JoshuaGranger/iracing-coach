@@ -14,9 +14,9 @@ The public API is intentionally small:
     Return selected channels as a column-oriented ``samples`` mapping.  Array
     variables remain lists inside each channel's sample list.
 
-Only read-only file handles and read-only memory maps are used. PyYAML is used
-when available; a strict parser for iRacing's mapping/list/scalar YAML subset
-keeps the reader self-contained when it is not.
+Only read-only file handles and read-only memory maps are used. Session YAML is
+read by a strict parser for iRacing's mapping/list/scalar subset only; an
+installed PyYAML is never used, so every interpreter reads a recording alike.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ from __future__ import annotations
 import ast
 import datetime as _datetime
 import hashlib
-import importlib
 import itertools
 import math
 import mmap
@@ -281,58 +280,6 @@ def _decode_c_string(value: bytes) -> str:
         return value.decode("cp1252", errors="replace")
 
 
-_YAML_MODULE: Any = None
-_YAML_IMPORT_ATTEMPTED = False
-
-
-def _load_yaml_module() -> Any:
-    global _YAML_IMPORT_ATTEMPTED, _YAML_MODULE
-    if _YAML_IMPORT_ATTEMPTED:
-        return _YAML_MODULE
-
-    _YAML_IMPORT_ATTEMPTED = True
-    errors: list[str] = []
-
-    def usable(module: Any) -> bool:
-        return callable(getattr(module, "safe_load", None))
-
-    # This file is <plugin>/skills/analyze-iracing-race/scripts/ibt_reader.py.
-    vendor = Path(__file__).resolve().parents[3] / "vendor"
-    if vendor.is_dir():
-        vendor_text = str(vendor)
-        if vendor_text not in sys.path:
-            sys.path.insert(0, vendor_text)
-        try:
-            candidate = importlib.import_module("yaml")
-            if usable(candidate):
-                _YAML_MODULE = candidate
-                return _YAML_MODULE
-            errors.append("bundled yaml module does not provide safe_load")
-        except Exception as exc:  # dependency/ACL/import failures need context
-            errors.append(f"bundled PyYAML: {exc}")
-
-        # An empty/incomplete vendor directory can be imported as a namespace
-        # package.  Remove that unusable module and path before trying the
-        # runtime installation.
-        sys.modules.pop("yaml", None)
-        try:
-            sys.path.remove(vendor_text)
-        except ValueError:
-            pass
-        importlib.invalidate_caches()
-
-    try:
-        candidate = importlib.import_module("yaml")
-        if usable(candidate):
-            _YAML_MODULE = candidate
-            return _YAML_MODULE
-        errors.append("runtime yaml module does not provide safe_load")
-    except Exception as exc:
-        errors.append(f"runtime PyYAML: {exc}")
-
-    return None
-
-
 _INTEGER_PATTERN = re.compile(r"^[+-]?(?:0|[1-9][0-9]*)$")
 _FLOAT_PATTERN = re.compile(
     r"^[+-]?(?:(?:[0-9]+\.[0-9]*)|(?:[0-9]*\.[0-9]+)|(?:[0-9]+[eE][+-]?[0-9]+)|(?:[0-9]+\.[0-9]*[eE][+-]?[0-9]+))$"
@@ -539,24 +486,10 @@ def _parse_session_info(data: bytes, path: Path) -> dict[str, Any]:
     except UnicodeDecodeError:
         text = data.decode("cp1252", errors="replace")
 
-    yaml = _load_yaml_module()
-    if yaml is None:
-        parsed = _parse_iracing_yaml_subset(text, path)
-    else:
-        try:
-            parsed = yaml.safe_load(text)
-        except Exception as exc:
-            raise IbtYamlError(
-                f"{_path_label(path)}: invalid embedded session YAML: {exc}"
-            ) from exc
-    if parsed is None:
-        return {}
-    if not isinstance(parsed, Mapping):
-        raise IbtYamlError(
-            f"{_path_label(path)}: embedded session YAML root is "
-            f"{type(parsed).__name__}, expected a mapping"
-        )
-    return _normalise_yaml_value(parsed)
+    # Always the subset parser, never an installed PyYAML: YAML 1.1 reads
+    # `SteeringRatio: 12:1` as the base-60 integer 721, so the same recording
+    # analysed differently wherever PyYAML happened to be installed.
+    return _normalise_yaml_value(_parse_iracing_yaml_subset(text, path))
 
 
 def _as_mapping(value: Any) -> Mapping[str, Any]:
@@ -744,6 +677,12 @@ def _extract_summary(
     else:
         is_race = (event_type or "").strip().lower() == "race"
 
+    # Recordings spell the flag DriverSetupIsModified (P5, 102 Las Vegas
+    # recordings); DriverSetupModified survives only in older synthetic fixtures.
+    setup_modified = driver_info.get("DriverSetupIsModified")
+    if setup_modified is None:
+        setup_modified = driver_info.get("DriverSetupModified")
+
     driver_car_idx = _as_int(driver_info.get("DriverCarIdx"))
     driver: Mapping[str, Any] = {}
     for candidate in _as_list(driver_info.get("Drivers")):
@@ -817,7 +756,7 @@ def _extract_summary(
         "car_screen_name": _as_text(driver.get("CarScreenName")),
         "driver_user_id": _as_int(driver.get("UserID")),
         "driver_setup_name": _as_text(driver_info.get("DriverSetupName")),
-        "driver_setup_modified": _as_bool(driver_info.get("DriverSetupModified")),
+        "driver_setup_modified": _as_bool(setup_modified),
         "start_time_unix": start_epoch,
         "end_time_unix": end_epoch,
         "start_time_utc": _safe_iso(start_epoch),
@@ -1794,8 +1733,9 @@ def _iter_ibt_paths(root: Path) -> Iterator[Path]:
         return
     for directory, directory_names, file_names in os.walk(root, followlinks=False):
         # Stable traversal makes grouping/tests reproducible.
-        directory_names.sort(key=str.lower)
-        file_names.sort(key=str.lower)
+        # Names equal but for case keep a fixed order on every file system.
+        directory_names.sort(key=lambda name: (name.lower(), name))
+        file_names.sort(key=lambda name: (name.lower(), name))
         for file_name in file_names:
             if file_name.lower().endswith(".ibt"):
                 yield Path(directory) / file_name

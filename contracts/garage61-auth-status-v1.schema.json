@@ -8,7 +8,7 @@
     "ok": { "type": "boolean" },
     "configured": { "type": "boolean" },
     "status": { "enum": ["credential_store_unavailable", "not_configured", "unavailable", "available"] },
-    "credential_storage": { "const": "windows-user-dpapi" },
+    "credential_storage": { "enum": ["windows-user-dpapi", "token-file"] },
     "archive_root": { "type": "string" },
     "api_request": { "type": ["object", "null"] },
     "error_type": { "type": "string" },

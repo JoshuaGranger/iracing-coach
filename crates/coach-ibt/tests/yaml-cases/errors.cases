@@ -1,0 +1,63 @@
+Rejected session-info texts: each case must fail in Python and in Rust (unsupported literals:
+Python accepts them, the port rejects them by contract).
+%%% tab_indent
+A: 1
+	B: 2
+%%% tab_after_spaces
+A:
+  	B: 2
+%%% anchor
+A: 1
+&anchor B: 2
+%%% alias
+A:
+ *alias
+%%% tag
+!tag A: 1
+%%% unexpected_indentation
+A: 1
+  B: 2
+%%% root_list
+- a
+- b
+%%% root_scalar_pair_missing
+just text
+%%% scalar_item_with_block
+A:
+- item
+  nested: 1
+%%% continuation_not_mapping
+A:
+- K: 1
+  - x
+%%% unterminated_quoted_key
+"unterminated: 5
+%%% empty_key
+: value
+%%% dedent_leftover
+  A: 1
+B: 2
+%%% list_then_mapping
+A:
+ - x
+ B: 1
+%%% set_literal
+A: {1, 2}
+%%% set_call
+A: [set()]
+%%% bytes_literal
+A: [b'x']
+%%% complex_literal
+A: [1+2j]
+%%% ellipsis_literal
+A: [...]
+%%% int_key_literal
+A: {1: 'a'}
+%%% unhashable_key_type_error
+A: {[1]: 2, 'a': x}
+%%% unhashable_set_type_error
+A: {[1]}
+%%% surrogate_literal
+A: '\ud800'
+%%% tuple_quoted_key
+'a', 'b': 1

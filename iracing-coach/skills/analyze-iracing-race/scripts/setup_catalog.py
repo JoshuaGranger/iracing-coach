@@ -1392,9 +1392,9 @@ def catalog_setups(
         base = Path(directory)
         directory_names[:] = sorted(
             [name for name in directory_names if not (base / name).is_symlink()],
-            key=str.casefold,
+            key=lambda name: (name.casefold(), name),
         )
-        for name in sorted(file_names, key=str.casefold):
+        for name in sorted(file_names, key=lambda name: (name.casefold(), name)):
             suffix = Path(name).suffix.casefold()
             if suffix not in {".sto", ".htm", ".html"}:
                 continue
@@ -1433,8 +1433,8 @@ def catalog_setups(
     for _, bucket in sorted(grouped.items(), key=lambda item: item[0]):
         if len(entries) >= entry_limit:
             break
-        html_paths = sorted(bucket["html"], key=lambda path: str(path).casefold())
-        sto_paths = sorted(bucket["sto"], key=lambda path: str(path).casefold())
+        html_paths = sorted(bucket["html"], key=lambda path: (str(path).casefold(), str(path)))
+        sto_paths = sorted(bucket["sto"], key=lambda path: (str(path).casefold(), str(path)))
         all_paths = [*html_paths, *sto_paths]
         try:
             sources = {

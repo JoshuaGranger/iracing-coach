@@ -66,7 +66,7 @@ try:  # Support package imports and direct execution from the scripts folder.
     )
     from .race_card import build_race_card, render_race_card
     from .reporting import render_report, render_visuals
-    from .secure_store import SecureStoreError, credential_exists
+    from .secure_store import SecureStoreError, credential_exists, credential_storage
     from .storage import ArchiveStore, safe_slug, session_phase, stable_hash, utc_now
 except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading.
     from analysis_engine import (
@@ -105,7 +105,7 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
     )
     from race_card import build_race_card, render_race_card
     from reporting import render_report, render_visuals
-    from secure_store import SecureStoreError, credential_exists
+    from secure_store import SecureStoreError, credential_exists, credential_storage
     from storage import ArchiveStore, safe_slug, session_phase, stable_hash, utc_now
 
 
@@ -936,8 +936,8 @@ def iracing_local_inventory_workflow(
     for directory, directory_names, file_names in os.walk(
         selected_root, followlinks=False, onerror=on_walk_error
     ):
-        directory_names.sort(key=str.lower)
-        file_names.sort(key=str.lower)
+        directory_names.sort(key=lambda name: (name.lower(), name))
+        file_names.sort(key=lambda name: (name.lower(), name))
         base = Path(directory)
         for file_name in file_names:
             path = base / file_name
@@ -1633,7 +1633,7 @@ def _analysis_pipeline_sha256() -> str:
 # reader decodes scalar columns through typed memory views, and track
 # geometry filters columns in C. The complete cold outputs of four real
 # recordings (NH race and practice, a short NH test, an Iowa race) are
-# byte-identical under tools/analysis_parity.py, and test_analysis_columns
+# byte-identical under tools/parity/analysis_parity.py, and test_analysis_columns
 # pins every rewritten helper against the verbatim pre-change functions.
 # Review 2026-09-24: v19 core answers are unchanged. review_sections.v1.json
 # adds IRP (232-irp/2026-09-24.1) and sections may carry a driver-readable
@@ -1761,8 +1761,24 @@ def _analysis_pipeline_sha256() -> str:
 # v23 has not left this branch; a v23 analysis cached before this review lacks
 # steering_offset and fails closed (its steering work never matches), so the
 # profile is kept rather than retiring caches that give no wrong answer.
+# Review 2026-10-02 (rewrite wave 1, worker-interface section 5; v23 kept):
+# ibt_reader.scan_ibt reads DriverSetupIsModified, the key recordings carry
+# (P5), falling back to the fixture spelling DriverSetupModified; only the scan
+# metadata's driver_setup_modified changes (the analysis identity already read
+# DriverSetupIsModified). Directory walks in ibt_reader and setup_catalog break
+# ties between names equal but for case by the name itself, so order no longer
+# depends on the file system. A synthetic recording carrying
+# DriverSetupIsModified: 1 gives a byte-identical cached analysis before and
+# after (analyzer digest pinned). Session YAML is now always read by the
+# subset parser: an interpreter with PyYAML installed (WSL's system 3.12) read
+# `SteeringRatio: 12:1` as the base-60 integer 721, losing the steering ratio
+# and changing both setup fingerprints; the oracle runtime has no PyYAML, so
+# its answers are unchanged, and the private corpus (New Hampshire race,
+# Iowa race, practice, Offline Testing) is now byte-identical between Windows
+# and Linux. analysis_id moves with the bundle digest, as it does for every
+# analyzer-source change.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "dba2fd5e7a0e17812f5f3bda7445d3b0ffacc9d4406206436e96c172a9bd1fea"
+    "f313b4ed265ebe46ebaee2ac49873bfbfe22eb1fefe7546dc66afc90494297fc"
 )
 
 
@@ -1878,6 +1894,7 @@ def _local_race_file_references(
             and setup_car_directory(path).casefold() == identity_car_path.casefold()
             else 1,
             str(path).casefold(),
+            str(path),
         )
     )
     try:
@@ -1944,6 +1961,31 @@ def _local_race_file_references(
         "replay_matches": replay_matches,
         "replay_status": "matched_by_subsession_id" if replay_matches else "not_found",
     }
+
+
+#: ``IRACING_COACH_RAW_ARCHIVE=external``: the service keeps raw recordings
+#: (on the NAS), so analysis neither copies nor re-hashes them into the archive.
+RAW_ARCHIVE_VARIABLE = "IRACING_COACH_RAW_ARCHIVE"
+RAW_ARCHIVE_EXTERNAL = "external"
+def _external_raw_archive() -> dict[str, Any]:
+    return {
+        "schema_version": 2,
+        "status": RAW_ARCHIVE_EXTERNAL,
+        "durably_copied": False,
+        "failed_count": 0,
+        "items": [],
+    }
+
+
+def _raw_archive_is_external() -> bool:
+    value = os.environ.get(RAW_ARCHIVE_VARIABLE, "").strip()
+    if not value:
+        return False
+    if value != RAW_ARCHIVE_EXTERNAL:
+        raise WorkflowError(
+            f"{RAW_ARCHIVE_VARIABLE} must be unset or '{RAW_ARCHIVE_EXTERNAL}', got {value!r}."
+        )
+    return True
 
 
 def _raw_archive_failures(raw_archive: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -2079,7 +2121,12 @@ def _analyze_race_workflow(
                 "The selected IBT changed during SHA-256 verification: "
                 f"{path}. No analysis artifact was written."
             )
-    raw_archive = store.archive_raw_telemetry(source_fingerprints)
+    raw_archive_external = _raw_archive_is_external()
+    raw_archive = (
+        _external_raw_archive()
+        if raw_archive_external
+        else store.archive_raw_telemetry(source_fingerprints)
+    )
     selection_verified = time.perf_counter()
     pipeline_sha256 = _analysis_pipeline_sha256()
     analysis_cache_key = _analysis_cache_identity(
@@ -2174,19 +2221,31 @@ def _analyze_race_workflow(
     }
 
     source["fingerprints"] = source_fingerprints
-    source["raw_source_policy"] = {
-        "mode": "content-addressed-portable-copy",
-        "durably_copied": raw_archive.get("durably_copied") is True,
-        "archive": raw_archive,
-        "note": "Verified raw IBTs are copied into portable append-only storage; originals remain untouched.",
-    }
-    # TD-008: a failed copy leaves the original untouched and does not stop the
-    # analysis, which records that raw-channel reanalysis is not yet durable.
-    source["raw_source_policy"]["raw_reanalysis_durable"] = (
-        raw_archive.get("durably_copied") is True
-    )
-    if raw_archive.get("durably_copied") is not True:
-        source["raw_source_policy"]["note"] = _raw_archive_failure_note(raw_archive)
+    if raw_archive_external:
+        source["raw_source_policy"] = {
+            "mode": RAW_ARCHIVE_EXTERNAL,
+            "durably_copied": False,
+            "archive": raw_archive,
+            "note": (
+                "Raw IBTs are archived outside the analysis archive by the service "
+                "that supplied them; no copy was made here."
+            ),
+            "raw_reanalysis_durable": None,
+        }
+    else:
+        source["raw_source_policy"] = {
+            "mode": "content-addressed-portable-copy",
+            "durably_copied": raw_archive.get("durably_copied") is True,
+            "archive": raw_archive,
+            "note": "Verified raw IBTs are copied into portable append-only storage; originals remain untouched.",
+        }
+        # TD-008: a failed copy leaves the original untouched and does not stop the
+        # analysis, which records that raw-channel reanalysis is not yet durable.
+        source["raw_source_policy"]["raw_reanalysis_durable"] = (
+            raw_archive.get("durably_copied") is True
+        )
+        if raw_archive.get("durably_copied") is not True:
+            source["raw_source_policy"]["note"] = _raw_archive_failure_note(raw_archive)
     if iracing_root is not None:
         selected_iracing_root = _resolved_root(iracing_root)
     else:
@@ -2948,7 +3007,7 @@ def garage61_status_workflow(
             "ok": False,
             "configured": False,
             "status": "credential_store_unavailable",
-            "credential_storage": "windows-user-dpapi",
+            "credential_storage": credential_storage(),
             "archive_root": str(store.root),
             "api_request": request_status or None,
             "error_type": type(exc).__name__,
@@ -2959,12 +3018,14 @@ def garage61_status_workflow(
             "ok": False,
             "configured": False,
             "status": "not_configured",
-            "credential_storage": "windows-user-dpapi",
+            "credential_storage": credential_storage(),
             "archive_root": str(store.root),
             "api_request": request_status or None,
             "message": (
                 "Garage61 API access is awaiting approval; use the signed-in browser fallback meanwhile."
                 if request_status.get("status") == "pending"
+                else "Garage61 is not configured: the server token file does not exist."
+                if credential_storage() == "token-file"
                 else "Garage61 is not configured. Run configure-garage61.ps1 once."
             ),
         }
@@ -2978,7 +3039,7 @@ def garage61_status_workflow(
             "ok": False,
             "configured": True,
             "status": "unavailable",
-            "credential_storage": "windows-user-dpapi",
+            "credential_storage": credential_storage(),
             "archive_root": str(store.root),
             "api_request": request_status or None,
             "error_type": type(exc).__name__,
@@ -2991,7 +3052,7 @@ def garage61_status_workflow(
         **health,
         "configured": True,
         "status": "available",
-        "credential_storage": "windows-user-dpapi",
+        "credential_storage": credential_storage(),
         "archive_root": str(store.root),
         "api_request": effective_request or None,
     }
@@ -4341,7 +4402,7 @@ def garage61_sync_workflow(
         "target_derivation_version": _GARAGE61_TARGET_DERIVATION_VERSION,
         "synced_at": utc_now(),
         "authentication": {
-            "method": "bearer-pat-from-windows-user-dpapi",
+            "method": f"bearer-pat-from-{credential_storage()}",
             "healthy": health.get("ok") is True,
             "identity": health.get("identity") or {},
             "api_permissions": list(health.get("api_permissions") or ()),

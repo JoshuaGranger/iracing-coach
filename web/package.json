@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "e2e": "playwright test",
-    "perf:g2": "node perf/g2.mjs"
+    "perf:g2": "node perf/g2.mjs",
+    "mock": "node mock/server.mjs",
+    "mock:build": "vite build --outDir test-results/app-dist --emptyOutDir"
   },
   "dependencies": {
     "preact": "10.29.8"

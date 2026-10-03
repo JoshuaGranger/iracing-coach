@@ -1526,7 +1526,6 @@
                          {"family":"backend","id":"test_live_truth.ConformanceVectorTests.test_the_omitted_caution_bits_have_named_vectors","tier":"SourceContract","technique":"none"},
                          {"family":"backend","id":"test_live_truth.LiveFlagConsumerClosureTests.test_each_previously_omitted_bit_is_now_a_caution","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_live_truth.LiveFlagConsumerClosureTests.test_every_named_single_flag_has_a_decided_policy_state","tier":"Behavioral","technique":"none"},
-                         {"family":"backend","id":"test_live_truth.LiveFlagConsumerClosureTests.test_the_live_csharp_source_delegates_flag_truth_to_the_shared_policy","tier":"SourceContract","technique":"none"},
                          {"family":"backend","id":"test_live_truth.LiveFlagConsumerClosureTests.test_the_policy_contains_the_two_previously_omitted_caution_bits","tier":"Behavioral","technique":"none"},
                          {"family":"backend","id":"test_live_truth.MissingValueTests.test_a_boolean_is_not_the_start_finish_line","tier":"Behavioral","technique":"fault"},
                          {"family":"backend","id":"test_live_truth.MissingValueTests.test_a_genuine_start_finish_position_is_preserved","tier":"Behavioral","technique":"none"},

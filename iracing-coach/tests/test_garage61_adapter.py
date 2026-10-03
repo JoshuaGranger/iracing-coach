@@ -12,6 +12,7 @@ import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 
@@ -21,10 +22,25 @@ SCRIPTS = (
     / "analyze-iracing-race"
     / "scripts"
 )
+WORKSPACE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SCRIPTS))
 
 import garage61_client  # noqa: E402
 import secure_store  # noqa: E402
+import workflow  # noqa: E402
+
+
+def _load_contract_validation() -> Any:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "contract_validation_for_garage61", WORKSPACE / "tools" / "contract_validation.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class _Garage61Handler(BaseHTTPRequestHandler):
@@ -346,6 +362,80 @@ class SecureStoreTests(unittest.TestCase):
             ):
                 self.assertEqual(secure_store.load_token(credential), "loaded-secret")
         self.assertNotIn("loaded-secret", " ".join(str(value) for value in run.call_args.args[0]))
+
+
+class TokenFileTests(unittest.TestCase):
+    """The server route: a root-only secret file named by IRACING_COACH_GARAGE61_TOKEN_FILE, no Windows."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.token_file = Path(self.temporary.name) / "garage61-token"
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def _write(self, data: bytes, mode: int = 0o600) -> None:
+        self.token_file.write_bytes(data)
+        os.chmod(self.token_file, mode)
+
+    def _environment(self) -> Any:
+        return mock.patch.dict(os.environ, {secure_store.TOKEN_FILE_VARIABLE: str(self.token_file)})
+
+    def test_the_token_file_is_read_before_any_windows_check(self) -> None:
+        self._write(b"file-secret-token\n")
+        with (
+            self._environment(),
+            mock.patch.object(secure_store, "_is_windows", return_value=False),
+            mock.patch.object(secure_store.subprocess, "run") as run,
+        ):
+            self.assertTrue(secure_store.credential_exists())
+            self.assertEqual(secure_store.load_token(), "file-secret-token")
+            self.assertEqual(secure_store.credential_storage(), "token-file")
+        run.assert_not_called()
+
+    def test_a_missing_token_file_is_not_configured_and_never_falls_back_to_dpapi(self) -> None:
+        with (
+            self._environment(),
+            mock.patch.object(secure_store, "_is_windows", return_value=True),
+            mock.patch.object(secure_store.subprocess, "run") as run,
+        ):
+            self.assertFalse(secure_store.credential_exists())
+            with self.assertRaisesRegex(secure_store.SecureStoreError, "not configured"):
+                secure_store.load_token()
+        run.assert_not_called()
+
+    def test_empty_oversized_or_multi_line_files_are_refused_without_echoing_them(self) -> None:
+        for data in (b"\n", b"x" * 5000, b"first-secret\nsecond-secret\n", b"\xff\xfe"):
+            with self.subTest(size=len(data)), self._environment():
+                self._write(data)
+                with self.assertRaises(secure_store.SecureStoreError) as raised:
+                    secure_store.load_token()
+                self.assertNotIn("secret", str(raised.exception))
+
+    @unittest.skipIf(os.name == "nt", "POSIX file modes")
+    def test_a_token_file_readable_by_others_is_refused(self) -> None:
+        self._write(b"file-secret-token\n", mode=0o644)
+        with self._environment(), self.assertRaisesRegex(secure_store.SecureStoreError, "0600"):
+            secure_store.load_token()
+
+    def test_an_explicit_credential_path_still_means_the_dpapi_blob(self) -> None:
+        self._write(b"file-secret-token\n")
+        with self._environment(), mock.patch.object(secure_store, "_is_windows", return_value=False):
+            with self.assertRaisesRegex(secure_store.SecureStoreError, "Windows-only"):
+                secure_store.load_token(Path(self.temporary.name) / "credential.dpapi")
+
+    def test_the_status_names_the_token_file_route_and_validates(self) -> None:
+        validation = _load_contract_validation()
+        schema = json.loads(
+            (WORKSPACE / "contracts" / "garage61-auth-status-v1.schema.json").read_text(encoding="utf-8")
+        )
+        schema.pop("$id")  # an identifier, not a constraint; the bounded validator refuses it
+        with self._environment(), tempfile.TemporaryDirectory() as archive:
+            status = workflow.garage61_status_workflow(archive_root=archive)
+        self.assertEqual(status["status"], "not_configured")
+        self.assertEqual(status["credential_storage"], "token-file")
+        self.assertNotIn("configure-garage61.ps1", status["message"])
+        validation.assert_valid(status, schema, "garage61 status with a token file")
 
 
 if __name__ == "__main__":

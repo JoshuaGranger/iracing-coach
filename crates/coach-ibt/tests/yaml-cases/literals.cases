@@ -1,0 +1,83 @@
+Quoted and flow values (_yaml_scalar's ast.literal_eval branch) and plain scalar typing.
+%%% quoted_strings
+Values:
+ Double: "25.0 psi"
+ Single: '-2.8 deg'
+ Escapes: "tab\there\x41\101\u00e9\U0001F600"
+ UnknownEscape: "C:\setups\new"
+ RawConcat: 'a' r'\d'
+ Concat: "a" 'b' "c"
+ Triple: '''it's'''
+ InnerQuote: 'it's'
+ OneChar: '
+ TwoQuotes: ''
+ Mismatched: 'abc"
+ Octal: '\777'
+ TrailingComment: 'x'  # comment'
+ Fallback: 'a' if 1 else 'b'
+ BadHex: 'bad\x4'
+ FString: 'a' f'b'
+ MixedBytes: 'a' b'b'
+%%% flow_values
+WeekendInfo:
+ WeekendOptions: {'IsFixedSetup': False, 'NumStarters': 3}
+ TrackName: ['Synthetic', 'Oval']
+Values:
+ List: [1, -2.5, 'x', None, True, (3, 4), [], {}]
+ Nested: {'a': {'b': [1, {'c': 'd'}]}, 'a': 2, 'e': 3}
+ Tuple: 'a', 'b'
+ TwoLists: [1], [2]
+ Empty: []
+ EmptyMap: {}
+ Numbers: [0x1F, 0o17, 0b101, 1_000, -0, 007.5, 1e999, .5, 1., 1.e1, +3, -(4)]
+ BigInts: [0x10000000000000000, -9223372036854775808, 99999999999999999999]
+ Bare: [a, b]
+ Spaces: [1 2]
+ Call: [1][0]
+ Comment: [1, 2] # tail]
+ Mismatch: [1, 2}
+ Sum: [1+2]
+ UnaryBool: [-True]
+ Deep: [[[[[[[[[[1]]]]]]]]]]
+%%% plain_scalars
+Values:
+ NullTilde: ~
+ NullWord: Null
+ NullUpper: NULL
+ NotNull: nUlL
+ YesWord: Yes
+ OnWord: ON
+ OffWord: off
+ NoWord: no
+ TrueWord: TRUE
+ Int: -12
+ Plus: +7
+ Zero: 0
+ LeadingZero: 012
+ BigInt: 99999999999999999999
+ NegBigInt: -99999999999999999999
+ Float: 1.50
+ TrailingDot: 1.
+ LeadingDot: .5
+ Exp: 1e3
+ DotExp: 1.e3
+ LeadingDotExp: .5e3
+ Overflow: 1e999
+ Underscore: 1_000
+ Hex: 0x1F
+ Units: 61.2 mm
+ Percent: 54.0%
+ Negative units: -2.8 deg
+ Time: 2:00 pm
+ Date: 2026-09-20
+CarSetup:
+ UpdateCount: 2
+ Chassis:
+  Front:
+   Toggle: On
+   Count: 007
+   Ratio: 14.5:1
+   Quoted: "1.50"
+   Flow: [1, 'two', 3.0, None, False]
+   Nothing: ~
+   Map: {'x': 1}

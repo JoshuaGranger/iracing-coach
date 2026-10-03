@@ -797,22 +797,43 @@ def _fixed(value: str, length: int) -> bytes:
     return raw + b"\x00" * (length - len(raw))
 
 
-def _build_tiny_ibt(path: Path, *, truncate: bool = False) -> None:
-    yaml_text = """WeekendInfo:
+def _build_tiny_ibt(
+    path: Path,
+    *,
+    truncate: bool = False,
+    session_id: int = 7001,
+    subsession_id: int = 8001,
+    disk_start_epoch: int = 1_780_000_000,
+    first_record: int = 0,
+    record_count: int = 120,
+    race_records: int = 120,
+    disk_session_times: tuple[float, float] = (0.0, 1.983333),
+    driver_setup_lines: str = "",
+) -> None:
+    """Write a tiny valid Race IBT.
+
+    The defaults write ``synthetic-race.ibt``. The keywords cut a longer race
+    (``race_records`` samples) into one recording of ``record_count`` samples
+    from ``first_record``, which is how ``tools/parity/worker_corpus.py`` builds
+    a two-file reconnect with overlapping samples and a recording with no
+    server ids and no usable start time.
+    """
+
+    yaml_text = f"""WeekendInfo:
   TrackName: Synthetic Speedway
   TrackDisplayName: Synthetic Speedway
   TrackConfigName: Oval
   TrackID: 9001
   SeasonID: 202603
-  SessionID: 7001
-  SubSessionID: 8001
+  SessionID: {session_id}
+  SubSessionID: {subsession_id}
   EventType: Race
   Category: Oval
   WeekendOptions:
     IsFixedSetup: 0
 DriverInfo:
   DriverCarIdx: 0
-  Drivers:
+{driver_setup_lines}  Drivers:
     - CarIdx: 0
       UserID: 1
       CarID: 9002
@@ -838,7 +859,6 @@ CarSetup:
         (4, 32, 1, "Brake", "Brake", "%"),
         (1, 36, 1, "OnPitRoad", "On pit road", ""),
     ]
-    record_count = 120
     buffer_length = 48
     session_info_offset = HEADER.size + DISK_SUBHEADER.size
     variable_header_offset = _align(session_info_offset + len(yaml_blob))
@@ -850,7 +870,7 @@ CarSetup:
         0, 0, record_count - 1, sample_offset, 0, 0,
     ] + [0] * 12
     HEADER.pack_into(output, 0, *header_values)
-    DISK_SUBHEADER.pack_into(output, HEADER.size, 1_780_000_000, 0.0, 1.983333, 1, record_count)
+    DISK_SUBHEADER.pack_into(output, HEADER.size, disk_start_epoch, *disk_session_times, 1, record_count)
     output[session_info_offset:session_info_offset + len(yaml_blob)] = yaml_blob
     for index, (type_code, offset, count, name, desc, unit) in enumerate(variables):
         VAR_HEADER.pack_into(
@@ -859,9 +879,10 @@ CarSetup:
             type_code, offset, count, 0,
             _fixed(name, 32), _fixed(desc, 64), _fixed(unit, 32),
         )
-    for index in range(record_count):
-        base = sample_offset + index * buffer_length
-        pct = index / record_count
+    for record in range(record_count):
+        index = first_record + record
+        base = sample_offset + record * buffer_length
+        pct = index / race_records
         struct.pack_into("<i", output, base, 1)
         struct.pack_into("<d", output, base + 8, index / 60.0)
         struct.pack_into("<i", output, base + 16, 1)

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Emit a byte-exact golden of the Python .ibt decode for C# parity testing.
+"""Emit a byte-exact golden of the Python .ibt decode for decode parity testing.
 
-The C# port under companion-app/src/iRacingCoach.Telemetry must reproduce this
-file exactly. Python is the authoritative oracle: this captures the variable
+A native decoder (the Rust decode stage, port phase 1) must reproduce this file
+exactly. Python is the authoritative oracle: this captures the variable
 catalogue, the sampling plan, and a content hash of the decoded value matrix
-so a C# reader can be proven byte-identical, not merely close.
+so a native reader can be proven byte-identical, not merely close.
 """
 from __future__ import annotations
 

@@ -994,6 +994,63 @@
       "name": "record_open_setup_feedback"
     },
     {
+      "description": "Migration only: record the tuning experiments of a copied legacy archive in this archive, rewriting their analysis references through an old-to-new map. Unmapped references become null and are listed, never guessed. Idempotent.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_map": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "analysis_id": {
+                  "maxLength": 128,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "analysis_path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "legacy_analysis_id": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "legacy_analysis_id",
+                "analysis_id",
+                "analysis_path"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5000,
+            "type": "array"
+          },
+          "archive_root": {
+            "type": "string"
+          },
+          "dry_run": {
+            "default": false,
+            "type": "boolean"
+          },
+          "legacy_archive_root": {
+            "description": "Copy of a legacy archive root (history.sqlite3 and tuning/) inside the iRacing root.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "legacy_archive_root",
+          "analysis_map"
+        ],
+        "type": "object"
+      },
+      "name": "import_legacy_tuning_experiments"
+    },
+    {
       "description": "Save one measurable test from an archived race investigation: exact section bounds and annotation version, baseline laps, exposure window and success rule. Idempotent.",
       "inputSchema": {
         "additionalProperties": false,

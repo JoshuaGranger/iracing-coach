@@ -1496,8 +1496,6 @@ class TestDayToolContractTests(unittest.TestCase):
         import coach_tool_authority as authority
 
         self.assertEqual(authority.TOOL_CAPABILITIES["review_test_day"], authority.CAPABILITY_READ_ANALYSIS)
-        host = (WORKSPACE / "companion-app" / "src" / "iRacingCoach.Coordinator" / "CompanionHostProfile.cs").read_text(encoding="utf-8")
-        self.assertIn('"review_test_day"', host)
 
     def test_the_tool_confines_paths_to_archived_analyses(self) -> None:
         import json

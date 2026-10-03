@@ -1,0 +1,311 @@
+Session-info texts for parity with ibt_reader._parse_iracing_yaml_subset. Synthetic values only.
+%%% realistic_offline_test
+---
+WeekendInfo:
+ TrackName: synthetic oval
+ TrackID: 900
+ TrackLength: 1.06 km
+ TrackLengthOfficial: 1.06 km
+ TrackDisplayName: Synthetic Oval Park
+ TrackDisplayShortName: SOP
+ TrackConfigName:
+ TrackCity: Nowhere
+ TrackCountry: USA
+ TrackAltitude: 245.84 m
+ TrackLatitude: 39.812346 m
+ TrackLongitude: -86.341232 m
+ TrackNorthOffset: 0.0000 rad
+ TrackNumTurns: 4
+ TrackPitSpeedLimit: 72.00 kph
+ TrackType: short oval
+ TrackWeatherType: Static
+ TrackSkies: Partly Cloudy
+ TrackSurfaceTemp: 31.25 C
+ TrackAirTemp: 25.55 C
+ TrackAirPressure: 29.24 Hg
+ TrackWindVel: 0.89 m/s
+ TrackWindDir: 0.00 rad
+ TrackRelativeHumidity: 55 %
+ TrackFogLevel: 0 %
+ TrackCleanup: 0
+ TrackDynamicTrack: 1
+ TrackVersion: 2026.09.01.01
+ SeriesID: 0
+ SeasonID: 0
+ SessionID: 0
+ SubSessionID: 0
+ LeagueID: 0
+ Official: 0
+ RaceWeek: 0
+ EventType: Test
+ Category: Oval
+ SimMode: full
+ TeamRacing: 0
+ MinDrivers: 0
+ MaxDrivers: 0
+ DCRuleSet: None
+ QualifierMustStartRace: 0
+ NumCarClasses: 1
+ NumCarTypes: 1
+ HeatRacing: 0
+ BuildType: Release
+ BuildTarget: Members
+ BuildVersion: 2026.09.20.02
+ RaceFarm:
+ WeekendOptions:
+  NumStarters: 0
+  StartingGrid: single file
+  QualifyScoring: best lap
+  CourseCautions: off
+  StandingStart: 0
+  ShortParadeLap: 0
+  Restarts: single file
+  WeatherType: Static
+  Skies: Partly Cloudy
+  WindDirection: N
+  WindSpeed: 3.22 km/h
+  WeatherTemp: 25.56 C
+  RelativeHumidity: 55 %
+  FogLevel: 0 %
+  TimeOfDay: 2:00 pm
+  Date: 2026-09-20
+  EarthRotationSpeedupFactor: 1
+  Unofficial: 1
+  CommercialMode: consumer
+  NightMode: variable
+  IsFixedSetup: 0
+  StrictLapsChecking: default
+  HasOpenRegistration: 0
+  HardcoreLevel: 1
+  NumJokerLaps: 0
+  IncidentLimit: unlimited
+  FastRepairsLimit: unlimited
+  GreenWhiteCheckeredLimit: 0
+ TelemetryOptions:
+  TelemetryDiskFile: ""
+
+SessionInfo:
+ Sessions:
+ - SessionNum: 0
+   SessionLaps: unlimited
+   SessionTime: unlimited
+   SessionNumLapsToAvg: 0
+   SessionType: Offline Testing
+   SessionTrackRubberState: moderate usage
+   SessionName: TESTING
+   SessionSubType:
+   SessionSkipped: 0
+   SessionRunGroupsUsed: 0
+   SessionEnforceTireCompoundChange: 0
+   ResultsPositions:
+   ResultsFastestLap:
+   - CarIdx: 255
+     FastestLap: 0
+     FastestTime: -1.0000
+   ResultsAverageLapTime: -1.0000
+   ResultsNumCautionFlags: 0
+   ResultsNumCautionLaps: 0
+   ResultsNumLeadChanges: 0
+   ResultsLapsComplete: -1
+   ResultsOfficial: 0
+
+CameraInfo:
+ Groups:
+ - GroupNum: 1
+   GroupName: Nose
+   Cameras:
+   - CameraNum: 1
+     CameraName: CamNose
+ - GroupNum: 2
+   GroupName: Gearbox
+   Cameras:
+   - CameraNum: 1
+     CameraName: CamGearbox
+
+RadioInfo:
+ SelectedRadioNum: 0
+ Radios:
+ - RadioNum: 0
+   HopCount: 2
+   NumFrequencies: 7
+   TunedToFrequencyNum: 0
+   ScanningIsOn: 1
+   Frequencies:
+   - FrequencyNum: 0
+     FrequencyName: "@ALLTEAMS"
+     Priority: 12
+     CarIdx: -1
+     EntryIdx: -1
+     ClubID: 0
+     CanScan: 1
+     CanSquawk: 1
+     Muted: 0
+     IsMutable: 1
+     IsDeletable: 0
+   - FrequencyNum: 1
+     FrequencyName: "@DRIVERS"
+     Priority: 15
+
+DriverInfo:
+ DriverCarIdx: 0
+ DriverUserID: 1
+ PaceCarIdx: -1
+ DriverHeadPosX: -0.170
+ DriverHeadPosY: 0.367
+ DriverHeadPosZ: 0.622
+ DriverIsAdmin: 1
+ DriverCarIdleRPM: 1000.000
+ DriverCarRedLine: 7000.000
+ DriverCarEngCylinderCount: 6
+ DriverCarFuelKgPerLtr: 0.750
+ DriverCarFuelMaxLtr: 60.000
+ DriverCarMaxFuelPct: 1.000
+ DriverCarGearNumForward: 6
+ DriverCarGearNeutral: 1
+ DriverCarGearReverse: 1
+ DriverCarSLFirstRPM: 6000.000
+ DriverCarSLShiftRPM: 6600.000
+ DriverCarSLLastRPM: 6800.000
+ DriverCarSLBlinkRPM: 6900.000
+ DriverCarVersion: 2026.09.01.01
+ DriverPitTrkPct: 0.123456
+ DriverCarEstLapTime: 22.4500
+ DriverSetupName: synthetic baseline.sto
+ DriverSetupIsModified: 0
+ DriverSetupLoadTypeName: user
+ DriverSetupPassedTech: 1
+ DriverIncidentCount: 0
+ Drivers:
+ - CarIdx: 0
+   UserName: Test Driver
+   AbbrevName:
+   Initials:
+   UserID: 1
+   TeamID: 0
+   TeamName: Test Driver
+   CarNumber: "64"
+   CarNumberRaw: 64
+   CarPath: synthetic coupe
+   CarClassID: 0
+   CarID: 9002
+   CarIsPaceCar: 0
+   CarIsAI: 0
+   CarIsElectric: 0
+   CarScreenName: Synthetic Coupe GT
+   CarScreenNameShort: Syn GT
+   CarCfg: -1
+   CarCfgName:
+   CarCfgCustomPaintExt:
+   CarClassShortName:
+   CarClassRelSpeed: 0
+   CarClassLicenseLevel: 0
+   CarClassMaxFuelPct: 1.000 %
+   CarClassWeightPenalty: 0.000 kg
+   CarClassPowerAdjust: 0.000 %
+   CarClassDryTireSetLimit: 0 %
+   CarClassColor: 0xffffff
+   CarClassEstLapTime: 22.4500
+   IRating: 1
+   LicLevel: 1
+   LicSubLevel: 1
+   LicString: R 0.01
+   LicColor: 0xundefined
+   IsSpectator: 0
+   CarDesignStr: 0,ffffff,ffffff,ffffff
+   HelmetDesignStr: 0,ffffff,ffffff,ffffff
+   SuitDesignStr: 0,ffffff,ffffff,ffffff
+   BodyType: 0
+   FaceType: 0
+   HelmetType: 0
+   CarNumberDesignStr: 0,0,ffffff,ffffff,ffffff
+   CarSponsor_1: 0
+   CarSponsor_2: 0
+   CurDriverIncidentCount: 0
+   TeamIncidentCount: 0
+
+SplitTimeInfo:
+ Sectors:
+ - SectorNum: 0
+   SectorStartPct: 0.000000
+ - SectorNum: 1
+   SectorStartPct: 0.497411
+
+CarSetup:
+ UpdateCount: 4
+ TiresAero:
+  LeftFront:
+   StartingPressure: 145.0 kPa
+   LastHotPressure: 145.0 kPa
+   LastTempsOMI: 32C, 32C, 32C
+   TreadRemaining: 100%, 100%, 100%
+  AeroBalanceCalc:
+   FrontRhAtSpeed: 60.0 mm
+   FrontDownforce: 43.12%
+ Chassis:
+  Front:
+   ArbBlades: 3
+   ToeIn: -1.0 mm
+   FuelLevel: 20.0 L
+   BrakeBias: 54.0%
+  LeftFront:
+   CornerWeight: 3820 N
+   RideHeight: 61.2 mm
+   SpringPerchOffset: 33.0 mm
+   Camber: -2.8 deg
+  Rear:
+   ArbPreload: 0.0 Nm
+   DiffPreload: 50 Nm
+...
+%%% duplicates_nulls_and_lists
+A: 1
+A:
+ B: 2
+C:
+D:
+-
+- plain item
+- K:
+- K2:
+  extra: 1
+- K3: 3
+  K3: 4
+-
+ - nested list item
+E: last
+E:
+%%% comments_spacing_and_line_endings
+# leading comment
+WeekendInfo:
+   # indented comment
+   TrackName: spaced value
+   TrackID: 12
+   Odd Key With Spaces: v
+   Colon: a:b:c
+   Url: http://example.invalid/x
+   Hash: "#5" # not a comment for this parser
+   Empty quotes: ''
+   Single quote char: '
+   Unicode: café ∆ 漢字
+   Nbsp:  x
+DriverInfo:
+ DriverCarIdx: 2
+ Drivers:
+ - CarIdx: 2
+   UserName: crlf name
+%%% quoted_keys
+"Quoted Key": 1
+'Single': 2
+"esc\"aped": 3
+'a' 'b': 4
+'it''s': 5
+"[x]": 6
+'bad\x4': 7
+%%% empty_document
+%%% whitespace_only
+
+
+%%% root_indented
+  WeekendInfo:
+    TrackName: indented root
+  DriverInfo:
+    DriverCarIdx: 0

@@ -859,6 +859,7 @@ class StorageReportUsageTests(unittest.TestCase):
             self.assertEqual(usage["duplicate_group_count"], 2)
             self.assertEqual(usage["groups"][0]["analysis_id"], "ae7b1748175fa9e9f5c6ae52")
 
+    @unittest.skipUnless(os.name == "nt", "a moved Windows Documents home; D12 re-ingests on Linux")
     def test_references_still_protect_copies_after_the_documents_home_moves(self) -> None:
         # A copied or migrated Documents home keeps absolute paths to the old
         # location in its history index and saved records (31 of 34 index rows

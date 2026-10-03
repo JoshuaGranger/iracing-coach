@@ -7,20 +7,23 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[lib]
+name = "coach_collector"
+path = "src/lib.rs"
+
+[[bin]]
+name = "coach-collector"
+path = "src/main.rs"
+
 [dependencies]
 coach-wire.workspace = true
 coach-ibt.workspace = true
 coach-live.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-tungstenite.workspace = true
-ureq.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Security",
@@ -29,11 +32,20 @@ windows = { workspace = true, features = [
     "Win32_System_Threading",
     "Win32_System_Registry",
     "Win32_System_LibraryLoader",
+    "Win32_System_IO",
+    "Win32_System_Com",
+    "Win32_Networking_WinSock",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_Gdi",
 ] }
+
+[dev-dependencies]
+# The in-test server mock speaks WebSocket through tungstenite; the collector's own client is `src/ws.rs`.
+tungstenite.workspace = true
+sha2.workspace = true
+jsonschema.workspace = true
 
 [lints]
 workspace = true

@@ -785,6 +785,34 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "import_legacy_tuning_experiments",
+        "description": "Migration only: record the tuning experiments of a copied legacy archive in this archive, rewriting their analysis references through an old-to-new map. Unmapped references become null and are listed, never guessed. Idempotent.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["legacy_archive_root", "analysis_map"],
+            "properties": {
+                "legacy_archive_root": {"type": "string", "description": "Copy of a legacy archive root (history.sqlite3 and tuning/) inside the iRacing root."},
+                "analysis_map": {
+                    "type": "array",
+                    "maxItems": 5000,
+                    "items": {
+                        "type": "object",
+                        "required": ["legacy_analysis_id", "analysis_id", "analysis_path"],
+                        "properties": {
+                            "legacy_analysis_id": {"type": "string", "maxLength": 128},
+                            "analysis_id": {"type": ["string", "null"], "maxLength": 128},
+                            "analysis_path": {"type": ["string", "null"]},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "dry_run": {"type": "boolean", "default": False},
+                "archive_root": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "save_driving_trial",
         "description": "Save one measurable test from an archived race investigation: exact section bounds and annotation version, baseline laps, exposure window and success rule. Idempotent.",
         "inputSchema": {
@@ -1144,6 +1172,28 @@ def call_tool(name: str, arguments: Mapping[str, Any]) -> Any:
             notes=str(arguments.get("notes") or ""),
             result_analysis_path=result_analysis,
             archive_root=str(archive_root),
+        )
+    if name == "import_legacy_tuning_experiments":
+        import legacy_import
+        entries = arguments.get("analysis_map")
+        if not isinstance(entries, list) or not all(isinstance(item, Mapping) for item in entries):
+            raise ValueError("analysis_map must be a list of objects.")
+        mapped = []
+        for item in entries:
+            path = item.get("analysis_path")
+            mapped.append({
+                "legacy_analysis_id": _bounded_text(item.get("legacy_analysis_id"), "legacy_analysis_id", 128),
+                "analysis_id": _bounded_text(item["analysis_id"], "analysis_id", 128) if item.get("analysis_id") else None,
+                "analysis_path": str(_analysis_path(path, archive_root)) if path else None,
+            })
+        return legacy_import.import_legacy_tuning_experiments_workflow(
+            legacy_archive_root=str(_iracing_root(
+                _bounded_text(arguments.get("legacy_archive_root"), "legacy_archive_root", 4096),
+                label="legacy_archive_root",
+            )),
+            analysis_map=mapped,
+            archive_root=str(archive_root),
+            dry_run=bool(arguments.get("dry_run", False)),
         )
     if name in ("save_driving_trial", "list_driving_trials", "load_driving_trial", "evaluate_driving_trial"):
         import driving_trials

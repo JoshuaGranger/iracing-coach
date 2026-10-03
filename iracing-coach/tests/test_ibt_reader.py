@@ -42,10 +42,16 @@ def _fixed_bytes(value: str, length: int) -> bytes:
     return encoded + b"\x00" * (length - len(encoded))
 
 
+#: The flag as the original synthetic fixtures spelled it; recordings spell it
+#: DriverSetupIsModified (P5).
+LEGACY_SETUP_FLAG = "  DriverSetupModified: false\n"
+
+
 def _fixture_yaml(
     subsession_id: int,
     session_id: int,
     event_type: str,
+    setup_flag_lines: str = LEGACY_SETUP_FLAG,
 ) -> str:
     return f"""WeekendInfo:
   TrackName: Iowa Speedway
@@ -66,8 +72,7 @@ def _fixture_yaml(
 DriverInfo:
   DriverCarIdx: 0
   DriverSetupName: synthetic-race.sto
-  DriverSetupModified: false
-  Drivers:
+{setup_flag_lines}  Drivers:
     - CarIdx: 0
       UserID: 777
       CarID: 67
@@ -99,8 +104,9 @@ def build_ibt(
     record_count: int = 6,
     bad_type: bool = False,
     bad_offset: bool = False,
+    setup_flag_lines: str = LEGACY_SETUP_FLAG,
 ) -> None:
-    yaml_blob = _fixture_yaml(subsession_id, session_id, event_type).encode("utf-8")
+    yaml_blob = _fixture_yaml(subsession_id, session_id, event_type, setup_flag_lines).encode("utf-8")
     yaml_blob += b"\x00"
 
     variables = [
@@ -404,6 +410,52 @@ class IbtReaderTests(unittest.TestCase):
         errors = [item for item in results if item["kind"] == "error"]
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["error_type"], "IbtTruncatedError")
+
+
+class DriverSetupModifiedTests(unittest.TestCase):
+    """Recordings carry DriverSetupIsModified; the reader once read only DriverSetupModified."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def _scan(self, lines: str) -> object:
+        source = self.root / "race.ibt"
+        build_ibt(source, setup_flag_lines=lines)
+        return ibt_reader.scan_ibt(source)["driver_setup_modified"]
+
+    def test_the_recorded_spelling_is_read(self) -> None:
+        self.assertIs(self._scan("  DriverSetupIsModified: 1\n"), True)
+        self.assertIs(self._scan("  DriverSetupIsModified: 0\n"), False)
+
+    def test_the_recorded_spelling_wins_over_the_fixture_spelling(self) -> None:
+        lines = "  DriverSetupIsModified: 1\n  DriverSetupModified: false\n"
+        self.assertIs(self._scan(lines), True)
+
+    def test_the_fixture_spelling_is_only_a_fallback(self) -> None:
+        self.assertIs(self._scan(LEGACY_SETUP_FLAG), False)
+
+    def test_an_absent_flag_is_unknown(self) -> None:
+        self.assertIsNone(self._scan(""))
+
+
+class SessionYamlParserTests(unittest.TestCase):
+    """Every interpreter reads session YAML alike, whatever is installed beside it."""
+
+    def test_an_installed_yaml_module_is_never_used(self) -> None:
+        from types import ModuleType
+        from unittest import mock
+
+        installed = ModuleType("yaml")
+        # PyYAML (YAML 1.1) reads `12:1` as the base-60 integer 721.
+        installed.safe_load = lambda text: {"CarSetup": {"Chassis": {"Front": {"SteeringRatio": 721}}}}  # type: ignore[attr-defined]
+        text = b"CarSetup:\n  Chassis:\n    Front:\n      SteeringRatio: 12:1\n"
+        with mock.patch.dict(sys.modules, {"yaml": installed}):
+            parsed = ibt_reader._parse_session_info(text, Path("supra.ibt"))
+        self.assertEqual(parsed["CarSetup"]["Chassis"]["Front"]["SteeringRatio"], "12:1")
 
 
 if __name__ == "__main__":

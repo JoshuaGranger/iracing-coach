@@ -1,0 +1,16 @@
+{
+ "golden": 1,
+ "kind": "ibt",
+ "source": "test-data/ibt/truncated-race.ibt",
+ "python": "3.12.14",
+ "platform": "win32",
+ "outcome": "error",
+ "error": {
+  "class": "IbtTruncatedError",
+  "message": "<file>: telemetry sample buffers requires bytes [1856, 7616), but the file contains only 7615 bytes",
+  "line": null,
+  "start": 1856,
+  "end": 7616,
+  "available": 7615
+ }
+}

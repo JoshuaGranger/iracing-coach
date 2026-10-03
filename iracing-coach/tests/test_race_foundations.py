@@ -970,7 +970,8 @@ class RaceFoundationTests(unittest.TestCase):
 
     def test_offline_workflow_durably_archives_before_cache_or_analysis_use(self) -> None:
         workflow = (SCRIPTS / "workflow.py").read_text(encoding="utf-8")
-        archive_call = workflow.index("raw_archive = store.archive_raw_telemetry(source_fingerprints)")
+        # With IRACING_COACH_RAW_ARCHIVE=external the copy is skipped; when it runs, it runs first.
+        archive_call = workflow.index("else store.archive_raw_telemetry(source_fingerprints)")
         cache_lookup = workflow.index("if analysis_cache_path.is_file()")
         analysis_call = workflow.index("analysis = analyze_telemetry(")
 

@@ -1,0 +1,155 @@
+_extract_summary inputs: session matching, player lookup, setup flags and the time fallbacks.
+%%% disk_header_time start_date=1780000000 start_time=10.5 end_time=1790.25
+WeekendInfo:
+ EventType: Race
+SessionInfo:
+ Sessions:
+ - SessionNum: 0
+   SessionType: Practice
+ - SessionNum: 2
+   SessionType: Race
+%%% disk_header_reversed start_date=1780000000 start_time=50 end_time=10
+WeekendInfo:
+ EventType: Test
+%%% disk_header_nan_offsets start_date=1780000000 start_time=nan end_time=5
+WeekendInfo:
+ EventType: Test
+%%% disk_header_huge_end start_date=1780000000 start_time=0 end_time=1e300
+WeekendInfo:
+ EventType: Race
+%%% disk_header_overflow_end start_date=1780000000 start_time=-1.7e308 end_time=1.7e308
+WeekendInfo:
+ EventType: Race
+%%% disk_header_out_of_range start_date=4102444801
+WeekendInfo:
+ SessionStartTime: 2026-05-28T20:26:40Z
+%%% yaml_time_zulu
+WeekendInfo:
+ SessionStartTime: 2026-05-28T20:26:40Z
+%%% yaml_time_offset
+WeekendInfo:
+ SessionStartTime: 2026-05-28T21:26:40.123456+01:00
+%%% yaml_time_naive_space
+WeekendInfo:
+ SessionStartTime: 2026-05-28 20:26:40.5
+%%% yaml_time_basic
+WeekendInfo:
+ SessionStartTime: 20260528T202640
+%%% yaml_time_date_only
+WeekendInfo:
+ SessionStartTime: 2026-05-28
+%%% yaml_time_week
+WeekendInfo:
+ SessionStartTime: 2026-W22-4
+%%% yaml_time_week_compact
+WeekendInfo:
+ SessionStartTime: 2026W224T12
+%%% yaml_time_fraction_long
+WeekendInfo:
+ SessionStartTime: 2026-05-28T20:26:40.1234567
+%%% yaml_time_comma
+WeekendInfo:
+ SessionStartTime: 2026-05-28T20:26:40,25
+%%% yaml_time_hour_24
+WeekendInfo:
+ SessionStartTime: 2026-05-28T24:00:00
+%%% yaml_time_bad_day
+WeekendInfo:
+ SessionStartTime: 2026-02-30
+%%% yaml_time_offset_too_large
+WeekendInfo:
+ SessionStartTime: 2026-05-28T20:26:40+24:00
+%%% yaml_time_old
+WeekendInfo:
+ SessionStartTime: 1601-01-01T00:00:00
+%%% yaml_time_quoted
+WeekendInfo:
+ SessionStartTime: "2026-05-28T20:26:40"
+%%% yaml_time_number
+WeekendInfo:
+ SessionStartTime: 1780000000
+%%% yaml_time_garbage
+WeekendInfo:
+ SessionStartTime: soon
+%%% mtime_fallback
+WeekendInfo:
+ TrackName: x
+%%% session_num_unknown_single_race
+SessionInfo:
+ Sessions:
+ - SessionNum: 0
+   SessionType: Qualify
+ - SessionNum: 4
+   SessionType: ' RACE '
+%%% two_races_no_match
+WeekendInfo:
+ EventType: race
+SessionInfo:
+ Sessions:
+ - SessionNum: 1
+   SessionType: Race
+ - SessionNum: 2
+   SessionType: Race
+%%% empty_session_type_falls_back
+WeekendInfo:
+ EventType: Race
+SessionInfo:
+ Sessions:
+ - SessionNum: 1
+   SessionType: ''
+%%% session_items_not_maps
+SessionInfo:
+ Sessions:
+ - Race
+ - SessionNum: 1
+   SessionType: Race
+%%% player_lookup_text_index
+DriverInfo:
+ DriverCarIdx: '3'
+ DriverSetupName: base.sto
+ DriverSetupIsModified: 1
+ DriverSetupLoadTypeName: user
+ DriverSetupLoadType: 2
+ Drivers:
+ - CarIdx: 1
+   UserID: 10
+ - CarIdx: 3.0
+   UserID: 30
+   UserName: Third
+   IRating: 2001
+   CarID: 77
+   CarPath: car path
+   CarScreenName: Car Name
+%%% player_unknown_index_matches_indexless
+DriverInfo:
+ DriverSetupModified: yes
+ Drivers:
+ - UserID: 11
+   CarPath: indexless
+ - CarIdx: 0
+   UserID: 12
+%%% setup_flag_fallback_on_null
+DriverInfo:
+ DriverCarIdx: 0
+ DriverSetupIsModified: ~
+ DriverSetupModified: 'off'
+%%% setup_flag_unreadable
+DriverInfo:
+ DriverSetupIsModified: maybe
+ DriverSetupModified: 1
+%%% conversions
+WeekendInfo:
+ SeriesID: 1.0
+ SeasonID: '  42 '
+ SessionID: 1_000
+ SubSessionID: 0
+ RaceWeek: 2.5
+ TrackID: true
+ Official: 0.0
+ Category: 3
+ TrackLength: 1.50
+ TrackName: [a, b]
+ TrackDisplayName: {'k': 'v'}
+ TrackConfigName: False
+ WeekendOptions:
+  IsFixedSetup: 'Yes'

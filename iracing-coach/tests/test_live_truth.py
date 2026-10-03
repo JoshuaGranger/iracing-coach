@@ -1,12 +1,12 @@
-"""The frozen racing-truth policy and its .NET consumer boundary.
+"""The frozen racing-truth policy and its conformance vectors.
 
 `DOMAIN-DRIFT-001`, `LIVE-FLAG-001`, `LIVE-CLEAN-001`, `LIVE-REPAIR-001`,
 `LIVE-MISSING-001`.
 
 The producer tests prove the policy is internally consistent and that its
-conformance vectors cover what they claim to cover. The source-contract test
-also guards the completed consumer handoff: the SDK decoder must delegate to
-the shared .NET policy rather than restoring an independent flag mask.
+conformance vectors cover what they claim to cover. Live consumers (the Rust
+live engine) prove themselves against `test-data/live-truth-conformance-v1.json`;
+no consumer source is read here.
 """
 
 from __future__ import annotations
@@ -26,14 +26,6 @@ import analysis_engine  # noqa: E402
 import live_truth as lt  # noqa: E402
 
 VECTOR_FIXTURE = WORKSPACE_ROOT / "test-data" / "live-truth-conformance-v1.json"
-
-DOTNET_SOURCE = (
-    WORKSPACE_ROOT
-    / "companion-app"
-    / "src"
-    / "iRacingCoach.Coordinator"
-    / "IRacingSdkTelemetrySource.cs"
-)
 
 
 def _mutant_decoder_without_two_caution_bits(flags: int) -> str:
@@ -86,13 +78,6 @@ class LiveFlagConsumerClosureTests(unittest.TestCase):
     def test_the_policy_contains_the_two_previously_omitted_caution_bits(self):
         self.assertNotEqual(lt.CAUTION_BITS_MISSING_FROM_DOTNET, 0)
         self.assertEqual(lt.CAUTION_BITS_MISSING_FROM_DOTNET, 0x0100 | 0x0200)
-
-    def test_the_live_csharp_source_delegates_flag_truth_to_the_shared_policy(self):
-        text = DOTNET_SOURCE.read_text(encoding="utf-8")
-        self.assertIn("LiveTruthPolicy.IsUnderCaution(flags)", text)
-        self.assertIn("LiveTruthPolicy.DecodeRacingState(flags)", text)
-        self.assertIn("LiveTruthPolicy.DisplayFlag(flags)", text)
-        self.assertNotIn("(flags & (0x00004000u | 0x00008000u | 0x00000008u))", text)
 
     def test_each_previously_omitted_bit_is_now_a_caution(self):
         for bit in (0x0100, 0x0200):

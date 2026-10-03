@@ -1,0 +1,1303 @@
+{
+ "golden": 1,
+ "kind": "cases",
+ "source": "crates/coach-ibt/tests/yaml-cases/literals.cases",
+ "source_sha256": "19c8f5f336e6caa2e1719ac33cd894f8e7340ec85187ba3eea49d2c1c6c10c41",
+ "python": "3.12.14",
+ "platform": "win32",
+ "case_mtime": {
+  "float": "1500000000.25"
+ },
+ "cases": [
+  {
+   "name": "quoted_strings",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "7a57bd2bedeb238242777d67597e3e7c7cd69ee60bf83d2927238e23d6f5b8d0",
+   "unsupported": null,
+   "literals": [
+    "\"25.0 psi\"",
+    "'-2.8 deg'",
+    "\"tab\\there\\x41\\101\\u00e9\\U0001F600\"",
+    "\"C:\\setups\\new\"",
+    "'a' r'\\d'",
+    "\"a\" 'b' \"c\"",
+    "'''it's'''",
+    "'it's'",
+    "'",
+    "''",
+    "'\\777'",
+    "'x'  # comment'",
+    "'a' if 1 else 'b'",
+    "'bad\\x4'",
+    "'a' f'b'",
+    "'a' b'b'"
+   ],
+   "session_info": {
+    "map": [
+     [
+      "Values",
+      {
+       "map": [
+        [
+         "Double",
+         "25.0 psi"
+        ],
+        [
+         "Single",
+         "-2.8 deg"
+        ],
+        [
+         "Escapes",
+         "tab\thereAA\u00e9\ud83d\ude00"
+        ],
+        [
+         "UnknownEscape",
+         "C:\\setups\new"
+        ],
+        [
+         "RawConcat",
+         "a\\d"
+        ],
+        [
+         "Concat",
+         "abc"
+        ],
+        [
+         "Triple",
+         "it's"
+        ],
+        [
+         "InnerQuote",
+         "it's"
+        ],
+        [
+         "OneChar",
+         ""
+        ],
+        [
+         "TwoQuotes",
+         ""
+        ],
+        [
+         "Mismatched",
+         "'abc\""
+        ],
+        [
+         "Octal",
+         "\u01ff"
+        ],
+        [
+         "TrailingComment",
+         "x"
+        ],
+        [
+         "Fallback",
+         "a' if 1 else 'b"
+        ],
+        [
+         "BadHex",
+         "bad\\x4"
+        ],
+        [
+         "FString",
+         "a' f'b"
+        ],
+        [
+         "MixedBytes",
+         "a' b'b"
+        ]
+       ]
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "flow_values",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "b06f540eea5b3c5867e9ee0fd5c7c42a4d22fc260d8d5fb6b16322661fd6523b",
+   "unsupported": null,
+   "literals": [
+    "{'IsFixedSetup': False, 'NumStarters': 3}",
+    "['Synthetic', 'Oval']",
+    "[1, -2.5, 'x', None, True, (3, 4), [], {}]",
+    "{'a': {'b': [1, {'c': 'd'}]}, 'a': 2, 'e': 3}",
+    "'a', 'b'",
+    "[1], [2]",
+    "[]",
+    "{}",
+    "[0x1F, 0o17, 0b101, 1_000, -0, 007.5, 1e999, .5, 1., 1.e1, +3, -(4)]",
+    "[0x10000000000000000, -9223372036854775808, 99999999999999999999]",
+    "[a, b]",
+    "[1 2]",
+    "[1][0]",
+    "[1, 2] # tail]",
+    "[1, 2}",
+    "[1+2]",
+    "[-True]",
+    "[[[[[[[[[[1]]]]]]]]]]"
+   ],
+   "session_info": {
+    "map": [
+     [
+      "WeekendInfo",
+      {
+       "map": [
+        [
+         "WeekendOptions",
+         {
+          "map": [
+           [
+            "IsFixedSetup",
+            false
+           ],
+           [
+            "NumStarters",
+            {
+             "int": "3"
+            }
+           ]
+          ]
+         }
+        ],
+        [
+         "TrackName",
+         [
+          "Synthetic",
+          "Oval"
+         ]
+        ]
+       ]
+      }
+     ],
+     [
+      "Values",
+      {
+       "map": [
+        [
+         "List",
+         [
+          {
+           "int": "1"
+          },
+          {
+           "float": "-2.5"
+          },
+          "x",
+          null,
+          true,
+          [
+           {
+            "int": "3"
+           },
+           {
+            "int": "4"
+           }
+          ],
+          [],
+          {
+           "map": []
+          }
+         ]
+        ],
+        [
+         "Nested",
+         {
+          "map": [
+           [
+            "a",
+            {
+             "int": "2"
+            }
+           ],
+           [
+            "e",
+            {
+             "int": "3"
+            }
+           ]
+          ]
+         }
+        ],
+        [
+         "Tuple",
+         [
+          "a",
+          "b"
+         ]
+        ],
+        [
+         "TwoLists",
+         [
+          [
+           {
+            "int": "1"
+           }
+          ],
+          [
+           {
+            "int": "2"
+           }
+          ]
+         ]
+        ],
+        [
+         "Empty",
+         []
+        ],
+        [
+         "EmptyMap",
+         {
+          "map": []
+         }
+        ],
+        [
+         "Numbers",
+         [
+          {
+           "int": "31"
+          },
+          {
+           "int": "15"
+          },
+          {
+           "int": "5"
+          },
+          {
+           "int": "1000"
+          },
+          {
+           "int": "0"
+          },
+          {
+           "float": "7.5"
+          },
+          {
+           "float": "inf"
+          },
+          {
+           "float": "0.5"
+          },
+          {
+           "float": "1.0"
+          },
+          {
+           "float": "10.0"
+          },
+          {
+           "int": "3"
+          },
+          {
+           "int": "-4"
+          }
+         ]
+        ],
+        [
+         "BigInts",
+         [
+          {
+           "int": "18446744073709551616"
+          },
+          {
+           "int": "-9223372036854775808"
+          },
+          {
+           "int": "99999999999999999999"
+          }
+         ]
+        ],
+        [
+         "Bare",
+         "[a, b]"
+        ],
+        [
+         "Spaces",
+         "[1 2]"
+        ],
+        [
+         "Call",
+         "[1][0]"
+        ],
+        [
+         "Comment",
+         [
+          {
+           "int": "1"
+          },
+          {
+           "int": "2"
+          }
+         ]
+        ],
+        [
+         "Mismatch",
+         "[1, 2}"
+        ],
+        [
+         "Sum",
+         "[1+2]"
+        ],
+        [
+         "UnaryBool",
+         "[-True]"
+        ],
+        [
+         "Deep",
+         [
+          [
+           [
+            [
+             [
+              [
+               [
+                [
+                 [
+                  [
+                   {
+                    "int": "1"
+                   }
+                  ]
+                 ]
+                ]
+               ]
+              ]
+             ]
+            ]
+           ]
+          ]
+         ]
+        ]
+       ]
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       "['Synthetic', 'Oval']"
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       false
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": null
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      "['Synthetic', 'Oval']"
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      false
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "plain_scalars",
+   "options": {},
+   "outcome": "ok",
+   "session_info_text_sha256": "105d0c2987afc857338ff47391852f8a8017a2f0894147818c79ddefc8ff7f61",
+   "unsupported": null,
+   "literals": [
+    "\"1.50\"",
+    "[1, 'two', 3.0, None, False]",
+    "{'x': 1}"
+   ],
+   "session_info": {
+    "map": [
+     [
+      "Values",
+      {
+       "map": [
+        [
+         "NullTilde",
+         null
+        ],
+        [
+         "NullWord",
+         null
+        ],
+        [
+         "NullUpper",
+         null
+        ],
+        [
+         "NotNull",
+         "nUlL"
+        ],
+        [
+         "YesWord",
+         true
+        ],
+        [
+         "OnWord",
+         true
+        ],
+        [
+         "OffWord",
+         false
+        ],
+        [
+         "NoWord",
+         false
+        ],
+        [
+         "TrueWord",
+         true
+        ],
+        [
+         "Int",
+         {
+          "int": "-12"
+         }
+        ],
+        [
+         "Plus",
+         {
+          "int": "7"
+         }
+        ],
+        [
+         "Zero",
+         {
+          "int": "0"
+         }
+        ],
+        [
+         "LeadingZero",
+         "012"
+        ],
+        [
+         "BigInt",
+         {
+          "int": "99999999999999999999"
+         }
+        ],
+        [
+         "NegBigInt",
+         {
+          "int": "-99999999999999999999"
+         }
+        ],
+        [
+         "Float",
+         {
+          "float": "1.5"
+         }
+        ],
+        [
+         "TrailingDot",
+         {
+          "float": "1.0"
+         }
+        ],
+        [
+         "LeadingDot",
+         {
+          "float": "0.5"
+         }
+        ],
+        [
+         "Exp",
+         {
+          "float": "1000.0"
+         }
+        ],
+        [
+         "DotExp",
+         {
+          "float": "1000.0"
+         }
+        ],
+        [
+         "LeadingDotExp",
+         ".5e3"
+        ],
+        [
+         "Overflow",
+         "1e999"
+        ],
+        [
+         "Underscore",
+         "1_000"
+        ],
+        [
+         "Hex",
+         "0x1F"
+        ],
+        [
+         "Units",
+         "61.2 mm"
+        ],
+        [
+         "Percent",
+         "54.0%"
+        ],
+        [
+         "Negative units",
+         "-2.8 deg"
+        ],
+        [
+         "Time",
+         "2:00 pm"
+        ],
+        [
+         "Date",
+         "2026-09-20"
+        ]
+       ]
+      }
+     ],
+     [
+      "CarSetup",
+      {
+       "map": [
+        [
+         "UpdateCount",
+         {
+          "int": "2"
+         }
+        ],
+        [
+         "Chassis",
+         {
+          "map": [
+           [
+            "Front",
+            {
+             "map": [
+              [
+               "Toggle",
+               true
+              ],
+              [
+               "Count",
+               "007"
+              ],
+              [
+               "Ratio",
+               "14.5:1"
+              ],
+              [
+               "Quoted",
+               "1.50"
+              ],
+              [
+               "Flow",
+               [
+                {
+                 "int": "1"
+                },
+                "two",
+                {
+                 "float": "3.0"
+                },
+                null,
+                false
+               ]
+              ],
+              [
+               "Nothing",
+               null
+              ],
+              [
+               "Map",
+               {
+                "map": [
+                 [
+                  "x",
+                  {
+                   "int": "1"
+                  }
+                 ]
+                ]
+               }
+              ]
+             ]
+            }
+           ]
+          ]
+         }
+        ]
+       ]
+      }
+     ]
+    ]
+   },
+   "extracts": {
+    "weekend": {
+     "map": [
+      [
+       "track_name",
+       null
+      ],
+      [
+       "track_display_name",
+       null
+      ],
+      [
+       "track_config_name",
+       null
+      ],
+      [
+       "track_id",
+       null
+      ],
+      [
+       "track_length",
+       null
+      ],
+      [
+       "series_id",
+       null
+      ],
+      [
+       "season_id",
+       null
+      ],
+      [
+       "session_id",
+       null
+      ],
+      [
+       "subsession_id",
+       null
+      ],
+      [
+       "race_week",
+       null
+      ],
+      [
+       "event_type",
+       null
+      ],
+      [
+       "category",
+       null
+      ],
+      [
+       "official",
+       null
+      ],
+      [
+       "is_fixed_setup",
+       null
+      ]
+     ]
+    },
+    "sessions": [],
+    "driver": null,
+    "driver_setup": {
+     "map": [
+      [
+       "name",
+       null
+      ],
+      [
+       "is_modified",
+       null
+      ],
+      [
+       "load_type_name",
+       null
+      ],
+      [
+       "load_type",
+       null
+      ]
+     ]
+    },
+    "car_setup": {
+     "update_count": {
+      "int": "2"
+     },
+     "leaves": [
+      [
+       "UpdateCount",
+       "2",
+       {
+        "int": "2"
+       }
+      ],
+      [
+       "Chassis.Front.Toggle",
+       "True",
+       true
+      ],
+      [
+       "Chassis.Front.Count",
+       "007",
+       "007"
+      ],
+      [
+       "Chassis.Front.Ratio",
+       "14.5:1",
+       "14.5:1"
+      ],
+      [
+       "Chassis.Front.Quoted",
+       "1.50",
+       "1.50"
+      ],
+      [
+       "Chassis.Front.Flow.0",
+       "1",
+       {
+        "int": "1"
+       }
+      ],
+      [
+       "Chassis.Front.Flow.1",
+       "two",
+       "two"
+      ],
+      [
+       "Chassis.Front.Flow.2",
+       "3.0",
+       {
+        "float": "3.0"
+       }
+      ],
+      [
+       "Chassis.Front.Flow.4",
+       "False",
+       false
+      ],
+      [
+       "Chassis.Front.Map.x",
+       "1",
+       {
+        "int": "1"
+       }
+      ]
+     ]
+    }
+   },
+   "summary": {
+    "map": [
+     [
+      "series_id",
+      null
+     ],
+     [
+      "season_id",
+      null
+     ],
+     [
+      "session_id",
+      null
+     ],
+     [
+      "subsession_id",
+      null
+     ],
+     [
+      "race_week",
+      null
+     ],
+     [
+      "event_type",
+      null
+     ],
+     [
+      "category",
+      null
+     ],
+     [
+      "official",
+      null
+     ],
+     [
+      "track_id",
+      null
+     ],
+     [
+      "track_name",
+      null
+     ],
+     [
+      "track_display_name",
+      null
+     ],
+     [
+      "track_config_name",
+      null
+     ],
+     [
+      "track_length",
+      null
+     ],
+     [
+      "is_fixed_setup",
+      null
+     ],
+     [
+      "sim_session_num",
+      null
+     ],
+     [
+      "sim_session_type",
+      null
+     ],
+     [
+      "session_unique_id",
+      null
+     ],
+     [
+      "is_race",
+      false
+     ],
+     [
+      "car_id",
+      null
+     ],
+     [
+      "car_path",
+      null
+     ],
+     [
+      "car_screen_name",
+      null
+     ],
+     [
+      "driver_user_id",
+      null
+     ],
+     [
+      "driver_setup_name",
+      null
+     ],
+     [
+      "driver_setup_modified",
+      null
+     ],
+     [
+      "start_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "end_time_unix",
+      {
+       "float": "1500000000.25"
+      }
+     ],
+     [
+      "start_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "end_time_utc",
+      "2017-07-14T02:40:00.250000+00:00"
+     ],
+     [
+      "time_source",
+      "mtime"
+     ]
+    ]
+   }
+  }
+ ]
+}

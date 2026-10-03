@@ -1,0 +1,628 @@
+{
+ "golden": 1,
+ "kind": "ibt",
+ "source": "test-data/ibt/synthetic-race.ibt",
+ "python": "3.12.14",
+ "platform": "win32",
+ "outcome": "ok",
+ "file_size": 7616,
+ "header": {
+  "version": 2,
+  "status": 1,
+  "tick_rate": 60,
+  "session_info_update": 1,
+  "session_info_length": 550,
+  "session_info_offset": 144,
+  "num_variables": 8,
+  "variable_header_offset": 704,
+  "num_buffers": 1,
+  "buffer_length": 48
+ },
+ "buffers": [
+  [
+   119,
+   1856
+  ]
+ ],
+ "disk": {
+  "map": [
+   [
+    "session_start_date",
+    {
+     "int": "1780000000"
+    }
+   ],
+   [
+    "session_start_time",
+    {
+     "float": "0.0"
+    }
+   ],
+   [
+    "session_end_time",
+    {
+     "float": "1.983333"
+    }
+   ],
+   [
+    "session_lap_count",
+    {
+     "int": "1"
+    }
+   ],
+   [
+    "session_record_count",
+    {
+     "int": "120"
+    }
+   ]
+  ]
+ },
+ "buffer_offset": 1856,
+ "record_count": 120,
+ "variables": [
+  [
+   "SessionNum",
+   "Simulator session number",
+   "",
+   2,
+   0,
+   1,
+   false
+  ],
+  [
+   "SessionTime",
+   "Session time",
+   "s",
+   5,
+   8,
+   1,
+   false
+  ],
+  [
+   "Lap",
+   "Lap",
+   "",
+   2,
+   16,
+   1,
+   false
+  ],
+  [
+   "LapDistPct",
+   "Lap distance",
+   "%",
+   4,
+   20,
+   1,
+   false
+  ],
+  [
+   "Speed",
+   "Speed",
+   "m/s",
+   4,
+   24,
+   1,
+   false
+  ],
+  [
+   "Throttle",
+   "Throttle",
+   "%",
+   4,
+   28,
+   1,
+   false
+  ],
+  [
+   "Brake",
+   "Brake",
+   "%",
+   4,
+   32,
+   1,
+   false
+  ],
+  [
+   "OnPitRoad",
+   "On pit road",
+   "",
+   1,
+   36,
+   1,
+   false
+  ]
+ ],
+ "session_info_sha256": "57a5409ddac57b9896fac12b19c575422a38bf59110ae18dfff554f3195314b6",
+ "session_info_text_sha256": "a80987f8ce10bf067658df93a1f3397df77cd8a2c6f4451766be7180b74f93da",
+ "unsupported": null,
+ "literals": [],
+ "session_info": {
+  "map": [
+   [
+    "WeekendInfo",
+    {
+     "map": [
+      [
+       "TrackName",
+       "Synthetic Speedway"
+      ],
+      [
+       "TrackDisplayName",
+       "Synthetic Speedway"
+      ],
+      [
+       "TrackConfigName",
+       "Oval"
+      ],
+      [
+       "TrackID",
+       {
+        "int": "9001"
+       }
+      ],
+      [
+       "SeasonID",
+       {
+        "int": "202603"
+       }
+      ],
+      [
+       "SessionID",
+       {
+        "int": "7001"
+       }
+      ],
+      [
+       "SubSessionID",
+       {
+        "int": "8001"
+       }
+      ],
+      [
+       "EventType",
+       "Race"
+      ],
+      [
+       "Category",
+       "Oval"
+      ],
+      [
+       "WeekendOptions",
+       {
+        "map": [
+         [
+          "IsFixedSetup",
+          {
+           "int": "0"
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    }
+   ],
+   [
+    "DriverInfo",
+    {
+     "map": [
+      [
+       "DriverCarIdx",
+       {
+        "int": "0"
+       }
+      ],
+      [
+       "Drivers",
+       [
+        {
+         "map": [
+          [
+           "CarIdx",
+           {
+            "int": "0"
+           }
+          ],
+          [
+           "UserID",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "CarID",
+           {
+            "int": "9002"
+           }
+          ],
+          [
+           "CarPath",
+           "synthetic test car"
+          ],
+          [
+           "CarScreenName",
+           "NASCAR Test Car"
+          ]
+         ]
+        }
+       ]
+      ]
+     ]
+    }
+   ],
+   [
+    "SessionInfo",
+    {
+     "map": [
+      [
+       "Sessions",
+       [
+        {
+         "map": [
+          [
+           "SessionNum",
+           {
+            "int": "1"
+           }
+          ],
+          [
+           "SessionType",
+           "Race"
+          ]
+         ]
+        }
+       ]
+      ]
+     ]
+    }
+   ],
+   [
+    "CarSetup",
+    {
+     "map": [
+      [
+       "Tires",
+       {
+        "map": [
+         [
+          "LeftFront",
+          {
+           "map": [
+            [
+             "ColdPressure",
+             "25.0 psi"
+            ]
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     ]
+    }
+   ]
+  ]
+ },
+ "extracts": {
+  "weekend": {
+   "map": [
+    [
+     "track_name",
+     "Synthetic Speedway"
+    ],
+    [
+     "track_display_name",
+     "Synthetic Speedway"
+    ],
+    [
+     "track_config_name",
+     "Oval"
+    ],
+    [
+     "track_id",
+     {
+      "int": "9001"
+     }
+    ],
+    [
+     "track_length",
+     null
+    ],
+    [
+     "series_id",
+     null
+    ],
+    [
+     "season_id",
+     {
+      "int": "202603"
+     }
+    ],
+    [
+     "session_id",
+     {
+      "int": "7001"
+     }
+    ],
+    [
+     "subsession_id",
+     {
+      "int": "8001"
+     }
+    ],
+    [
+     "race_week",
+     null
+    ],
+    [
+     "event_type",
+     "Race"
+    ],
+    [
+     "category",
+     "Oval"
+    ],
+    [
+     "official",
+     null
+    ],
+    [
+     "is_fixed_setup",
+     false
+    ]
+   ]
+  },
+  "sessions": [
+   {
+    "map": [
+     [
+      "session_num",
+      {
+       "int": "1"
+      }
+     ],
+     [
+      "session_type",
+      "Race"
+     ],
+     [
+      "session_name",
+      null
+     ]
+    ]
+   }
+  ],
+  "driver": {
+   "map": [
+    [
+     "car_idx",
+     {
+      "int": "0"
+     }
+    ],
+    [
+     "user_id",
+     {
+      "int": "1"
+     }
+    ],
+    [
+     "user_name",
+     null
+    ],
+    [
+     "irating",
+     null
+    ],
+    [
+     "car_id",
+     {
+      "int": "9002"
+     }
+    ],
+    [
+     "car_path",
+     "synthetic test car"
+    ],
+    [
+     "car_screen_name",
+     "NASCAR Test Car"
+    ]
+   ]
+  },
+  "driver_setup": {
+   "map": [
+    [
+     "name",
+     null
+    ],
+    [
+     "is_modified",
+     null
+    ],
+    [
+     "load_type_name",
+     null
+    ],
+    [
+     "load_type",
+     null
+    ]
+   ]
+  },
+  "car_setup": {
+   "update_count": null,
+   "leaves": [
+    [
+     "Tires.LeftFront.ColdPressure",
+     "25.0 psi",
+     "25.0 psi"
+    ]
+   ]
+  }
+ },
+ "summary": {
+  "map": [
+   [
+    "series_id",
+    null
+   ],
+   [
+    "season_id",
+    {
+     "int": "202603"
+    }
+   ],
+   [
+    "session_id",
+    {
+     "int": "7001"
+    }
+   ],
+   [
+    "subsession_id",
+    {
+     "int": "8001"
+    }
+   ],
+   [
+    "race_week",
+    null
+   ],
+   [
+    "event_type",
+    "Race"
+   ],
+   [
+    "category",
+    "Oval"
+   ],
+   [
+    "official",
+    null
+   ],
+   [
+    "track_id",
+    {
+     "int": "9001"
+    }
+   ],
+   [
+    "track_name",
+    "Synthetic Speedway"
+   ],
+   [
+    "track_display_name",
+    "Synthetic Speedway"
+   ],
+   [
+    "track_config_name",
+    "Oval"
+   ],
+   [
+    "track_length",
+    null
+   ],
+   [
+    "is_fixed_setup",
+    false
+   ],
+   [
+    "sim_session_num",
+    {
+     "int": "1"
+    }
+   ],
+   [
+    "sim_session_type",
+    "Race"
+   ],
+   [
+    "session_unique_id",
+    null
+   ],
+   [
+    "is_race",
+    true
+   ],
+   [
+    "car_id",
+    {
+     "int": "9002"
+    }
+   ],
+   [
+    "car_path",
+    "synthetic test car"
+   ],
+   [
+    "car_screen_name",
+    "NASCAR Test Car"
+   ],
+   [
+    "driver_user_id",
+    {
+     "int": "1"
+    }
+   ],
+   [
+    "driver_setup_name",
+    null
+   ],
+   [
+    "driver_setup_modified",
+    null
+   ],
+   [
+    "start_time_unix",
+    {
+     "float": "1780000000.0"
+    }
+   ],
+   [
+    "end_time_unix",
+    {
+     "float": "1780000001.983333"
+    }
+   ],
+   [
+    "start_time_utc",
+    "2026-05-28T20:26:40+00:00"
+   ],
+   [
+    "end_time_utc",
+    "2026-05-28T20:26:41.983333+00:00"
+   ],
+   [
+    "time_source",
+    "disk_header"
+   ]
+  ]
+ },
+ "edges": {
+  "SessionNum": {
+   "int": "1"
+  },
+  "SessionTime": {
+   "float": "1.9833333333333334"
+  },
+  "Lap": {
+   "int": "1"
+  },
+  "LapDistPct": {
+   "float": "0.9916666746139526"
+  },
+  "Speed": {
+   "float": "61.37196731567383"
+  },
+  "Throttle": {
+   "float": "0.8500000238418579"
+  },
+  "Brake": {
+   "float": "0.0"
+  },
+  "OnPitRoad": false
+ }
+}

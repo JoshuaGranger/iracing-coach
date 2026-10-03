@@ -1,0 +1,3633 @@
+{
+ "analysis_id": "31feaceee7e8b4c430a25cca",
+ "analysis_profile": {
+  "pipeline_sha256": "73b370e5aa6b93669f1cd3c27038905e9994bec24065cb4cf560aa73f3e5232e",
+  "target_hz": 20.0
+ },
+ "analysis_profile_version": "post-race-foundations-v23",
+ "analyzed_at": "2026-10-03T01:53:49+00:00",
+ "coaching_signals": [
+  {
+   "coaching": "Keep disk telemetry enabled and return cleanly to pit service after the run to capture tire readings.",
+   "evidence": [],
+   "finding": "Telemetry did not expose enough measured degradation or post-stop tire evidence for a strong tire-management conclusion.",
+   "inference": null,
+   "priority": "medium"
+  }
+ ],
+ "conditions": {},
+ "corner_tire_age": {
+  "confirmed_tire_age_status": "unavailable",
+  "eligibility": {
+   "candidate_lap_count": 1,
+   "excluded_lap_counts": {},
+   "rule": "complete clean green laps only; pit, caution/mixed, restart, non-racing-state, off-track, close-traffic, and partial laps are excluded when the required channels exist",
+   "screening": {
+    "close_traffic_maximum_fraction": 0.1,
+    "on_track_minimum_fraction": 0.98,
+    "track_location_available": false,
+    "traffic_distance_available": false
+   }
+  },
+  "limitations": [
+   "Load-zone names are provisional telemetry labels unless sourced knowledge supplies an official name.",
+   "Routine sampled onset/release and throttle timing are coarser than a native-rate event query.",
+   "Within-run phase changes can also reflect traffic, line, damage, weather, track state, fuel mass, and driver adaptation.",
+   "Tire wear remains a discrete pit-service observation; this artifact does not interpolate tread remaining within a run.",
+   "No session-derived tire-state change-point model is applied, so fresh/settled/worn phase labels remain unavailable.",
+   "CarDistAhead/CarDistBehind were unavailable, so traffic and dirty-air exposure could not be screened.",
+   "PlayerTrackSurface was unavailable, so off-track samples could not be screened."
+  ],
+  "metric_evidence": {
+   "brake_average_peak": {
+    "aggregation": "median of per-lap average/peak fractions",
+    "evidence_class": "derived_from_measured_Brake"
+   },
+   "brake_energy_proxy": {
+    "definition": "integral of brake fraction x vehicle speed through the zone",
+    "evidence_class": "derived_proxy"
+   },
+   "brake_onset_release": {
+    "definition": "0.05 brake-fraction crossings; omitted when the transition is not observed",
+    "evidence_class": "derived_routine_sample_threshold"
+   },
+   "coaching": {
+    "evidence_class": "inferred",
+    "target_rule": "no exact target without a valid aligned representative-lap comparison"
+   },
+   "entry_minimum_exit_speed_mph": {
+    "aggregation": "median of per-lap zone observations",
+    "evidence_class": "derived_from_measured_Speed"
+   },
+   "steering_amount_work": {
+    "definition": "mean absolute angle, sign-change corrections, and integral of absolute angle x speed, on the recording's steering basis (lap_traces.steering: road-wheel angle when the setup states the steering ratio)",
+    "evidence_class": "derived_from_measured_SteeringWheelAngle"
+   },
+   "throttle_pickup_exit": {
+    "definition": "first 0.75 throttle sample after minimum speed plus zone-exit throttle",
+    "evidence_class": "derived_from_measured_Throttle"
+   },
+   "turn_in": {
+    "definition": "first steering demand crossing 0.05 rad of steering-wheel angle (0.05/12 rad of road-wheel angle) above the pre-zone signed steering baseline; absolute-angle fallback when no baseline exists; omitted and boundary-censored when the crossing predates the analysis window",
+    "evidence_class": "derived_routine_sample_threshold"
+   }
+  },
+  "observational_run_phase_status": "unavailable",
+  "phase_definition": {
+   "confirmed_model": "chronological early/middle/late thirds of this run's eligible laps with exact per-tire green-lap-on-set bounds after every tire has a confirmed zero-age boundary",
+   "fallback_model": "chronological early/middle/late thirds with session-relative age bounds when at least one tire lacks a confirmed zero-age boundary",
+   "late_semantics": "older-set/late-run proxy when green-lap age is confirmed; late-run proxy otherwise; never measured worn tread state",
+   "minimum_laps_per_phase_for_usable_comparison": 2,
+   "tire_state_labels": "fresh/settled/worn remain unavailable until session- or history-derived pace/control/tire change points support inclusive green-lap-age boundaries"
+  },
+  "reason": "No telemetry-derived load zones were detected.",
+  "runs": [],
+  "schema_version": 1,
+  "status": "unavailable",
+  "tire_state_phase_status": "unavailable"
+ },
+ "damage_repair": {
+  "channel_coverage": {
+   "driver_fast_repair_request": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "fast_repairs_available": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "fast_repairs_used": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "incident_points": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "mandatory_repair_timer": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "optional_repair_timer": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "pit_road": {
+    "channel": "OnPitRoad",
+    "status": "recorded",
+    "unit": null
+   },
+   "pit_service_active": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "pit_service_request_flags": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "pit_service_status": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "pit_stall": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "repair_required_flag": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   },
+   "tow_timer": {
+    "channel": null,
+    "status": "unavailable",
+    "unit": null
+   }
+  },
+  "episodes": [],
+  "incident_points": {
+   "damage_proof": false,
+   "end_count": null,
+   "events": [],
+   "note": "Incident points are never treated as proof of physical damage.",
+   "positive_delta": null,
+   "source_channel": null,
+   "start_count": null,
+   "status": "unavailable"
+  },
+  "lap_impacts": [],
+  "limitations": [
+   "No iRacing telemetry channel used here reports damage location or severity.",
+   "Pace loss, handling change, and incident points are never used to infer physical damage.",
+   "Pit-road, stall, service-active, and repair-countdown time overlap; stall time is not repair-exclusive time loss.",
+   "A positive repair timer is repair demand/availability, not proof that repair work was progressing; repair-active time uses intervals where the timer decreased.",
+   "A repair timer reaching zero does not certify that the car was fully undamaged.",
+   "Tow time confirms a tow/reset state but does not by itself prove physical damage.",
+   "Routine analysis is downsampled; use a bounded native-rate query for exact transition timing when needed."
+  ],
+  "run_impacts": [
+   {
+    "automatic_coaching_reference_eligible": true,
+    "candidate_lap_numbers_before_damage_filter": [
+     1
+    ],
+    "coaching_reference_lap_numbers": [
+     1
+    ],
+    "episode_overlap_excluded_lap_numbers": [],
+    "post_stop_context": {
+     "mandatory_repair_remaining_at_stall_exit_s": 0.0,
+     "optional_repair_remaining_at_stall_exit_s": 0.0,
+     "prior_episode_ids": [],
+     "recorded_repair_before_run": false,
+     "tow_before_run": false
+    },
+    "reason_codes": [],
+    "related_episode_ids": [],
+    "run_number": 1,
+    "scope_note": "This screens only recorded pit/tow/repair evidence and never certifies that the car was fully undamaged; all normal clean-lap filters still apply.",
+    "status": "no_recorded_damage_disruption_exclusion"
+   }
+  ],
+  "sampling_resolution_s": 0.05,
+  "schema_version": 1,
+  "status": "partial",
+  "summary": {
+   "all_recording_pit_road_time_s": 0.0,
+   "confirmed_fast_repair_uses": 0,
+   "episodes": 0,
+   "mandatory_repair_episodes": 0,
+   "optional_repair_episodes": 0,
+   "pit_road_episodes": 0,
+   "pre_race_or_grid_episodes": 0,
+   "pre_race_or_grid_pit_road_time_s": 0.0,
+   "race_window_episodes": 0,
+   "recorded_repair_episodes": 0,
+   "repair_required_flag_episodes": 0,
+   "total_pit_road_time_s": 0.0,
+   "total_pit_stall_time_s": null,
+   "total_pitstop_service_active_time_s": null,
+   "total_repair_active_time_s": null,
+   "total_repair_required_flag_active_time_s": null,
+   "total_repair_timer_positive_observed_s": null,
+   "total_repair_work_completed_s": null,
+   "total_tow_active_time_s": null,
+   "totals_scope_note": "Unsuffixed totals cover recorded-race-window episodes only; pre-race/grid pit state is reported separately and is not race pit loss.",
+   "tow_episodes": 0
+  },
+  "time_basis": "sampled SessionTime; durations are sums of routine-analysis sample intervals",
+  "unavailable_measurements": [
+   {
+    "measurement": "tow_timer",
+    "reason": "None of the expected channels were recorded: PlayerCarTowTime."
+   },
+   {
+    "measurement": "mandatory_repair_timer",
+    "reason": "None of the expected channels were recorded: PitRepairLeft."
+   },
+   {
+    "measurement": "optional_repair_timer",
+    "reason": "None of the expected channels were recorded: PitOptRepairLeft."
+   }
+  ]
+ },
+ "data_quality": {
+  "causality_rule": "Brake/steering/load traces support likely causes, not exact within-run tire-wear timing.",
+  "channels": {
+   "brake": true,
+   "distance": true,
+   "flags": false,
+   "fuel": false,
+   "groove_path": false,
+   "lap": true,
+   "pit": true,
+   "repair_context": true,
+   "setup": true,
+   "speed": true,
+   "steering": false,
+   "time": true,
+   "tire_wear": false
+  },
+  "confidence": "high",
+  "damage_rule": "Tow/repair timers and confirmed fast-repair counters are recorded evidence; pace loss and incident points never prove damage.",
+  "missing": [
+   "steering",
+   "fuel",
+   "flags",
+   "tire_wear",
+   "groove_path"
+  ],
+  "telemetry_completeness": {
+   "analyzed_channels": 7,
+   "catalog_complete": true,
+   "loaded_channels": 8,
+   "raw_source_sha256_verified": true,
+   "recorded_channels": 8
+  },
+  "tire_wear_rule": "Tire readings are discrete pit-service observations assigned to the preceding run."
+ },
+ "driver_adjustments": {},
+ "field_pace": {
+  "cars": [],
+  "reason": "car_position_channel_not_recorded",
+  "relative": [],
+  "schema_version": 1,
+  "status": "unavailable"
+ },
+ "garage61_representative_laps": {
+  "comparison_quality": {},
+  "comparison_scope": null,
+  "reason": "No cached Garage61 representative laps are available for this exact car/track/setup context.",
+  "reference_comparisons": [],
+  "representative_laps": [],
+  "schema_version": 1,
+  "status": "unavailable",
+  "target_derivation_version": "explicit-analysis-paths-v2"
+ },
+ "groove_evolution": {
+  "available_required_channels": [
+   "LapDistPct",
+   "Lap"
+  ],
+  "inside_outside_calibration": {
+   "calibrated_zone_count": 0,
+   "reason": "No valid zone-specific signed-curvature calibration is available.",
+   "status": "unavailable"
+  },
+  "limitations": [
+   "Lateral offset is relative to the driver's session-median path, not an official centerline or measured track edge.",
+   "Positive offset means left of travel relative to that reference; it maps toward inside/outside only where signed-curvature quality gates pass.",
+   "Inside/outside and oval low/high fields describe observed movement direction, not absolute lane position or a recommended groove.",
+   "LapDistPct aligns samples around the lap but cannot establish a groove without recorded Lat/Lon position.",
+   "Tire odometers measure distance on the current tire set, not continuous wear; wear remains known only at a discrete service reading.",
+   "A detected migration is a repeatable path change, not proof that tire wear or setup caused it; traffic, cautions, line choice, and driver intent may contribute."
+  ],
+  "performance_claim": {
+   "best_groove_claimed": false,
+   "reason": "No path-performance claim is possible without valid path evidence and controlled pace comparisons.",
+   "status": "unavailable"
+  },
+  "reason": "Missing measured position/progress channels: Lat, Lon",
+  "required_channels": {
+   "position": [
+    "Lat (decimal degrees)",
+    "Lon (decimal degrees)"
+   ],
+   "recommended_filters": [
+    "SessionFlags",
+    "OnPitRoad",
+    "Speed"
+   ],
+   "tire_age": {
+    "any_of": [
+     "LFodometer",
+     "RFodometer",
+     "LRodometer",
+     "RRodometer"
+    ],
+    "minimum": 2,
+    "unit": "m"
+   },
+   "track_progress": [
+    "LapDistPct",
+    "Lap"
+   ]
+  },
+  "schema_version": 2,
+  "status": "unavailable",
+  "zones": []
+ },
+ "identity": {
+  "car_id": 9002,
+  "car_name": "NASCAR Test Car",
+  "car_path": "synthetic test car",
+  "category": "Oval",
+  "conditions": {
+   "air_temp_c": null,
+   "track_temp_c": null,
+   "track_usage": null,
+   "track_wetness": null
+  },
+  "customer_id": 1,
+  "driver_irating": null,
+  "driver_name": null,
+  "event_type": "Race",
+  "garage_setup_fingerprint": "08c544f2b82afbb0",
+  "is_fixed_setup": false,
+  "max_fuel_percent": null,
+  "power_adjust_percent": null,
+  "race_week": null,
+  "season_id": 202603,
+  "season_quarter": null,
+  "season_year": null,
+  "series_id": null,
+  "session_id": 7001,
+  "session_start": "2026-05-28T20:26:40+00:00",
+  "session_unique_id": null,
+  "setup": {
+   "Tires": {
+    "LeftFront": {
+     "ColdPressure": "25.0 psi"
+    }
+   }
+  },
+  "setup_fingerprint": "08c544f2b82afbb0",
+  "setup_load_type": null,
+  "setup_modified": null,
+  "setup_name": null,
+  "setup_parameter_count": 1,
+  "sim_build": null,
+  "subsession_id": 8001,
+  "tire_compound": null,
+  "track_config": "Oval",
+  "track_id": 9001,
+  "track_length": null,
+  "track_name": "Synthetic Speedway",
+  "track_type": null,
+  "weight_penalty_kg": null
+ },
+ "lap_traces": {
+  "additional_signal_catalog": [
+   {
+    "category": "Race",
+    "description": "Recorded pit-road state.",
+    "evidence_type": "measured",
+    "id": "on-pit-road",
+    "name": "On pit road",
+    "source_channels": [
+     "OnPitRoad"
+    ],
+    "unit": "on / off"
+   }
+  ],
+  "distance_bins_per_lap": 160,
+  "downsampling": "lap-distance bins retain representative values plus speed range, minimum throttle, peak brake, and peak absolute steering",
+  "schema_version": 2,
+  "sector_start_pcts": [],
+  "steering": {
+   "basis": "steering_wheel",
+   "definition": "Recorded SteeringWheelAngle. Without the car's steering ratio it cannot be converted to road-wheel angle, so it is never compared with road-wheel steering.",
+   "degree_digits": 1,
+   "evidence_class": "measured",
+   "label": "Steering wheel angle — ratio not recorded",
+   "ratio_source": null,
+   "raw_channel": "SteeringWheelAngle",
+   "reason": "The garage setup does not state a steering ratio.",
+   "schema_version": 1,
+   "setup_steering_offset": null,
+   "short_label": "Steering wheel angle",
+   "status": "not_recorded",
+   "steering_offset_applied": false,
+   "steering_ratio": null,
+   "steering_ratio_text": null,
+   "steering_wheel_angle_recorded": false,
+   "threshold_reference_ratio": 12.0,
+   "unit": "deg",
+   "value_unit": "rad"
+  },
+  "tire_stress": {
+   "definition": "bounded blend of brake fraction at speed, steering magnitude at speed, and lateral acceleration; it is not per-lap tread wear",
+   "evidence_class": "proxy",
+   "version": "controls-load-proxy-v1"
+  },
+  "trace_count": 1,
+  "traces": [
+   {
+    "caution_fraction": 0.0,
+    "complete": true,
+    "conditions": {
+     "air_density_lb_ft3": null,
+     "air_pressure_inhg": null,
+     "air_temperature_f": null,
+     "fog_percent": null,
+     "precipitation_percent": null,
+     "relative_humidity_percent": null,
+     "sky": null,
+     "track_temperature_f": null,
+     "track_usage": null,
+     "track_usage_percent": null,
+     "track_wetness_state": null,
+     "weather_declared_wet": null,
+     "wind_direction_degrees": null,
+     "wind_speed_mph": null
+    },
+    "flag_state": "green",
+    "flag_states": [
+     "green"
+    ],
+    "fuel_used_gal": null,
+    "green_fraction": 1.0,
+    "lap": 1,
+    "lap_time_s": 1.95,
+    "pit_entry": false,
+    "pit_exit": false,
+    "pit_time_s": 0.0,
+    "points": [
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.003125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.0,
+      "slip_angle_deg": null,
+      "speed_max_mph": 138.69,
+      "speed_min_mph": 138.69,
+      "speed_mph": 138.69,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.028125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.05,
+      "slip_angle_deg": null,
+      "speed_max_mph": 134.491,
+      "speed_min_mph": 134.491,
+      "speed_mph": 134.491,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.053125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.1,
+      "slip_angle_deg": null,
+      "speed_max_mph": 130.395,
+      "speed_min_mph": 130.395,
+      "speed_mph": 130.395,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.078125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.15,
+      "slip_angle_deg": null,
+      "speed_max_mph": 126.503,
+      "speed_min_mph": 126.503,
+      "speed_mph": 126.503,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.103125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.2,
+      "slip_angle_deg": null,
+      "speed_max_mph": 122.912,
+      "speed_min_mph": 122.912,
+      "speed_mph": 122.912,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.128125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.25,
+      "slip_angle_deg": null,
+      "speed_max_mph": 119.709,
+      "speed_min_mph": 119.709,
+      "speed_mph": 119.709,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.153125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.3,
+      "slip_angle_deg": null,
+      "speed_max_mph": 116.973,
+      "speed_min_mph": 116.973,
+      "speed_mph": 116.973,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.171875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.35,
+      "slip_angle_deg": null,
+      "speed_max_mph": 114.773,
+      "speed_min_mph": 114.773,
+      "speed_mph": 114.773,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.203125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.4,
+      "slip_angle_deg": null,
+      "speed_max_mph": 113.161,
+      "speed_min_mph": 113.161,
+      "speed_mph": 113.161,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.221875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.45,
+      "slip_angle_deg": null,
+      "speed_max_mph": 112.177,
+      "speed_min_mph": 112.177,
+      "speed_mph": 112.177,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.253125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.5,
+      "slip_angle_deg": null,
+      "speed_max_mph": 111.847,
+      "speed_min_mph": 111.847,
+      "speed_mph": 111.847,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.278125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.55,
+      "slip_angle_deg": null,
+      "speed_max_mph": 112.177,
+      "speed_min_mph": 112.177,
+      "speed_mph": 112.177,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.303125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.6,
+      "slip_angle_deg": null,
+      "speed_max_mph": 113.161,
+      "speed_min_mph": 113.161,
+      "speed_mph": 113.161,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.321875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.65,
+      "slip_angle_deg": null,
+      "speed_max_mph": 114.773,
+      "speed_min_mph": 114.773,
+      "speed_mph": 114.773,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.346875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.7,
+      "slip_angle_deg": null,
+      "speed_max_mph": 116.973,
+      "speed_min_mph": 116.973,
+      "speed_mph": 116.973,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.378125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.75,
+      "slip_angle_deg": null,
+      "speed_max_mph": 119.709,
+      "speed_min_mph": 119.709,
+      "speed_mph": 119.709,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.403125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.8,
+      "slip_angle_deg": null,
+      "speed_max_mph": 122.912,
+      "speed_min_mph": 122.912,
+      "speed_mph": 122.912,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.428125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.85,
+      "slip_angle_deg": null,
+      "speed_max_mph": 126.503,
+      "speed_min_mph": 126.503,
+      "speed_mph": 126.503,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.446875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.9,
+      "slip_angle_deg": null,
+      "speed_max_mph": 130.395,
+      "speed_min_mph": 130.395,
+      "speed_mph": 130.395,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.471875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 0.95,
+      "slip_angle_deg": null,
+      "speed_max_mph": 134.491,
+      "speed_min_mph": 134.491,
+      "speed_mph": 134.491,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.503125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.0,
+      "slip_angle_deg": null,
+      "speed_max_mph": 138.69,
+      "speed_min_mph": 138.69,
+      "speed_mph": 138.69,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.521875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.05,
+      "slip_angle_deg": null,
+      "speed_max_mph": 134.491,
+      "speed_min_mph": 134.491,
+      "speed_mph": 134.491,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.553125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.1,
+      "slip_angle_deg": null,
+      "speed_max_mph": 130.395,
+      "speed_min_mph": 130.395,
+      "speed_mph": 130.395,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.571875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.15,
+      "slip_angle_deg": null,
+      "speed_max_mph": 126.503,
+      "speed_min_mph": 126.503,
+      "speed_mph": 126.503,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.603125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.2,
+      "slip_angle_deg": null,
+      "speed_max_mph": 122.912,
+      "speed_min_mph": 122.912,
+      "speed_mph": 122.912,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.628125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.25,
+      "slip_angle_deg": null,
+      "speed_max_mph": 119.709,
+      "speed_min_mph": 119.709,
+      "speed_mph": 119.709,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.646875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.3,
+      "slip_angle_deg": null,
+      "speed_max_mph": 116.973,
+      "speed_min_mph": 116.973,
+      "speed_mph": 116.973,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.678125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.35,
+      "slip_angle_deg": null,
+      "speed_max_mph": 114.773,
+      "speed_min_mph": 114.773,
+      "speed_mph": 114.773,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.696875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.4,
+      "slip_angle_deg": null,
+      "speed_max_mph": 113.161,
+      "speed_min_mph": 113.161,
+      "speed_mph": 113.161,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.728125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.45,
+      "slip_angle_deg": null,
+      "speed_max_mph": 112.177,
+      "speed_min_mph": 112.177,
+      "speed_mph": 112.177,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.753125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.5,
+      "slip_angle_deg": null,
+      "speed_max_mph": 111.847,
+      "speed_min_mph": 111.847,
+      "speed_mph": 111.847,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.771875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.55,
+      "slip_angle_deg": null,
+      "speed_max_mph": 112.177,
+      "speed_min_mph": 112.177,
+      "speed_mph": 112.177,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.803125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.6,
+      "slip_angle_deg": null,
+      "speed_max_mph": 113.161,
+      "speed_min_mph": 113.161,
+      "speed_mph": 113.161,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.821875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.65,
+      "slip_angle_deg": null,
+      "speed_max_mph": 114.773,
+      "speed_min_mph": 114.773,
+      "speed_mph": 114.773,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.853125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.7,
+      "slip_angle_deg": null,
+      "speed_max_mph": 116.973,
+      "speed_min_mph": 116.973,
+      "speed_mph": 116.973,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.878125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.75,
+      "slip_angle_deg": null,
+      "speed_max_mph": 119.709,
+      "speed_min_mph": 119.709,
+      "speed_mph": 119.709,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.896875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.8,
+      "slip_angle_deg": null,
+      "speed_max_mph": 122.912,
+      "speed_min_mph": 122.912,
+      "speed_mph": 122.912,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.928125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.85,
+      "slip_angle_deg": null,
+      "speed_max_mph": 126.503,
+      "speed_min_mph": 126.503,
+      "speed_mph": 126.503,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.946875,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.9,
+      "slip_angle_deg": null,
+      "speed_max_mph": 130.395,
+      "speed_min_mph": 130.395,
+      "speed_mph": 130.395,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     },
+     {
+      "additional_signals": {
+       "on-pit-road": 0.0
+      },
+      "brake": 0.0,
+      "brake_mean": 0.0,
+      "gear": null,
+      "lap_pct": 0.978125,
+      "lateral_g": null,
+      "latitude": null,
+      "longitude": null,
+      "longitudinal_g": null,
+      "rpm": null,
+      "samples": 1,
+      "session_time_s": 1.95,
+      "slip_angle_deg": null,
+      "speed_max_mph": 134.491,
+      "speed_min_mph": 134.491,
+      "speed_mph": 134.491,
+      "steering_abs_peak_rad": null,
+      "steering_rad": null,
+      "throttle": 0.85,
+      "throttle_min": 0.85,
+      "tire_stress_proxy": 0.0,
+      "yaw_rate_deg_s": null
+     }
+    ]
+   }
+  ]
+ },
+ "laps": [
+  {
+   "caution_fraction": 0.0,
+   "clean_context": {
+    "on_track_fraction": null,
+    "traffic_proximity_fraction": null,
+    "traffic_rule": "car ahead within max(25 m, 0.75 s) or behind within max(15 m, 0.40 s) for at least 10% of observed lap time",
+    "traffic_screened": false
+   },
+   "complete": true,
+   "conditions": {
+    "air_density_lb_ft3": null,
+    "air_pressure_inhg": null,
+    "air_temperature_f": null,
+    "fog_percent": null,
+    "precipitation_percent": null,
+    "relative_humidity_percent": null,
+    "sky": null,
+    "track_temperature_f": null,
+    "track_usage": null,
+    "track_usage_percent": null,
+    "track_wetness_state": null,
+    "weather_declared_wet": null,
+    "wind_direction_degrees": null,
+    "wind_speed_mph": null
+   },
+   "controls": {
+    "brake_energy_proxy": 0.0,
+    "brake_max": 0.0,
+    "brake_mean": 0.0,
+    "brake_steer_overlap_s": 0.0,
+    "lateral_g_exposure_proxy": 0.0,
+    "long_accel_mean_mps2": null,
+    "steering_abs_mean_rad": null,
+    "steering_corrections": 0,
+    "steering_work_proxy": 0.0,
+    "throttle_mean": 0.85
+   },
+   "damage_repair_context": {
+    "automatic_coaching_reference_eligible": true,
+    "episode_ids": [],
+    "exclusion_reason_codes": [],
+    "lap": 1,
+    "run_reference_status": "no_recorded_damage_disruption_exclusion"
+   },
+   "end_index": 39,
+   "end_time": 1.95,
+   "flag_state": "green",
+   "flag_states": [
+    "green"
+   ],
+   "fuel": {
+    "end_l": null,
+    "start_l": null,
+    "used_gal": null,
+    "used_l": null
+   },
+   "green_fraction": 1.0,
+   "lap": 1,
+   "lap_time_s": 1.95,
+   "lap_time_source": "sample_derived",
+   "pit_entry": false,
+   "pit_exit": false,
+   "pit_time_s": 0.0,
+   "position": {
+    "best": null,
+    "class_end": null,
+    "class_start": null,
+    "end": null,
+    "start": null,
+    "worst": null
+   },
+   "racing_state_fraction": null,
+   "speed": {
+    "average_mph": 121.636,
+    "maximum_mph": 138.69,
+    "minimum_mph": 111.847
+   },
+   "start_index": 0,
+   "start_time": 0.0,
+   "vehicle_dynamics": {}
+  }
+ ],
+ "pace_attribution": {
+  "eligible_lap_count": 1,
+  "eligible_lap_numbers": [
+   1
+  ],
+  "limitations": [
+   "Recoverable time is this driver's own median minus his own best in each segment. It is proven achievable in isolation; the total is a ceiling composed from different laps, not a lap time.",
+   "Tire energy is a specific-energy proxy from vehicle acceleration and speed, not a wear measurement.",
+   "No load zones were detected, so segments are even distance slices and do not correspond to named corners.",
+   "12 segment(s) were excluded from ranking; each carries its own reason."
+  ],
+  "priorities": [],
+  "reason": null,
+  "schema_version": 1,
+  "segment_source": "uniform_fallback",
+  "status": "unavailable",
+  "time_loss": {
+   "classification": "recoverable time is this driver's own median minus his own best in each segment; the total is a ceiling composed from different laps, not an achievable single-lap time",
+   "contract_version": 1,
+   "excluded_segment_count": 12,
+   "minimum_laps_for_ranking": 3,
+   "ranked_names": [],
+   "segments": [
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.083333,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S1",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.0,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.833333,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S10",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.75,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.916667,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S11",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.833333,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 1.0,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S12",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.916667,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.166667,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S2",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.083333,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.25,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S3",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.166667,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.333333,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S4",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.25,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.416667,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S5",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.333333,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.5,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S6",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.416667,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.583333,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S7",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.5,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.666667,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S8",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.583333,
+     "status": "unavailable",
+     "worst_s": null
+    },
+    {
+     "best_lap": null,
+     "best_s": null,
+     "end_pct": 0.75,
+     "lap_count": 0,
+     "median_minimum_speed_mps": null,
+     "median_s": null,
+     "minimum_speed_on_best_mps": null,
+     "name": "S9",
+     "near_best_lap_count": 0,
+     "reason": "insufficient_covering_laps",
+     "recoverable_s": null,
+     "start_pct": 0.666667,
+     "status": "unavailable",
+     "worst_s": null
+    }
+   ],
+   "status": "unavailable",
+   "total_recoverable_s": null,
+   "usable_lap_count": 0
+  },
+  "tire_energy": {
+   "classification": "specific energy proxy from vehicle acceleration and speed; vehicle mass cancels. Not a wear measurement and not a wear model.",
+   "contract_version": 1,
+   "grade": "load_only",
+   "missing_channels": [
+    "LatAccel",
+    "LongAccel"
+   ],
+   "required_channels": [
+    "Speed",
+    "LatAccel",
+    "LongAccel",
+    "LapDistPct",
+    "SessionTime"
+   ],
+   "segments": [],
+   "status": "unavailable",
+   "total_load_j_per_kg": null,
+   "units": "J/kg"
+  },
+  "total_recoverable_s": null
+ },
+ "race_grades": {
+  "categories": [],
+  "message": "At least three usable green laps and two supported categories are required for a race grade.",
+  "overall_grade": null,
+  "rubric": {
+   "a_plus_gate": {
+    "available_evidence": "Local recorded telemetry only.",
+    "eligible": false,
+    "required_evidence": "A usable condition- and setup-comparable field-strength cohort plus high-confidence evidence across every material category.",
+    "status": "blocked_missing_external_comparable_field_strength"
+   },
+   "available_weight_percent": 0,
+   "category_weights_percent": {
+    "consistency": 20,
+    "pace": 30,
+    "racecraft": 15,
+    "strategy": 15,
+    "tire_management": 20
+   },
+   "normalization": "Configured weights are renormalized across available categories only; unavailable categories contribute no neutral score.",
+   "normalized_available_weights": {},
+   "version": "race-execution-v2"
+  },
+  "rubric_version": "race-execution-v2",
+  "status": "insufficient_comparable_laps",
+  "unavailable_categories": [
+   {
+    "key": "pace",
+    "label": "Pace execution",
+    "reason": "At least three complete, clean green laps are required.",
+    "weight_percent": 30
+   },
+   {
+    "key": "consistency",
+    "label": "Consistency and execution",
+    "reason": "At least three complete, clean green laps are required.",
+    "weight_percent": 20
+   },
+   {
+    "key": "tire_management",
+    "label": "Tire management",
+    "reason": "No damage-screened run exposed a usable clean-lap pace trend.",
+    "weight_percent": 20
+   },
+   {
+    "key": "strategy",
+    "label": "Pit and strategy execution",
+    "reason": "Pit count, fuel arithmetic, tow, and repair records do not establish whether a pit decision was well executed.",
+    "weight_percent": 15
+   },
+   {
+    "key": "racecraft",
+    "label": "Racecraft and adaptability",
+    "reason": "Start-to-finish position and incident records do not establish field strength, avoidability, traffic context, or driver-controlled racecraft.",
+    "weight_percent": 15
+   }
+  ]
+ },
+ "race_investigation": {
+  "comparison_coverage": {
+   "candidate_count": 0,
+   "generated_count": 0,
+   "selection_policy": "At most 24 comparisons: retain the latest usable window and the latest fully screened usable window with their runs' early-run windows, the first and last four candidates, then usable comparisons by largest absolute median pace change before unusable ones. All recorded laps remain in the timeline."
+  },
+  "comparisons": [],
+  "default_comparison_id": null,
+  "laps": [
+   {
+    "eligible": true,
+    "exclusion_reasons": [],
+    "flag_state": "green",
+    "green_exposure": 1.0,
+    "lap": 1,
+    "lap_time_s": 1.95,
+    "plot_pace": true,
+    "position": null,
+    "run_number": 1
+   }
+  ],
+  "limitations": [
+   "Window medians are observed comparisons, not estimates of a single cause.",
+   "Clean windows use the existing recorded eligibility screen; observed finish windows retain excluded laps and their reasons.",
+   "A comparison whose selected laps are all excluded, whose window spans a caution, or whose earlier and later laps a caution separates carries no pace delta or explanations and states why. Cross-run windows are matched by green exposure across a stop.",
+   "Cross-run exposure uses sampled green-time fractions from complete laps, not measured tire wear or exact physical green distance.",
+   "A saved test needs one run long enough to reach its exposure window; a test day is assumed to give runs of up to 20 laps. A run whose late laps need a longer run adds a first-20-green-lap window of its own clean laps, which offers a test only when it passes the same screens.",
+   "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
+   "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible.",
+   "Steering is steering-wheel angle, not road-wheel steering: The garage setup does not state a steering ratio."
+  ],
+  "projection_version": "sections-trials-v7",
+  "runs": [
+   {
+    "first_lap": 1,
+    "fit": null,
+    "fit_unavailable_reason": "Fewer than three screened laps with known exposure.",
+    "last_lap": 1,
+    "plotted_lap_count": 1,
+    "run_number": 1,
+    "trend": {
+     "covered_lap_count": 0,
+     "gaps": [],
+     "includes_reference_exclusions": true,
+     "method": "centered_five_observation_median",
+     "segments": []
+    }
+   }
+  ],
+  "schema_version": 2,
+  "sections": {
+   "configuration_key": "9001-oval",
+   "provenance": "Regions detected from steering and lateral load in this recording. Letters are analysis labels, not turn numbers.",
+   "sections": [],
+   "source": "detected_in_recording",
+   "unavailable_reason": "No usable track sections were detected in this recording.",
+   "version": "detected/4f53cda18c2b"
+  },
+  "status": "insufficient_evidence",
+  "steering": {
+   "basis": "steering_wheel",
+   "definition": "Recorded SteeringWheelAngle. Without the car's steering ratio it cannot be converted to road-wheel angle, so it is never compared with road-wheel steering.",
+   "degree_digits": 1,
+   "evidence_class": "measured",
+   "label": "Steering wheel angle — ratio not recorded",
+   "ratio_source": null,
+   "raw_channel": "SteeringWheelAngle",
+   "reason": "The garage setup does not state a steering ratio.",
+   "schema_version": 1,
+   "setup_steering_offset": null,
+   "short_label": "Steering wheel angle",
+   "status": "not_recorded",
+   "steering_offset_applied": false,
+   "steering_ratio": null,
+   "steering_ratio_text": null,
+   "steering_wheel_angle_recorded": false,
+   "threshold_reference_ratio": 12.0,
+   "unit": "deg",
+   "value_unit": "rad"
+  },
+  "summary": "No two usable multi-lap windows are available yet; the recorded lap timeline remains inspectable.",
+  "timeline": [
+   {
+    "detail": "Lap 1",
+    "kind": "race_end",
+    "label": "Recording ends",
+    "lap": 1,
+    "unit": null,
+    "value": null
+   },
+   {
+    "detail": "Lap 1",
+    "kind": "race_start",
+    "label": "Recording starts",
+    "lap": 1,
+    "unit": null,
+    "value": null
+   }
+  ],
+  "track_evolution": {
+   "limitations": [
+    "Track temperature is a separate measurement; stable temperature does not establish stable rubber, marbles or grip.",
+    "A starting or carry-over rubber label does not measure subsequent rubber build-up or groove grip."
+   ],
+   "points": [
+    {
+     "lap": 1,
+     "track_temp_f": null,
+     "usage_value": null
+    }
+   ],
+   "provenance": "No usable track-usage series or starting rubber state.",
+   "starting_usage": null,
+   "status": "unavailable",
+   "summary": "Track rubber evolution was not recorded.",
+   "usage_source": null,
+   "usage_unit": "%"
+  }
+ },
+ "race_replay": {
+  "coverage": [
+   {
+    "channel": "SessionTime",
+    "reason": null,
+    "status": "recorded"
+   },
+   {
+    "channel": "SessionState",
+    "reason": "SessionState is required to identify grid, racing, and post-checker scope.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxLapDistPct",
+    "reason": "CarIdxLapDistPct is required to place competitors on the track.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxLap",
+    "reason": "Per-car lap number was not recorded.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxLapCompleted",
+    "reason": "Per-car completed-lap count was not recorded.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxPosition",
+    "reason": "Per-car overall position was not recorded.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxClassPosition",
+    "reason": "Per-car class position was not recorded.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxOnPitRoad",
+    "reason": "Per-car pit-road state was not recorded.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxTrackSurface",
+    "reason": "Per-car track-surface state was not recorded.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxPaceFlags",
+    "reason": "Per-car pace flags were not recorded; private black/penalty flags cannot be reconstructed.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxLastLapTime",
+    "reason": "Per-car last-lap timing was not recorded.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "CarIdxBestLapTime",
+    "reason": "Per-car best-lap timing was not recorded.",
+    "status": "unavailable"
+   },
+   {
+    "channel": "SessionFlags",
+    "reason": "Global session flags were not recorded.",
+    "status": "unavailable"
+   }
+  ],
+  "frames": [],
+  "interpolation": "linear lap-distance interpolation between recorded replay frames",
+  "limitations": [
+   "SessionFlags is a global/player-visible flag channel, not a private flag feed for every competitor.",
+   "Competitor fuel, tire wear, tire temperature, and setup are not present in this replay contract."
+  ],
+  "participant_count": 1,
+  "participants": [
+   {
+    "car_index": 0,
+    "car_name": "NASCAR Test Car",
+    "car_number": null,
+    "class_id": null,
+    "class_name": null,
+    "driver_name": null,
+    "is_player": true,
+    "is_spectator": false,
+    "team_name": null
+   }
+  ],
+  "player_car_index": 0,
+  "sample_rate_hz": 2.0,
+  "schema_version": 1,
+  "status": "unavailable",
+  "unavailable_reasons": [
+   "SessionState is required to identify grid, racing, and post-checker scope.",
+   "CarIdxLapDistPct is required to place competitors on the track."
+  ]
+ },
+ "race_summary": {
+  "best_clean_lap_s": 1.95,
+  "caution_lap_equivalents": 0.0,
+  "caution_laps_estimated": 0.0,
+  "caution_reconciliation": {
+   "difference_laps": null,
+   "note": "Telemetry classification uses sampled caution flags; official metadata remains a separate cross-check.",
+   "official_laps": null,
+   "status": "official_unavailable",
+   "telemetry_estimated_laps": 0.0
+  },
+  "damage_repair": {
+   "confirmed_fast_repair_uses": 0,
+   "incident_points_added": null,
+   "recorded_repair_episodes": 0,
+   "repair_required_flag_episodes": 0,
+   "status": "partial",
+   "tow_episodes": 0
+  },
+  "final_recorded_position": null,
+  "fuel_used_gal": 0.0,
+  "fuel_used_l": 0.0,
+  "green_lap_equivalents": 1.0,
+  "green_laps_estimated": 1.0,
+  "longest_green_run": 1.0,
+  "official_caution_laps": null,
+  "official_cautions": null,
+  "pace_consistency_percent": null,
+  "pace_slope_s_per_lap": null,
+  "pit_stops_detected": 0,
+  "recorded_laps": 1,
+  "runs_detected": 1,
+  "scheduled_laps": null,
+  "scheduled_minutes": null,
+  "starting_position": null
+ },
+ "race_timeline": {
+  "events": [
+   {
+    "end_lap": 1,
+    "event_id": "race-event-001",
+    "event_type": "race_start",
+    "evidence_class": "measured",
+    "session_time_s": 0.0,
+    "source_channels": [
+     "SessionTime",
+     "Lap"
+    ],
+    "start_lap": 1
+   },
+   {
+    "end_lap": 1,
+    "event_id": "race-event-002",
+    "event_type": "race_end",
+    "evidence_class": "measured_recording_end",
+    "note": "This marks the end of the recorded race telemetry, which may differ from official classification time.",
+    "session_time_s": 1.95,
+    "source_channels": [
+     "SessionTime",
+     "Lap"
+    ],
+    "start_lap": 1
+   }
+  ],
+  "index_semantics": "Timeline events do not claim native IBT record indices; use native event search for exact source records.",
+  "limitations": [
+   "Caution periods are derived from sampled SessionFlags and must be reconciled with official results.",
+   "Requested pit service is reported separately from fuel or tire service confirmed by telemetry.",
+   "Recording start/end and player position do not replace official classification data."
+  ],
+  "schema_version": 1,
+  "summary": {
+   "caution_periods_from_sampled_flags": 0,
+   "confirmed_consumable_service_events": 0,
+   "event_count": 2,
+   "service_events": 0
+  },
+  "time_basis": "recorded SessionTime seconds from the routine analysis table"
+ },
+ "runs": [
+  {
+   "caution_lap_equivalents": 0.0,
+   "caution_laps": 0.0,
+   "coaching_reference_lap_numbers": [
+    1
+   ],
+   "damage_repair_context": {
+    "automatic_coaching_reference_eligible": true,
+    "candidate_lap_numbers_before_damage_filter": [
+     1
+    ],
+    "coaching_reference_lap_numbers": [
+     1
+    ],
+    "episode_overlap_excluded_lap_numbers": [],
+    "post_stop_context": {
+     "mandatory_repair_remaining_at_stall_exit_s": 0.0,
+     "optional_repair_remaining_at_stall_exit_s": 0.0,
+     "prior_episode_ids": [],
+     "recorded_repair_before_run": false,
+     "tow_before_run": false
+    },
+    "reason_codes": [],
+    "related_episode_ids": [],
+    "run_number": 1,
+    "scope_note": "This screens only recorded pit/tow/repair evidence and never certifies that the car was fully undamaged; all normal clean-lap filters still apply.",
+    "status": "no_recorded_damage_disruption_exclusion"
+   },
+   "driving_load": {
+    "early_brake_energy_proxy": 0.0,
+    "early_brake_vs_late_percent": null,
+    "early_steer_vs_late_percent": null,
+    "early_steering_work_proxy": 0.0,
+    "late_brake_energy_proxy": 0.0,
+    "late_steering_work_proxy": 0.0,
+    "steering_basis": "steering_wheel",
+    "steering_offset": null
+   },
+   "end_lap": 1,
+   "end_time_s": 1.95,
+   "ended_under_caution": false,
+   "ended_with_pit_stop": false,
+   "ended_with_post_run_service": false,
+   "fuel": {
+    "caution_gal_per_lap": null,
+    "caution_l_per_lap": null,
+    "end_l": null,
+    "green_gal_per_lap": null,
+    "green_l_per_lap": null,
+    "start_l": null,
+    "used_gal": 0.0,
+    "used_l": 0.0
+   },
+   "green_lap_equivalents": 1.0,
+   "green_laps": 1.0,
+   "lap_numbers": [
+    1
+   ],
+   "pace": {
+    "early_average_lap_s": 1.95,
+    "early_to_late_delta_s": 0.0,
+    "green_lap_time_slope_s_per_lap": null,
+    "green_laps_used": 1,
+    "late_average_lap_s": 1.95,
+    "slope_basis": "cumulative_recorded_green_lap_equivalents",
+    "slope_exposure_definition": "Sum of sampled green-time fractions over complete laps between retained pace observations; an exposure approximation, not physical green distance. Incomplete or missing intervening laps withhold the rate.",
+    "slope_unavailable_reason": "insufficient_timed_clean_laps"
+   },
+   "pit_service": null,
+   "position": {
+    "class_end": null,
+    "class_start": null,
+    "end": null,
+    "gained": null,
+    "start": null
+   },
+   "run_number": 1,
+   "start_lap": 1,
+   "start_time_s": 0.0,
+   "tire_measurement_status": "unmeasured_final_run",
+   "tire_observation": null,
+   "tire_set_lifecycle": {
+    "confirmation": "not_observed",
+    "confirmed_changed_at_run_end": [],
+    "corners": {
+     "LF": {
+      "caution_laps_on_set": 0.0,
+      "distance_m_on_set": 0.0,
+      "green_laps_on_set": 1.0,
+      "green_run_cycles": 1,
+      "minimum_band_remaining_percent": null,
+      "remaining_percent_at_run_end": null,
+      "session_set_number": 1
+     },
+     "LR": {
+      "caution_laps_on_set": 0.0,
+      "distance_m_on_set": 0.0,
+      "green_laps_on_set": 1.0,
+      "green_run_cycles": 1,
+      "minimum_band_remaining_percent": null,
+      "remaining_percent_at_run_end": null,
+      "session_set_number": 1
+     },
+     "RF": {
+      "caution_laps_on_set": 0.0,
+      "distance_m_on_set": 0.0,
+      "green_laps_on_set": 1.0,
+      "green_run_cycles": 1,
+      "minimum_band_remaining_percent": null,
+      "remaining_percent_at_run_end": null,
+      "session_set_number": 1
+     },
+     "RR": {
+      "caution_laps_on_set": 0.0,
+      "distance_m_on_set": 0.0,
+      "green_laps_on_set": 1.0,
+      "green_run_cycles": 1,
+      "minimum_band_remaining_percent": null,
+      "remaining_percent_at_run_end": null,
+      "session_set_number": 1
+     }
+    },
+    "scope": "session-local; initial pre-session tire history is unknown"
+   },
+   "total_laps": 1,
+   "valid_green_lap_numbers": [
+    1
+   ],
+   "valid_green_lap_rule": "complete green laps with less than 1.0 s on pit road, at least 98% racing-state exposure when SessionState exists, excluding the first green lap immediately after a caution, off-track laps, and laps with close traffic for at least 10% of observed time",
+   "vehicle_dynamics": {
+    "abs_active_s": null,
+    "braking_wheel_lock_proxy_s": null,
+    "front_wheel_lock_proxy_s": null,
+    "proxy_note": "Wheel-speed divergence is a conservative tire-load proxy; corner-radius differences, banking, bumps, and sensor behavior can contribute.",
+    "rear_wheelspin_proxy_s": null,
+    "scope": "green complete laps when available",
+    "tire_distance_m": {},
+    "yaw_rate_abs_p95_deg_s_mean": null
+   }
+  }
+ ],
+ "schema_version": 2,
+ "setup_telemetry": {
+  "available_channels": [],
+  "limits": [
+   "Dynamic platform, shock, pressure, and temperature traces are observational correlations; telemetry cannot uniquely identify which setup parameter caused a change.",
+   "Attribute setup effects only after controlled A/B runs with one change at a time and matched fuel, tires, weather, track state, line, and driver inputs.",
+   "Observed ride-height minima are not universal setup targets; legal and effective clearances depend on the car, track, ruleset, and complete setup.",
+   "Pressure and temperature traces do not establish tire wear; wear remains a discrete pit-service observation under the tire-wear rule."
+  ],
+  "platform": {},
+  "sample_count": 40,
+  "sample_scope": "non-pit, non-caution samples with valid lap distance when available",
+  "shocks": {},
+  "tires": {}
+ },
+ "source": {
+  "analysis_cache": {
+   "hit": false,
+   "key": "58fc9dfaf8ee96b384b9c6c1accde1952370096e2620c9e45cffe1976a2196fc",
+   "path": "<path>"
+  },
+  "analyzed_channels": [
+   "Brake",
+   "Lap",
+   "LapDistPct",
+   "OnPitRoad",
+   "SessionTime",
+   "Speed",
+   "Throttle"
+  ],
+  "available_channels": [
+   "Brake",
+   "Lap",
+   "LapDistPct",
+   "OnPitRoad",
+   "SessionNum",
+   "SessionTime",
+   "Speed",
+   "Throttle"
+  ],
+  "catalog_summary": {
+   "conflict_count": 0,
+   "conflicts": [],
+   "intersection_channels": [
+    "Brake",
+    "Lap",
+    "LapDistPct",
+    "OnPitRoad",
+    "SessionNum",
+    "SessionTime",
+    "Speed",
+    "Throttle"
+   ],
+   "intersection_count": 8,
+   "source_count": 1,
+   "union_channels": [
+    "Brake",
+    "Lap",
+    "LapDistPct",
+    "OnPitRoad",
+    "SessionNum",
+    "SessionTime",
+    "Speed",
+    "Throttle"
+   ],
+   "union_count": 8
+  },
+  "channel_coverage": {
+   "analysis_sample_rate_hz": 20.0,
+   "analyzed_count": 7,
+   "catalog_complete": true,
+   "loaded_count": 8,
+   "native_tick_rate_hz": 60.0,
+   "recorded_count": 8,
+   "sampling_policy": "selective routine analysis; native/chunked passes available on demand",
+   "unloaded_count": 0
+  },
+  "fingerprints": [
+   {
+    "modified_ns": 1786582907540936000,
+    "path": "<path>",
+    "sha256": "540f7208f1bdc25fe36ac0830d041e655826b89e910feadf2097bdf99eb92a81",
+    "size": 7616
+   }
+  ],
+  "loaded_channels": [
+   "Brake",
+   "Lap",
+   "LapDistPct",
+   "OnPitRoad",
+   "SessionNum",
+   "SessionTime",
+   "Speed",
+   "Throttle"
+  ],
+  "per_source_channel_catalogs": [
+   {
+    "analysis_sample_rate_hz": 20.0,
+    "catalog_sha256": "a7017e317db22ff99ccfe96f1987407e1e5b9093d8ee47251f48d734e64c2e32",
+    "file_size": 7616,
+    "loaded_channels": [
+     "Brake",
+     "Lap",
+     "LapDistPct",
+     "OnPitRoad",
+     "SessionNum",
+     "SessionTime",
+     "Speed",
+     "Throttle"
+    ],
+    "modified_ns": 1786582907540936000,
+    "native_tick_rate_hz": 60,
+    "path": "<path>",
+    "record_count": 120,
+    "recorded_channel_catalog": [
+     {
+      "byte_size": 4,
+      "count": 1,
+      "count_as_time": false,
+      "description": "Simulator session number",
+      "name": "SessionNum",
+      "offset": 0,
+      "type": "int",
+      "type_code": 2,
+      "unit": ""
+     },
+     {
+      "byte_size": 8,
+      "count": 1,
+      "count_as_time": false,
+      "description": "Session time",
+      "name": "SessionTime",
+      "offset": 8,
+      "type": "double",
+      "type_code": 5,
+      "unit": "s"
+     },
+     {
+      "byte_size": 4,
+      "count": 1,
+      "count_as_time": false,
+      "description": "Lap",
+      "name": "Lap",
+      "offset": 16,
+      "type": "int",
+      "type_code": 2,
+      "unit": ""
+     },
+     {
+      "byte_size": 4,
+      "count": 1,
+      "count_as_time": false,
+      "description": "Lap distance",
+      "name": "LapDistPct",
+      "offset": 20,
+      "type": "float",
+      "type_code": 4,
+      "unit": "%"
+     },
+     {
+      "byte_size": 4,
+      "count": 1,
+      "count_as_time": false,
+      "description": "Speed",
+      "name": "Speed",
+      "offset": 24,
+      "type": "float",
+      "type_code": 4,
+      "unit": "m/s"
+     },
+     {
+      "byte_size": 4,
+      "count": 1,
+      "count_as_time": false,
+      "description": "Throttle",
+      "name": "Throttle",
+      "offset": 28,
+      "type": "float",
+      "type_code": 4,
+      "unit": "%"
+     },
+     {
+      "byte_size": 4,
+      "count": 1,
+      "count_as_time": false,
+      "description": "Brake",
+      "name": "Brake",
+      "offset": 32,
+      "type": "float",
+      "type_code": 4,
+      "unit": "%"
+     },
+     {
+      "byte_size": 1,
+      "count": 1,
+      "count_as_time": false,
+      "description": "On pit road",
+      "name": "OnPitRoad",
+      "offset": 36,
+      "type": "bool",
+      "type_code": 1,
+      "unit": ""
+     }
+    ],
+    "unloaded_channels": []
+   }
+  ],
+  "raw_source_policy": {
+   "archive": {
+    "durably_copied": true,
+    "failed_count": 0,
+    "items": [
+     {
+      "archive_path": "<path>",
+      "discovery_id": "443eeb70bac9d6c003e17466995b8aa54164b1c57872d32f26635d9d4b6b5d24",
+      "new_discovery": true,
+      "sha256": "540f7208f1bdc25fe36ac0830d041e655826b89e910feadf2097bdf99eb92a81",
+      "size": 7616,
+      "source_path": "<path>",
+      "status": "verified"
+     }
+    ],
+    "schema_version": 2,
+    "status": "verified"
+   },
+   "durably_copied": true,
+   "mode": "content-addressed-portable-copy",
+   "note": "Verified raw IBTs are copied into portable append-only storage; originals remain untouched.",
+   "raw_reanalysis_durable": true
+  },
+  "recorded_channel_catalog": [
+   {
+    "byte_size": 4,
+    "count": 1,
+    "count_as_time": false,
+    "description": "Simulator session number",
+    "name": "SessionNum",
+    "offset": 0,
+    "type": "int",
+    "type_code": 2,
+    "unit": ""
+   },
+   {
+    "byte_size": 8,
+    "count": 1,
+    "count_as_time": false,
+    "description": "Session time",
+    "name": "SessionTime",
+    "offset": 8,
+    "type": "double",
+    "type_code": 5,
+    "unit": "s"
+   },
+   {
+    "byte_size": 4,
+    "count": 1,
+    "count_as_time": false,
+    "description": "Lap",
+    "name": "Lap",
+    "offset": 16,
+    "type": "int",
+    "type_code": 2,
+    "unit": ""
+   },
+   {
+    "byte_size": 4,
+    "count": 1,
+    "count_as_time": false,
+    "description": "Lap distance",
+    "name": "LapDistPct",
+    "offset": 20,
+    "type": "float",
+    "type_code": 4,
+    "unit": "%"
+   },
+   {
+    "byte_size": 4,
+    "count": 1,
+    "count_as_time": false,
+    "description": "Speed",
+    "name": "Speed",
+    "offset": 24,
+    "type": "float",
+    "type_code": 4,
+    "unit": "m/s"
+   },
+   {
+    "byte_size": 4,
+    "count": 1,
+    "count_as_time": false,
+    "description": "Throttle",
+    "name": "Throttle",
+    "offset": 28,
+    "type": "float",
+    "type_code": 4,
+    "unit": "%"
+   },
+   {
+    "byte_size": 4,
+    "count": 1,
+    "count_as_time": false,
+    "description": "Brake",
+    "name": "Brake",
+    "offset": 32,
+    "type": "float",
+    "type_code": 4,
+    "unit": "%"
+   },
+   {
+    "byte_size": 1,
+    "count": 1,
+    "count_as_time": false,
+    "description": "On pit road",
+    "name": "OnPitRoad",
+    "offset": 36,
+    "type": "bool",
+    "type_code": 1,
+    "unit": ""
+   }
+  ],
+  "related_local_files": {
+   "embedded_setup_is_authority": true,
+   "iracing_documents_root": "<path>",
+   "preferred_saved_setup": null,
+   "replay_matches": [],
+   "replay_status": "not_found",
+   "saved_setup_matches": [],
+   "saved_setup_name": null,
+   "saved_setup_status": "not_saved_locally_or_built_in"
+  },
+  "sample_count": 40,
+  "selection": {
+   "car_id": 9002,
+   "car_name": "NASCAR Test Car",
+   "car_path": "synthetic test car",
+   "end_time_unix": 1780000001.983333,
+   "end_time_utc": "2026-05-28T20:26:41.983333+00:00",
+   "event_type": "Race",
+   "file_count": 1,
+   "files": [
+    "<path>"
+   ],
+   "group_id": "subsession:8001:1",
+   "is_fixed_setup": false,
+   "is_race": true,
+   "kind": "session",
+   "latest_mtime_unix": 1786582907.540936,
+   "season_id": 202603,
+   "selector": "latest",
+   "selector_type": "latest",
+   "series_id": null,
+   "session_id": 7001,
+   "session_unique_id": null,
+   "sim_session_num": 1,
+   "sim_session_type": "Race",
+   "start_time_unix": 1780000000.0,
+   "start_time_utc": "2026-05-28T20:26:40+00:00",
+   "subsession_id": 8001,
+   "time_source": "disk_header",
+   "track_config_name": "Oval",
+   "track_display_name": "Synthetic Speedway",
+   "track_id": 9001,
+   "track_name": "Synthetic Speedway",
+   "valid": true
+  },
+  "telemetry_files": [
+   "<path>"
+  ],
+  "unloaded_channels": []
+ },
+ "steering": {
+  "basis": "steering_wheel",
+  "definition": "Recorded SteeringWheelAngle. Without the car's steering ratio it cannot be converted to road-wheel angle, so it is never compared with road-wheel steering.",
+  "degree_digits": 1,
+  "evidence_class": "measured",
+  "label": "Steering wheel angle — ratio not recorded",
+  "ratio_source": null,
+  "raw_channel": "SteeringWheelAngle",
+  "reason": "The garage setup does not state a steering ratio.",
+  "schema_version": 1,
+  "setup_steering_offset": null,
+  "short_label": "Steering wheel angle",
+  "status": "not_recorded",
+  "steering_offset_applied": false,
+  "steering_ratio": null,
+  "steering_ratio_text": null,
+  "steering_wheel_angle_recorded": false,
+  "threshold_reference_ratio": 12.0,
+  "unit": "deg",
+  "value_unit": "rad"
+ },
+ "strategy": {
+  "confidence": "low",
+  "forecast": {
+   "all_green_range_laps": null,
+   "assumptions": [
+    "Uses the maximum fuel observed at a run start as available capacity; it may be below the car's legal tank maximum.",
+    "Holds measured green/caution burn rates constant and reserves exactly one green lap for operational uncertainty.",
+    "Equal-stint targets ignore live track position, stage breaks, pit loss, tire rules, damage, and future cautions."
+   ],
+   "classification": "fuel-feasibility forecast, not an optimal-pit-call claim",
+   "equal_stint_pit_targets_all_green": [],
+   "maximum_recorded_run_start_fuel_l": null,
+   "minimum_stops_all_green": null,
+   "minimum_stops_at_observed_mix": null,
+   "observed_caution_fraction": 0.0,
+   "observed_mix_range_laps": null,
+   "operational_reserve_fuel_l": null,
+   "operational_reserve_green_laps": 1.0,
+   "race_plan_decision": {
+    "all_green_range_laps": null,
+    "assumptions": [
+     "Uses the maximum fuel observed at a run start as available capacity; it may be below the car's legal tank maximum.",
+     "Holds the measured green burn rate constant and reserves exactly one green lap of fuel for operational uncertainty.",
+     "Equal-stint targets ignore live track position, stage breaks, pit loss, tire rules, damage, and future cautions."
+    ],
+    "caution_scenario": null,
+    "classification": "fuel-feasibility decision, not an optimal-pit-call claim",
+    "decision_version": 1,
+    "equal_stint_pit_targets": [],
+    "final_stint_margin_laps": null,
+    "green_burn_l_per_lap": null,
+    "limitations": [],
+    "maximum_start_fuel_l": null,
+    "minimum_stops": null,
+    "no_stop_language_permitted": false,
+    "re_decidable": true,
+    "reserve_fuel_l": null,
+    "reserve_green_laps": 1.0,
+    "scheduled_laps": null,
+    "status": "insufficient_fuel_or_distance_evidence",
+    "stints": null,
+    "stop_windows": [],
+    "usable_fuel_l": null
+   },
+   "scheduled_laps": null,
+   "status": "insufficient_fuel_or_distance_evidence"
+  },
+  "historical_context_required": true,
+  "limitations": [
+   "An optimal pit call also depends on track position, pit-loss timing, stage/race rules, and future cautions.",
+   "Final-run tire wear is unknown unless the car returned for a tire-reading update."
+  ],
+  "measured_caution_fuel_gal_per_lap": null,
+  "measured_caution_fuel_l_per_lap": null,
+  "measured_green_fuel_gal_per_lap": null,
+  "measured_green_fuel_l_per_lap": null,
+  "median_green_lap_degradation_s_per_lap": null,
+  "pit_assessments": [
+   {
+    "all_green_fuel_surplus_laps": null,
+    "ended_under_caution": false,
+    "evidence": "partial",
+    "fuel_laps_remaining_at_end": null,
+    "lowest_tire_remaining_percent": null,
+    "pit_cycle_position_change": null,
+    "position_after_stop": null,
+    "position_at_end": null,
+    "position_before_stop": null,
+    "post_stop_all_green_range_laps": null,
+    "post_stop_all_green_surplus_laps": null,
+    "post_stop_fuel_l": null,
+    "run_number": 1,
+    "scheduled_race_laps_remaining": null,
+    "scheduled_race_laps_remaining_after_stop": null,
+    "was_pit_stop": false,
+    "was_post_run_service": false
+   }
+  ]
+ },
+ "strategy_planning": {
+  "pit_loss": null,
+  "plan_comparison": null,
+  "reason": "no_clean_green_reference_lap",
+  "schema_version": 1,
+  "status": "unavailable"
+ },
+ "technical_insights": [
+  {
+   "evidence": [],
+   "key": "pit",
+   "label": "Pit strategy",
+   "metrics": [
+    {
+     "action": "Check recording coverage and fuel range before using this as a no-stop reference.",
+     "detail": "No pit stop was observed in the available recording; completion and strategy intent are not established.",
+     "evidence_type": "measured",
+     "group": "outcome",
+     "label": "Stops recorded",
+     "numeric_value": 0,
+     "unit": null,
+     "value": "0"
+    },
+    {
+     "detail": "Recorded race summary or last observed run lap; this does not confirm a race finish.",
+     "evidence_type": "measured",
+     "group": "outcome",
+     "label": "Recorded lap extent",
+     "numeric_value": 1,
+     "unit": "laps",
+     "value": "1 laps"
+    }
+   ],
+   "rating": "no-stop",
+   "status": "available",
+   "takeaway": "No pit stop was observed in the available recording; race completion and the intended strategy are unknown.",
+   "tire_strategy": {
+    "direct_two_vs_four_comparison": {
+     "four_tire_samples": 0,
+     "rule": "A direct comparison is emitted only when both confirmed call types occurred.",
+     "status": "unavailable",
+     "two_tire_samples": 0
+    },
+    "four_tire_calls": 0,
+    "left_side_calls": 0,
+    "observed_calls": [],
+    "right_side_calls": 0
+   },
+   "unavailable_reasons": []
+  },
+  {
+   "evidence": [
+    "clean-run early and late pace",
+    "wheel-speed and chassis motion"
+   ],
+   "key": "tires",
+   "label": "Tires",
+   "metrics": [
+    {
+     "action": "A positive value is falloff; compare the same run's tire condition and driving load.",
+     "detail": "Average late clean pace minus average early clean pace in the longest comparable run.",
+     "evidence_type": "derived",
+     "group": "pace",
+     "label": "Run 1 late vs early (average)",
+     "numeric_value": 0.0,
+     "unit": "s",
+     "value": "0.000 s"
+    }
+   ],
+   "rating": "stable",
+   "status": "available",
+   "takeaway": "Run 1 pace was stable early-to-late.",
+   "unavailable_reasons": [
+    "No confirmed measured O/M/I tire endpoint was recorded.",
+    "At least three matching sessions with the same car, track configuration, setup type, tire compound, confirmed fresh starts, and measured O/M/I endpoints are required."
+   ]
+  },
+  {
+   "evidence": [],
+   "key": "fuel",
+   "label": "Fuel",
+   "metrics": [],
+   "rating": "unavailable",
+   "status": "unavailable",
+   "takeaway": "Fuel use could not be measured.",
+   "unavailable_reasons": [
+    "Fuel level or comparable lap exposure was unavailable."
+   ]
+  },
+  {
+   "evidence": [
+    "representative race pace timing and controls"
+   ],
+   "key": "racecraft",
+   "label": "Racecraft & pace",
+   "metrics": [
+    {
+     "action": "Compare its controls with the median race-pace lap before copying it.",
+     "detail": "Fastest lap inside the robust green-race pace band; traffic context may remain.",
+     "evidence_type": "measured",
+     "group": "pace",
+     "label": "Fastest race pace",
+     "numeric_value": 1.95,
+     "unit": "s",
+     "value": "1.95 s"
+    },
+    {
+     "action": "The gap to fastest indicates how consistently peak pace was reproduced.",
+     "detail": "Middle representative race pace lap across 1 lap(s).",
+     "evidence_type": "measured",
+     "group": "pace",
+     "label": "Median race pace",
+     "numeric_value": 1.95,
+     "unit": "s",
+     "value": "1.95 s"
+    },
+    {
+     "action": "Compare laps above and below this value with lap time; more throttle time is useful only when the lap is also controlled and faster.",
+     "detail": "Median throttle fraction across 1 representative race pace lap(s).",
+     "evidence_type": "derived",
+     "group": "driver execution",
+     "label": "Throttle commitment",
+     "numeric_value": 85.0,
+     "unit": "% average",
+     "value": "85 % average"
+    },
+    {
+     "action": "Use the aligned brake trace to identify where peak pressure or release differs from the fastest reference.",
+     "detail": "Median lap-level peak brake input across 1 representative race pace lap(s).",
+     "evidence_type": "derived",
+     "group": "driver execution",
+     "label": "Brake peak",
+     "numeric_value": 0.0,
+     "unit": "%",
+     "value": "0 %"
+    },
+    {
+     "action": "Compare overlap locations with the faster laps; the measurement describes technique and does not prove that overlap is harmful.",
+     "detail": "Median time per lap with at least 8% brake and at least 4.6° of steering-wheel angle.",
+     "evidence_type": "derived",
+     "group": "driver execution",
+     "label": "Brake / steer overlap",
+     "numeric_value": 0.0,
+     "unit": "s/lap",
+     "value": "0 s/lap"
+    },
+    {
+     "action": "Use the steering trace to find repeatable correction clusters, then compare those zones with the fastest stable lap.",
+     "detail": "Median threshold-crossing steering reversals per lap.",
+     "evidence_type": "derived",
+     "group": "driver execution",
+     "label": "Steering corrections",
+     "numeric_value": 0.0,
+     "unit": "/ lap",
+     "value": "0 / lap"
+    },
+    {
+     "action": "Use corner minimum speed with entry and exit traces; top speed alone does not identify where lap time was gained.",
+     "detail": "Median lap minimum to highest recorded maximum across the selected pace laps.",
+     "evidence_type": "derived",
+     "group": "driver execution",
+     "label": "Speed envelope",
+     "numeric_value": null,
+     "unit": "mph",
+     "value": "111.8-138.7 mph"
+    },
+    {
+     "action": "Use with tire and driving-load findings before attributing the change to technique.",
+     "detail": "Run 1, the longest comparable run: average late clean pace minus average early clean pace in the longest comparable run.",
+     "evidence_type": "derived",
+     "group": "pace",
+     "label": "Long-run change",
+     "numeric_value": 0.0,
+     "unit": "s",
+     "value": "0.000 s"
+    }
+   ],
+   "pace_sample": {
+    "lap_count": 1,
+    "lap_numbers": [
+     1
+    ],
+    "raw_green_timed_laps": 1,
+    "robust_race_pace_laps": 1,
+    "scope": "representative race pace",
+    "valid_reference_laps": 1
+   },
+   "rating": "pace-only",
+   "status": "available",
+   "takeaway": "Fastest clean green lap was 1.950 s.",
+   "unavailable_reasons": [
+    "Start and finish position endpoints were not both recorded.",
+    "Lap-by-lap position phases were unavailable."
+   ]
+  }
+ ],
+ "tire_learning": {
+  "context": {
+   "car_id": 9002,
+   "car_path": "synthetic test car",
+   "family": null,
+   "setup_type": "open",
+   "tire_compound": null,
+   "track_config": "Oval",
+   "track_id": 9001
+  },
+  "context_key": "unsupported-9002-9001-oval-open-compound-unknown",
+  "family": null,
+  "observations": [],
+  "persistent_model": {
+   "model_version": "nascar-tire-condition-load-match-v2",
+   "observation_count": 0,
+   "observation_set_fingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "path": "<path>"
+  },
+  "prediction": {
+   "comparable_feature_count": 0,
+   "confidence": "low",
+   "effective_matched_observations": 0.0,
+   "eligible_observations": 0,
+   "excluded_observations": 0,
+   "exclusion_reasons": [],
+   "matched_features": [],
+   "matching_scope": "exact car/track-configuration/setup model and tire compound; distance-weighted recorded conditions and controls/load",
+   "matching_sessions": 0,
+   "median_feature_distance": null,
+   "model_version": "nascar-tire-condition-load-match-v2",
+   "observation_set_fingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+   "reason": "At least three matching sessions with the same car, track configuration, setup type, tire compound, confirmed fresh starts, and measured O/M/I endpoints are required.",
+   "status": "unavailable",
+   "total_observations": 0
+  },
+  "schema_version": 1,
+  "status": "unsupported_car_family",
+  "supported_families": [
+   "nascar_xfinity",
+   "nascar_truck",
+   "nascar_next_gen",
+   "arca"
+  ]
+ },
+ "track_geometry": {
+  "cache": {
+   "contributing_source_recordings": 1,
+   "path": "<path>",
+   "selection": "complete closed loop first, then lap-percent coverage and recorded detail",
+   "source_recordings": 1,
+   "updated_at": "2026-10-03T01:53:49+00:00"
+  },
+  "contributing_source_sha256": [
+   "540f7208f1bdc25fe36ac0830d041e655826b89e910feadf2097bdf99eb92a81"
+  ],
+  "coordinate_system": "normalized_local_vector",
+  "geometry_hash": null,
+  "geometry_provenance": {
+   "normalization_transform": {},
+   "observations": [
+    {
+     "geometry_fingerprint": "96bee14a5193b62b36e2162900cb60726098bf7c99a648977f7575f717ae3143",
+     "observation_id": "08488693cddcd9d4ac426fc4f94aa72fb995880e09be6a25d1697428f772e3a2",
+     "observed_at": "2026-10-03T01:53:49+00:00",
+     "quality": {
+      "closure_distance": 1.0,
+      "geometry_plausible": false,
+      "lap_percent_coverage": 0.0,
+      "main_loop_complete": false,
+      "main_path_points": 0,
+      "main_path_span": 0.0,
+      "main_source_samples": 0,
+      "maximum_lap_percent_gap": 1.0,
+      "maximum_relative_segment_distance": null,
+      "maximum_segment_distance": null,
+      "observed_main_path_points": 0,
+      "pit_entry_observations": 0,
+      "pit_exit_observations": 0,
+      "pit_lane_points": 0,
+      "pit_source_samples": 0
+     },
+     "source_sha256": [
+      "540f7208f1bdc25fe36ac0830d041e655826b89e910feadf2097bdf99eb92a81"
+     ],
+     "transform": {}
+    }
+   ],
+   "selected_observation_id": "08488693cddcd9d4ac426fc4f94aa72fb995880e09be6a25d1697428f772e3a2"
+  },
+  "main_path": [],
+  "observed_source_sha256": [
+   "540f7208f1bdc25fe36ac0830d041e655826b89e910feadf2097bdf99eb92a81"
+  ],
+  "pit_commitment_line": null,
+  "pit_entry_path": [],
+  "pit_exit_path": [],
+  "pit_lane": [],
+  "pit_merge_line": null,
+  "quality": {
+   "closure_distance": 1.0,
+   "geometry_plausible": false,
+   "lap_percent_coverage": 0.0,
+   "main_loop_complete": false,
+   "main_path_points": 0,
+   "main_path_span": 0.0,
+   "main_source_samples": 0,
+   "maximum_lap_percent_gap": 1.0,
+   "maximum_relative_segment_distance": null,
+   "maximum_segment_distance": null,
+   "observed_main_path_points": 0,
+   "pit_entry_observations": 0,
+   "pit_exit_observations": 0,
+   "pit_lane_points": 0,
+   "pit_source_samples": 0
+  },
+  "schema_version": 1,
+  "source_sha256": [
+   "540f7208f1bdc25fe36ac0830d041e655826b89e910feadf2097bdf99eb92a81"
+  ],
+  "start_finish_line": null,
+  "status": "unavailable",
+  "track_config": "Oval",
+  "track_configuration_key": "9001-oval",
+  "track_id": 9001,
+  "track_name": "Synthetic Speedway",
+  "unavailable_reasons": [
+   "Latitude was not recorded.",
+   "Longitude was not recorded.",
+   "A complete closed main circuit loop could not be verified."
+  ]
+ },
+ "track_profile": {
+  "bins": 200,
+  "detected_corner_segments": [],
+  "profile": [
+   {
+    "bin": 0,
+    "brake": 0.0,
+    "lap_pct": 0.0025,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 138.69,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 5,
+    "brake": 0.0,
+    "lap_pct": 0.0275,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 134.491,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 10,
+    "brake": 0.0,
+    "lap_pct": 0.0525,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 130.395,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 15,
+    "brake": 0.0,
+    "lap_pct": 0.0775,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 126.503,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 20,
+    "brake": 0.0,
+    "lap_pct": 0.1025,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 122.912,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 25,
+    "brake": 0.0,
+    "lap_pct": 0.1275,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 119.709,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 30,
+    "brake": 0.0,
+    "lap_pct": 0.1525,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 116.973,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 34,
+    "brake": 0.0,
+    "lap_pct": 0.1725,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 114.773,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 40,
+    "brake": 0.0,
+    "lap_pct": 0.2025,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 113.161,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 44,
+    "brake": 0.0,
+    "lap_pct": 0.2225,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 112.177,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 50,
+    "brake": 0.0,
+    "lap_pct": 0.2525,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 111.847,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 55,
+    "brake": 0.0,
+    "lap_pct": 0.2775,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 112.177,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 60,
+    "brake": 0.0,
+    "lap_pct": 0.3025,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 113.161,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 64,
+    "brake": 0.0,
+    "lap_pct": 0.3225,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 114.773,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 69,
+    "brake": 0.0,
+    "lap_pct": 0.3475,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 116.973,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 75,
+    "brake": 0.0,
+    "lap_pct": 0.3775,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 119.709,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 80,
+    "brake": 0.0,
+    "lap_pct": 0.4025,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 122.912,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 85,
+    "brake": 0.0,
+    "lap_pct": 0.4275,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 126.503,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 89,
+    "brake": 0.0,
+    "lap_pct": 0.4475,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 130.395,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 94,
+    "brake": 0.0,
+    "lap_pct": 0.4725,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 134.491,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 100,
+    "brake": 0.0,
+    "lap_pct": 0.5025,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 138.69,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 104,
+    "brake": 0.0,
+    "lap_pct": 0.5225,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 134.491,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 110,
+    "brake": 0.0,
+    "lap_pct": 0.5525,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 130.395,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 114,
+    "brake": 0.0,
+    "lap_pct": 0.5725,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 126.503,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 120,
+    "brake": 0.0,
+    "lap_pct": 0.6025,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 122.912,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 125,
+    "brake": 0.0,
+    "lap_pct": 0.6275,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 119.709,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 129,
+    "brake": 0.0,
+    "lap_pct": 0.6475,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 116.973,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 135,
+    "brake": 0.0,
+    "lap_pct": 0.6775,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 114.773,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 139,
+    "brake": 0.0,
+    "lap_pct": 0.6975,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 113.161,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 145,
+    "brake": 0.0,
+    "lap_pct": 0.7275,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 112.177,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 150,
+    "brake": 0.0,
+    "lap_pct": 0.7525,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 111.847,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 154,
+    "brake": 0.0,
+    "lap_pct": 0.7725,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 112.177,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 160,
+    "brake": 0.0,
+    "lap_pct": 0.8025,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 113.161,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 164,
+    "brake": 0.0,
+    "lap_pct": 0.8225,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 114.773,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 170,
+    "brake": 0.0,
+    "lap_pct": 0.8525,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 116.973,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 175,
+    "brake": 0.0,
+    "lap_pct": 0.8775,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 119.709,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 179,
+    "brake": 0.0,
+    "lap_pct": 0.8975,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 122.912,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 185,
+    "brake": 0.0,
+    "lap_pct": 0.9275,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 126.503,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 189,
+    "brake": 0.0,
+    "lap_pct": 0.9475,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 130.395,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   },
+   {
+    "bin": 195,
+    "brake": 0.0,
+    "lap_pct": 0.9775,
+    "lat": null,
+    "lateral_g": 0.0,
+    "lon": null,
+    "samples": 1,
+    "speed_mph": 134.491,
+    "steering_abs_rad": 0.0,
+    "throttle": 0.85
+   }
+  ],
+  "segment_note": "Segments are telemetry-derived load zones; cached track references may supply official corner names.",
+  "setup_trace_fields": [],
+  "shape": null
+ },
+ "track_usage_context": {
+  "dynamic_track_enabled": null,
+  "provenance": "Embedded SessionInfo.Sessions[].SessionTrackRubberState and WeekendInfo.TrackDynamicTrack metadata; not a sampled rubber history.",
+  "recorded_usage_channel": false,
+  "session_states": []
+ }
+}
