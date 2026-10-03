@@ -1,0 +1,24 @@
+# Build context for deploy/mini-pc/Dockerfile: only what the image is built from.
+# rust-toolchain.toml stays out on purpose (the builder image pins the same 1.99.0).
+*
+!.cargo/
+!Cargo.toml
+!Cargo.lock
+!crates/
+!collector/
+!server/
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!web/
+!iracing-coach/
+!contracts/
+!deploy/mini-pc/
+**/target/
+**/node_modules/
+**/__pycache__/
+**/*.py[cod]
+web/dist/
+web/playwright-report/
+web/test-results/
+iracing-coach/tests/

@@ -1,0 +1,52 @@
+# iRacing Coach stack on the mini PC (architecture.md section 10; mini-pc skill).
+# Released only with release.sh or the g-house-app steps; never `compose up` by hand.
+services:
+  app:
+    image: ${APP_IMAGE}
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    ports:
+      - "8210:8080"
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: 2.0
+    cpu_shares: 256
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    volumes:
+      - ${APP_DATA}:/data
+      - type: volume
+        source: nas
+        target: /nas/apps
+        volume:
+          nocopy: true
+      - /etc/localtime:/etc/localtime:ro
+    # /health: database open and migrations applied; independent of the NAS.
+    # The image's Python is used until coach-server gains its `healthcheck` subcommand (W4).
+    healthcheck:
+      test:
+        - CMD
+        - python3.12
+        - -c
+        - "import sys, urllib.request; sys.exit(urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4).status != 200)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
+    logging:
+      driver: json-file
+      options: { max-size: 20m, max-file: "3" }
+
+volumes:
+  # NAS `apps` export (admits 192.168.1.81 only, no credentials); nas-layout.md section 1.
+  # Changing these options needs the volume recreated: settle them before editing.
+  nas:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=192.168.1.82,nfsvers=4.1,soft,timeo=150,retrans=3,noatime
+      device: ":/volume1/apps"
