@@ -149,6 +149,25 @@ async fn read_tuning_json(app: &AppState, analysis_id: &str) -> Result<Value> {
         .map_err(|e| Error::internal(format!("tuning.json is not JSON: {e}")))
 }
 
+/// The `draft_identity_key` that `GET /analyses/{id}/tuning` returns for this analysis; None when
+/// the analysis does not exist, is not ready or has no tuning context.
+pub async fn draft_key_for_analysis(app: &AppState, analysis_id: &str) -> Result<Option<String>> {
+    let projection = match read_tuning_json(app, analysis_id).await {
+        Ok(projection) => projection,
+        Err(Error::Api(_)) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let row = match analysis_row(app, analysis_id).await {
+        Ok(row) => row,
+        Err(Error::Api(_)) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    Ok(Some(draft_identity_key(
+        &projection["identity"],
+        &binding_of(&row),
+    )))
+}
+
 /// `GET /analyses/{id}/tuning`.
 pub async fn context(State(app): State<AppState>, Path(analysis_id): Path<String>) -> Resp {
     let projection = read_tuning_json(&app, &analysis_id).await?;

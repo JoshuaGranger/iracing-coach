@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -198,6 +199,41 @@ class RawArchiveSwitchTests(unittest.TestCase):
             with self.assertRaisesRegex(workflow.WorkflowError, "IRACING_COACH_RAW_ARCHIVE"):
                 self._analyze(Path(folder), "bad", {"IRACING_COACH_RAW_ARCHIVE": "nas"})
             self.assertFalse((Path(folder) / "bad" / "archive" / "reports").exists())
+
+
+class CompatibilityContractTests(unittest.TestCase):
+    """`contracts/compatibility.json` describes the rewrite, not the retired desktop app."""
+
+    def setUp(self) -> None:
+        self.compatibility = json.loads(
+            (WORKSPACE / "contracts" / "compatibility.json").read_text(encoding="utf-8")
+        )
+
+    def test_the_worker_python_is_the_interpreter_the_server_launches(self) -> None:
+        contracts = WORKSPACE / "docs" / "08-rewrite" / "contracts"
+        interface = (contracts / "worker-interface.md").read_text(encoding="utf-8")
+        config = (contracts / "server-config.md").read_text(encoding="utf-8")
+        launched = re.search(r"\bpython(\d+\.\d+) -X utf8 -u /app/iracing-coach/", interface)
+        configured = re.search(r"\| `COACH_PYTHON` \| `/usr/local/bin/python(\d+\.\d+)`", config)
+        self.assertIsNotNone(launched)
+        self.assertIsNotNone(configured)
+        runtime = self.compatibility["runtime"]
+        self.assertEqual(runtime["worker"]["python"], launched.group(1))
+        self.assertEqual(runtime["worker"]["python"], configured.group(1))
+        self.assertEqual(runtime["oracle"]["python"], runtime["worker"]["python"])
+        self.assertEqual(runtime["python_runtime_dependencies"], [])
+
+    def test_the_ui_is_the_web_app_and_names_no_retired_host(self) -> None:
+        ui = self.compatibility["ui"]
+        theme = json.loads((WORKSPACE / "config" / "theme.dark.json").read_text(encoding="utf-8"))
+        self.assertEqual(ui["application_language"], "TypeScript")
+        self.assertEqual(ui["default_theme"], theme["name"])
+        self.assertEqual(
+            sorted(self.compatibility["application"]), ["collector", "server", "web", "worker"]
+        )
+        text = json.dumps(self.compatibility)
+        for retired in ("WPF", "Blazor", ".NET 10", "native_host", "webview_runtime_policy"):
+            self.assertNotIn(retired, text)
 
 
 class WorkerProcessTests(unittest.TestCase):

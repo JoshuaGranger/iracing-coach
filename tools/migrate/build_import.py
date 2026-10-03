@@ -10,7 +10,9 @@ and writes one `ImportBundle` (`contracts/api.openapi.yaml`) for `POST /api/v1/a
   `live-channels.json` unit ids, and a tile whose metric is not in the tile catalog is dropped
   (the whole settings file stays in `legacy_items`).
 - `tuning_drafts` from `portable-settings/tuning-drafts/`, mapped to `TuningDraftBody` fields;
-  every other legacy draft field is kept verbatim under `legacy`.
+  every other legacy draft field is kept verbatim under `legacy`. Each names its
+  `representativeSession.analysisId` as `legacy_analysis_id` (null when absent), from which the
+  server computes the new draft key; `identity_key` stays the legacy file stem.
 - `turn_annotations` from `portable-settings/tuning-turn-annotations/`.
 - `legacy_analyses`: every analysis in `data/history.sqlite3` `sessions`, the tuning experiments
   and the drafts, with its recording hashes (raw-archive manifests, the draft's
@@ -287,7 +289,13 @@ def tuning_drafts(root: Path, references: list[dict[str, Any]],
         if not isinstance(draft, dict):
             skipped.append({"path": relative, "reason": "not a JSON object"})
             continue
-        drafts.append({"identity_key": path.stem.lower(), "body": draft_body(draft)})
+        representative = identity_reference(draft.get("representativeSession"))
+        drafts.append({
+            "identity_key": path.stem.lower(),
+            # The server re-keys the draft from this analysis (ImportBundle.tuning_drafts).
+            "legacy_analysis_id": representative["legacy_analysis_id"][:128] if representative else None,
+            "body": draft_body(draft),
+        })
         target = draft.get("openSetupTarget") or {}
         for identity in (draft.get("representativeSession"), target.get("baseline") if isinstance(target, dict) else None):
             reference = identity_reference(identity)
@@ -552,6 +560,8 @@ def build(root: Path, customer_id: int, machine: str, recordings: Path | None = 
         "counts": {key: len(value) for key, value in bundle.items() if isinstance(value, list)},
         "legacy_archive_files": len((bundle["legacy_archive"] or {}).get("files", [])),
         "analyses_with_recording_hash": sum(1 for entry in bundle["legacy_analyses"] if entry["recording_sha256"]),
+        # Parked by the server whatever it resolves; the import summary's tuning_drafts_unresolved includes them.
+        "tuning_drafts_without_analysis": sum(1 for draft in drafts if draft["legacy_analysis_id"] is None),
         "dropped_tiles": dropped,
         "not_converted": skipped,
         **notes,

@@ -2,9 +2,7 @@
 //! `.sto` files linked by name and hash, files whose values are unknown.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::OnceLock;
 
-use regex::Regex;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
@@ -37,23 +35,8 @@ pub fn upsert_setup(
     )
 }
 
-/// Keys that do not count toward setup identity (`setup-keys.json`).
-pub fn is_identity_excluded(key: &str) -> bool {
-    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
-    let patterns = PATTERNS.get_or_init(|| {
-        coach_wire::setup_keys::EXCLUDED_LEAF_PATTERNS
-            .iter()
-            .filter_map(|(pattern, _)| {
-                regex::RegexBuilder::new(pattern)
-                    .case_insensitive(true)
-                    .build()
-                    .ok()
-            })
-            .collect()
-    });
-    let leaf = key.rsplit('.').next().unwrap_or(key);
-    patterns.iter().any(|p| p.is_match(leaf))
-}
+/// Keys that do not count toward setup identity: the one implementation of `setup-keys.json`.
+pub use coach_ibt::is_identity_excluded;
 
 /// What the server did with one garage event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -679,4 +662,43 @@ pub fn cars_and_tracks(conn: &Connection, customer: i64) -> rusqlite::Result<Val
         })?
         .collect::<rusqlite::Result<_>>()?;
     Ok(json!({"cars": cars, "tracks": tracks}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The literal leaves a contract pattern matches: anchors dropped, one group expanded.
+    fn literals(pattern: &str) -> Vec<String> {
+        let body = pattern.trim_start_matches('^').trim_end_matches('$');
+        match (body.find('('), body.find(')')) {
+            (Some(open), Some(close)) => body[open + 1..close]
+                .split('|')
+                .map(|alt| format!("{}{alt}{}", &body[..open], &body[close + 1..]))
+                .collect(),
+            _ => vec![body.to_owned()],
+        }
+    }
+
+    #[test]
+    fn every_contract_pattern_literal_is_excluded() {
+        for (pattern, _) in coach_wire::setup_keys::EXCLUDED_LEAF_PATTERNS {
+            for literal in literals(pattern) {
+                assert!(
+                    is_identity_excluded(&format!("Chassis.Front.{literal}")),
+                    "{literal}"
+                );
+                assert!(
+                    is_identity_excluded(&literal.to_ascii_uppercase()),
+                    "{literal}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kelvin_sign_is_not_ascii_k() {
+        assert!(is_identity_excluded("Chassis.Rear.TruckArmPreload"));
+        assert!(!is_identity_excluded("Chassis.Rear.Truc\u{212A}ArmPreload"));
+    }
 }

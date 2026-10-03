@@ -262,7 +262,6 @@ dependencies = [
  "http-body-util",
  "jsonschema",
  "libc",
- "regex",
  "rusqlite",
  "serde",
  "serde_json",

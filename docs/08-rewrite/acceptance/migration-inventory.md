@@ -33,6 +33,7 @@ The dev PC holds its own legacy Coach root (not the sim's). The export and inven
 | same on the exported copy | 162 user-authored files: the export covers every user-authored file the inventory finds |
 | export again after adding `data\trials`, `data\event-plans`, `data\ai-coaching` and the raw-archive `manifest.json` files (wave-1 follow-up) | 177 files (162 plus 15 manifests), 0 recordings, 0 hash mismatches |
 | `$py tools/migrate/build_import.py <copy> --customer-id 1 --machine DESKTOP-JOSHUA --out <scratch>` | valid `ImportBundle` (ajv over `wire.schema.json`): 3 live layouts (units `°C` to `C`, `laps` to `lap`, `time` to the tile default), 1 trace layout, 3 tuning drafts, 18 legacy analyses (17 with a recording hash), 5 `legacy_archive` files, 154 `legacy_items`, nothing dropped |
+| same, wave 2 (drafts name `legacy_analysis_id`, wave-2 follow-up W9-1), on a fresh export (177 files, 0 hash mismatches) | valid `ImportBundle` (ajv); every one of the 3 drafts names a legacy analysis that `legacy_analyses` lists with a recording hash; `tuning_drafts_without_analysis` 0; other counts as above |
 
 Dev-PC counts: `history.sqlite3` holds 15 sessions, 41 runs, 2 knowledge bundles, 2 tuning packages, 0 tuning experiments; 3 tuning-draft files; 152 activity-history entries; 1 strategy-history entry; `user-library/`, `data/tuning-experiments/`, `data/setup-history/`, `data/target-laps/` empty; `data/test-artifacts/` absent. No saved Tests, plans or free notes exist here, so their format is still unseen.
 
@@ -44,3 +45,7 @@ Dev-PC counts: `history.sqlite3` holds 15 sessions, 41 runs, 2 knowledge bundles
 | Legacy inventory | `$py tools/migrate/inventory_legacy.py <copied root> --out <outside the repository>` | dev PC, on the copy |
 | Raw hash list for step 5 | `tools/rig/Get-SimRecordingInventory.ps1 -OutFile <file> -Hash` (below-normal priority; stops if `iRacingSim64DX11` starts) | sim PC, off track |
 | Steps 2 to 5 | `tools/migrate/build_import.py` (ready, tested on synthetic data and the dev-PC copy), backfill, reanalysis, `migration.md` | wave 3 |
+
+## Tuning drafts in the report
+
+A legacy draft key hashes the old `analysis_id`, so no draft keeps its key (`api.openapi.yaml` `ImportBundle.tuning_drafts`). Each bundle draft names its `representativeSession.analysisId` as `legacy_analysis_id`, listed in `legacy_analyses` with its stable identity; the server re-keys the draft from the resolved current analysis or parks it as a `legacy_items` row (kind `tuning_draft`). `migration.md` lists, from the `POST /api/v1/admin/import` summary, `tuning_drafts` (stored under a new key) and `tuning_drafts_unresolved` (parked), with each draft's legacy file stem (`identity_key`), its legacy analysis and the new key or the reason it was parked. `build_import.py` reports `tuning_drafts_without_analysis` beforehand: those drafts are parked whatever the import resolves.

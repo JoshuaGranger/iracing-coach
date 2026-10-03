@@ -6,14 +6,14 @@
 .PARAMETER Linux
   Run only the Linux gate (tools/wsl/check.sh in WSL Ubuntu) instead of the Windows steps.
 .PARAMETER LinuxScope
-  Scope passed to tools/wsl/check.sh with -Linux: rust (default), server, all (adds the Python suite) or python.
+  Scope passed to tools/wsl/check.sh with -Linux: all (default, as in check.sh: rust, then the Python suite), rust, server or python.
 .PARAMETER SkipRepository
   Skip tools\verify-repository.ps1 (slow) for quick loops. CI and delivery never skip it.
 #>
 param(
     [string]$PythonPath = 'C:\Users\joshu\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe',
     [switch]$Linux,
-    [ValidateSet('rust', 'server', 'all', 'python')][string]$LinuxScope = 'rust',
+    [ValidateSet('all', 'rust', 'server', 'python')][string]$LinuxScope = 'all',
     [switch]$SkipRepository
 )
 

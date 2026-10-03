@@ -225,16 +225,11 @@ async fn import_tuning_experiments(
     cancel: &Cancel,
     customer: i64,
     bundle: &Value,
+    map: &[Value],
 ) -> Result<std::result::Result<Value, JobOutcome>> {
     let files = match legacy_files(bundle) {
         Ok(files) => files,
         Err(message) => return Ok(Err(JobOutcome::failed("invalid_bundle", message))),
-    };
-    let map = {
-        let bundle = bundle.clone();
-        app.store
-            .read(move |conn| Ok(analysis_map(conn, customer, &bundle)?))
-            .await?
     };
     let mapped = map.iter().filter(|m| !m["analysis_id"].is_null()).count();
     let mut counts = json!({
@@ -291,6 +286,43 @@ async fn import_tuning_experiments(
     }
 }
 
+/// One bundle draft: its new key and rewritten body when its legacy analysis resolves to a
+/// session's current analysis with a tuning context, else None (the draft is parked).
+struct DraftPlan {
+    item: Value,
+    new_key: Option<(String, Value)>,
+}
+
+/// Re-keys each draft as `GET .../tuning` would for the resolved analysis; the target of an open
+/// setup is rewritten through the same map (null when unresolved).
+async fn plan_drafts(app: &AppState, bundle: &Value, map: &[Value]) -> Result<Vec<DraftPlan>> {
+    let resolve_id = |legacy: &str| -> Option<String> {
+        map.iter()
+            .find(|m| m["legacy_analysis_id"].as_str() == Some(legacy))
+            .and_then(|m| m["analysis_id"].as_str())
+            .map(str::to_owned)
+    };
+    let mut plans = Vec::new();
+    for item in bundle["tuning_drafts"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
+        let mut new_key = None;
+        if let Some(analysis) = item["legacy_analysis_id"].as_str().and_then(resolve_id)
+            && let Some(key) = crate::tuning::draft_key_for_analysis(app, &analysis).await?
+        {
+            let mut body = item["body"].clone();
+            if let Some(target) = body.get("open_target_analysis_id").and_then(Value::as_str) {
+                body["open_target_analysis_id"] = json!(resolve_id(target));
+            }
+            new_key = Some((key, body));
+        }
+        plans.push(DraftPlan { item, new_key });
+    }
+    Ok(plans)
+}
+
 pub async fn run(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOutcome> {
     let sha = job.subject["bundle_sha256"]
         .as_str()
@@ -315,11 +347,19 @@ pub async fn run(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOut
     if already {
         return Ok(JobOutcome::Succeeded(json!({"already_imported": true})));
     }
-    // The worker step is idempotent, so a retry after a failed transaction repeats it safely.
-    let experiments = match import_tuning_experiments(app, job, cancel, customer, &bundle).await? {
-        Ok(counts) => counts,
-        Err(outcome) => return Ok(outcome),
+    let map = {
+        let bundle = bundle.clone();
+        app.store
+            .read(move |conn| Ok(analysis_map(conn, customer, &bundle)?))
+            .await?
     };
+    // The worker step is idempotent, so a retry after a failed transaction repeats it safely.
+    let experiments =
+        match import_tuning_experiments(app, job, cancel, customer, &bundle, &map).await? {
+            Ok(counts) => counts,
+            Err(outcome) => return Ok(outcome),
+        };
+    let draft_plans = plan_drafts(app, &bundle, &map).await?;
     let job_id = job.job_id;
     let summary = app
         .store
@@ -409,13 +449,35 @@ pub async fn run(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOut
                     ],
                 )?;
             }
-            let mut drafts = 0;
-            for draft in bundle["tuning_drafts"].as_array().cloned().unwrap_or_default() {
-                drafts += tx.execute(
-                    "INSERT OR IGNORE INTO tuning_drafts(customer_id, identity_key, body_json, version, updated_at)
-                     VALUES (?1, ?2, ?3, 1, ?4)",
-                    params![customer, draft["identity_key"].as_str().unwrap_or_default(), draft["body"].to_string(), now],
+            let (mut drafts, mut drafts_unresolved) = (0, 0);
+            for plan in &draft_plans {
+                let stored = match &plan.new_key {
+                    Some((key, body)) => tx.execute(
+                        "INSERT OR IGNORE INTO tuning_drafts(customer_id, identity_key, body_json, version, updated_at)
+                         VALUES (?1, ?2, ?3, 1, ?4)",
+                        params![customer, key, body.to_string(), now],
+                    )?,
+                    None => 0,
+                };
+                if stored == 1 {
+                    drafts += 1;
+                    continue;
+                }
+                tx.execute(
+                    "INSERT INTO legacy_items(customer_id, kind, source_path, body_json, imported_at, import_id)
+                     VALUES (?1, 'tuning_draft', ?2, ?3, ?4, ?5)",
+                    params![
+                        customer,
+                        format!(
+                            "tuning-drafts/{}",
+                            plan.item["identity_key"].as_str().unwrap_or_default()
+                        ),
+                        plan.item.to_string(),
+                        now,
+                        import_id
+                    ],
                 )?;
+                drafts_unresolved += 1;
             }
             let mut annotations = 0;
             for a in bundle["turn_annotations"].as_array().cloned().unwrap_or_default() {
@@ -454,6 +516,7 @@ pub async fn run(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOut
                 "unresolved_notes": unresolved,
                 "layouts": layouts,
                 "tuning_drafts": drafts,
+                "tuning_drafts_unresolved": drafts_unresolved,
                 "turn_annotations": annotations,
                 "legacy_items": parked,
             });

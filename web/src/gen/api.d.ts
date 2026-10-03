@@ -2968,8 +2968,24 @@ export interface components {
             trace_layouts?: components["schemas"]["TraceLayoutWrite"][];
             live_layouts?: components["schemas"]["LiveLayoutWrite"][];
             prefs?: components["schemas"]["DriverPrefsWrite"] | null;
+            /**
+             * @description Legacy Progressive Tuning drafts (the desktop app's portable-settings/tuning-drafts). A
+             *     legacy key cannot be reused: draft_identity_key (TuningContext) hashes the analysis_id and
+             *     the binding, which re-ingest and re-analysis change. The server resolves legacy_analysis_id
+             *     through legacy_analyses (the same map it gives import_legacy_tuning_experiments) to the
+             *     session's current analysis, computes that analysis's draft_identity_key exactly as
+             *     GET .../tuning does, and stores the body under it; body.open_target_analysis_id is rewritten
+             *     through the same map (null when unresolved). A draft whose legacy_analysis_id is null or
+             *     absent, does not resolve, or whose analysis has no projected tuning context, and a draft
+             *     whose new key an earlier draft of the bundle already took (bundle order), is stored as a
+             *     legacy_items row (kind tuning_draft, body = the bundle item). The import summary counts
+             *     tuning_drafts (stored under a new key) and tuning_drafts_unresolved (parked).
+             */
             tuning_drafts?: {
+                /** @description The legacy draft's key (its file name), kept for the migration report; never used as the new key. */
                 identity_key: string;
+                /** @description The legacy draft's representativeSession.analysisId; must also be listed in legacy_analyses with its stable identity. */
+                legacy_analysis_id?: string | null;
                 body: {
                     [key: string]: unknown;
                 };
@@ -2981,14 +2997,14 @@ export interface components {
                     [key: string]: unknown;
                 };
             }[];
-            /** @description Stable identity of every legacy analysis that legacy notes or tuning experiments reference. The server resolves each to the matching session's current analysis (null when unresolved) and passes the map to import_legacy_tuning_experiments. */
+            /** @description Stable identity of every legacy analysis that legacy notes, tuning drafts or tuning experiments reference. The server resolves each to the matching session's current analysis (null when unresolved) and passes the map to import_legacy_tuning_experiments. */
             legacy_analyses?: {
                 legacy_analysis_id: string;
                 recording_sha256?: string[];
                 subsession_id?: number | null;
                 sim_session_num?: number | null;
             }[];
-            /** @description The legacy worker archive's history.sqlite3 and tuning/ files, copied byte for byte. The server writes them under the import job root's legacy/ and runs import_legacy_tuning_experiments (worker-interface.md section 4) on them; nothing else reads them. */
+            /** @description The legacy worker archive's history.sqlite3 and tuning/ files, copied byte for byte. The server writes them under the import job root's legacy/ and runs import_legacy_tuning_experiments (worker-interface.md section 4) on them; nothing else reads them. The worker's own tuning/drafts/*.json travel here and are not converted: they are write-only records of past recommend calls (the worker never reads one back) and the next recommend call writes its own. They stay preserved verbatim because the server keeps every accepted bundle at import/<bundle_sha256>.json under COACH_DATA_DIR and never deletes it. */
             legacy_archive?: {
                 files: {
                     /** @description history.sqlite3 or tuning/..., forward slashes, no .. segments. */

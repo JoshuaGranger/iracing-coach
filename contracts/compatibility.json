@@ -4,6 +4,12 @@
     "preferred_adapter": "codex-app-server-stdio",
     "required_for_deterministic_workflows": false
   },
+  "application": {
+    "collector": "coach-collector: Rust, Windows x64 sim PC, no .NET and no WebView",
+    "server": "coach-server: Rust, Linux x64 container on the mini PC",
+    "web": "TypeScript single-page app served by coach-server",
+    "worker": "this backend: Python 3.12, standard library only, inside the server container"
+  },
   "backend": {
     "analysis_profile_version": "post-race-foundations-v23",
     "analysis_schema_version": 2,
@@ -60,21 +66,32 @@
   },
   "repository_contract_version": 1,
   "runtime": {
-    "operating_system": "Windows 10/11 x64",
+    "oracle": {
+      "operating_system": "Windows 10/11 x64",
+      "python": "3.12"
+    },
     "powershell_required_for": [
-      "MCP launcher",
-      "Garage61 DPAPI credential configuration"
+      "Codex plugin MCP launcher on Windows",
+      "Garage61 DPAPI credential configuration on Windows"
     ],
     "python_minimum": "3.10",
-    "python_runtime_dependencies": []
+    "python_runtime_dependencies": [],
+    "worker": {
+      "launched_by": "coach-server, one process per job (worker-interface.md section 1)",
+      "operating_system": "Linux x64 (python:3.12-slim-bookworm image, mini PC)",
+      "python": "3.12"
+    }
   },
   "ui": {
-    "application_language": "C#",
-    "application_runtime": ".NET 10",
+    "application_language": "TypeScript",
     "default_theme": "mineral-glass-dark",
     "design_system_version": 1,
-    "native_host": "WPF",
-    "view_layer": "Blazor Hybrid",
-    "webview_runtime_policy_required": true
+    "hosts": [
+      "desktop browser",
+      "rig screen browser",
+      "tablet browser",
+      "phone browser"
+    ],
+    "view_layer": "Preact single-page app built with Vite"
   }
 }

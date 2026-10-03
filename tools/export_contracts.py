@@ -34,6 +34,11 @@ import workflow  # noqa: E402
 
 COMPATIBILITY_SOURCES_PATH = CONTRACT_ROOT / "compatibility-sources.json"
 
+# The interpreter the server runs the worker with and the oracle runs on
+# (owner decisions 2026-10-02, D2 ruling: 3.12 for compensated `sum()`).
+# `python_minimum` stays the source floor the suite still supports.
+WORKER_PYTHON = "3.12"
+
 _JSON_TYPE_BY_FIELD_KIND = {
     "object": {"type": "object"},
     "array": {"type": "array"},
@@ -326,14 +331,33 @@ def exported_values() -> dict[Path, Any]:
             "setup_catalog_schema_version": setup_catalog.SCHEMA_VERSION,
             "tuning_schema_version": tuning_engine.TUNING_SCHEMA_VERSION,
         },
+        # The rewrite (owner decisions 2026-10-02, architecture.md sections 2
+        # and 8): a Rust collector on the sim PC, a Rust server in a Linux
+        # container on the mini PC that runs this backend as its Python 3.12
+        # worker, and a TypeScript single-page app. Windows runs the same
+        # backend as the parity oracle and as the Codex plugin.
         "runtime": {
-            "operating_system": "Windows 10/11 x64",
             "python_minimum": "3.10",
             "python_runtime_dependencies": [],
+            "worker": {
+                "python": WORKER_PYTHON,
+                "operating_system": "Linux x64 (python:3.12-slim-bookworm image, mini PC)",
+                "launched_by": "coach-server, one process per job (worker-interface.md section 1)",
+            },
+            "oracle": {
+                "python": WORKER_PYTHON,
+                "operating_system": "Windows 10/11 x64",
+            },
             "powershell_required_for": [
-                "MCP launcher",
-                "Garage61 DPAPI credential configuration",
+                "Codex plugin MCP launcher on Windows",
+                "Garage61 DPAPI credential configuration on Windows",
             ],
+        },
+        "application": {
+            "collector": "coach-collector: Rust, Windows x64 sim PC, no .NET and no WebView",
+            "server": "coach-server: Rust, Linux x64 container on the mini PC",
+            "worker": "this backend: Python 3.12, standard library only, inside the server container",
+            "web": "TypeScript single-page app served by coach-server",
         },
         "environment": {
             "IRACING_COACH_PYTHON": "packaged Python executable",
@@ -353,11 +377,9 @@ def exported_values() -> dict[Path, Any]:
         "ui": {
             "design_system_version": 1,
             "default_theme": "mineral-glass-dark",
-            "application_language": "C#",
-            "application_runtime": ".NET 10",
-            "native_host": "WPF",
-            "view_layer": "Blazor Hybrid",
-            "webview_runtime_policy_required": True,
+            "application_language": "TypeScript",
+            "view_layer": "Preact single-page app built with Vite",
+            "hosts": ["desktop browser", "rig screen browser", "tablet browser", "phone browser"],
         },
         # JSON carries no comments, so the alias records which store the retained
         # ambiguous key means, and when it goes away, in a form tests can check.

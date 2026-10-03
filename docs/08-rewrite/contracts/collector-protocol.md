@@ -74,8 +74,9 @@ A **stream session** ends only when the sim disconnects, or `SubSessionID`, `Ses
 - `viewers` goes 0 to 1: server sends `stream.start {reason: "viewer"}`. The collector sets the latch and streams (at most 60 frames/s, `live-frame.md` Rules) while connected to the sim.
 - `viewers` goes to 0: server sends `stream.release`. The collector keeps streaming while the latch is set and clears it, then stops, when the stream session ends. A `stream.start` before that cancels the release.
 - While viewer demand stands, every new stream session (after a boundary or a sim reconnect) starts with the latch set, so a viewer who leaves mid-session still gets the rest of that session.
-- Viewers are counted for the collector's current driver. When the driver in `status` changes, the server recounts for the new driver and sends `viewers {count}` and `stream.start` or `stream.release` to match; demand belonging to the previous driver never carries over.
-- Reconnect or server restart: `welcome.stream_wanted` reports viewer demand only. `true` acts as `stream.start`; `false` acts as `stream.release` (an existing latch is kept until the stream session ends). A collector restart starts with the latch clear.
+- Viewers are counted for the collector's current driver. When the driver in `status` changes, the server recounts for the new driver. With viewers it sends `viewers {count}` and `stream.start`. Without viewers it sends `viewers {count: 0}` and `stream.release` only when the change is from a previous driver (including a change to no driver), whose demand the collector may hold. A connection's first driver (the first `status` after `hello` names one) has no earlier demand to cancel, so for a driver without viewers the server sends nothing (`welcome` already said `stream_wanted: false`). Demand belonging to the previous driver never carries over.
+- Demand and the live layout belong to a driver, and a new connection has no driver until its first `status` names one: `welcome` carries `stream_wanted: false`, `viewers: 0` and `layout: null`, and that first `status` is handled as a driver change (bullet above; section 9 for the layout).
+- Reconnect or server restart: demand returns with the first `status` (above). The collector treats `welcome.stream_wanted` `false` as `stream.release` (an existing latch is kept until the stream session ends) and `true` as `stream.start`. A collector restart starts with the latch clear.
 - The server also sends `viewers {count}` on every change; the tray shows the count.
 - Rates per browser (1, 10, 30, 60 Hz) are chosen by the browser and applied by the server by decimation; the collector always sends at the wire rate of `live-frame.md`.
 
@@ -115,7 +116,7 @@ Edge rules (wave 1, from P5 and the collector):
 ## 9. Setup files and layouts
 
 - Setup files: at start and after directory events (off track only, section 4 rule), the collector lists `setups\**\*.sto|*.htm`, hashes changed files, and uploads unknown ones (kind `sto` / `htm`, `relative_path` under `setups\`). It never writes the setups folder.
-- Layouts: the server sends `layout.set {layout_id, version, layout}` on `welcome` and whenever the active live layout changes; the collector applies it, caches it in `collector.json`, and answers `layout.ack {layout_id, version}`. Placement, scale and monitor stay machine-local.
+- Layouts: the server sends `layout.set {layout_id, version, layout}` for the driver's active live layout on every driver change (including the first `status` that names a driver, section 6) and whenever that layout changes; the collector applies it, caches it in `collector.json`, and answers `layout.ack {layout_id, version}`. Placement, scale and monitor stay machine-local.
 
 ## 10. Versioning
 

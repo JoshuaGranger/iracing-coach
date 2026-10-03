@@ -1,9 +1,9 @@
 // G2 gate: the investigation SPA at 6x CPU throttle (workstreams.md, Gates).
 //
-//   pnpm -C web perf:g2 [-- --runs 3 --duration 10000 --rate 6 --viewports phone,tablet]
+//   pnpm -C web perf:g2 [-- --runs 3 --duration 10000 --rate 6 --viewports phone,tablet --fixture g2|synthetic]
 //
 // Chromium via Playwright, CDP Emulation.setCPUThrottlingRate, phone 390x844 and tablet 1024x768, the
-// synthetic 82-lap current-profile fixture, median of 3. Pass: Traces first interactive <= 3 s, cursor
+// committed current-profile 82-lap fixture (test-data/g2, or the synthetic fallback), median of 3. Pass: Traces first interactive <= 3 s, cursor
 // >= 55 fps under continuous pointer movement, zero requests during pointer movement.
 //
 // Two cursor measurements are taken per run. `driven` dispatches one pointermove per animation frame from
@@ -14,7 +14,7 @@ import { chromium } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { buildHarness, outRoot, serve, VIEWPORTS } from "./harness-lib.mjs";
+import { buildHarness, outRoot, pageUrl, serve, VIEWPORTS } from "./harness-lib.mjs";
 
 const args = process.argv.slice(2);
 function option(name, fallback) {
@@ -24,9 +24,11 @@ function option(name, fallback) {
 const RUNS = Number(option("runs", 3));
 const DURATION_MS = Number(option("duration", 10_000));
 const RATE = Number(option("rate", 6));
+const FIXTURE = option("fixture", "g2");
 const WANTED = option("viewports", "phone,tablet").split(",");
 // `--select all` selects every lap before the sweeps: the worst case for per-frame work (82 logical traces, 24 detailed).
 const SELECT_ALL = option("select", "best") === "all";
+const RESULT_FILE = `g2-result${FIXTURE === "g2" ? "" : "-" + FIXTURE}${SELECT_ALL ? "-all-laps" : ""}.json`;
 const GATE = { firstInteractiveMs: 3000, fps: 55, requests: 0 };
 
 const median = (values) => {
@@ -52,7 +54,7 @@ async function waitForQuietCpu() {
   return load;
 }
 
-async function measureOnce(browser, origin, name, viewport, rate, view = "traces") {
+async function measureOnce(browser, origin, fixture, name, viewport, rate, view = "traces") {
   const cpuBefore = await waitForQuietCpu();
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
   const page = await context.newPage();
@@ -64,7 +66,7 @@ async function measureOnce(browser, origin, name, viewport, rate, view = "traces
   page.on("pageerror", (error) => consoleErrors.push(String(error)));
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
 
-  await page.goto(`${origin}/?view=${view}`, { waitUntil: "commit" });
+  await page.goto(pageUrl(origin, fixture, view), { waitUntil: "commit" });
   await page.waitForFunction(() => window.__g2 && window.__g2.tracesPaintedMs !== null, null, { timeout: 120_000, polling: 100 });
   const surface = page.locator(".ri-chart-surface");
   await surface.scrollIntoViewIfNeeded();
@@ -146,19 +148,19 @@ async function measureOnce(browser, origin, name, viewport, rate, view = "traces
 
 async function main() {
   console.log("building harness ...");
-  const { distDir, fixture } = await buildHarness();
+  const { distDir, fixture } = await buildHarness(FIXTURE);
   const { server, origin } = await serve(distDir, fixture);
   const browser = await chromium.launch({ args: ["--disable-features=CalculateNativeWinOcclusion", "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding"] });
-  const results = { generatedAt: new Date().toISOString(), select: SELECT_ALL ? "all" : "best three", rate: RATE, runs: RUNS, durationMs: DURATION_MS, browser: browser.version(), node: process.version, fixtureTraceBytes: fixture.ccolBytes, gate: GATE, viewports: {} };
+  const results = { generatedAt: new Date().toISOString(), select: SELECT_ALL ? "all" : "best three", rate: RATE, fixture: fixture.name, analysisId: fixture.analysisId, fixtureLaps: fixture.laps, runs: RUNS, durationMs: DURATION_MS, browser: browser.version(), node: process.version, fixtureTraceBytes: fixture.ccolBytes, gate: GATE, viewports: {} };
   let failed = false;
   try {
     for (const name of WANTED) {
       const viewport = VIEWPORTS[name];
       if (!viewport) throw new Error(`unknown viewport ${name}`);
-      const reference = await measureOnce(browser, origin, name, viewport, 1);
+      const reference = await measureOnce(browser, origin, fixture, name, viewport, 1);
       const runs = [];
       for (let run = 0; run < RUNS; run++) {
-        const result = await measureOnce(browser, origin, name, viewport, RATE);
+        const result = await measureOnce(browser, origin, fixture, name, viewport, RATE);
         runs.push(result);
         console.log(`${name} run ${run + 1}: interactive ${result.firstInteractiveMs} ms, driven ${result.drivenFps} fps, real ${result.realFps} fps (${result.realMouseMoves} moves), requests ${result.requestsDuringPointer.length}`);
       }
@@ -179,14 +181,14 @@ async function main() {
     await browser.close();
     server.close();
   }
-  await writeFile(path.join(outRoot, SELECT_ALL ? "g2-result-all-laps.json" : "g2-result.json"), JSON.stringify(results, null, 2));
+  await writeFile(path.join(outRoot, RESULT_FILE), JSON.stringify(results, null, 2));
   console.log("\nG2 at 6x CPU throttle (median of runs)");
   console.log("viewport  first interactive   driven fps   real-input fps   requests   gate");
   for (const [name, entry] of Object.entries(results.viewports)) {
     const s = entry.summary;
     console.log(`${name.padEnd(9)} ${String(s.firstInteractiveMs).padStart(8)} ms      ${String(s.drivenFps).padStart(8)}      ${String(s.realFps).padStart(10)}       ${String(s.requestsDuringPointer).padStart(5)}      ${s.pass && s.functionalOk ? "PASS" : "FAIL"}`);
   }
-  console.log(`result: ${path.join(outRoot, SELECT_ALL ? "g2-result-all-laps.json" : "g2-result.json")}`);
+  console.log(`result: ${path.join(outRoot, RESULT_FILE)}`);
   process.exitCode = failed ? 1 : 0;
 }
 

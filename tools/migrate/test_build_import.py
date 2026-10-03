@@ -188,6 +188,7 @@ class BuildImportTests(unittest.TestCase):
     def test_draft_maps_to_tuning_draft_body(self) -> None:
         (draft,) = self.bundle["tuning_drafts"]
         self.assertEqual(draft["identity_key"], "abc" + "0" * 61)
+        self.assertEqual(draft["legacy_analysis_id"], "legacy-analysis-1")
         body = draft["body"]
         self.assertEqual(body["goal"], "tire-life")
         self.assertEqual(body["general_note"], "Loose on exit after lap 20.")
@@ -202,6 +203,21 @@ class BuildImportTests(unittest.TestCase):
         self.assertEqual(body["legacy"]["rulesetId"], "nascar-oreilly-xfinity-2026s3-v1")
         for mapped in ("goal", "generalNote", "representativeRunIds", "feedback"):
             self.assertNotIn(mapped, body["legacy"])
+
+    def test_drafts_name_a_listed_legacy_analysis(self) -> None:
+        orphan = {key: value for key, value in DRAFT.items() if key != "representativeSession"}
+        write_json(self.root / "portable-settings" / "tuning-drafts" / ("D" * 64 + ".json"), orphan)
+        bundle, summary = build_import.build(self.root, 123456, "DESKTOP-SIM")
+        drafts = {draft["identity_key"]: draft for draft in bundle["tuning_drafts"]}
+        self.assertEqual(drafts["abc" + "0" * 61]["legacy_analysis_id"], "legacy-analysis-1")
+        self.assertIsNone(drafts["d" * 64]["legacy_analysis_id"])
+        listed = {entry["legacy_analysis_id"] for entry in bundle["legacy_analyses"]}
+        for draft in bundle["tuning_drafts"]:
+            self.assertIn("legacy_analysis_id", draft)
+            if draft["legacy_analysis_id"] is not None:
+                self.assertIn(draft["legacy_analysis_id"], listed)
+        self.assertEqual(summary["tuning_drafts_without_analysis"], 1)
+        self.assertEqual(self.summary["tuning_drafts_without_analysis"], 0)
 
     def test_turn_annotations(self) -> None:
         (annotation,) = self.bundle["turn_annotations"]

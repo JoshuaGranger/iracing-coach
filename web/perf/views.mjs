@@ -1,12 +1,13 @@
-// Renders Race, Runs, Sections and Traces from the synthetic fixture at desktop, tablet and phone sizes
+// Renders Race, Runs, Sections and Traces from the committed g2 fixture (or `--fixture synthetic`) at desktop, tablet and phone sizes
 // and checks structure, console errors, horizontal scroll and the 44 px phone targets. Screenshots go to
 // <repo>/target/W8/shots. Not part of the G2 gate: `node perf/views.mjs`.
 import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { buildHarness, outRoot, serve, VIEWPORTS } from "./harness-lib.mjs";
+import { buildHarness, outRoot, pageUrl, serve, VIEWPORTS } from "./harness-lib.mjs";
 
-const { distDir, fixture } = await buildHarness();
+const fixtureName = process.argv.includes("--fixture") ? process.argv[process.argv.indexOf("--fixture") + 1] : "g2";
+const { distDir, fixture } = await buildHarness(fixtureName);
 const { server, origin } = await serve(distDir, fixture);
 const browser = await chromium.launch();
 const shots = path.join(outRoot, "shots");
@@ -24,7 +25,7 @@ for (const [sizeName, viewport] of Object.entries(VIEWPORTS)) {
     const errors = [];
     page.on("pageerror", (error) => errors.push(String(error)));
     page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
-    await page.goto(`${origin}/?view=${view}`);
+    await page.goto(pageUrl(origin, fixture, view));
     const ready = { race: ".ri-dot", runs: ".ri-dot", sections: "[data-ri-chart]", traces: "[data-analysis-trace-path]" }[view];
     await page.waitForSelector(ready, { timeout: 30_000 });
     await page.waitForTimeout(400);

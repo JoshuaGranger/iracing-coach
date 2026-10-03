@@ -293,3 +293,71 @@ async fn the_real_import_tool_records_a_generated_legacy_archive() {
         .unwrap();
     assert_eq!(id, "exp-legacy-1");
 }
+
+#[tokio::test]
+async fn tuning_drafts_are_re_keyed_to_the_current_analysis_and_the_rest_are_parked() {
+    let env = Env::new().await;
+    ingest(&env, 9600).await;
+    env.settle().await;
+    let analysis_id: String = scalar(&env, "SELECT current_analysis_id FROM sessions");
+    let key = env
+        .get(&format!("/api/v1/analyses/{analysis_id}/tuning"))
+        .await
+        .json()["draft_identity_key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let mut b = bundle(vec![]);
+    b.as_object_mut().unwrap().remove("legacy_archive");
+    b["tuning_drafts"] = json!([
+        {"identity_key": "legacy-file-1", "legacy_analysis_id": "old-a",
+         "body": {"label": "first", "open_target_analysis_id": "old-a"}},
+        {"identity_key": "legacy-file-2", "legacy_analysis_id": "old-a",
+         "body": {"label": "second"}},
+        {"identity_key": "legacy-file-3", "legacy_analysis_id": "old-b",
+         "body": {"label": "unresolved"}},
+        {"identity_key": "legacy-file-4", "legacy_analysis_id": null,
+         "body": {"label": "no analysis"}},
+        {"identity_key": "legacy-file-5", "body": {"label": "absent"}},
+    ]);
+    let job = import_job(&env, b).await;
+    assert_eq!(job["state"], "succeeded", "{job}");
+    assert_eq!(job["result"]["tuning_drafts"], 1, "{job}");
+    assert_eq!(job["result"]["tuning_drafts_unresolved"], 4, "{job}");
+
+    // the first draft of the bundle is under the key GET .../tuning returns, target rewritten
+    let draft = env
+        .get(&format!("/api/v1/drivers/{CUSTOMER}/tuning-drafts/{key}"))
+        .await;
+    assert_eq!(draft.status, StatusCode::OK);
+    let draft = draft.json();
+    assert_eq!(draft["body"]["label"], "first");
+    assert_eq!(
+        draft["body"]["open_target_analysis_id"],
+        analysis_id.as_str()
+    );
+    assert_eq!(scalar::<i64>(&env, "SELECT COUNT(*) FROM tuning_drafts"), 1);
+
+    // the legacy key is never reused; the other four are kept verbatim
+    let legacy = env
+        .get(&format!(
+            "/api/v1/drivers/{CUSTOMER}/tuning-drafts/legacy-file-1"
+        ))
+        .await;
+    assert_eq!(legacy.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        scalar::<i64>(
+            &env,
+            "SELECT COUNT(*) FROM legacy_items WHERE kind = 'tuning_draft'"
+        ),
+        4
+    );
+    let parked: String = scalar(
+        &env,
+        "SELECT body_json FROM legacy_items WHERE kind = 'tuning_draft' AND source_path = 'tuning-drafts/legacy-file-2'",
+    );
+    let parked: Value = serde_json::from_str(&parked).unwrap();
+    assert_eq!(parked["body"]["label"], "second");
+    assert_eq!(parked["legacy_analysis_id"], "old-a");
+}
