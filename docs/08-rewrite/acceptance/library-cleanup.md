@@ -57,3 +57,7 @@ Recordings that agents made on the rig with the owner's iRacing account during t
 | 37 | `stockcars2 supra2019_vegas oval 2026-10-03 09-45-56.ibt` | 75,857,115 B | `937d4e306df5d86fd7a4c5ab2881f9d45e4157b32d453d74ec6efd8aa8ed968e` | G4, parked car (`g4-performance.md`) |
 
 Also kept: setup 10, `claude LV R CAM.sto`, whose garage observations come from the G4 session (the values of a real file the bot study made), and the bot-study recordings of 2026-09-25 to 2026-09-28 (Indianapolis Raceway Park, Las Vegas, Kansas), which are the owner's data gathering, not test entries.
+
+## 2026-10-03 (evening): the five rig-test sessions removed at the owner's word
+
+Joshua: "Remove them". Dry run first, then `POST /api/v1/admin/remove` with `dry_run false` for the five recordings listed above (sessions 18, 17, 8, 7 and 37; P3, P5, G3 and G4 parked-car and garage runs). All five applied, none blocked; one analysis, four jobs and one setup observation each were removed with them. Kept untouched: NAS raw files and manifests, the collector's journal, the worker's per-driver archive, user-authored rows. Server log: `/data/run/admin-removals.jsonl`.
