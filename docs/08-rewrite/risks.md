@@ -1,0 +1,48 @@
+# Rewrite risks, owner questions, scope
+
+## Top risks and the mitigation built into the plan
+
+| # | Risk | Evidence | Mitigation in the plan |
+|---|---|---|---|
+| R1 | LAN delivers 6 to 8 MB/s on every path (cause unknown) | P4 (b) | Nothing interactive depends on it: uploads run off track in the background, archiving is asynchronous, session-end-to-ready budget (2 min for 203 MB) already assumes it; migration planned at about 1.5 h. The ceiling stays Joshua's infrastructure item. |
+| R2 | NFS writes from the container may be refused (export squash, uid mapping untested) | infra D, P4 (d) | First mini-PC release in wave 1 runs the NAS write probe before anything depends on it; status shows `readonly`. If refused, it becomes an infrastructure item for the export rule, and the spool keeps working meanwhile. |
+| R3 | The Compose NFS volume mounts at container start, so the stack cannot start while the NAS is unreachable | infra B (a bad mount fails `compose up`) | Running stack tolerates NAS outages (archiver thread isolated, spool on NVMe, `soft` mount so a stuck call fails after about 45 s and cannot block shutdown or release recovery; plan review #11). Starting during an outage needs a host automount: owner question Q1. Until Q1 is answered v1 does not claim NAS-independent start. |
+| R4 | Python memory scales with file size (11.2 bytes per byte); the 2 GB recording would need about 22 GiB | P1, sim spike | Admission gate defers recordings over about 250 MB with a stated reason; worker `oom_score_adj 1000` protects the server; port phases 1-2 remove the Python float lists that are 85 % of the peak. |
+| R5 | The SPA cursor may not reach 55 fps at 6x (the same JS gave about 9 fps under both Blazor hosts) | P2 | G2 runs in wave 2, before the other screens are finished; the remedy is in the cursor loop; a failure after rework goes to Joshua with numbers. |
+| R6 | Rust session-info parsing diverges from Python's subset parser (driver identity, CarSetup values) | spike section 5 | W1 parity golden against Python on every private recording; analysis still runs in Python, which stays the source of truth for everything it outputs. |
+| R7 | Linux container output differs from the Windows oracle (Python version, newline, sort ties) | spike rows 11, 13; P1 ran 3.11 | Python pinned to 3.12 by digest; W6 tie-break fix; G1 includes byte parity apart from line endings. |
+| R8 | Untested garage cases (leave without Apply, Revert, new name, other cars, driving out) change capture semantics | P5 limits | G3 runs in wave 2 with the collector's dry-run build, before the setup library semantics are final. |
+| R9 | Live engine port drifts from the C# behaviour | live-stack 2.7 | Vectors converted from the C# tests and the conformance file; cue strings byte-checked against C# source. |
+| R10 | A recording deleted from `Documents\iRacing\telemetry` before upload is lost (no outbox copy, by design to keep sim disk writes at zero) | design choice | Uploads start as soon as the car leaves the track; startup scan catches up after collector downtime; the journal shows what is pending. |
+| R11 | A failed release restores Compose and image but not data | infra B | Additive migrations only, previous binary must run on the new schema, `pre-migrate-v<N>` copy, recovery point limited to SQLite and snapshots. |
+| R12 | Mini-PC pressure (swap full, Frigate, 67 C) | infra A | `mem_limit 4g` without swap, `cpus 2.0`, `cpu_shares 256`, worker `nice 10`, one analysis at a time; G1 re-measures HA and Frigate frame handling. |
+| R13 | Where legacy notes, saved Tests and plans live is unknown | sim spike section 3 | Inventory on copies in wave 1; anything without a v1 home is preserved verbatim as `legacy_items`. |
+| R14 | Clock skew between sim PC and mini PC breaks the 2 s quiet rule | spike row 18 | Server sets spool mtime to `min(source_mtime, now - 10 s)`. |
+| R15 | Eight agents in parallel drift on interfaces | D14 | Contracts first, generated types with drift checks, contract-only dependencies, Codex review of the protocol and ingest. |
+| R16 | Collector and server versions drift (no auto-update) | design | Protocol and table versions are checked on connect; status shows "Collector update needed"; W9 updates the collector through the remote tools (once the sim-PC pause is lifted). |
+| R17 | Cross-model disagreement on D2: Codex calls the P1 result undecidable; `prove/verdicts.md` and the owner ruling apply the written FAIL rule (staged Rust port) | P1: wall 13.01 s against 120 s, peak RSS 2.27 GiB against 3 GiB, HA p95 1.64 ms against a 100.87 ms limit, 0 failed; Frigate summed `detection_fps` -49.4 % and -31.8 % against +/-10 %, but the idle control kept only 25 % of windows within +/-10 % (range -29.3 % to +87.7 %); run1 is below the control's lowest window; swap activity unmeasured; no optimized-Python comparison exists | Decision unchanged (owner ruling B). The port is after v1 and gated phase by phase, so v1 does not depend on the disagreement. Taken to the owner as Q2. |
+| R18 | Cross-model disagreement on the D5 implementation: Codex calls P3 undecidable; `prove/verdicts.md` confirms Rust on footprint | P3: by the letter neither route passed (both BG -14.88 % against 2 %; stream on/off BG C# -2.08 %, Rust -1.05 % against 1 %); C# WPF 276 MB against 150 MB, Rust 8.6 MB; non-WPF C# about 31 to 35 MB measured only in emulation, never on the sim; the Rust prototype had no engine and the car was parked | Decision unchanged (Rust collector). G4 re-proves sim impact with the real engine on track. Taken to the owner as Q3. |
+| R19 | The `soft` NFS mount can return short or failed writes and reads | nfs(5) | Safe only with the archiver's hash-after-flush, rename commit and manifest-last protocol and hash-checked restaging; any other `/nas` writer would need the same. |
+| R20 | The conservative 1.5x factor for multi-recording groups defers reconnected races over about 170 MB total until G1 measures one | plan review #5; `workflow.py:1376-1500` keeps every decoded table while merging | G1 measures a two-recording group in wave 2 and the factor is set from it; deferred sessions are listed with their reason and re-queued by `admin/reanalyze`. |
+| R21 | The sim-PC pause blocks G3, G4, the collector install and D12 migration, so v1 cannot be accepted on the rig until Joshua lifts it | owner, 2026-10-02 evening | All sim steps are marked **[sim: blocked]** in `workstreams.md`; everything else proceeds against the `--replay` fixture path. |
+
+## Owner questions
+
+- **Q1. May the mini PC host get a systemd automount for the NAS `apps` export** (same pattern as `/mnt/nas-backups`, added in the g-house repository's `ops/host`), with the Coach stack bind-mounting it instead of a Compose NFS volume? Without it the stack cannot start while the NAS is unreachable (R3). It is a host change, outside D14's permission for the `iracing-coach` stack. Until answered, v1 uses the Compose volume.
+- **Q2. D2 basis (R17).** Codex Sol 6.1 judged P1 "undecidable": Python passed wall time, RSS and HA by wide margins, and the only failing criterion, Frigate `detection_fps`, is noisy in the idle control. The ruling stands as made; does Joshua want it kept as an owner directive (maximum performance) rather than presented as a measured necessity, or an optimized-Python comparison before wave 5?
+- **Q3. D5 basis (R18).** Codex judged P3 "undecidable" between Rust and a non-WPF C# collector (never measured on the sim). The Rust decision stands on footprint; does Joshua want a non-WPF C# measurement, or is G4 on track enough?
+- **Q4. Lift of the sim-PC pause (R21).** Required in writing before any [sim: blocked] step.
+
+Decided here rather than asked: Python pinned to 3.12 with `mem_limit 4g`; recordings over about 250 MB deferred until port phase 2; decode before kernels in the port (reason in `architecture.md` section 12); no outbox copy on the sim; Frigate `detection_fps` recorded but not a G1 criterion; the server deletes its own spool copies only after a hash-verified NAS copy exists; the old desktop app on the sim is left installed and not started; the NFS mount is `soft` (R19); v1 assigns each recording to one session group only (no multi-phase rows from one continuous recording; plan review #22).
+
+## Out of scope for v1
+
+- Everything in the parking lot: bulk `.sto` harvest and decryption; Plan, saved Tests, Test day, Replay, Details, Ask; crew-chief calls on the overlay. Their data is preserved (`legacy_items`, worker archive).
+- `.ircr2` live-replay capture (no on-track disk work).
+- Garage61 UI and sync: only the seam (token-file route, secret name `GARAGE61_TOKEN`) lands in v1.
+- AI keys and any provider integration (D10, later phase).
+- Authentication, TLS, `tailscale serve` HTTPS, service-worker offline mode (D7; the site is plain HTTP).
+- Collector auto-update and an installer framework.
+- One-PC mode and local analysis fallback (D1).
+- Uninstalling the retired desktop app from the sim PC, and the leftover empty `C:\192.168.1.82` folder on the dev PC (Joshua's chores).
+- Rust port phases (wave 5, after v1 acceptance).

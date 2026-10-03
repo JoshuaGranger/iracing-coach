@@ -1,0 +1,1951 @@
+openapi: 3.1.0
+info:
+  title: iRacing Coach server API
+  version: "1"
+  description: |
+    HTTP API used by the browser SPA and the collector's uploads, plus the JSON messages of the
+    collector WebSocket (`collector-protocol.md`) and the live WebSocket (`live-frame.md`).
+    Single source of truth for wire types (see README.md). No authentication (D7).
+    Conventions:
+    - IDs: `customer_id` (iRacing customer id, integer), `session_id` (integer), `analysis_id` (string),
+      `setup_id` (integer), `job_id` (integer), `sha256` (lowercase hex).
+    - Times are UTC ISO-8601. Nullable means "not measured / unknown", never zero.
+    - Mutable user-authored resources carry `version`; writes send `If-Match: <version>`; a stale
+      version returns 412 with the current resource.
+    - Every POST, PUT and DELETE from the browser outbox carries `Idempotency-Key: <uuid>` (the
+      client operation id, persisted with the queued write). The server stores the key with the
+      response status and body for 7 days (`request_log` in `db-schema.sql`); a retry with the same
+      key returns the stored response and performs nothing. A key reused with a different method or
+      path returns 422. Uploads are idempotent by `sha256` instead.
+    - Long or Python-backed work returns `202 JobRef`; progress arrives on `/api/v1/events`
+      (`job_state`) and the result at `GET /api/v1/jobs/{job_id}`.
+    - View payloads carry `ETag: "<analysis_id>-p<projection_version>"` and `Cache-Control: no-cache`.
+    - `x-max-bytes` on a response is a hard server-side bound; exceeding it is a server defect.
+    - Readers ignore and preserve unknown optional fields. Objects marked `x-source` pass a backend
+      subtree through unchanged; its shape is owned by the named Python contract or module.
+servers:
+  - url: http://192.168.1.81:8210
+  - url: http://minipc.tail4e6ca6.ts.net:8210
+
+tags:
+  - name: system
+  - name: library
+  - name: views
+  - name: setups
+  - name: tuning
+  - name: user-data
+  - name: jobs
+  - name: ingest
+  - name: live
+  - name: admin
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Liveness for the Compose healthcheck (DB open, migrations applied; independent of the NAS).
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/status:
+    get:
+      tags: [system]
+      summary: Server, NAS, queue and collector state.
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerStatus" }
+
+  /api/v1/events:
+    get:
+      tags: [system]
+      summary: Server-sent events. One stream per tab; `data:` is one ServerEvent JSON object; `event:` equals its `type`.
+      parameters:
+        - { name: customer_id, in: query, required: false, schema: { type: integer }, description: Limit driver-scoped events to one driver. }
+      responses:
+        "200":
+          description: text/event-stream of ServerEvent
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/ServerEvent" }
+
+  /api/v1/drivers:
+    get:
+      tags: [library]
+      summary: Drivers that have data (D7 landing). One driver -> the SPA opens that driver directly.
+      responses:
+        "200":
+          description: Drivers
+          x-max-bytes: 65536
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DriverList" }
+
+  /api/v1/drivers/{customer_id}:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [library]
+      responses:
+        "200":
+          description: Driver
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Driver" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/drivers/{customer_id}/sessions:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [library]
+      summary: Sessions library, newest first. Filtering is server-side; grouping into events uses `event_key`.
+      parameters:
+        - { name: type, in: query, schema: { type: string, enum: [all, race, qualify, practice, test] } }
+        - { name: q, in: query, schema: { type: string, maxLength: 120 }, description: Text over track, layout, car, series. }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Page of sessions
+          x-max-bytes: 524288
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionPage" }
+
+  /api/v1/drivers/{customer_id}/cars-and-tracks:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [setups]
+      summary: Cars and tracks seen in this driver's recordings (Find a baseline choices).
+      responses:
+        "200":
+          description: Options
+          x-max-bytes: 262144
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CarTrackOptions" }
+
+  /api/v1/sessions/{session_id}:
+    parameters: [{ $ref: "#/components/parameters/SessionId" }]
+    get:
+      tags: [library]
+      responses:
+        "200":
+          description: Session detail
+          x-max-bytes: 131072
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/sessions/{session_id}/analysis:
+    parameters: [{ $ref: "#/components/parameters/SessionId" }]
+    post:
+      tags: [library]
+      summary: Queue (re)analysis. Idempotent while one is queued or running for the same profile.
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/analyses/{analysis_id}/race:
+    parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
+    get:
+      tags: [views]
+      summary: Race view (overview, laps, timeline, pit stops, incidents, conditions).
+      responses:
+        "200":
+          description: Race view
+          x-max-bytes: 2097152
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RaceView" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ProjectionPending" }
+
+  /api/v1/analyses/{analysis_id}/runs:
+    parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
+    get:
+      tags: [views]
+      responses:
+        "200":
+          description: Runs view
+          x-max-bytes: 1048576
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunsView" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ProjectionPending" }
+
+  /api/v1/analyses/{analysis_id}/investigation:
+    parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
+    get:
+      tags: [views]
+      summary: Sections and comparisons (race_investigation, schema 2, projection sections-trials-v7).
+      responses:
+        "200":
+          description: Investigation view
+          x-max-bytes: 4194304
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvestigationView" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ProjectionPending" }
+
+  /api/v1/analyses/{analysis_id}/traces/catalog:
+    parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
+    get:
+      tags: [views]
+      summary: Laps, signals, bins and steering basis for the Traces workspace.
+      responses:
+        "200":
+          description: Trace catalog
+          x-max-bytes: 524288
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TraceCatalog" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ProjectionPending" }
+
+  /api/v1/analyses/{analysis_id}/traces:
+    parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
+    get:
+      tags: [views]
+      summary: |
+        160-bin lap traces as a columnar binary container (`application/vnd.coach.columns`):
+        bytes 0-3 "CCOL", u16 version 1, u16 reserved 0, u32 header length H, H bytes of UTF-8 JSON
+        `TraceBlobHeader`, zero padding to an 8-byte boundary, then for each channel in header order
+        a little-endian typed array of `laps.length x bins` values, lap-major, each array starting at
+        its `offset` (from the start of the data section, 8-byte aligned). Missing values are NaN
+        (floats) or the channel's `missing` sentinel. Compressed with gzip/br when the client accepts it.
+        Encoding rule: each channel copies one backend `lap_traces` point key (`TraceSignal.source_key`)
+        in the backend's unit. Non-integer values are `f64` (exact copy of the Python double); `i16`/`u8`
+        only for keys whose every value is an integer in range, with a `missing` sentinel outside the
+        observed range; null, absent and non-finite backend values are missing. W5 tests that decoding
+        every channel reproduces each backend value and its missingness exactly.
+      parameters:
+        - name: laps
+          in: query
+          description: Comma list of lap numbers or ranges (e.g. `1-40,52`); default all laps.
+          schema: { type: string, maxLength: 2048 }
+        - name: channels
+          in: query
+          description: Comma list of signal ids from the catalog; default the catalog's default set.
+          schema: { type: string, maxLength: 2048 }
+      responses:
+        "200":
+          description: Columnar traces
+          x-max-bytes: 16777216
+          headers:
+            X-Coach-Trace-Laps: { schema: { type: integer }, description: Number of laps in the body. }
+          content:
+            application/vnd.coach.columns:
+              schema: { type: string, format: binary }
+              x-header-schema: { $ref: "#/components/schemas/TraceBlobHeader" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ProjectionPending" }
+        "413":
+          description: Selection exceeds 16 MiB; narrow `laps` or `channels`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/analyses/{analysis_id}/track:
+    parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
+    get:
+      tags: [views]
+      summary: Track geometry projected to local metres (map and cursor).
+      responses:
+        "200":
+          description: Track geometry
+          x-max-bytes: 524288
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrackGeometry" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ProjectionPending" }
+
+  /api/v1/drivers/{customer_id}/setups:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [setups]
+      summary: Setup library (D9). Every setup seen in any recording, garage capture or export, plus `.sto` files with values unknown.
+      parameters:
+        - { name: car_path, in: query, schema: { type: string, maxLength: 160 } }
+        - { name: q, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: raced_only, in: query, schema: { type: boolean, default: false } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Page of setups
+          x-max-bytes: 1048576
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupPage" }
+
+  /api/v1/setups/{setup_id}:
+    parameters:
+      - { name: setup_id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [setups]
+      responses:
+        "200":
+          description: Setup detail
+          x-max-bytes: 524288
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/setups/compare:
+    post:
+      tags: [setups]
+      summary: Compare two setups of the same car (Python `compare_iracing_setups`). Answers inline when done within 10 s, else 202.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupCompareRequest" }
+      responses:
+        "200":
+          description: Comparison
+          x-max-bytes: 524288
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupCompareResult" }
+        "202": { $ref: "#/components/responses/Accepted" }
+        "422":
+          description: Different cars or values unknown
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/drivers/{customer_id}/baseline:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    post:
+      tags: [setups]
+      summary: Find a baseline (Python `build_open_setup_package`). Result is `contracts/setup-package-v1.schema.json`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BaselineRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+
+  /api/v1/analyses/{analysis_id}/tuning:
+    parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
+    get:
+      tags: [tuning]
+      summary: Progressive Tuning context for one analysis (eligibility, exact identity, turn map, representative runs).
+      responses:
+        "200":
+          description: Tuning context
+          x-max-bytes: 1048576
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TuningContext" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/ProjectionPending" }
+
+  /api/v1/analyses/{analysis_id}/tuning/recommendations:
+    parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
+    post:
+      tags: [tuning]
+      summary: Structured recommendation (Python `recommend_structured_open_setup_tuning`, no AI). Result is `contracts/tuning-recommendation-v1.schema.json`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TuningRecommendRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+
+  /api/v1/drivers/{customer_id}/tuning/experiments/{experiment_id}/outcome:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: experiment_id, in: path, required: true, schema: { type: string, maxLength: 128 } }
+    post:
+      tags: [tuning]
+      summary: Record an experiment outcome (Python `record_open_setup_feedback`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TuningOutcomeRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+
+  /api/v1/drivers/{customer_id}/tuning/history:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [tuning]
+      summary: Tuning history for an analysis context (Python `iracing_setup_history`).
+      parameters:
+        - { name: analysis_id, in: query, required: true, schema: { type: string } }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+
+  /api/v1/drivers/{customer_id}/tuning-drafts/{identity_key}:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: identity_key, in: path, required: true, schema: { type: string, maxLength: 256 } }
+    get:
+      tags: [user-data]
+      responses:
+        "200":
+          description: Draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TuningDraft" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [user-data]
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TuningDraftWrite" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TuningDraft" }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+
+  /api/v1/drivers/{customer_id}/turn-annotations/{track_config_key}/{map_identity}:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: track_config_key, in: path, required: true, schema: { type: string, maxLength: 256 } }
+      - { name: map_identity, in: path, required: true, schema: { type: string, maxLength: 128 } }
+    get:
+      tags: [user-data]
+      responses:
+        "200":
+          description: Turn-name corrections
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TurnAnnotations" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [user-data]
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TurnAnnotationsWrite" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TurnAnnotations" }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+
+  /api/v1/drivers/{customer_id}/notes:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [user-data]
+      parameters:
+        - { name: subject_kind, in: query, required: true, schema: { $ref: "#/components/schemas/NoteSubjectKind" } }
+        - { name: subject_id, in: query, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200":
+          description: Notes for one subject
+          x-max-bytes: 1048576
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notes]
+                properties:
+                  notes: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/Note" } }
+    post:
+      tags: [user-data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+
+  /api/v1/notes/{note_id}:
+    parameters:
+      - { name: note_id, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [user-data]
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteUpdate" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+    delete:
+      tags: [user-data]
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      responses:
+        "204": { description: Deleted by the user }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+
+  /api/v1/drivers/{customer_id}/trace-layouts:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [user-data]
+      responses:
+        "200":
+          description: Named trace layouts (Default is built in and immutable)
+          x-max-bytes: 1048576
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [layouts]
+                properties:
+                  layouts: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/TraceLayout" } }
+
+  /api/v1/drivers/{customer_id}/trace-layouts/{layout_id}:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { $ref: "#/components/parameters/LayoutId" }
+    put:
+      tags: [user-data]
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TraceLayoutWrite" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TraceLayout" }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+    delete:
+      tags: [user-data]
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      responses:
+        "204": { description: Deleted by the user }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+
+  /api/v1/drivers/{customer_id}/live-layouts:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [user-data]
+      responses:
+        "200":
+          description: Live dashboards (Default is built in and immutable) and the active one
+          x-max-bytes: 1048576
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LiveLayoutList" }
+
+  /api/v1/drivers/{customer_id}/live-layouts/{layout_id}:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { $ref: "#/components/parameters/LayoutId" }
+    put:
+      tags: [user-data]
+      summary: Save a live layout; if active, the server pushes it to the rig (`layout.set`).
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LiveLayoutWrite" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LiveLayout" }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+    delete:
+      tags: [user-data]
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      responses:
+        "204": { description: Deleted by the user }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+
+  /api/v1/drivers/{customer_id}/prefs:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [user-data]
+      responses:
+        "200":
+          description: Preferences, active live layout, last investigation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DriverPrefs" }
+    put:
+      tags: [user-data]
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DriverPrefsWrite" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DriverPrefs" }
+        "412": { $ref: "#/components/responses/VersionConflict" }
+
+  /api/v1/jobs:
+    get:
+      tags: [jobs]
+      parameters:
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/JobState" } }
+        - { name: customer_id, in: query, schema: { type: integer } }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Jobs, newest first
+          x-max-bytes: 524288
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs: { type: array, items: { $ref: "#/components/schemas/Job" } }
+
+  /api/v1/jobs/{job_id}:
+    parameters: [{ $ref: "#/components/parameters/JobId" }]
+    get:
+      tags: [jobs]
+      responses:
+        "200":
+          description: Job with result when finished
+          x-max-bytes: 4194304
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/jobs/{job_id}/cancel:
+    parameters: [{ $ref: "#/components/parameters/JobId" }]
+    post:
+      tags: [jobs]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "409":
+          description: Already finished
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/uploads:
+    post:
+      tags: [ingest]
+      summary: Create or resume an upload; idempotent by sha256 (collector-protocol.md section 4).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadCreate" }
+      responses:
+        "200":
+          description: Existing upload (resume) or already received
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadState" }
+        "201":
+          description: New upload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadState" }
+        "413": { description: Larger than 4 GiB }
+        "503":
+          description: Spool full; retry after `Retry-After` seconds
+          headers:
+            Retry-After: { schema: { type: integer } }
+
+  /api/v1/uploads/{sha256}:
+    parameters: [{ $ref: "#/components/parameters/Sha256" }]
+    head:
+      tags: [ingest]
+      responses:
+        "200":
+          description: Upload known
+          headers:
+            Upload-Offset: { schema: { type: integer } }
+            Upload-State: { schema: { $ref: "#/components/schemas/UploadStateName" } }
+        "404": { description: Unknown upload }
+    put:
+      tags: [ingest]
+      summary: Append one chunk (<= 8 MiB) at the durable offset. The completing chunk triggers hash verification.
+      parameters:
+        - { name: Content-Range, in: header, required: true, schema: { type: string, pattern: "^bytes [0-9]+-[0-9]+/[0-9]+$" } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary, maxLength: 8388608 }
+      responses:
+        "200":
+          description: Chunk durable (state open) or file verified (state verified)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadState" }
+        "409":
+          description: Offset mismatch; continue from `offset`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadState" }
+        "422":
+          description: Whole-file hash mismatch; the partial file is discarded; restart from 0
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/live/channels:
+    get:
+      tags: [live]
+      summary: The live channel, cue and tile table the server was built with (`live-channels.json`).
+      responses:
+        "200":
+          description: Table
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true, x-source: docs/08-rewrite/contracts/live-channels.json }
+
+  /ws/live/{customer_id}:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: rate, in: query, schema: { type: integer, enum: [1, 10, 30, 60], default: 30 } }
+    get:
+      tags: [live]
+      summary: WebSocket upgrade. First text message LiveHello, then backlog and live binary frames (live-frame.md). Counts as a viewer.
+      x-websocket:
+        server-text: { $ref: "#/components/schemas/LiveHello" }
+        client-text: { $ref: "#/components/schemas/LiveRateChange" }
+        server-binary: live-frame.md
+      responses:
+        "101": { description: Switching protocols }
+
+  /ws/collector:
+    get:
+      tags: [live]
+      summary: Collector WebSocket, subprotocol `coach-collector.1` (collector-protocol.md).
+      x-websocket:
+        client-text: { $ref: "#/components/schemas/CollectorClientMessage" }
+        server-text: { $ref: "#/components/schemas/CollectorServerMessage" }
+        client-binary: live-frame.md
+      responses:
+        "101": { description: Switching protocols }
+
+  /api/v1/admin/import:
+    post:
+      tags: [admin]
+      summary: One-time import of legacy user-authored data (D12). Idempotent by bundle hash.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportBundle" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "200":
+          description: Bundle already imported
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobRef" }
+
+  /api/v1/admin/reanalyze:
+    post:
+      tags: [admin]
+      summary: Queue analysis of every session (optionally one driver) whose current analysis is missing or older than the worker's profile.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_id: { type: [integer, "null"] }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+
+  /api/v1/admin/snapshot:
+    post:
+      tags: [admin]
+      summary: Take a user-data snapshot now (local and NAS).
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+
+components:
+  parameters:
+    CustomerId: { name: customer_id, in: path, required: true, schema: { type: integer } }
+    SessionId: { name: session_id, in: path, required: true, schema: { type: integer } }
+    AnalysisId: { name: analysis_id, in: path, required: true, schema: { type: string, maxLength: 64 } }
+    JobId: { name: job_id, in: path, required: true, schema: { type: integer } }
+    LayoutId: { name: layout_id, in: path, required: true, schema: { type: string, maxLength: 64, pattern: "^[a-z0-9-]+$" } }
+    Sha256: { name: sha256, in: path, required: true, schema: { type: string, pattern: "^[0-9a-f]{64}$" } }
+    Cursor: { name: cursor, in: query, schema: { type: string, maxLength: 256 } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+    IfMatch: { name: If-Match, in: header, required: false, schema: { type: string }, description: "Current `version`; required to update or delete an existing resource." }
+
+  responses:
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Accepted:
+      description: Job queued (or the existing equivalent job)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/JobRef" }
+    ProjectionPending:
+      description: Analysis exists but its view files are being (re)built; retry on `analysis_ready`
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    VersionConflict:
+      description: Stale `If-Match`; body is the current resource under `current`
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, current]
+            properties:
+              error: { const: version_conflict }
+              current: { type: object, additionalProperties: true }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string, description: "Stable code, e.g. not_found, invalid_request, hash_mismatch, projection_pending, exceeds_memory_budget" }
+        message: { type: string }
+        details: { type: [object, "null"], additionalProperties: true }
+
+    Health:
+      type: object
+      required: [status, server_version, schema_version]
+      properties:
+        status: { const: ok }
+        server_version: { type: string }
+        schema_version: { type: integer }
+
+    NasState:
+      type: string
+      enum: [ok, readonly, unreachable, stalled]
+
+    ServerStatus:
+      type: object
+      required: [server_version, api_version, collector_protocol, live_table_version, projection_version, nas, spool, queue, collectors, disk_free_bytes]
+      properties:
+        server_version: { type: string }
+        api_version: { const: 1 }
+        collector_protocol: { type: integer }
+        live_table_version: { type: integer }
+        projection_version: { type: integer }
+        worker_profile_version: { type: [string, "null"] }
+        python_version: { type: [string, "null"] }
+        nas:
+          type: object
+          required: [state, pending_archive]
+          properties:
+            state: { $ref: "#/components/schemas/NasState" }
+            last_ok_at: { type: [string, "null"], format: date-time }
+            pending_archive: { type: integer }
+        spool:
+          type: object
+          required: [bytes, files, limit_bytes]
+          properties:
+            bytes: { type: integer }
+            files: { type: integer }
+            limit_bytes: { type: integer }
+        queue:
+          type: object
+          required: [analysis, light, deferred]
+          properties:
+            analysis: { type: integer }
+            light: { type: integer }
+            deferred: { type: integer }
+        collectors: { type: array, items: { $ref: "#/components/schemas/CollectorPresence" } }
+        disk_free_bytes: { type: integer }
+
+    CollectorPresence:
+      type: object
+      required: [collector_id, machine, collector_version, protocol, compatible, online, last_seen_at, viewers]
+      properties:
+        collector_id: { type: string, format: uuid }
+        machine: { type: string }
+        collector_version: { type: string }
+        protocol: { type: integer }
+        compatible: { type: boolean }
+        online: { type: boolean }
+        last_seen_at: { type: string, format: date-time }
+        status: { oneOf: [{ $ref: "#/components/schemas/CollectorStatusBody" }, { type: "null" }] }
+        viewers: { type: integer }
+
+    Driver:
+      type: object
+      required: [customer_id, name, session_count, live]
+      properties:
+        customer_id: { type: integer }
+        name: { type: string }
+        irating: { type: [integer, "null"] }
+        session_count: { type: integer }
+        last_session_at: { type: [string, "null"], format: date-time }
+        live: { type: boolean, description: "A connected collector reports this driver in a session (D5)." }
+
+    DriverList:
+      type: object
+      required: [drivers]
+      properties:
+        drivers: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/Driver" } }
+
+    AnalysisState:
+      type: string
+      enum: [none, queued, running, ready, failed, deferred]
+
+    SessionOverview:
+      type: object
+      description: Library row figures (from discovery and the current analysis). Null = not measured.
+      additionalProperties: true
+      properties:
+        starting_position: { type: [integer, "null"] }
+        final_position: { type: [integer, "null"] }
+        recorded_laps: { type: [integer, "null"] }
+        green_laps_estimated: { type: [number, "null"] }
+        caution_laps_estimated: { type: [number, "null"] }
+        pit_stops_detected: { type: [integer, "null"] }
+        runs_detected: { type: [integer, "null"] }
+        longest_green_run: { type: [integer, "null"] }
+        pace_slope_s_per_lap: { type: [number, "null"] }
+        pace_consistency_percent: { type: [number, "null"] }
+        best_clean_lap_s: { type: [number, "null"] }
+        fuel_used_gal: { type: [number, "null"] }
+
+    SessionSummary:
+      type: object
+      required: [session_id, customer_id, group_key, event_key, recording_count, analysis_state, overview]
+      properties:
+        session_id: { type: integer }
+        customer_id: { type: integer }
+        group_key: { type: string }
+        event_key: { type: string, description: "Groups phases of one event: 'subsession:<id>' or 'offline:<recording sha>'." }
+        session_type: { type: [string, "null"] }
+        track: { type: [string, "null"] }
+        track_config: { type: [string, "null"] }
+        car_path: { type: [string, "null"] }
+        car_name: { type: [string, "null"] }
+        series_name: { type: [string, "null"] }
+        season_name: { type: [string, "null"] }
+        subsession_id: { type: [integer, "null"] }
+        sim_session_num: { type: [integer, "null"] }
+        start_time_utc: { type: [string, "null"], format: date-time }
+        recording_count: { type: integer }
+        analysis_state: { $ref: "#/components/schemas/AnalysisState" }
+        analysis_reason: { type: [string, "null"] }
+        analysis_id: { type: [string, "null"] }
+        overview: { $ref: "#/components/schemas/SessionOverview" }
+
+    SessionPage:
+      type: object
+      required: [sessions]
+      properties:
+        sessions: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/SessionSummary" } }
+        next_cursor: { type: [string, "null"] }
+
+    RecordingSummary:
+      type: object
+      required: [sha256, size, file_name, ingest_state, nas_state]
+      properties:
+        sha256: { type: string }
+        size: { type: integer }
+        file_name: { type: string }
+        start_time_utc: { type: [string, "null"], format: date-time }
+        ingest_state: { type: string, enum: [verified, parsed, discovered, failed] }
+        nas_state: { type: string, enum: [pending, archived, failed] }
+
+    AnalysisSummary:
+      type: object
+      required: [analysis_id, created_at, profile_version, projection_state, current]
+      properties:
+        analysis_id: { type: string }
+        created_at: { type: string, format: date-time }
+        profile_version: { type: string }
+        lap_count: { type: [integer, "null"] }
+        projection_version: { type: [integer, "null"] }
+        projection_state: { type: string, enum: [pending, ready, failed] }
+        current: { type: boolean }
+
+    SessionDetail:
+      type: object
+      required: [session, recordings, analyses, setup_ids, notes_count]
+      properties:
+        session: { $ref: "#/components/schemas/SessionSummary" }
+        recordings: { type: array, items: { $ref: "#/components/schemas/RecordingSummary" } }
+        analyses: { type: array, items: { $ref: "#/components/schemas/AnalysisSummary" } }
+        setup_ids: { type: array, items: { type: integer }, description: Setups observed in this session's recordings. }
+        notes_count: { type: integer }
+        event_sessions:
+          type: array
+          description: Other phases of the same event (phase switch).
+          items:
+            type: object
+            required: [session_id, session_type]
+            properties:
+              session_id: { type: integer }
+              session_type: { type: [string, "null"] }
+
+    ViewEnvelope:
+      type: object
+      required: [analysis_id, projection_version, schema_version, profile_version]
+      properties:
+        analysis_id: { type: string }
+        projection_version: { type: integer }
+        schema_version: { type: integer }
+        profile_version: { type: string }
+
+    Lap:
+      type: object
+      description: One recorded lap (backend `laps[]` projected; unknown backend fields preserved).
+      additionalProperties: true
+      required: [lap]
+      properties:
+        lap: { type: integer }
+        lap_time_s: { type: [number, "null"] }
+        clean: { type: [boolean, "null"] }
+        green: { type: [boolean, "null"] }
+        caution: { type: [boolean, "null"] }
+        pit_in: { type: [boolean, "null"] }
+        pit_out: { type: [boolean, "null"] }
+        run_number: { type: [integer, "null"] }
+        run_age_laps: { type: [number, "null"], description: "Accumulated green exposure in the run." }
+        incident_count: { type: [integer, "null"] }
+
+    RaceView:
+      allOf:
+        - { $ref: "#/components/schemas/ViewEnvelope" }
+        - type: object
+          required: [identity, race_summary, laps]
+          properties:
+            identity: { type: object, additionalProperties: true, x-source: "analysis_view.identity" }
+            race_summary: { type: object, additionalProperties: true, x-source: "analysis_view.race_summary" }
+            race_grades: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.race_grades" }
+            laps: { type: array, maxItems: 2000, items: { $ref: "#/components/schemas/Lap" } }
+            strategy: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.strategy (pit stops, timeline)" }
+            damage_repair: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.damage_repair (contracts/damage-repair-v1.schema.json)" }
+            field_pace: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.field_pace" }
+            conditions: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.conditions" }
+            data_quality: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.data_quality" }
+
+    RunsView:
+      allOf:
+        - { $ref: "#/components/schemas/ViewEnvelope" }
+        - type: object
+          required: [runs]
+          properties:
+            runs:
+              type: array
+              maxItems: 200
+              description: "Observed trend segments and screened fit stay distinct (AGENTS.md)."
+              items: { type: object, additionalProperties: true, x-source: "analysis_view.runs[]" }
+            corner_tire_age: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.corner_tire_age" }
+            tire_learning: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.tire_learning" }
+
+    InvestigationView:
+      allOf:
+        - { $ref: "#/components/schemas/ViewEnvelope" }
+        - type: object
+          required: [race_investigation]
+          properties:
+            race_investigation:
+              type: object
+              additionalProperties: true
+              x-source: "analysis_view.race_investigation (race_investigation.py schema 2, projection sections-trials-v7; test-data/race-investigation.json)"
+
+    SteeringBasis:
+      type: object
+      description: "TD-037: road-wheel steering when the ratio is known; never guessed."
+      additionalProperties: true
+      required: [basis]
+      properties:
+        basis: { type: string, enum: [road_wheel, steering_wheel, unknown] }
+        steering_ratio: { type: [number, "null"] }
+        digits: { type: [integer, "null"] }
+
+    TraceSignal:
+      type: object
+      required: [id, source_key, label, unit, dtype]
+      properties:
+        id: { type: string, description: "Stable signal id used by layouts and the cursor (e.g. speed, throttle, steering)." }
+        source_key: { type: string, description: "Backend analysis_view.lap_traces point key copied into this channel (e.g. speed_mph)." }
+        label: { type: string }
+        short_label: { type: [string, "null"] }
+        unit: { type: string }
+        digits: { type: [integer, "null"] }
+        category: { type: [string, "null"] }
+        minimum: { type: [number, "null"] }
+        maximum: { type: [number, "null"] }
+        dtype: { type: string, enum: [f64, i16, u8] }
+        default: { type: boolean, description: In the default channel set. }
+
+    TraceLap:
+      type: object
+      required: [lap]
+      additionalProperties: true
+      properties:
+        lap: { type: integer }
+        lap_time_s: { type: [number, "null"] }
+        clean: { type: [boolean, "null"] }
+        green: { type: [boolean, "null"] }
+        run_number: { type: [integer, "null"] }
+        run_age_laps: { type: [number, "null"] }
+        fastest: { type: boolean }
+        conditions: { type: [object, "null"], additionalProperties: true }
+
+    TraceCatalog:
+      allOf:
+        - { $ref: "#/components/schemas/ViewEnvelope" }
+        - type: object
+          required: [bins_per_lap, laps, signals, steering_basis, budgets]
+          properties:
+            bins_per_lap: { type: integer, description: "160 today (about 0.6 % of a lap)." }
+            laps: { type: array, maxItems: 2000, items: { $ref: "#/components/schemas/TraceLap" } }
+            signals: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/TraceSignal" } }
+            steering_basis: { $ref: "#/components/schemas/SteeringBasis" }
+            budgets:
+              type: object
+              description: "Rendering budgets single-sourced here (AnalysisTrackMapGeometry.cs:132-146)."
+              required: [vertex_budget_per_signal, min_points_per_trace, max_color_groups, cursor_detail_traces, max_trace_rows]
+              properties:
+                vertex_budget_per_signal: { const: 48000 }
+                min_points_per_trace: { const: 48 }
+                max_color_groups: { const: 20 }
+                cursor_detail_traces: { const: 24 }
+                max_trace_rows: { const: 10 }
+
+    TraceBlobHeader:
+      type: object
+      required: [format, version, analysis_id, projection_version, bins, laps, channels]
+      properties:
+        format: { const: CCOL }
+        version: { const: 1 }
+        analysis_id: { type: string }
+        projection_version: { type: integer }
+        bins: { type: integer }
+        laps: { type: array, items: { type: integer } }
+        channels:
+          type: array
+          items:
+            type: object
+            required: [id, dtype, offset, byte_length]
+            properties:
+              id: { type: string }
+              dtype: { type: string, enum: [f64, i16, u8] }
+              offset: { type: integer }
+              byte_length: { type: integer }
+              missing: { type: [integer, "null"], description: "Sentinel for integer dtypes; floats use NaN." }
+
+    PathSeries:
+      type: object
+      required: [pct, x, y]
+      properties:
+        pct: { type: array, items: { type: number } }
+        x: { type: array, items: { type: number } }
+        y: { type: array, items: { type: number } }
+
+    TrackGeometry:
+      allOf:
+        - { $ref: "#/components/schemas/ViewEnvelope" }
+        - type: object
+          required: [coordinate_space, main_path, provenance]
+          properties:
+            coordinate_space: { const: local_m }
+            main_path: { $ref: "#/components/schemas/PathSeries" }
+            pit_lane: { oneOf: [{ $ref: "#/components/schemas/PathSeries" }, { type: "null" }] }
+            pit_entry: { oneOf: [{ $ref: "#/components/schemas/PathSeries" }, { type: "null" }] }
+            pit_exit: { oneOf: [{ $ref: "#/components/schemas/PathSeries" }, { type: "null" }] }
+            start_finish: { type: [object, "null"], additionalProperties: true }
+            provenance: { type: object, additionalProperties: true, x-source: "analysis_view.track_geometry.provenance" }
+
+    CarTrackOptions:
+      type: object
+      required: [cars, tracks]
+      properties:
+        cars:
+          type: array
+          items:
+            type: object
+            required: [car_path]
+            properties:
+              car_path: { type: string }
+              car_name: { type: [string, "null"] }
+        tracks:
+          type: array
+          items:
+            type: object
+            required: [track]
+            properties:
+              track: { type: string }
+              track_config: { type: [string, "null"] }
+
+    SetupSource:
+      type: string
+      enum: [recording, garage_snapshot, garage_commit, htm_export]
+
+    SetupFileEntry:
+      type: object
+      required: [sha256, car_folder, relative_path, format, present]
+      properties:
+        sha256: { type: string }
+        car_folder: { type: string }
+        relative_path: { type: string }
+        format: { type: string, enum: [sto, htm] }
+        present: { type: boolean }
+        linked_setup_id: { type: [integer, "null"], description: "Null = values unknown (encrypted .sto, never seen unmodified). Set only from an observation with is_modified = false (collector-protocol.md section 8)." }
+
+    SetupSummary:
+      type: object
+      required: [setup_id, customer_id, car_path, names, sources, observation_count, raced, first_seen_at, last_seen_at]
+      properties:
+        setup_id: { type: integer }
+        customer_id: { type: integer }
+        car_path: { type: string }
+        car_name: { type: [string, "null"] }
+        names: { type: array, items: { type: string }, description: "Known .sto names linked to these values." }
+        sto_files: { type: array, items: { $ref: "#/components/schemas/SetupFileEntry" } }
+        sources: { type: array, items: { $ref: "#/components/schemas/SetupSource" } }
+        observation_count: { type: integer }
+        raced: { type: boolean, description: "Seen in a Race session recording." }
+        first_seen_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+
+    SetupPage:
+      type: object
+      required: [setups, unlinked_files]
+      properties:
+        setups: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/SetupSummary" } }
+        unlinked_files: { type: array, maxItems: 2000, items: { $ref: "#/components/schemas/SetupFileEntry" } }
+        next_cursor: { type: [string, "null"] }
+
+    SetupObservation:
+      type: object
+      required: [source, observed_at]
+      properties:
+        source: { $ref: "#/components/schemas/SetupSource" }
+        observed_at: { type: string, format: date-time }
+        setup_name: { type: [string, "null"] }
+        sto_sha256: { type: [string, "null"] }
+        is_modified: { type: [boolean, "null"] }
+        load_type: { type: [string, "null"] }
+        session_id: { type: [integer, "null"] }
+        visit_id: { type: [string, "null"] }
+
+    SetupDetail:
+      type: object
+      required: [setup, values, identity_excluded_keys, observations]
+      properties:
+        setup: { $ref: "#/components/schemas/SetupSummary" }
+        values:
+          type: object
+          description: CarSetup leaf key (e.g. Chassis.LeftFront.Camber) to the published string.
+          maxProperties: 4096
+          additionalProperties: { type: string }
+        identity_excluded_keys: { type: array, items: { type: string }, description: "Keys excluded from identity (setup-keys.json)." }
+        observations: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/SetupObservation" } }
+
+    SetupCompareRequest:
+      type: object
+      required: [left_setup_id, right_setup_id]
+      properties:
+        left_setup_id: { type: integer }
+        right_setup_id: { type: integer }
+
+    SetupCompareRow:
+      type: object
+      required: [key, status]
+      properties:
+        key: { type: string }
+        label: { type: [string, "null"] }
+        left: { type: [string, "null"] }
+        right: { type: [string, "null"] }
+        status: { type: string, enum: [changed, unknown, identical] }
+        readout: { type: boolean, description: "Derived readout, not a setting." }
+
+    SetupCompareResult:
+      type: object
+      required: [rows, identical_count]
+      properties:
+        rows: { type: array, maxItems: 4096, items: { $ref: "#/components/schemas/SetupCompareRow" } }
+        identical_count: { type: integer }
+        backend: { type: object, additionalProperties: true, x-source: "compare_iracing_setups result" }
+
+    BaselineRequest:
+      type: object
+      required: [season, car, track]
+      properties:
+        season: { type: string, maxLength: 32 }
+        car: { type: string, maxLength: 160 }
+        track: { type: string, maxLength: 160 }
+        analysis_id: { type: [string, "null"] }
+        track_characteristics: { type: [string, "null"], maxLength: 4000 }
+
+    TuningContext:
+      type: object
+      required: [analysis_id, eligible, reasons, identity, map, draft_identity_key]
+      properties:
+        analysis_id: { type: string }
+        eligible: { type: boolean }
+        reasons: { type: array, items: { type: string } }
+        identity: { type: object, additionalProperties: true, description: "Exact session identity (TuningSessionIdentity, includes source sha256)." }
+        map: { type: object, additionalProperties: true, description: "Turn map (TuningMapView) with official-turn provenance." }
+        representative_runs: { type: array, items: { type: object, additionalProperties: true } }
+        open_targets: { type: array, items: { type: object, additionalProperties: true }, description: "Compatible open-setup target analyses." }
+        draft_identity_key: { type: string }
+
+    TuningDraftWrite:
+      type: object
+      required: [body]
+      properties:
+        body: { type: object, additionalProperties: true, description: "ProgressiveTuningDraft: feedback items, goal, note, representative run ids, turn corrections." }
+
+    TuningDraft:
+      allOf:
+        - { $ref: "#/components/schemas/TuningDraftWrite" }
+        - type: object
+          required: [identity_key, version, updated_at]
+          properties:
+            identity_key: { type: string }
+            version: { type: integer }
+            updated_at: { type: string, format: date-time }
+
+    TurnAnnotationsWrite:
+      type: object
+      required: [body]
+      properties:
+        body: { type: object, additionalProperties: true }
+
+    TurnAnnotations:
+      allOf:
+        - { $ref: "#/components/schemas/TurnAnnotationsWrite" }
+        - type: object
+          required: [track_config_key, map_identity, version, updated_at]
+          properties:
+            track_config_key: { type: string }
+            map_identity: { type: string }
+            version: { type: integer }
+            updated_at: { type: string, format: date-time }
+
+    TuningRecommendRequest:
+      type: object
+      required: [feedback, map_identity]
+      properties:
+        open_target_analysis_id: { type: [string, "null"] }
+        feedback: { type: array, maxItems: 100, items: { type: object, additionalProperties: true } }
+        representative_run_ids: { type: array, maxItems: 32, items: { type: string } }
+        map_identity: { type: object, additionalProperties: true }
+        ruleset_id: { type: [string, "null"] }
+        goal: { type: [string, "null"], maxLength: 2000 }
+        generic_note: { type: [string, "null"], maxLength: 4000 }
+        maximum_changes: { const: 1 }
+
+    TuningOutcomeRequest:
+      type: object
+      required: [outcome, notes]
+      properties:
+        outcome: { type: string, enum: [improved, worse, no-change, inconclusive] }
+        notes: { type: string, maxLength: 8000 }
+        result_analysis_id: { type: [string, "null"] }
+
+    NoteSubjectKind:
+      type: string
+      enum: [session, setup, analysis]
+
+    NoteCreate:
+      type: object
+      required: [subject_kind, subject_id, body]
+      properties:
+        subject_kind: { $ref: "#/components/schemas/NoteSubjectKind" }
+        subject_id: { type: string, maxLength: 128 }
+        body: { type: string, maxLength: 16384 }
+
+    NoteUpdate:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, maxLength: 16384 }
+
+    Note:
+      allOf:
+        - { $ref: "#/components/schemas/NoteCreate" }
+        - type: object
+          required: [note_id, customer_id, version, created_at, updated_at]
+          properties:
+            note_id: { type: integer }
+            customer_id: { type: integer }
+            version: { type: integer }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+
+    TraceLayoutWrite:
+      type: object
+      required: [name, body]
+      properties:
+        name: { type: string, maxLength: 80 }
+        body:
+          type: object
+          description: "Up to 10 rows, up to 2 signals per row (AnalysisTraceLayout)."
+          required: [rows]
+          properties:
+            rows:
+              type: array
+              maxItems: 10
+              items:
+                type: object
+                required: [row_id, signals]
+                properties:
+                  row_id: { type: string }
+                  label: { type: [string, "null"] }
+                  signals: { type: array, minItems: 1, maxItems: 2, items: { type: string } }
+
+    TraceLayout:
+      allOf:
+        - { $ref: "#/components/schemas/TraceLayoutWrite" }
+        - type: object
+          required: [layout_id, version, builtin]
+          properties:
+            layout_id: { type: string }
+            version: { type: integer }
+            builtin: { type: boolean }
+
+    LiveTileStyle:
+      type: string
+      enum: [number, gauge, bar, trend, status]
+
+    LiveTile:
+      type: object
+      required: [tile_id, metric, row, column, row_span, column_span, style]
+      properties:
+        tile_id: { type: string, maxLength: 64 }
+        metric: { type: string, description: "Tile id from live-channels.json tiles[]." }
+        row: { type: integer, minimum: 0, maximum: 7 }
+        column: { type: integer, minimum: 0, maximum: 7 }
+        row_span: { type: integer, minimum: 1, maximum: 8 }
+        column_span: { type: integer, minimum: 1, maximum: 8 }
+        style: { $ref: "#/components/schemas/LiveTileStyle" }
+        unit: { type: [string, "null"] }
+        precision: { type: [integer, "null"], minimum: 0, maximum: 3 }
+        trend_window: { type: [string, "null"], enum: [s15, s30, s60, one_lap, three_laps, null] }
+        accent: { type: [string, "null"], enum: [default, blue, green, amber, coral, violet, null] }
+        highlight_abs: { type: boolean, default: false }
+
+    LiveLayoutBody:
+      type: object
+      required: [rows, columns, tiles]
+      properties:
+        rows: { type: integer, minimum: 1, maximum: 8 }
+        columns: { type: integer, minimum: 1, maximum: 8 }
+        tiles: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/LiveTile" } }
+
+    LiveLayoutWrite:
+      type: object
+      required: [name, body]
+      properties:
+        name: { type: string, maxLength: 80 }
+        body: { $ref: "#/components/schemas/LiveLayoutBody" }
+
+    LiveLayout:
+      allOf:
+        - { $ref: "#/components/schemas/LiveLayoutWrite" }
+        - type: object
+          required: [layout_id, version, builtin]
+          properties:
+            layout_id: { type: string }
+            version: { type: integer }
+            builtin: { type: boolean }
+
+    LiveLayoutList:
+      type: object
+      required: [layouts, active_layout_id]
+      properties:
+        layouts: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/LiveLayout" } }
+        active_layout_id: { type: string }
+
+    LastInvestigation:
+      type: object
+      required: [session_id, analysis_id, view]
+      properties:
+        session_id: { type: integer }
+        analysis_id: { type: string }
+        view: { type: string, enum: [race, runs, sections, traces] }
+        comparison_id: { type: [string, "null"] }
+        section_id: { type: [string, "null"] }
+
+    DriverPrefsWrite:
+      type: object
+      properties:
+        active_live_layout_id: { type: [string, "null"] }
+        active_trace_layout_id: { type: [string, "null"] }
+        last_investigation: { oneOf: [{ $ref: "#/components/schemas/LastInvestigation" }, { type: "null" }] }
+        theme_color: { type: [string, "null"], maxLength: 16 }
+        reduced_motion: { type: [boolean, "null"] }
+        safe_glance: { type: [boolean, "null"], description: "Live cue safe-glance hold (default true)." }
+        units: { type: [object, "null"], additionalProperties: { type: string } }
+
+    DriverPrefs:
+      allOf:
+        - { $ref: "#/components/schemas/DriverPrefsWrite" }
+        - type: object
+          required: [customer_id, version]
+          properties:
+            customer_id: { type: integer }
+            version: { type: integer }
+
+    JobKind:
+      type: string
+      enum: [discover, analyze, project, archive, restage, setup_files, setup_compare, baseline, tuning_recommend, tuning_outcome, tuning_history, import, snapshot, reanalyze]
+
+    JobState:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelled, interrupted, deferred]
+
+    JobRef:
+      type: object
+      required: [job_id, kind, state]
+      properties:
+        job_id: { type: integer }
+        kind: { $ref: "#/components/schemas/JobKind" }
+        state: { $ref: "#/components/schemas/JobState" }
+
+    Job:
+      allOf:
+        - { $ref: "#/components/schemas/JobRef" }
+        - type: object
+          required: [lane, priority, created_at, attempts]
+          properties:
+            lane: { type: string, enum: [analysis, light, io, server] }
+            priority: { type: integer }
+            customer_id: { type: [integer, "null"] }
+            subject: { type: object, additionalProperties: true }
+            attempts: { type: integer }
+            created_at: { type: string, format: date-time }
+            started_at: { type: [string, "null"], format: date-time }
+            finished_at: { type: [string, "null"], format: date-time }
+            error_code: { type: [string, "null"], description: "worker_oom, worker_crash, timeout, tool_error, exceeds_memory_budget, nas_unreachable, ..." }
+            error_message: { type: [string, "null"] }
+            result: { type: [object, "null"], additionalProperties: true, description: "Tool result for Python-backed jobs (validated against its MCP contract where one exists)." }
+
+    UploadKind:
+      type: string
+      enum: [ibt, sto, htm]
+
+    UploadStateName:
+      type: string
+      enum: [open, verified, parsed, discovered, archived, analysis_queued, analyzed, deferred, failed]
+
+    UploadCreate:
+      type: object
+      required: [sha256, size, kind, file_name, collector_id]
+      properties:
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size: { type: integer, minimum: 1, maximum: 4294967296 }
+        kind: { $ref: "#/components/schemas/UploadKind" }
+        file_name: { type: string, maxLength: 512 }
+        relative_path: { type: [string, "null"], maxLength: 1024, description: "For setup files: path under Documents\\iRacing\\setups, forward slashes." }
+        source_mtime: { type: [string, "null"], format: date-time }
+        collector_id: { type: string, format: uuid }
+        customer_id: { type: [integer, "null"], description: "Driver the collector last saw in session info when it listed the file; recorded on the occurrence. Recordings are attributed from the IBT at ingest instead." }
+
+    UploadState:
+      type: object
+      required: [sha256, state, offset, size]
+      properties:
+        sha256: { type: string }
+        state: { $ref: "#/components/schemas/UploadStateName" }
+        offset: { type: integer }
+        size: { type: integer }
+
+    ImportBundle:
+      type: object
+      description: "Built by tools/migrate from a copy of the legacy data root (D12). Converted once."
+      required: [bundle_version, customer_id, source]
+      properties:
+        bundle_version: { const: 1 }
+        customer_id: { type: integer }
+        source:
+          type: object
+          required: [machine, root]
+          properties:
+            machine: { type: string }
+            root: { type: string }
+            app_version: { type: [string, "null"] }
+            archive_id: { type: [string, "null"] }
+        notes:
+          type: array
+          description: "Legacy notes. subject_id is ignored; the server resolves subject_ref after re-ingest and discovery. Unresolved notes become legacy_items (kind note) and are listed in the migration report."
+          items:
+            allOf:
+              - { $ref: "#/components/schemas/NoteCreate" }
+              - type: object
+                required: [legacy_id, subject_ref]
+                properties:
+                  legacy_id: { type: string }
+                  subject_ref:
+                    type: object
+                    description: "Stable identity of the subject, independent of new ids."
+                    properties:
+                      recording_sha256: { type: array, items: { type: string } }
+                      subsession_id: { type: [integer, "null"] }
+                      sim_session_num: { type: [integer, "null"] }
+                      car_path: { type: [string, "null"] }
+                      setup_values_fingerprint: { type: [string, "null"] }
+                      sto_sha256: { type: [string, "null"] }
+                      legacy_analysis_id: { type: [string, "null"] }
+        trace_layouts: { type: array, items: { $ref: "#/components/schemas/TraceLayoutWrite" } }
+        live_layouts: { type: array, items: { $ref: "#/components/schemas/LiveLayoutWrite" } }
+        prefs: { oneOf: [{ $ref: "#/components/schemas/DriverPrefsWrite" }, { type: "null" }] }
+        tuning_drafts:
+          type: array
+          items:
+            type: object
+            required: [identity_key, body]
+            properties:
+              identity_key: { type: string }
+              body: { type: object, additionalProperties: true }
+        turn_annotations:
+          type: array
+          items:
+            type: object
+            required: [track_config_key, map_identity, body]
+            properties:
+              track_config_key: { type: string }
+              map_identity: { type: string }
+              body: { type: object, additionalProperties: true }
+        tuning_experiments:
+          type: array
+          description: "Rows of the legacy history.sqlite3 tuning_experiments table plus their experiment files, imported into the driver's worker archive by a light job."
+          items: { type: object, additionalProperties: true }
+        legacy_items:
+          type: array
+          description: "Parked features' data preserved verbatim (saved Tests, plans, trials, activity)."
+          items:
+            type: object
+            required: [kind, source_path, body]
+            properties:
+              kind: { type: string }
+              source_path: { type: string }
+              body: { type: object, additionalProperties: true }
+
+    # ---- Server-sent events ----
+    ServerEvent:
+      oneOf:
+        - { $ref: "#/components/schemas/PresenceEvent" }
+        - { $ref: "#/components/schemas/RecordingStateEvent" }
+        - { $ref: "#/components/schemas/JobStateEvent" }
+        - { $ref: "#/components/schemas/AnalysisReadyEvent" }
+        - { $ref: "#/components/schemas/LibraryChangedEvent" }
+
+    PresenceEvent:
+      type: object
+      required: [type, collector]
+      properties:
+        type: { const: presence }
+        collector: { $ref: "#/components/schemas/CollectorPresence" }
+
+    RecordingStateEvent:
+      type: object
+      required: [type, sha256, state]
+      properties:
+        type: { const: recording_state }
+        sha256: { type: string }
+        customer_id: { type: [integer, "null"] }
+        state: { $ref: "#/components/schemas/UploadStateName" }
+        reason: { type: [string, "null"] }
+
+    JobStateEvent:
+      type: object
+      required: [type, job]
+      properties:
+        type: { const: job_state }
+        job: { $ref: "#/components/schemas/JobRef" }
+        customer_id: { type: [integer, "null"] }
+        error_code: { type: [string, "null"] }
+
+    AnalysisReadyEvent:
+      type: object
+      required: [type, customer_id, session_id, analysis_id, projection_version]
+      properties:
+        type: { const: analysis_ready }
+        customer_id: { type: integer }
+        session_id: { type: integer }
+        analysis_id: { type: string }
+        projection_version: { type: integer }
+
+    LibraryChangedEvent:
+      type: object
+      required: [type, customer_id, scope]
+      properties:
+        type: { const: library_changed }
+        customer_id: { type: integer }
+        scope: { type: string, enum: [sessions, setups, layouts, notes, prefs] }
+
+    # ---- Live browser socket ----
+    LiveHello:
+      type: object
+      required: [type, table_version, live, backlog_frames, rate]
+      properties:
+        type: { const: live.hello }
+        table_version: { type: integer }
+        live: { type: boolean }
+        backlog_frames: { type: integer }
+        rate: { type: integer }
+
+    LiveRateChange:
+      type: object
+      required: [type, rate]
+      properties:
+        type: { const: rate }
+        rate: { type: integer, enum: [1, 10, 30, 60] }
+
+    # ---- Collector WebSocket (collector-protocol.md) ----
+    CollectorClientMessage:
+      oneOf:
+        - { $ref: "#/components/schemas/CollectorHello" }
+        - { $ref: "#/components/schemas/CollectorStatus" }
+        - { $ref: "#/components/schemas/CollectorPong" }
+        - { $ref: "#/components/schemas/GarageSnapshot" }
+        - { $ref: "#/components/schemas/GarageCommit" }
+        - { $ref: "#/components/schemas/StreamStats" }
+        - { $ref: "#/components/schemas/LayoutAck" }
+
+    CollectorServerMessage:
+      oneOf:
+        - { $ref: "#/components/schemas/CollectorWelcome" }
+        - { $ref: "#/components/schemas/CollectorPing" }
+        - { $ref: "#/components/schemas/StreamStart" }
+        - { $ref: "#/components/schemas/StreamRelease" }
+        - { $ref: "#/components/schemas/ViewersMessage" }
+        - { $ref: "#/components/schemas/LayoutSet" }
+        - { $ref: "#/components/schemas/IngestStateMessage" }
+        - { $ref: "#/components/schemas/GarageAck" }
+        - { $ref: "#/components/schemas/CollectorError" }
+
+    CollectorHello:
+      type: object
+      required: [type, protocol, collector_id, machine, collector_version, live_table_version]
+      properties:
+        type: { const: hello }
+        protocol: { const: 1 }
+        collector_id: { type: string, format: uuid }
+        machine: { type: string, maxLength: 64 }
+        collector_version: { type: string }
+        live_table_version: { type: integer }
+        os: { type: [string, "null"] }
+
+    DriverRef:
+      type: object
+      required: [customer_id]
+      properties:
+        customer_id: { type: integer }
+        name: { type: [string, "null"] }
+
+    LiveSessionRef:
+      type: object
+      required: [session_epoch]
+      properties:
+        session_epoch: { type: integer }
+        subsession_id: { type: [integer, "null"] }
+        session_num: { type: [integer, "null"] }
+        session_type: { type: [string, "null"] }
+        track: { type: [string, "null"] }
+        track_config: { type: [string, "null"] }
+        car_path: { type: [string, "null"] }
+
+    CollectorStatusBody:
+      type: object
+      required: [sim, connected, on_track, in_garage, on_pit_road, streaming, queue]
+      properties:
+        sim: { type: string, enum: [not_running, menus, in_session] }
+        connected: { type: boolean }
+        on_track: { type: boolean }
+        in_garage: { type: boolean }
+        on_pit_road: { type: boolean }
+        session: { oneOf: [{ $ref: "#/components/schemas/LiveSessionRef" }, { type: "null" }] }
+        driver: { oneOf: [{ $ref: "#/components/schemas/DriverRef" }, { type: "null" }] }
+        streaming: { type: boolean }
+        queue:
+          type: object
+          required: [uploads_pending, bytes_pending]
+          properties:
+            uploads_pending: { type: integer }
+            bytes_pending: { type: integer }
+
+    CollectorStatus:
+      allOf:
+        - { $ref: "#/components/schemas/CollectorStatusBody" }
+        - type: object
+          required: [type]
+          properties:
+            type: { const: status }
+
+    CollectorPong:
+      type: object
+      required: [type, nonce]
+      properties:
+        type: { const: pong }
+        nonce: { type: integer }
+
+    SetupValues:
+      type: object
+      description: CarSetup leaf key to the published string, all keys including derived ones.
+      maxProperties: 4096
+      additionalProperties: { type: string }
+
+    GarageSnapshot:
+      type: object
+      required: [type, visit_id, update_count, observed_at, values]
+      properties:
+        type: { const: garage.snapshot }
+        visit_id: { type: string, format: uuid }
+        update_count: { type: integer }
+        observed_at: { type: string, format: date-time }
+        car_path: { type: [string, "null"] }
+        driver: { oneOf: [{ $ref: "#/components/schemas/DriverRef" }, { type: "null" }] }
+        session: { oneOf: [{ $ref: "#/components/schemas/LiveSessionRef" }, { type: "null" }] }
+        values: { $ref: "#/components/schemas/SetupValues" }
+
+    GarageCommit:
+      type: object
+      required: [type, visit_id, entered_at, exited_at, values]
+      properties:
+        type: { const: garage.commit }
+        visit_id: { type: string, format: uuid }
+        update_count: { type: [integer, "null"], description: "UpdateCount of the last snapshot whose values this commit carries." }
+        entered_at: { type: string, format: date-time }
+        exited_at: { type: string, format: date-time }
+        car_path: { type: [string, "null"] }
+        driver: { oneOf: [{ $ref: "#/components/schemas/DriverRef" }, { type: "null" }] }
+        session: { oneOf: [{ $ref: "#/components/schemas/LiveSessionRef" }, { type: "null" }] }
+        setup_name: { type: [string, "null"], description: "DriverSetupName after exit; null when it did not change within 5 s." }
+        sto_sha256: { type: [string, "null"] }
+        ambiguous: { type: boolean, default: false }
+        is_modified: { type: [boolean, "null"] }
+        load_type: { type: [string, "null"] }
+        values: { $ref: "#/components/schemas/SetupValues" }
+
+    StreamStats:
+      type: object
+      required: [type, sent, dropped, since]
+      properties:
+        type: { const: stream.stats }
+        sent: { type: integer }
+        dropped: { type: integer }
+        since: { type: string, format: date-time }
+
+    LayoutAck:
+      type: object
+      required: [type, layout_id, version]
+      properties:
+        type: { const: layout.ack }
+        layout_id: { type: string }
+        version: { type: integer }
+
+    CollectorWelcome:
+      type: object
+      required: [type, protocol, server_version, stream_wanted, viewers]
+      properties:
+        type: { const: welcome }
+        protocol: { const: 1 }
+        server_version: { type: string }
+        stream_wanted: { type: boolean }
+        viewers: { type: integer }
+        layout: { oneOf: [{ $ref: "#/components/schemas/LayoutSet" }, { type: "null" }] }
+
+    CollectorPing:
+      type: object
+      required: [type, nonce]
+      properties:
+        type: { const: ping }
+        nonce: { type: integer }
+
+    StreamStart:
+      type: object
+      required: [type, reason]
+      properties:
+        type: { const: stream.start }
+        reason: { type: string, enum: [viewer] }
+
+    StreamRelease:
+      type: object
+      required: [type]
+      properties:
+        type: { const: stream.release }
+
+    ViewersMessage:
+      type: object
+      required: [type, count]
+      properties:
+        type: { const: viewers }
+        count: { type: integer }
+
+    LayoutSet:
+      type: object
+      required: [type, layout_id, version, layout]
+      properties:
+        type: { const: layout.set }
+        layout_id: { type: string }
+        version: { type: integer }
+        layout: { $ref: "#/components/schemas/LiveLayoutBody" }
+
+    IngestStateMessage:
+      type: object
+      required: [type, sha256, state]
+      properties:
+        type: { const: ingest.state }
+        sha256: { type: string }
+        state: { $ref: "#/components/schemas/UploadStateName" }
+        reason: { type: [string, "null"] }
+
+    GarageAck:
+      type: object
+      description: "Sent after the observation's SQLite transaction commits (or for a duplicate); the collector then drops the journal entry."
+      required: [type, visit_id, kind]
+      properties:
+        type: { const: garage.ack }
+        visit_id: { type: string, format: uuid }
+        kind: { type: string, enum: [snapshot, commit] }
+        update_count: { type: [integer, "null"] }
+
+    CollectorError:
+      type: object
+      required: [type, code]
+      properties:
+        type: { const: error }
+        code: { type: string, enum: [bad_message, unknown_type, incompatible_table, internal] }
+        message: { type: [string, "null"] }

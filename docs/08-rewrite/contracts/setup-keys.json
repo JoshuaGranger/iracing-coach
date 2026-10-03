@@ -1,0 +1,18 @@
+{
+  "$comment": "CarSetup keys excluded from setup identity (values fingerprint). Derived by the sim or run readings, not user settings. Source: prove/P5 (corner weights, ride heights, ARB and truck-arm preload differ by 1 N / 1 mm / 0.2 Nm for the same file) and setup_recordings.py:30-33 (run readings). Patterns match the last path segment of a CarSetup key such as Chassis.LeftFront.CornerWeight, case-insensitively. Values are still stored and shown; they only do not count toward identity. Change by contract review only.",
+  "version": 1,
+  "excluded_leaf_patterns": [
+    { "pattern": "^CornerWeight$", "reason": "derived" },
+    { "pattern": "^RideHeight$", "reason": "derived" },
+    { "pattern": "^(Arb|TruckArm)Preload$", "reason": "derived" },
+    { "pattern": "^LastHotPressure", "reason": "run reading" },
+    { "pattern": "^LastTemps", "reason": "run reading" },
+    { "pattern": "^TreadRemaining", "reason": "run reading" },
+    { "pattern": "^UpdateCount$", "reason": "revision counter" }
+  ],
+  "fingerprint": {
+    "algorithm": "sha256",
+    "input": "for each remaining key in ascending UTF-8 byte order: key + 0x1F + raw value string exactly as published (trimmed) + 0x1E",
+    "output": "lowercase hex, first 32 characters"
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.iracingcoach/rewrite/manifest-v1.schema.json",
+  "title": "NAS object manifest",
+  "description": "Written next to every object under $NAS (nas-layout.md). Readers preserve unknown optional fields.",
+  "type": "object",
+  "required": ["manifest_version", "kind", "sha256", "size", "archived_at", "archiver_version"],
+  "additionalProperties": true,
+  "properties": {
+    "manifest_version": { "const": 1 },
+    "kind": { "enum": ["recording", "setup_file", "backup"] },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "size": { "type": "integer", "minimum": 0 },
+    "archived_at": { "type": "string", "format": "date-time" },
+    "archiver_version": { "type": "string" },
+    "original_name": { "type": ["string", "null"], "maxLength": 512 },
+    "source_mtime": { "type": ["string", "null"], "format": "date-time" },
+    "received_at": { "type": ["string", "null"], "format": "date-time" },
+    "collector_id": { "type": ["string", "null"], "format": "uuid" },
+    "driver": {
+      "type": ["object", "null"],
+      "required": ["customer_id"],
+      "additionalProperties": true,
+      "properties": {
+        "customer_id": { "type": "integer" },
+        "name": { "type": ["string", "null"] }
+      }
+    },
+    "recording": {
+      "type": ["object", "null"],
+      "description": "Present when kind = recording. From the IBT header and session info at ingest.",
+      "additionalProperties": true,
+      "required": ["record_count", "tick_rate", "buffer_length", "session_info_sha256"],
+      "properties": {
+        "record_count": { "type": "integer" },
+        "tick_rate": { "type": "integer" },
+        "buffer_length": { "type": "integer" },
+        "variable_count": { "type": ["integer", "null"] },
+        "session_info_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "subsession_id": { "type": ["integer", "null"] },
+        "session_types": { "type": "array", "items": { "type": "string" } },
+        "track": { "type": ["string", "null"] },
+        "track_config": { "type": ["string", "null"] },
+        "car_path": { "type": ["string", "null"] },
+        "start_time_utc": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "setup_file": {
+      "type": ["object", "null"],
+      "description": "Present when kind = setup_file.",
+      "additionalProperties": true,
+      "required": ["format", "car_folder", "relative_path"],
+      "properties": {
+        "format": { "enum": ["sto", "htm"] },
+        "car_folder": { "type": "string" },
+        "relative_path": { "type": "string", "description": "Path under Documents\\iRacing\\setups\\<car_folder>, forward slashes." }
+      }
+    },
+    "backup": {
+      "type": ["object", "null"],
+      "description": "Present when kind = backup; lists every file in the day folder.",
+      "additionalProperties": true,
+      "required": ["files"],
+      "properties": {
+        "schema_version": { "type": "integer" },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "sha256", "size"],
+            "properties": {
+              "path": { "type": "string" },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "size": { "type": "integer" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
