@@ -43,7 +43,6 @@ A tile entry is `{ id, unit (wire id or null), primary, secondary, state, value,
 ## Known, accepted differences (asserted by `engine_vectors.rs`)
 
 - **Pace range, 1 ms.** C# derives the pace band in double precision; the wire channels 33 and 34 are f32, and lap times are truncated to milliseconds, so a bound that sits on a whole millisecond can read 1 ms low (about 0.2 % of tile readings). The test allows exactly that and nothing more.
-- **Cue bases.** The C# coach-cue tile shows the cue's basis string as secondary text for every cue; `live-channels.json` lists a basis for cues 2, 4, 5 and 9 only. `format_tile` reads the table, so ten cues differ until the contract is corrected (W2 report, contract change request 1). `PENDING_BASIS_IDS` names them; the test fails when the table starts to match, so the list cannot go stale.
 
 `serde_json` runs with `float_roundtrip` in this crate's dev-dependencies: its default float parser is not correctly rounded and the vectors compare `f64` values exactly.
 

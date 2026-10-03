@@ -422,7 +422,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     schedule();
   };
   const onKey = (event: KeyboardEvent): void => {
-    const step = 1 / Math.max(1, config.bins - 1);
+    const step = 1 / Math.max(1, config.bins);
     let next = fraction;
     if (event.key === "ArrowRight" || event.key === "ArrowUp") next += step;
     else if (event.key === "ArrowLeft" || event.key === "ArrowDown") next -= step;

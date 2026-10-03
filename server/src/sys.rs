@@ -31,6 +31,9 @@ pub fn free_bytes(path: &Path) -> std::io::Result<u64> {
 pub fn signal_group(pid: u32, kill: bool) {
     #[cfg(unix)]
     {
+        if pid == 0 {
+            return; // -0 would be the server's own process group
+        }
         let signal = if kill { libc::SIGKILL } else { libc::SIGTERM };
         // SAFETY: plain syscall with integer arguments; a stale pid at worst signals nothing.
         unsafe {
@@ -40,6 +43,24 @@ pub fn signal_group(pid: u32, kill: bool) {
     #[cfg(not(unix))]
     {
         let _ = (pid, kill);
+    }
+}
+
+/// True while any process of the group led by `pid` exists (a zombie leader counts until reaped).
+pub fn group_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        if pid == 0 {
+            return false;
+        }
+        // SAFETY: signal 0 only checks for existence.
+        let rc = unsafe { libc::kill(-(pid as i32), 0) };
+        rc == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
     }
 }
 

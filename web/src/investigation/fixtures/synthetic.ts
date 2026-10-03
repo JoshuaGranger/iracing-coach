@@ -86,7 +86,7 @@ export function buildSyntheticAnalysis(options: SyntheticOptions = {}): Syntheti
   const analysisId = options.analysisId ?? "synthetic-82-lap";
   const random = mulberry32(options.seed ?? 20261002);
   const laps = Array.from({ length: lapCount }, (_, index) => index + 1);
-  const kappa = Float64Array.from({ length: bins }, (_, bin) => Math.abs(curvatureAt(bin / (bins - 1))));
+  const kappa = Float64Array.from({ length: bins }, (_, bin) => Math.abs(curvatureAt((bin + 0.5) / bins)));
   const kmax = Math.max(...kappa);
   const values = new Map<string, Float64Array>();
   for (const [id] of SIGNALS) values.set(id, new Float64Array(lapCount * bins).fill(Number.NaN));
@@ -102,7 +102,7 @@ export function buildSyntheticAnalysis(options: SyntheticOptions = {}): Syntheti
     const started = clock;
     let time = clock;
     for (let bin = 0; bin < bins; bin++) {
-      const t = bin / (bins - 1);
+      const t = (bin + 0.5) / bins;
       const k = kappa[bin]! / kmax;
       const speed = (155 - 82 * Math.pow(k, 0.6)) / pace + (random() - 0.5) * 1.2;
       const nextK = kappa[Math.min(bins - 1, bin + 1)]! / kmax;
@@ -134,7 +134,6 @@ export function buildSyntheticAnalysis(options: SyntheticOptions = {}): Syntheti
   }
   const scale = lapTimes[0]! / 30;
   const lapTimesScaled = lapTimes.map((value) => Math.round((value / scale) * 1000) / 1000);
-  const fastest = Math.min(...lapTimesScaled);
 
   const signals: TraceSignalData[] = SIGNALS.map(([id, source_key, label, unit, dtype, category, def]) => ({ id, source_key, label, unit, dtype, category, default: def }));
   const flagOf = (lap: number): string => (lap >= 41 && lap <= 43 ? "caution" : "green");
@@ -149,7 +148,6 @@ export function buildSyntheticAnalysis(options: SyntheticOptions = {}): Syntheti
       exclusion_reasons: eligible ? [] : [pit ? "pit" : flag !== "green" ? "caution_or_mixed" : "restart"],
       run_number: runOf(lap),
       run_age_laps: lap - runStart[runOf(lap) - 1]! + 1,
-      fastest: Math.abs(lapTimesScaled[index]! - fastest) < 0.0001,
       complete: true,
       flag_state: flag,
       caution_fraction: flag === "caution" ? 1 : 0,
@@ -209,7 +207,6 @@ export function buildSyntheticAnalysis(options: SyntheticOptions = {}): Syntheti
     flag_state: lap.flag_state,
     pit_in: lap.pit_time_s > 0,
     pit_out: lap.lap === 29 || lap.lap === 57,
-    incident_count: lap.lap === 17 ? 2 : 0,
   }));
   const race: RaceViewData = {
     analysis_id: analysisId,

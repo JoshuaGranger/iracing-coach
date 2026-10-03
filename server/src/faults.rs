@@ -1,6 +1,7 @@
 //! Fault injection for the ingest and archive crash tests. A named point either "crashes" (the
-//! operation stops at once and runs no cleanup, as if the process was killed) or fails with an
-//! I/O error such as `ENOSPC`. Points are disarmed after they fire once unless armed as sticky.
+//! operation stops at once and runs no cleanup, as if the process was killed), kills the process,
+//! or fails with an I/O error such as `ENOSPC`. Points are disarmed after they fire once unless
+//! armed as sticky.
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -8,9 +9,16 @@ use std::sync::Mutex;
 
 use crate::error::{Error, Result};
 
+/// Exit status of a process ended by `FaultMode::Kill`.
+pub const KILLED_EXIT: i32 = 86;
+
 #[derive(Debug, Clone, Copy)]
 pub enum FaultMode {
     Crash,
+    /// Ends the whole process on the spot with `KILLED_EXIT` (no destructors run; the operating
+    /// system closes the files): the crash tests that run the server in a child process cut the
+    /// protocol this way, like a `kill -9`.
+    Kill,
     Io(ErrorKind),
 }
 
@@ -57,8 +65,11 @@ impl Faults {
         if !sticky {
             armed.remove(name);
         }
+        if matches!(mode, FaultMode::Kill) {
+            std::process::exit(KILLED_EXIT);
+        }
         Err(match mode {
-            FaultMode::Crash => Error::Crash(name.to_string()),
+            FaultMode::Crash | FaultMode::Kill => Error::Crash(name.to_string()),
             FaultMode::Io(kind) => {
                 Error::Io(std::io::Error::new(kind, format!("injected at {name}")))
             }

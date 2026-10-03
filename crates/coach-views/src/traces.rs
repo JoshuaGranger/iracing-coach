@@ -16,7 +16,7 @@ use crate::{Envelope, ProjectError, SelectError};
 
 /// `TraceCatalog.signals` `maxItems` in `api.openapi.yaml`; signals past it are listed in
 /// `omitted_signals` and not served.
-pub(crate) const MAX_SIGNALS: usize = 64;
+pub(crate) const MAX_SIGNALS: usize = 128;
 const DEFAULT_BINS: usize = 160;
 const MAX_BINS: usize = 4096;
 const PREAMBLE_LEN: usize = 12;

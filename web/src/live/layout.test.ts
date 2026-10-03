@@ -23,6 +23,11 @@ describe("live layout model", () => {
     expect(validateLayout(body).map((i) => i.message)).toEqual(["Speed has no unit furlongs."]);
   });
 
+  it("stores unit ids: a display label in a layout is rejected", () => {
+    const tiles = [t("a", "track-temperature", 0, 0, { unit: "F" }), t("b", "track-temperature", 0, 1, { unit: "°F" }), t("c", "laps-remaining", 0, 2, { unit: "laps" })];
+    expect(validateLayout({ rows: 1, columns: 3, tiles }).map((i) => i.message)).toEqual(["Track temperature has no unit °F.", "Laps remaining has no unit laps."]);
+  });
+
   it("finds the first free spot row-major and refuses overlaps and out-of-grid placement", () => {
     const b = base();
     expect(findFreeSpot(b)).toEqual({ row: 0, column: 2 });

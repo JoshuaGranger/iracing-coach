@@ -1,21 +1,23 @@
 {
-  "$comment": "Declared compatibility policy for stores whose authority is not a Python constant. Generation consumes this file; tests bind each field to its stated authority. A field declared as csharp-symbol must equal that symbol in C# source. A field declared as declared-policy is a target for a later phase and is NOT evidence that current code enforces it.",
+  "$comment": "Declared compatibility policy for stores whose authority is not a Python constant. Generation consumes this file; tests bind each field to its stated authority. A field declared as retired-csharp-symbol is frozen at the value that symbol had in C# source when the desktop app was retired; the source is no longer read. A field declared as declared-policy is a target for a later phase and is NOT evidence that current code enforces it.",
   "companion_durable_archive": {
     "description": "The C# durable archive in the user's Documents Coach folder, written by DurableArchiveService. Distinct from the Python backend cache/archive manifest.",
     "manifest_file_name": "archive-manifest.json",
     "writer_version": {
       "value": 1,
-      "authority": "csharp-symbol",
+      "authority": "retired-csharp-symbol",
       "symbol": "DurableArchiveService.CurrentSchemaVersion",
       "source": "companion-app/src/iRacingCoach.Coordinator/DurableArchive.cs",
-      "derivation": "The manifest is written with schemaVersion = CurrentSchemaVersion."
+      "derivation": "The manifest is written with schemaVersion = CurrentSchemaVersion.",
+      "retired": "The desktop app was retired on 2026-10-02 (owner decision D13); the value is frozen at the last CurrentSchemaVersion and no longer read from C# source."
     },
     "max_readable_version": {
       "value": 1,
-      "authority": "csharp-symbol",
+      "authority": "retired-csharp-symbol",
       "symbol": "DurableArchiveService.CurrentSchemaVersion",
       "source": "companion-app/src/iRacingCoach.Coordinator/DurableArchive.cs",
-      "derivation": "Initialize throws ArchiveCompatibilityException when manifest.SchemaVersion > CurrentSchemaVersion, so the maximum readable version equals that symbol."
+      "derivation": "Initialize throws ArchiveCompatibilityException when manifest.SchemaVersion > CurrentSchemaVersion, so the maximum readable version equals that symbol.",
+      "retired": "The desktop app was retired on 2026-10-02 (owner decision D13); the value is frozen at the last CurrentSchemaVersion and no longer read from C# source."
     },
     "min_readable_version": {
       "value": 0,

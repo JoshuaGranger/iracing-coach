@@ -17,7 +17,7 @@ const loader = createAnalysisLoader();            // 3 analyses, 96 MB, in memor
 />
 ```
 
-Requests are made by `load.ts` only: the overview (race, runs, investigation, track) when an analysis opens, and the catalog plus CCOL traces when Traces opens. Pointer movement, hover, selection and layout editing make none (`cursor/` is checked for network calls by a unit test; the G2 harness logs requests during a sweep). A loaded analysis stays in the cache and stays inspectable when the server drops.
+Requests are made by `load.ts` only: the overview (race, runs, investigation, track) when an analysis opens, and the catalog plus CCOL traces when Traces opens. Pointer movement, hover, selection and layout editing make none (`cursor/` is checked for network calls by a unit test; the G2 harness logs requests during a sweep). A loaded analysis stays in the cache and stays inspectable when the server drops. A traces request the server refuses with 413 is repeated for lap ranges (halves, recursively) and the bodies are joined. Bin i lies at lap fraction (i + 0.5) / bins, the backend's `lap_pct`.
 
 | Path | What |
 |---|---|

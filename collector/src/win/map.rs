@@ -5,7 +5,7 @@
 use std::io;
 use std::time::Duration;
 
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, ERROR_FILE_NOT_FOUND, HANDLE};
 use windows::Win32::System::Memory::{
     FILE_MAP_READ, MEMORY_BASIC_INFORMATION, MEMORY_MAPPED_VIEW_ADDRESS, MapViewOfFile,
     OpenFileMappingW, UnmapViewOfFile, VirtualQuery,
@@ -22,8 +22,15 @@ use crate::sdk::{MapSource, SdkMap};
 const MAP_NAME: &str = "Local\\IRSDKMemMapFileName";
 const EVENT_NAME: &str = "Local\\IRSDKDataValidEvent";
 
-/// Opens the real map; `Ok(None)` while iRacing has never run.
+/// Opens the real map. `Ok(None)` only when the mapping does not exist (iRacing is not running);
+/// every other failure is an error, which the reader treats as unknown evidence, never as "not
+/// running" (`collector-protocol.md` section 4).
 pub struct Win32MapSource;
+
+/// True when opening the mapping failed because it does not exist.
+fn mapping_is_absent(error: &windows::core::Error) -> bool {
+    error.code() == ERROR_FILE_NOT_FOUND.to_hresult()
+}
 
 impl MapSource for Win32MapSource {
     fn open(&mut self) -> io::Result<Option<Box<dyn SdkMap>>> {
@@ -32,7 +39,8 @@ impl MapSource for Win32MapSource {
         unsafe {
             let mapping = match OpenFileMappingW(FILE_MAP_READ.0, false, PCWSTR(name.as_ptr())) {
                 Ok(h) => h,
-                Err(_) => return Ok(None),
+                Err(e) if mapping_is_absent(&e) => return Ok(None),
+                Err(e) => return Err(io::Error::other(format!("cannot open the SDK map: {e}"))),
             };
             let view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
             if view.Value.is_null() {
@@ -156,5 +164,21 @@ impl Drop for Win32Map {
                 let _ = CloseHandle(h);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_NOT_ENOUGH_MEMORY};
+
+    #[test]
+    fn only_a_missing_mapping_counts_as_absent() {
+        let err = |code: windows::Win32::Foundation::WIN32_ERROR| {
+            windows::core::Error::from_hresult(code.to_hresult())
+        };
+        assert!(mapping_is_absent(&err(ERROR_FILE_NOT_FOUND)));
+        assert!(!mapping_is_absent(&err(ERROR_ACCESS_DENIED)));
+        assert!(!mapping_is_absent(&err(ERROR_NOT_ENOUGH_MEMORY)));
     }
 }

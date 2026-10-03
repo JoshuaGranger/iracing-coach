@@ -3,7 +3,7 @@ import { CHANNEL_INDEX, type TileSpec } from "../gen/live-channels";
 import type { LiveFrame } from "./frame";
 import { LiveHistory, TREND_WINDOW_SPECS, downsample } from "./history";
 import type { LiveTileCfg } from "./layout";
-import { type TileText, formatTile, tileRange, unitConverter } from "./tiles";
+import { type TileText, formatTile, resolveUnit, tileRange, unitConverter } from "./tiles";
 
 const ACCENT_VAR: Record<string, string> = {
   default: "var(--color-accent)",
@@ -55,7 +55,7 @@ export function TrendCanvas({ cfg, spec, history, frame, tick }: { cfg: LiveTile
     const win = TREND_WINDOW_SPECS[cfg.trend_window ?? "s30"] ?? { seconds: 30 };
     const series = history.series(channel, win);
     if (series.t.length === 0) return;
-    const conv = unitConverter(channel, cfg.unit ?? spec.units[0]);
+    const conv = unitConverter(channel, resolveUnit(spec, cfg.unit));
     for (let i = 0; i < series.v.length; i++) series.v[i] = conv.fn(series.v[i]!);
     const t1 = series.t[series.t.length - 1]!;
     const t0 = win.seconds !== undefined ? t1 - win.seconds : series.t[0]!;
@@ -140,8 +140,8 @@ export function TileView({ cfg, spec, frame, history, tick, observed }: TileView
         <div class="tile-body">
           {style === "gauge" ? <Gauge value={text.value} min={min ?? 0} max={max ?? 1} /> : null}
           <div class="tile-value">
-            <span class="tile-primary">{text.primary}</span>
-            {text.unit && text.state === "ok" ? <span class="tile-unit">{text.unit}</span> : null}
+            <span class="tile-primary">{text.amount}</span>
+            {text.unit ? <span class="tile-unit">{text.unit}</span> : null}
           </div>
           {style === "bar" ? (
             <div class="tile-bar" aria-hidden="true">

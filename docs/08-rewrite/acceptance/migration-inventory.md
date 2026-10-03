@@ -31,6 +31,8 @@ The dev PC holds its own legacy Coach root (not the sim's). The export and inven
 | `tools/rig/Get-SimRecordingInventory.ps1 -OutFile <scratch>\recordings.json` | 49 telemetry recordings (2.59 GB), 30 archived raw (2.23 GB), 0 setup files; `-Hash` checked on a fixture tree (SHA-256 of `abc` correct) |
 | `$py tools/migrate/inventory_legacy.py "Documents\iRacing Coach" --out <scratch>` | 162 user-authored files, 30 raw recordings, 2 unclassified (`archive-manifest.json`, `portable-state.json`); refuses an output path inside the repository |
 | same on the exported copy | 162 user-authored files: the export covers every user-authored file the inventory finds |
+| export again after adding `data\trials`, `data\event-plans`, `data\ai-coaching` and the raw-archive `manifest.json` files (wave-1 follow-up) | 177 files (162 plus 15 manifests), 0 recordings, 0 hash mismatches |
+| `$py tools/migrate/build_import.py <copy> --customer-id 1 --machine DESKTOP-JOSHUA --out <scratch>` | valid `ImportBundle` (ajv over `wire.schema.json`): 3 live layouts (units `°C` to `C`, `laps` to `lap`, `time` to the tile default), 1 trace layout, 3 tuning drafts, 18 legacy analyses (17 with a recording hash), 5 `legacy_archive` files, 154 `legacy_items`, nothing dropped |
 
 Dev-PC counts: `history.sqlite3` holds 15 sessions, 41 runs, 2 knowledge bundles, 2 tuning packages, 0 tuning experiments; 3 tuning-draft files; 152 activity-history entries; 1 strategy-history entry; `user-library/`, `data/tuning-experiments/`, `data/setup-history/`, `data/target-laps/` empty; `data/test-artifacts/` absent. No saved Tests, plans or free notes exist here, so their format is still unseen.
 
@@ -41,4 +43,4 @@ Dev-PC counts: `history.sqlite3` holds 15 sessions, 41 runs, 2 knowledge bundles
 | D12 step 1: copy user data | `tools/rig/Export-LegacyCoachData.ps1 -Destination <folder>` (read-only on the source; never `data\auth`; refuses while the old app runs) | sim PC, through the remote tools; then copy the folder to the dev PC |
 | Legacy inventory | `$py tools/migrate/inventory_legacy.py <copied root> --out <outside the repository>` | dev PC, on the copy |
 | Raw hash list for step 5 | `tools/rig/Get-SimRecordingInventory.ps1 -OutFile <file> -Hash` (below-normal priority; stops if `iRacingSim64DX11` starts) | sim PC, off track |
-| Steps 2 to 5 | `tools/migrate/build_import.py`, backfill, reanalysis, `migration.md` | wave 3 |
+| Steps 2 to 5 | `tools/migrate/build_import.py` (ready, tested on synthetic data and the dev-PC copy), backfill, reanalysis, `migration.md` | wave 3 |

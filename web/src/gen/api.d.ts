@@ -535,10 +535,14 @@ export interface paths {
         /**
          * 160-bin lap traces as a columnar binary container (`application/vnd.coach.columns`):
          *     bytes 0-3 "CCOL", u16 version 1, u16 reserved 0, u32 header length H, H bytes of UTF-8 JSON
-         *     `TraceBlobHeader`, zero padding to an 8-byte boundary, then for each channel in header order
-         *     a little-endian typed array of `laps.length x bins` values, lap-major, each array starting at
-         *     its `offset` (from the start of the data section, 8-byte aligned). Missing values are NaN
-         *     (floats) or the channel's `missing` sentinel. Compressed with gzip/br when the client accepts it.
+         *     `TraceBlobHeader`, zero padding up to the data section, which starts at the first file offset
+         *     at or after 12 + H that is a multiple of 8, then for each channel in header order a
+         *     little-endian typed array of `laps.length x bins` values, lap-major, each array starting at
+         *     its `offset` (from the start of the data section, a multiple of 8; zero padding between
+         *     arrays). Bin i of a lap lies at lap fraction (i + 0.5) / bins, the backend's `lap_pct` for
+         *     that distance bucket; a bucket the backend left empty is missing in every channel. Missing
+         *     values are NaN (floats) or the channel's `missing` sentinel. Compressed with gzip/br when the
+         *     client accepts it.
          *     Encoding rule: each channel copies one backend `lap_traces` point key (`TraceSignal.source_key`)
          *     in the backend's unit. Non-integer values are `f64` (exact copy of the Python double); `i16`/`u8`
          *     only for keys whose every value is an integer in range, with a `missing` sentinel outside the
@@ -564,7 +568,7 @@ export interface paths {
                 /** @description Columnar traces */
                 200: {
                     headers: {
-                        /** @description Number of laps in the body. */
+                        /** @description Number of laps in the body: the length of its TraceBlobHeader `laps` array. */
                         "X-Coach-Trace-Laps"?: number;
                         [name: string]: unknown;
                     };
@@ -574,7 +578,7 @@ export interface paths {
                 };
                 404: components["responses"]["NotFound"];
                 409: components["responses"]["ProjectionPending"];
-                /** @description Selection exceeds 16 MiB; narrow `laps` or `channels`. */
+                /** @description Selection exceeds 16 MiB; narrow `laps` or `channels`. Only an analysis near the bound with every lap and channel selected reaches it; the browser then requests lap ranges (for example halves) and joins them. */
                 413: {
                     headers: {
                         [name: string]: unknown;
@@ -730,7 +734,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Compare two setups of the same car (Python `compare_iracing_setups`). Answers inline when done within 10 s, else 202. */
+        /** Compare two setups of the same car (Python `compare_iracing_setups`). Answers inline when done within the server's inline wait (default 10 s), else 202. */
         post: {
             parameters: {
                 query?: never;
@@ -816,7 +820,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Progressive Tuning context for one analysis (eligibility, exact identity, turn map, representative runs). */
+        /** Progressive Tuning context for one analysis (eligibility, exact identity, turn map, representative runs). Unlike the view payloads it carries no ETag, because the server merges request-time fields (`binding`, `open_targets`, `draft_identity_key`) into the projected `tuning.json`; it is sent with Cache-Control no-cache. */
         get: {
             parameters: {
                 query?: never;
@@ -1501,6 +1505,7 @@ export interface paths {
                 };
             };
         };
+        /** Top-level merge: each field present in the body replaces the stored value (null clears it; `units` is replaced as a whole); absent fields keep their stored value. Sending the full body is valid. */
         put: {
             parameters: {
                 query?: never;
@@ -2061,6 +2066,8 @@ export interface components {
             projection_version: number;
             worker_profile_version?: string | null;
             python_version?: string | null;
+            /** @description A connected collector sent live frames with a table_version above the server's; those frames are not relayed (live-frame.md). */
+            collector_newer_than_server?: boolean;
             nas: {
                 state: components["schemas"]["NasState"];
                 /** Format: date-time */
@@ -2190,7 +2197,9 @@ export interface components {
         ViewEnvelope: {
             analysis_id: string;
             projection_version: number;
+            /** @description analysis_view schema the view was projected from: 1 (crate-api.md section 5 lists the accepted inputs). */
             schema_version: number;
+            /** @description analysis_profile_version; empty string when the backend left it null. */
             profile_version: string;
         };
         /** @description One recorded lap (backend `laps[]` projected; unknown backend fields preserved). */
@@ -2213,13 +2222,14 @@ export interface components {
              *     humanizes codes for display.
              */
             exclusion_reasons: string[];
-            caution?: boolean | null;
+            /** @description Backend laps[].pit_entry. */
             pit_in?: boolean | null;
+            /** @description Backend laps[].pit_exit. */
             pit_out?: boolean | null;
+            /** @description The runs[] entry whose lap_numbers contains this lap. */
             run_number?: number | null;
-            /** @description Accumulated green exposure in the run. */
+            /** @description Accumulated green exposure in the run (race_investigation.laps[].green_exposure). */
             run_age_laps?: number | null;
-            incident_count?: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -2285,6 +2295,7 @@ export interface components {
             source_key: string;
             label: string;
             short_label?: string | null;
+            /** @description The backend key's unit, as served (steering ids carry rad; the browser converts for display, rad to degrees). */
             unit: string;
             digits?: number | null;
             category?: string | null;
@@ -2305,7 +2316,6 @@ export interface components {
             exclusion_reasons: string[];
             run_number?: number | null;
             run_age_laps?: number | null;
-            fastest?: boolean;
             conditions?: {
                 [key: string]: unknown;
             } | null;
@@ -2313,10 +2323,19 @@ export interface components {
             [key: string]: unknown;
         };
         TraceCatalog: components["schemas"]["ViewEnvelope"] & {
-            /** @description 160 today (about 0.6 % of a lap). */
+            /** @description 160 today (about 0.6 % of a lap). Bin i lies at lap fraction (i + 0.5) / bins_per_lap (the CCOL rule on the traces endpoint). */
             bins_per_lap: number;
             laps: components["schemas"]["TraceLap"][];
+            /**
+             * @description The 15 fixed signals in this order when their backend key occurs (id <- source key): speed <- speed_mph,
+             *     session-time <- session_time_s, throttle, brake, steering <- steering_rad, steering-peak <-
+             *     steering_abs_peak_rad, slip <- slip_angle_deg, yaw <- yaw_rate_deg_s, lateral-g <- lateral_g,
+             *     longitudinal-g <- longitudinal_g, gear, rpm, latitude, longitude, tire-stress <- tire_stress_proxy; then the
+             *     backend's additional signals in backend order, up to 128 in all.
+             */
             signals: components["schemas"]["TraceSignal"][];
+            /** @description Backend additional-signal keys beyond the 128-signal cap; not in the CCOL body. */
+            omitted_signals?: string[];
             /** @description lap_traces.sector_start_pcts, ascending lap fractions in [0, 1) (Traces sector bands). */
             sector_start_pcts?: number[];
             steering_basis: components["schemas"]["SteeringBasis"];
@@ -2427,7 +2446,7 @@ export interface components {
             /** @enum {string} */
             format: "sto" | "htm";
             present: boolean;
-            /** @description Null = values unknown (encrypted .sto, never seen unmodified). Set only from an observation with is_modified = false (collector-protocol.md section 8). */
+            /** @description Null = values unknown (encrypted .sto, never seen unmodified). Derived by the server when it answers, never stored: only from an observation with is_modified = false or an htm_export of the file (collector-protocol.md section 8). */
             linked_setup_id?: number | null;
         };
         SetupSummary: {
@@ -2461,6 +2480,8 @@ export interface components {
             is_modified?: boolean | null;
             load_type?: string | null;
             session_id?: number | null;
+            /** @description The session's current analysis (recording observations), so Tune this setup needs no second request. */
+            analysis_id?: string | null;
             visit_id?: string | null;
         };
         SetupDetail: {
@@ -2651,10 +2672,21 @@ export interface components {
             draft_identity_key: string;
         };
         TuningDraftWrite: {
-            /** @description ProgressiveTuningDraft: feedback items, goal, note, representative run ids, turn corrections. */
-            body: {
+            body: components["schemas"]["TuningDraftBody"];
+        };
+        /** @description C# ProgressiveTuningDraft as the browser keeps it. Unknown fields round-trip. D12 maps legacy drafts to these fields. */
+        TuningDraftBody: {
+            /** @description TuningRecommendRequest.goal value. */
+            goal?: string | null;
+            general_note?: string;
+            /** @description run_number values as decimal text. */
+            representative_run_ids?: string[];
+            open_target_analysis_id?: string | null;
+            feedback?: {
                 [key: string]: unknown;
-            };
+            }[];
+        } & {
+            [key: string]: unknown;
         };
         TuningDraft: components["schemas"]["TuningDraftWrite"] & {
             identity_key: string;
@@ -2663,7 +2695,12 @@ export interface components {
             updated_at: string;
         };
         TurnAnnotationsWrite: {
+            /** @description Turn-name corrections for one track configuration and map identity. Unknown fields round-trip. */
             body: {
+                corners?: {
+                    [key: string]: unknown;
+                }[];
+            } & {
                 [key: string]: unknown;
             };
         };
@@ -2795,6 +2832,7 @@ export interface components {
             row_span: number;
             column_span: number;
             style: components["schemas"]["LiveTileStyle"];
+            /** @description A live-channels.json tiles[].units id (C, F, m/s2, lap, mph, ...), never a display label (°C). Null or an id the tile does not list selects the tile's default unit. D12 maps legacy labels (°C, °F, m/s², laps) to ids. */
             unit?: string | null;
             precision?: number | null;
             /** @enum {string|null} */
@@ -2943,10 +2981,22 @@ export interface components {
                     [key: string]: unknown;
                 };
             }[];
-            /** @description Rows of the legacy history.sqlite3 tuning_experiments table plus their experiment files, imported into the driver's worker archive by a light job. */
-            tuning_experiments?: {
-                [key: string]: unknown;
+            /** @description Stable identity of every legacy analysis that legacy notes or tuning experiments reference. The server resolves each to the matching session's current analysis (null when unresolved) and passes the map to import_legacy_tuning_experiments. */
+            legacy_analyses?: {
+                legacy_analysis_id: string;
+                recording_sha256?: string[];
+                subsession_id?: number | null;
+                sim_session_num?: number | null;
             }[];
+            /** @description The legacy worker archive's history.sqlite3 and tuning/ files, copied byte for byte. The server writes them under the import job root's legacy/ and runs import_legacy_tuning_experiments (worker-interface.md section 4) on them; nothing else reads them. */
+            legacy_archive?: {
+                files: {
+                    /** @description history.sqlite3 or tuning/..., forward slashes, no .. segments. */
+                    relative_path: string;
+                    sha256: string;
+                    content_base64: string;
+                }[];
+            } | null;
             /** @description Parked features' data preserved verbatim (saved Tests, plans, trials, activity). */
             legacy_items?: {
                 kind: string;

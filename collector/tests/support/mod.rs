@@ -99,6 +99,11 @@ pub struct State {
     pub body_hook: Option<BodyHook>,
     /// Slows body reads to this many bytes per second (0 = no limit).
     pub body_rate: usize,
+    /// After this many body bytes the server stops reading altogether (a stalled link) until the
+    /// field is cleared or five seconds pass.
+    pub stall_after: Option<usize>,
+    /// Set while the server is stalled that way.
+    pub stalled: bool,
 
     pub ws_connections: usize,
     pub ws_text: Vec<(usize, Value)>,
@@ -163,6 +168,11 @@ impl Mock {
 
     pub fn url(&self) -> String {
         format!("http://{}", self.addr)
+    }
+
+    /// The shared state, for a helper thread that has to watch it while a test thread is blocked.
+    pub fn state_handle(&self) -> Arc<Mutex<State>> {
+        self.state.clone()
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
@@ -408,6 +418,17 @@ fn put(
         }
         if drop_after.is_some_and(|n| body.len() >= n) {
             lock(state).aborted_puts += 1;
+            return;
+        }
+        if lock(state).stall_after.is_some_and(|n| body.len() >= n) {
+            lock(state).stalled = true;
+            let until = Instant::now() + Duration::from_secs(5);
+            while lock(state).stall_after.is_some() && Instant::now() < until {
+                thread::sleep(Duration::from_millis(5));
+            }
+            let mut s = lock(state);
+            s.stalled = false;
+            s.aborted_puts += 1;
             return;
         }
     }

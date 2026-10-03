@@ -3,7 +3,7 @@ import { createAnalysisCache } from "../cache";
 import { channelAsFloat, decodeCcol, encodeCcol } from "../ccol";
 import { fixtureFetch } from "../fixtures/api";
 import { buildSyntheticAnalysis } from "../fixtures/synthetic";
-import { createAnalysisLoader, HttpError, ProjectionPendingError, type AnalysisHandle } from "../load";
+import { createAnalysisLoader, HttpError, lapRangeText, ProjectionPendingError, type AnalysisHandle } from "../load";
 
 import { signalColumn as signalColumnOf } from "../geometry/trace-model";
 
@@ -122,5 +122,76 @@ describe("analysis loader", () => {
     expect(log.length).toBe(before);
     await handle.ensureSignals(["no-such-signal"]);
     expect(log.length).toBe(before);
+  });
+
+  describe("413 on the traces", () => {
+    const full = decodeCcol(analysis.ccol);
+    const inRanges = (text: string): number[] =>
+      text.split(",").flatMap((part) => {
+        const [from, to] = part.split("-").map(Number);
+        return Array.from({ length: (to ?? from!) - from! + 1 }, (_, offset) => from! + offset);
+      });
+    /** Server stand-in: bodies over `limit` laps answer 413, smaller ones are cut from the full table. */
+    const limited = (limit: { laps: number }, log: string[]): typeof fetch => {
+      const inner = fixtureFetch(analysis);
+      return (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        log.push(url);
+        if (!url.includes("/traces") || url.includes("/catalog")) return inner(input, init);
+        const query = new URL(url, "http://x").searchParams;
+        const wanted = query.has("laps") ? inRanges(query.get("laps")!) : full.laps;
+        if (wanted.length > limit.laps) return new Response(JSON.stringify({ error: "payload_too_large", message: "narrow laps" }), { status: 413 });
+        const rows = wanted.map((lap) => full.laps.indexOf(lap));
+        const ids = query.has("channels") ? query.get("channels")!.split(",") : [...full.channels.keys()];
+        const body = encodeCcol(analysis.analysisId, 1, full.bins, wanted, ids.map((id) => {
+          const channel = full.channels.get(id)!;
+          const values = channelAsFloat(channel);
+          const picked = new Float64Array(rows.length * full.bins);
+          rows.forEach((row, at) => picked.set(values.subarray(row * full.bins, (row + 1) * full.bins), at * full.bins));
+          return { id, dtype: channel.dtype, values: picked, missing: channel.missing };
+        }));
+        return new Response(body, { status: 200 });
+      }) as typeof fetch;
+    };
+
+    it("writes consecutive laps as ranges", () => {
+      expect(lapRangeText([5, 1, 2, 3, 52, 4, 6, 53, 60])).toBe("1-6,52-53,60");
+      expect(lapRangeText([7])).toBe("7");
+    });
+
+    it("requests lap halves recursively and joins them into the same table", async () => {
+      const log: string[] = [];
+      const data = await createAnalysisLoader({ fetch: limited({ laps: 3 }, log) }).get(analysis.analysisId).traces();
+      expect(data.laps).toEqual(full.laps);
+      for (const [id, channel] of full.channels) {
+        const joined = data.table.channels.get(id)!;
+        expect(joined.dtype).toBe(channel.dtype);
+        expect(Array.from(joined.raw)).toEqual(Array.from(channel.raw));
+      }
+      const traceRequests = log.filter((url) => url.includes("/traces") && !url.includes("/catalog"));
+      expect(traceRequests[0]!.endsWith("/traces")).toBe(true);
+      expect(traceRequests.slice(1).every((url) => url.includes("laps="))).toBe(true);
+      expect(traceRequests.slice(1).map((url) => new URL(url, "http://x").searchParams.get("laps"))).toEqual(["1-6", "1-3", "4-6", "7-12", "7-9", "10-12"]);
+    });
+
+    it("splits an extra-channel request the same way", async () => {
+      const log: string[] = [];
+      const limit = { laps: 12 };
+      const handle = createAnalysisLoader({ fetch: limited(limit, log) }).get(analysis.analysisId);
+      const data = await handle.traces();
+      data.table.channels.delete("rpm");
+      data.columns.delete("rpm");
+      limit.laps = 5;
+      const before = log.length;
+      await handle.ensureSignals(["rpm"]);
+      expect(log.slice(before).filter((url) => url.includes("laps=")).length).toBeGreaterThan(1);
+      expect(Array.from(data.table.channels.get("rpm")!.raw)).toEqual(Array.from(full.channels.get("rpm")!.raw));
+    });
+
+    it("fails with the 413 when a single lap is still too large", async () => {
+      const error = await createAnalysisLoader({ fetch: limited({ laps: 0 }, []) }).get(analysis.analysisId).traces().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).status).toBe(413);
+    });
   });
 });

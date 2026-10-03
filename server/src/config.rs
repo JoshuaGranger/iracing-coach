@@ -12,7 +12,7 @@ pub const MIB: u64 = 1 << 20;
 pub struct WorkerConfig {
     /// Program and leading arguments, e.g. `nice -n 10 python3.12 -X utf8 -u .../mcp_server.py`.
     pub command: Vec<String>,
-    /// Directory holding `mcp_server.py` (for the analyzer bundle digest and profile version).
+    /// Directory holding the worker script (for the analyzer bundle digest and profile version).
     pub scripts_dir: Option<PathBuf>,
     pub analyze_timeout: Duration,
     pub discover_timeout: Duration,
@@ -30,6 +30,8 @@ pub struct Config {
     /// `$NAS`, e.g. `/nas/apps/iracing-coach`.
     pub nas_root: PathBuf,
     pub web_dir: Option<PathBuf>,
+    /// The Python MCP contracts that worker results are validated against.
+    pub contracts_dir: PathBuf,
     pub worker: WorkerConfig,
     pub spool_limit_bytes: u64,
     pub min_free_bytes: u64,
@@ -48,6 +50,10 @@ pub struct Config {
     pub collector_idle: Duration,
     pub collector_ping: Duration,
     pub collector_hello_timeout: Duration,
+    /// A browser that stays behind this long is closed with 4008 (`collector-protocol.md` section 7).
+    pub slow_browser: Duration,
+    /// How long a restage waits for spool admission before it fails.
+    pub restage_wait: Duration,
     pub retry_after_secs: u32,
     /// How long a setup comparison waits for its job before answering 202 (10 s).
     pub inline_wait: Duration,
@@ -106,8 +112,14 @@ impl Config {
         Ok(())
     }
 
+    /// Reads the environment of `contracts/server-config.md`; an empty value counts as unset.
     pub fn from_env(dev: bool) -> Result<Config, String> {
-        let env = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+        Config::from_vars(dev, &|name| std::env::var(name).ok())
+    }
+
+    /// `from_env` over any variable source (the config test feeds the image environment).
+    pub fn from_vars(dev: bool, source: &dyn Fn(&str) -> Option<String>) -> Result<Config, String> {
+        let env = |name: &str| source(name).filter(|v| !v.is_empty());
         let bind: SocketAddr = env("COACH_BIND")
             .unwrap_or_else(|| {
                 if dev {
@@ -120,46 +132,61 @@ impl Config {
             .parse()
             .map_err(|e| format!("COACH_BIND: {e}"))?;
         let dev_root = PathBuf::from(env("COACH_DEV_DIR").unwrap_or_else(|| "dev-data".into()));
-        let data_dir = env("COACH_DATA").map(PathBuf::from).unwrap_or_else(|| {
+        let data_dir = env("COACH_DATA_DIR").map(PathBuf::from).unwrap_or_else(|| {
             if dev {
                 dev_root.join("data")
             } else {
                 "/data".into()
             }
         });
-        let nas_root = env("COACH_NAS").map(PathBuf::from).unwrap_or_else(|| {
+        let nas_root = env("COACH_NAS_DIR").map(PathBuf::from).unwrap_or_else(|| {
             if dev {
                 dev_root.join("nas")
             } else {
                 "/nas/apps/iracing-coach".into()
             }
         });
-        let web_dir = env("COACH_WEB_DIR").map(PathBuf::from).or_else(|| {
-            let default: PathBuf = if dev {
+        // A missing directory disables static hosting (the router checks).
+        let web_dir: PathBuf = env("COACH_WEB_DIR").map(PathBuf::from).unwrap_or_else(|| {
+            if dev {
                 "web/dist".into()
             } else {
-                "/app/web/dist".into()
-            };
-            default.is_dir().then_some(default)
+                "/app/web".into()
+            }
         });
-        let scripts_dir = env("COACH_WORKER_SCRIPTS").map(PathBuf::from).or_else(|| {
-            let default: PathBuf = if dev {
-                "iracing-coach/skills/analyze-iracing-race/scripts".into()
+        let script: PathBuf = env("COACH_WORKER_SCRIPT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                if dev {
+                    "iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py".into()
+                } else {
+                    "/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py".into()
+                }
+            });
+        // The script's directory is where the analyzer digest and profile are read from.
+        let scripts_dir = script
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(PathBuf::from);
+        let contracts_dir: PathBuf = env("COACH_CONTRACTS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                if dev {
+                    "contracts".into()
+                } else {
+                    "/app/contracts".into()
+                }
+            });
+        let python = env("COACH_PYTHON").unwrap_or_else(|| {
+            if dev {
+                "python3.12".into()
             } else {
-                "/app/iracing-coach/skills/analyze-iracing-race/scripts".into()
-            };
-            default.is_dir().then_some(default)
+                "/usr/local/bin/python3.12".into()
+            }
         });
-        let python = env("COACH_PYTHON").unwrap_or_else(|| "python3.12".into());
         let command = match env("COACH_WORKER_COMMAND") {
             Some(text) => text.split_whitespace().map(str::to_string).collect(),
             None => {
-                let script = scripts_dir
-                    .clone()
-                    .unwrap_or_else(|| {
-                        "/app/iracing-coach/skills/analyze-iracing-race/scripts".into()
-                    })
-                    .join("mcp_server.py");
                 let mut command: Vec<String> = Vec::new();
                 if !dev {
                     command.extend(["nice".into(), "-n".into(), "10".into()]);
@@ -172,7 +199,8 @@ impl Config {
         let mut config = Config::base(data_dir, nas_root, command);
         config.bind = bind;
         config.dev = dev;
-        config.web_dir = web_dir;
+        config.web_dir = Some(web_dir);
+        config.contracts_dir = contracts_dir;
         config.worker.scripts_dir = scripts_dir;
         config.worker.set_oom_score = !dev;
         if let Some(v) = env("COACH_SPOOL_LIMIT_BYTES").and_then(|v| v.parse().ok()) {
@@ -192,6 +220,7 @@ impl Config {
             data_dir,
             nas_root,
             web_dir: None,
+            contracts_dir: "contracts".into(),
             worker: WorkerConfig {
                 command: worker_command,
                 scripts_dir: None,
@@ -214,10 +243,125 @@ impl Config {
             collector_idle: Duration::from_secs(15),
             collector_ping: Duration::from_secs(15),
             collector_hello_timeout: Duration::from_secs(5),
+            slow_browser: Duration::from_secs(10),
+            restage_wait: Duration::from_secs(300),
             retry_after_secs: 30,
             inline_wait: Duration::from_secs(10),
             background: true,
             app_version: env!("CARGO_PKG_VERSION").to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn vars(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |name| map.get(name).cloned()
+    }
+
+    /// The image environment (`deploy/mini-pc/Dockerfile`, `contracts/server-config.md`).
+    const IMAGE: &[(&str, &str)] = &[
+        ("COACH_BIND", "0.0.0.0:8080"),
+        ("COACH_DATA_DIR", "/data"),
+        ("COACH_NAS_DIR", "/nas/apps/iracing-coach"),
+        ("COACH_WEB_DIR", "/app/web"),
+        ("COACH_PYTHON", "/usr/local/bin/python3.12"),
+        (
+            "COACH_WORKER_SCRIPT",
+            "/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py",
+        ),
+        ("COACH_CONTRACTS_DIR", "/app/contracts"),
+    ];
+
+    #[test]
+    fn the_image_environment_sets_every_directory_and_the_worker() {
+        let config = Config::from_vars(false, &vars(IMAGE)).unwrap();
+        assert_eq!(config.bind, "0.0.0.0:8080".parse().unwrap());
+        assert_eq!(config.data_dir, PathBuf::from("/data"));
+        assert_eq!(config.nas_root, PathBuf::from("/nas/apps/iracing-coach"));
+        assert_eq!(config.web_dir, Some(PathBuf::from("/app/web")));
+        assert_eq!(config.contracts_dir, PathBuf::from("/app/contracts"));
+        let script = "/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py";
+        assert_eq!(
+            config.worker.scripts_dir,
+            Some(PathBuf::from(
+                "/app/iracing-coach/skills/analyze-iracing-race/scripts"
+            ))
+        );
+        assert_eq!(
+            config.worker.command,
+            [
+                "nice",
+                "-n",
+                "10",
+                "/usr/local/bin/python3.12",
+                "-X",
+                "utf8",
+                "-u",
+                script
+            ]
+        );
+        assert!(config.worker.set_oom_score);
+    }
+
+    #[test]
+    fn production_defaults_equal_the_image_values() {
+        let defaults = Config::from_vars(false, &vars(&[])).unwrap();
+        let image = Config::from_vars(false, &vars(IMAGE)).unwrap();
+        assert_eq!(defaults.bind, image.bind);
+        assert_eq!(defaults.data_dir, image.data_dir);
+        assert_eq!(defaults.nas_root, image.nas_root);
+        assert_eq!(defaults.web_dir, image.web_dir);
+        assert_eq!(defaults.contracts_dir, image.contracts_dir);
+        assert_eq!(defaults.worker.command, image.worker.command);
+        assert_eq!(defaults.worker.scripts_dir, image.worker.scripts_dir);
+    }
+
+    #[test]
+    fn empty_values_count_as_unset_and_dev_uses_local_directories() {
+        let config = Config::from_vars(
+            true,
+            &vars(&[("COACH_DATA_DIR", ""), ("COACH_WORKER_SCRIPT", "")]),
+        )
+        .unwrap();
+        assert_eq!(config.bind, "127.0.0.1:8210".parse().unwrap());
+        assert_eq!(config.data_dir, PathBuf::from("dev-data/data"));
+        assert_eq!(config.nas_root, PathBuf::from("dev-data/nas"));
+        assert_eq!(config.web_dir, Some(PathBuf::from("web/dist")));
+        assert_eq!(config.contracts_dir, PathBuf::from("contracts"));
+        assert_eq!(
+            config.worker.scripts_dir,
+            Some(PathBuf::from(
+                "iracing-coach/skills/analyze-iracing-race/scripts"
+            ))
+        );
+        assert_eq!(config.worker.command[0], "python3.12");
+        let moved = Config::from_vars(true, &vars(&[("COACH_DEV_DIR", "elsewhere")])).unwrap();
+        assert_eq!(moved.data_dir, PathBuf::from("elsewhere/data"));
+        assert_eq!(moved.nas_root, PathBuf::from("elsewhere/nas"));
+    }
+
+    #[test]
+    fn the_worker_command_override_and_optional_limits() {
+        let config = Config::from_vars(
+            false,
+            &vars(&[
+                ("COACH_WORKER_COMMAND", "python3 -u stub.py"),
+                ("COACH_SPOOL_LIMIT_BYTES", "1234"),
+                ("COACH_TZ_OFFSET_MINUTES", "-300"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(config.worker.command, ["python3", "-u", "stub.py"]);
+        assert_eq!(config.spool_limit_bytes, 1234);
+        assert_eq!(config.tz_offset_minutes, -300);
+        assert!(Config::from_vars(false, &vars(&[("COACH_BIND", "nonsense")])).is_err());
     }
 }

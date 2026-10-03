@@ -6,10 +6,7 @@
 //! malformed-node failure is `Fail` (Python's `SyntaxError`/`ValueError`, which `_yaml_scalar`
 //! catches and turns into the unevaluated text).
 
-use std::sync::LazyLock;
-
-use regex::Regex;
-
+use crate::matchers::{is_python_float, is_python_imaginary, is_python_int};
 use crate::yaml::{YamlNode, YamlScalar};
 
 /// Python's tokenizer limit on nested brackets (`MAXLEVEL`); deeper input is a `SyntaxError`.
@@ -168,30 +165,9 @@ fn literal_eval(text: &str) -> Eval<Lit> {
     convert(node)
 }
 
-static INT_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:[1-9](?:_?[0-9])*|0+(?:_?0)*|0[xX](?:_?[0-9a-fA-F])+|0[oO](?:_?[0-7])+|0[bB](?:_?[01])+)$")
-        .expect("valid integer token pattern")
-});
-
-const DIGITPART: &str = "[0-9](?:_?[0-9])*";
-
-fn float_body() -> String {
-    let point = format!("(?:(?:{d})?\\.{d}|{d}\\.)", d = DIGITPART);
-    format!("(?:{point}|(?:{d}|{point})[eE][+-]?{d})", d = DIGITPART)
-}
-
-static FLOAT_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!("^{}$", float_body())).expect("valid float token pattern")
-});
-
-static IMAG_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!("^(?:{}|{})[jJ]$", float_body(), DIGITPART))
-        .expect("valid imaginary token pattern")
-});
-
 fn number(token: &str) -> Eval<Lit> {
     let plain: String = token.chars().filter(|&c| c != '_').collect();
-    if INT_TOKEN.is_match(token) {
+    if is_python_int(token) {
         let (digits, radix) = match plain.get(..2) {
             Some("0x" | "0X") => (&plain[2..], 16),
             Some("0o" | "0O") => (&plain[2..], 8),
@@ -202,13 +178,13 @@ fn number(token: &str) -> Eval<Lit> {
             .map(Lit::Int)
             .ok_or(EvalError::Fail);
     }
-    if FLOAT_TOKEN.is_match(token) {
+    if is_python_float(token) {
         return plain
             .parse::<f64>()
             .map(Lit::Float)
             .map_err(|_| EvalError::Fail);
     }
-    if IMAG_TOKEN.is_match(token) {
+    if is_python_imaginary(token) {
         return Ok(Lit::Complex);
     }
     Err(EvalError::Fail)

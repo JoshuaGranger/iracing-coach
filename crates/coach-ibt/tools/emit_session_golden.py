@@ -136,7 +136,8 @@ def _sha256(data: bytes) -> str:
 
 def _error_record(exc: BaseException, path: Path) -> dict[str, Any]:
     message = str(exc)
-    for spelling in {str(path), str(path.resolve())}:
+    # Longest first: the relative spelling is a suffix of the resolved one.
+    for spelling in sorted({str(path), str(path.resolve())}, key=len, reverse=True):
         message = message.replace(spelling, "<file>")
     record: dict[str, Any] = {"class": type(exc).__name__, "message": message}
     line = re.search(r"line (\d+)", message)

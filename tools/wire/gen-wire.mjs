@@ -103,6 +103,10 @@ function validateLive() {
   for (const t of live.tiles) {
     for (const ch of t.channel.split(",")) if (!ids.has(ch)) throw new Error(`live-channels: tile ${t.id} names unknown channel ${ch}`);
   }
+  const tileUnits = new Set(live.tiles.flatMap((t) => t.units ?? []));
+  for (const unit of Object.keys(live.unit_labels)) {
+    if (!tileUnits.has(unit)) throw new Error(`live-channels: unit_labels names unit ${unit}, which no tile lists`);
+  }
 }
 
 function liveRust() {
@@ -190,6 +194,14 @@ function liveRust() {
     }
   }
   o.push("        _ => None,");
+  o.push("    }");
+  o.push("}");
+  o.push("");
+  o.push("/// Display label of a unit id (`unit_labels`); a unit without an entry displays as written.");
+  o.push("pub fn unit_label(unit: &str) -> &str {");
+  o.push("    match unit {");
+  for (const [unit, label] of Object.entries(live.unit_labels)) o.push(`        ${rsStr(unit)} => ${rsStr(label)},`);
+  o.push("        other => other,");
   o.push("    }");
   o.push("}");
   o.push("");
@@ -296,6 +308,15 @@ function liveTs() {
   o.push("export function conversion(from: string, to: string): Conversion | null {");
   o.push("  if (from === to) return { scale: 1, offset: 0 };");
   o.push("  return CONVERSIONS[from]?.[to] ?? null;");
+  o.push("}");
+  o.push("");
+  o.push("const UNIT_LABELS: ReadonlyMap<string, string> = new Map([");
+  for (const [unit, label] of Object.entries(live.unit_labels)) o.push(`  [${tsStr(unit)}, ${tsStr(label)}],`);
+  o.push("]);");
+  o.push("");
+  o.push("/** Display label of a unit id (`unit_labels`); a unit without an entry displays as written. */");
+  o.push("export function unitLabel(unit: string): string {");
+  o.push("  return UNIT_LABELS.get(unit) ?? unit;");
   o.push("}");
   o.push("");
   o.push("export interface TileSpec {");

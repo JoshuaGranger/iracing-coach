@@ -2,7 +2,7 @@
 //! Text follows the C# formatting byte for byte; see `format.rs` for the number rules.
 
 use coach_wire::live_channels::{
-    ArgFormat, CUES, Conversion, FlagState, RunPhase, TILES, TileSpec, conversion,
+    ArgFormat, CUES, Conversion, FlagState, RunPhase, TILES, TileSpec, conversion, unit_label,
 };
 
 use crate::format;
@@ -140,18 +140,6 @@ fn convert(value: f64, from: &str, to: &str) -> f64 {
         Some(Conversion::Scale(scale)) => value * scale,
         Some(Conversion::ScaleOffset { scale, offset }) => value * scale + offset,
         None => value,
-    }
-}
-
-/// The unit as C# shows it. Time-valued tiles and unitless tiles show none.
-fn unit_label(unit: &str) -> &str {
-    match unit {
-        "C" => "°C",
-        "F" => "°F",
-        "m/s2" => "m/s²",
-        "lap" => "laps",
-        "time" => "",
-        other => other,
     }
 }
 

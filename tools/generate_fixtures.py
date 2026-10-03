@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Generate sanitized deterministic UI fixtures and tiny synthetic IBTs."""
+"""Generate sanitized deterministic UI fixtures, tiny synthetic IBTs and the G2 race views."""
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import math
+import os
+import random
+import re
+import shutil
 import struct
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -895,6 +903,606 @@ CarSetup:
     path.write_bytes(output[:-1] if truncate else output)
 
 
+# ---------------------------------------------------------------------------
+# G2 race: a synthetic 82-lap short-oval race with the channel set of a real
+# recording, analysed with the current profile and projected by coach-views
+# into the committed view files under test-data/g2/ (workstreams.md gate G2).
+# The recording itself is never committed; it is rebuilt here byte for byte.
+# ---------------------------------------------------------------------------
+
+G2_LAPS = 82
+G2_PIT_LAP = 41
+G2_TICK_RATE = 60
+G2_TRACK_LENGTH_M = 1200.0
+G2_DIR = FIXTURE_ROOT / "g2"
+G2_RECORDING_NAME = "synthetic-g2-race.ibt"
+G2_VIEW_FILES = (
+    "race.json",
+    "runs.json",
+    "investigation.json",
+    "traces-catalog.json",
+    "traces.ccol",
+    "track.json",
+    "tuning.json",
+)
+_G2_GRID = 2400
+_G2_VMAX = 61.0
+_G2_LATERAL = 19.0
+_G2_ACCELERATE = 4.2
+_G2_BRAKE = 11.0
+_G2_PIT_LIMIT = 20.0
+_G2_PIT_ENTRY = 0.86
+_G2_STALL = 0.03
+_G2_PIT_EXIT = 0.16
+_G2_STALL_SECONDS = 13.0
+_G2_TANK_L = 68.0
+_G2_START_FUEL_L = 60.0
+_G2_SESSION_START = 845.25
+_G2_LAT0 = 39.0
+_G2_LON0 = -86.5
+_G2_TIRE_BASE_C = {"LF": 71.0, "RF": 89.0, "LR": 68.0, "RR": 84.0}
+_G2_COLD_KPA = {"LF": 165.0, "RF": 190.0, "LR": 160.0, "RR": 185.0}
+_G2_GEAR_RATIO = (0.0, 583.0, 340.0, 210.0, 141.7)
+_G2_TIRES = ("LF", "RF", "LR", "RR")
+
+_G2_SESSION_INFO = """WeekendInfo:
+  TrackName: synthetic speedway
+  TrackID: 9001
+  TrackLength: 1.20 km
+  TrackDisplayName: Synthetic Speedway
+  TrackDisplayShortName: Synthetic
+  TrackConfigName: Oval
+  TrackCity: Synthetic
+  TrackCountry: USA
+  TrackNumTurns: 4
+  TrackType: short oval
+  SeriesID: 9003
+  SeasonID: 202603
+  SessionID: 7201
+  SubSessionID: 8201
+  LeagueID: 0
+  Official: 1
+  RaceWeek: 3
+  EventType: Race
+  Category: Oval
+  SimMode: full
+  WeekendOptions:
+    NumStarters: 24
+    IsFixedSetup: 0
+SessionInfo:
+  Sessions:
+    - SessionNum: 0
+      SessionLaps: 82
+      SessionTime: unlimited
+      SessionType: Race
+      SessionName: RACE
+SplitTimeInfo:
+  Sectors:
+    - SectorNum: 0
+      SectorStartPct: 0.000000
+    - SectorNum: 1
+      SectorStartPct: 0.250000
+    - SectorNum: 2
+      SectorStartPct: 0.500000
+    - SectorNum: 3
+      SectorStartPct: 0.750000
+DriverInfo:
+  DriverCarIdx: 0
+  DriverUserID: 1
+  DriverSetupName: g2 race.sto
+  DriverSetupIsModified: 0
+  DriverSetupLoadTypeName: user
+  DriverCarFuelMaxLtr: 68.000
+  DriverCarMaxFuelPct: 1.000
+  Drivers:
+    - CarIdx: 0
+      UserName: Synthetic Driver
+      UserID: 1
+      IRating: 2000
+      CarID: 9002
+      CarPath: synthetic test car
+      CarScreenName: NASCAR Test Car
+      CarClassID: 0
+CarSetup:
+  UpdateCount: 3
+  Tires:
+    LeftFront:
+      ColdPressure: 165.0 kPa
+    RightFront:
+      ColdPressure: 190.0 kPa
+    LeftRear:
+      ColdPressure: 160.0 kPa
+    RightRear:
+      ColdPressure: 185.0 kPa
+  Chassis:
+    Front:
+      SteeringRatio: 12:1
+      BrakeBias: 56.5%
+    LeftFront:
+      SpringRate: 900 lbs/in
+    RightFront:
+      SpringRate: 1100 lbs/in
+"""
+
+# (name, type code, unit, description); the record holds them in this order.
+_G2_VARIABLES = (
+    ("SessionTime", 5, "s", "Seconds since session start"),
+    ("Lat", 5, "deg", "Latitude in decimal degrees"),
+    ("Lon", 5, "deg", "Longitude in decimal degrees"),
+    ("SessionTimeRemain", 5, "s", "Seconds left till session ends"),
+    ("SessionNum", 2, "", "Session number"),
+    ("SessionUniqueID", 2, "", "Session ID"),
+    ("SessionTick", 2, "", "Current update number"),
+    ("SessionState", 2, "irsdk_SessionState", "Session state"),
+    ("SessionFlags", 3, "irsdk_Flags", "Session flags"),
+    ("SessionLapsRemain", 2, "", "Old laps left till session ends"),
+    ("SessionLapsRemainEx", 2, "", "New improved laps left till session ends"),
+    ("SessionLapsTotal", 2, "", "Total number of laps in session"),
+    ("SessionTimeOfDay", 4, "s", "Time of day in seconds"),
+    ("Lap", 2, "", "Laps started count"),
+    ("LapCompleted", 2, "", "Laps completed count"),
+    ("RaceLaps", 2, "", "Laps completed in race"),
+    ("LapDist", 4, "m", "Meters traveled from S/F this lap"),
+    ("LapDistPct", 4, "%", "Percentage distance around lap"),
+    ("LapLastLapTime", 4, "s", "Players last lap time"),
+    ("LapBestLapTime", 4, "s", "Players best lap time"),
+    ("LapCurrentLapTime", 4, "s", "Estimate of players current lap time as shown in F3 box"),
+    ("Speed", 4, "m/s", "GPS vehicle speed"),
+    ("RPM", 4, "revs/min", "Engine rpm"),
+    ("Gear", 2, "", "-1=reverse  0=neutral  1..n=current gear"),
+    ("Throttle", 4, "%", "0=off throttle to 1=full throttle"),
+    ("ThrottleRaw", 4, "%", "Raw throttle input 0=off throttle to 1=full throttle"),
+    ("Brake", 4, "%", "0=brake released to 1=max pedal force"),
+    ("BrakeRaw", 4, "%", "Raw brake input 0=brake released to 1=max pedal force"),
+    ("Clutch", 4, "%", "0=disengaged to 1=fully engaged"),
+    ("BrakeABSactive", 1, "", "true if abs is currently reducing brake force pressure"),
+    ("BrakeABScutPct", 4, "%", "Percent of brake force reduction caused by ABS system"),
+    ("dcBrakeBias", 4, "", "In car brake bias adjustment"),
+    ("SteeringWheelAngle", 4, "rad", "Steering wheel angle"),
+    ("SteeringWheelAngleMax", 4, "rad", "Steering wheel max angle"),
+    ("SteeringWheelTorque", 4, "N*m", "Output torque on steering shaft"),
+    ("LatAccel", 4, "m/s^2", "Lateral acceleration (including gravity)"),
+    ("LongAccel", 4, "m/s^2", "Longitudinal acceleration (including gravity)"),
+    ("VertAccel", 4, "m/s^2", "Vertical acceleration (including gravity)"),
+    ("YawRate", 4, "rad/s", "Yaw rate"),
+    ("PitchRate", 4, "rad/s", "Pitch rate"),
+    ("RollRate", 4, "rad/s", "Roll rate"),
+    ("Yaw", 4, "rad", "Yaw orientation"),
+    ("Pitch", 4, "rad", "Pitch orientation"),
+    ("Roll", 4, "rad", "Roll orientation"),
+    ("VelocityX", 4, "m/s", "X velocity"),
+    ("VelocityY", 4, "m/s", "Y velocity"),
+    ("VelocityZ", 4, "m/s", "Z velocity"),
+    ("Alt", 4, "m", "Altitude in meters"),
+    ("FuelLevel", 4, "l", "Liters of fuel remaining"),
+    ("FuelLevelPct", 4, "%", "Percent fuel remaining"),
+    ("FuelUsePerHour", 4, "kg/h", "Engine fuel used instantaneous"),
+    ("OnPitRoad", 1, "", "Is the player car on pit road between the cones"),
+    ("PlayerCarInPitStall", 1, "", "Players car is in their pit stall"),
+    ("PitstopActive", 1, "", "Is the player getting pit stop service"),
+    ("PitSvFlags", 3, "irsdk_PitSvFlags", "Bitfield of pit service checkboxes"),
+    ("PitSvFuel", 4, "l", "Pit service fuel add amount"),
+    ("PlayerCarPitSvStatus", 2, "irsdk_PitSvStatus", "Players car pit service status bits"),
+    ("PlayerTrackSurface", 2, "irsdk_TrkLoc", "Players car track surface type"),
+    ("PlayerTrackSurfaceMaterial", 2, "irsdk_TrkSurf", "Players car track surface material type"),
+    ("PlayerCarPosition", 2, "", "Players position in race"),
+    ("PlayerCarClassPosition", 2, "", "Players class position in race"),
+    ("CarDistAhead", 4, "m", "Distance to first car in front of player in meters"),
+    ("CarDistBehind", 4, "m", "Distance to first car behind player in meters"),
+    ("IsOnTrack", 1, "", "1=Car on track physics running with player in car"),
+    ("IsOnTrackCar", 1, "", "1=Car on track physics running"),
+    ("PlayerCarMyIncidentCount", 2, "", "Players own incident count for this session"),
+    ("PlayerCarTowTime", 4, "s", "Players car is being towed if time is greater than zero"),
+    ("PitRepairLeft", 4, "s", "Time left for mandatory pit repairs if repairs are active"),
+    ("PitOptRepairLeft", 4, "s", "Time left for optional repairs if repairs are active"),
+    ("FastRepairUsed", 2, "", "How many fast repairs used so far"),
+    ("FastRepairAvailable", 2, "", "How many fast repairs left  255 is unlimited"),
+    ("TireSetsUsed", 2, "", "How many tire sets used so far"),
+    ("LFTiresUsed", 2, "", "How many left front tires used so far"),
+    ("RFTiresUsed", 2, "", "How many right front tires used so far"),
+    ("LRTiresUsed", 2, "", "How many left rear tires used so far"),
+    ("RRTiresUsed", 2, "", "How many right rear tires used so far"),
+    ("TrackTempCrew", 4, "C", "Temperature of track measured by crew around track"),
+    ("TrackTemp", 4, "C", "Deprecated  set to TrackTempCrew"),
+    ("AirTemp", 4, "C", "Temperature of air at start/finish line"),
+    ("AirDensity", 4, "kg/m^3", "Density of air at start/finish line"),
+    ("AirPressure", 4, "Pa", "Pressure of air at start/finish line"),
+    ("WindVel", 4, "m/s", "Wind velocity at start/finish line"),
+    ("WindDir", 4, "rad", "Wind direction at start/finish line"),
+    ("RelativeHumidity", 4, "%", "Relative Humidity at start/finish line"),
+    ("FogLevel", 4, "%", "Fog level at start/finish line"),
+    ("Precipitation", 4, "%", "Precipitation at start/finish line"),
+    ("Skies", 2, "", "Skies (0=clear/1=p cloudy/2=m cloudy/3=overcast)"),
+    ("TrackWetness", 2, "irsdk_TrackWetness", "How wet is the average track surface"),
+    ("WeatherDeclaredWet", 1, "", "The steward says rain tires can be used"),
+    ("CFSRrideHeight", 4, "m", "Center front splitter ride height"),
+    *(
+        item
+        for tire in _G2_TIRES
+        for item in (
+            (f"{tire}speed", 4, "m/s", f"{tire} wheel speed"),
+            (f"{tire}rideHeight", 4, "m", f"{tire} ride height"),
+            (f"{tire}shockDefl", 4, "m", f"{tire} shock deflection"),
+            (f"{tire}shockVel", 4, "m/s", f"{tire} shock velocity"),
+            (f"{tire}pressure", 4, "kPa", f"{tire} tire pressure"),
+            (f"{tire}coldPressure", 4, "kPa", f"{tire} tire cold pressure as set in the garage"),
+            (f"{tire}tempCL", 4, "C", f"{tire} tire left carcass temperature"),
+            (f"{tire}tempCM", 4, "C", f"{tire} tire middle carcass temperature"),
+            (f"{tire}tempCR", 4, "C", f"{tire} tire right carcass temperature"),
+            (f"{tire}tempL", 4, "C", f"{tire} tire left surface temperature"),
+            (f"{tire}tempM", 4, "C", f"{tire} tire middle surface temperature"),
+            (f"{tire}tempR", 4, "C", f"{tire} tire right surface temperature"),
+            (f"{tire}wearL", 4, "%", f"{tire} tire left percent tread remaining"),
+            (f"{tire}wearM", 4, "%", f"{tire} tire middle percent tread remaining"),
+            (f"{tire}wearR", 4, "%", f"{tire} tire right percent tread remaining"),
+        )
+    ),
+)
+_G2_FORMATS = {1: "?", 2: "i", 3: "I", 4: "f", 5: "d"}
+_G2_WEAR_MEASURED = {
+    "LF": (0.95, 0.94, 0.93),
+    "RF": (0.90, 0.88, 0.87),
+    "LR": (0.96, 0.955, 0.95),
+    "RR": (0.92, 0.91, 0.90),
+}
+
+
+def _g2_track() -> tuple[list[tuple[float, float]], list[float], list[float], list[float]]:
+    """Grid cells of a four-turn short oval: position (m), heading, curvature and speed limit.
+
+    The outline is a superellipse traced counterclockwise from the middle of the
+    front straight and resampled by arc length, so ``LapDistPct`` is distance.
+    The speed limit is the lateral-grip limit of each cell bounded by the
+    acceleration and braking limits around the closed lap.
+    """
+
+    fine = 24000
+    outline = []
+    for index in range(fine + 1):
+        angle = -math.pi / 2 + 2 * math.pi * index / fine
+        cosine, sine = math.cos(angle), math.sin(angle)
+        outline.append(
+            (math.copysign(abs(cosine) ** 0.5, cosine), 0.42 * math.copysign(abs(sine) ** 0.5, sine))
+        )
+    lengths = [0.0]
+    for (x0, y0), (x1, y1) in zip(outline, outline[1:]):
+        lengths.append(lengths[-1] + math.hypot(x1 - x0, y1 - y0))
+    scale = G2_TRACK_LENGTH_M / lengths[-1]
+    positions: list[tuple[float, float]] = []
+    cursor = 0
+    for cell in range(_G2_GRID):
+        target = lengths[-1] * cell / _G2_GRID
+        while lengths[cursor + 1] < target:
+            cursor += 1
+        span = lengths[cursor + 1] - lengths[cursor]
+        share = (target - lengths[cursor]) / span if span else 0.0
+        (x0, y0), (x1, y1) = outline[cursor], outline[cursor + 1]
+        positions.append(((x0 + (x1 - x0) * share) * scale, (y0 + (y1 - y0) * share) * scale))
+    step = G2_TRACK_LENGTH_M / _G2_GRID
+    heading = []
+    for cell in range(_G2_GRID):
+        (xa, ya), (xb, yb) = positions[cell - 1], positions[(cell + 1) % _G2_GRID]
+        heading.append(math.atan2(yb - ya, xb - xa))
+    turn = []
+    for cell in range(_G2_GRID):
+        delta = heading[(cell + 1) % _G2_GRID] - heading[cell]
+        turn.append(((delta + math.pi) % (2 * math.pi) - math.pi) / step)
+    window = 12
+    curvature = [
+        sum(turn[(cell + offset) % _G2_GRID] for offset in range(-window, window + 1)) / (2 * window + 1)
+        for cell in range(_G2_GRID)
+    ]
+    limit = [min(_G2_VMAX, math.sqrt(_G2_LATERAL / abs(value))) if value else _G2_VMAX for value in curvature]
+    for _ in range(2):
+        for cell in range(_G2_GRID):
+            limit[cell] = min(limit[cell], math.sqrt(limit[cell - 1] ** 2 + 2 * _G2_ACCELERATE * step))
+        for cell in range(_G2_GRID - 1, -1, -1):
+            limit[cell] = min(limit[cell], math.sqrt(limit[(cell + 1) % _G2_GRID] ** 2 + 2 * _G2_BRAKE * step))
+    return positions, heading, curvature, limit
+
+
+def _g2_bump(distance_m: float) -> float:
+    """Repeatable surface undulation by lap distance (m/s^2 of vertical acceleration)."""
+
+    return 0.6 * math.sin(distance_m / 7.3) + 0.35 * math.sin(distance_m / 2.9 + 1.0)
+
+
+def _build_g2_race_ibt(path: Path) -> dict[str, Any]:
+    """Write the G2 race: 82 green laps at 60 Hz with one four-tire stop after lap 41.
+
+    Lap-to-lap variation comes from a seeded generator; the stint fades with
+    tire age and gains as fuel burns. Returns the recording's summary.
+    """
+
+    positions, heading, curvature, limit = _g2_track()
+    rng = random.Random(8201)
+    lap_noise = [(rng.random() - 0.5) * 0.006 for _ in range(G2_LAPS + 3)]
+    lap_phase = [rng.random() * 2 * math.pi for _ in range(G2_LAPS + 3)]
+    names = [name for name, *_ in _G2_VARIABLES]
+    record = struct.Struct("<" + "".join(_G2_FORMATS[code] for _name, code, *_ in _G2_VARIABLES))
+    dt = 1.0 / G2_TICK_RATE
+    length = G2_TRACK_LENGTH_M
+    lat_scale = 1.0 / 111_320.0
+    lon_scale = 1.0 / (111_320.0 * math.cos(math.radians(_G2_LAT0)))
+
+    rows: list[bytes] = []
+    elapsed = 0.0
+    pct = 0.0
+    lap = 1
+    completed = 0
+    lap_start = 0.0
+    last_lap = 0.0
+    best_lap = 0.0
+    fuel = _G2_START_FUEL_L
+    speed_prev = 34.0
+    cap = 34.0
+    stint_start = 0.0
+    stall_left: float | None = None
+    serviced = False
+    tires_used = 0
+    finish: float | None = None
+    previous: dict[str, float] = {"pitch": 0.0, "roll": 0.0}
+    lap_times: list[float] = []
+
+    while finish is None or elapsed <= finish + 4.0:
+        cell = int(pct * _G2_GRID) % _G2_GRID
+        share = pct * _G2_GRID - int(pct * _G2_GRID)
+        on_pit_road = (lap == G2_PIT_LAP and pct >= _G2_PIT_ENTRY) or (
+            lap == G2_PIT_LAP + 1 and pct < _G2_PIT_EXIT
+        )
+        in_stall = stall_left is not None
+        if in_stall:
+            speed = 0.0
+            stall_left -= dt
+            if stall_left <= 0.0:
+                stall_left = None
+                serviced = True
+                cap = 0.0
+                fuel = _G2_START_FUEL_L
+                tires_used += 1
+                stint_start = elapsed
+        else:
+            run_laps = completed if lap <= G2_PIT_LAP else completed - G2_PIT_LAP
+            scale = (
+                1.0
+                - 0.004 * min(run_laps, 40) / 40.0
+                + 0.002 * (_G2_START_FUEL_L - fuel) / 50.0
+                + lap_noise[lap]
+                + 0.002 * math.sin(8 * math.pi * pct + lap_phase[lap])
+            )
+            target = limit[cell] * scale
+            if lap == G2_PIT_LAP and 0.6 <= pct < _G2_PIT_ENTRY:
+                target = min(target, math.sqrt(_G2_PIT_LIMIT ** 2 + 1.6 * _G2_BRAKE * (_G2_PIT_ENTRY - pct) * length))
+            if on_pit_road:
+                target = min(target, _G2_PIT_LIMIT)
+                if not serviced:
+                    to_stall = ((1.0 - pct) + _G2_STALL if lap == G2_PIT_LAP else _G2_STALL - pct) * length
+                    target = min(target, math.sqrt(2 * 6.0 * max(to_stall, 0.0)))
+                    if to_stall <= 0.05 or (lap == G2_PIT_LAP + 1 and target < 0.3):
+                        pct = _G2_STALL
+                        target = 0.0
+                        stall_left = _G2_STALL_SECONDS
+            if finish is not None:
+                target = min(target, max(12.0, 45.0 - 3.0 * (elapsed - finish)))
+            cap = min(cap + _G2_ACCELERATE * dt, _G2_VMAX + 5.0)
+            speed = max(0.0, min(target, cap))
+            in_stall = stall_left is not None
+        accel_long = (speed - speed_prev) / dt
+        accel_lat = speed * speed * curvature[cell]
+        if in_stall:
+            throttle, brake = 0.0, 0.35
+        elif accel_long < -0.8:
+            throttle, brake = 0.0, min(0.95, -accel_long / _G2_BRAKE * 0.9 + 0.05)
+        elif accel_long > 0.4:
+            throttle, brake = min(1.0, 0.6 + 0.4 * accel_long / _G2_ACCELERATE), 0.0
+        else:
+            throttle, brake = 0.5 + 0.5 * speed / _G2_VMAX, 0.0
+        gear = 1 if speed < 12.0 else 2 if speed < 22.0 else 3 if speed < 38.0 else 4
+        fuel_rate = 2.0 if in_stall else 30.0 + 110.0 * throttle
+        fuel = max(0.0, fuel - fuel_rate / 3600.0 / 0.745 * dt)
+        distance = pct * length
+        bump = _g2_bump(distance) * min(1.0, speed / _G2_VMAX)
+        (x0, y0), (x1, y1) = positions[cell], positions[(cell + 1) % _G2_GRID]
+        x, y = x0 + (x1 - x0) * share, y0 + (y1 - y0) * share
+        lateral = accel_lat / _G2_LATERAL
+        aero = (speed / _G2_VMAX) ** 2
+        pitch = 0.0009 * accel_long
+        roll = -0.0021 * accel_lat
+        track_temp = 38.0 - 2.5 * elapsed / 2100.0
+        warm = 1.0 - math.exp(-(elapsed - stint_start) / 45.0)
+        in_pit_stall = in_stall
+        after_pit = lap > G2_PIT_LAP + 1 or (lap == G2_PIT_LAP + 1 and serviced)
+        position = 12 - min(6, completed // 7) if not after_pit else 14 - min(7, (completed - G2_PIT_LAP) // 5)
+        flags = 0x00000001 if finish is not None else 0x00000006 if lap == G2_LAPS else 0x00000004
+
+        values: dict[str, Any] = {
+            "SessionTime": _G2_SESSION_START + elapsed,
+            "Lat": _G2_LAT0 + y * lat_scale,
+            "Lon": _G2_LON0 + x * lon_scale,
+            "SessionTimeRemain": 604800.0,
+            "SessionNum": 0,
+            "SessionUniqueID": 2,
+            "SessionTick": int(round((_G2_SESSION_START + elapsed) * G2_TICK_RATE)),
+            "SessionState": 5 if finish is not None else 4,
+            "SessionFlags": flags,
+            "SessionLapsRemain": max(0, G2_LAPS - completed),
+            "SessionLapsRemainEx": max(0, G2_LAPS - completed),
+            "SessionLapsTotal": G2_LAPS,
+            "SessionTimeOfDay": 50400.0 + elapsed,
+            "Lap": lap,
+            "LapCompleted": completed,
+            "RaceLaps": completed,
+            "LapDist": distance,
+            "LapDistPct": pct,
+            "LapLastLapTime": last_lap,
+            "LapBestLapTime": best_lap,
+            "LapCurrentLapTime": elapsed - lap_start,
+            "Speed": speed,
+            "RPM": 1100.0 if in_stall else max(1100.0, speed * _G2_GEAR_RATIO[gear]),
+            "Gear": gear,
+            "Throttle": throttle,
+            "ThrottleRaw": throttle,
+            "Brake": brake,
+            "BrakeRaw": brake,
+            "Clutch": 0.0 if in_stall else 1.0,
+            "BrakeABSactive": False,
+            "BrakeABScutPct": 0.0,
+            "dcBrakeBias": 56.5,
+            "SteeringWheelAngle": (math.atan(2.8 * curvature[cell]) + 0.0012 * accel_lat) * 12.0
+            + 0.004 * math.sin(distance / 5.1),
+            "SteeringWheelAngleMax": 4.712389,
+            "SteeringWheelTorque": 3.0 + 0.85 * accel_lat + 0.2 * bump,
+            "LatAccel": accel_lat,
+            "LongAccel": accel_long,
+            "VertAccel": 9.80665 + bump,
+            "YawRate": speed * curvature[cell],
+            "PitchRate": (pitch - previous["pitch"]) / dt,
+            "RollRate": (roll - previous["roll"]) / dt,
+            "Yaw": heading[cell],
+            "Pitch": pitch,
+            "Roll": roll,
+            "VelocityX": speed,
+            "VelocityY": -0.006 * accel_lat,
+            "VelocityZ": 0.0,
+            "Alt": 230.0 + 1.5 * math.sin(2 * math.pi * pct),
+            "FuelLevel": fuel,
+            "FuelLevelPct": fuel / _G2_TANK_L,
+            "FuelUsePerHour": fuel_rate,
+            "OnPitRoad": on_pit_road,
+            "PlayerCarInPitStall": in_pit_stall,
+            "PitstopActive": in_pit_stall,
+            "PitSvFlags": 0x1F if completed >= G2_PIT_LAP - 2 and not serviced else 0,
+            "PitSvFuel": _G2_START_FUEL_L if not serviced else 0.0,
+            "PlayerCarPitSvStatus": 1 if in_pit_stall else 2 if serviced else 0,
+            "PlayerTrackSurface": 1 if in_pit_stall else 2 if on_pit_road else 3,
+            "PlayerTrackSurfaceMaterial": 1,
+            "PlayerCarPosition": position,
+            "PlayerCarClassPosition": position,
+            "CarDistAhead": 18.0 + 12.0 * math.sin(elapsed / 37.0),
+            "CarDistBehind": 22.0 + 9.0 * math.cos(elapsed / 29.0),
+            "IsOnTrack": True,
+            "IsOnTrackCar": True,
+            "PlayerCarMyIncidentCount": 0,
+            "PlayerCarTowTime": 0.0,
+            "PitRepairLeft": 0.0,
+            "PitOptRepairLeft": 0.0,
+            "FastRepairUsed": 0,
+            "FastRepairAvailable": 1,
+            "TireSetsUsed": tires_used,
+            "LFTiresUsed": tires_used,
+            "RFTiresUsed": tires_used,
+            "LRTiresUsed": tires_used,
+            "RRTiresUsed": tires_used,
+            "TrackTempCrew": track_temp,
+            "TrackTemp": track_temp,
+            "AirTemp": 24.0 + 0.5 * elapsed / 2100.0,
+            "AirDensity": 1.16,
+            "AirPressure": 98200.0,
+            "WindVel": 3.1,
+            "WindDir": 1.2,
+            "RelativeHumidity": 0.48,
+            "FogLevel": 0.0,
+            "Precipitation": 0.0,
+            "Skies": 1,
+            "TrackWetness": 1,
+            "WeatherDeclaredWet": False,
+            "CFSRrideHeight": 0.07 - 0.02 * aero + 0.0006 * accel_long + 0.001 * bump,
+        }
+        for tire in _G2_TIRES:
+            right = tire[0] == "R"
+            front = tire[1] == "F"
+            side = 1.0 if right else -1.0
+            deflection = (
+                0.045 + 0.012 * aero + 0.010 * lateral * side
+                - 0.0006 * accel_long * (1.0 if front else -1.0) + 0.002 * bump
+            )
+            wheel = speed * (1.0 + 0.8 * curvature[cell] * side)
+            if not front:
+                wheel *= 1.0 + 0.012 * throttle
+            else:
+                wheel *= 1.0 - 0.03 * brake
+            base = track_temp + (_G2_TIRE_BASE_C[tire] - track_temp) * warm
+            spread = (2.5, 0.0, -1.5) if not right else (-1.5, 0.0, 2.5)
+            load = 6.0 * abs(lateral) * (1.0 if right else 0.5) + (3.0 * throttle if not front else 4.0 * brake)
+            worn = in_pit_stall and not serviced
+            wear = _G2_WEAR_MEASURED[tire] if worn else (1.0, 1.0, 1.0)
+            values.update(
+                {
+                    f"{tire}speed": wheel,
+                    f"{tire}rideHeight": (0.11 if front else 0.13) - 0.8 * deflection,
+                    f"{tire}shockDefl": deflection,
+                    f"{tire}shockVel": (deflection - previous.get(f"{tire}defl", deflection)) / dt,
+                    f"{tire}pressure": _G2_COLD_KPA[tire] * (1.0 + 0.0028 * (base - 25.0)),
+                    f"{tire}coldPressure": _G2_COLD_KPA[tire],
+                    f"{tire}tempCL": base + spread[0],
+                    f"{tire}tempCM": base + spread[1],
+                    f"{tire}tempCR": base + spread[2],
+                    f"{tire}tempL": base + spread[0] + load - 2.0,
+                    f"{tire}tempM": base + spread[1] + load - 2.0,
+                    f"{tire}tempR": base + spread[2] + load - 2.0,
+                    f"{tire}wearL": wear[0],
+                    f"{tire}wearM": wear[1],
+                    f"{tire}wearR": wear[2],
+                }
+            )
+            previous[f"{tire}defl"] = deflection
+        rows.append(record.pack(*(values[name] for name in names)))
+        previous["pitch"], previous["roll"] = pitch, roll
+        speed_prev = speed
+
+        step = speed * dt / length
+        pct += step
+        elapsed += dt
+        if pct >= 1.0:
+            crossed = elapsed - dt * ((pct - 1.0) / step)
+            pct -= 1.0
+            completed += 1
+            lap += 1
+            last_lap = crossed - lap_start
+            lap_times.append(last_lap)
+            best_lap = last_lap if best_lap == 0.0 else min(best_lap, last_lap)
+            lap_start = crossed
+            if completed == G2_LAPS:
+                finish = crossed
+
+    yaml_blob = _G2_SESSION_INFO.encode("utf-8") + b"\x00"
+    session_info_offset = HEADER.size + DISK_SUBHEADER.size
+    variable_header_offset = _align(session_info_offset + len(yaml_blob))
+    sample_offset = _align(variable_header_offset + len(_G2_VARIABLES) * VAR_HEADER.size)
+    output = bytearray(sample_offset)
+    HEADER.pack_into(
+        output, 0,
+        2, 1, G2_TICK_RATE, 1, len(yaml_blob), session_info_offset,
+        len(_G2_VARIABLES), variable_header_offset, 1, record.size,
+        0, 0, len(rows) - 1, sample_offset, 0, 0, *([0] * 12),
+    )
+    DISK_SUBHEADER.pack_into(
+        output, HEADER.size,
+        1_780_100_000, _G2_SESSION_START, _G2_SESSION_START + (len(rows) - 1) * dt, G2_LAPS, len(rows),
+    )
+    output[session_info_offset:session_info_offset + len(yaml_blob)] = yaml_blob
+    offset = 0
+    for index, (name, code, unit, description) in enumerate(_G2_VARIABLES):
+        VAR_HEADER.pack_into(
+            output,
+            variable_header_offset + index * VAR_HEADER.size,
+            code, offset, 1, 0,
+            _fixed(name, 32), _fixed(description, 64), _fixed(unit, 32),
+        )
+        offset += struct.calcsize("<" + _G2_FORMATS[code])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as handle:
+        handle.write(output)
+        handle.write(b"".join(rows))
+    return {
+        "records": len(rows),
+        "laps": len(lap_times),
+        "best_lap_s": round(min(lap_times), 3),
+        "median_lap_s": round(sorted(lap_times)[len(lap_times) // 2], 3),
+        "bytes": path.stat().st_size,
+    }
+
+
 def _session_fixture(
     *,
     subsession_id: int,
@@ -1539,7 +2147,152 @@ def _report_reclaim_fixtures() -> tuple[dict[str, Any], dict[str, Any]]:
         )
 
 
-def main() -> int:
+#: Stamp used for every wall-clock field the analysis writes, so regeneration is repeatable.
+_G2_ANALYZED_AT = "2026-05-29T00:00:00+00:00"
+#: The container's roots (architecture.md section 2.3) stand in for the temporary ones.
+_G2_ARCHIVE_ROOT = "/data/py/1/archive"
+_G2_JOB_ROOT = "/data/py/1/jobs/g2"
+
+
+def _g2_neutral_paths(text: str, roots: list[tuple[Path, str]]) -> str:
+    """Rewrite JSON-escaped absolute paths under each root to the container's root, with ``/``."""
+
+    for root, placeholder in roots:
+        escaped = json.dumps(str(root))[1:-1]
+        pattern = re.compile(re.escape(escaped) + r'((?:(?:\\\\|/)[^"\\/]*)*)')
+        text = pattern.sub(lambda match: placeholder + match.group(1).replace("\\\\", "/"), text)
+    return text
+
+
+def _cargo() -> str:
+    explicit = os.environ.get("CARGO")
+    if explicit:
+        return explicit
+    found = shutil.which("cargo")
+    if found:
+        return found
+    home = Path.home() / ".cargo" / "bin" / ("cargo.exe" if os.name == "nt" else "cargo")
+    if home.is_file():
+        return str(home)
+    raise SystemExit("cargo not found: set CARGO or put ~/.cargo/bin on PATH")
+
+
+def build_g2_fixture(keep_analysis: Path | None = None) -> dict[str, Any]:
+    """Rebuild ``test-data/g2/``: generate the race, analyse it, project it with coach-views.
+
+    The analysis runs in process exactly as the worker runs it (raw archive
+    external, explicit roots); wall-clock stamps are pinned and the temporary
+    roots are rewritten to the container's, so the committed views carry no
+    local path. The projection uses coach-views' ``project`` example.
+    ``keep_analysis`` receives a copy of the projected ``analysis.json``.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="g2-fixture-") as raw:
+        base = Path(raw).resolve()
+        job_root = base / "job"
+        archive = base / "archive"
+        recording = job_root / "telemetry" / G2_RECORDING_NAME
+        recording_summary = _build_g2_race_ibt(recording)
+        os.utime(recording, (1_780_100_000, 1_780_100_000))
+        os.environ["IRACING_COACH_IRACING_ROOT"] = str(job_root)
+        os.environ["IRACING_COACH_DATA"] = str(archive)
+        os.environ["IRACING_COACH_RAW_ARCHIVE"] = "external"
+        import analysis_engine
+        import storage
+        import workflow
+
+        analysis_engine._now = lambda: _G2_ANALYZED_AT
+        storage.utc_now = lambda: _G2_ANALYZED_AT
+        result = workflow.analyze_race_workflow(
+            selector=str(recording),
+            iracing_root=str(job_root),
+            archive_root=str(archive),
+            target_hz=None,
+        )
+        text = Path(result["analysis_path"]).read_text(encoding="utf-8")
+        text = _g2_neutral_paths(text, [(archive, _G2_ARCHIVE_ROOT), (job_root, _G2_JOB_ROOT)])
+        if base.name in text:
+            raise SystemExit("A temporary path survived in analysis.json; refusing to write the G2 fixture.")
+        analysis = base / "analysis.json"
+        analysis.write_text(text, encoding="utf-8", newline="\n")
+        if keep_analysis is not None:
+            keep_analysis.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(analysis, keep_analysis / "analysis.json")
+
+        example = "project" if (WORKSPACE_ROOT / "crates" / "coach-views" / "examples" / "project.rs").is_file() else "project_file"
+        environment = dict(os.environ)
+        environment.setdefault("CARGO_TARGET_DIR", str(WORKSPACE_ROOT / "target" / "fixtures"))
+        views = base / "views"
+        completed = subprocess.run(
+            [_cargo(), "run", "--release", "--quiet", "-p", "coach-views", "--example", example, "--",
+             str(analysis), str(views)],
+            cwd=WORKSPACE_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise SystemExit(f"coach-views projection failed:\n{completed.stderr}")
+        projection = json.loads(completed.stdout)
+
+        G2_DIR.mkdir(parents=True, exist_ok=True)
+        for name in G2_VIEW_FILES:
+            (G2_DIR / name).unlink(missing_ok=True)
+        files = []
+        for item in projection["files"]:
+            source = views / item["file_name"]
+            if base.name.encode("utf-8") in source.read_bytes():
+                raise SystemExit(f"A temporary path survived in {item['file_name']}; refusing to write the G2 fixture.")
+            shutil.copyfile(source, G2_DIR / item["file_name"])
+            files.append({key: item[key] for key in ("kind", "file_name", "bytes", "sha256")})
+        catalog = json.loads((views / "traces-catalog.json").read_text(encoding="utf-8"))
+        manifest = {
+            "fixture": "g2-race",
+            "purpose": "Gate G2 (workstreams.md): a current-profile 82-lap race for the investigation views.",
+            "generator": "tools/generate_fixtures.py --g2",
+            "recording": {"name": G2_RECORDING_NAME, "sha256": _sha256_file(recording), **recording_summary},
+            "analysis_id": result["analysis_id"],
+            "analysis_profile_version": analysis_engine.ANALYSIS_PROFILE_VERSION,
+            "projection_version": projection["projection_version"],
+            "race_laps": G2_LAPS,
+            "catalog_laps": len(catalog["laps"]),
+            "signals": len(catalog["signals"]),
+            "omitted_signals": catalog.get("omitted_signals") or [],
+            "files": files,
+        }
+        (G2_DIR / "fixture.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        return manifest
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--g2",
+        action="store_true",
+        help="Rebuild only test-data/g2/ (needs cargo); the other fixtures are left untouched.",
+    )
+    parser.add_argument(
+        "--keep-analysis",
+        type=Path,
+        help="With --g2, also copy the projected analysis.json into this directory.",
+    )
+    args = parser.parse_args(argv)
+    if args.g2:
+        print(json.dumps(build_g2_fixture(args.keep_analysis), indent=2, sort_keys=True))
+        return 0
     card = _race_card()
     damage = _damage_repair()
     timing = {

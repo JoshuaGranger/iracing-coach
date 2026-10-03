@@ -1,6 +1,8 @@
 //! D12: one-time conversion of legacy user-authored data. The bundle is stored by hash, the job
 //! reads it back, resolves every reference against the re-ingested library and attaches notes,
-//! drafts and annotations; what cannot be resolved is kept verbatim as `legacy_items`.
+//! drafts and annotations; what cannot be resolved is kept verbatim as `legacy_items`. The legacy
+//! worker archive travels in the bundle and goes through W6's `import_legacy_tuning_experiments`
+//! on the light lane.
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
@@ -8,7 +10,8 @@ use serde_json::{Value, json};
 use crate::app::AppState;
 use crate::error::{Error, Result};
 use crate::jobs::{JobOutcome, JobRow};
-use crate::util::iso_now;
+use crate::util::{self, iso_now};
+use crate::worker::Cancel;
 
 pub fn bundle_path(app: &AppState, sha: &str) -> std::path::PathBuf {
     app.cfg.data_dir.join("import").join(format!("{sha}.json"))
@@ -145,7 +148,150 @@ fn unique_layout_id(
     }
 }
 
-pub async fn run(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
+/// A legacy archive file path the bundle may carry: `history.sqlite3` or a file under `tuning/`,
+/// forward slashes, no empty, `.` or `..` segment, no drive or stream colon.
+fn legacy_path_ok(path: &str) -> bool {
+    let allowed = path == "history.sqlite3" || path.starts_with("tuning/");
+    allowed
+        && !path.contains(['\\', ':', '\0'])
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+}
+
+/// The bundle's `legacy_archive` files, each decoded and checked against its SHA-256 and path.
+fn legacy_files(bundle: &Value) -> std::result::Result<Vec<(String, Vec<u8>)>, String> {
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for file in bundle["legacy_archive"]["files"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let path = file["relative_path"].as_str().unwrap_or_default();
+        if !legacy_path_ok(path) {
+            return Err(format!("legacy_archive path {path:?} is not allowed"));
+        }
+        if files.iter().any(|(seen, _)| seen == path) {
+            return Err(format!("legacy_archive names {path} twice"));
+        }
+        let bytes = util::base64_decode(file["content_base64"].as_str().unwrap_or_default())
+            .ok_or_else(|| format!("legacy_archive file {path} is not valid base64"))?;
+        let want = file["sha256"].as_str().unwrap_or_default();
+        if util::sha256_hex(&bytes) != want {
+            return Err(format!(
+                "legacy_archive file {path} does not match its sha256"
+            ));
+        }
+        files.push((path.to_string(), bytes));
+    }
+    Ok(files)
+}
+
+/// Every legacy analysis the bundle names, resolved to the matching session's current analysis
+/// (null id and path when unresolved), as `import_legacy_tuning_experiments` expects.
+fn analysis_map(conn: &Connection, customer: i64, bundle: &Value) -> rusqlite::Result<Vec<Value>> {
+    let mut map = Vec::new();
+    for entry in bundle["legacy_analyses"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
+        let legacy = entry["legacy_analysis_id"].as_str().unwrap_or_default();
+        let current: Option<(String, String)> = match session_for_ref(conn, customer, &entry)? {
+            Some(session) => conn
+                .query_row(
+                    "SELECT a.analysis_id, a.analysis_path FROM sessions s
+                     JOIN analyses a ON a.analysis_id = s.current_analysis_id WHERE s.session_id = ?1",
+                    [session],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?,
+            None => None,
+        };
+        map.push(json!({
+            "legacy_analysis_id": legacy,
+            "analysis_id": current.as_ref().map(|c| c.0.clone()),
+            "analysis_path": current.map(|c| c.1),
+        }));
+    }
+    Ok(map)
+}
+
+/// Writes the legacy files under the job root and runs the worker's import; the counts for the
+/// summary, or the failed outcome.
+async fn import_tuning_experiments(
+    app: &AppState,
+    job: &JobRow,
+    cancel: &Cancel,
+    customer: i64,
+    bundle: &Value,
+) -> Result<std::result::Result<Value, JobOutcome>> {
+    let files = match legacy_files(bundle) {
+        Ok(files) => files,
+        Err(message) => return Ok(Err(JobOutcome::failed("invalid_bundle", message))),
+    };
+    let map = {
+        let bundle = bundle.clone();
+        app.store
+            .read(move |conn| Ok(analysis_map(conn, customer, &bundle)?))
+            .await?
+    };
+    let mapped = map.iter().filter(|m| !m["analysis_id"].is_null()).count();
+    let mut counts = json!({
+        "legacy_analyses": map.len(),
+        "legacy_analyses_resolved": mapped,
+        "legacy_analyses_unresolved": map.len() - mapped,
+        "tuning_experiments_imported": 0,
+        "tuning_experiments_resolved": 0,
+        "tuning_experiments_unresolved": 0,
+    });
+    if files.is_empty() {
+        return Ok(Ok(counts));
+    }
+    let (root, _) = crate::handlers::prepare_root(app, job, customer, &[], false).await?;
+    let legacy = root.join("legacy");
+    let written = (|| -> std::io::Result<()> {
+        for (path, bytes) in &files {
+            let dest = legacy.join(path);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(dest, bytes)?;
+        }
+        Ok(())
+    })();
+    if let Err(e) = written {
+        crate::handlers::cleanup_root(&root);
+        return Err(e.into());
+    }
+    let archive = app.cfg.py_archive(customer);
+    let result = crate::handlers::call_worker(
+        app,
+        job,
+        "import_legacy_tuning_experiments",
+        json!({
+            "legacy_archive_root": legacy.to_string_lossy(),
+            "analysis_map": map,
+            "archive_root": archive.to_string_lossy(),
+        }),
+        &root,
+        app.cfg.worker.light_timeout,
+        cancel,
+    )
+    .await;
+    crate::handlers::cleanup_root(&root);
+    match result {
+        Ok(result) => {
+            counts["tuning_experiments_imported"] = result["experiment_count"].clone();
+            counts["tuning_experiments_resolved"] = result["resolved_count"].clone();
+            counts["tuning_experiments_unresolved"] = result["unresolved_count"].clone();
+            Ok(Ok(counts))
+        }
+        Err(e) => Ok(Err(crate::handlers::worker_failure(e))),
+    }
+}
+
+pub async fn run(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOutcome> {
     let sha = job.subject["bundle_sha256"]
         .as_str()
         .unwrap_or_default()
@@ -153,6 +299,27 @@ pub async fn run(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
     let path = bundle_path(app, &sha);
     let bundle: Value = serde_json::from_slice(&std::fs::read(&path)?)
         .map_err(|e| Error::internal(format!("stored bundle is not JSON: {e}")))?;
+    let customer = bundle["customer_id"].as_i64().unwrap_or_default();
+    let already: bool = {
+        let sha = sha.clone();
+        app.store
+            .read(move |conn| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) > 0 FROM imports WHERE bundle_sha256 = ?1",
+                    [sha],
+                    |r| r.get(0),
+                )?)
+            })
+            .await?
+    };
+    if already {
+        return Ok(JobOutcome::Succeeded(json!({"already_imported": true})));
+    }
+    // The worker step is idempotent, so a retry after a failed transaction repeats it safely.
+    let experiments = match import_tuning_experiments(app, job, cancel, customer, &bundle).await? {
+        Ok(counts) => counts,
+        Err(outcome) => return Ok(outcome),
+    };
     let job_id = job.job_id;
     let summary = app
         .store
@@ -265,14 +432,6 @@ pub async fn run(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
                 )?;
             }
             let mut parked = 0;
-            for exp in bundle["tuning_experiments"].as_array().cloned().unwrap_or_default() {
-                tx.execute(
-                    "INSERT INTO legacy_items(customer_id, kind, source_path, body_json, imported_at, import_id)
-                     VALUES (?1, 'tuning_experiment', 'history.sqlite3/tuning_experiments', ?2, ?3, ?4)",
-                    params![customer, exp.to_string(), now, import_id],
-                )?;
-                parked += 1;
-            }
             for item in bundle["legacy_items"].as_array().cloned().unwrap_or_default() {
                 tx.execute(
                     "INSERT INTO legacy_items(customer_id, kind, source_path, body_json, imported_at, import_id)
@@ -288,7 +447,7 @@ pub async fn run(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
                 )?;
                 parked += 1;
             }
-            let summary = json!({
+            let mut summary = json!({
                 "job_id": job_id,
                 "notes_attached": notes_attached,
                 "notes_unresolved": notes_unresolved,
@@ -297,8 +456,10 @@ pub async fn run(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
                 "tuning_drafts": drafts,
                 "turn_annotations": annotations,
                 "legacy_items": parked,
-                "tuning_experiments_awaiting_worker_import": bundle["tuning_experiments"].as_array().map(|a| a.len()).unwrap_or(0),
             });
+            if let (Some(out), Some(counts)) = (summary.as_object_mut(), experiments.as_object()) {
+                out.extend(counts.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
             tx.execute(
                 "UPDATE imports SET summary_json = ?2 WHERE import_id = ?1",
                 params![import_id, summary.to_string()],

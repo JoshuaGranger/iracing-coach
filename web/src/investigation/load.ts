@@ -1,5 +1,5 @@
 import { createAnalysisCache, type AnalysisCache } from "./cache";
-import { decodeCcol, type CcolChannel, type TraceTable } from "./ccol";
+import { decodeCcol, joinCcol, type CcolChannel, type TraceTable } from "./ccol";
 import { createTraceData, type TraceData } from "./geometry/trace-model";
 import { parseInvestigation, type Investigation } from "./investigation-model";
 import type { InvestigationViewData, RaceViewData, RunsViewData, TraceCatalogData, TrackGeometryData } from "./types";
@@ -58,6 +58,19 @@ export interface LoaderOptions {
   baseUrl?: string;
 }
 
+/** Lap numbers as the `laps` query value: sorted, consecutive runs written as ranges (`1-40,52`). */
+export function lapRangeText(laps: readonly number[]): string {
+  const sorted = [...new Set(laps)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let index = 0; index < sorted.length;) {
+    let end = index;
+    while (end + 1 < sorted.length && sorted[end + 1] === sorted[end]! + 1) end++;
+    parts.push(end > index ? `${sorted[index]}-${sorted[end]}` : `${sorted[index]}`);
+    index = end + 1;
+  }
+  return parts.join(",");
+}
+
 async function errorFrom(response: Response): Promise<HttpError> {
   let code = `http_${response.status}`;
   let message = `${response.status} ${response.statusText}`.trim();
@@ -114,19 +127,44 @@ export function createAnalysisLoader(options: LoaderOptions = {}): AnalysisLoade
     }
 
     async function loadTraces(): Promise<TraceData> {
+      const catalogRequest = json<TraceCatalogData>(`/api/v1/analyses/${id}/traces/catalog`);
       const [catalog, blob] = await Promise.all([
-        json<TraceCatalogData>(`/api/v1/analyses/${id}/traces/catalog`),
-        fetchCcol(`/api/v1/analyses/${id}/traces`),
+        catalogRequest,
+        fetchTraces(null, async () => (await catalogRequest).value!.laps.map((lap) => lap.lap)),
       ]);
       data = createTraceData(catalog.value!, blob);
       account(catalog.bytes + blob.byteLength);
       return data;
     }
 
-    async function fetchCcol(path: string): Promise<TraceTable> {
-      const response = await doFetch(`${base}${path}`, { headers: { accept: "application/vnd.coach.columns" } });
+    /** One CCOL body, or null when the server answers 413 (selection over its 16 MiB bound). */
+    async function fetchCcol(channels: readonly string[] | null, laps: readonly number[] | null): Promise<TraceTable | null> {
+      const query: string[] = [];
+      if (channels) query.push(`channels=${encodeURIComponent(channels.join(","))}`);
+      if (laps) query.push(`laps=${encodeURIComponent(lapRangeText(laps))}`);
+      const response = await doFetch(`${base}/api/v1/analyses/${id}/traces${query.length ? `?${query.join("&")}` : ""}`, { headers: { accept: "application/vnd.coach.columns" } });
+      if (response.status === 413) return null;
       if (!response.ok) throw await errorFrom(response);
       return decodeCcol(await response.arrayBuffer());
+    }
+
+    /** Requests the lap selection in halves, recursively, and joins the bodies (the 413 remedy). */
+    async function fetchLapHalves(channels: readonly string[] | null, laps: readonly number[]): Promise<TraceTable> {
+      if (laps.length < 2) throw new HttpError(413, "payload_too_large", "A single lap exceeds the traces size bound");
+      const middle = laps.length >> 1;
+      const parts: TraceTable[] = [];
+      for (const half of [laps.slice(0, middle), laps.slice(middle)]) {
+        parts.push((await fetchCcol(channels, half)) ?? (await fetchLapHalves(channels, half)));
+      }
+      return joinCcol(parts);
+    }
+
+    /** The whole selection in one request; on a 413 the lap list (from `lapsOf`) is split instead. */
+    async function fetchTraces(channels: readonly string[] | null, lapsOf: () => Promise<readonly number[]> | readonly number[]): Promise<TraceTable> {
+      const whole = await fetchCcol(channels, null);
+      if (whole) return whole;
+      const laps = [...new Set(await lapsOf())].sort((a, b) => a - b);
+      return fetchLapHalves(channels, laps);
     }
 
     return {
@@ -149,7 +187,7 @@ export function createAnalysisLoader(options: LoaderOptions = {}): AnalysisLoade
         const current = await this.traces();
         const missing = ids.filter((signal) => !current.table.channels.has(signal) && current.signals.has(signal));
         if (missing.length === 0) return current;
-        const extra = await fetchCcol(`/api/v1/analyses/${id}/traces?channels=${encodeURIComponent(missing.join(","))}`);
+        const extra = await fetchTraces(missing, () => current.table.laps);
         if (extra.bins !== current.bins || extra.laps.length !== current.laps.length) return current;
         const added: [string, CcolChannel][] = [];
         for (const [channelId, channel] of extra.channels) if (!current.table.channels.has(channelId)) added.push([channelId, channel]);

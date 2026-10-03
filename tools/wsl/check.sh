@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Linux gate in WSL Ubuntu. Run from anywhere: wsl -d Ubuntu -- bash tools/wsl/check.sh [scope]
-#   (none) | rust  clippy -D warnings and tests over the whole workspace
-#   all            rust, then the Python suite
+#   (none) | all   rust, then the Python suite
+#   rust           clippy -D warnings and tests over the whole workspace
 #   server         coach-server and the crates it links (coach-wire, coach-ibt, coach-live, coach-views)
-#   python         Python suite only (17 tests fail on Linux until W6 makes the suite Linux-clean;
-#                  W6 then makes `all` the default through the contract change process)
+#   python         Python suite only
 # Build output goes to the Linux filesystem; the /mnt/c checkout is read only for sources.
 set -euo pipefail
 
-scope="${1:-rust}"
+scope="${1:-all}"
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo"
 

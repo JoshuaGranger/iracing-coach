@@ -41,7 +41,7 @@ The rename is the commit; a reader trusts a data file only when its manifest exi
 
 | Reader | Reads | When |
 |---|---|---|
-| Archiver (restage) | `raw/<aa>/<sha>.ibt` to `/data/spool/ready/<sha>.ibt` with hash check | re-analysis of a recording whose spool copy is gone |
+| Archiver (restage) | `raw/<aa>/<sha>.ibt` to `/data/spool/ready/<sha>.ibt` with hash check; the bytes are reserved first through the upload admission (`collector-protocol.md` section 4: restaged bytes count toward 20 GB and the 4 GiB free rule; a refused restage waits), and the file gets the blob's `source_mtime` with the commit clamp `min(source_mtime, now - 10 s)` and is fsynced before it is renamed into `ready/` | re-analysis of a recording whose spool copy is gone |
 | Archiver (rebuild) | all `*.manifest.json` | disaster recovery: rebuild `blobs` and `recordings` rows from manifests (`coach-server rebuild-index`) |
 | Migration check | manifests | D12 completeness report |
 

@@ -46,7 +46,7 @@ export const EXTRA_STAGES: readonly [Stage | "whole", string][] = [
 ];
 
 /** One saved observation. Field names match the worker's closed input schema (`TuningFeedbackItem`) plus `priority`. */
-export interface FeedbackItem {
+export type FeedbackItem = {
   feedback_id: string;
   corner_id: string;
   corner_label: string;
@@ -60,17 +60,16 @@ export interface FeedbackItem {
   driver_confidence: number;
   priority: number;
   note: string;
-}
+};
 
-/** The draft body stored per exact session identity (`TuningDraft.body`). Unknown fields are kept when saving. */
-export interface DraftBody {
+/** The draft body stored per exact session identity (`TuningDraft.body`): the wire `TuningDraftBody` with its fields narrowed to what this page writes. Unknown fields are kept when saving. */
+export type DraftBody = Omit<Schemas["TuningDraftBody"], "goal" | "general_note" | "representative_run_ids" | "open_target_analysis_id" | "feedback"> & {
   goal: Goal;
   general_note: string;
   representative_run_ids: string[];
   open_target_analysis_id: string | null;
   feedback: FeedbackItem[];
-  [extra: string]: unknown;
-}
+};
 
 export const EMPTY_DRAFT: DraftBody = { goal: "long-run-pace", general_note: "", representative_run_ids: [], open_target_analysis_id: null, feedback: [] };
 

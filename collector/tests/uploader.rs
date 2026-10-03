@@ -441,6 +441,62 @@ fn an_in_flight_chunk_is_abandoned_within_100_ms_when_the_car_goes_on_track() {
     assert!(mock.with(|s| s.uploads[&sha256_hex(&bytes)].verified));
 }
 
+// Windows only, like the test above: it relies on the bounded socket buffers. The server reads a
+// little of the chunk and then stops reading: the client's write blocks on a full socket, and the
+// on-track gate must still end the request within 100 ms.
+#[cfg(windows)]
+#[test]
+fn a_chunk_is_abandoned_within_100_ms_even_when_the_server_stops_reading() {
+    use std::time::{Duration, Instant};
+    let env = Env::new();
+    let mock = Mock::start();
+    let path = env.paths.telemetry_dir().join("stall.ibt");
+    let bytes = recording(&path, 12_500, 14); // about 17.6 MB
+    assert!(bytes.len() > 16 * 1024 * 1024);
+    mock.with(|s| s.stall_after = Some(64 * 1024));
+    let mut up = env.uploader(&mock.url(), 8 * 1024 * 1024);
+    up.step(); // scan
+
+    // The car goes on track half a second after the server stalled: the socket is long full.
+    let flipped: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+    let watcher = {
+        let hub = env.hub.clone();
+        let flipped = flipped.clone();
+        let stalled = {
+            let state = mock.state_handle();
+            move || state.lock().unwrap().stalled
+        };
+        std::thread::spawn(move || {
+            assert!(wait_until(Duration::from_secs(10), &stalled));
+            std::thread::sleep(Duration::from_millis(500));
+            *flipped.lock().unwrap() = Some(Instant::now());
+            hub.gate.observe(Evidence::Live {
+                on_track: Some(true),
+            });
+        })
+    };
+    let outcome = up.step();
+    let returned = Instant::now();
+    watcher.join().unwrap();
+    assert_eq!(outcome, Step::Worked);
+    let lag = returned.duration_since(flipped.lock().unwrap().expect("the server stalled"));
+    assert!(
+        lag < Duration::from_millis(100),
+        "abandoning a blocked write took {lag:?}"
+    );
+    mock.with(|s| {
+        assert!(s.puts.is_empty(), "no chunk completed");
+        s.stall_after = None; // release the stalled handler
+    });
+    assert_eq!(env.pending_journal(), 1, "still queued");
+    assert!(matches!(up.step(), Step::Idle(_)), "paused while on track");
+
+    // Off track again and the server healthy: the file goes through.
+    env.set_off_track();
+    env.drain(&mut up, 20);
+    assert!(mock.with(|s| s.uploads[&sha256_hex(&bytes)].verified));
+}
+
 #[test]
 fn a_restart_resumes_from_the_server_offset_without_hashing_again() {
     let env = Env::new();

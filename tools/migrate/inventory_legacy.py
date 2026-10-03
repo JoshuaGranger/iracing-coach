@@ -45,6 +45,9 @@ USER_AUTHORED = (
     "data/strategy-history",
     "data/setup-history",
     "data/target-laps",
+    "data/trials",
+    "data/event-plans",
+    "data/ai-coaching",
 )
 RAW_RECORDINGS = "data/telemetry-traces/raw"
 REDERIVED = (
@@ -56,7 +59,6 @@ REDERIVED = (
     "data/track-geometry",
     "data/tire-models",
     "data/driver-models",
-    "data/ai-coaching",
     "data/telemetry-events",
     "data/telemetry-profiles",
     "data/ui-analysis-cache",

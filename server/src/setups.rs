@@ -55,6 +55,17 @@ pub fn is_identity_excluded(key: &str) -> bool {
     patterns.iter().any(|p| p.is_match(leaf))
 }
 
+/// What the server did with one garage event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GarageOutcome {
+    /// Its values are stored as an observation for this driver (a replay counts): acknowledge.
+    Stored(i64),
+    /// It cannot be attributed yet (driver, car or values missing): leave it unacknowledged so the
+    /// collector resends it after a later `welcome` (`collector-protocol.md` section 8).
+    Unattributed(&'static str),
+}
+
+/// The event's own driver, else the collector's last reported driver.
 fn resolve_garage_customer(
     conn: &Connection,
     msg: &Value,
@@ -64,22 +75,29 @@ fn resolve_garage_customer(
         crate::db::upsert_driver(conn, id, msg["driver"]["name"].as_str(), None)?;
         return Ok(Some(id));
     }
-    let last: Option<i64> = conn
+    Ok(conn
         .query_row(
             "SELECT last_customer_id FROM collectors WHERE collector_id = ?1",
             [collector_id],
             |r| r.get(0),
         )
         .optional()?
-        .flatten();
-    if last.is_some() {
-        return Ok(last);
+        .flatten())
+}
+
+/// The event's own car, else the car its visit already carries.
+fn resolve_garage_car(conn: &Connection, msg: &Value) -> rusqlite::Result<Option<String>> {
+    if let Some(car) = msg["car_path"].as_str() {
+        return Ok(Some(car.to_string()));
     }
-    let ids: Vec<i64> = conn
-        .prepare("SELECT customer_id FROM drivers LIMIT 2")?
-        .query_map([], |r| r.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
-    Ok(if ids.len() == 1 { Some(ids[0]) } else { None })
+    Ok(conn
+        .query_row(
+            "SELECT car_path FROM garage_visits WHERE visit_id = ?1",
+            [msg["visit_id"].as_str().unwrap_or_default()],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten())
 }
 
 fn values_of(msg: &Value) -> BTreeMap<String, String> {
@@ -124,14 +142,16 @@ pub fn record_garage_snapshot(
     msg: &Value,
     collector_id: &str,
     fingerprint: &dyn Fn(&BTreeMap<String, String>) -> String,
-) -> Result<()> {
+) -> Result<GarageOutcome> {
     let visit = msg["visit_id"].as_str().unwrap_or_default().to_string();
     let update_count = msg["update_count"].as_i64();
     let customer = resolve_garage_customer(conn, msg, collector_id)?;
     ensure_visit(conn, msg, collector_id, customer)?;
-    let (Some(customer), Some(car_path)) = (customer, msg["car_path"].as_str()) else {
-        tracing::warn!(visit_id = %visit, "garage snapshot has no driver or car; acknowledged without a setup");
-        return Ok(());
+    let Some(customer) = customer else {
+        return Ok(GarageOutcome::Unattributed("driver"));
+    };
+    let Some(car_path) = resolve_garage_car(conn, msg)? else {
+        return Ok(GarageOutcome::Unattributed("car"));
     };
     let values = values_of(msg);
     let observed = msg["observed_at"]
@@ -141,7 +161,7 @@ pub fn record_garage_snapshot(
     let setup_id = upsert_setup(
         conn,
         customer,
-        car_path,
+        &car_path,
         &fingerprint(&values),
         &values,
         &observed,
@@ -151,7 +171,7 @@ pub fn record_garage_snapshot(
          VALUES (?1, ?2, 'garage_snapshot', ?3, ?4, ?5)",
         params![setup_id, customer, visit, update_count, observed],
     )?;
-    Ok(())
+    Ok(GarageOutcome::Stored(customer))
 }
 
 /// `garage.commit`: the visit's last snapshot with the name and `.sto` hash iRacing published at
@@ -162,25 +182,15 @@ pub fn record_garage_commit(
     msg: &Value,
     collector_id: &str,
     fingerprint: &dyn Fn(&BTreeMap<String, String>) -> String,
-) -> Result<()> {
+) -> Result<GarageOutcome> {
     let visit = msg["visit_id"].as_str().unwrap_or_default().to_string();
     let customer = resolve_garage_customer(conn, msg, collector_id)?;
     ensure_visit(conn, msg, collector_id, customer)?;
-    conn.execute(
-        "UPDATE garage_visits SET exited_at = ?2, committed_name = ?3, committed_sto_sha256 = ?4,
-           ambiguous_name = ?5, entered_at = COALESCE(entered_at, ?6) WHERE visit_id = ?1",
-        params![
-            visit,
-            msg["exited_at"].as_str(),
-            msg["setup_name"].as_str(),
-            msg["sto_sha256"].as_str(),
-            msg["ambiguous"].as_bool().unwrap_or(false) as i64,
-            msg["entered_at"].as_str(),
-        ],
-    )?;
-    let (Some(customer), Some(car_path)) = (customer, msg["car_path"].as_str()) else {
-        tracing::warn!(visit_id = %visit, "garage commit has no driver or car; acknowledged without a setup");
-        return Ok(());
+    let Some(customer) = customer else {
+        return Ok(GarageOutcome::Unattributed("driver"));
+    };
+    let Some(car_path) = resolve_garage_car(conn, msg)? else {
+        return Ok(GarageOutcome::Unattributed("car"));
     };
     let mut values = values_of(msg);
     if values.is_empty()
@@ -199,6 +209,23 @@ pub fn record_garage_commit(
             values = serde_json::from_str(&json).unwrap_or_default();
         }
     }
+    if values.is_empty() {
+        // The snapshot it names is not stored yet (it was not attributable); the resend of both
+        // events, oldest first, stores them in order.
+        return Ok(GarageOutcome::Unattributed("values"));
+    }
+    conn.execute(
+        "UPDATE garage_visits SET exited_at = ?2, committed_name = ?3, committed_sto_sha256 = ?4,
+           ambiguous_name = ?5, entered_at = COALESCE(entered_at, ?6) WHERE visit_id = ?1",
+        params![
+            visit,
+            msg["exited_at"].as_str(),
+            msg["setup_name"].as_str(),
+            msg["sto_sha256"].as_str(),
+            msg["ambiguous"].as_bool().unwrap_or(false) as i64,
+            msg["entered_at"].as_str(),
+        ],
+    )?;
     let observed = msg["exited_at"]
         .as_str()
         .map(str::to_string)
@@ -206,7 +233,7 @@ pub fn record_garage_commit(
     let setup_id = upsert_setup(
         conn,
         customer,
-        car_path,
+        &car_path,
         &fingerprint(&values),
         &values,
         &observed,
@@ -227,7 +254,7 @@ pub fn record_garage_commit(
             observed
         ],
     )?;
-    Ok(())
+    Ok(GarageOutcome::Stored(customer))
 }
 
 #[derive(Debug, Clone)]
@@ -252,6 +279,10 @@ struct ObsRow {
     observed_at: String,
     session_id: Option<i64>,
     session_type: Option<String>,
+    /// The session's current analysis (recording observations).
+    analysis_id: Option<String>,
+    /// The visit's commit could not tell which same-named file was loaded.
+    ambiguous: bool,
 }
 
 fn base_name(relative_path: &str) -> &str {
@@ -284,7 +315,10 @@ fn load_observations(conn: &Connection, customer: i64) -> rusqlite::Result<Vec<O
                 (SELECT s.session_id FROM session_recordings sr JOIN sessions s ON s.session_id = sr.session_id
                    WHERE sr.recording_sha256 = o.recording_sha256 LIMIT 1),
                 (SELECT s.session_type FROM session_recordings sr JOIN sessions s ON s.session_id = sr.session_id
-                   WHERE sr.recording_sha256 = o.recording_sha256 LIMIT 1)
+                   WHERE sr.recording_sha256 = o.recording_sha256 LIMIT 1),
+                (SELECT s.current_analysis_id FROM session_recordings sr JOIN sessions s ON s.session_id = sr.session_id
+                   WHERE sr.recording_sha256 = o.recording_sha256 LIMIT 1),
+                COALESCE((SELECT v.ambiguous_name FROM garage_visits v WHERE v.visit_id = o.visit_id), 0)
          FROM setup_observations o WHERE o.customer_id = ?1 ORDER BY o.observed_at DESC, o.observation_id DESC",
     )?;
     let rows = stmt
@@ -301,6 +335,8 @@ fn load_observations(conn: &Connection, customer: i64) -> rusqlite::Result<Vec<O
                 observed_at: r.get(9)?,
                 session_id: r.get(10)?,
                 session_type: r.get(11)?,
+                analysis_id: r.get(12)?,
+                ambiguous: r.get::<_, i64>(13)? != 0,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -317,7 +353,10 @@ fn linked_setup(file: &FileRow, car_path_of: &HashMap<i64, String>, obs: &[ObsRo
                 if o.sto.as_deref() == Some(file.sha.as_str()) {
                     return true;
                 }
+                // An ambiguous visit withheld the hash because it could not tell which file was
+                // loaded, so its name proves nothing about any one file.
                 o.sto.is_none()
+                    && !o.ambiguous
                     && file.format == "sto"
                     && o.name
                         .as_deref()
@@ -579,6 +618,7 @@ pub fn detail(conn: &Connection, setup_id: i64) -> Result<Option<Value>> {
                 "is_modified": o.modified.map(|m| m != 0),
                 "load_type": o.load_type,
                 "session_id": o.session_id,
+                "analysis_id": o.analysis_id,
                 "visit_id": o.visit,
             })
         })

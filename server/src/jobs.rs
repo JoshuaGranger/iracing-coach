@@ -1,8 +1,8 @@
 //! Job queue and runner: persistent rows in `jobs`, four lanes (analysis, light, io, server)
 //! each running one job at a time, admission through one shared memory budget, restart recovery.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -221,10 +221,23 @@ struct Running {
     estimate: u64,
 }
 
+/// A terminal state write that SQLite refused; kept and retried until it lands.
+pub struct TerminalWrite {
+    job: JobRow,
+    state: &'static str,
+    code: Option<String>,
+    message: Option<String>,
+    result: Option<String>,
+}
+
 pub struct JobRuntime {
     /// Set by the snapshot while it holds the light lane.
     pub light_hold: std::sync::atomic::AtomicBool,
     running: Mutex<HashMap<i64, Running>>,
+    /// Terminal writes waiting for SQLite (`flush_pending`).
+    pending: Mutex<Vec<TerminalWrite>>,
+    /// Drivers whose `.write-*` and `.copy-*` temp files wait for their workers to go idle.
+    deferred_cleanup: Mutex<HashSet<Option<i64>>>,
     wake: watch::Sender<u64>,
     pub finished: broadcast::Sender<i64>,
 }
@@ -234,6 +247,8 @@ impl Default for JobRuntime {
         JobRuntime {
             light_hold: std::sync::atomic::AtomicBool::new(false),
             running: Mutex::new(HashMap::new()),
+            pending: Mutex::new(Vec::new()),
+            deferred_cleanup: Mutex::new(HashSet::new()),
             wake: watch::channel(0).0,
             finished: broadcast::channel(256).0,
         }
@@ -241,9 +256,22 @@ impl Default for JobRuntime {
 }
 
 pub enum Admit {
-    Yes,
+    /// The job's declared memory is reserved until the guard is dropped, on every path.
+    Yes(AdmissionGuard),
     Wait,
     Never,
+}
+
+/// Holds one job's slice of the shared memory budget; dropping it releases the slice.
+pub struct AdmissionGuard {
+    runtime: Arc<JobRuntime>,
+    job_id: i64,
+}
+
+impl Drop for AdmissionGuard {
+    fn drop(&mut self) {
+        self.runtime.release(self.job_id);
+    }
 }
 
 impl JobRuntime {
@@ -256,8 +284,8 @@ impl JobRuntime {
     }
 
     /// Reserves `estimate` bytes of the shared budget for `job_id`.
-    fn try_admit(
-        &self,
+    pub fn try_admit(
+        self: &Arc<Self>,
         cfg: &Config,
         job_id: i64,
         lane: &'static str,
@@ -283,7 +311,10 @@ impl JobRuntime {
                 estimate,
             },
         );
-        Admit::Yes
+        Admit::Yes(AdmissionGuard {
+            runtime: self.clone(),
+            job_id,
+        })
     }
 
     fn release(&self, job_id: i64) {
@@ -322,6 +353,37 @@ impl JobRuntime {
             None => false,
         }
     }
+
+    /// Notes that a killed worker's `.write-*` and `.copy-*` files could not be removed because
+    /// another worker of the driver was running.
+    pub fn defer_cleanup(&self, customer_id: Option<i64>) {
+        self.deferred_cleanup.lock().unwrap().insert(customer_id);
+    }
+
+    /// Takes the drivers with deferred cleanup that have no running job now.
+    pub fn take_idle_deferred(&self) -> Vec<Option<i64>> {
+        let running = self.running.lock().unwrap();
+        let mut deferred = self.deferred_cleanup.lock().unwrap();
+        let idle: Vec<Option<i64>> = deferred
+            .iter()
+            .copied()
+            .filter(|c| !running.values().any(|r| r.customer_id == *c))
+            .collect();
+        for customer in &idle {
+            deferred.remove(customer);
+        }
+        idle
+    }
+}
+
+/// Runs the deferred orphan cleanup of every driver whose lanes have gone idle
+/// (`nas-layout.md` section 7). Returns the files removed.
+pub fn sweep_deferred_cleanup(app: &AppState) -> usize {
+    app.jobs
+        .take_idle_deferred()
+        .into_iter()
+        .map(|customer| crate::worker::cleanup_strays(&app.cfg.py_archive(customer.unwrap_or(0))))
+        .sum()
 }
 
 #[derive(Debug, Clone)]
@@ -357,7 +419,7 @@ pub fn estimate_bytes(job: &JobRow) -> u64 {
         return v;
     }
     match job.kind.as_str() {
-        "discover" | "setup_files" | "setup_compare" | "baseline" | "tuning_outcome"
+        "discover" | "setup_files" | "setup_compare" | "baseline" | "tuning_outcome" | "import"
         | "tuning_history" => (GIB as f64 * 0.25) as u64,
         "tuning_recommend" => (GIB as f64 * 0.25) as u64,
         "project" => (GIB as f64 * 0.6) as u64,
@@ -410,7 +472,7 @@ pub async fn run_next(app: &AppState, lane: &'static str) -> Result<bool> {
     };
     let cancel = Cancel::default();
     let estimate = estimate_bytes(&job);
-    match app.jobs.try_admit(
+    let guard = match app.jobs.try_admit(
         &app.cfg,
         job.job_id,
         lane,
@@ -431,12 +493,15 @@ pub async fn run_next(app: &AppState, lane: &'static str) -> Result<bool> {
             .await?;
             return Ok(true);
         }
-        Admit::Yes => {}
-    }
+        Admit::Yes(guard) => guard,
+    };
+    // From here every exit drops the guard, so the budget is never leaked.
     let started = {
         let id = job.job_id;
+        let faults = app.faults.clone();
         app.store
             .write(move |conn| {
+                faults.check("job.before_running")?;
                 let n = conn.execute(
                     "UPDATE jobs SET state = 'running', started_at = ?2, attempts = attempts + 1
                      WHERE job_id = ?1 AND state = 'queued'",
@@ -447,11 +512,13 @@ pub async fn run_next(app: &AppState, lane: &'static str) -> Result<bool> {
             .await?
     };
     if !started {
-        app.jobs.release(job.job_id);
         return Ok(true);
     }
     publish_state(app, job.job_id, None).await;
-    refresh_for_job(app, &job).await?;
+    if let Err(e) = refresh_for_job(app, &job).await {
+        // derived state only; the job is running and must run
+        tracing::warn!(job_id = job.job_id, error = %e, "session state not refreshed");
+    }
 
     let handler_app = app.clone();
     let handler_job = job.clone();
@@ -466,7 +533,7 @@ pub async fn run_next(app: &AppState, lane: &'static str) -> Result<bool> {
     } else {
         outcome
     };
-    app.jobs.release(job.job_id);
+    drop(guard);
     finish(app, &job, outcome).await?;
     Ok(true)
 }
@@ -491,31 +558,58 @@ async fn publish_state(app: &AppState, job_id: i64, error_code: Option<String>) 
 
 async fn finish(app: &AppState, job: &JobRow, outcome: JobOutcome) -> Result<()> {
     let (state, code, message, result) = match outcome {
-        JobOutcome::Succeeded(v) => ("succeeded", None, None, Some(v)),
+        JobOutcome::Succeeded(v) => ("succeeded", None, None, Some(v.to_string())),
         JobOutcome::Failed { code, message } => ("failed", Some(code), Some(message), None),
         JobOutcome::Deferred { code, message } => ("deferred", Some(code), Some(message), None),
         JobOutcome::Cancelled => ("cancelled", Some("cancelled".to_string()), None, None),
     };
-    let id = job.job_id;
-    let (code2, message2) = (code.clone(), message.clone());
+    let terminal = TerminalWrite {
+        job: job.clone(),
+        state,
+        code,
+        message,
+        result,
+    };
+    match write_terminal(app, &terminal).await {
+        Ok(()) => after_finish(app, &terminal).await,
+        Err(e) => {
+            // SQLite refused the write (disk full, busy): the outcome is kept and retried by the
+            // lane loop, never dropped, so the row does not stay `running` without an owner.
+            tracing::error!(job_id = job.job_id, error = %e, "job outcome not written; will retry");
+            app.jobs.pending.lock().unwrap().push(terminal);
+        }
+    }
+    Ok(())
+}
+
+async fn write_terminal(app: &AppState, terminal: &TerminalWrite) -> Result<()> {
+    let id = terminal.job.job_id;
+    let (state, code, message, result) = (
+        terminal.state,
+        terminal.code.clone(),
+        terminal.message.clone(),
+        terminal.result.clone(),
+    );
+    let faults = app.faults.clone();
     app.store
         .write(move |conn| {
+            faults.check("job.before_finish")?;
             conn.execute(
                 "UPDATE jobs SET state = ?2, finished_at = ?3, error_code = ?4, error_message = ?5,
                    result_json = ?6 WHERE job_id = ?1",
-                params![
-                    id,
-                    state,
-                    iso_now(),
-                    code2,
-                    message2,
-                    result.map(|v| v.to_string())
-                ],
+                params![id, state, iso_now(), code, message, result],
             )?;
             Ok(())
         })
-        .await?;
-    refresh_for_job(app, job).await?;
+        .await
+}
+
+/// What follows a written terminal state; none of it may stop the lane.
+async fn after_finish(app: &AppState, terminal: &TerminalWrite) {
+    let job = &terminal.job;
+    if let Err(e) = refresh_for_job(app, job).await {
+        tracing::warn!(job_id = job.job_id, error = %e, "session state not refreshed");
+    }
     // recordings no queued job needs any more leave the spool once they are on the NAS
     let mut shas: Vec<String> = Vec::new();
     if let Some(sha) = job.subject["sha256"].as_str() {
@@ -532,10 +626,29 @@ async fn finish(app: &AppState, job: &JobRow, outcome: JobOutcome) -> Result<()>
             tracing::warn!(error = %e, "spool release failed");
         }
     }
-    publish_state(app, job.job_id, code).await;
+    sweep_deferred_cleanup(app);
+    publish_state(app, job.job_id, terminal.code.clone()).await;
     let _ = app.jobs.finished.send(job.job_id);
     app.jobs.wake_all();
-    Ok(())
+}
+
+/// Writes the terminal states SQLite refused earlier. Returns how many landed.
+pub async fn flush_pending(app: &AppState) -> usize {
+    let items = std::mem::take(&mut *app.jobs.pending.lock().unwrap());
+    let mut landed = 0;
+    for terminal in items {
+        match write_terminal(app, &terminal).await {
+            Ok(()) => {
+                after_finish(app, &terminal).await;
+                landed += 1;
+            }
+            Err(e) => {
+                tracing::error!(job_id = terminal.job.job_id, error = %e, "job outcome still not written");
+                app.jobs.pending.lock().unwrap().push(terminal);
+            }
+        }
+    }
+    landed
 }
 
 /// Recomputes `sessions.analysis_state` for the session an analysis or projection job concerns.
@@ -745,6 +858,8 @@ pub fn spawn_lanes(app: &AppState) {
             let mut rx = app.jobs.subscribe();
             loop {
                 let _ = rx.borrow_and_update();
+                flush_pending(&app).await;
+                sweep_deferred_cleanup(&app);
                 match run_next(&app, lane).await {
                     Ok(true) => continue,
                     Ok(false) => {}
@@ -767,6 +882,8 @@ pub fn spawn_lanes(app: &AppState) {
 pub async fn drain(app: &AppState) -> Result<usize> {
     let mut ran = 0;
     loop {
+        flush_pending(app).await;
+        sweep_deferred_cleanup(app);
         let mut progressed = false;
         for lane in LANES {
             while run_next(app, lane).await? {
@@ -810,6 +927,8 @@ pub async fn recover(app: &AppState) -> Result<()> {
             if jobs.is_dir() {
                 let _ = std::fs::remove_dir_all(&jobs);
             }
+            // no worker runs at start: the temp files killed workers left are safe to remove
+            crate::worker::cleanup_strays(&driver.path().join("archive"));
         }
     }
     Ok(())

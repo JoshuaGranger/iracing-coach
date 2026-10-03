@@ -96,6 +96,10 @@
             "null"
           ]
         },
+        "collector_newer_than_server": {
+          "type": "boolean",
+          "description": "A connected collector sent live frames with a table_version above the server's; those frames are not relayed (live-frame.md)."
+        },
         "nas": {
           "type": "object",
           "required": [
@@ -655,10 +659,12 @@
           "type": "integer"
         },
         "schema_version": {
-          "type": "integer"
+          "type": "integer",
+          "description": "analysis_view schema the view was projected from: 1 (crate-api.md section 5 lists the accepted inputs)."
         },
         "profile_version": {
-          "type": "string"
+          "type": "string",
+          "description": "analysis_profile_version; empty string when the backend left it null."
         }
       }
     },
@@ -708,42 +714,33 @@
           },
           "description": "Projector-computed codes, RuntimeMapper.LapComparisonExclusionReasons (RuntimeMapper.cs:2525-2547) over the\nbackend laps[] in ascending `lap` order (stable), previous flag = the preceding lap's flag_state trimmed and\nlowercased. flag = this lap's flag_state trimmed, lowercased, missing as \"\". In order: \"partial\" when complete\nis not true; \"caution_or_mixed\" when flag != \"green\"; \"pit\" when pit_time_s >= 1; \"not_racing_state\" when\nracing_state_fraction < 0.98; \"off_track\" when clean_context.on_track_fraction < 0.98; \"close_traffic\" when\nclean_context.traffic_proximity_fraction >= 0.10; \"restart\" when the previous flag is \"caution\" and flag is\n\"green\"; then damage_repair_context.exclusion_reason_codes (a string, or an array's non-null items, blanks\ndropped; any other non-null value is one code, its JSON text), or\n\"damage_repair_context\" when there are none and automatic_coaching_reference_eligible is false. A missing\nor non-finite number skips its test. Duplicates removed case-insensitively, first kept. The browser\nhumanizes codes for display.\n"
         },
-        "caution": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
         "pit_in": {
           "type": [
             "boolean",
             "null"
-          ]
+          ],
+          "description": "Backend laps[].pit_entry."
         },
         "pit_out": {
           "type": [
             "boolean",
             "null"
-          ]
+          ],
+          "description": "Backend laps[].pit_exit."
         },
         "run_number": {
           "type": [
             "integer",
             "null"
-          ]
+          ],
+          "description": "The runs[] entry whose lap_numbers contains this lap."
         },
         "run_age_laps": {
           "type": [
             "number",
             "null"
           ],
-          "description": "Accumulated green exposure in the run."
-        },
-        "incident_count": {
-          "type": [
-            "integer",
-            "null"
-          ]
+          "description": "Accumulated green exposure in the run (race_investigation.laps[].green_exposure)."
         }
       }
     },
@@ -1253,7 +1250,8 @@
           ]
         },
         "unit": {
-          "type": "string"
+          "type": "string",
+          "description": "The backend key's unit, as served (steering ids carry rad; the browser converts for display, rad to degrees)."
         },
         "digits": {
           "type": [
@@ -1348,9 +1346,6 @@
             "null"
           ]
         },
-        "fastest": {
-          "type": "boolean"
-        },
         "conditions": {
           "type": [
             "object",
@@ -1394,7 +1389,7 @@
           "properties": {
             "bins_per_lap": {
               "type": "integer",
-              "description": "160 today (about 0.6 % of a lap)."
+              "description": "160 today (about 0.6 % of a lap). Bin i lies at lap fraction (i + 0.5) / bins_per_lap (the CCOL rule on the traces endpoint)."
             },
             "laps": {
               "type": "array",
@@ -1405,10 +1400,19 @@
             },
             "signals": {
               "type": "array",
-              "maxItems": 64,
+              "maxItems": 128,
               "items": {
                 "$ref": "#/$defs/TraceSignal"
-              }
+              },
+              "description": "The 15 fixed signals in this order when their backend key occurs (id <- source key): speed <- speed_mph,\nsession-time <- session_time_s, throttle, brake, steering <- steering_rad, steering-peak <-\nsteering_abs_peak_rad, slip <- slip_angle_deg, yaw <- yaw_rate_deg_s, lateral-g <- lateral_g,\nlongitudinal-g <- longitudinal_g, gear, rpm, latitude, longitude, tire-stress <- tire_stress_proxy; then the\nbackend's additional signals in backend order, up to 128 in all.\n"
+            },
+            "omitted_signals": {
+              "type": "array",
+              "maxItems": 1024,
+              "items": {
+                "type": "string"
+              },
+              "description": "Backend additional-signal keys beyond the 128-signal cap; not in the CCOL body."
             },
             "sector_start_pcts": {
               "type": "array",
@@ -1859,7 +1863,7 @@
             "integer",
             "null"
           ],
-          "description": "Null = values unknown (encrypted .sto, never seen unmodified). Set only from an observation with is_modified = false (collector-protocol.md section 8)."
+          "description": "Null = values unknown (encrypted .sto, never seen unmodified). Derived by the server when it answers, never stored: only from an observation with is_modified = false or an htm_export of the file (collector-protocol.md section 8)."
         }
       }
     },
@@ -2000,6 +2004,13 @@
             "integer",
             "null"
           ]
+        },
+        "analysis_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The session's current analysis (recording observations), so Tune this setup needs no second request."
         },
         "visit_id": {
           "type": [
@@ -2565,9 +2576,49 @@
       ],
       "properties": {
         "body": {
-          "type": "object",
-          "additionalProperties": true,
-          "description": "ProgressiveTuningDraft: feedback items, goal, note, representative run ids, turn corrections."
+          "$ref": "#/$defs/TuningDraftBody"
+        }
+      }
+    },
+    "TuningDraftBody": {
+      "type": "object",
+      "description": "C# ProgressiveTuningDraft as the browser keeps it. Unknown fields round-trip. D12 maps legacy drafts to these fields.",
+      "additionalProperties": true,
+      "properties": {
+        "goal": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "TuningRecommendRequest.goal value."
+        },
+        "general_note": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "representative_run_ids": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "description": "run_number values as decimal text."
+        },
+        "open_target_analysis_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "feedback": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "TuningFeedbackItem fields; a draft may hold incomplete items."
+          }
         }
       }
     },
@@ -2606,7 +2657,19 @@
       "properties": {
         "body": {
           "type": "object",
-          "additionalProperties": true
+          "description": "Turn-name corrections for one track configuration and map identity. Unknown fields round-trip.",
+          "additionalProperties": true,
+          "properties": {
+            "corners": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "TuningMapCorner fields (corner_id, label, start_pct, apex_pct, end_pct)."
+              }
+            }
+          }
         }
       }
     },
@@ -3148,7 +3211,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "A live-channels.json tiles[].units id (C, F, m/s2, lap, mph, ...), never a display label (°C). Null or an id the tile does not list selects the tile's default unit. D12 maps legacy labels (°C, °F, m/s², laps) to ids."
         },
         "precision": {
           "type": [
@@ -3804,12 +3868,77 @@
             }
           }
         },
-        "tuning_experiments": {
+        "legacy_analyses": {
           "type": "array",
-          "description": "Rows of the legacy history.sqlite3 tuning_experiments table plus their experiment files, imported into the driver's worker archive by a light job.",
+          "maxItems": 5000,
+          "description": "Stable identity of every legacy analysis that legacy notes or tuning experiments reference. The server resolves each to the matching session's current analysis (null when unresolved) and passes the map to import_legacy_tuning_experiments.",
           "items": {
             "type": "object",
-            "additionalProperties": true
+            "required": [
+              "legacy_analysis_id"
+            ],
+            "properties": {
+              "legacy_analysis_id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "recording_sha256": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "subsession_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "sim_session_num": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "legacy_archive": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The legacy worker archive's history.sqlite3 and tuning/ files, copied byte for byte. The server writes them under the import job root's legacy/ and runs import_legacy_tuning_experiments (worker-interface.md section 4) on them; nothing else reads them.",
+          "required": [
+            "files"
+          ],
+          "properties": {
+            "files": {
+              "type": "array",
+              "maxItems": 5000,
+              "items": {
+                "type": "object",
+                "required": [
+                  "relative_path",
+                  "sha256",
+                  "content_base64"
+                ],
+                "properties": {
+                  "relative_path": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "history.sqlite3 or tuning/..., forward slashes, no .. segments."
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "content_base64": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
         },
         "legacy_items": {

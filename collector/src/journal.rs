@@ -8,8 +8,9 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -128,13 +129,27 @@ struct Visit {
 
 pub struct Journal {
     path: Option<PathBuf>,
+    /// Opened for writing without append mode: every record is written at `len`, so a failed
+    /// write can be cut off again (an append handle cannot be truncated on Windows).
     file: Option<File>,
+    /// Bytes of complete records in the file.
+    len: u64,
+    /// A write failed: the file may carry a fragment beyond `len`, cut off before the next write.
+    tainted: bool,
+    /// The last attempt to open a journal that was unavailable at start.
+    last_attach: Option<Instant>,
     recordings: BTreeMap<String, RecordingEntry>,
     seen: BTreeMap<String, SeenEntry>,
     visits: BTreeMap<String, Visit>,
     seq: u64,
     lines: usize,
+    /// Tests: the next appends write half a line and fail.
+    #[cfg(test)]
+    fail_writes: u32,
 }
+
+/// How often a journal that could not be opened is opened again.
+const REATTACH_EVERY: Duration = Duration::from_millis(if cfg!(test) { 0 } else { 1_000 });
 
 /// Seen entries older than this are ignored, so a server that lost its data is refilled within a week.
 pub const SEEN_TTL_MS: u64 = 7 * 24 * 3600 * 1000;
@@ -144,49 +159,115 @@ const KEEP_SEEN: usize = 4096;
 const KEEP_ABANDONED_VISITS: usize = 8;
 
 impl Journal {
-    /// An in-memory journal that writes nothing (`--dry-run` keeps its own log instead).
-    pub fn in_memory() -> Journal {
+    fn blank(path: Option<PathBuf>) -> Journal {
         Journal {
-            path: None,
+            path,
             file: None,
+            len: 0,
+            tainted: false,
+            last_attach: None,
             recordings: BTreeMap::new(),
             seen: BTreeMap::new(),
             visits: BTreeMap::new(),
             seq: 0,
             lines: 0,
+            #[cfg(test)]
+            fail_writes: 0,
         }
     }
 
+    /// An in-memory journal that writes nothing (`--dry-run` keeps its own log instead).
+    pub fn in_memory() -> Journal {
+        Journal::blank(None)
+    }
+
+    /// The journal at `path`, or, when it cannot be opened, an empty one that keeps entries in
+    /// memory and opens the file again later (`retry_attach`). It sends no garage event until the
+    /// file is open: an event the collector sent must survive a restart.
+    pub fn open_or_unavailable(path: &Path) -> Journal {
+        Journal::open(path).unwrap_or_else(|e| {
+            crate::error!("journal unavailable, garage events wait for it: {e}");
+            Journal::blank(Some(path.to_path_buf()))
+        })
+    }
+
     /// Opens or creates the journal, replays it, and rewrites it compactly when it has grown.
-    /// Lines that do not parse (a torn last line after a crash) are skipped.
+    /// Only complete lines are replayed. A torn tail (the last line has no newline, so the crash
+    /// came before its append returned) is cut off and the repair fsynced, so the next append
+    /// starts on a line of its own. Complete lines that do not parse are skipped.
     pub fn open(path: &Path) -> io::Result<Journal> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut journal = Journal {
-            path: Some(path.to_path_buf()),
-            file: None,
-            recordings: BTreeMap::new(),
-            seen: BTreeMap::new(),
-            visits: BTreeMap::new(),
-            seq: 0,
-            lines: 0,
-        };
+        let mut journal = Journal::blank(Some(path.to_path_buf()));
         if path.exists() {
-            for line in BufReader::new(File::open(path)?).lines() {
-                let Ok(line) = line else { break };
-                if line.trim().is_empty() {
+            let bytes = fs::read(path)?;
+            let complete = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+            for line in bytes[..complete].split(|b| *b == b'\n') {
+                if line.iter().all(u8::is_ascii_whitespace) {
                     continue;
                 }
-                if let Ok(record) = serde_json::from_str::<Record>(&line) {
+                if let Ok(record) = serde_json::from_slice::<Record>(line) {
                     journal.apply(record);
                 }
                 journal.lines += 1;
             }
+            if complete < bytes.len() {
+                let file = OpenOptions::new().write(true).open(path)?;
+                file.set_len(complete as u64)?;
+                file.sync_all()?;
+            }
         }
         journal.compact_if_needed()?;
-        journal.file = Some(OpenOptions::new().create(true).append(true).open(path)?);
+        journal.attach_file(path)?;
         Ok(journal)
+    }
+
+    fn attach_file(&mut self, path: &Path) -> io::Result<()> {
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(path)?;
+        self.len = file.metadata()?.len();
+        self.tainted = false;
+        self.file = Some(file);
+        Ok(())
+    }
+
+    /// False while a journal that could not be opened still has no file.
+    pub fn sendable(&self) -> bool {
+        self.path.is_none() || self.file.is_some()
+    }
+
+    /// Opens the file of a journal that was unavailable and writes out what accumulated in
+    /// memory. True when the journal is backed by its file (tried at most once per second).
+    pub fn retry_attach(&mut self) -> bool {
+        let Some(path) = self.path.clone() else {
+            return true;
+        };
+        if self.file.is_some() {
+            return true;
+        }
+        if self
+            .last_attach
+            .is_some_and(|t| t.elapsed() < REATTACH_EVERY)
+        {
+            return false;
+        }
+        self.last_attach = Some(Instant::now());
+        let Ok(mut fresh) = Journal::open(&path) else {
+            return false;
+        };
+        for record in self.live_records() {
+            if fresh.append(record).is_err() {
+                return false;
+            }
+        }
+        fresh.last_attach = self.last_attach;
+        *self = fresh;
+        crate::info!("journal available again");
+        true
     }
 
     fn apply(&mut self, record: Record) {
@@ -264,16 +345,48 @@ impl Journal {
         }
     }
 
+    /// Writes the record, fsyncs, then applies it. A failed write applies nothing and the caller
+    /// keeps the event to try again; the next write first cuts off the fragment the failure may
+    /// have left. A journal that was unavailable at start applies in memory only (see
+    /// `open_or_unavailable`).
     fn append(&mut self, record: Record) -> io::Result<()> {
+        if self.path.is_some() && self.file.is_none() {
+            self.retry_attach();
+        }
         if let Some(file) = self.file.as_mut() {
             let mut line = serde_json::to_string(&record).map_err(io::Error::other)?;
             line.push('\n');
-            file.write_all(line.as_bytes())?;
-            file.sync_data()?;
+            if self.tainted {
+                file.set_len(self.len)?;
+                self.tainted = false;
+            }
+            #[cfg(test)]
+            if self.fail_writes > 0 {
+                self.fail_writes -= 1;
+                self.tainted = true;
+                file.seek(SeekFrom::Start(self.len))?;
+                file.write_all(&line.as_bytes()[..line.len() / 2])?;
+                return Err(io::Error::other("injected write failure"));
+            }
+            let written = file
+                .seek(SeekFrom::Start(self.len))
+                .and_then(|_| file.write_all(line.as_bytes()))
+                .and_then(|()| file.sync_data());
+            if let Err(e) = written {
+                self.tainted = true;
+                return Err(e);
+            }
+            self.len += line.len() as u64;
             self.lines += 1;
         }
         self.apply(record);
         Ok(())
+    }
+
+    /// Tests: make the next `n` writes fail after half a line.
+    #[cfg(test)]
+    pub(crate) fn fail_next_writes(&mut self, n: u32) {
+        self.fail_writes = n;
     }
 
     // ---- recordings ----
@@ -432,6 +545,9 @@ impl Journal {
     /// Garage messages not yet sent on connection `conn`, oldest first, each marked as sent on it.
     /// A commit is held back until its `.sto` hash is resolved and its snapshot is known.
     pub fn take_unsent(&mut self, conn: u64) -> Vec<GarageOut> {
+        if !self.sendable() {
+            return Vec::new();
+        }
         let mut out: BTreeMap<u64, GarageOut> = BTreeMap::new();
         for visit in self.visits.values_mut() {
             for snap in visit.snapshots.values_mut() {
@@ -556,10 +672,10 @@ impl Journal {
             }
             f.sync_all()?;
         }
-        // The append handle points at the old inode on some platforms: reopen after the rename.
+        // The handle points at the old inode on some platforms: reopen after the rename.
         self.file = None;
         fs::rename(&tmp, &path)?;
-        self.file = Some(OpenOptions::new().append(true).open(&path)?);
+        self.attach_file(&path)?;
         self.lines = live.len();
         // Replay the live records so sequence numbers and the in-memory state match the file,
         // keeping which entries were already sent on the current connection.
@@ -763,6 +879,89 @@ mod tests {
         let lines = fs::read_to_string(&path).unwrap().lines().count();
         assert!(lines < 20, "compacted, got {lines} lines");
         assert_eq!(j.take_unsent(1).len(), 1);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_torn_tail_is_cut_off_so_the_next_append_survives_a_restart() {
+        let path = temp();
+        {
+            let mut j = Journal::open(&path).unwrap();
+            j.add_snapshot(snap("v1", 1)).unwrap();
+        }
+        let append = |bytes: &[u8]| {
+            let mut f = OpenOptions::new().append(true).open(&path).unwrap();
+            f.write_all(bytes).unwrap();
+            f.sync_all().unwrap();
+        };
+        // A fragment, and a record that is whole but lost its newline: neither was acknowledged
+        // to the caller, so neither is replayed.
+        append(b"{\"snapshot\":{\"visit_id\":\"v2\",\"update_cou");
+        let mut j = Journal::open(&path).unwrap();
+        assert!(
+            fs::read(&path).unwrap().ends_with(b"\n"),
+            "the repair is on disk"
+        );
+        j.add_snapshot(snap("v3", 7)).unwrap();
+        drop(j);
+        let whole = serde_json::to_string(&Record::Snapshot(snap("v4", 9))).unwrap();
+        append(whole.as_bytes());
+        let mut j = Journal::open(&path).unwrap();
+        j.add_snapshot(snap("v5", 11)).unwrap();
+        drop(j);
+        let mut j = Journal::open(&path).unwrap();
+        let ids: Vec<String> = j
+            .take_unsent(1)
+            .into_iter()
+            .filter_map(|m| match m {
+                GarageOut::Snapshot(s) => Some(s.visit_id),
+                GarageOut::Commit { .. } => None,
+            })
+            .collect();
+        assert_eq!(ids, ["v1", "v3", "v5"], "no appended event was lost");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_failed_append_applies_nothing_and_its_retry_leaves_no_fragment() {
+        let path = temp();
+        let mut j = Journal::open(&path).unwrap();
+        j.add_snapshot(snap("v1", 1)).unwrap();
+        j.fail_next_writes(2);
+        assert!(j.add_snapshot(snap("v1", 2)).is_err());
+        assert!(j.add_snapshot(snap("v1", 2)).is_err());
+        assert_eq!(j.garage_pending(), 1, "a failed append is not applied");
+        j.add_snapshot(snap("v1", 2)).unwrap();
+        j.ack_snapshot("v1", 1).unwrap();
+        drop(j);
+        for line in fs::read_to_string(&path).unwrap().lines() {
+            serde_json::from_str::<Record>(line).expect("every line is a whole record");
+        }
+        let j = Journal::open(&path).unwrap();
+        assert_eq!(j.garage_pending(), 1);
+        assert_eq!(j.visits["v1"].snapshots.len(), 2);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn an_unavailable_journal_holds_events_back_until_the_file_opens() {
+        // A directory where the journal file belongs: it cannot be opened.
+        let path = temp();
+        fs::create_dir_all(&path).unwrap();
+        let mut j = Journal::open_or_unavailable(&path);
+        assert!(!j.sendable());
+        j.add_snapshot(snap("v1", 1)).unwrap();
+        assert_eq!(j.garage_pending(), 1, "kept in memory");
+        assert!(
+            j.take_unsent(1).is_empty(),
+            "nothing is sent without a file"
+        );
+        assert!(!j.retry_attach());
+        fs::remove_dir_all(&path).unwrap();
+        assert!(j.retry_attach());
+        assert_eq!(j.take_unsent(1).len(), 1);
+        drop(j);
+        assert_eq!(Journal::open(&path).unwrap().garage_pending(), 1);
         let _ = fs::remove_file(path);
     }
 }

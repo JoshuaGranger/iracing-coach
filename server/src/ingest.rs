@@ -212,6 +212,9 @@ pub async fn create_upload(app: &AppState, body: &[u8]) -> Result<(StatusCode, V
         .to_string();
     let reported = value["customer_id"].as_i64();
 
+    // One hash lock covers every state read and the decision: a concurrent create or chunk for
+    // the same bytes can no longer act on a stale view (review 6).
+    let _guard = app.upload_locks.lock(&sha).await;
     let existing = {
         let (sha, kind, file_name, relative_path, source_mtime, collector_id) = (
             sha.clone(),
@@ -272,15 +275,18 @@ pub async fn create_upload(app: &AppState, body: &[u8]) -> Result<(StatusCode, V
                     "size differs from the open upload of this hash",
                 ));
             }
-            let _guard = app.upload_locks.lock(&sha).await;
             match settle(app, &sha).await? {
                 Settled::Verified => {
                     let state = blob_state(app, &sha).await?;
                     Ok((StatusCode::OK, upload_state_json(&sha, &state, size, size)))
                 }
-                Settled::Mismatch => Ok((StatusCode::OK, upload_state_json(&sha, "open", 0, size))),
+                Settled::Mismatch => {
+                    admit(app, 0).await?;
+                    Ok((StatusCode::OK, upload_state_json(&sha, "open", 0, size)))
+                }
                 Settled::Open(offset) => {
-                    reserve(app, (size - offset).max(0) as u64).await?;
+                    // The resume's remaining bytes are already reserved in `uploads`.
+                    admit(app, 0).await?;
                     Ok((
                         StatusCode::OK,
                         upload_state_json(&sha, "open", offset, size),
@@ -289,8 +295,9 @@ pub async fn create_upload(app: &AppState, body: &[u8]) -> Result<(StatusCode, V
             }
         }
         Existing::Upload(_) | Existing::Nothing => {
-            let _guard = app.upload_locks.lock(&sha).await;
-            reserve(app, size as u64).await?;
+            // Check and registration are one step under the admission gate.
+            let _gate = app.spool.gate.lock().await;
+            check_admission(app, size as u64).await?;
             let part = part_path(app, &sha);
             let _ = fs::remove_file(&part);
             {
@@ -334,32 +341,47 @@ async fn blob_state(app: &AppState, sha: &str) -> Result<String> {
         .await
 }
 
-/// Refuses an upload when the spool reservation or `/data` headroom would be exceeded.
-async fn reserve(app: &AppState, needed: u64) -> Result<()> {
+/// Takes the admission gate and checks `extra` more reserved bytes (a resume adds nothing).
+async fn admit(app: &AppState, extra: u64) -> Result<()> {
+    let _gate = app.spool.gate.lock().await;
+    check_admission(app, extra).await
+}
+
+/// Refuses with 503 when the spool or `/data` cannot take `extra` more reserved bytes: the spool
+/// counts incoming, `ready/` and restaged bytes plus every outstanding reservation against the
+/// limit, and the filesystem must keep the minimum free after all of them are written. `extra`
+/// is the increment only: a new upload's whole size, nothing for a resume, whose remaining bytes
+/// are already reserved in `uploads` (a resume counted twice could never resume near the limit).
+/// The caller holds the admission gate.
+pub async fn check_admission(app: &AppState, extra: u64) -> Result<()> {
     cleanup_idle_uploads(app).await?;
-    let idle = app.cfg.part_idle_secs;
-    let (reserved, ready): (i64, i64) = app
+    let (incoming, reserved, ready): (i64, i64, i64) = app
         .store
         .read(move |conn| {
-            let reserved: i64 = conn.query_row(
-                "SELECT COALESCE(SUM(size - durable_offset), 0) FROM uploads WHERE state = 'open'",
+            let (incoming, reserved): (i64, i64) = conn.query_row(
+                "SELECT COALESCE(SUM(durable_offset), 0), COALESCE(SUM(size - durable_offset), 0)
+                 FROM uploads WHERE state = 'open'",
                 [],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
             let ready: i64 = conn.query_row(
                 "SELECT COALESCE(SUM(size), 0) FROM blobs WHERE spool_present = 1",
                 [],
                 |r| r.get(0),
             )?;
-            let _ = idle;
-            Ok((reserved, ready))
+            Ok((incoming, reserved, ready))
         })
         .await?;
-    // `needed` is included in `reserved` for a resumed upload but not for a new one; counting it
-    // twice for a resume only makes the check slightly stricter.
-    let total = reserved as u64 + ready as u64 + needed;
+    let outstanding = (reserved.max(0) as u64).saturating_add(app.spool.restaging_bytes());
+    let used = (incoming.max(0) as u64)
+        .saturating_add(ready.max(0) as u64)
+        .saturating_add(outstanding)
+        .saturating_add(extra);
     let free = app.disk.free_bytes(&app.cfg.data_dir);
-    if total > app.cfg.spool_limit_bytes || free < needed.saturating_add(app.cfg.min_free_bytes) {
+    let needed_free = outstanding
+        .saturating_add(extra)
+        .saturating_add(app.cfg.min_free_bytes);
+    if used > app.cfg.spool_limit_bytes || free < needed_free {
         return Err(Error::unavailable(
             app.cfg.retry_after_secs,
             "spool is full or /data has too little free space; retry later",
@@ -368,7 +390,9 @@ async fn reserve(app: &AppState, needed: u64) -> Result<()> {
     Ok(())
 }
 
-/// Deletes `.part` files idle for `part_idle_secs` and releases their reservation.
+/// Deletes `.part` files idle for `part_idle_secs` and releases their reservation. The state and
+/// the cutoff are checked again under the hash lock: a chunk that arrived since the list was
+/// read keeps its upload.
 pub async fn cleanup_idle_uploads(app: &AppState) -> Result<usize> {
     let cutoff = util::iso_from_unix(util::unix_now() - app.cfg.part_idle_secs);
     let stale: Vec<String> = {
@@ -384,23 +408,36 @@ pub async fn cleanup_idle_uploads(app: &AppState) -> Result<usize> {
             })
             .await?
     };
+    let mut removed = 0;
     for sha in &stale {
-        let Some(_guard) = app.upload_locks.try_lock(sha) else {
-            continue;
-        };
-        let _ = fs::remove_file(part_path(app, sha));
-        let sha = sha.clone();
-        app.store
-            .write(move |conn| {
-                conn.execute(
-                    "DELETE FROM uploads WHERE sha256 = ?1 AND state = 'open'",
-                    [sha],
-                )?;
-                Ok(())
-            })
-            .await?;
+        if remove_idle_upload(app, sha, &cutoff).await? {
+            removed += 1;
+        }
     }
-    Ok(stale.len())
+    Ok(removed)
+}
+
+/// Removes one upload that is still idle at `cutoff`. False when a request holds its hash lock,
+/// or when the row is gone or was touched since the caller listed it: the check and the delete
+/// are one statement under the lock, so a chunk acknowledged in between keeps its upload.
+pub async fn remove_idle_upload(app: &AppState, sha: &str, cutoff: &str) -> Result<bool> {
+    let Some(_guard) = app.upload_locks.try_lock(sha) else {
+        return Ok(false);
+    };
+    let (sha_owned, cutoff) = (sha.to_string(), cutoff.to_string());
+    let deleted = app
+        .store
+        .write(move |conn| {
+            Ok(conn.execute(
+                "DELETE FROM uploads WHERE sha256 = ?1 AND state = 'open' AND updated_at < ?2",
+                params![sha_owned, cutoff],
+            )?)
+        })
+        .await?;
+    if deleted > 0 {
+        let _ = fs::remove_file(part_path(app, sha));
+    }
+    Ok(deleted > 0)
 }
 
 #[derive(Debug, PartialEq)]
@@ -433,18 +470,10 @@ pub async fn settle(app: &AppState, sha: &str) -> Result<Settled> {
     let ready = ready_path(app, sha);
     let part = part_path(app, sha);
     if ready.exists() {
-        // crash between rename and transaction
-        let ready2 = ready.clone();
-        let (hash, _) = tokio::task::spawn_blocking(move || util::sha256_file(&ready2))
-            .await
-            .map_err(|e| Error::internal(e.to_string()))??;
-        if hash == sha {
-            finish_blob(app, &row).await?;
+        // crash between the rename and the transaction
+        if adopt_ready(app, &row).await? {
             return Ok(Settled::Verified);
         }
-        let bad = app.cfg.spool_incoming().join(format!("{sha}.bad"));
-        let _ = fs::rename(&ready, &bad);
-        let _ = fs::remove_file(&bad);
         set_offset(app, sha, 0).await?;
         return Ok(Settled::Open(0));
     }
@@ -707,7 +736,8 @@ async fn commit_part(app: &AppState, row: &UploadRow) -> Result<bool> {
         let part = part.clone();
         tokio::task::spawn_blocking(move || -> std::io::Result<()> {
             let f = OpenOptions::new().write(true).open(part)?;
-            f.set_modified(util::systime_from_unix(mtime))
+            f.set_modified(util::systime_from_unix(mtime))?;
+            f.sync_all()
         })
         .await
         .map_err(|e| Error::internal(e.to_string()))??;
@@ -719,6 +749,67 @@ async fn commit_part(app: &AppState, row: &UploadRow) -> Result<bool> {
     util::fsync_dir(&app.cfg.spool_ready())?;
     util::fsync_dir(&app.cfg.spool_incoming())?;
     app.faults.check("commit.after_dir_sync")?;
+    finish_blob(app, row).await?;
+    Ok(true)
+}
+
+/// The mtime a committed recording carries: the source's, clamped to `now - 10 s` (the worker's
+/// 2 s quiet rule reads it; the clamp absorbs clock skew between the PCs).
+fn commit_mtime(source: Option<i64>) -> i64 {
+    source
+        .unwrap_or_else(util::unix_now)
+        .min(util::unix_now() - 10)
+}
+
+/// A file in `ready/` with no blob row (a crash between the rename and the transaction, or a
+/// transaction that failed). It is adopted only when its bytes hash to its name; then, exactly as
+/// a fresh commit, its mtime is set, the file is fsynced and so are both rename directories
+/// before the blob is recorded as `verified` (review 1). False when the hash differs: the file
+/// is deleted.
+async fn adopt_ready(app: &AppState, row: &UploadRow) -> Result<bool> {
+    let sha = row.sha256.as_str();
+    let ready = ready_path(app, sha);
+    let hashed = {
+        let ready = ready.clone();
+        tokio::task::spawn_blocking(move || util::sha256_file(&ready))
+            .await
+            .map_err(|e| Error::internal(e.to_string()))??
+    };
+    if hashed.0 != sha {
+        let bad = app.cfg.spool_incoming().join(format!("{sha}.bad"));
+        let _ = fs::rename(&ready, &bad);
+        let _ = fs::remove_file(&bad);
+        return Ok(false);
+    }
+    let source = row
+        .source_mtime
+        .as_deref()
+        .and_then(util::parse_iso)
+        .or_else(|| {
+            fs::metadata(&ready)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+        });
+    let mtime = commit_mtime(source);
+    {
+        let (ready, ready_dir, incoming) = (
+            ready.clone(),
+            app.cfg.spool_ready(),
+            app.cfg.spool_incoming(),
+        );
+        tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+            let f = OpenOptions::new().write(true).open(ready)?;
+            f.set_modified(util::systime_from_unix(mtime))?;
+            f.sync_all()?;
+            util::fsync_dir(&ready_dir)?;
+            util::fsync_dir(&incoming)
+        })
+        .await
+        .map_err(|e| Error::internal(e.to_string()))??;
+    }
+    app.faults.check("recover.after_sync")?;
     finish_blob(app, row).await?;
     Ok(true)
 }
@@ -772,15 +863,32 @@ async fn finish_blob(app: &AppState, row: &UploadRow) -> Result<()> {
                         [&row.sha256],
                     )?;
                 } else {
-                    if let Some(customer) = customer {
-                        link_setup_file(
-                            &tx,
-                            customer,
-                            &row.sha256,
-                            &row.kind,
-                            row.relative_path.as_deref(),
-                            &row.file_name,
-                        )?;
+                    // Every occurrence the bytes were announced under, not only the path of the
+                    // upload that completed (review 23): each is a file of its driver's folder.
+                    let occurrences: Vec<(Option<i64>, Option<String>, String, Option<String>)> = tx
+                        .prepare(
+                            "SELECT customer_id, relative_path, file_name, collector_id FROM blob_occurrences
+                             WHERE sha256 = ?1 AND kind <> 'ibt' ORDER BY occurrence_id",
+                        )?
+                        .query_map([&row.sha256], |r| {
+                            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                        })?
+                        .collect::<rusqlite::Result<_>>()?;
+                    for (owner, relative_path, file_name, collector) in occurrences {
+                        let owner = match owner {
+                            Some(owner) => Some(owner),
+                            None => resolve_customer(&tx, None, collector.as_deref())?,
+                        };
+                        if let Some(owner) = owner {
+                            link_setup_file(
+                                &tx,
+                                owner,
+                                &row.sha256,
+                                &row.kind,
+                                relative_path.as_deref(),
+                                &file_name,
+                            )?;
+                        }
                     }
                     jobs::enqueue_tx(
                         &tx,
@@ -840,32 +948,23 @@ pub async fn reconcile(app: &AppState) -> Result<()> {
             continue;
         }
         let ready = ready_path(app, sha);
-        let ready2 = ready.clone();
-        let (hash, bytes) = tokio::task::spawn_blocking(move || util::sha256_file(&ready2))
-            .await
-            .map_err(|e| Error::internal(e.to_string()))??;
-        if hash == *sha {
-            let row = row.unwrap_or_else(|| UploadRow {
-                sha256: sha.clone(),
-                size: bytes as i64,
-                kind: "ibt".into(),
-                file_name: sha.clone(),
-                relative_path: None,
-                source_mtime: None,
-                collector_id: None,
-                durable_offset: bytes as i64,
-                state: "open".into(),
-            });
-            if row.collector_id.is_none() {
-                // No upload row survived: the file name and kind are unknown; keep the bytes only if
-                // the header identifies an IBT, otherwise leave the file for an operator.
-                tracing::warn!(sha256 = %sha, "ready file without an upload row; kept as ibt");
-            }
-            finish_blob(app, &row).await?;
-        } else {
-            let bad = incoming.join(format!("{sha}.bad"));
-            let _ = fs::rename(&ready, &bad);
-            let _ = fs::remove_file(&bad);
+        let bytes = fs::metadata(&ready)?.len();
+        let row = row.unwrap_or_else(|| UploadRow {
+            sha256: sha.clone(),
+            size: bytes as i64,
+            kind: "ibt".into(),
+            file_name: sha.clone(),
+            relative_path: None,
+            source_mtime: None,
+            collector_id: None,
+            durable_offset: bytes as i64,
+            state: "open".into(),
+        });
+        if row.collector_id.is_none() {
+            // No upload row survived: the file name and kind are unknown; it is kept as a recording.
+            tracing::warn!(sha256 = %sha, "ready file without an upload row; kept as ibt");
+        }
+        if !adopt_ready(app, &row).await? {
             set_offset_if_row(app, sha, 0).await?;
         }
     }
@@ -1012,18 +1111,7 @@ pub async fn ingest_recording(app: &AppState, sha: &str) -> Result<()> {
                 })
                 .await?
         };
-        let restaged = archived
-            && app
-                .archiver
-                .restage(
-                    sha,
-                    crate::archiver::ArchiveKind::Recording,
-                    "ibt",
-                    path.clone(),
-                    app.cfg.spool_incoming(),
-                )
-                .await
-                .is_ok();
+        let restaged = archived && restage_recording(app, sha).await.is_ok();
         if !restaged {
             return fail_ingest(app, sha, "spool copy is missing and could not be restaged").await;
         }
@@ -1043,6 +1131,7 @@ pub async fn ingest_recording(app: &AppState, sha: &str) -> Result<()> {
     let Some(customer) = parsed.customer_id else {
         return fail_ingest(app, sha, "the recording carries no driver identity").await;
     };
+    app.faults.check("ingest.before_tx")?;
     let sha_owned = sha.to_string();
     app.store
         .write(move |conn| {
@@ -1127,5 +1216,67 @@ async fn fail_ingest(app: &AppState, sha: &str, message: &str) -> Result<()> {
         .await?;
     app.events
         .recording_state(sha, None, "failed", Some(message));
+    Ok(())
+}
+
+/// Copies an archived recording from the NAS back into `ready/` for analysis. The bytes are
+/// reserved through the upload admission first (`nas-layout.md` section 4: they count toward the
+/// 20 GB and the 4 GiB free rule, and a refused restage waits up to `restage_wait`), and the
+/// file gets the blob's source mtime with the commit clamp, fsynced before it is published.
+pub async fn restage_recording(app: &AppState, sha: &str) -> Result<()> {
+    let sha_owned = sha.to_string();
+    let (size, source_mtime): (i64, Option<String>) = app
+        .store
+        .read(move |conn| {
+            Ok(conn.query_row(
+                "SELECT size, source_mtime FROM blobs WHERE sha256 = ?1",
+                [sha_owned],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?)
+        })
+        .await?;
+    let deadline = tokio::time::Instant::now() + app.cfg.restage_wait;
+    let reservation = loop {
+        let attempt = {
+            let _gate = app.spool.gate.lock().await;
+            match check_admission(app, size as u64).await {
+                Ok(()) => Ok(app.spool.hold_restage(size as u64)),
+                Err(e) => Err(e),
+            }
+        };
+        match attempt {
+            Ok(reservation) => break reservation,
+            Err(Error::Api(e))
+                if e.status == StatusCode::SERVICE_UNAVAILABLE
+                    && tokio::time::Instant::now() < deadline =>
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    let mtime = commit_mtime(source_mtime.as_deref().and_then(util::parse_iso));
+    app.archiver
+        .restage(
+            sha,
+            crate::archiver::ArchiveKind::Recording,
+            "ibt",
+            ready_path(app, sha),
+            app.cfg.spool_incoming(),
+            Some(mtime),
+        )
+        .await?;
+    // Counted as spool bytes before the reservation is released.
+    let sha_owned = sha.to_string();
+    app.store
+        .write(move |conn| {
+            conn.execute(
+                "UPDATE blobs SET spool_present = 1 WHERE sha256 = ?1",
+                [sha_owned],
+            )?;
+            Ok(())
+        })
+        .await?;
+    drop(reservation);
     Ok(())
 }

@@ -8,9 +8,9 @@ use std::path::Path;
 use std::sync::LazyLock;
 use std::time::{Duration, SystemTime};
 
-use regex::{Regex, RegexBuilder};
 use sha2::{Digest, Sha256};
 
+use crate::matchers::LeafPattern;
 use crate::{HASH_BLOCK_BYTES, IbtError, IbtFile, QUIET_PERIOD};
 
 pub(crate) fn hex(bytes: &[u8]) -> String {
@@ -157,23 +157,21 @@ pub fn sha256_file(
     })
 }
 
-static EXCLUDED_LEAVES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+static EXCLUDED_LEAVES: LazyLock<Vec<LeafPattern>> = LazyLock::new(|| {
     coach_wire::setup_keys::EXCLUDED_LEAF_PATTERNS
         .iter()
         .map(|(pattern, _reason)| {
-            RegexBuilder::new(pattern)
-                .case_insensitive(true)
-                .build()
-                .expect("setup-keys.json patterns are valid regular expressions")
+            LeafPattern::parse(pattern)
+                .expect("setup-keys.json patterns stay inside the matchable subset")
         })
         .collect()
 });
 
 /// True when the last path segment of a `CarSetup` key matches an excluded pattern
-/// (case-insensitive).
+/// (ASCII case folding).
 pub fn is_identity_excluded(key: &str) -> bool {
     let leaf = key.rsplit('.').next().unwrap_or(key);
-    EXCLUDED_LEAVES.iter().any(|pattern| pattern.is_match(leaf))
+    EXCLUDED_LEAVES.iter().any(|pattern| pattern.matches(leaf))
 }
 
 /// `setup-keys.json`: drop excluded keys; hash the rest in ascending UTF-8 byte order as
@@ -199,7 +197,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_contract_pattern_compiles() {
+    fn every_contract_pattern_is_inside_the_subset() {
+        for (pattern, reason) in coach_wire::setup_keys::EXCLUDED_LEAF_PATTERNS {
+            assert!(
+                LeafPattern::parse(pattern).is_some(),
+                "setup-keys.json pattern {pattern:?} ({reason}) is outside the subset this crate matches"
+            );
+        }
         assert_eq!(
             EXCLUDED_LEAVES.len(),
             coach_wire::setup_keys::EXCLUDED_LEAF_PATTERNS.len()
@@ -214,6 +218,10 @@ mod tests {
         assert!(is_identity_excluded("Tires.LeftFront.LastTempsOMI"));
         assert!(is_identity_excluded("Tires.LeftFront.TreadRemaining"));
         assert!(is_identity_excluded("UpdateCount"));
+        assert!(is_identity_excluded("Chassis.Rear.TRUCKARMPRELOAD"));
+        assert!(is_identity_excluded("Tires.RightRear.LastHotPressure"));
+        assert!(!is_identity_excluded("Chassis.Front.Preload"));
+        assert!(!is_identity_excluded("Chassis.Front.ArbPreloadOffset"));
         assert!(!is_identity_excluded("Chassis.LeftFront.CornerWeightBias"));
         assert!(!is_identity_excluded("CornerWeight.Camber"));
         assert!(!is_identity_excluded("Tires.LeftFront.ColdPressure"));

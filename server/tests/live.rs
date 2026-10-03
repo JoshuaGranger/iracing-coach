@@ -536,3 +536,264 @@ async fn a_silent_collector_goes_offline() {
     let status = env.get("/api/v1/status").await.json();
     assert_eq!(status["collectors"][0]["online"], false);
 }
+
+// ------------------------------------------- review follow-ups (wave 1)
+
+fn ack_for(c: &mut Client, kind: &str, update_count: i64) -> Option<Value> {
+    c.until(Duration::from_millis(1500), |v| {
+        v["type"] == "garage.ack" && v["kind"] == kind && v["update_count"] == update_count
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn garage_events_are_acknowledged_only_once_they_are_attributed_and_stored() {
+    let env = Env::new().await;
+    let addr = serve(&env).await;
+    let app = env.app.clone();
+    tokio::task::spawn_blocking(move || {
+        let values = json!({"Chassis.Front.ArbSetting": "7", "UpdateCount": "5"});
+
+        // No driver in the event and none reported by this collector: stored nowhere, not
+        // acknowledged, so the collector keeps it in its journal.
+        let visit = "44444444-aaaa-4bbb-8ccc-000000000001";
+        let (mut snapshot, mut commit) = garage(visit, 5, values.clone());
+        snapshot["driver"] = Value::Null;
+        commit["driver"] = Value::Null;
+        let mut c = Client::collector(addr);
+        c.hello("bbbbbbbb-0000-4000-8000-000000000001");
+        c.send(snapshot.clone());
+        assert!(ack_for(&mut c, "snapshot", 5).is_none(), "no driver, no acknowledgement");
+        assert_eq!(count(&app, "SELECT COUNT(*) FROM setup_observations"), 0);
+        assert_eq!(count(&app, "SELECT COUNT(*) FROM garage_visits"), 1, "the visit itself is known");
+
+        // Once the collector reports its driver, the resend is attributed to it and acknowledged.
+        c.status(false);
+        c.send(snapshot.clone());
+        assert!(ack_for(&mut c, "snapshot", 5).is_some());
+        assert_eq!(
+            count(
+                &app,
+                &format!("SELECT COUNT(*) FROM setup_observations WHERE customer_id = {CUSTOMER} AND source = 'garage_snapshot'")
+            ),
+            1,
+            "attributed to the collector's last reported driver"
+        );
+
+        // A commit that names no car uses the car its visit already carries.
+        commit["car_path"] = Value::Null;
+        c.send(commit.clone());
+        assert!(ack_for(&mut c, "commit", 5).is_some());
+        assert_eq!(
+            count(&app, "SELECT COUNT(*) FROM setup_observations WHERE source = 'garage_commit' AND setup_id IN (SELECT setup_id FROM setups WHERE car_path = 'stockcars chevyss2020')"),
+            1
+        );
+
+        // No driver and no car anywhere: a commit for a visit nothing is known about waits too.
+        let (_, mut orphan) = garage("44444444-aaaa-4bbb-8ccc-000000000002", 9, values.clone());
+        orphan["car_path"] = Value::Null;
+        c.send(orphan.clone());
+        assert!(ack_for(&mut c, "commit", 9).is_none(), "no car, no acknowledgement");
+        assert_eq!(
+            count(&app, "SELECT COUNT(*) FROM setup_observations WHERE visit_id = '44444444-aaaa-4bbb-8ccc-000000000002'"),
+            0
+        );
+        // its car arrives with a later event of the visit; the resend then goes through
+        let (late_snapshot, _) = garage("44444444-aaaa-4bbb-8ccc-000000000002", 9, values.clone());
+        c.send(late_snapshot);
+        assert!(ack_for(&mut c, "snapshot", 9).is_some());
+        c.send(orphan);
+        assert!(ack_for(&mut c, "commit", 9).is_some());
+
+        // A commit whose snapshot is not stored yet (values referenced, not repeated) waits.
+        let visit = "44444444-aaaa-4bbb-8ccc-000000000003";
+        let (snapshot, mut commit) = garage(visit, 7, values.clone());
+        commit["values"] = json!({});
+        c.send(commit.clone());
+        assert!(ack_for(&mut c, "commit", 7).is_none(), "its values are not stored");
+        assert_eq!(
+            count(&app, &format!("SELECT COUNT(*) FROM setup_observations WHERE visit_id = '{visit}'")),
+            0
+        );
+        c.send(snapshot);
+        assert!(ack_for(&mut c, "snapshot", 7).is_some());
+        c.send(commit);
+        assert!(ack_for(&mut c, "commit", 7).is_some());
+        assert_eq!(
+            count(&app, &format!("SELECT COUNT(*) FROM setup_observations WHERE visit_id = '{visit}' AND source = 'garage_commit'")),
+            1
+        );
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_ambiguous_commit_never_links_a_file_by_name() {
+    let env = Env::new().await;
+    let addr = serve(&env).await;
+    let bytes = fake_ibt(race_meta(9910, 0, "driver"), 2_000);
+    env.upload(&bytes, "ibt", "d.ibt", None, 2000).await;
+    coach_server::ingest::ingest_pending(&env.app)
+        .await
+        .unwrap();
+    // two same-named files in one car folder: the collector cannot tell which one was loaded
+    for (rel, content) in [
+        ("stockcars chevyss2020/garage.sto", b"first copy".to_vec()),
+        (
+            "stockcars chevyss2020/old/garage.sto",
+            b"second copy".to_vec(),
+        ),
+    ] {
+        env.upload(&content, "sto", "garage.sto", Some(rel), 4096)
+            .await;
+    }
+    let sto_shas: Vec<String> = [b"first copy".to_vec(), b"second copy".to_vec()]
+        .iter()
+        .map(|b| coach_server::util::sha256_hex(b))
+        .collect();
+    let send = |visit: &'static str, values: Value, ambiguous: bool| {
+        let (_, mut commit) = garage(visit, 4, values);
+        commit["sto_sha256"] = Value::Null;
+        commit["ambiguous"] = json!(ambiguous);
+        commit["setup_name"] = json!("garage.sto");
+        commit["is_modified"] = json!(false);
+        tokio::task::spawn_blocking(move || {
+            let mut c = Client::collector(addr);
+            c.hello(COLLECTOR);
+            c.status(false);
+            c.send(commit);
+            c.until(Duration::from_secs(5), |v| v["type"] == "garage.ack")
+                .expect("ack");
+        })
+    };
+    send(
+        "55555555-aaaa-4bbb-8ccc-000000000001",
+        json!({"Chassis.Front.ArbSetting": "13"}),
+        true,
+    )
+    .await
+    .unwrap();
+    let library = env.get("/api/v1/drivers/1001/setups").await.json();
+    let unlinked: Vec<&str> = library["unlinked_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["sha256"].as_str().unwrap())
+        .collect();
+    for sha in &sto_shas {
+        assert!(
+            unlinked.contains(&sha.as_str()),
+            "an ambiguous visit proves nothing about either file"
+        );
+    }
+    // the same commit from a visit that could name its file links it by name
+    send(
+        "55555555-aaaa-4bbb-8ccc-000000000002",
+        json!({"Chassis.Front.ArbSetting": "14"}),
+        false,
+    )
+    .await
+    .unwrap();
+    let library = env.get("/api/v1/drivers/1001/setups").await.json();
+    let unlinked: Vec<&str> = library["unlinked_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["sha256"].as_str().unwrap())
+        .collect();
+    assert!(
+        sto_shas.iter().any(|sha| !unlinked.contains(&sha.as_str())),
+        "an unambiguous name does link"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_driver_change_recounts_demand_for_the_new_driver() {
+    let env = Env::new().await;
+    let addr = serve(&env).await;
+    tokio::task::spawn_blocking(move || {
+        let mut collector = Client::collector(addr);
+        collector.hello(COLLECTOR);
+        collector.status(false);
+        // a viewer of this driver starts the stream
+        let viewer = Client::connect(addr, &format!("/ws/live/{CUSTOMER}?rate=10"), None);
+        collector
+            .until(Duration::from_secs(5), |v| v["type"] == "stream.start")
+            .expect("stream.start for the first driver");
+
+        // the collector now reports another driver nobody watches: the previous driver's demand
+        // must not carry over
+        collector.send(json!({"type": "status", "sim": "in_session", "connected": true, "on_track": true, "in_garage": false,
+                              "on_pit_road": false, "streaming": true,
+                              "driver": {"customer_id": 2002, "name": "Guest Driver"},
+                              "session": {"session_epoch": 1, "subsession_id": 9901, "session_num": 0},
+                              "queue": {"uploads_pending": 0, "bytes_pending": 0}}));
+        let zero = collector
+            .until(Duration::from_secs(5), |v| v["type"] == "viewers" && v["count"] == 0)
+            .expect("viewers 0 for the new driver");
+        assert_eq!(zero["count"], 0);
+        collector
+            .until(Duration::from_secs(5), |v| v["type"] == "stream.release")
+            .expect("stream.release for the new driver");
+
+        // and back to the watched driver: demand is recounted and the stream restarts
+        collector.status(true);
+        let back = collector
+            .until(Duration::from_secs(5), |v| v["type"] == "viewers" && v["count"] == 1)
+            .expect("viewers 1 for the first driver again");
+        assert_eq!(back["count"], 1);
+        collector
+            .until(Duration::from_secs(5), |v| v["type"] == "stream.start")
+            .expect("stream.start again");
+        drop(viewer);
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_browser_that_cannot_keep_up_is_closed_and_stops_counting_as_a_viewer() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.slow_browser = Duration::from_millis(800)),
+        ..Default::default()
+    })
+    .await;
+    let addr = serve(&env).await;
+    let app = env.app.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut collector = Client::collector(addr);
+        collector.hello(COLLECTOR);
+        collector.status(true);
+        // A viewer that never reads: its socket buffers fill with large frames, the send stalls.
+        let viewer = Client::connect(addr, &format!("/ws/live/{CUSTOMER}?rate=60"), None);
+        collector
+            .until(Duration::from_secs(5), |v| {
+                v["type"] == "viewers" && v["count"] == 1
+            })
+            .expect("one viewer");
+        assert_eq!(app.hub.viewer_count(CUSTOMER), 1);
+        let big = |seq: u32, ms: u64| {
+            let mut f = frame(TABLE, 45, ms, seq);
+            f.extend(std::iter::repeat_n(0u8, 512 * 1024));
+            f
+        };
+        let end = Instant::now() + Duration::from_secs(20);
+        let mut seq = 0u32;
+        while app.hub.viewer_count(CUSTOMER) > 0 && Instant::now() < end {
+            collector.send_binary(big(seq, 5_000_000 + seq as u64 * 17));
+            seq += 1;
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            app.hub.viewer_count(CUSTOMER),
+            0,
+            "the stalled viewer was dropped within the limit (sent {seq} frames)"
+        );
+        collector
+            .until(Duration::from_secs(5), |v| v["type"] == "stream.release")
+            .expect("the collector is told demand ended");
+        drop(viewer);
+    })
+    .await
+    .unwrap();
+}

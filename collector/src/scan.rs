@@ -1,6 +1,9 @@
 //! Directory listings for the uploader: recordings under `Documents\iRacing\telemetry` and setup
 //! files under `Documents\iRacing\setups`. Metadata only, read-only; nothing under
-//! `Documents\iRacing` is ever written, renamed or deleted.
+//! `Documents\iRacing` is ever written, renamed or deleted. Every listing asks `proceed` before
+//! each directory read and each entry, so a scan stops within one metadata call of the on-track
+//! gate closing (`collector-protocol.md` section 4); an interrupted listing is returned as such,
+//! never as a short one.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -65,6 +68,10 @@ impl Candidate {
     }
 }
 
+/// The check said stop: the listing is incomplete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Interrupted;
+
 fn candidate(path: PathBuf, kind: Kind, relative_path: Option<String>) -> Option<Candidate> {
     let meta = fs::metadata(&path).ok()?;
     // The upload API takes files of at least one byte (a recording being created is 0 bytes).
@@ -87,20 +94,29 @@ fn candidate(path: PathBuf, kind: Kind, relative_path: Option<String>) -> Option
 }
 
 /// Every `.ibt` directly in `dir`, newest first.
-pub fn scan_recordings(dir: &Path) -> Vec<Candidate> {
+pub fn scan_recordings(
+    dir: &Path,
+    proceed: &dyn Fn() -> bool,
+) -> Result<Vec<Candidate>, Interrupted> {
+    if !proceed() {
+        return Err(Interrupted);
+    }
     let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let out: Vec<Candidate> = entries
-        .flatten()
-        .filter_map(|e| {
-            let path = e.path();
-            (Kind::of_path(&path) == Some(Kind::Ibt))
-                .then(|| candidate(path, Kind::Ibt, None))
-                .flatten()
-        })
-        .collect();
-    newest_first(out)
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        if !proceed() {
+            return Err(Interrupted);
+        }
+        let path = entry.path();
+        if Kind::of_path(&path) == Some(Kind::Ibt)
+            && let Some(c) = candidate(path, Kind::Ibt, None)
+        {
+            out.push(c);
+        }
+    }
+    Ok(newest_first(out))
 }
 
 /// Newest first, ties by path. A map instead of `sort_by`: sorting a Vec of these entries costs
@@ -115,26 +131,38 @@ fn newest_first(list: Vec<Candidate>) -> Vec<Candidate> {
 
 /// Every `.sto` and `.htm` below `dir`, newest first. Files without an extension (the `-Current-`
 /// files iRacing rewrites) are not setup files.
-pub fn scan_setups(dir: &Path) -> Vec<Candidate> {
+pub fn scan_setups(dir: &Path, proceed: &dyn Fn() -> bool) -> Result<Vec<Candidate>, Interrupted> {
     let mut out = Vec::new();
-    walk(dir, dir, 0, &mut out);
-    newest_first(out)
+    walk(dir, dir, 0, proceed, &mut out)?;
+    Ok(newest_first(out))
 }
 
-fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<Candidate>) {
+fn walk(
+    root: &Path,
+    dir: &Path,
+    depth: usize,
+    proceed: &dyn Fn() -> bool,
+    out: &mut Vec<Candidate>,
+) -> Result<(), Interrupted> {
     if depth > 8 {
-        return;
+        return Ok(());
+    }
+    if !proceed() {
+        return Err(Interrupted);
     }
     let Ok(entries) = fs::read_dir(dir) else {
-        return;
+        return Ok(());
     };
     for entry in entries.flatten() {
+        if !proceed() {
+            return Err(Interrupted);
+        }
         let path = entry.path();
         let Ok(kind) = entry.file_type() else {
             continue;
         };
         if kind.is_dir() {
-            walk(root, &path, depth + 1, out);
+            walk(root, &path, depth + 1, proceed, out)?;
         } else if let Some(k @ (Kind::Sto | Kind::Htm)) = Kind::of_path(&path) {
             let relative = path
                 .strip_prefix(root)
@@ -145,6 +173,7 @@ fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<Candidate>) {
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -164,10 +193,10 @@ mod tests {
         fs::write(root.join("setups/stockcars2 supra2019/-Current-"), b"x").unwrap();
         fs::write(root.join("setups/stockcars2 supra2019/mine.STO"), b"2").unwrap();
         fs::write(setups.join("r.htm"), b"3").unwrap();
-        let rec = scan_recordings(&tel);
+        let rec = scan_recordings(&tel, &|| true).unwrap();
         assert_eq!(rec.len(), 1);
         assert_eq!(rec[0].kind, Kind::Ibt);
-        let set = scan_setups(&root.join("setups"));
+        let set = scan_setups(&root.join("setups"), &|| true).unwrap();
         let mut rel: Vec<_> = set
             .iter()
             .map(|c| c.relative_path.clone().unwrap())
@@ -180,7 +209,60 @@ mod tests {
                 "stockcars2 supra2019/shop/r.htm"
             ]
         );
-        assert!(scan_recordings(&root.join("missing")).is_empty());
+        assert!(
+            scan_recordings(&root.join("missing"), &|| true)
+                .unwrap()
+                .is_empty()
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_scan_stops_part_way_when_the_check_says_stop() {
+        use std::cell::Cell;
+        let root = std::env::temp_dir().join(format!("coach-scan-{}", uuid_v4()));
+        let setups = root.join("setups");
+        for car in 0..6 {
+            let dir = setups.join(format!("car{car}/shop"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("a.sto"), b"1").unwrap();
+        }
+        let tel = root.join("telemetry");
+        fs::create_dir_all(&tel).unwrap();
+        for n in 0..4 {
+            fs::write(tel.join(format!("{n}.ibt")), b"1").unwrap();
+        }
+        // Every call to the check is counted; the gate closes after `budget` of them.
+        let calls = Cell::new(0usize);
+        let stops_after = |budget: usize| {
+            calls.set(0);
+            let calls = &calls;
+            move || {
+                calls.set(calls.get() + 1);
+                calls.get() <= budget
+            }
+        };
+        let full = {
+            let proceed = stops_after(usize::MAX);
+            assert_eq!(scan_setups(&setups, &proceed).unwrap().len(), 6);
+            calls.get()
+        };
+        assert!(
+            full > 12,
+            "the walk asks per directory and per entry: {full}"
+        );
+        for budget in [0, 1, 5, full - 1] {
+            let proceed = stops_after(budget);
+            assert_eq!(
+                scan_setups(&setups, &proceed),
+                Err(Interrupted),
+                "setups, closed after {budget} checks"
+            );
+            assert!(calls.get() <= budget + 1, "it stops at the first refusal");
+        }
+        let proceed = stops_after(2);
+        assert_eq!(scan_recordings(&tel, &proceed), Err(Interrupted));
+        assert_eq!(scan_recordings(&tel, &|| true).unwrap().len(), 4);
         fs::remove_dir_all(&root).unwrap();
     }
 }

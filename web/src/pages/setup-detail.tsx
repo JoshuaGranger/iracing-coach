@@ -7,7 +7,7 @@ import { uuid4 } from "../core/uuid";
 import { href, navigate } from "../core/router";
 import { Chip, ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
 import { NotesPanel } from "../ui/notes";
-import { SOURCE_LABEL, classifyCompare, groupSetupValues, setupTitle, uniqueSources } from "../setups/model";
+import { SOURCE_LABEL, classifyCompare, groupSetupValues, setupTitle, tuneTarget, uniqueSources } from "../setups/model";
 
 type Result = Schemas["SetupCompareResult"];
 
@@ -87,7 +87,6 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
   const [otherId, setOtherId] = useState<number | null>(null);
   const compare = useJobRun<Result>();
   const [tuneError, setTuneError] = useState<string | null>(null);
-  const [tuning, setTuning] = useState(false);
 
   if (!detail) return res.error ? <ErrorLine error={res.error} /> : <Loading what="setup" />;
   const s = detail.setup;
@@ -101,21 +100,11 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
     void compare.run(() => request("POST", paths.setupCompare, { left_setup_id: setupId, right_setup_id: id }, { idempotencyKey: uuid4() }), "Comparing");
   }
 
-  async function tune() {
-    setTuning(true);
+  function tune() {
+    const target = tuneTarget(detail!.observations);
+    if ("blocked" in target) return setTuneError(target.blocked);
     setTuneError(null);
-    try {
-      const sessionId = detail!.observations.find((o) => o.session_id != null)?.session_id;
-      if (sessionId == null) throw new Error("No recording used this setup yet.");
-      const sd = await api.session(sessionId);
-      const analysis = sd.analyses.find((a) => a.current && a.projection_state === "ready");
-      if (!analysis) throw new Error("The recording that used this setup is not analyzed yet.");
-      navigate({ page: "tuning", customerId, analysisId: analysis.analysis_id });
-    } catch (e) {
-      setTuneError(e instanceof Error ? e.message : "Could not open tuning");
-    } finally {
-      setTuning(false);
-    }
+    navigate({ page: "tuning", customerId, analysisId: target.analysisId });
   }
 
   const linked = detail.observations.some((o) => o.session_id != null);
@@ -125,8 +114,8 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
         <a href={href({ page: "setups", customerId })}>Setups</a>
       </p>
       <PageHead title={setupTitle(s)} sub={`${s.car_name ?? s.car_path} · first seen ${formatDateTime(s.first_seen_at)}`}>
-        <button type="button" class="btn btn-accent" disabled={!linked || tuning} title={linked ? "Tune from the recording that used this setup" : "Needs a recording with this setup"} onClick={tune}>
-          {tuning ? "Opening" : "Tune this setup"}
+        <button type="button" class="btn btn-accent" disabled={!linked} title={linked ? "Tune from the recording that used this setup" : "Needs a recording with this setup"} onClick={tune}>
+          Tune this setup
         </button>
       </PageHead>
       {tuneError ? <Notice tone="warn">{tuneError}</Notice> : null}

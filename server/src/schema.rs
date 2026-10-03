@@ -3,6 +3,7 @@
 //! enums are enforced exactly as the contract states, without a typed struct per request.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use jsonschema::Validator;
@@ -101,4 +102,99 @@ pub fn parse_request(name: &str, body: &[u8]) -> Result<Value> {
         .map_err(|e| Error::invalid(format!("body is not valid JSON: {e}")))?;
     validate_request(name, &value)?;
     Ok(value)
+}
+
+/// The worker tools whose results are validated, and the Python MCP contract each one meets
+/// (`contracts/README.md`).
+pub fn worker_contract_for(tool: &str) -> Option<&'static str> {
+    match tool {
+        "analyze_iracing_race" => Some("analyze-result-v1"),
+        "build_open_setup_package" => Some("setup-package-v1"),
+        "recommend_structured_open_setup_tuning" => Some("tuning-recommendation-v1"),
+        _ => None,
+    }
+}
+
+/// Resolves the relative `$ref`s between the Python contracts (`analyze-result-v1` names
+/// `damage-repair-v1`, `race-card-v1` and `analysis-view-v1`) from the contracts directory.
+struct ContractFiles(PathBuf);
+
+impl jsonschema::Retrieve for ContractFiles {
+    fn retrieve(
+        &self,
+        uri: &jsonschema::Uri<String>,
+    ) -> std::result::Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let path = uri.path().as_str();
+        let name = path.rsplit('/').next().unwrap_or_default();
+        if !name.ends_with(".schema.json") || name.contains(['\\', ':']) || name.starts_with('.') {
+            return Err(format!("{uri} is not a contract file").into());
+        }
+        let text = std::fs::read_to_string(self.0.join(name))?;
+        Ok(serde_json::from_str(&text)?)
+    }
+}
+
+/// Validators for the Python MCP contracts, built on first use from `COACH_CONTRACTS_DIR`.
+pub struct WorkerContracts {
+    dir: PathBuf,
+    cache: Mutex<HashMap<String, Arc<Validator>>>,
+}
+
+impl WorkerContracts {
+    pub fn new(dir: PathBuf) -> WorkerContracts {
+        WorkerContracts {
+            dir,
+            cache: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn validator(&self, name: &str) -> std::result::Result<Arc<Validator>, String> {
+        if let Some(v) = self.cache.lock().unwrap().get(name) {
+            return Ok(v.clone());
+        }
+        let file = self.dir.join(format!("{name}.schema.json"));
+        let text = std::fs::read_to_string(&file).map_err(|e| {
+            format!(
+                "contract {name} cannot be read from {}: {e}",
+                file.display()
+            )
+        })?;
+        let schema: Value =
+            serde_json::from_str(&text).map_err(|e| format!("contract {name} is not JSON: {e}"))?;
+        let validator = jsonschema::options()
+            .with_retriever(ContractFiles(self.dir.clone()))
+            .build(&schema)
+            .map_err(|e| format!("contract {name} does not compile: {e}"))?;
+        let validator = Arc::new(validator);
+        self.cache
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), validator.clone());
+        Ok(validator)
+    }
+
+    /// Up to five error messages when `result` does not satisfy contract `name`.
+    pub fn check(&self, name: &str, result: &Value) -> std::result::Result<(), String> {
+        let validator = self.validator(name)?;
+        let errors: Vec<String> = validator
+            .iter_errors(result)
+            .take(5)
+            .map(|e| {
+                let path = e.instance_path().to_string();
+                if path.is_empty() {
+                    e.to_string()
+                } else {
+                    format!("{path}: {e}")
+                }
+            })
+            .collect();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "the worker's result does not meet {name}: {}",
+                errors.join("; ")
+            ))
+        }
+    }
 }

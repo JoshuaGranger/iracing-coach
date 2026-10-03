@@ -38,8 +38,14 @@ $Items = @(
     'data\test-artifacts',
     'data\strategy-history',
     'data\setup-history',
-    'data\target-laps'
+    'data\target-laps',
+    'data\trials',
+    'data\event-plans',
+    'data\ai-coaching'
 )
+# Raw-archive manifests only, never the recordings: they give each legacy analysis's source
+# path its recording hash (tools/migrate/build_import.py).
+$RawArchive = 'data\telemetry-traces\raw'
 
 function Test-Inside([string]$Child, [string]$Parent) {
     $c = [IO.Path]::GetFullPath($Child).TrimEnd('\') + '\'
@@ -71,6 +77,13 @@ foreach ($item in $Items) {
         Get-ChildItem -LiteralPath $source -Recurse -File -Force | ForEach-Object { $files.Add($_.FullName) }
     }
 }
+$rawRoot = Join-Path $CoachRoot $RawArchive
+if (Test-Path -LiteralPath $rawRoot -PathType Container) {
+    Get-ChildItem -LiteralPath $rawRoot -Directory -Force | ForEach-Object {
+        $manifestFile = Join-Path $_.FullName 'manifest.json'
+        if (Test-Path -LiteralPath $manifestFile -PathType Leaf) { $files.Add($manifestFile) }
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 $entries = New-Object System.Collections.Generic.List[object]
@@ -98,7 +111,7 @@ $manifest = [ordered]@{
     machine = $env:COMPUTERNAME
     coach_root = $CoachRoot
     created_utc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-    items = $Items
+    items = $Items + @("$RawArchive\*\manifest.json")
     files = $entries
     unequal = $unequal.Count
 }

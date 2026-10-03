@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -55,22 +54,27 @@ def _compatibility_sources() -> dict[str, Any]:
 
 DURABLE_ARCHIVE_SOURCE = "companion-app/src/iRacingCoach.Coordinator/DurableArchive.cs"
 DURABLE_ARCHIVE_SYMBOL = "DurableArchiveService.CurrentSchemaVersion"
+RETIRED_SYMBOL_AUTHORITY = "retired-csharp-symbol"
 
 # Exact expectations, not shapes. Checking that a symbol string is non-empty
 # accepts `Bogus.CurrentVersion`; checking that a value is in range accepts a
 # policy floor of 1 where 0 is the accepted value. Each field is pinned to the
-# literal metadata and, where its authority is C# source, to the integer
-# actually read from that source.
+# literal metadata and to its exact value. The writer and maximum were bound to
+# the C# constant while the desktop app existed; it was retired on 2026-10-02
+# (owner decision D13), so they are frozen at the constant's last value and the
+# C# source is no longer read.
 _COMPANION_AUTHORITY_CONTRACT = {
     "writer_version": {
-        "authority": "csharp-symbol",
+        "authority": RETIRED_SYMBOL_AUTHORITY,
         "symbol": DURABLE_ARCHIVE_SYMBOL,
         "source": DURABLE_ARCHIVE_SOURCE,
+        "value": 1,
     },
     "max_readable_version": {
-        "authority": "csharp-symbol",
+        "authority": RETIRED_SYMBOL_AUTHORITY,
         "symbol": DURABLE_ARCHIVE_SYMBOL,
         "source": DURABLE_ARCHIVE_SOURCE,
+        "value": 1,
     },
     "min_readable_version": {
         "authority": "declared-policy",
@@ -79,109 +83,6 @@ _COMPANION_AUTHORITY_CONTRACT = {
         "value": 0,
     },
 }
-
-
-def _strip_csharp_comments_and_strings(text: str) -> str:
-    """Blank out comments, strings, and char literals, preserving offsets.
-
-    A regular expression over raw C# happily matches a declaration inside a
-    comment, so generation would bind compatibility values to dead text. Only
-    executable source may carry authority, so non-code spans are replaced with
-    spaces of equal length before any matching. Newlines are preserved so line
-    numbers stay usable in errors.
-
-    Unterminated comments and strings raise rather than being tolerated: an
-    ambiguous parse must not resolve to a plausible number.
-    """
-    out: list[str] = []
-    index = 0
-    length = len(text)
-    while index < length:
-        char = text[index]
-        pair = text[index : index + 2]
-        if pair == "//":
-            end = text.find("\n", index)
-            end = length if end == -1 else end
-            out.append(" " * (end - index))
-            index = end
-        elif pair == "/*":
-            end = text.find("*/", index + 2)
-            if end == -1:
-                raise ValueError(
-                    f"Unterminated block comment in {DURABLE_ARCHIVE_SOURCE}; refusing to parse"
-                )
-            span = text[index : end + 2]
-            out.append("".join("\n" if c == "\n" else " " for c in span))
-            index = end + 2
-        elif pair == '@"':
-            cursor = index + 2
-            while True:
-                if cursor >= length:
-                    raise ValueError(
-                        f"Unterminated verbatim string in {DURABLE_ARCHIVE_SOURCE}; refusing to parse"
-                    )
-                if text[cursor] == '"':
-                    if text[cursor : cursor + 2] == '""':
-                        cursor += 2
-                        continue
-                    cursor += 1
-                    break
-                cursor += 1
-            span = text[index:cursor]
-            out.append("".join("\n" if c == "\n" else " " for c in span))
-            index = cursor
-        elif char in {'"', "'"}:
-            quote = char
-            cursor = index + 1
-            while True:
-                if cursor >= length or text[cursor] == "\n":
-                    raise ValueError(
-                        f"Unterminated {quote!r} literal in {DURABLE_ARCHIVE_SOURCE}; refusing to parse"
-                    )
-                if text[cursor] == "\\":
-                    cursor += 2
-                    continue
-                if text[cursor] == quote:
-                    cursor += 1
-                    break
-                cursor += 1
-            out.append(" " * (cursor - index))
-            index = cursor
-        else:
-            out.append(char)
-            index += 1
-    return "".join(out)
-
-
-_CURRENT_SCHEMA_VERSION_DECLARATION = re.compile(
-    r"(?:^|[;{}\s])public\s+const\s+int\s+CurrentSchemaVersion\s*=\s*(-?\d+)\s*;"
-)
-
-
-def _csharp_current_schema_version() -> int:
-    """Read `CurrentSchemaVersion` from live C# source, refusing anything ambiguous.
-
-    Generation binds the companion writer and maximum to this integer, so a
-    parser that guesses, or that reads commented-out text, would defeat the
-    binding. Missing, duplicated, commented-out, and non-integer declarations
-    all raise rather than resolving to a plausible number.
-    """
-    path = WORKSPACE_ROOT / DURABLE_ARCHIVE_SOURCE
-    if not path.is_file():
-        raise ValueError(f"Companion archive source is missing: {DURABLE_ARCHIVE_SOURCE}")
-    code = _strip_csharp_comments_and_strings(path.read_text(encoding="utf-8"))
-    matches = _CURRENT_SCHEMA_VERSION_DECLARATION.findall(code)
-    if not matches:
-        raise ValueError(
-            f"{DURABLE_ARCHIVE_SYMBOL} was not found as a live integer constant in "
-            f"{DURABLE_ARCHIVE_SOURCE}"
-        )
-    if len(matches) > 1:
-        raise ValueError(
-            f"{DURABLE_ARCHIVE_SYMBOL} is declared {len(matches)} times in "
-            f"{DURABLE_ARCHIVE_SOURCE}; refusing to guess which one binds"
-        )
-    return int(matches[0])
 
 
 def _companion_entry(record: dict[str, Any], field: str) -> int:
@@ -216,22 +117,20 @@ def _companion_entry(record: dict[str, Any], field: str) -> int:
                 f"got {entry[key]!r}"
             )
 
-    if contract["authority"] == "csharp-symbol":
-        # Bind the value to the constant actually in C# source, not merely to a
-        # field that names a symbol. A self-consistent but substituted number
-        # fails here even though it satisfies the range invariant.
-        current = _csharp_current_schema_version()
-        if value != current:
-            raise ValueError(
-                f"companion_durable_archive.{field}.value is {value}, but "
-                f"{DURABLE_ARCHIVE_SYMBOL} is {current}"
-            )
+    if value != contract["value"]:
+        origin = (
+            f" ({contract['symbol']} when the desktop app was retired)"
+            if contract["authority"] == RETIRED_SYMBOL_AUTHORITY
+            else ""
+        )
+        raise ValueError(
+            f"companion_durable_archive.{field}.value must be exactly {contract['value']}{origin}, "
+            f"got {value}"
+        )
+    if contract["authority"] == RETIRED_SYMBOL_AUTHORITY:
+        if not entry.get("retired"):
+            raise ValueError(f"companion_durable_archive.{field} lacks 'retired'")
     else:
-        if value != contract["value"]:
-            raise ValueError(
-                f"companion_durable_archive.{field}.value must be exactly "
-                f"{contract['value']}, got {value}"
-            )
         for required in ("enforced_by", "current_behavior"):
             if not entry.get(required):
                 raise ValueError(f"companion_durable_archive.{field} lacks {required!r}")
@@ -415,7 +314,7 @@ def exported_values() -> dict[Path, Any]:
             # Two independent stores previously shared the single ambiguous key
             # `archive_schema_version`. The backend range is derived here; the
             # companion range is declared in compatibility-sources.json because
-            # its authority is C# source, and a test binds it there.
+            # its authority was C# source (retired, frozen at its last value).
             "backend_archive_writer_version": storage.SCHEMA_VERSION,
             "backend_archive_min_readable_version": storage.SCHEMA_VERSION,
             "backend_archive_max_readable_version": storage.SCHEMA_VERSION,

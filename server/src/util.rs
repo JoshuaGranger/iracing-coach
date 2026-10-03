@@ -107,6 +107,43 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     hex(&Sha256::digest(bytes))
 }
 
+/// Standard base64 (RFC 4648, padded, no whitespace); None for anything else.
+pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let bytes = text.as_bytes();
+    if !bytes.len().is_multiple_of(4) {
+        return None;
+    }
+    let value = |c: u8| -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a') as u32 + 26),
+            b'0'..=b'9' => Some((c - b'0') as u32 + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    };
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
+    let groups = bytes.len() / 4;
+    for (i, chunk) in bytes.chunks(4).enumerate() {
+        let last = i + 1 == groups;
+        let pad = chunk.iter().rev().take_while(|c| **c == b'=').count();
+        if pad > 2 || (pad > 0 && !last) {
+            return None;
+        }
+        let mut n = 0u32;
+        for (k, c) in chunk.iter().enumerate() {
+            n <<= 6;
+            if k < 4 - pad {
+                n |= value(*c)?;
+            }
+        }
+        let triple = n.to_be_bytes();
+        out.extend_from_slice(&triple[1..4 - pad]);
+    }
+    Some(out)
+}
+
 pub fn is_sha256_hex(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
 }
@@ -181,6 +218,18 @@ mod tests {
         );
         assert_eq!(parse_iso("2026-08-01T14:00:00+02:00"), Some(1_785_585_600));
         assert_eq!(parse_iso("nonsense"), None);
+    }
+
+    #[test]
+    fn base64_decoding() {
+        assert_eq!(base64_decode(""), Some(Vec::new()));
+        assert_eq!(base64_decode("TWFu"), Some(b"Man".to_vec()));
+        assert_eq!(base64_decode("TWE="), Some(b"Ma".to_vec()));
+        assert_eq!(base64_decode("TQ=="), Some(b"M".to_vec()));
+        assert_eq!(base64_decode("+/8="), Some(vec![0xFB, 0xFF]));
+        for bad in ["TWF", "TW=u", "T===", "TWFu TWFu", "TQ==TWFu", "TW-u"] {
+            assert_eq!(base64_decode(bad), None, "{bad}");
+        }
     }
 
     #[test]

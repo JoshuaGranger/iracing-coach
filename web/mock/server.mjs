@@ -98,7 +98,7 @@ function sessionDetail(s) {
 }
 
 function envelope(analysisId) {
-  return { analysis_id: analysisId, projection_version: 1, schema_version: 2, profile_version: "post-race-foundations-v23" };
+  return { analysis_id: analysisId, projection_version: 1, schema_version: 1, profile_version: "post-race-foundations-v23" };
 }
 
 /** Versioned user resources: enforces If-Match like the real server (an existing resource needs the current version). */
@@ -182,7 +182,7 @@ async function route(req, res, url) {
     return json(res, 200, { ...envelope(a), coordinate_space: "normalized_local_vector", status: "usable", main_path: { pct: [0, 0.5], x: [0.1, 0.9], y: [0.5, 0.5] }, provenance: {} });
   }
   if ((r = p.match(/^\/api\/v1\/analyses\/([^/]+)\/traces\/catalog$/)))
-    return json(res, 200, { ...envelope(r[1]), bins_per_lap: 160, laps: Array.from({ length: 12 }, (_, i) => ({ lap: i + 1, lap_time_s: 15.2, comparison_eligible: true, exclusion_reasons: [] })), signals: TRACE_SIGNALS, steering_basis: { basis: "steering_wheel" }, budgets: { vertex_budget_per_signal: 48000, min_points_per_trace: 48, max_color_groups: 20, cursor_detail_traces: 24, max_trace_rows: 10 } });
+    return json(res, 200, { ...envelope(r[1]), bins_per_lap: 160, laps: Array.from({ length: 12 }, (_, i) => ({ lap: i + 1, lap_time_s: 15.2, comparison_eligible: true, exclusion_reasons: [] })), signals: TRACE_SIGNALS, omitted_signals: [], steering_basis: { basis: "steering_wheel" }, budgets: { vertex_budget_per_signal: 48000, min_points_per_trace: 48, max_color_groups: 20, cursor_detail_traces: 24, max_trace_rows: 10 } });
   if ((r = p.match(/^\/api\/v1\/analyses\/([^/]+)\/traces$/))) {
     const body = traceBinary(r[1]);
     res.writeHead(200, { "Content-Type": "application/vnd.coach.columns", "Content-Length": body.length, "X-Coach-Trace-Laps": "12" });
@@ -206,7 +206,7 @@ async function route(req, res, url) {
   }
   if ((r = p.match(/^\/api\/v1\/setups\/(\d+)$/))) {
     const s = Object.values(state.setups).flat().find((x) => x.summary.setup_id === Number(r[1]));
-    return s ? json(res, 200, { setup: s.summary, values: s.values, identity_excluded_keys: EXCLUDED_KEYS, observations: s.observations }) : err(res, 404, "not_found", "No such setup");
+    return s ? json(res, 200, { setup: s.summary, values: s.values, identity_excluded_keys: EXCLUDED_KEYS, observations: s.observations.map((o) => ({ ...o, analysis_id: o.session_id != null ? (findSession(o.session_id)?.analysis_id ?? null) : null })) }) : err(res, 404, "not_found", "No such setup");
   }
   if (p === "/api/v1/setups/compare" && m === "POST") {
     const body = await readBody(req);

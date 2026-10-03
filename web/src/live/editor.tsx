@@ -1,5 +1,6 @@
 import { useMemo } from "preact/hooks";
-import { TILE_BY_ID } from "./tiles";
+import { unitLabel } from "../gen/live-channels";
+import { TILE_BY_ID, resolveUnit, usesPrecision } from "./tiles";
 import {
   ACCENTS,
   type LayoutBody,
@@ -136,25 +137,27 @@ export function LayoutEditor(p: EditorProps) {
           {spec.units.length > 1 ? (
             <label>
               <span>Unit</span>
-              <select value={tile.unit ?? spec.units[0]} onChange={(e) => set({ unit: (e.currentTarget as HTMLSelectElement).value })}>
+              <select value={resolveUnit(spec, tile.unit)} onChange={(e) => set({ unit: (e.currentTarget as HTMLSelectElement).value })}>
                 {spec.units.map((u) => (
                   <option key={u} value={u}>
-                    {u}
+                    {unitLabel(u)}
                   </option>
                 ))}
               </select>
             </label>
           ) : null}
-          <label>
-            <span>Decimals</span>
-            <select value={tile.precision ?? spec.precision} onChange={(e) => set({ precision: Number((e.currentTarget as HTMLSelectElement).value) })}>
-              {[0, 1, 2, 3].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
+          {usesPrecision(spec) ? (
+            <label>
+              <span>Decimals</span>
+              <select value={tile.precision ?? spec.precision} onChange={(e) => set({ precision: Number((e.currentTarget as HTMLSelectElement).value) })}>
+                {[0, 1, 2, 3].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {tile.style === "trend" ? (
             <label>
               <span>Window</span>

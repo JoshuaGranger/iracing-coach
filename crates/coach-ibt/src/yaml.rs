@@ -1,12 +1,9 @@
 //! Session-info text: the in-house YAML subset of `ibt_reader._parse_iracing_yaml_subset`
 //! (ibt_reader.py:400-517) and `_yaml_scalar` (:342-372). No general YAML.
 
-use std::sync::LazyLock;
-
-use regex::Regex;
-
 use crate::IbtError;
 use crate::literal::{Evaluated, evaluate};
+use crate::matchers::{is_yaml_float, is_yaml_integer};
 use crate::py;
 
 /// Deepest block nesting accepted. Python's recursive parser raises `RecursionError` near its
@@ -40,15 +37,6 @@ pub enum YamlScalar {
     Float(f64),
     Str(String),
 }
-
-static INTEGER_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[+-]?(?:0|[1-9][0-9]*)$").expect("valid integer pattern"));
-static FLOAT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"^[+-]?(?:(?:[0-9]+\.[0-9]*)|(?:[0-9]*\.[0-9]+)|(?:[0-9]+[eE][+-]?[0-9]+)|(?:[0-9]+\.[0-9]*[eE][+-]?[0-9]+))$",
-    )
-    .expect("valid float pattern")
-});
 
 fn is_quoted(value: &str) -> bool {
     let first = value.chars().next();
@@ -90,13 +78,13 @@ impl Scalar {
                 _ => YamlScalar::Str(value.to_owned()),
             };
         }
-        if INTEGER_PATTERN.is_match(value) {
+        if is_yaml_integer(value) {
             return match value.parse::<i64>() {
                 Ok(number) => YamlScalar::Int(number),
                 Err(_) => YamlScalar::Str(value.to_owned()),
             };
         }
-        if FLOAT_PATTERN.is_match(value) {
+        if is_yaml_float(value) {
             return match value.parse::<f64>() {
                 Ok(number) if number.is_finite() => YamlScalar::Float(number),
                 _ => YamlScalar::Str(value.to_owned()),

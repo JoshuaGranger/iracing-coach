@@ -94,6 +94,12 @@ describe("feedback editing", () => {
     expect(readDraft(null)).toEqual(EMPTY_DRAFT);
     expect(readDraft({ goal: "nonsense" }).goal).toBe("long-run-pace");
   });
+
+  it("is the wire TuningDraftBody, so a saved draft needs no cast", () => {
+    const wire: Schemas["TuningDraftBody"] = readDraft({ goal: "tire-life", future_field: 1 });
+    expect(wire.goal).toBe("tire-life");
+    expect(wire.future_field).toBe(1);
+  });
 });
 
 describe("request to the worker", () => {

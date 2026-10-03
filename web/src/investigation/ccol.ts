@@ -100,6 +100,46 @@ export function decodeCcol(buffer: ArrayBuffer): TraceTable {
   };
 }
 
+/**
+ * Joins CCOL bodies of consecutive lap ranges of one analysis into one table (the 413 remedy: the browser
+ * asks for halves and joins them). Every part must carry the same bins and channels; a channel whose
+ * integer width or sentinel differs between parts (the encoder picks it per body) is joined as f64 with
+ * NaN for missing.
+ */
+export function joinCcol(parts: readonly TraceTable[]): TraceTable {
+  if (parts.length === 0) throw new CcolError("nothing to join");
+  const first = parts[0]!;
+  if (parts.length === 1) return first;
+  for (const part of parts) {
+    if (part.bins !== first.bins || part.analysisId !== first.analysisId) throw new CcolError("parts of one analysis must share bins");
+    if (part.channels.size !== first.channels.size) throw new CcolError("parts carry different channels");
+    for (const id of first.channels.keys()) if (!part.channels.has(id)) throw new CcolError(`channel ${id} is missing from a part`);
+  }
+  const total = parts.reduce((sum, part) => sum + part.laps.length * part.bins, 0);
+  const channels = new Map<string, CcolChannel>();
+  for (const [id, head] of first.channels) {
+    const members = parts.map((part) => part.channels.get(id)!);
+    const uniform = members.every((member) => member.dtype === head.dtype && member.missing === head.missing);
+    const dtype = uniform ? head.dtype : "f64";
+    const raw: CcolArray = dtype === "f64" ? new Float64Array(total) : dtype === "i16" ? new Int16Array(total) : new Uint8Array(total);
+    let at = 0;
+    for (const member of members) {
+      const source = uniform ? member.raw : channelAsFloat(member);
+      (raw as Float64Array).set(source as Float64Array, at);
+      at += source.length;
+    }
+    channels.set(id, { id, dtype, missing: dtype === "f64" ? null : head.missing, raw });
+  }
+  return {
+    analysisId: first.analysisId,
+    projectionVersion: first.projectionVersion,
+    bins: first.bins,
+    laps: parts.flatMap((part) => part.laps),
+    channels,
+    byteLength: parts.reduce((sum, part) => sum + part.byteLength, 0),
+  };
+}
+
 /** One value of a channel; a missing integer or NaN float returns NaN. */
 export function channelValue(channel: CcolChannel, lapIndex: number, bin: number, bins: number): number {
   const raw = channel.raw[lapIndex * bins + bin];

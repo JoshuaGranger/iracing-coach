@@ -433,6 +433,20 @@ async fn every_endpoint_answers_as_the_contract_says() {
     assert_eq!(r.json()["setups"].as_array().unwrap().len(), 1);
     let r = env.get(&format!("/api/v1/setups/{}", by_car[0])).await;
     check(c, "GET", "/api/v1/setups/{setup_id}", &r);
+    // a recording observation names the session's current analysis (Tune this setup, one request)
+    let detail = r.json();
+    let recorded = detail["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["source"] == "recording")
+        .expect("a recording observation");
+    let observed_session = recorded["session_id"].as_i64().unwrap();
+    let current: String = scalar(
+        &env,
+        &format!("SELECT current_analysis_id FROM sessions WHERE session_id = {observed_session}"),
+    );
+    assert_eq!(recorded["analysis_id"], current.as_str());
     assert!(
         r.json()["identity_excluded_keys"]
             .as_array()
@@ -929,7 +943,11 @@ async fn every_endpoint_answers_as_the_contract_says() {
                   {"legacy_id": "n2", "subject_kind": "session", "subject_id": "x", "body": "unknown event",
                    "subject_ref": {"subsession_id": 123456}}],
         "trace_layouts": [{"name": "Legacy rows", "body": {"rows": [{"row_id": "r", "signals": ["speed"]}]}}],
-        "tuning_experiments": [{"experiment_id": "old-1"}]});
+        "legacy_analyses": [{"legacy_analysis_id": "old-a", "subsession_id": 9500, "sim_session_num": 0},
+                            {"legacy_analysis_id": "old-b", "subsession_id": 123456}],
+        "legacy_archive": {"files": [legacy_file("history.sqlite3", b"not read by the stub"),
+                                     legacy_file("tuning/experiments/s/c/t/old-1.json",
+                                                 json!({"experiment_id": "old-1", "analysis_id": "old-a"}).to_string().as_bytes())]}});
     let r = env.post("/api/v1/admin/import", bundle.clone()).await;
     assert_eq!(r.status, StatusCode::ACCEPTED);
     check(c, "POST", "/api/v1/admin/import", &r);
@@ -957,8 +975,15 @@ async fn every_endpoint_answers_as_the_contract_says() {
             &env,
             "SELECT COUNT(*) FROM legacy_items WHERE kind = 'tuning_experiment'"
         ),
-        1
+        0,
+        "tuning experiments go through the worker, not into legacy_items"
     );
+    let summary: Value =
+        serde_json::from_str(&scalar::<String>(&env, "SELECT summary_json FROM imports")).unwrap();
+    assert_eq!(summary["tuning_experiments_imported"], 1);
+    assert_eq!(summary["tuning_experiments_resolved"], 1);
+    assert_eq!(summary["legacy_analyses_resolved"], 1);
+    assert_eq!(summary["legacy_analyses_unresolved"], 1);
     assert_eq!(scalar::<i64>(&env, "SELECT COUNT(*) FROM trace_layouts"), 1);
     assert_eq!(scalar::<i64>(&env, "SELECT COUNT(*) FROM imports"), 1);
 

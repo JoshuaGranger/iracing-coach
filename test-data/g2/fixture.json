@@ -1,0 +1,65 @@
+{
+  "analysis_id": "23519d5bc7d3f505efdcbe1c",
+  "analysis_profile_version": "post-race-foundations-v23",
+  "catalog_laps": 83,
+  "files": [
+    {
+      "bytes": 237017,
+      "file_name": "race.json",
+      "kind": "race",
+      "sha256": "0a5f7fd60119f96b5ef8c498f205dadc02fe470b4fc420bab3ced9f02fb0daec"
+    },
+    {
+      "bytes": 114832,
+      "file_name": "runs.json",
+      "kind": "runs",
+      "sha256": "04d37a17b87929267efe8ac40a25f0fbbd3db76e1fd382748045c250d0a5ac2c"
+    },
+    {
+      "bytes": 107425,
+      "file_name": "investigation.json",
+      "kind": "investigation",
+      "sha256": "91680a3e0094ae165a2fd1f0b77b94ac5df399b3f34cd5e40bed040aea662abb"
+    },
+    {
+      "bytes": 74760,
+      "file_name": "traces-catalog.json",
+      "kind": "trace_catalog",
+      "sha256": "e51eb3bac853671f1ed90d2d2f6f95f9f59c6d86acc30032112638db420ce4ae"
+    },
+    {
+      "bytes": 6806552,
+      "file_name": "traces.ccol",
+      "kind": "traces",
+      "sha256": "f2aae8df61f7f5b3002a9435fc2740fa7b45b12d8f775d5c421747893d4ae0ce"
+    },
+    {
+      "bytes": 26045,
+      "file_name": "track.json",
+      "kind": "track",
+      "sha256": "662b47bdb08eb87109cbd4227705b6bf8b309b54bea2226afb034cf02e39f654"
+    },
+    {
+      "bytes": 25975,
+      "file_name": "tuning.json",
+      "kind": "tuning",
+      "sha256": "b28f4f2e6b3d8bf029a4b0198eeb643d71b95507a47f6dfc3d0f9b88b511a3da"
+    }
+  ],
+  "fixture": "g2-race",
+  "generator": "tools/generate_fixtures.py --g2",
+  "omitted_signals": [],
+  "projection_version": 1,
+  "purpose": "Gate G2 (workstreams.md): a current-profile 82-lap race for the investigation views.",
+  "race_laps": 82,
+  "recording": {
+    "best_lap_s": 28.408,
+    "bytes": 84647267,
+    "laps": 82,
+    "median_lap_s": 28.514,
+    "name": "synthetic-g2-race.ibt",
+    "records": 142225,
+    "sha256": "2e98c4f6002c336d22182672a0d59d1f7253ab2bf66c64a9e0fb4cd2cd85cebb"
+  },
+  "signals": 77
+}

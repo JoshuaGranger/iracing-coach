@@ -22,8 +22,10 @@ Spawned with `tokio::process`, its own process group, `oom_score_adj` set to 100
 | `PYTHONUTF8` | `1` |
 | `PYTHONDONTWRITEBYTECODE` | `1` (image is precompiled) |
 | `LANG` | `C.UTF-8` |
-| `HOME`, `TMPDIR` | `/data/py/<customer_id>/tmp` |
+| `HOME`, `TMPDIR` | `/data/py/<customer_id>/tmp` (required: without `HOME` a tool fails with "Could not determine home directory") |
 | `PATH` | `/usr/local/bin:/usr/bin:/bin` |
+
+Windows development (`coach-server --dev` on the dev PC) adds `USERPROFILE` set to the same directory as `HOME` (Python's home lookup reads it there, not `HOME`), and passes through only `SystemRoot`, `SYSTEMROOT`, `PATH`, `PATHEXT`, `TEMP` and `TMP`, which the interpreter needs to start.
 
 `IRACING_COACH_INSTALL_ROOT` is unset. The container network stays enabled for the server; v1 runs no networked tool.
 
@@ -37,7 +39,7 @@ Spawned with `tokio::process`, its own process group, `oom_score_adj` set to 100
 
 The job root is created before the job and deleted after it (links only). A discovery job's root holds one recording. An analysis job's root holds every recording of the session's group (a reconnected race spans several files); members whose spool copy is gone are restaged from the NAS first. Spool files keep the recording's original mtime (set at commit), so `_assert_finalized_ibt`'s 2 s quiet rule passes. Path bounds (`_bounded_path`) hold because every path lies under these roots. Python's `discover_sessions` groups by `SubSessionID + sim_session_num`; cross-file test-day tagging is not used in v1 (Test day is parked).
 
-**Stable selectors.** Job roots differ per job, so a group key that embeds the recording's path is not stable: `ibt_reader._fallback_group_key` uses `metadata["path"]` when `time_source == "mtime"` (recordings with no server ids and no usable session start time). Such a group always has one member. The server stores it as `local-file:<sha256>` and runs `analyze_iracing_race` with `selector` = that recording's path in the analysis job root. Every other group is selected by the worker's `group_key`, which holds no path. Each recording belongs to one group only (the final `SessionNum`, `db-schema.sql` sessions comment). W6 adds regression tests for a recording with no server ids and no session start time, and for a two-file reconnect.
+**Stable selectors.** Job roots differ per job, so a group key that embeds the recording's path is not stable: `ibt_reader._fallback_group_key` uses `metadata["path"]` when `time_source == "mtime"` (recordings with no server ids and no usable session start time). Such a group always has one member; the server recognises it by the discovery group's `time_source == "mtime"`. The server stores it as `local-file:<sha256>` and runs `analyze_iracing_race` with `selector` = that recording's path in the analysis job root. Every other group is selected by the worker's `group_id`, which holds no path (the server stores it as `sessions.group_key`). Each recording belongs to one group only (the final `SessionNum`, `db-schema.sql` sessions comment). W6 adds regression tests for a recording with no server ids and no session start time, and for a two-file reconnect.
 
 ## 4. Protocol
 
@@ -55,20 +57,25 @@ Read stdout lines until the response with `id: 2`. Result: `result.content[0].te
 
 | Lane | Tool | Arguments (paths are under the roots above) | Server use of the result |
 |---|---|---|---|
-| light | `discover_iracing_sessions` | `root` (the job root, holding one recording), `races_only: false`, `limit: 50` | per group: find or create the driver's `sessions` row by `group_key`, add the recording to `session_recordings` |
-| analysis | `analyze_iracing_race` | `selector: <group_key>`, `iracing_root`, `archive_root`, `target_hz: null` | `analysis_path`, identity, `analysis_id`; then projection |
+| light | `discover_iracing_sessions` | `root` (the job root, holding one recording), `races_only: false`, `limit: 50` | per session group (result `sessions[]`, each keyed by `group_id`): find or create the driver's `sessions` row by that key (`local-file:<sha256>` for a `time_source == "mtime"` group), add the recording to `session_recordings` |
+| analysis | `analyze_iracing_race` | `selector: <group_id>` (or the recording's job-root path for `local-file`), `iracing_root`, `archive_root`, `target_hz: null` | `analysis_path`, identity, `analysis_id`; then projection |
 | light | `catalog_iracing_setups` | `root`, `archive_root`, `car`, `maximum_entries: 1000` | values of `.htm` exports (`htm_export` observations) |
 | light | `compare_iracing_setups` | `left`, `right`, `scheme: "recording"` | compare rows, passed through |
 | light | `build_open_setup_package` | `iracing_root`, `archive_root`, `season`, `car`, `track`, optional `analysis_path` | Find a baseline result (validated against `contracts/setup-package-v1.schema.json`) |
 | light | `recommend_structured_open_setup_tuning` | per `contracts/mcp-tools.v1.json`; `ai_response` never sent in v1 | Progressive Tuning result (validated against `tuning-recommendation-v1`) |
 | light | `record_open_setup_feedback` | `experiment_id`, `outcome`, `notes`, optional `result_analysis_path` | outcome stored in the worker's `tuning_experiments` |
 | light | `iracing_setup_history` | `analysis_path` or `package_id`, `archive_root`, `limit: 100` | tuning history view |
+| light | `import_legacy_tuning_experiments` (write tool, D12 only) | `legacy_archive_root` (the import job root's `legacy/`, holding the bundle's `legacy_archive` files), `analysis_map` (`[{legacy_analysis_id, analysis_id, analysis_path}]`, null ids and paths for unresolved analyses), `archive_root`, optional `dry_run` | imported, skipped and unmapped counts in the import summary; bumps `user_data_generation` |
+
+**Analyze idempotency key.** The worker does not report its analyzer bundle digest or profile, so the server derives both from the scripts directory at start: the digest is the first 16 hex characters of SHA-256 over the directory's `*.py` files in path order, each as file name, `0x00`, contents, `0x00`; the profile is the `ANALYSIS_PROFILE_VERSION = "..."` text in `analysis_engine.py`. Any Python change therefore changes the key. The worker's own `analysis_id` stays the identity of a result.
 
 ## 5. Python changes required for v1 (owned by W6)
 
-1. `IRACING_COACH_RAW_ARCHIVE=external`: skip `archive_raw_telemetry` and record `source.raw_source_policy: "external"`. The oracle uses the same switch in every parity run.
+Status (wave 1): all six landed in the wave-1 commit (`dd0ce49`), with regression tests.
+
+1. `IRACING_COACH_RAW_ARCHIVE=external`: skip `archive_raw_telemetry`. `source.raw_source_policy` stays an object: `{mode: "external", durably_copied: false, archive: {status: "external", items: []}, note, raw_reanalysis_durable: null}`, and the analyze result's `raw_archive.status` is `"external"`. Any value other than unset or `external` fails the job. The oracle uses the same switch in every parity run.
 2. `secure_store`: honour `IRACING_COACH_GARAGE61_TOKEN_FILE` before the Windows check (about 20 lines).
-3. `ibt_reader.py:820`: read `DriverSetupIsModified` (P5); keep `DriverSetupModified` only as the fixture fallback.
+3. `ibt_reader.py`: read `DriverSetupIsModified` (P5); keep `DriverSetupModified` only as the fixture fallback. Session info is always parsed by the built-in subset parser, never PyYAML (an installed PyYAML read `SteeringRatio: 12:1` as 721), so the image rule "no PyYAML" is also enforced in code.
 4. Deterministic tie-break in `key=str.lower` sorts: sort by `(key, name)` (`ibt_reader.py:1797`, `setup_catalog.py:1391`).
 5. Tests: Windows-literal path tests skip on POSIX; tests that read `companion-app/` C# sources are removed or rewritten before `companion-app/` is deleted.
 6. Each change that alters output bumps the analyzer bundle (existing rules in `test_analysis_pipeline_identity.py`).
@@ -101,4 +108,4 @@ Read stdout lines until the response with `id: 2`. Result: `result.content[0].te
 The existing harness parses persisted JSON and re-serializes it before comparing, so it cannot see the writer's own bytes. W6 adds, before phase 3 and used by every phase:
 - **Raw mode** (`--raw`): compares the original persisted bytes after textual substitution of an explicit allowlist only (ISO instants in `*_at` values, the report-directory timestamp slug, `*_ms` / `elapsed_seconds` values, the timestamp-derived `analysis_sha256`, the job-root and archive-root prefixes as `<iracing_root>` / `<archive_root>`). Phase 3 passes only in raw mode; the parsed comparison stays as a diagnostic.
 - **Production identity:** one capture pair per phase with the analyzer digest unpinned, run in the same image; `analysis_id` and run ids must be equal between Python and native.
-- **Worker-interface captures:** captures driven through `mcp_server.py` with the section 3 roots and selectors (not one explicit file) for a two-file reconnect group with overlapping samples, a restaged recording, and a `local-file` fallback recording; Linux container against Windows oracle with only the root prefixes and line endings normalized. Corpus: `test-data/ibt/synthetic-race.ibt` (committed) and the private corpus named by `COACH_PRIVATE_CORPUS` (at least the 203 MB New Hampshire race, the 146 MB Iowa race, one practice, one test session; never committed). Phase 1 also requires `tools/parity/emit_ibt_golden.py` matrix-hash equality. An unexplained difference fails the stage (D2); no tolerance.
+- **Worker-interface captures:** captures driven through `mcp_server.py` with the section 3 roots and selectors (not one explicit file) for a two-file reconnect group with overlapping samples, a restaged recording, and a `local-file` fallback recording; Linux container against Windows oracle with only the root prefixes, line endings, and the path separators that follow `<archive_root>` or `<iracing_root>` (normalised to `/`) normalized. Raw mode compares SQLite files only as parsed row dumps. Corpus: `test-data/ibt/synthetic-race.ibt` (committed) and the private corpus named by `COACH_PRIVATE_CORPUS` (at least the 203 MB New Hampshire race, the 146 MB Iowa race, one practice, one test session; never committed). Phase 1 also requires `tools/parity/emit_ibt_golden.py` matrix-hash equality. An unexplained difference fails the stage (D2); no tolerance.

@@ -766,33 +766,57 @@ fn a_geometry_view_over_its_bound_drops_provenance_first() {
     assert_valid("TrackGeometry", &track);
 }
 
-// ---- more than 64 signals ----
+// ---- the 128-signal limit ----
+
+/// `count` extra signal ids `s000`, `s001`, ... that live for the whole test run.
+fn extra_ids(count: usize) -> &'static [&'static str] {
+    let ids: Vec<&'static str> = (0..count)
+        .map(|i| &*Box::leak(format!("s{i:03}").into_boxed_str()))
+        .collect();
+    Box::leak(ids.into_boxed_slice())
+}
 
 #[test]
 fn signals_past_the_contract_limit_are_listed_not_served() {
-    const IDS: [&str; 52] = [
-        "s00", "s01", "s02", "s03", "s04", "s05", "s06", "s07", "s08", "s09", "s10", "s11", "s12",
-        "s13", "s14", "s15", "s16", "s17", "s18", "s19", "s20", "s21", "s22", "s23", "s24", "s25",
-        "s26", "s27", "s28", "s29", "s30", "s31", "s32", "s33", "s34", "s35", "s36", "s37", "s38",
-        "s39", "s40", "s41", "s42", "s43", "s44", "s45", "s46", "s47", "s48", "s49", "s50", "s51",
-    ];
     let doc = analysis_doc(
         "many",
         &Options {
             laps: 2,
-            extras: &IDS,
+            extras: extra_ids(130),
             ..Options::default()
         },
     );
     let (out, summary) = project_doc(&doc);
-    assert_eq!(summary.trace_channels.len(), 64);
+    assert_eq!(summary.trace_channels.len(), 128);
     let catalog = view(&out, "traces-catalog.json");
-    assert_eq!(catalog["signals"].as_array().unwrap().len(), 64);
-    // 15 fixed channels, then the first 49 of the backend's order; the last three are omitted
-    assert_eq!(catalog["omitted_signals"], json!(["s49", "s50", "s51"]));
+    assert_eq!(catalog["signals"].as_array().unwrap().len(), 128);
+    // 15 fixed channels, then the first 113 of the backend's order; only the 17 past the cap are omitted
+    let omitted: Vec<String> = (113..130).map(|i| format!("s{i:03}")).collect();
+    assert_eq!(catalog["omitted_signals"], json!(omitted));
     assert_valid("TraceCatalog", &catalog);
     let ccol = decode_ccol(&fs::read(out.join("traces.ccol")).unwrap());
-    assert_eq!(ccol.columns.len(), 64);
+    assert_eq!(ccol.columns.len(), 128);
+}
+
+#[test]
+fn the_76_signals_of_a_real_recording_are_all_served() {
+    // 15 fixed channels and 61 additional signals, as in the private recordings
+    let doc = analysis_doc(
+        "real",
+        &Options {
+            laps: 2,
+            extras: extra_ids(61),
+            ..Options::default()
+        },
+    );
+    let (out, summary) = project_doc(&doc);
+    assert_eq!(summary.trace_channels.len(), 76);
+    let catalog = view(&out, "traces-catalog.json");
+    assert_eq!(catalog["signals"].as_array().unwrap().len(), 76);
+    assert!(catalog.get("omitted_signals").is_none());
+    assert_valid("TraceCatalog", &catalog);
+    let ccol = decode_ccol(&fs::read(out.join("traces.ccol")).unwrap());
+    assert_eq!(ccol.columns.len(), 76);
 }
 
 // ---- select_traces ----

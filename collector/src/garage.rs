@@ -131,14 +131,20 @@ impl GarageCapture {
                     mut visit,
                     exited_ms,
                 } => {
-                    snapshot_if_changed(&mut visit, tick, &mut out);
                     if in_garage {
-                        // Back in the garage before the window closed: close the old visit by
-                        // the name seen so far, then start a new one.
-                        let name = changed_name(&visit, tick.setup);
-                        self.finish(visit, exited_ms, name, tick, &mut out);
+                        // Back in the garage before the window closed. Close the old visit
+                        // first, as if the window had ended, from its own last snapshot: this
+                        // tick's count and values belong to the new visit. The new visit's
+                        // baseline is the old visit's last count, so a count that changed
+                        // meanwhile is the new visit's first snapshot.
+                        let carried = visit.last_count;
+                        self.finish(visit, exited_ms, None, tick, &mut out);
+                        let mut next = open_visit(tick);
+                        next.last_count = carried;
+                        self.state = State::InGarage(next);
                         continue;
                     }
+                    snapshot_if_changed(&mut visit, tick, &mut out);
                     if let Some(name) = changed_name(&visit, tick.setup) {
                         self.finish(visit, exited_ms, Some(name), tick, &mut out);
                     } else if tick.now_ms.saturating_sub(exited_ms) >= EXIT_WINDOW_MS {
@@ -155,7 +161,7 @@ impl GarageCapture {
 
     /// Closes `visit`. A visit that saw no value change has nothing to commit.
     fn finish(
-        &mut self,
+        &self,
         mut visit: Visit,
         exited_ms: u64,
         name: Option<String>,
@@ -180,9 +186,12 @@ impl GarageCapture {
             update_count: visit.last_snapshot,
             entered_at: iso_utc(visit.entered_ms),
             exited_at: iso_utc(exited_ms),
-            car_path: tick.setup.car_path.clone().or(visit.car_path.clone()),
-            driver: tick.setup.driver.clone().or(visit.driver.clone()),
-            session: tick.setup.session.clone().or(visit.session.clone()),
+            car_path: visit
+                .car_path
+                .clone()
+                .or_else(|| tick.setup.car_path.clone()),
+            driver: visit.driver.clone().or_else(|| tick.setup.driver.clone()),
+            session: visit.session.clone().or_else(|| tick.setup.session.clone()),
             setup_name: name,
             sto_sha256: None,
             ambiguous: false,
@@ -194,9 +203,6 @@ impl GarageCapture {
             },
             hash_pending: named,
         }));
-        if tick.in_garage == Some(true) && tick.connected {
-            self.state = State::InGarage(open_visit(tick));
-        }
     }
 }
 
@@ -435,6 +441,46 @@ mod tests {
         let out = step(&mut g, 1_000, true, &view(3, "R.sto", Some(false)));
         assert!(matches!(&out[..], [GarageAction::Commit(c)] if c.setup_name.is_none()));
         assert!(g.in_visit(), "a new visit is open");
+    }
+
+    #[test]
+    fn reentry_with_a_changed_count_commits_the_old_visit_before_the_new_snapshot() {
+        let mut g = GarageCapture::new();
+        step(&mut g, 0, true, &view(2, "R.sto", Some(false)));
+        let first = step(&mut g, 100, true, &view(3, "R.sto", Some(false)));
+        let old_id = match &first[..] {
+            [GarageAction::Snapshot(s)] => s.visit_id.clone(),
+            other => panic!("unexpected {other:?}"),
+        };
+        step(&mut g, 200, false, &view(3, "R.sto", Some(false)));
+        // Back inside the window with count 4: that value is the new visit's, not the old one's.
+        let out = step(&mut g, 1_000, true, &view(4, "R.sto", Some(false)));
+        match &out[..] {
+            [GarageAction::Commit(c), GarageAction::Snapshot(s)] => {
+                assert_eq!(c.visit_id, old_id);
+                assert_eq!(
+                    c.update_count,
+                    Some(3),
+                    "the old visit keeps its own snapshot"
+                );
+                assert_eq!(c.setup_name, None);
+                assert_ne!(s.visit_id, old_id, "the snapshot opens the new visit");
+                assert_eq!(s.update_count, 4);
+                assert_eq!(s.values["Tires.LeftFront.ColdPressure"], "4 kPa");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        // The new visit carries on from there: its commit names count 4, never the old visit.
+        step(&mut g, 1_100, false, &view(4, "R.sto", Some(false)));
+        let out = step(&mut g, 1_300, false, &view(4, "Q.sto", Some(true)));
+        match &out[..] {
+            [GarageAction::Commit(c)] => {
+                assert_ne!(c.visit_id, old_id);
+                assert_eq!(c.update_count, Some(4));
+                assert_eq!(c.setup_name.as_deref(), Some("Q.sto"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

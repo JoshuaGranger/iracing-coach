@@ -339,8 +339,21 @@ pub fn stub_script() -> PathBuf {
 
 // ---------------------------------------------------------------------- env
 
+/// The data and NAS directories of one environment: a temporary directory, or an existing one
+/// (the crash tests start the server in a child process over a directory the parent owns).
+pub struct Dir {
+    path: PathBuf,
+    _temp: Option<TempDir>,
+}
+
+impl Dir {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 pub struct Env {
-    pub dir: Arc<TempDir>,
+    pub dir: Arc<Dir>,
     pub app: AppState,
     pub router: Router,
     pub faults: Arc<Faults>,
@@ -381,6 +394,7 @@ pub fn base_config(dir: &Path, python: Option<&str>) -> Config {
     cfg.worker.discover_timeout = std::time::Duration::from_secs(60);
     cfg.worker.light_timeout = std::time::Duration::from_secs(60);
     cfg.min_free_bytes = 0;
+    cfg.contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../contracts");
     cfg
 }
 
@@ -390,7 +404,11 @@ impl Env {
     }
 
     pub async fn with(opts: Opts) -> Env {
-        let dir = Arc::new(TempDir::new().expect("tempdir"));
+        let temp = TempDir::new().expect("tempdir");
+        let dir = Arc::new(Dir {
+            path: temp.path().to_path_buf(),
+            _temp: Some(temp),
+        });
         let python = python();
         let mut cfg = base_config(dir.path(), python.as_deref());
         cfg.background = opts.background;
@@ -398,7 +416,22 @@ impl Env {
         Env::start(dir, cfg, python).await
     }
 
-    async fn start(dir: Arc<TempDir>, cfg: Config, python: Option<String>) -> Env {
+    /// An environment over directories that already exist (and that outlive it).
+    pub async fn over(path: &Path, faults: Option<(&str, coach_server::faults::FaultMode)>) -> Env {
+        let dir = Arc::new(Dir {
+            path: path.to_path_buf(),
+            _temp: None,
+        });
+        let python = python();
+        let cfg = base_config(dir.path(), python.as_deref());
+        let env = Env::start(dir, cfg, python).await;
+        if let Some((point, mode)) = faults {
+            env.faults.arm(point, mode);
+        }
+        env
+    }
+
+    async fn start(dir: Arc<Dir>, cfg: Config, python: Option<String>) -> Env {
         let faults = Arc::new(Faults::default());
         let projector = Arc::new(FakeProjector::default());
         let parts = Parts {
@@ -726,4 +759,30 @@ impl Contract {
             "{method} {template} {status} violates the contract: {errors:?}\nbody: {body}"
         );
     }
+}
+
+// ------------------------------------------------------------------- import
+
+pub fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = (chunk[0] as u32) << 16
+            | (*chunk.get(1).unwrap_or(&0) as u32) << 8
+            | *chunk.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// One `legacy_archive` file of an `ImportBundle`.
+pub fn legacy_file(relative_path: &str, bytes: &[u8]) -> Value {
+    json!({"relative_path": relative_path, "sha256": coach_server::util::sha256_hex(bytes),
+           "content_base64": base64(bytes)})
 }

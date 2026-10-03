@@ -17,6 +17,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -227,6 +228,24 @@ class VerifierSourceContractTests(unittest.TestCase):
             source.count("_run_backend_suite()"),
             "the producer must have exactly one call site, inside the --full guard",
         )
+
+
+class G2FixtureTests(unittest.TestCase):
+    """The committed G2 race views are checked against their manifest."""
+
+    def test_the_committed_fixture_matches_its_manifest(self) -> None:
+        verify_repository._validate_g2_fixture()
+
+    def test_a_changed_view_file_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g2-fixture-check-") as raw:
+            copy = Path(raw) / "g2"
+            shutil.copytree(ROOT / "test-data" / "g2", copy)
+            traces = copy / "traces.ccol"
+            data = bytearray(traces.read_bytes())
+            data[-1] ^= 0x01
+            traces.write_bytes(bytes(data))
+            with self.assertRaisesRegex(ValueError, "traces.ccol"):
+                verify_repository._validate_g2_fixture(copy)
 
 
 if __name__ == "__main__":

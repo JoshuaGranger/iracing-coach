@@ -14,6 +14,7 @@ use crate::app::AppState;
 use crate::error::Error;
 use crate::hub::{CollectorConn, FrameVerdict, Outgoing};
 use crate::schema::Schemas;
+use crate::setups::GarageOutcome;
 use crate::util::{self, iso_now};
 
 pub const COLLECTOR_SUBPROTOCOL: &str = "coach-collector.1";
@@ -270,26 +271,29 @@ async fn handle_text(
                     let fp = |values: &std::collections::BTreeMap<String, String>| {
                         parser.fingerprint(values)
                     };
-                    if is_commit {
-                        crate::setups::record_garage_commit(&tx, &msg, &id, &fp)?;
+                    let outcome = if is_commit {
+                        crate::setups::record_garage_commit(&tx, &msg, &id, &fp)?
                     } else {
-                        crate::setups::record_garage_snapshot(&tx, &msg, &id, &fp)?;
-                    }
+                        crate::setups::record_garage_snapshot(&tx, &msg, &id, &fp)?
+                    };
                     tx.commit()?;
-                    Ok(())
+                    Ok(outcome)
                 })
                 .await;
             match result {
-                Ok(()) => {
-                    if let Some(customer) = message["driver"]["customer_id"].as_i64() {
-                        app.events.library_changed(customer, "setups");
-                    }
+                Ok(GarageOutcome::Stored(customer)) => {
+                    app.events.library_changed(customer, "setups");
                     vec![json!({
                         "type": "garage.ack",
                         "visit_id": message["visit_id"],
                         "kind": if is_commit { "commit" } else { "snapshot" },
                         "update_count": message["update_count"],
                     })]
+                }
+                Ok(GarageOutcome::Unattributed(missing)) => {
+                    // Not acknowledged: the collector keeps it and resends after a later welcome.
+                    tracing::warn!(visit_id = %message["visit_id"], missing, "garage event cannot be attributed yet; not acknowledged");
+                    Vec::new()
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "garage event failed; not acknowledged");
@@ -340,15 +344,20 @@ async fn handle_status(
         json!({"collector": update.presence}),
     );
     let mut replies = Vec::new();
-    if update.driver_changed
-        && let Some(driver) = update.driver
-    {
-        if let Ok(layout) = crate::userdata::active_layout_message(app, driver).await {
+    if update.driver_changed {
+        if let Some(driver) = update.driver
+            && let Ok(layout) = crate::userdata::active_layout_message(app, driver).await
+        {
             replies.push(layout);
         }
+        // Demand belongs to a driver: recount for the new one and tell the collector, so a
+        // viewer of the previous driver never keeps the new driver's stream running.
         if update.viewers > 0 {
             replies.push(json!({"type": "viewers", "count": update.viewers}));
             replies.push(json!({"type": "stream.start", "reason": "viewer"}));
+        } else if update.previous_driver.is_some() {
+            replies.push(json!({"type": "viewers", "count": 0}));
+            replies.push(json!({"type": "stream.release"}));
         }
     }
     replies
@@ -373,6 +382,7 @@ pub async fn live_ws(
 }
 
 async fn viewer_session(app: AppState, mut socket: WebSocket, customer: i64, rate: u32) {
+    let limit = app.cfg.slow_browser;
     let (viewer, backlog, count) = app.hub.add_viewer(customer, rate);
     let _ = count;
     publish_driver_presence(&app, customer);
@@ -385,26 +395,19 @@ async fn viewer_session(app: AppState, mut socket: WebSocket, customer: i64, rat
     });
     let mut ok = socket.send(text(&hello)).await.is_ok();
     if ok {
-        for frame in backlog {
-            if socket.send(Message::Binary(frame)).await.is_err() {
-                ok = false;
-                break;
-            }
+        // A stalled socket holds neither the backlog nor the viewer count past the limit.
+        ok = send_all(&mut socket, backlog.into_iter(), limit).await;
+        if !ok {
+            close_slow(&mut socket).await;
         }
     }
     while ok {
         tokio::select! {
             _ = viewer.notify.notified() => {
-                for frame in viewer.drain() {
-                    let sent = tokio::time::timeout(Duration::from_secs(10), socket.send(Message::Binary(frame))).await;
-                    if !matches!(sent, Ok(Ok(()))) {
-                        let _ = socket.send(close_message(4008, "too_slow")).await;
-                        ok = false;
-                        break;
-                    }
-                }
-                if viewer.behind_for().is_some_and(|d| d > Duration::from_secs(10)) {
-                    let _ = socket.send(close_message(4008, "too_slow")).await;
+                let frames = viewer.drain();
+                let sent = send_all(&mut socket, frames.into_iter(), limit).await;
+                if !sent || viewer.behind_for().is_some_and(|d| d > limit) {
+                    close_slow(&mut socket).await;
                     ok = false;
                 }
             }
@@ -427,6 +430,33 @@ async fn viewer_session(app: AppState, mut socket: WebSocket, customer: i64, rat
     viewer.closed.store(true, Ordering::Relaxed);
     app.hub.remove_viewer(customer, viewer.id);
     publish_driver_presence(&app, customer);
+}
+
+/// Sends binary frames; false when the whole batch did not go out within `limit` or a send failed.
+async fn send_all(
+    socket: &mut WebSocket,
+    frames: impl Iterator<Item = axum::body::Bytes>,
+    limit: Duration,
+) -> bool {
+    let batch = async {
+        for frame in frames {
+            if socket.send(Message::Binary(frame)).await.is_err() {
+                return false;
+            }
+        }
+        true
+    };
+    matches!(tokio::time::timeout(limit, batch).await, Ok(true))
+}
+
+/// Closes a viewer that cannot keep up with 4008; a socket that will not even take the close
+/// frame is dropped after two seconds.
+async fn close_slow(socket: &mut WebSocket) {
+    let _ = tokio::time::timeout(
+        Duration::from_secs(2),
+        socket.send(close_message(4008, "too_slow")),
+    )
+    .await;
 }
 
 /// Presence of the driver's collectors (their viewer count changed).

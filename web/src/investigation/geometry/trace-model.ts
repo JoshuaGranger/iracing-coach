@@ -17,7 +17,7 @@ export interface TraceData {
   laps: number[];
   lapIndex: ReadonlyMap<number, number>;
   lapMeta: ReadonlyMap<number, TraceLapData>;
-  /** Lap fraction of each bin; shared by every lap. */
+  /** Lap fraction of each bin, the backend's bucket-centre `lap_pct` (bin i at (i + 0.5) / bins); shared by every lap. */
   x: Float64Array;
   catalog: TraceCatalogData;
   signals: ReadonlyMap<string, TraceSignalData>;
@@ -57,7 +57,7 @@ export function createTraceData(catalog: TraceCatalogData, table: TraceTable): T
   for (let bin = 0; bin < bins; bin++) {
     let value = Number.NaN;
     if (pct) for (let lap = 0; lap < table.laps.length && !Number.isFinite(value); lap++) value = pct[lap * bins + bin]!;
-    x[bin] = Number.isFinite(value) ? value : bins > 1 ? bin / (bins - 1) : 0;
+    x[bin] = Number.isFinite(value) ? value : (bin + 0.5) / bins;
   }
   const times = table.laps
     .map((lap) => lapMeta.get(lap))

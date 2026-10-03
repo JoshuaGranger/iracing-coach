@@ -17,9 +17,9 @@ coach-collector record-sdk <seconds> <out.sdkfix>
 | `sdk`, `win::map` | Event-driven reader over an `SdkMap` (real map or replay): torn-read guard, session info only when the header counter changes, map reopened after 3 s dead |
 | `pipeline`, `hub` | Reader thread: engine tick, frame decimation to at most 60 per second, epoch marker carried to the next sent frame, status, overlay state; nothing here touches disk or network |
 | `gate` | The on-track gate: fresh off-track evidence or no file work |
-| `uploader`, `http`, `scan`, `win::watcher` | Finalization gate, SHA-256, create, 4 MiB chunks, resume; every file read re-checks the gate per 32 KiB piece |
+| `uploader`, `http`, `scan`, `win::watcher` | Finalization gate, SHA-256, create, 4 MiB chunks, resume; the gate is re-checked per 32 KiB piece read, per directory entry scanned, per journal entry matched, and every 2 ms while a full socket is waited on (the socket is non-blocking), so an abort completes within 100 ms |
 | `garage`, `garage_io` | P5 two-moment capture state machine; journal thread; `.sto` search and hash under the gate |
-| `journal` | `journal.jsonl`: pending recordings, garage snapshots and commits, hash memo, `seen` memo (restart does not hash or post a held file again) |
+| `journal` | `journal.jsonl`: pending recordings, garage snapshots and commits, hash memo, `seen` memo (restart does not hash or post a held file again). A torn tail is cut off at start; a failed append is not applied and the caller retries it; a journal that cannot be opened holds entries in memory, sends no garage event, and opens the file again |
 | `link`, `ws`, `stream` | One WebSocket (own RFC 6455 client), presence, stream latch, layout sync, garage resend after every welcome |
 | `win::ui`, `win::render`, `layout`, `hotkey` | Layered click-through overlay, tray, hotkey, server prompt; GDI renderer usable on a memory bitmap |
 | `fixture`, `record` | SDK byte fixtures (`.sdkfix`): format, replay map, synthetic map builder, recorder |
@@ -50,4 +50,4 @@ The in-test server mock (`tests/support`) implements `POST` and `PUT /api/v1/upl
 
 ## Size
 
-`cargo build --release -p coach-collector --target x86_64-pc-windows-msvc` is held to 3 MB. About 1.4 MB of it is the `regex` engine that `coach-ibt` links for YAML scalar typing, which is why this crate carries its own small HTTP client, WebSocket client and logger instead of `ureq`, `tungstenite` and `tracing`.
+`cargo build --release -p coach-collector --target x86_64-pc-windows-msvc` is held to 3 MB (1,578,496 bytes after `coach-ibt` dropped `regex`). The crate carries its own small HTTP client, WebSocket client and logger instead of `ureq`, `tungstenite` and `tracing` to stay there.

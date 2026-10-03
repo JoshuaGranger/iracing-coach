@@ -200,21 +200,21 @@ pub struct CueSpec {
 }
 
 pub static CUES: &[CueSpec] = &[
-    CueSpec { id: 1, key: "black_flag", priority: Priority::Critical, evidence: Evidence::Measured, template: "Black flag: follow the recorded penalty instruction", basis: None, args: &[] },
+    CueSpec { id: 1, key: "black_flag", priority: Priority::Critical, evidence: Evidence::Measured, template: "Black flag: follow the recorded penalty instruction", basis: Some("iRacing race status"), args: &[] },
     CueSpec { id: 2, key: "tow", priority: Priority::Critical, evidence: Evidence::Measured, template: "Tow active", basis: Some("PlayerCarTowTime"), args: &[] },
-    CueSpec { id: 3, key: "mandatory_repair", priority: Priority::Critical, evidence: Evidence::Measured, template: "Mandatory repair: {0} s remaining", basis: None, args: &[ArgFormat::Ceil] },
+    CueSpec { id: 3, key: "mandatory_repair", priority: Priority::Critical, evidence: Evidence::Measured, template: "Mandatory repair: {0} s remaining", basis: Some("iRacing repair timer"), args: &[ArgFormat::Ceil] },
     CueSpec { id: 4, key: "fuel_critical", priority: Priority::Critical, evidence: Evidence::Derived, template: "Fuel hard limit: pit now if rules permit", basis: Some("Fuel-use history"), args: &[] },
     CueSpec { id: 5, key: "fuel_limit", priority: Priority::Strategy, evidence: Evidence::Derived, template: "Fuel hard limit: {0} laps", basis: Some("Fuel-use history"), args: &[ArgFormat::Int] },
-    CueSpec { id: 6, key: "flags_unknown", priority: Priority::Information, evidence: Evidence::Unavailable, template: "Race flag unavailable: flag-dependent coaching paused", basis: None, args: &[] },
-    CueSpec { id: 7, key: "caution", priority: Priority::PitService, evidence: Evidence::Measured, template: "Caution: competitive gap trends paused", basis: None, args: &[] },
-    CueSpec { id: 8, key: "pit_road", priority: Priority::PitService, evidence: Evidence::Measured, template: "Pit road: confirm service and speed", basis: None, args: &[] },
+    CueSpec { id: 6, key: "flags_unknown", priority: Priority::Information, evidence: Evidence::Unavailable, template: "Race flag unavailable: flag-dependent coaching paused", basis: Some("SessionFlags"), args: &[] },
+    CueSpec { id: 7, key: "caution", priority: Priority::PitService, evidence: Evidence::Measured, template: "Caution: competitive gap trends paused", basis: Some("iRacing race status"), args: &[] },
+    CueSpec { id: 8, key: "pit_road", priority: Priority::PitService, evidence: Evidence::Measured, template: "Pit road: confirm service and speed", basis: Some("OnPitRoad"), args: &[] },
     CueSpec { id: 9, key: "gap_closing", priority: Priority::Traffic, evidence: Evidence::Derived, template: "Gap ahead closing: {0} s", basis: Some("8-second scoring trend"), args: &[ArgFormat::Fixed2] },
-    CueSpec { id: 10, key: "pace_outside", priority: Priority::Pace, evidence: Evidence::Derived, template: "Last lap outside the clean in-session target band", basis: None, args: &[] },
-    CueSpec { id: 11, key: "braking_overshoot", priority: Priority::Coaching, evidence: Evidence::Derived, template: "Braking zone near {0}% lap: peak {1} above your clean baseline on {2} comparable laps", basis: None, args: &[ArgFormat::Int, ArgFormat::Percent0, ArgFormat::Int] },
-    CueSpec { id: 12, key: "building_pace", priority: Priority::Information, evidence: Evidence::Unavailable, template: "Building your pace range \u{b7} complete three clean laps", basis: None, args: &[] },
-    CueSpec { id: 13, key: "no_action", priority: Priority::Information, evidence: Evidence::Derived, template: "No action: pace and race state within the supported band", basis: None, args: &[] },
+    CueSpec { id: 10, key: "pace_outside", priority: Priority::Pace, evidence: Evidence::Derived, template: "Last lap outside the clean in-session target band", basis: Some("Clean in-session baseline"), args: &[] },
+    CueSpec { id: 11, key: "braking_overshoot", priority: Priority::Coaching, evidence: Evidence::Derived, template: "Braking zone near {0}% lap: peak {1} above your clean baseline on {2} comparable laps", basis: Some("Clean in-session brake-peak baseline by lap-distance zone"), args: &[ArgFormat::Int, ArgFormat::Percent0, ArgFormat::Int] },
+    CueSpec { id: 12, key: "building_pace", priority: Priority::Information, evidence: Evidence::Unavailable, template: "Building your pace range \u{b7} complete three clean laps", basis: Some("Three clean in-session laps are required for a defensible baseline."), args: &[] },
+    CueSpec { id: 13, key: "no_action", priority: Priority::Information, evidence: Evidence::Derived, template: "No action: pace and race state within the supported band", basis: Some("Clean in-session baseline"), args: &[] },
     CueSpec { id: 14, key: "waiting", priority: Priority::Information, evidence: Evidence::Unavailable, template: "Waiting for iRacing", basis: None, args: &[] },
-    CueSpec { id: 15, key: "paused", priority: Priority::Information, evidence: Evidence::Measured, template: "Live coaching paused", basis: None, args: &[] },
+    CueSpec { id: 15, key: "paused", priority: Priority::Information, evidence: Evidence::Measured, template: "Live coaching paused", basis: Some("User control"), args: &[] },
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -235,6 +235,17 @@ pub fn conversion(from: &str, to: &str) -> Option<Conversion> {
         ("C", "F") => Some(Conversion::ScaleOffset { scale: 1.8, offset: 32.0 }),
         ("ratio", "%") => Some(Conversion::Scale(100.0)),
         _ => None,
+    }
+}
+
+/// Display label of a unit id (`unit_labels`); a unit without an entry displays as written.
+pub fn unit_label(unit: &str) -> &str {
+    match unit {
+        "C" => "\u{b0}C",
+        "F" => "\u{b0}F",
+        "m/s2" => "m/s\u{b2}",
+        "lap" => "laps",
+        other => other,
     }
 }
 

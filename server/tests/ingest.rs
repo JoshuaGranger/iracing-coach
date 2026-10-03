@@ -975,3 +975,501 @@ async fn nas_state_is_reported_and_archive_retries_use_backoff() {
     );
     assert_eq!(env.get("/api/v1/status").await.json()["nas"]["state"], "ok");
 }
+
+// ------------------------------------------------- review follow-ups (wave 1)
+
+#[tokio::test]
+async fn recovery_of_a_renamed_file_restores_the_mtime_and_syncs_before_verified() {
+    let env = Env::new().await;
+    let bytes = recording(8501, "recover", 8_000);
+    let sha = sha256_hex(&bytes);
+    env.faults.arm("commit.after_rename", FaultMode::Crash);
+    let crashed = env.upload(&bytes, "ibt", "r.ibt", None, 4096).await;
+    assert_eq!(crashed.status, StatusCode::INTERNAL_SERVER_ERROR);
+    // the rename survived but the file looks freshly written
+    let ready = env.data().join("spool/ready").join(&sha);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&ready)
+        .unwrap()
+        .set_modified(SystemTime::now())
+        .unwrap();
+
+    let env = env.restart().await;
+    assert_eq!(
+        env.faults.hits("recover.after_sync"),
+        1,
+        "the recovered file was synced (file and both directories) before it was recorded"
+    );
+    let want = SystemTime::UNIX_EPOCH
+        + Duration::from_secs(
+            coach_server::util::parse_iso("2026-08-01T12:30:00Z").unwrap() as u64,
+        );
+    assert_eq!(
+        std::fs::metadata(&ready).unwrap().modified().unwrap(),
+        want,
+        "the clamped source mtime is applied again"
+    );
+    assert_eq!(count(&env, "SELECT COUNT(*) FROM blobs"), 1);
+    assert_eq!(
+        count(
+            &env,
+            "SELECT COUNT(*) FROM uploads WHERE state = 'verified'"
+        ),
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_create_waits_for_the_hash_lock_before_it_reads_the_state() {
+    let env = Env::new().await;
+    let bytes = recording(8502, "lock", 6_000);
+    let sha = sha256_hex(&bytes);
+    let guard = env.app.upload_locks.lock(&sha).await;
+    let body = json!({"sha256": sha, "size": bytes.len(), "kind": "ibt", "file_name": "l.ibt",
+                      "source_mtime": "2026-08-01T12:30:00Z", "collector_id": COLLECTOR})
+    .to_string();
+    let app = env.app.clone();
+    let create =
+        tokio::spawn(
+            async move { coach_server::ingest::create_upload(&app, body.as_bytes()).await },
+        );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    // meanwhile another request creates the upload and receives acknowledged chunks
+    put_upload_row(&env, &sha, bytes.len(), 4000, "open");
+    std::fs::write(
+        env.data()
+            .join("spool/incoming")
+            .join(format!("{sha}.part")),
+        &bytes[..4000],
+    )
+    .unwrap();
+    drop(guard);
+    let (status, value) = create.await.unwrap().unwrap();
+    assert_eq!(status, StatusCode::OK, "a resume, not a fresh create");
+    assert_eq!(value["offset"], 4000, "the acknowledged bytes were kept");
+    assert_eq!(
+        std::fs::metadata(
+            env.data()
+                .join("spool/incoming")
+                .join(format!("{sha}.part"))
+        )
+        .unwrap()
+        .len(),
+        4000
+    );
+    assert_eq!(durable_offset(&env, &sha), 4000);
+}
+
+#[tokio::test]
+async fn idle_cleanup_rechecks_the_upload_under_its_lock() {
+    let env = Env::new().await;
+    let bytes = recording(8503, "idle", 6_000);
+    let sha = sha256_hex(&bytes);
+    put_upload_row(&env, &sha, bytes.len(), 3000, "open");
+    let part = env
+        .data()
+        .join("spool/incoming")
+        .join(format!("{sha}.part"));
+    std::fs::write(&part, &bytes[..3000]).unwrap();
+    let touch = |at: &str| {
+        let (sha, at) = (sha.clone(), at.to_string());
+        env.app
+            .store
+            .write_blocking(move |c| {
+                c.execute(
+                    "UPDATE uploads SET updated_at = ?2 WHERE sha256 = ?1",
+                    params![sha, at],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    };
+    let cutoff = "2026-01-01T00:00:00Z";
+
+    // listed as stale, then a chunk is acknowledged before the cleanup reaches it
+    touch("2025-01-01T00:00:00Z");
+    touch(&coach_server::util::iso_now());
+    assert!(
+        !coach_server::ingest::remove_idle_upload(&env.app, &sha, cutoff)
+            .await
+            .unwrap(),
+        "an upload touched since the list was read is kept"
+    );
+    assert!(part.exists());
+    assert_eq!(durable_offset(&env, &sha), 3000);
+
+    // still idle but a request holds the lock: left for the next pass
+    touch("2025-01-01T00:00:00Z");
+    let guard = env.app.upload_locks.lock(&sha).await;
+    assert!(
+        !coach_server::ingest::remove_idle_upload(&env.app, &sha, cutoff)
+            .await
+            .unwrap()
+    );
+    drop(guard);
+    assert!(part.exists());
+
+    // idle and free: file and row go
+    assert!(
+        coach_server::ingest::remove_idle_upload(&env.app, &sha, cutoff)
+            .await
+            .unwrap()
+    );
+    assert!(!part.exists());
+    assert_eq!(count(&env, "SELECT COUNT(*) FROM uploads"), 0);
+}
+
+#[tokio::test]
+async fn reservations_count_incoming_bytes_and_every_outstanding_reservation() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.spool_limit_bytes = 10_000),
+        ..Default::default()
+    })
+    .await;
+    let a = recording(8504, "a", 6_000);
+    let sha_a = sha256_hex(&a);
+    assert_eq!(
+        env.create_upload(&sha_a, a.len(), "ibt", "a.ibt", None, None)
+            .await
+            .status,
+        StatusCode::CREATED
+    );
+    // 4000 bytes now sit in incoming/: they must still count against the limit
+    assert_eq!(
+        env.put_chunk(&sha_a, a.len(), 0, &a[..4000]).await.status,
+        StatusCode::OK
+    );
+    let b = recording(8505, "b", 5_000);
+    let refused = env
+        .create_upload(&sha256_hex(&b), b.len(), "ibt", "b.ibt", None, None)
+        .await;
+    assert_eq!(
+        refused.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "6000 reserved by the first upload (4000 written, 2000 to come) leaves no room for 5000"
+    );
+    assert!(refused.header("retry-after").is_some());
+    let c = recording(8506, "c", 3_000);
+    assert_eq!(
+        env.create_upload(&sha256_hex(&c), c.len(), "ibt", "c.ibt", None, None)
+            .await
+            .status,
+        StatusCode::CREATED,
+        "3000 more fits exactly beside the 6000"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_creates_for_different_hashes_cannot_over_admit() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.spool_limit_bytes = 10_000),
+        ..Default::default()
+    })
+    .await;
+    let files: Vec<Vec<u8>> = (0..3).map(|i| recording(8510 + i, "many", 4_000)).collect();
+    let shas: Vec<String> = files.iter().map(|b| sha256_hex(b)).collect();
+    let create = |i: usize| env.create_upload(&shas[i], files[i].len(), "ibt", "m.ibt", None, None);
+    let (x, y, z) = tokio::join!(create(0), create(1), create(2));
+    let statuses = [x.status, y.status, z.status];
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|s| **s == StatusCode::CREATED)
+            .count(),
+        2,
+        "{statuses:?}"
+    );
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|s| **s == StatusCode::SERVICE_UNAVAILABLE)
+            .count(),
+        1,
+        "{statuses:?}"
+    );
+    assert_eq!(count(&env, "SELECT COUNT(*) FROM uploads"), 2);
+}
+
+#[tokio::test]
+async fn a_resume_adds_only_its_increment_to_the_reservation() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.spool_limit_bytes = 5_000),
+        ..Default::default()
+    })
+    .await;
+    let bytes = recording(8520, "resume", 5_000);
+    let sha = sha256_hex(&bytes);
+    let first = env
+        .create_upload(&sha, bytes.len(), "ibt", "r.ibt", None, None)
+        .await;
+    assert_eq!(first.status, StatusCode::CREATED);
+    // the whole limit is this upload's own reservation; resuming it must not count it twice
+    let again = env
+        .create_upload(&sha, bytes.len(), "ibt", "r.ibt", None, None)
+        .await;
+    assert_eq!(again.status, StatusCode::OK);
+    assert_eq!(again.json()["offset"], 0);
+    env.put_chunk(&sha, bytes.len(), 0, &bytes[..2000]).await;
+    let resumed = env
+        .create_upload(&sha, bytes.len(), "ibt", "r.ibt", None, None)
+        .await;
+    assert_eq!(resumed.status, StatusCode::OK);
+    assert_eq!(resumed.json()["offset"], 2000);
+}
+
+#[tokio::test]
+async fn every_occurrence_reaches_setup_files_when_the_upload_commits() {
+    let env = Env::new().await;
+    // the first driver exists
+    env.upload(
+        &recording(8530, "driver", 3_000),
+        "ibt",
+        "d.ibt",
+        None,
+        3000,
+    )
+    .await;
+    coach_server::ingest::ingest_pending(&env.app)
+        .await
+        .unwrap();
+    let sto = b"one setup, three places".to_vec();
+    let sha = sha256_hex(&sto);
+    let created = env
+        .create_upload(
+            &sha,
+            sto.len(),
+            "sto",
+            "a.sto",
+            Some("stockcars chevyss2020/a.sto"),
+            Some(CUSTOMER),
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    // while the upload is open, the same bytes are announced at other paths and by another driver
+    for (name, rel, customer) in [
+        ("b.sto", "stockcars chevyss2020/sub/b.sto", Some(CUSTOMER)),
+        ("c.sto", "stockcars chevyss2020/c.sto", Some(2002)),
+    ] {
+        let again = env
+            .create_upload(&sha, sto.len(), "sto", name, Some(rel), customer)
+            .await;
+        assert_eq!(again.status, StatusCode::OK);
+        assert_eq!(again.json()["state"], "open");
+    }
+    assert_eq!(
+        count(&env, "SELECT COUNT(*) FROM setup_files"),
+        0,
+        "nothing is linked before the bytes are committed"
+    );
+    let done = env.put_chunk(&sha, sto.len(), 0, &sto).await;
+    assert_eq!(done.json()["state"], "verified");
+    let files: Vec<(i64, String)> = env.query(|c| {
+        let mut stmt = c.prepare(
+            "SELECT customer_id, car_folder || '/' || relative_path FROM setup_files ORDER BY customer_id, relative_path",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    });
+    assert_eq!(
+        files,
+        vec![
+            (CUSTOMER, "stockcars chevyss2020/a.sto".to_string()),
+            (CUSTOMER, "stockcars chevyss2020/sub/b.sto".to_string()),
+            (2002, "stockcars chevyss2020/c.sto".to_string()),
+        ],
+        "each occurrence is a file of its own driver"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_ingest_transaction_is_retried_by_the_scheduler() {
+    let env = Env::new().await;
+    let bytes = recording(8540, "retry", 4_000);
+    let sha = sha256_hex(&bytes);
+    env.upload(&bytes, "ibt", "r.ibt", None, 4096).await;
+    env.faults.arm(
+        "ingest.before_tx",
+        FaultMode::Io(std::io::ErrorKind::StorageFull),
+    );
+    assert!(
+        coach_server::ingest::ingest_pending(&env.app)
+            .await
+            .is_err(),
+        "the ingest transaction fails when the disk is full"
+    );
+    let state = |env: &Env| -> String {
+        let sha = sha.clone();
+        env.query(move |c| {
+            c.query_row(
+                "SELECT ingest_state FROM recordings WHERE sha256 = ?1",
+                [sha],
+                |r| r.get(0),
+            )
+        })
+    };
+    assert_eq!(state(&env), "verified", "acknowledged, not yet parsed");
+    // space is back; nothing uploads and the server does not restart: the periodic pass ingests
+    let report = coach_server::scheduler::tick(&env.app, coach_server::util::unix_now())
+        .await
+        .unwrap();
+    assert_eq!(report["recordings_ingested"], 1);
+    assert_eq!(state(&env), "parsed");
+    assert_eq!(
+        count(&env, "SELECT COUNT(*) FROM jobs WHERE kind = 'discover'"),
+        1
+    );
+}
+
+// ---------------------------------------------------------------- restage
+
+/// A recording that is archived on the NAS and gone from the spool.
+async fn archived_only(env: &Env, subsession: i64) -> (String, Vec<u8>) {
+    let bytes = recording(subsession, "archived", 4_000);
+    let sha = sha256_hex(&bytes);
+    env.upload(&bytes, "ibt", "arch.ibt", None, 4096).await;
+    coach_server::ingest::ingest_pending(&env.app)
+        .await
+        .unwrap();
+    run_io_lane(env).await;
+    env.app
+        .store
+        .write_blocking(|c| {
+            c.execute(
+                "UPDATE jobs SET state = 'cancelled' WHERE kind = 'discover'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    assert!(
+        coach_server::handlers::release_spool(&env.app, &sha)
+            .await
+            .unwrap()
+    );
+    assert!(!env.data().join("spool/ready").join(&sha).exists());
+    (sha, bytes)
+}
+
+#[tokio::test]
+async fn a_restaged_recording_has_its_source_mtime_and_counts_as_spool() {
+    let env = Env::new().await;
+    let (sha, bytes) = archived_only(&env, 8550).await;
+    coach_server::ingest::restage_recording(&env.app, &sha)
+        .await
+        .unwrap();
+    let ready = env.data().join("spool/ready").join(&sha);
+    assert_eq!(std::fs::read(&ready).unwrap(), bytes);
+    let want = SystemTime::UNIX_EPOCH
+        + Duration::from_secs(
+            coach_server::util::parse_iso("2026-08-01T12:30:00Z").unwrap() as u64,
+        );
+    assert_eq!(
+        std::fs::metadata(&ready).unwrap().modified().unwrap(),
+        want,
+        "the worker quiet rule must see an old file"
+    );
+    assert_eq!(count(&env, "SELECT spool_present FROM blobs"), 1);
+    assert_eq!(
+        env.app.spool.restaging_bytes(),
+        0,
+        "the reservation was released"
+    );
+    assert!(
+        incoming_files(&env).is_empty(),
+        "no restage temp file is left"
+    );
+}
+
+#[tokio::test]
+async fn a_restage_the_spool_cannot_take_waits_and_then_fails() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| {
+            c.spool_limit_bytes = 5_000;
+            c.restage_wait = Duration::from_millis(400);
+        }),
+        ..Default::default()
+    })
+    .await;
+    let (sha, bytes) = archived_only(&env, 8551).await;
+    // another recording fills the spool
+    let other = recording(8552, "filler", 4_000);
+    let other_sha = sha256_hex(&other);
+    env.upload(&other, "ibt", "filler.ibt", None, 4096).await;
+    let refused = coach_server::ingest::restage_recording(&env.app, &sha)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&refused, coach_server::error::Error::Api(e) if e.status == StatusCode::SERVICE_UNAVAILABLE),
+        "{refused:?}"
+    );
+    assert!(!env.data().join("spool/ready").join(&sha).exists());
+    assert_eq!(env.app.spool.restaging_bytes(), 0);
+
+    // space is freed: the same restage now goes through
+    std::fs::remove_file(env.data().join("spool/ready").join(&other_sha)).unwrap();
+    env.app
+        .store
+        .write_blocking(move |c| {
+            c.execute(
+                "UPDATE blobs SET spool_present = 0 WHERE sha256 = ?1",
+                [other_sha],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    coach_server::ingest::restage_recording(&env.app, &sha)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read(env.data().join("spool/ready").join(&sha)).unwrap(),
+        bytes
+    );
+}
+
+#[tokio::test]
+async fn a_restaged_recording_is_analysed_at_once() {
+    let env = Env::new().await;
+    if env.python.is_none() {
+        eprintln!("skipped: no Python 3 for the stub worker");
+        return;
+    }
+    let bytes = recording(8553, "again", 4_000);
+    env.upload(&bytes, "ibt", "again.ibt", None, 4096).await;
+    env.settle().await;
+    assert_eq!(count(&env, "SELECT spool_present FROM blobs"), 0);
+    // analyse the session again: its recording must come back from the NAS
+    let session = count(&env, "SELECT session_id FROM sessions");
+    let queue = coach_server::jobs::QueueParams::of(&env.app);
+    env.app
+        .store
+        .write_blocking(move |c| {
+            c.execute(
+                "UPDATE jobs SET state = 'cancelled' WHERE kind = 'analyze'",
+                [],
+            )?;
+            let tx = c.transaction()?;
+            coach_server::jobs::queue_analysis_tx(&tx, &queue, session, true, false)?;
+            tx.commit()?;
+            Ok(())
+        })
+        .unwrap();
+    assert!(
+        coach_server::jobs::run_next(&env.app, "analysis")
+            .await
+            .unwrap()
+    );
+    let (state, message): (String, Option<String>) = env.query(|c| {
+        c.query_row(
+            "SELECT state, error_message FROM jobs WHERE kind = 'analyze' ORDER BY job_id DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    });
+    assert_eq!(
+        state, "succeeded",
+        "the restaged copy passes the worker quiet rule: {message:?}"
+    );
+}

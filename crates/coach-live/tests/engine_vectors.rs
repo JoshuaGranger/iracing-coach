@@ -265,27 +265,14 @@ fn pace_range_matches(actual: &str, expected: &str) -> bool {
             .all(|(x, y)| (lap_ms(x) - lap_ms(y)).abs() <= 1)
 }
 
-/// Cue bases the C# strings carry and `live-channels.json` lacks (contract change request in the
-/// W2 report). `format_tile` reads the table, so the tile's secondary line follows the contract
-/// until it is corrected; the entries here are accepted only while the table still differs from C#.
-const PENDING_BASIS_IDS: &[u8] = &[1, 3, 6, 7, 8, 10, 11, 12, 13, 15];
-
-fn contract_basis(id: u8) -> Option<&'static str> {
-    coach_wire::live_channels::CUES
-        .iter()
-        .find(|spec| spec.id == id)
-        .and_then(|spec| spec.basis)
-}
-
 #[derive(Default)]
 struct Tally {
     divergences: Vec<String>,
-    csharp_bases: std::collections::BTreeMap<u8, Option<String>>,
     tiles: usize,
     pace_range_one_ms: usize,
 }
 
-fn check_tiles(label: &str, state: &LiveState, cue_id: u8, tiles: &[Value], tally: &mut Tally) {
+fn check_tiles(label: &str, state: &LiveState, tiles: &[Value], tally: &mut Tally) {
     for tile in tiles {
         tally.tiles += 1;
         let id = tile["id"].as_str().unwrap();
@@ -315,26 +302,11 @@ fn check_tiles(label: &str, state: &LiveState, cue_id: u8, tiles: &[Value], tall
             );
         }
         let expected_secondary = tile["secondary"].as_str().map(str::to_string);
-        if id == "coach-cue" && text.state == TileState::Value {
-            tally
-                .csharp_bases
-                .insert(cue_id, expected_secondary.clone());
-            let pending = PENDING_BASIS_IDS.contains(&cue_id)
-                && contract_basis(cue_id) != expected_secondary.as_deref();
-            if !pending {
-                report(
-                    "secondary",
-                    format!("{:?}", text.secondary),
-                    format!("{expected_secondary:?}"),
-                );
-            }
-        } else {
-            report(
-                "secondary",
-                format!("{:?}", text.secondary),
-                format!("{expected_secondary:?}"),
-            );
-        }
+        report(
+            "secondary",
+            format!("{:?}", text.secondary),
+            format!("{expected_secondary:?}"),
+        );
         let kind = match text.state {
             TileState::Value => "value",
             TileState::Waiting => "waiting",
@@ -419,7 +391,7 @@ fn engine_and_tile_vectors_match_the_csharp_monitor() {
             let cue_id = u8::try_from(expect["cue"]["id"].as_u64().unwrap()).unwrap();
             cue_ids.insert(cue_id);
             if let Some(tiles) = step.get("tiles").and_then(Value::as_array) {
-                check_tiles(&label, &state, cue_id, tiles, &mut tally);
+                check_tiles(&label, &state, tiles, &mut tally);
             }
         }
     }
@@ -439,15 +411,6 @@ fn engine_and_tile_vectors_match_the_csharp_monitor() {
     // Every cue the C# engine can say appears in the vectors, so each template was byte-compared.
     let missing: Vec<u8> = (1..=15).filter(|id| !cue_ids.contains(id)).collect();
     assert!(missing.is_empty(), "cues never exercised: {missing:?}");
-    // A pending basis that the table now matches must leave the list.
-    for id in PENDING_BASIS_IDS {
-        if let Some(csharp) = tally.csharp_bases.get(id) {
-            assert!(
-                contract_basis(*id) != csharp.as_deref(),
-                "cue {id} basis now matches C#: remove it from PENDING_BASIS_IDS"
-            );
-        }
-    }
     eprintln!(
         "{steps_checked} steps, {} tile readings, {} pace-range readings 1 ms low (f32 channel)",
         tally.tiles, tally.pace_range_one_ms

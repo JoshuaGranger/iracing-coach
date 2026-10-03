@@ -1,5 +1,5 @@
 {
-  "$comment": "Single source for live frame channels, enums, cue templates and the Live tile catalog. Generated into Rust (crates/coach-wire) and TS (web/src/gen). Channels are append-only; appending increments table_version. Rules and formulas come from spikes/live-stack.md sections 1-2 (C# LiveTelemetry.cs, LiveTelemetryCatalog.cs, LiveTruthPolicy.cs). Cue message text must equal the C# strings byte for byte; workstream W2 verifies every template and basis against companion-app source before its first release and corrects this file by contract change if needed.",
+  "$comment": "Single source for live frame channels, enums, cue templates and the Live tile catalog. Generated into Rust (crates/coach-wire) and TS (web/src/gen). Channels are append-only; appending increments table_version. Rules and formulas come from spikes/live-stack.md sections 1-2 (C# LiveTelemetry.cs, LiveTelemetryCatalog.cs, LiveTruthPolicy.cs). Cue message text must equal the C# strings byte for byte; workstream W2 verified every template and basis against companion-app source (wave 1). Every cue carries the C# basis except 14 (waiting): a disconnected tile reads Waiting with no secondary text (crate-api.md 4.7). unit_labels maps a unit id to its display label (C# LiveTelemetryCatalog units); a unit id without an entry displays as written; laptime formats show no unit. Unit ids, never labels, are stored in layouts (LiveTile.unit).",
   "table_version": 1,
   "channels": [
     { "index": 0, "id": "speed", "type": "f32", "unit": "m/s", "source": "sdk:Speed" },
@@ -57,21 +57,21 @@
     "priority": { "information": 0, "environment": 10, "coaching": 20, "pace": 30, "traffic": 40, "pit_service": 50, "strategy": 60, "critical": 100 }
   },
   "cues": [
-    { "id": 1, "key": "black_flag", "priority": "critical", "evidence": "measured", "template": "Black flag: follow the recorded penalty instruction", "args": [] },
+    { "id": 1, "key": "black_flag", "priority": "critical", "evidence": "measured", "template": "Black flag: follow the recorded penalty instruction", "basis": "iRacing race status", "args": [] },
     { "id": 2, "key": "tow", "priority": "critical", "evidence": "measured", "template": "Tow active", "basis": "PlayerCarTowTime", "args": [] },
-    { "id": 3, "key": "mandatory_repair", "priority": "critical", "evidence": "measured", "template": "Mandatory repair: {0} s remaining", "args": [{ "format": "ceil" }] },
+    { "id": 3, "key": "mandatory_repair", "priority": "critical", "evidence": "measured", "template": "Mandatory repair: {0} s remaining", "basis": "iRacing repair timer", "args": [{ "format": "ceil" }] },
     { "id": 4, "key": "fuel_critical", "priority": "critical", "evidence": "derived", "template": "Fuel hard limit: pit now if rules permit", "basis": "Fuel-use history", "args": [] },
     { "id": 5, "key": "fuel_limit", "priority": "strategy", "evidence": "derived", "template": "Fuel hard limit: {0} laps", "basis": "Fuel-use history", "args": [{ "format": "int" }] },
-    { "id": 6, "key": "flags_unknown", "priority": "information", "evidence": "unavailable", "template": "Race flag unavailable: flag-dependent coaching paused", "args": [] },
-    { "id": 7, "key": "caution", "priority": "pit_service", "evidence": "measured", "template": "Caution: competitive gap trends paused", "args": [] },
-    { "id": 8, "key": "pit_road", "priority": "pit_service", "evidence": "measured", "template": "Pit road: confirm service and speed", "args": [] },
+    { "id": 6, "key": "flags_unknown", "priority": "information", "evidence": "unavailable", "template": "Race flag unavailable: flag-dependent coaching paused", "basis": "SessionFlags", "args": [] },
+    { "id": 7, "key": "caution", "priority": "pit_service", "evidence": "measured", "template": "Caution: competitive gap trends paused", "basis": "iRacing race status", "args": [] },
+    { "id": 8, "key": "pit_road", "priority": "pit_service", "evidence": "measured", "template": "Pit road: confirm service and speed", "basis": "OnPitRoad", "args": [] },
     { "id": 9, "key": "gap_closing", "priority": "traffic", "evidence": "derived", "template": "Gap ahead closing: {0} s", "basis": "8-second scoring trend", "args": [{ "format": "fixed2" }] },
-    { "id": 10, "key": "pace_outside", "priority": "pace", "evidence": "derived", "template": "Last lap outside the clean in-session target band", "args": [] },
-    { "id": 11, "key": "braking_overshoot", "priority": "coaching", "evidence": "derived", "template": "Braking zone near {0}% lap: peak {1} above your clean baseline on {2} comparable laps", "args": [{ "format": "int" }, { "format": "percent0" }, { "format": "int" }] },
-    { "id": 12, "key": "building_pace", "priority": "information", "evidence": "unavailable", "template": "Building your pace range · complete three clean laps", "args": [] },
-    { "id": 13, "key": "no_action", "priority": "information", "evidence": "derived", "template": "No action: pace and race state within the supported band", "args": [] },
+    { "id": 10, "key": "pace_outside", "priority": "pace", "evidence": "derived", "template": "Last lap outside the clean in-session target band", "basis": "Clean in-session baseline", "args": [] },
+    { "id": 11, "key": "braking_overshoot", "priority": "coaching", "evidence": "derived", "template": "Braking zone near {0}% lap: peak {1} above your clean baseline on {2} comparable laps", "basis": "Clean in-session brake-peak baseline by lap-distance zone", "args": [{ "format": "int" }, { "format": "percent0" }, { "format": "int" }] },
+    { "id": 12, "key": "building_pace", "priority": "information", "evidence": "unavailable", "template": "Building your pace range · complete three clean laps", "basis": "Three clean in-session laps are required for a defensible baseline.", "args": [] },
+    { "id": 13, "key": "no_action", "priority": "information", "evidence": "derived", "template": "No action: pace and race state within the supported band", "basis": "Clean in-session baseline", "args": [] },
     { "id": 14, "key": "waiting", "priority": "information", "evidence": "unavailable", "template": "Waiting for iRacing", "args": [] },
-    { "id": 15, "key": "paused", "priority": "information", "evidence": "measured", "template": "Live coaching paused", "args": [] }
+    { "id": 15, "key": "paused", "priority": "information", "evidence": "measured", "template": "Live coaching paused", "basis": "User control", "args": [] }
   ],
   "unit_conversions": {
     "m/s": { "mph": 2.2369362920544, "km/h": 3.6 },
@@ -82,6 +82,7 @@
     "C": { "F": { "scale": 1.8, "offset": 32 } },
     "ratio": { "%": 100 }
   },
+  "unit_labels": { "C": "°C", "F": "°F", "m/s2": "m/s²", "lap": "laps" },
   "tiles": [
     { "id": "air-temperature", "label": "Air temperature", "channel": "air_temperature", "units": ["C", "F"], "style": "number", "precision": 1 },
     { "id": "ahead-gap", "label": "Gap ahead", "channel": "ahead_gap", "units": ["s"], "style": "number", "precision": 2, "min": 0 },

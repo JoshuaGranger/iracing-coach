@@ -8,6 +8,13 @@ discovery does (SubSessionID + session number) and behaves as the header's "beha
   crash       exit with status 3
   iserror     answer with isError true
   orphans     leave a .write-x file and a <pid>.tmp file, then hang
+  closeout    close stdout without exiting, then hang
+  ignoreterm  leave a child that ignores SIGTERM in the process group, then hang
+  badresult   answer an analysis without its analysis_view (breaks analyze-result-v1)
+
+Results of analyze_iracing_race, build_open_setup_package and
+recommend_structured_open_setup_tuning are built from the sanitized fixtures in test-data/ so
+they meet their Python contracts; an argument "stub_invalid" breaks the other two.
 """
 
 import hashlib
@@ -17,6 +24,14 @@ import signal
 import subprocess
 import sys
 import time
+
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "test-data")
+
+
+def fixture(name):
+    with open(os.path.join(FIXTURES, name), "r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def read_header(path):
@@ -92,6 +107,17 @@ def hang(archive, header):
     time.sleep(3600)
 
 
+def stubborn_child(archive):
+    code = (
+        "import os, signal, sys, time; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "open(sys.argv[1], 'w').write(str(os.getpid())); "
+        "time.sleep(30)"
+    )
+    subprocess.Popen([sys.executable, "-c", code, os.path.join(archive, "stubborn.pid")])
+    time.sleep(0.5)
+
+
 def analyze(arguments):
     root = os.environ["IRACING_COACH_IRACING_ROOT"]
     archive = os.environ["IRACING_COACH_DATA"]
@@ -103,6 +129,11 @@ def analyze(arguments):
             members.append((name, path, header))
     if not members:
         return None, {"error": "NoSession", "message": "no recording matches " + selector, "tool": "analyze_iracing_race"}
+    for _, path, _ in members:
+        # the real worker refuses a recording written in the last 2 seconds (finalization)
+        if time.time() - os.path.getmtime(path) < 2:
+            return None, {"error": "IbtNotFinalized", "message": "recording changed in the last 2 seconds",
+                          "tool": "analyze_iracing_race"}
     for _, _, header in members:
         behavior = header.get("behavior")
         if behavior == "hang":
@@ -112,6 +143,16 @@ def analyze(arguments):
             open(os.path.join(archive, ".write-stray"), "w").close()
             open(os.path.join(archive, "partial.%d.tmp" % os.getpid()), "w").close()
             hang(archive, header)
+        elif behavior == "ignoreterm":
+            os.makedirs(archive, exist_ok=True)
+            stubborn_child(archive)
+            time.sleep(3600)
+        elif behavior == "closeout":
+            os.makedirs(archive, exist_ok=True)
+            open(os.path.join(archive, "closed"), "w").close()
+            sys.stdout.close()
+            os.close(1)
+            time.sleep(3600)
         elif behavior == "oom":
             os.kill(os.getpid(), getattr(signal, "SIGKILL", 9))
         elif behavior == "crash":
@@ -133,10 +174,31 @@ def analyze(arguments):
     body = {"analysis_id": digest, "files": names, "lap_count": 2}
     with open(path, "w") as handle:
         json.dump(body, handle)
-    return {
-        "ok": True, "analysis_id": digest, "selector": selector, "analysis_path": path,
-        "analysis_view": {"schema_version": 14, "analysis_profile_version": "stub-v1", "laps": [{}, {}]},
-    }, None
+    result = fixture("analyze-repair-heavy.json")
+    view = fixture("analysis-view-valid.json")
+    view["analysis_profile_version"] = "stub-v1"
+    view["laps"] = [{"lap": 1, "lap_time_s": 30.5}, {"lap": 2, "lap_time_s": 30.1}]
+    result.update({
+        "analysis_id": digest, "selector": selector, "analysis_path": path,
+        "source_files": names, "analysis_view": view,
+    })
+    if any(header.get("behavior") == "badresult" for _, _, header in members):
+        del result["analysis_view"]
+    return result, None
+
+
+def package(arguments):
+    result = fixture("setup-package.json")
+    if arguments.get("stub_invalid"):
+        result["status"] = "not-a-status"
+    return result
+
+
+def recommendation(arguments):
+    result = fixture("setup-recommendation.json")
+    if arguments.get("stub_invalid"):
+        del result["recommendation"]
+    return result
 
 
 def compare(arguments):
@@ -170,6 +232,31 @@ def catalog(arguments):
     return {"schema_version": 1, "root": root, "entries": entries, "error_count": 0, "errors": []}
 
 
+def legacy_import(arguments):
+    iracing = os.path.abspath(os.environ["IRACING_COACH_IRACING_ROOT"])
+    root = os.path.abspath(arguments["legacy_archive_root"])
+    if not root.startswith(iracing + os.sep):
+        return None, {"error": "ValueError", "message": "legacy_archive_root is outside the iRacing root",
+                      "tool": "import_legacy_tuning_experiments"}
+    mapping = {m["legacy_analysis_id"]: m for m in arguments["analysis_map"]}
+    found, files = [], []
+    for folder, _, names in os.walk(root):
+        for name in sorted(names):
+            path = os.path.join(folder, name)
+            files.append(os.path.relpath(path, root).replace(os.sep, "/"))
+            if name.endswith(".json") and os.sep + "experiments" + os.sep in path:
+                with open(path, "r", encoding="utf-8") as handle:
+                    found.append(json.load(handle))
+    resolved = sum(1 for e in found if (mapping.get(e.get("analysis_id")) or {}).get("analysis_id"))
+    archive = os.environ["IRACING_COACH_DATA"]
+    os.makedirs(archive, exist_ok=True)
+    with open(os.path.join(archive, "import-call.json"), "w") as handle:
+        json.dump({"files": sorted(files), "analysis_map": arguments["analysis_map"], "root": root}, handle)
+    return {"ok": True, "contract": "legacy-tuning-import-v1", "dry_run": False, "archive_root": archive,
+            "experiment_count": len(found), "resolved_count": resolved,
+            "unresolved_count": len(found) - resolved, "experiments": []}, None
+
+
 def main():
     lines = [line for line in sys.stdin.read().splitlines() if line.strip()]
     call = None
@@ -193,6 +280,12 @@ def main():
         result = compare(arguments)
     elif name == "catalog_iracing_setups":
         result = catalog(arguments)
+    elif name == "import_legacy_tuning_experiments":
+        result, error = legacy_import(arguments)
+    elif name == "build_open_setup_package":
+        result = package(arguments)
+    elif name == "recommend_structured_open_setup_tuning":
+        result = recommendation(arguments)
     else:
         result = {"ok": True, "tool": name, "arguments": arguments}
     if error is not None:

@@ -20,8 +20,9 @@ Every fixture in this directory is synthetic and contains no real driver/account
 | `mcp-tool-error.json` | MCP `tools/call` nested domain-error framing. |
 | `ibt/synthetic-race.ibt` | Tiny valid Race IBT for real MCP scan, dashboard, query, and deliberately low-evidence full-analysis smoke tests. |
 | `ibt/truncated-race.ibt` | One-byte-truncated IBT for rejection tests. |
+| `g2/` | Gate G2 fixture: the coach-views projection (`race.json`, `runs.json`, `investigation.json`, `traces-catalog.json`, `traces.ccol`, `track.json`, `tuning.json`) of a synthetic 82-lap short-oval race with one four-tire stop, analysed with the current profile. `fixture.json` records the recording's hash, the `analysis_id`, the profile and projection versions and every file's size and SHA-256; `tools/verify_repository.py` checks the files against it. The 85 MB recording is rebuilt by the generator and never committed. |
 
-Regenerate them from the repository root with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\tools\generate-fixtures.ps1`. Golden frontend snapshots should be derived from these files, not from the private `data/` directory.
+Regenerate them from the repository root with `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\tools\generate-fixtures.ps1`. Rebuild `g2/` with `python -X utf8 tools/generate_fixtures.py --g2` (needs cargo). It changes whenever the analyzer or the projector changes, because the `analysis_id` hashes the analyzer bundle. Golden frontend snapshots should be derived from these files, not from the private `data/` directory.
 
 Both visualization fixtures conform to `contracts/track-phase-visualization-v1.schema.json`. A usable comparison authorizes only a **Best-supported target**, never an unqualified optimal-lap claim. When interpolation, signed/normalized steering, inside/outside calibration, or comparison evidence is unavailable, the corresponding UI control or claim must remain unavailable.
 

@@ -215,64 +215,70 @@ pub async fn run_worker(
         payload.push_str(&request.to_string());
         payload.push('\n');
     }
-    // A worker that exits early closes the pipe; that is reported from its exit status below.
-    let _ = stdin.write_all(payload.as_bytes()).await;
-    let _ = stdin.shutdown().await;
-    drop(stdin);
 
-    let read_response = async {
+    // One deadline and one cancellation cover stdin delivery, the response and the exit: a
+    // worker that stops reading, closes stdout without exiting, or never exits cannot hold the
+    // lane or its memory reservation past the timeout.
+    let mut response: Option<Value> = None;
+    let mut status: Option<std::process::ExitStatus> = None;
+    let exchange = async {
+        // A worker that exits early closes the pipe; that is reported from its exit status below.
+        let _ = stdin.write_all(payload.as_bytes()).await;
+        let _ = stdin.shutdown().await;
+        drop(stdin);
         let mut lines = BufReader::new(stdout).lines();
-        loop {
-            match lines.next_line().await {
-                Ok(Some(line)) => {
-                    let Ok(message) = serde_json::from_str::<Value>(line.trim()) else {
-                        continue;
-                    };
-                    if message["id"] == json!(2) {
-                        return Some(message);
-                    }
-                }
-                _ => return None,
+        while let Ok(Some(line)) = lines.next_line().await {
+            let Ok(message) = serde_json::from_str::<Value>(line.trim()) else {
+                continue;
+            };
+            if message["id"] == json!(2) {
+                response = Some(message);
+                break;
             }
         }
+        if response.is_some() {
+            // The process should exit on its own (stdin is closed); a lingering one is stopped
+            // below once the answer is in hand.
+            status = tokio::time::timeout(EXIT_LINGER, child.wait())
+                .await
+                .ok()
+                .and_then(|r| r.ok());
+        } else {
+            status = child.wait().await.ok();
+        }
     };
-
-    enum Outcome {
-        Response(Option<Value>),
+    enum End {
+        Finished,
         Timeout,
         Cancelled,
     }
-    let outcome = tokio::select! {
-        r = read_response => Outcome::Response(r),
-        _ = tokio::time::sleep(call.timeout) => Outcome::Timeout,
-        _ = cancel.cancelled() => Outcome::Cancelled,
+    let end = tokio::select! {
+        _ = exchange => End::Finished,
+        _ = tokio::time::sleep(call.timeout) => End::Timeout,
+        _ = cancel.cancelled() => End::Cancelled,
     };
 
     let grace = cfg.kill_grace;
-    match outcome {
-        Outcome::Timeout => {
+    if let Some(message) = &response {
+        // The answer arrived: a process that has not exited is stopped, then it is parsed.
+        if status.is_none() {
+            kill_group(&mut child, pid, grace).await;
+        }
+        stderr_task.abort();
+        return parse_response(message);
+    }
+    match end {
+        End::Timeout => {
             kill_group(&mut child, pid, grace).await;
             stderr_task.abort();
             Err(WorkerError::Timeout)
         }
-        Outcome::Cancelled => {
+        End::Cancelled => {
             kill_group(&mut child, pid, grace).await;
             stderr_task.abort();
             Err(WorkerError::Cancelled)
         }
-        Outcome::Response(Some(message)) => {
-            // Let the process exit on its own (stdin is closed); stop it if it lingers.
-            if tokio::time::timeout(Duration::from_secs(10), child.wait())
-                .await
-                .is_err()
-            {
-                kill_group(&mut child, pid, grace).await;
-            }
-            stderr_task.abort();
-            parse_response(&message)
-        }
-        Outcome::Response(None) => {
-            let status = child.wait().await.ok();
+        End::Finished => {
             let stderr_text = tokio::time::timeout(Duration::from_secs(2), stderr_task)
                 .await
                 .ok()
@@ -297,18 +303,34 @@ pub async fn run_worker(
     }
 }
 
+/// How long a worker that has answered may take to exit before its group is stopped.
+const EXIT_LINGER: Duration = Duration::from_secs(10);
+
 /// SIGKILL together with a cgroup `oom_kill` increase is the kernel killing the worker for memory.
 pub fn is_oom_exit(signal: Option<i32>, oom_before: u64, oom_after: u64) -> bool {
     signal == Some(9) && oom_after > oom_before
 }
 
+/// Stops the worker's whole process group: SIGTERM, then SIGKILL for every member still alive
+/// when the grace ends, even if the leader itself has already exited (a descendant that ignores
+/// SIGTERM must not outlive the job).
 async fn kill_group(child: &mut tokio::process::Child, pid: u32, grace: Duration) {
     crate::sys::signal_group(pid, false);
-    if tokio::time::timeout(grace, child.wait()).await.is_err() {
-        crate::sys::signal_group(pid, true);
-        let _ = child.start_kill();
-        let _ = child.wait().await;
+    let deadline = tokio::time::Instant::now() + grace;
+    loop {
+        // reaps the leader as soon as it exits, so an empty group is seen as gone
+        let _ = child.try_wait();
+        if !crate::sys::group_alive(pid) {
+            break;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            crate::sys::signal_group(pid, true);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
+    let _ = child.start_kill();
+    let _ = child.wait().await;
 }
 
 fn parse_response(message: &Value) -> Result<Value, WorkerError> {
@@ -352,4 +374,28 @@ pub fn cleanup_after_kill(archive_root: &std::path::Path, pid: Option<u32>, driv
         }
     }
     walk(archive_root, pid, driver_idle);
+}
+
+/// Removes the `.write-*` and `.copy-*` temp files killed workers left under a driver's archive.
+/// Only safe while no worker of that driver runs (their names are random, `storage.py`).
+pub fn cleanup_strays(archive_root: &std::path::Path) -> usize {
+    fn walk(dir: &std::path::Path) -> usize {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return 0;
+        };
+        let mut removed = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if path.is_dir() {
+                removed += walk(&path);
+            } else if (name.starts_with(".write-") || name.starts_with(".copy-"))
+                && std::fs::remove_file(&path).is_ok()
+            {
+                removed += 1;
+            }
+        }
+        removed
+    }
+    walk(archive_root)
 }

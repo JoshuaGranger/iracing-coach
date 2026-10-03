@@ -9,14 +9,15 @@ would recognise.
 
 These tests hold the split: two independently named ranges, the companion range
 bound to its stated authority, and a legacy alias that cannot quietly come to
-mean the other store.
+mean the other store. The desktop app was retired on 2026-10-02 (D13), so the
+companion writer and maximum are frozen at the C# constant's last value and
+generation reads no `companion-app` source.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
@@ -28,9 +29,7 @@ ROOT = Path(__file__).resolve().parents[3]
 CONTRACTS = ROOT / "contracts"
 COMPATIBILITY = CONTRACTS / "compatibility.json"
 SOURCES = CONTRACTS / "compatibility-sources.json"
-DURABLE_ARCHIVE_CS = (
-    ROOT / "companion-app" / "src" / "iRacingCoach.Coordinator" / "DurableArchive.cs"
-)
+RETIRED_VALUE = 1
 EXPORTER = ROOT / "tools" / "export_contracts.py"
 
 
@@ -66,15 +65,17 @@ class ArchiveStoreSplitTests(unittest.TestCase):
         self.assertEqual(backend["backend_archive_min_readable_version"], writer)
         self.assertEqual(backend["backend_archive_max_readable_version"], writer)
 
-    def test_companion_writer_and_maximum_are_bound_to_the_csharp_symbol(self) -> None:
-        source = DURABLE_ARCHIVE_CS.read_text(encoding="utf-8")
-        match = re.search(r"public\s+const\s+int\s+CurrentSchemaVersion\s*=\s*(\d+)\s*;", source)
-        self.assertIsNotNone(match, "CurrentSchemaVersion must remain a readable constant")
-        assert match is not None
-        current = int(match.group(1))
+    def test_companion_writer_and_maximum_are_frozen_at_the_retired_symbol(self) -> None:
+        record = _sources()["companion_durable_archive"]
         backend = _registry()["backend"]
-        self.assertEqual(backend["companion_durable_archive_writer_version"], current)
-        self.assertEqual(backend["companion_durable_archive_max_readable_version"], current)
+        for field in ("writer_version", "max_readable_version"):
+            with self.subTest(field=field):
+                entry = record[field]
+                self.assertEqual(entry["authority"], "retired-csharp-symbol")
+                self.assertEqual(entry["symbol"], "DurableArchiveService.CurrentSchemaVersion")
+                self.assertEqual(entry["value"], RETIRED_VALUE)
+                self.assertIn("retired", entry["retired"])
+                self.assertEqual(backend[f"companion_durable_archive_{field}"], RETIRED_VALUE)
 
     def test_companion_minimum_is_declared_policy_and_says_so(self) -> None:
         # The registry may publish a target floor, but the record must not imply
@@ -85,27 +86,16 @@ class ArchiveStoreSplitTests(unittest.TestCase):
         self.assertEqual(record["enforced_by"], "codex-consumer-phase")
         self.assertIn("NOT enforced today", record["current_behavior"])
 
-    def test_current_csharp_does_not_enforce_a_lower_bound(self) -> None:
-        """Characterization, not endorsement.
-
-        The upper bound is guarded against CurrentSchemaVersion, but the lower
-        branch passes every smaller integer to Migrate. This records today's
-        behavior so the declared floor is never mistaken for an enforced one.
-        """
-        source = DURABLE_ARCHIVE_CS.read_text(encoding="utf-8")
-        self.assertNotIn("MinimumReadableSchemaVersion", source)
-        self.assertRegex(source, r"manifest\.SchemaVersion\s*>\s*CurrentSchemaVersion")
-        self.assertRegex(source, r"manifest\.SchemaVersion\s*<\s*CurrentSchemaVersion")
-
     def test_each_companion_field_declares_its_authority(self) -> None:
         record = _sources()["companion_durable_archive"]
         for field in ("writer_version", "min_readable_version", "max_readable_version"):
             with self.subTest(field=field):
                 entry = record[field]
-                self.assertIn(entry["authority"], {"csharp-symbol", "declared-policy"})
-                if entry["authority"] == "csharp-symbol":
+                self.assertIn(entry["authority"], {"retired-csharp-symbol", "declared-policy"})
+                if entry["authority"] == "retired-csharp-symbol":
                     self.assertTrue(entry["symbol"])
                     self.assertTrue(entry["source"])
+                    self.assertTrue(entry["retired"])
 
 
 class LegacyAliasTests(unittest.TestCase):
@@ -155,8 +145,6 @@ class CompanionRangeMutationTests(unittest.TestCase):
                             ignore=shutil.ignore_patterns("dev", "__pycache__"))
             shutil.copytree(ROOT / "iracing-coach", sandbox / "iracing-coach",
                             ignore=shutil.ignore_patterns("__pycache__", "tests"))
-            # Generation now reads the C# constant, so the source must be present.
-            shutil.copytree(ROOT / "companion-app" / "src", sandbox / "companion-app" / "src")
             target = sandbox / "contracts" / "compatibility-sources.json"
             document = json.loads(target.read_text(encoding="utf-8"))
             mutate(document)
@@ -177,7 +165,7 @@ class CompanionRangeMutationTests(unittest.TestCase):
         It is now caught by the exact policy-value binding rather than the range
         invariant, because the exact check runs first and is strictly stronger.
         Worth stating plainly: with all three fields pinned - minimum to exactly
-        0, writer and maximum to the C# constant - the range invariant is no
+        0, writer and maximum to the retired constant - the range invariant is no
         longer independently reachable. It stays as a defensive check against a
         future field gaining a looser binding, not as live coverage, and this
         test asserts refusal rather than a particular message.
@@ -215,6 +203,10 @@ class CompanionRangeMutationTests(unittest.TestCase):
             ["min_readable_version"].update({"symbol": "DurableArchiveService.CurrentSchemaVersion"}),
             "symbol field downgraded to policy": lambda d: d["companion_durable_archive"]
             ["writer_version"].update({"authority": "declared-policy"}),
+            "symbol field claiming live C# authority": lambda d: d["companion_durable_archive"]
+            ["writer_version"].update({"authority": "csharp-symbol"}),
+            "retired field missing its retirement note": lambda d: d["companion_durable_archive"]
+            ["max_readable_version"].pop("retired"),
             "symbol field missing its source": lambda d: d["companion_durable_archive"]
             ["max_readable_version"].update({"source": ""}),
             "policy missing enforced_by": lambda d: d["companion_durable_archive"]
@@ -232,8 +224,8 @@ class CompanionRangeMutationTests(unittest.TestCase):
         An earlier version of this test asserted the exporter *succeeds* for
         max = 2 and then compared the unmutated repository's backend value to the
         C# constant - a comparison independent of the mutated sandbox, so it did
-        not catch the substitution it was named for. Generation now binds the
-        value to the constant read from C# source, so the substitution fails here.
+        not catch the substitution it was named for. Generation binds the value
+        to the retired constant's frozen value, so the substitution fails here.
         """
         backend_writer = _registry()["backend"]["backend_archive_writer_version"]
 
@@ -263,7 +255,7 @@ class CompanionRangeMutationTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("must be exactly", completed.stderr)
 
-    def test_the_declared_value_is_bound_to_the_csharp_constant(self) -> None:
+    def test_the_declared_value_is_bound_to_the_retired_constant(self) -> None:
         for field in ("writer_version", "max_readable_version"):
             with self.subTest(field=field):
                 def mutate(document, field=field):
@@ -299,8 +291,6 @@ class GeneratedRegistryMutationTests(unittest.TestCase):
                             ignore=shutil.ignore_patterns("dev", "__pycache__"))
             shutil.copytree(ROOT / "iracing-coach", sandbox / "iracing-coach",
                             ignore=shutil.ignore_patterns("__pycache__", "tests"))
-            shutil.copytree(ROOT / "companion-app" / "src",
-                            sandbox / "companion-app" / "src")
             target = sandbox / "contracts" / "compatibility.json"
             document = json.loads(target.read_text(encoding="utf-8"))
             mutate(document)
@@ -313,6 +303,7 @@ class GeneratedRegistryMutationTests(unittest.TestCase):
             )
 
     def test_the_unmutated_registry_passes_check(self) -> None:
+        # The sandbox holds no companion-app directory: generation must not need it.
         self.assertEqual(self._check_with_registry(lambda d: None).returncode, 0)
 
     def test_each_of_the_six_generated_keys_is_independently_detected(self) -> None:
@@ -334,101 +325,6 @@ class GeneratedRegistryMutationTests(unittest.TestCase):
                 def mutate(document, target=target, donor=donor):
                     document["backend"][target] = document["backend"][donor]
                 self.assertNotEqual(self._check_with_registry(mutate).returncode, 0)
-
-
-class CSharpConstantParserTests(unittest.TestCase):
-    """The parser must fail clearly rather than guess."""
-
-    def _with_source(self, replacement: str) -> subprocess.CompletedProcess:
-        with tempfile.TemporaryDirectory(prefix="registry-csharp-") as raw:
-            sandbox = Path(raw)
-            shutil.copytree(ROOT / "contracts", sandbox / "contracts")
-            shutil.copytree(ROOT / "tools", sandbox / "tools",
-                            ignore=shutil.ignore_patterns("dev", "__pycache__"))
-            shutil.copytree(ROOT / "iracing-coach", sandbox / "iracing-coach",
-                            ignore=shutil.ignore_patterns("__pycache__", "tests"))
-            shutil.copytree(ROOT / "companion-app" / "src", sandbox / "companion-app" / "src")
-            target = (sandbox / "companion-app" / "src" / "iRacingCoach.Coordinator"
-                      / "DurableArchive.cs")
-            source = target.read_text(encoding="utf-8")
-            target.write_text(
-                source.replace("public const int CurrentSchemaVersion = 1;", replacement),
-                encoding="utf-8",
-            )
-            return subprocess.run(
-                [sys.executable, "-X", "utf8", str(sandbox / "tools" / "export_contracts.py")],
-                cwd=sandbox, capture_output=True, text=True, check=False, timeout=120,
-            )
-
-    def test_a_missing_constant_is_refused(self) -> None:
-        completed = self._with_source("// constant removed")
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("was not found", completed.stderr)
-
-    def test_a_duplicate_constant_is_refused(self) -> None:
-        completed = self._with_source(
-            "public const int CurrentSchemaVersion = 1;\n"
-            "    public const int CurrentSchemaVersion = 2;"
-        )
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("refusing to guess", completed.stderr)
-
-    def test_a_non_integer_constant_is_refused(self) -> None:
-        for replacement in ('public const string CurrentSchemaVersion = "1";',
-                            "public const bool CurrentSchemaVersion = true;"):
-            with self.subTest(declaration=replacement):
-                completed = self._with_source(replacement)
-                self.assertNotEqual(completed.returncode, 0)
-                self.assertIn("was not found", completed.stderr)
-
-    def test_a_changed_constant_is_reflected_and_the_declaration_must_follow(self) -> None:
-        # Bumping the C# constant without updating the declaration must fail,
-        # which is the drift detection this binding exists to provide.
-        completed = self._with_source("public const int CurrentSchemaVersion = 2;")
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("CurrentSchemaVersion", completed.stderr)
-
-    def test_a_commented_out_declaration_is_not_live_authority(self) -> None:
-        """Dead text must not carry authority.
-
-        An unanchored regex over raw C# matched a declaration inside a comment,
-        so generation would have bound compatibility values to code that does
-        not exist. Commenting the constant out is a *missing* constant.
-        """
-        for label, replacement in (
-            ("line comment", "// public const int CurrentSchemaVersion = 1;"),
-            ("block comment", "/*\npublic const int CurrentSchemaVersion = 1;\n*/"),
-            ("trailing line comment", "int Unused = 0; // public const int CurrentSchemaVersion = 1;"),
-        ):
-            with self.subTest(case=label):
-                completed = self._with_source(replacement)
-                self.assertNotEqual(completed.returncode, 0)
-                self.assertIn("was not found as a live integer constant", completed.stderr)
-
-    def test_a_declaration_inside_a_string_literal_is_not_live_authority(self) -> None:
-        for label, replacement in (
-            ("regular string", 'const string Doc = "public const int CurrentSchemaVersion = 1;";'),
-            ("verbatim string", 'const string Doc = @"public const int CurrentSchemaVersion = 1;";'),
-        ):
-            with self.subTest(case=label):
-                completed = self._with_source(replacement)
-                self.assertNotEqual(completed.returncode, 0)
-                self.assertIn("was not found as a live integer constant", completed.stderr)
-
-    def test_a_live_declaration_beside_commented_decoys_still_binds(self) -> None:
-        # The scanner must not become so strict that real source stops parsing:
-        # one live declaration among commented copies is unambiguous.
-        completed = self._with_source(
-            "// public const int CurrentSchemaVersion = 9;\n"
-            "    public const int CurrentSchemaVersion = 1;\n"
-            "    /* public const int CurrentSchemaVersion = 8; */"
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-
-    def test_an_unterminated_block_comment_is_refused(self) -> None:
-        completed = self._with_source("/* public const int CurrentSchemaVersion = 1;")
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("Unterminated", completed.stderr)
 
 
 class GenerationTests(unittest.TestCase):

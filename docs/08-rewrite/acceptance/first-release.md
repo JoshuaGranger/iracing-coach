@@ -49,6 +49,12 @@ Run again once W4's server is released: `curl -s http://192.168.1.81:8210/api/v1
 | Extras | none | `init: true`, `stop_grace_period: 30s`, `/tmp` tmpfs 256 MB, `/etc/localtime` read-only | worker reaping and SIGTERM forwarding, time for the snapshot on SIGTERM, a bounded tmpfs, local time for the 04:00 daily backup |
 | Server paths | not stated | `COACH_BIND`, `COACH_DATA_DIR=/data`, `COACH_NAS_DIR=/nas/apps/iracing-coach`, `COACH_WEB_DIR=/app/web`, `COACH_PYTHON`, `COACH_WORKER_SCRIPT=/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py`, `COACH_CONTRACTS_DIR=/app/contracts` in the image | proposed to W4 as a contract change; only `COACH_BIND` is read today |
 
+## Next release (wave-1 follow-ups, not released yet)
+
+- Compose runs `/usr/local/bin/coach-server healthcheck` (`contracts/server-config.md`). Checked on the dev PC against the tree's server: exit 1 with no listener, 0 once `coach-server serve --dev` listened on the `COACH_BIND` port, 1 after it stopped. That server created `db/`, `snapshots/`, `spool/`, `py/`, `views/` and `run/` under `COACH_DATA_DIR` at start.
+- `RECOVERY_PATHS=.` stays for the first real-server release: the released skeleton created neither `db/` nor `snapshots/`, and `g-house-stack` refuses a missing path. The release after it sets `RECOVERY_PATHS=db snapshots` and `RECOVERY_SQLITE=db/coach.sqlite3`.
+- The real server is released only after W4's recovery-durability and restage fixes land (R23).
+
 ## Not verified
 
 - Tailnet access: from the dev PC `http://minipc.tail4e6ca6.ts.net:8210/health` timed out, and so did Home Assistant on 8123, so the dev PC was not on the tailnet at the time; not a stack fault, still to check from a tailnet device.

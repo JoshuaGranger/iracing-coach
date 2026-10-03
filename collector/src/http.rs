@@ -1,17 +1,21 @@
 //! A minimal blocking HTTP/1.1 client over `std::net` for the upload API (plain http, one request
 //! per connection). Written by hand because the uploader needs exact control: a body that is read
-//! from a gate-checked source in small pieces so an in-flight chunk can be abandoned within 100 ms,
-//! and a known `Content-Length` (no chunked encoding) for the server's `Content-Range` handling.
+//! from a gate-checked source in small pieces and written to a non-blocking socket that asks the
+//! same check whenever the socket is full, so an in-flight chunk is abandoned within 100 ms even
+//! when the server has stopped reading; and a known `Content-Length` (no chunked encoding) for the
+//! server's `Content-Range` handling.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Largest response body accepted (the API answers with small JSON).
 const MAX_BODY: usize = 1 << 20;
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 /// Request bodies are written in pieces of this size; the source is polled between pieces.
 pub const WRITE_PIECE: usize = 32 * 1024;
+/// How long a full socket is waited on before the body check runs again.
+const WRITE_POLL: Duration = Duration::from_millis(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum HttpError {
@@ -52,10 +56,12 @@ impl Response {
 pub enum Body<'a> {
     None,
     Bytes(&'a [u8]),
-    /// `len` bytes read from `reader` in pieces; an error from the reader abandons the request.
+    /// `len` bytes read from `reader` in pieces; an error from the reader abandons the request,
+    /// and so does `keep_going` returning false, which is asked whenever the socket is full.
     Stream {
         len: u64,
         reader: &'a mut dyn Read,
+        keep_going: &'a dyn Fn() -> bool,
     },
 }
 
@@ -110,11 +116,17 @@ impl HttpClient {
             head.push_str(&format!("Content-Length: {len}\r\n"));
         }
         head.push_str("\r\n");
-        stream.write_all(head.as_bytes())?;
+        stream.set_nonblocking(true)?;
+        let always = || true;
+        write_gated(&mut stream, head.as_bytes(), &always, self.io_timeout)?;
         match &mut body {
             Body::None => {}
-            Body::Bytes(bytes) => stream.write_all(bytes)?,
-            Body::Stream { len, reader } => {
+            Body::Bytes(bytes) => write_gated(&mut stream, bytes, &always, self.io_timeout)?,
+            Body::Stream {
+                len,
+                reader,
+                keep_going,
+            } => {
                 let mut remaining = *len;
                 let mut piece = vec![0u8; WRITE_PIECE];
                 while remaining > 0 {
@@ -133,12 +145,12 @@ impl HttpClient {
                             return Err(HttpError::Body(e));
                         }
                     };
-                    stream.write_all(&piece[..n])?;
+                    write_gated(&mut stream, &piece[..n], *keep_going, self.io_timeout)?;
                     remaining -= n as u64;
                 }
             }
         }
-        stream.flush()?;
+        stream.set_nonblocking(false)?;
         read_response(stream, method == "HEAD")
     }
 
@@ -159,7 +171,6 @@ impl HttpClient {
                     stream.set_nodelay(true).ok();
                     bound_send_buffer(&stream);
                     stream.set_read_timeout(Some(self.io_timeout))?;
-                    stream.set_write_timeout(Some(self.io_timeout))?;
                     return Ok(stream);
                 }
                 Err(e) => last = e,
@@ -167,6 +178,40 @@ impl HttpClient {
         }
         Err(connect_err(last))
     }
+}
+
+/// Writes all of `data` to a non-blocking socket. While the socket is full it asks `keep_going`
+/// every couple of milliseconds and, when that says no, shuts the socket down and gives up at once;
+/// it also gives up when nothing was accepted for `limit`.
+fn write_gated(
+    stream: &mut TcpStream,
+    mut data: &[u8],
+    keep_going: &dyn Fn() -> bool,
+    limit: Duration,
+) -> Result<(), HttpError> {
+    let mut last_progress = Instant::now();
+    while !data.is_empty() {
+        match stream.write(data) {
+            Ok(0) => return Err(io::Error::from(io::ErrorKind::WriteZero).into()),
+            Ok(n) => {
+                data = &data[n..];
+                last_progress = Instant::now();
+            }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                if !keep_going() {
+                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                    return Err(HttpError::Body(io::Error::other("request abandoned")));
+                }
+                if last_progress.elapsed() >= limit {
+                    return Err(io::Error::from(io::ErrorKind::TimedOut).into());
+                }
+                std::thread::sleep(WRITE_POLL);
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(())
 }
 
 /// Keeps the kernel from swallowing a whole chunk: with a small send buffer the writer blocks as
@@ -367,10 +412,95 @@ mod tests {
                 Body::Stream {
                     len: 1 << 20,
                     reader: &mut src,
+                    keep_going: &|| true,
                 },
             )
             .unwrap_err();
         assert!(matches!(err, HttpError::Body(_)));
+    }
+
+    /// The server accepts the connection and never reads: the socket fills and the write blocks.
+    /// The check still runs and abandons the request within 100 ms of saying no.
+    #[test]
+    fn a_full_socket_does_not_hold_back_an_abandoned_request() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let stop = Arc::new(AtomicBool::new(false));
+        let server = {
+            let stop = stop.clone();
+            thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                while !stop.load(Ordering::SeqCst) {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                drop(stream);
+            })
+        };
+        let go = Arc::new(AtomicBool::new(true));
+        let flipped: Arc<std::sync::Mutex<Option<Instant>>> = Arc::default();
+        {
+            let (go, flipped) = (go.clone(), flipped.clone());
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(400));
+                *flipped.lock().unwrap() = Some(Instant::now());
+                go.store(false, Ordering::SeqCst);
+            });
+        }
+        let mut source = io::repeat(7);
+        let keep_going = {
+            let go = go.clone();
+            move || go.load(Ordering::SeqCst)
+        };
+        let err = HttpClient::new(&addr)
+            .request(
+                "PUT",
+                "/x",
+                &[],
+                Body::Stream {
+                    len: 1 << 30,
+                    reader: &mut source,
+                    keep_going: &keep_going,
+                },
+            )
+            .unwrap_err();
+        let returned = Instant::now();
+        assert!(matches!(err, HttpError::Body(_)), "{err}");
+        let lag = returned.duration_since(flipped.lock().unwrap().expect("the check ran"));
+        assert!(lag < Duration::from_millis(100), "abandoning took {lag:?}");
+        stop.store(true, Ordering::SeqCst);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn a_stalled_peer_times_out_after_the_io_limit() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            thread::sleep(Duration::from_millis(700));
+            drop(stream);
+        });
+        let mut source = io::repeat(1);
+        let err = HttpClient::new(&addr)
+            .with_timeouts(Duration::from_secs(1), Duration::from_millis(250))
+            .request(
+                "PUT",
+                "/x",
+                &[],
+                Body::Stream {
+                    len: 1 << 30,
+                    reader: &mut source,
+                    keep_going: &|| true,
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&err, HttpError::Io(e) if e.kind() == io::ErrorKind::TimedOut),
+            "{err}"
+        );
+        server.join().unwrap();
     }
 
     #[test]

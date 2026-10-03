@@ -1,8 +1,10 @@
 //! The uploader (`collector-protocol.md` section 4): finalization gate, hash, create, 4 MiB chunks,
 //! resume, acknowledgement. One upload at a time, newest recording first, setup files after
 //! recordings. Everything that touches a file (scan, finalization check, hash, chunk read) runs
-//! only while the on-track gate allows it and re-checks before every chunk and every 32 KiB piece,
-//! so an in-flight chunk is abandoned within the 100 ms allowance when the evidence lapses.
+//! only while the on-track gate allows it and re-checks before every chunk, every 32 KiB piece,
+//! every directory entry of a scan and every pending journal entry, and while a full socket is
+//! waited on, so an in-flight chunk or scan is abandoned within the 100 ms allowance when the
+//! evidence lapses. Work interrupted that way is kept and resumed.
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
@@ -161,10 +163,22 @@ impl Uploader {
         self.clock.mono_ms()
     }
 
-    /// Items pending in the journal from an earlier run, whose files still exist.
-    fn load_journal(&mut self) {
+    /// True while file work may go on: the gate allows it and the collector is not shutting down.
+    fn proceed(&self) -> impl Fn() -> bool + use<> {
+        let gate = self.hub.gate.clone();
+        let hub = self.hub.clone();
+        move || gate.allows_file_work() && !hub.is_shutdown()
+    }
+
+    /// Items pending in the journal from an earlier run, whose files still exist. False when the
+    /// gate closed part way: the entries not reached stay in the journal for the next pass.
+    fn load_journal(&mut self, proceed: &dyn Fn() -> bool) -> bool {
         let pending = self.hub.journal().pending_recordings();
         for entry in pending {
+            if !proceed() {
+                self.publish_stats();
+                return false;
+            }
             let path = Path::new(&entry.path);
             let Some(kind) = Kind::parse(&entry.kind) else {
                 continue;
@@ -177,6 +191,7 @@ impl Uploader {
             }
         }
         self.publish_stats();
+        true
     }
 
     fn upsert(&mut self, cand: Candidate) {
@@ -210,10 +225,17 @@ impl Uploader {
             .store(bytes as i64, std::sync::atomic::Ordering::Relaxed);
     }
 
-    fn scan(&mut self) {
+    /// Lists both folders and reconciles the queue with them. False when the gate closed part way:
+    /// the scan stays due, nothing is dropped from the queue or the journal on a partial listing.
+    fn scan(&mut self, proceed: &dyn Fn() -> bool) -> bool {
         let now_unix = self.hub.clock.unix_ms();
-        let mut found: Vec<Candidate> = scan_recordings(&self.paths.telemetry_dir());
-        found.extend(scan_setups(&self.paths.setups_dir()));
+        let found = scan_recordings(&self.paths.telemetry_dir(), proceed).and_then(|mut found| {
+            found.extend(scan_setups(&self.paths.setups_dir(), proceed)?);
+            Ok(found)
+        });
+        let Ok(found) = found else {
+            return false;
+        };
         for cand in found {
             // Skip what the server is already known to hold (same path, size, mtime).
             let mut journal = self.hub.journal();
@@ -230,13 +252,15 @@ impl Uploader {
         }
         // A file that disappeared from disk can no longer be uploaded.
         let mut gone = Vec::new();
-        self.items.retain(|i| {
-            let exists = i.cand.path.is_file();
-            if !exists {
-                gone.push(i.cand.key());
+        for item in &self.items {
+            if !proceed() {
+                return false;
             }
-            exists
-        });
+            if !item.cand.path.is_file() {
+                gone.push(item.cand.key());
+            }
+        }
+        self.items.retain(|i| !gone.contains(&i.cand.key()));
         for key in gone {
             crate::warn!("{key} disappeared before it was uploaded");
             let _ = self.hub.journal().recording_done(&key);
@@ -248,6 +272,7 @@ impl Uploader {
             .scans_done
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.publish_stats();
+        true
     }
 
     /// One unit of work: a scan if due, else one file driven as far as it goes.
@@ -271,15 +296,19 @@ impl Uploader {
             .waiting_for_off_track
             .store(false, std::sync::atomic::Ordering::Relaxed);
 
+        let proceed = self.proceed();
         if !self.journal_loaded {
-            self.journal_loaded = true;
-            self.load_journal();
+            // Interrupted: the gate is closed now, and the next step waits for it.
+            self.journal_loaded = self.load_journal(&proceed);
+            if !self.journal_loaded {
+                return Step::Worked;
+            }
         }
         let scan_due = self.scanned_at_ms.is_none_or(|t| {
             self.rescan_requested || now.saturating_sub(t) >= self.settings.scan_interval_ms
         });
         if scan_due {
-            self.scan();
+            self.scan(&proceed);
             return Step::Worked;
         }
         if now < self.server_retry_at_ms {
@@ -456,6 +485,7 @@ impl Uploader {
             Err(outcome) => return outcome,
         };
 
+        let live = self.proceed();
         let mut file = match File::open(&cand.path) {
             Ok(f) => f,
             Err(e) => {
@@ -493,6 +523,7 @@ impl Uploader {
                 Body::Stream {
                     len,
                     reader: &mut reader,
+                    keep_going: &live,
                 },
             );
             match result {
@@ -675,5 +706,169 @@ impl Read for GateReader<'_> {
         let n = self.file.read(&mut buf[..want])?;
         self.remaining -= n as u64;
         Ok(n)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::journal::Journal;
+    use crate::util::{ManualClock, uuid_v4};
+    use std::cell::Cell;
+    use std::fs;
+
+    struct Env {
+        root: std::path::PathBuf,
+        up: Uploader,
+        hub: Arc<Hub>,
+    }
+
+    impl Env {
+        fn new() -> Env {
+            let root = std::env::temp_dir().join(format!("coach-up-{}", uuid_v4()));
+            let paths = Paths {
+                state_dir: root.join("state"),
+                iracing_root: root.join("iRacing"),
+            };
+            fs::create_dir_all(paths.telemetry_dir()).unwrap();
+            fs::create_dir_all(paths.setups_dir().join("car/shop")).unwrap();
+            let hub = Hub::new(
+                Arc::new(ManualClock::new(1_790_000_000_000)),
+                Journal::in_memory(),
+                false,
+            );
+            let up = Uploader::new(
+                hub.clone(),
+                "http://127.0.0.1:1",
+                paths,
+                UploaderSettings::new("11111111-2222-4333-8444-555555555555"),
+            );
+            Env { root, up, hub }
+        }
+    }
+
+    impl Drop for Env {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn stops_after(budget: usize, calls: &Cell<usize>) -> impl Fn() -> bool + '_ {
+        calls.set(0);
+        move || {
+            calls.set(calls.get() + 1);
+            calls.get() <= budget
+        }
+    }
+
+    /// Two setup files on disk and a queued recording that is gone from disk (in the queue and in
+    /// the journal): a complete scan finds the setups and drops the ghost, and only a complete one.
+    fn scan_fixture() -> (Env, Candidate) {
+        let mut env = Env::new();
+        let setups = env.up.paths.setups_dir();
+        fs::write(setups.join("car/shop/a.sto"), b"1").unwrap();
+        fs::write(setups.join("car/b.sto"), b"22").unwrap();
+        let ghost = Candidate {
+            path: env.up.paths.telemetry_dir().join("ghost.ibt"),
+            size: 5,
+            mtime_ms: 1,
+            kind: Kind::Ibt,
+            relative_path: None,
+        };
+        env.up.items.push(Item {
+            cand: ghost.clone(),
+            next_try_ms: 0,
+            failed: false,
+        });
+        env.hub
+            .journal()
+            .add_recording(RecordingEntry {
+                path: ghost.key(),
+                size: 5,
+                mtime_ms: 1,
+                kind: "ibt".into(),
+                relative_path: None,
+                sha256: None,
+            })
+            .unwrap();
+        (env, ghost)
+    }
+
+    #[test]
+    fn a_scan_closed_mid_walk_keeps_its_queue_and_stays_due() {
+        let calls = Cell::new(0);
+        let (mut env, ghost) = scan_fixture();
+        // How many checks a complete scan makes.
+        assert!(env.up.scan(&stops_after(usize::MAX, &calls)));
+        let full = calls.get();
+        assert!(full > 8, "{full}");
+        assert!(env.up.items.iter().all(|i| i.cand.path != ghost.path));
+        assert_eq!(env.hub.journal().pending_recordings().len(), 0);
+
+        // The same state again, interrupted at every possible point.
+        for budget in 0..full {
+            let (mut env, ghost) = scan_fixture();
+            assert!(
+                !env.up.scan(&stops_after(budget, &calls)),
+                "closed after {budget} checks"
+            );
+            assert!(env.up.scanned_at_ms.is_none(), "the scan is still due");
+            assert!(env.up.rescan_requested);
+            assert_eq!(
+                env.hub
+                    .uploads
+                    .scans_done
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                0
+            );
+            assert!(
+                env.up.items.iter().any(|i| i.cand.path == ghost.path),
+                "nothing is dropped on a partial listing (budget {budget})"
+            );
+            assert_eq!(
+                env.hub.journal().pending_recordings().len(),
+                1,
+                "the journal entry stays (budget {budget})"
+            );
+            // Once the gate opens again the scan completes and finishes the reconciliation.
+            assert!(env.up.scan(&|| true));
+            assert!(env.up.scanned_at_ms.is_some());
+            assert!(env.up.items.iter().all(|i| i.cand.path != ghost.path));
+            assert_eq!(
+                env.up
+                    .items
+                    .iter()
+                    .filter(|i| i.cand.kind == Kind::Sto)
+                    .count(),
+                2
+            );
+        }
+    }
+
+    #[test]
+    fn pending_journal_entries_are_matched_only_while_the_gate_stays_open() {
+        let mut env = Env::new();
+        let tel = env.up.paths.telemetry_dir();
+        for n in 0..3 {
+            let path = tel.join(format!("p{n}.ibt"));
+            fs::write(&path, b"abc").unwrap();
+            env.hub
+                .journal()
+                .add_recording(RecordingEntry {
+                    path: path.to_string_lossy().into_owned(),
+                    size: 3,
+                    mtime_ms: 1,
+                    kind: "ibt".into(),
+                    relative_path: None,
+                    sha256: None,
+                })
+                .unwrap();
+        }
+        let calls = Cell::new(0);
+        assert!(!env.up.load_journal(&stops_after(1, &calls)));
+        assert_eq!(env.up.items.len(), 1, "one entry reached, the rest wait");
+        assert_eq!(env.hub.journal().pending_recordings().len(), 3);
+        assert!(env.up.load_journal(&|| true));
+        assert_eq!(env.up.items.len(), 3);
     }
 }

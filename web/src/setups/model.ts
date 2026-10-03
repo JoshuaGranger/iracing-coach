@@ -108,6 +108,20 @@ export function uniqueSources(sources: readonly Schemas["SetupSource"][]): strin
   return [...new Set(sources.map((s) => SOURCE_LABEL[s]))];
 }
 
+export type TuneTarget = { analysisId: string } | { blocked: string };
+
+/**
+ * Where Tune this setup goes: the newest recording observation that carries its session's current analysis
+ * (`SetupObservation.analysis_id`), so the page needs no second request.
+ */
+export function tuneTarget(observations: readonly Schemas["SetupObservation"][]): TuneTarget {
+  const recorded = observations.filter((o) => o.session_id != null);
+  if (recorded.length === 0) return { blocked: "No recording used this setup yet." };
+  const analyzed = recorded.filter((o) => o.analysis_id).sort((a, b) => Date.parse(b.observed_at) - Date.parse(a.observed_at));
+  const newest = analyzed[0];
+  return newest ? { analysisId: newest.analysis_id! } : { blocked: "The recording that used this setup is not analyzed yet." };
+}
+
 /** iRacing season label for a date: seasons start in March, June, September and December (2026S1 starts Dec 2025). */
 export function currentSeason(d: Date): string {
   const m = d.getUTCMonth() + 1;

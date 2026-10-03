@@ -22,11 +22,20 @@ TOOLS_DEV = Path(__file__).resolve().parents[1]
 WORKTREE = TOOLS_DEV.parents[1]
 RESOLVER = WORKTREE / "tools" / "Resolve-Toolchain.ps1"
 CI_WORKFLOW = WORKTREE / ".github" / "workflows" / "ci.yml"
-GLOBAL_JSON_DIR = WORKTREE / "companion-app"
 POWERSHELL = os.path.join(
     os.environ.get("SystemRoot", r"C:\WINDOWS"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe"
 )
 AGENT_CACHE_MARKER = "codex-runtimes"
+#: The .NET pin the retired desktop app declared, written to a synthetic directory
+#: so these tests do not read `companion-app/`.
+GLOBAL_JSON = {"sdk": {"version": "10.0.300", "rollForward": "latestPatch"}}
+_GLOBAL_JSON_ROOT = tempfile.TemporaryDirectory(prefix="g0-global-json-")
+GLOBAL_JSON_DIR = Path(_GLOBAL_JSON_ROOT.name)
+(GLOBAL_JSON_DIR / "global.json").write_text(json.dumps(GLOBAL_JSON, indent=2) + "\n", encoding="utf-8")
+
+
+def tearDownModule() -> None:
+    _GLOBAL_JSON_ROOT.cleanup()
 
 
 def _run(script: str, environment: dict[str, str] | None = None):

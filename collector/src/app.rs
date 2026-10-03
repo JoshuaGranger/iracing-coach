@@ -127,10 +127,9 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
     let journal = if opts.dry_run {
         Journal::in_memory()
     } else {
-        Journal::open(&paths.journal_path()).unwrap_or_else(|e| {
-            crate::error!("journal unavailable, continuing without persistence: {e}");
-            Journal::in_memory()
-        })
+        // When the file cannot be opened the journal keeps entries in memory, opens the file again
+        // from the garage thread, and sends no garage event until then.
+        Journal::open_or_unavailable(&paths.journal_path())
     };
     let hub = Hub::new(clock, journal, config.safe_glance);
     if let Some(cached) = &config.layout {

@@ -69,9 +69,14 @@ for (const device of DEVICES) {
 
     test("tune this setup opens tuning for the recording that used it", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/setups/1`));
+      const sessionRequests: string[] = [];
+      page.on("request", (r) => {
+        if (/\/api\/v1\/sessions\/\d+$/.test(new URL(r.url()).pathname)) sessionRequests.push(r.url());
+      });
       await page.getByRole("button", { name: "Tune this setup" }).click();
       await expect(page).toHaveURL(new RegExp(`#/d/${DRIVER}/tuning/an-103$`));
       await expect(page.getByRole("heading", { name: "Bristol Motor Speedway - Oval" })).toBeVisible();
+      expect(sessionRequests, "the setup's observation carries the analysis id").toEqual([]);
     });
 
     test("find a baseline: only cars and tracks from recordings, then a starting point with its cautions", async ({ page, request }) => {

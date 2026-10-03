@@ -233,7 +233,6 @@ name = "coach-ibt"
 version = "0.19.0"
 dependencies = [
  "coach-wire",
- "regex",
  "serde",
  "serde_json",
  "sha2",

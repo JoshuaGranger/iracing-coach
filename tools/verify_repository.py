@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -407,6 +408,30 @@ def _validate_backend_fixture_shapes() -> None:
     _require(jobs.get("fixture_kind") == "companion-ui-projection" and isinstance(jobs.get("states"), dict), "job-state projection must be explicitly marked as UI-only")
 
 
+def _validate_g2_fixture(directory: Path = FIXTURE_ROOT / "g2") -> None:
+    """The committed G2 race views match their manifest (``tools/generate_fixtures.py --g2``)."""
+
+    manifest = _load_json(directory / "fixture.json")
+    _require(manifest.get("race_laps") == 82, "G2 fixture must be the 82-lap race")
+    files = manifest.get("files") or []
+    names = {item.get("file_name") for item in files}
+    _require({"traces-catalog.json", "traces.ccol"} <= names, "G2 fixture lacks the trace catalog or the traces")
+    for item in files:
+        data = (directory / item["file_name"]).read_bytes()
+        _require(
+            len(data) == item.get("bytes") and hashlib.sha256(data).hexdigest() == item.get("sha256"),
+            f"G2 fixture file differs from its manifest: {item['file_name']}",
+        )
+    catalog = _load_json(directory / "traces-catalog.json")
+    _require(
+        catalog.get("analysis_id") == manifest.get("analysis_id")
+        and len(catalog.get("laps") or []) == manifest.get("catalog_laps")
+        and len(catalog.get("signals") or []) == manifest.get("signals"),
+        "G2 trace catalog disagrees with its manifest",
+    )
+    _require((directory / "traces.ccol").read_bytes()[:4] == b"CCOL", "G2 traces are not a CCOL container")
+
+
 def _scan_tracked_files_for_secret_values() -> tuple[list[str], int]:
     findings: list[str] = []
     patterns = (
@@ -672,6 +697,7 @@ def main() -> int:
         FIXTURE_ROOT / "track-phase-visualization-unavailable.json"
     )
     _validate_backend_fixture_shapes()
+    _validate_g2_fixture()
     _validate_theme_contract()
 
     mcp_e2e = _run_mcp_e2e_smoke()

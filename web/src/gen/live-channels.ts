@@ -181,21 +181,21 @@ export interface CueSpec {
 }
 
 export const CUES: readonly CueSpec[] = [
-  { id: 1, key: "black_flag", priority: Priority.Critical, evidence: Evidence.Measured, template: "Black flag: follow the recorded penalty instruction", basis: null, args: [] },
+  { id: 1, key: "black_flag", priority: Priority.Critical, evidence: Evidence.Measured, template: "Black flag: follow the recorded penalty instruction", basis: "iRacing race status", args: [] },
   { id: 2, key: "tow", priority: Priority.Critical, evidence: Evidence.Measured, template: "Tow active", basis: "PlayerCarTowTime", args: [] },
-  { id: 3, key: "mandatory_repair", priority: Priority.Critical, evidence: Evidence.Measured, template: "Mandatory repair: {0} s remaining", basis: null, args: ["ceil"] },
+  { id: 3, key: "mandatory_repair", priority: Priority.Critical, evidence: Evidence.Measured, template: "Mandatory repair: {0} s remaining", basis: "iRacing repair timer", args: ["ceil"] },
   { id: 4, key: "fuel_critical", priority: Priority.Critical, evidence: Evidence.Derived, template: "Fuel hard limit: pit now if rules permit", basis: "Fuel-use history", args: [] },
   { id: 5, key: "fuel_limit", priority: Priority.Strategy, evidence: Evidence.Derived, template: "Fuel hard limit: {0} laps", basis: "Fuel-use history", args: ["int"] },
-  { id: 6, key: "flags_unknown", priority: Priority.Information, evidence: Evidence.Unavailable, template: "Race flag unavailable: flag-dependent coaching paused", basis: null, args: [] },
-  { id: 7, key: "caution", priority: Priority.PitService, evidence: Evidence.Measured, template: "Caution: competitive gap trends paused", basis: null, args: [] },
-  { id: 8, key: "pit_road", priority: Priority.PitService, evidence: Evidence.Measured, template: "Pit road: confirm service and speed", basis: null, args: [] },
+  { id: 6, key: "flags_unknown", priority: Priority.Information, evidence: Evidence.Unavailable, template: "Race flag unavailable: flag-dependent coaching paused", basis: "SessionFlags", args: [] },
+  { id: 7, key: "caution", priority: Priority.PitService, evidence: Evidence.Measured, template: "Caution: competitive gap trends paused", basis: "iRacing race status", args: [] },
+  { id: 8, key: "pit_road", priority: Priority.PitService, evidence: Evidence.Measured, template: "Pit road: confirm service and speed", basis: "OnPitRoad", args: [] },
   { id: 9, key: "gap_closing", priority: Priority.Traffic, evidence: Evidence.Derived, template: "Gap ahead closing: {0} s", basis: "8-second scoring trend", args: ["fixed2"] },
-  { id: 10, key: "pace_outside", priority: Priority.Pace, evidence: Evidence.Derived, template: "Last lap outside the clean in-session target band", basis: null, args: [] },
-  { id: 11, key: "braking_overshoot", priority: Priority.Coaching, evidence: Evidence.Derived, template: "Braking zone near {0}% lap: peak {1} above your clean baseline on {2} comparable laps", basis: null, args: ["int", "percent0", "int"] },
-  { id: 12, key: "building_pace", priority: Priority.Information, evidence: Evidence.Unavailable, template: "Building your pace range · complete three clean laps", basis: null, args: [] },
-  { id: 13, key: "no_action", priority: Priority.Information, evidence: Evidence.Derived, template: "No action: pace and race state within the supported band", basis: null, args: [] },
+  { id: 10, key: "pace_outside", priority: Priority.Pace, evidence: Evidence.Derived, template: "Last lap outside the clean in-session target band", basis: "Clean in-session baseline", args: [] },
+  { id: 11, key: "braking_overshoot", priority: Priority.Coaching, evidence: Evidence.Derived, template: "Braking zone near {0}% lap: peak {1} above your clean baseline on {2} comparable laps", basis: "Clean in-session brake-peak baseline by lap-distance zone", args: ["int", "percent0", "int"] },
+  { id: 12, key: "building_pace", priority: Priority.Information, evidence: Evidence.Unavailable, template: "Building your pace range · complete three clean laps", basis: "Three clean in-session laps are required for a defensible baseline.", args: [] },
+  { id: 13, key: "no_action", priority: Priority.Information, evidence: Evidence.Derived, template: "No action: pace and race state within the supported band", basis: "Clean in-session baseline", args: [] },
   { id: 14, key: "waiting", priority: Priority.Information, evidence: Evidence.Unavailable, template: "Waiting for iRacing", basis: null, args: [] },
-  { id: 15, key: "paused", priority: Priority.Information, evidence: Evidence.Measured, template: "Live coaching paused", basis: null, args: [] },
+  { id: 15, key: "paused", priority: Priority.Information, evidence: Evidence.Measured, template: "Live coaching paused", basis: "User control", args: [] },
 ];
 
 export type Conversion = { readonly scale: number; readonly offset: number };
@@ -229,6 +229,18 @@ const CONVERSIONS: Readonly<Record<string, Readonly<Record<string, Conversion>>>
 export function conversion(from: string, to: string): Conversion | null {
   if (from === to) return { scale: 1, offset: 0 };
   return CONVERSIONS[from]?.[to] ?? null;
+}
+
+const UNIT_LABELS: ReadonlyMap<string, string> = new Map([
+  ["C", "°C"],
+  ["F", "°F"],
+  ["m/s2", "m/s²"],
+  ["lap", "laps"],
+]);
+
+/** Display label of a unit id (`unit_labels`); a unit without an entry displays as written. */
+export function unitLabel(unit: string): string {
+  return UNIT_LABELS.get(unit) ?? unit;
 }
 
 export interface TileSpec {

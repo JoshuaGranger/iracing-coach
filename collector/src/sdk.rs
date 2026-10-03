@@ -35,7 +35,8 @@ pub trait SdkMap: Send {
     }
 }
 
-/// Opens the map. `Ok(None)` means it does not exist (iRacing never ran).
+/// Opens the map. `Ok(None)` means the mapping does not exist (iRacing is not running); any other
+/// failure is an error, which is unknown evidence, not permission for file work.
 pub trait MapSource: Send {
     fn open(&mut self) -> io::Result<Option<Box<dyn SdkMap>>>;
 }
@@ -216,7 +217,8 @@ impl SdkReader {
                 .last_open_ms
                 .is_some_and(|t| now_ms.saturating_sub(t) < REOPEN_INTERVAL_MS)
             {
-                self.evidence = Evidence::NoMap;
+                // Between attempts the last evidence stands: `NoMap` only after an open that
+                // found no mapping, `Stale` after a failed one.
                 return Poll::NoData;
             }
             self.last_open_ms = Some(now_ms);
@@ -227,16 +229,19 @@ impl SdkReader {
                     return self.disconnected_pulse(now_ms, unix_ms);
                 }
                 Err(e) => {
+                    // Access denied, out of resources, a mapping that cannot be sized: iRacing
+                    // may well be running on track.
                     crate::debug!("sdk map open failed: {e}");
-                    self.evidence = Evidence::NoMap;
+                    self.evidence = Evidence::Stale;
                     return self.disconnected_pulse(now_ms, unix_ms);
                 }
             }
         }
 
         let Some(header) = self.map.as_deref().and_then(read_header) else {
+            // The map exists but its header cannot be read: unknown, not absent.
             self.close_map();
-            self.evidence = Evidence::NoMap;
+            self.evidence = Evidence::Stale;
             return self.disconnected_pulse(now_ms, unix_ms);
         };
         self.header = Some(header);
@@ -428,5 +433,96 @@ impl SdkReader {
             session: None,
         };
         self.context = Some(Arc::new(ctx));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gate::TrackGate;
+    use crate::util::ManualClock;
+
+    /// A map too short to hold the header: it opens, but nothing can be read from it.
+    struct ShortMap;
+
+    impl SdkMap for ShortMap {
+        fn len(&self) -> usize {
+            8
+        }
+        fn read(&self, offset: usize, dst: &mut [u8]) -> bool {
+            offset + dst.len() <= 8 && {
+                dst.fill(0);
+                true
+            }
+        }
+        fn wait(&mut self, _: Duration) {}
+    }
+
+    enum Open {
+        /// The mapping does not exist.
+        Absent,
+        /// Opening failed for another reason (access denied, no resources).
+        Failed,
+        /// The mapping opens but its header is unreadable.
+        ShortHeader,
+    }
+
+    impl MapSource for Open {
+        fn open(&mut self) -> io::Result<Option<Box<dyn SdkMap>>> {
+            match self {
+                Open::Absent => Ok(None),
+                Open::Failed => Err(io::Error::other("access denied")),
+                Open::ShortHeader => Ok(Some(Box::new(ShortMap))),
+            }
+        }
+    }
+
+    /// What the gate allows after the reader's pass at `now_ms` (the reader loop reports its
+    /// evidence to the gate after every pass).
+    fn allows(reader: &mut SdkReader, gate: &TrackGate, now_ms: u64) -> bool {
+        reader.poll(now_ms, now_ms);
+        gate.observe(reader.evidence());
+        gate.allows_file_work()
+    }
+
+    fn gate() -> Arc<TrackGate> {
+        TrackGate::new(Arc::new(ManualClock::new(0)))
+    }
+
+    #[test]
+    fn a_missing_mapping_is_no_map_and_allows_file_work() {
+        let gate = gate();
+        let mut reader = SdkReader::new(Box::new(Open::Absent));
+        assert!(allows(&mut reader, &gate, 0));
+        assert_eq!(reader.evidence(), Evidence::NoMap);
+        // Between two attempts nothing changes.
+        assert!(allows(&mut reader, &gate, 100));
+    }
+
+    #[test]
+    fn an_open_failure_is_unknown_evidence_before_and_between_attempts() {
+        let gate = gate();
+        let mut reader = SdkReader::new(Box::new(Open::Failed));
+        assert!(!allows(&mut reader, &gate, 0));
+        assert_eq!(reader.evidence(), Evidence::Stale);
+        // The throttled passes after the failed attempt must not flip to "no map".
+        assert!(!allows(&mut reader, &gate, 100));
+        assert!(!allows(&mut reader, &gate, 900));
+        assert!(!allows(&mut reader, &gate, 1_000), "the retry fails again");
+    }
+
+    #[test]
+    fn an_unreadable_header_is_unknown_evidence_and_stays_so_until_the_map_is_absent() {
+        let gate = gate();
+        let mut reader = SdkReader::new(Box::new(Open::ShortHeader));
+        assert!(!allows(&mut reader, &gate, 0));
+        assert_eq!(reader.evidence(), Evidence::Stale);
+        // The map was closed; during the wait before the next open it is still unknown.
+        assert!(!allows(&mut reader, &gate, 200));
+        assert_eq!(reader.evidence(), Evidence::Stale);
+        // The mapping then disappears: only now is it "not running".
+        reader.source = Box::new(Open::Absent);
+        assert!(allows(&mut reader, &gate, 1_200));
+        assert_eq!(reader.evidence(), Evidence::NoMap);
     }
 }

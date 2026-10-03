@@ -64,6 +64,8 @@ enum Cmd {
         extension: String,
         dest: PathBuf,
         tmp_dir: PathBuf,
+        /// Unix seconds the restaged file carries (the blob's clamped source mtime).
+        mtime: Option<i64>,
         reply: mpsc::SyncSender<Result<()>>,
     },
     Backup {
@@ -140,10 +142,11 @@ impl Archiver {
                             extension,
                             dest,
                             tmp_dir,
+                            mtime,
                             reply,
                         } => {
                             let r = worker.run_op(|| {
-                                core.restage(&sha256, kind, &extension, &dest, &tmp_dir)
+                                core.restage(&sha256, kind, &extension, &dest, &tmp_dir, mtime)
                             });
                             let _ = reply.send(r);
                         }
@@ -241,6 +244,7 @@ impl Archiver {
         extension: &str,
         dest: PathBuf,
         tmp_dir: PathBuf,
+        mtime: Option<i64>,
     ) -> Result<()> {
         let (sha256, extension) = (sha256.to_string(), extension.to_string());
         self.ask(|reply| Cmd::Restage {
@@ -249,6 +253,7 @@ impl Archiver {
             extension,
             dest,
             tmp_dir,
+            mtime,
             reply,
         })
         .await?
@@ -466,7 +471,8 @@ impl Core {
     }
 
     /// Copies a raw object back to the spool with a hash check (re-analysis of an archived-only
-    /// recording).
+    /// recording). The copy gets `mtime` and is fsynced before it is renamed into place, so the
+    /// worker's quiet rule passes at once and the rename publishes a durable file.
     fn restage(
         &self,
         sha: &str,
@@ -474,6 +480,7 @@ impl Core {
         ext: &str,
         dest: &Path,
         tmp_dir: &Path,
+        mtime: Option<i64>,
     ) -> Result<()> {
         let (data, manifest) = self.final_paths(kind, sha, ext);
         if !manifest.exists() {
@@ -488,6 +495,9 @@ impl Core {
             crate::sys::drop_cache(&src);
             let mut out = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
             std::io::copy(&mut src, &mut out)?;
+            if let Some(mtime) = mtime {
+                out.set_modified(util::systime_from_unix(mtime))?;
+            }
             out.sync_all()
         })();
         if let Err(e) = copy {

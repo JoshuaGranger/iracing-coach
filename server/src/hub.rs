@@ -49,7 +49,10 @@ pub struct Viewer {
     queue: Mutex<VecDeque<Bytes>>,
     pub notify: Notify,
     last_sent_ms: AtomicU64,
+    /// When this viewer began dropping frames and has not caught up since (`drain`).
     behind_since: Mutex<Option<Instant>>,
+    /// The queue overflowed since the last `drain`.
+    overflowed: AtomicBool,
     pub closed: AtomicBool,
 }
 
@@ -73,6 +76,7 @@ impl Viewer {
         let mut queue = self.queue.lock().unwrap();
         if queue.len() >= self.capacity() {
             queue.clear();
+            self.overflowed.store(true, Ordering::Relaxed);
             let mut behind = self.behind_since.lock().unwrap();
             behind.get_or_insert_with(Instant::now);
         }
@@ -87,15 +91,18 @@ impl Viewer {
         self.notify.notify_one();
     }
 
+    /// Takes the queued frames. The viewer has caught up only when nothing overflowed since the
+    /// previous drain: a drain that merely emptied a queue the sender kept overflowing does not
+    /// reset the lag (`collector-protocol.md` section 7).
     pub fn drain(&self) -> Vec<Bytes> {
-        let mut queue = self.queue.lock().unwrap();
-        let frames: Vec<Bytes> = queue.drain(..).collect();
-        if queue.is_empty() {
+        let frames: Vec<Bytes> = self.queue.lock().unwrap().drain(..).collect();
+        if !self.overflowed.swap(false, Ordering::Relaxed) {
             *self.behind_since.lock().unwrap() = None;
         }
         frames
     }
 
+    /// How long the viewer has been dropping frames without catching up.
     pub fn behind_for(&self) -> Option<std::time::Duration> {
         self.behind_since.lock().unwrap().map(|t| t.elapsed())
     }
@@ -249,6 +256,7 @@ impl Hub {
         c.last_seen = util::unix_now();
         let new_driver = status["driver"]["customer_id"].as_i64();
         let driver_changed = new_driver != c.driver;
+        let previous_driver = c.driver;
         c.driver = new_driver;
         let was_streaming = c.streaming;
         c.streaming = status["streaming"].as_bool().unwrap_or(false);
@@ -266,6 +274,7 @@ impl Hub {
             presence: presence_json(collector_id, c, viewers),
             driver,
             driver_changed,
+            previous_driver,
             viewers,
         })
     }
@@ -327,6 +336,7 @@ impl Hub {
             notify: Notify::new(),
             last_sent_ms: AtomicU64::new(0),
             behind_since: Mutex::new(None),
+            overflowed: AtomicBool::new(false),
             closed: AtomicBool::new(false),
         });
         let mut inner = self.inner.lock().unwrap();
@@ -511,6 +521,8 @@ pub struct StatusUpdate {
     pub presence: Value,
     pub driver: Option<i64>,
     pub driver_changed: bool,
+    /// The driver before this status (the demand the collector holds belongs to it).
+    pub previous_driver: Option<i64>,
     pub viewers: usize,
 }
 
@@ -556,4 +568,40 @@ pub fn default_trace_layout() -> Value {
             {"row_id": "slip", "label": null, "signals": ["slip"]},
         ]
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn viewer(rate: u32) -> Viewer {
+        Viewer {
+            id: 1,
+            customer: 1,
+            rate: AtomicU32::new(rate),
+            queue: Mutex::new(VecDeque::new()),
+            notify: Notify::new(),
+            last_sent_ms: AtomicU64::new(0),
+            behind_since: Mutex::new(None),
+            overflowed: AtomicBool::new(false),
+            closed: AtomicBool::new(false),
+        }
+    }
+
+    #[test]
+    fn lag_lasts_while_the_queue_keeps_overflowing_and_ends_when_the_viewer_keeps_up() {
+        let v = viewer(2);
+        let frame = Bytes::from_static(b"x");
+        for i in 0..5 {
+            v.offer(&frame, 1_000 + i * 600);
+        }
+        assert!(v.behind_for().is_some(), "the queue overflowed");
+        // emptying the queue is not catching up while the sender kept overflowing it
+        assert_eq!(v.drain().len(), 1);
+        assert!(v.behind_for().is_some());
+        // a drain after a stretch without overflow ends the lag
+        v.offer(&frame, 10_000);
+        assert_eq!(v.drain().len(), 1);
+        assert!(v.behind_for().is_none());
+    }
 }

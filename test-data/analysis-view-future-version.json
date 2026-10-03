@@ -12,6 +12,7 @@
   "data_quality": {
     "level": "high"
   },
+  "field_pace": {},
   "garage61_representative_laps": {
     "representative_laps": []
   },
@@ -32,9 +33,11 @@
       "lap_time_s": 30.5
     }
   ],
+  "pace_attribution": {},
   "race_grades": {
     "overall": "B"
   },
+  "race_investigation": {},
   "race_replay": {
     "available": false
   },
@@ -55,6 +58,7 @@
   "strategy": {
     "minimum_stops": 0
   },
+  "strategy_planning": {},
   "technical_insights": [
     {
       "area": "pace",

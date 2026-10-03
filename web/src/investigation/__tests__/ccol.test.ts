@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CcolError, channelAsFloat, channelValue, decodeCcol, encodeCcol } from "../ccol";
+import { CcolError, channelAsFloat, channelValue, decodeCcol, encodeCcol, joinCcol } from "../ccol";
 
 function sample(): ArrayBuffer {
   const bins = 5;
@@ -73,5 +73,30 @@ describe("CCOL decoder", () => {
     const buffer = sample().slice(0);
     new Uint8Array(buffer, 12, 4).set([0xff, 0xfe, 0xfd, 0xfc]);
     expect(() => decodeCcol(buffer)).toThrow(/header/);
+  });
+
+  it("joins lap-range bodies, widening a channel whose integer width differs between parts", () => {
+    const first = decodeCcol(encodeCcol("a-1", 1, 2, [1], [
+      { id: "speed", dtype: "f64", values: [1, 2] },
+      { id: "rpm", dtype: "i16", values: [10, -32768], missing: -32768 },
+      { id: "gear", dtype: "u8", values: [3, 4], missing: 255 },
+    ]));
+    const second = decodeCcol(encodeCcol("a-1", 1, 2, [2, 3], [
+      { id: "speed", dtype: "f64", values: [3, Number.NaN, 5, 6] },
+      { id: "rpm", dtype: "f64", values: [11, 12, 13, 14] },
+      { id: "gear", dtype: "u8", values: [5, 255, 7, 8].map((v) => (v === 255 ? Number.NaN : v)), missing: 255 },
+    ]));
+    const joined = joinCcol([first, second]);
+    expect(joined.laps).toEqual([1, 2, 3]);
+    expect(joined.byteLength).toBe(first.byteLength + second.byteLength);
+    expect(Array.from(joined.channels.get("speed")!.raw)).toEqual([1, 2, 3, Number.NaN, 5, 6]);
+    const rpm = joined.channels.get("rpm")!;
+    expect(rpm.dtype).toBe("f64");
+    expect(Array.from(channelAsFloat(rpm))).toEqual([10, Number.NaN, 11, 12, 13, 14]);
+    const gear = joined.channels.get("gear")!;
+    expect(gear.dtype).toBe("u8");
+    expect(channelValue(gear, 1, 1, 2)).toBeNaN();
+    expect(channelValue(gear, 2, 0, 2)).toBe(7);
+    expect(() => joinCcol([first, decodeCcol(encodeCcol("a-1", 1, 3, [4], [{ id: "speed", dtype: "f64", values: [1, 2, 3] }]))])).toThrow(CcolError);
   });
 });

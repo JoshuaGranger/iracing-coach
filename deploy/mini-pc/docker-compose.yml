@@ -25,13 +25,9 @@ services:
           nocopy: true
       - /etc/localtime:/etc/localtime:ro
     # /health: database open and migrations applied; independent of the NAS.
-    # The image's Python is used until coach-server gains its `healthcheck` subcommand (W4).
+    # `healthcheck` exits 0 only on a 200 from the COACH_BIND port (contracts/server-config.md).
     healthcheck:
-      test:
-        - CMD
-        - python3.12
-        - -c
-        - "import sys, urllib.request; sys.exit(urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4).status != 200)"
+      test: ["CMD", "/usr/local/bin/coach-server", "healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -717,3 +717,247 @@ async fn job_root_file_names_cannot_escape_the_root() {
     assert!(!root.parent().unwrap().join("evil.ibt").exists());
     assert!(!root.join("evil.ibt").exists());
 }
+
+// ------------------------------------------- review follow-ups (wave 1)
+
+fn light_job(kind: &'static str, arguments: Value) -> jobs::NewJob {
+    jobs::NewJob::new(
+        kind,
+        "light",
+        Some(1001),
+        json!({"arguments": arguments, "needs_setups": false}),
+    )
+    .interactive()
+}
+
+async fn run_light(
+    env: &Env,
+    new: jobs::NewJob,
+) -> (String, Option<String>, Option<String>, Option<Value>) {
+    let id = env
+        .app
+        .store
+        .write_blocking(move |c| {
+            let tx = c.transaction()?;
+            let (id, _) = jobs::enqueue_tx(&tx, &new, false)?;
+            tx.commit()?;
+            Ok(id)
+        })
+        .unwrap();
+    assert!(jobs::run_next(&env.app, "light").await.unwrap());
+    env.query(move |c| {
+        c.query_row(
+            "SELECT state, error_code, error_message, result_json FROM jobs WHERE job_id = ?1",
+            [id],
+            |r| {
+                let result: Option<String> = r.get(3)?;
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    result.map(|t| serde_json::from_str(&t).unwrap()),
+                ))
+            },
+        )
+    })
+}
+
+#[tokio::test]
+async fn an_analysis_that_breaks_its_contract_fails_the_job_as_tool_error() {
+    let env = Env::new().await;
+    require_python!(env);
+    let (outcome, _) = run_behavior(&env, "badresult", |_| {}).await;
+    match outcome {
+        JobOutcome::Failed { code, message } => {
+            assert_eq!(code, "tool_error");
+            assert!(message.contains("analyze-result-v1"), "{message}");
+            assert!(message.contains("analysis_view"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        scalar::<i64>(&env, "SELECT COUNT(*) FROM analyses"),
+        0,
+        "nothing was recorded for the invalid result"
+    );
+}
+
+#[tokio::test]
+async fn baseline_and_tuning_results_are_validated_against_their_contracts() {
+    let env = Env::new().await;
+    require_python!(env);
+    ingest(&env, meta(9300, 0, "driver", None)).await;
+    for (kind, tool_contract, valid_key) in [
+        ("baseline", "setup-package-v1", "package_id"),
+        (
+            "tuning_recommend",
+            "tuning-recommendation-v1",
+            "recommendation",
+        ),
+    ] {
+        let (state, code, message, result) = run_light(&env, light_job(kind, json!({}))).await;
+        assert_eq!(state, "succeeded", "{kind}: {code:?} {message:?}");
+        assert!(result.unwrap().get(valid_key).is_some(), "{kind}");
+
+        let (state, code, message, result) =
+            run_light(&env, light_job(kind, json!({"stub_invalid": true}))).await;
+        assert_eq!(state, "failed", "{kind}");
+        assert_eq!(code.as_deref(), Some("tool_error"), "{kind}");
+        assert!(
+            message.unwrap_or_default().contains(tool_contract),
+            "{kind}: the message names the contract"
+        );
+        assert!(result.is_none(), "{kind}");
+    }
+}
+
+#[tokio::test]
+async fn a_worker_that_closes_stdout_without_exiting_is_stopped_at_the_timeout() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.worker.analyze_timeout = Duration::from_secs(2)),
+        ..Default::default()
+    })
+    .await;
+    require_python!(env);
+    let (outcome, _) = tokio::time::timeout(
+        Duration::from_secs(30),
+        run_behavior(&env, "closeout", |_| {}),
+    )
+    .await
+    .expect("the supervision must not wait on a worker that never exits");
+    assert!(
+        matches!(outcome, JobOutcome::Failed { ref code, .. } if code == "timeout"),
+        "{outcome:?}"
+    );
+    assert!(env.app.jobs.running_ids().is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_descendant_that_ignores_sigterm_is_killed_even_after_the_leader_exits() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.worker.analyze_timeout = Duration::from_secs(2)),
+        ..Default::default()
+    })
+    .await;
+    require_python!(env);
+    let archive = env.data().join("py/1001/archive");
+    let (outcome, _) = run_behavior(&env, "ignoreterm", |_| {}).await;
+    assert!(
+        matches!(outcome, JobOutcome::Failed { ref code, .. } if code == "timeout"),
+        "{outcome:?}"
+    );
+    let child: i32 = std::fs::read_to_string(archive.join("stubborn.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    // The leader dies on SIGTERM; the child ignores it. SIGKILL after the grace must reach it.
+    let state = std::fs::read_to_string(format!("/proc/{child}/stat")).unwrap_or_default();
+    assert!(
+        state.is_empty()
+            || state
+                .rsplit(')')
+                .next()
+                .map(str::trim_start)
+                .is_some_and(|s| s.starts_with('Z')),
+        "the child outlived its job: {state}"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_start_write_releases_the_memory_reservation() {
+    // room for exactly one light job beside the server reserve
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.memory_budget_bytes = (0.6 * (1u64 << 30) as f64) as u64),
+        ..Default::default()
+    })
+    .await;
+    require_python!(env);
+    ingest(&env, meta(9200, 0, "guard", None)).await;
+    env.faults.arm(
+        "job.before_running",
+        coach_server::faults::FaultMode::Io(std::io::ErrorKind::StorageFull),
+    );
+    assert!(
+        jobs::run_next(&env.app, "light").await.is_err(),
+        "SQLite refused the state change"
+    );
+    assert!(
+        env.app.jobs.running_ids().is_empty(),
+        "the admission was released on the error path"
+    );
+    assert_eq!(job_state(&env, "discover")[0].0, "queued");
+    // a leaked reservation would count against the job itself and it would never run again
+    assert!(jobs::run_next(&env.app, "light").await.unwrap());
+    assert_eq!(job_state(&env, "discover")[0].0, "succeeded");
+}
+
+#[tokio::test]
+async fn a_terminal_state_that_sqlite_refuses_is_kept_and_retried() {
+    let env = Env::new().await;
+    require_python!(env);
+    ingest(&env, meta(9201, 0, "terminal", None)).await;
+    env.faults.arm(
+        "job.before_finish",
+        coach_server::faults::FaultMode::Io(std::io::ErrorKind::StorageFull),
+    );
+    assert!(jobs::run_next(&env.app, "light").await.unwrap());
+    assert!(
+        env.app.jobs.running_ids().is_empty(),
+        "the reservation is released although the state write failed"
+    );
+    assert_eq!(
+        job_state(&env, "discover")[0].0,
+        "running",
+        "the row is still waiting for its outcome"
+    );
+    assert_eq!(jobs::flush_pending(&env.app).await, 1);
+    assert_eq!(job_state(&env, "discover")[0].0, "succeeded");
+    assert_eq!(jobs::flush_pending(&env.app).await, 0);
+    // the outcome's follow-up work ran: the session exists and its analysis is queued
+    assert_eq!(scalar::<i64>(&env, "SELECT COUNT(*) FROM sessions"), 1);
+}
+
+#[tokio::test]
+async fn deferred_orphan_cleanup_runs_when_the_drivers_lanes_go_idle() {
+    let env = Env::new().await;
+    let archive = env.data().join("py/1001/archive");
+    std::fs::create_dir_all(&archive).unwrap();
+    let stray = archive.join(".write-stray");
+    std::fs::write(&stray, b"x").unwrap();
+    let cancel = Cancel::default();
+    let busy = match env
+        .app
+        .jobs
+        .try_admit(&env.app.cfg, 9001, "light", Some(1001), 0, &cancel)
+    {
+        jobs::Admit::Yes(guard) => guard,
+        _ => panic!("admitted"),
+    };
+    // a worker of the driver was killed while another one runs: its temp files wait
+    env.app.jobs.defer_cleanup(Some(1001));
+    assert_eq!(jobs::sweep_deferred_cleanup(&env.app), 0);
+    assert!(stray.exists(), "removed while another worker may own it");
+    drop(busy);
+    assert_eq!(jobs::sweep_deferred_cleanup(&env.app), 1);
+    assert!(!stray.exists());
+    assert_eq!(jobs::sweep_deferred_cleanup(&env.app), 0, "done once");
+}
+
+#[tokio::test]
+async fn stray_temp_files_of_killed_workers_are_removed_at_start() {
+    let env = Env::new().await;
+    let archive = env.data().join("py/1001/archive/tuning");
+    std::fs::create_dir_all(&archive).unwrap();
+    std::fs::write(archive.join(".copy-old"), b"x").unwrap();
+    std::fs::write(archive.join(".write-old"), b"x").unwrap();
+    std::fs::write(archive.join("kept.json"), b"{}").unwrap();
+    let env = env.restart().await;
+    let names: Vec<String> = std::fs::read_dir(env.data().join("py/1001/archive/tuning"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["kept.json".to_string()]);
+}

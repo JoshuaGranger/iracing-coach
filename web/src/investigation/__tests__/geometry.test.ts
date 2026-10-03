@@ -35,11 +35,19 @@ function load(): TraceData {
 describe("trace model over the synthetic 82-lap analysis", () => {
   const data = load();
 
-  it("decodes 82 laps x 160 bins and a lap-fraction grid", () => {
+  it("decodes 82 laps x 160 bins and a bucket-centre lap-fraction grid", () => {
     expect(data.laps.length).toBe(82);
     expect(data.bins).toBe(160);
-    expect(data.x[0]).toBe(0);
-    expect(data.x[159]).toBeCloseTo(1, 12);
+    expect(data.x[0]).toBeCloseTo(0.5 / 160, 12);
+    expect(data.x[159]).toBeCloseTo(159.5 / 160, 12);
+  });
+
+  it("places bin i at (i + 0.5) / bins when the table has no lap fraction channel", () => {
+    const catalog = { ...analysis.catalog, signals: analysis.catalog.signals.filter((signal) => signal.source_key !== "lap_pct") };
+    const bare = createTraceData(catalog, decodeCcol(analysis.ccol));
+    expect(bare.x[0]).toBeCloseTo(0.5 / 160, 12);
+    expect(bare.x[159]).toBeCloseTo(159.5 / 160, 12);
+    expect(Array.from(bare.x)).toEqual(Array.from(data.x));
   });
 
   it("converts steering radians to degrees and leaves other units alone", () => {

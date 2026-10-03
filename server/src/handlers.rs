@@ -25,7 +25,7 @@ pub async fn run(app: &AppState, job: &JobRow, cancel: &Cancel) -> JobOutcome {
         "setup_compare" | "baseline" | "tuning_recommend" | "tuning_outcome" | "tuning_history" => {
             light_tool(app, job, cancel).await
         }
-        "import" => crate::import::run(app, job).await,
+        "import" => crate::import::run(app, job, cancel).await,
         "snapshot" => crate::scheduler::snapshot_job(app, job).await,
         "reanalyze" => reanalyze(app, job).await,
         other => Ok(JobOutcome::failed(
@@ -49,7 +49,7 @@ pub async fn run(app: &AppState, job: &JobRow, cancel: &Cancel) -> JobOutcome {
     }
 }
 
-fn worker_failure(error: WorkerError) -> JobOutcome {
+pub(crate) fn worker_failure(error: WorkerError) -> JobOutcome {
     match error {
         WorkerError::Cancelled => JobOutcome::Cancelled,
         other => JobOutcome::failed(other.code(), other.message()),
@@ -57,7 +57,7 @@ fn worker_failure(error: WorkerError) -> JobOutcome {
 }
 
 /// One tool call in a fresh worker process, with orphan cleanup after a kill.
-async fn call_worker(
+pub(crate) async fn call_worker(
     app: &AppState,
     job: &JobRow,
     tool: &str,
@@ -87,8 +87,22 @@ async fn call_worker(
         let idle = app.jobs.driver_idle_except(job.customer_id, job.job_id);
         let pid = pid.load(Ordering::SeqCst);
         cleanup_after_kill(&archive, (pid != 0).then_some(pid), idle);
+        if !idle {
+            // another worker of the driver is running: its temp files go when the driver is idle
+            app.jobs.defer_cleanup(job.customer_id);
+        }
     }
-    result
+    // A result that does not meet its Python contract fails the job (`contracts/README.md`).
+    let result = result?;
+    if let Some(contract) = crate::schema::worker_contract_for(tool)
+        && let Err(message) = app.contracts.check(contract, &result)
+    {
+        return Err(WorkerError::ToolError {
+            error: "contract_mismatch".into(),
+            message,
+        });
+    }
+    Ok(result)
 }
 
 fn link_or_copy(src: &Path, dest: &Path) -> std::io::Result<()> {
@@ -118,25 +132,7 @@ pub async fn prepare_root(
     for (sha, name) in recordings {
         let spool = ready_path(app, sha);
         if !spool.exists() {
-            app.archiver
-                .restage(
-                    sha,
-                    ArchiveKind::Recording,
-                    "ibt",
-                    spool.clone(),
-                    app.cfg.spool_incoming(),
-                )
-                .await?;
-            let sha = sha.clone();
-            app.store
-                .write(move |conn| {
-                    conn.execute(
-                        "UPDATE blobs SET spool_present = 1 WHERE sha256 = ?1",
-                        [sha],
-                    )?;
-                    Ok(())
-                })
-                .await?;
+            crate::ingest::restage_recording(app, sha).await?;
         }
         // the name came from a collector: keep only its last path component
         let base = name.rsplit(['/', '\\']).next().unwrap_or("");
@@ -187,7 +183,7 @@ pub async fn prepare_root(
     Ok((root, names))
 }
 
-fn cleanup_root(root: &Path) {
+pub(crate) fn cleanup_root(root: &Path) {
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -281,7 +277,8 @@ async fn apply_discovery(
         return Ok(JobOutcome::failed("no_session_found", reason));
     };
     let group_id = group["group_id"].as_str().unwrap_or_default().to_string();
-    let path_dependent = group["time_source"] == "mtime" && group_id.starts_with("local:");
+    // A group keyed by recording time from the file mtime embeds the recording path (worker-interface.md section 3).
+    let path_dependent = group["time_source"] == "mtime";
     let group_key = if path_dependent {
         format!("local-file:{sha}")
     } else {

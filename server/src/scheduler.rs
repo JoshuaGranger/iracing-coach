@@ -1,5 +1,5 @@
 //! Scheduler: user-data snapshots (hourly when changed, daily to the NAS, on demand and on
-//! shutdown), archive retries with backoff, idle-upload and request-log cleanup, NAS probe.
+//! shutdown), archive and ingest retries with backoff, idle-upload and request-log cleanup, NAS probe.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -284,6 +284,15 @@ pub async fn tick(app: &AppState, now: i64) -> Result<Value> {
         })
         .await?;
     let retried = retry_archives(app, now).await?;
+    // Recordings still `verified` after a failed ingest (SQLite full or busy) are parsed again
+    // here: nothing else would retry them until the next upload or restart.
+    let ingested = match crate::ingest::ingest_pending(app).await {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!(error = %e, "ingest retry failed");
+            0
+        }
+    };
     app.archiver.probe().await;
 
     let mut snapshot = Value::Null;
@@ -331,7 +340,9 @@ pub async fn tick(app: &AppState, now: i64) -> Result<Value> {
         }
         snapshot = json!({"generation": generation, "created": created, "nas": nas});
     }
-    Ok(json!({"idle_uploads_removed": idle, "archives_requeued": retried, "snapshot": snapshot}))
+    Ok(
+        json!({"idle_uploads_removed": idle, "archives_requeued": retried, "recordings_ingested": ingested, "snapshot": snapshot}),
+    )
 }
 
 pub fn spawn(app: &AppState) {

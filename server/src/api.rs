@@ -151,7 +151,7 @@ pub fn router(app: AppState) -> Router {
         .route("/ws/live/{customer_id}", get(crate::ws::live_ws))
         .nest("/api/v1", api)
         .route("/api/{*rest}", any(api_not_found));
-    router = match &app.cfg.web_dir {
+    router = match app.cfg.web_dir.as_ref().filter(|dir| dir.is_dir()) {
         Some(dir) => {
             use tower_http::services::{ServeDir, ServeFile};
             let index = dir.join("index.html");
@@ -1430,7 +1430,7 @@ async fn admin_import(State(app): State<AppState>, body: Bytes) -> Resp {
                 |r| r.get(0),
             )?;
             let new =
-                NewJob::new("import", "server", customer, json!({"bundle_sha256": sha})).keyed(key);
+                NewJob::new("import", "light", customer, json!({"bundle_sha256": sha})).keyed(key);
             let (id, _) = jobs::enqueue_tx(&tx, &new, !imported)?;
             let job = jobs::job_ref(&tx, id)?;
             tx.commit()?;

@@ -229,10 +229,14 @@ paths:
       summary: |
         160-bin lap traces as a columnar binary container (`application/vnd.coach.columns`):
         bytes 0-3 "CCOL", u16 version 1, u16 reserved 0, u32 header length H, H bytes of UTF-8 JSON
-        `TraceBlobHeader`, zero padding to an 8-byte boundary, then for each channel in header order
-        a little-endian typed array of `laps.length x bins` values, lap-major, each array starting at
-        its `offset` (from the start of the data section, 8-byte aligned). Missing values are NaN
-        (floats) or the channel's `missing` sentinel. Compressed with gzip/br when the client accepts it.
+        `TraceBlobHeader`, zero padding up to the data section, which starts at the first file offset
+        at or after 12 + H that is a multiple of 8, then for each channel in header order a
+        little-endian typed array of `laps.length x bins` values, lap-major, each array starting at
+        its `offset` (from the start of the data section, a multiple of 8; zero padding between
+        arrays). Bin i of a lap lies at lap fraction (i + 0.5) / bins, the backend's `lap_pct` for
+        that distance bucket; a bucket the backend left empty is missing in every channel. Missing
+        values are NaN (floats) or the channel's `missing` sentinel. Compressed with gzip/br when the
+        client accepts it.
         Encoding rule: each channel copies one backend `lap_traces` point key (`TraceSignal.source_key`)
         in the backend's unit. Non-integer values are `f64` (exact copy of the Python double); `i16`/`u8`
         only for keys whose every value is an integer in range, with a `missing` sentinel outside the
@@ -252,7 +256,7 @@ paths:
           description: Columnar traces
           x-max-bytes: 16777216
           headers:
-            X-Coach-Trace-Laps: { schema: { type: integer }, description: Number of laps in the body. }
+            X-Coach-Trace-Laps: { schema: { type: integer }, description: "Number of laps in the body: the length of its TraceBlobHeader `laps` array." }
           content:
             application/vnd.coach.columns:
               schema: { type: string, format: binary }
@@ -260,7 +264,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/ProjectionPending" }
         "413":
-          description: Selection exceeds 16 MiB; narrow `laps` or `channels`.
+          description: "Selection exceeds 16 MiB; narrow `laps` or `channels`. Only an analysis near the bound with every lap and channel selected reaches it; the browser then requests lap ranges (for example halves) and joins them."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -316,7 +320,7 @@ paths:
   /api/v1/setups/compare:
     post:
       tags: [setups]
-      summary: Compare two setups of the same car (Python `compare_iracing_setups`). Answers inline when done within 10 s, else 202.
+      summary: Compare two setups of the same car (Python `compare_iracing_setups`). Answers inline when done within the server's inline wait (default 10 s), else 202.
       requestBody:
         required: true
         content:
@@ -353,7 +357,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
     get:
       tags: [tuning]
-      summary: Progressive Tuning context for one analysis (eligibility, exact identity, turn map, representative runs).
+      summary: "Progressive Tuning context for one analysis (eligibility, exact identity, turn map, representative runs). Unlike the view payloads it carries no ETag, because the server merges request-time fields (`binding`, `open_targets`, `draft_identity_key`) into the projected `tuning.json`; it is sent with Cache-Control no-cache."
       responses:
         "200":
           description: Tuning context
@@ -611,6 +615,7 @@ paths:
               schema: { $ref: "#/components/schemas/DriverPrefs" }
     put:
       tags: [user-data]
+      summary: "Top-level merge: each field present in the body replaces the stored value (null clears it; `units` is replaced as a whole); absent fields keep their stored value. Sending the full body is valid."
       parameters: [{ $ref: "#/components/parameters/IfMatch" }]
       requestBody:
         required: true
@@ -878,6 +883,7 @@ components:
         projection_version: { type: integer }
         worker_profile_version: { type: [string, "null"] }
         python_version: { type: [string, "null"] }
+        collector_newer_than_server: { type: boolean, description: "A connected collector sent live frames with a table_version above the server's; those frames are not relayed (live-frame.md)." }
         nas:
           type: object
           required: [state, pending_archive]
@@ -1034,8 +1040,8 @@ components:
       properties:
         analysis_id: { type: string }
         projection_version: { type: integer }
-        schema_version: { type: integer }
-        profile_version: { type: string }
+        schema_version: { type: integer, description: "analysis_view schema the view was projected from: 1 (crate-api.md section 5 lists the accepted inputs)." }
+        profile_version: { type: string, description: "analysis_profile_version; empty string when the backend left it null." }
 
     Lap:
       type: object
@@ -1080,12 +1086,10 @@ components:
             "damage_repair_context" when there are none and automatic_coaching_reference_eligible is false. A missing
             or non-finite number skips its test. Duplicates removed case-insensitively, first kept. The browser
             humanizes codes for display.
-        caution: { type: [boolean, "null"] }
-        pit_in: { type: [boolean, "null"] }
-        pit_out: { type: [boolean, "null"] }
-        run_number: { type: [integer, "null"] }
-        run_age_laps: { type: [number, "null"], description: "Accumulated green exposure in the run." }
-        incident_count: { type: [integer, "null"] }
+        pit_in: { type: [boolean, "null"], description: "Backend laps[].pit_entry." }
+        pit_out: { type: [boolean, "null"], description: "Backend laps[].pit_exit." }
+        run_number: { type: [integer, "null"], description: "The runs[] entry whose lap_numbers contains this lap." }
+        run_age_laps: { type: [number, "null"], description: "Accumulated green exposure in the run (race_investigation.laps[].green_exposure)." }
 
     RaceView:
       allOf:
@@ -1423,7 +1427,7 @@ components:
         source_key: { type: string, description: "Backend analysis_view.lap_traces point key copied into this channel (e.g. speed_mph)." }
         label: { type: string }
         short_label: { type: [string, "null"] }
-        unit: { type: string }
+        unit: { type: string, description: "The backend key's unit, as served (steering ids carry rad; the browser converts for display, rad to degrees)." }
         digits: { type: [integer, "null"] }
         category: { type: [string, "null"] }
         minimum: { type: [number, "null"] }
@@ -1449,7 +1453,6 @@ components:
           description: "The joined Lap's exclusion_reasons; [\"eligibility_not_recorded\"] when no Lap has this number."
         run_number: { type: [integer, "null"] }
         run_age_laps: { type: [number, "null"] }
-        fastest: { type: boolean }
         conditions:
           type: [object, "null"]
           additionalProperties: true
@@ -1462,9 +1465,19 @@ components:
         - type: object
           required: [bins_per_lap, laps, signals, steering_basis, budgets]
           properties:
-            bins_per_lap: { type: integer, description: "160 today (about 0.6 % of a lap)." }
+            bins_per_lap: { type: integer, description: "160 today (about 0.6 % of a lap). Bin i lies at lap fraction (i + 0.5) / bins_per_lap (the CCOL rule on the traces endpoint)." }
             laps: { type: array, maxItems: 2000, items: { $ref: "#/components/schemas/TraceLap" } }
-            signals: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/TraceSignal" } }
+            signals:
+              type: array
+              maxItems: 128
+              items: { $ref: "#/components/schemas/TraceSignal" }
+              description: |
+                The 15 fixed signals in this order when their backend key occurs (id <- source key): speed <- speed_mph,
+                session-time <- session_time_s, throttle, brake, steering <- steering_rad, steering-peak <-
+                steering_abs_peak_rad, slip <- slip_angle_deg, yaw <- yaw_rate_deg_s, lateral-g <- lateral_g,
+                longitudinal-g <- longitudinal_g, gear, rpm, latitude, longitude, tire-stress <- tire_stress_proxy; then the
+                backend's additional signals in backend order, up to 128 in all.
+            omitted_signals: { type: array, maxItems: 1024, items: { type: string }, description: "Backend additional-signal keys beyond the 128-signal cap; not in the CCOL body." }
             sector_start_pcts: { type: array, maxItems: 64, items: { type: number }, description: "lap_traces.sector_start_pcts, ascending lap fractions in [0, 1) (Traces sector bands)." }
             steering_basis: { $ref: "#/components/schemas/SteeringBasis" }
             budgets:
@@ -1599,7 +1612,7 @@ components:
         relative_path: { type: string }
         format: { type: string, enum: [sto, htm] }
         present: { type: boolean }
-        linked_setup_id: { type: [integer, "null"], description: "Null = values unknown (encrypted .sto, never seen unmodified). Set only from an observation with is_modified = false (collector-protocol.md section 8)." }
+        linked_setup_id: { type: [integer, "null"], description: "Null = values unknown (encrypted .sto, never seen unmodified). Derived by the server when it answers, never stored: only from an observation with is_modified = false or an htm_export of the file (collector-protocol.md section 8)." }
 
     SetupSummary:
       type: object
@@ -1636,6 +1649,7 @@ components:
         is_modified: { type: [boolean, "null"] }
         load_type: { type: [string, "null"] }
         session_id: { type: [integer, "null"] }
+        analysis_id: { type: [string, "null"], description: "The session's current analysis (recording observations), so Tune this setup needs no second request." }
         visit_id: { type: [string, "null"] }
 
     SetupDetail:
@@ -1836,7 +1850,18 @@ components:
       type: object
       required: [body]
       properties:
-        body: { type: object, additionalProperties: true, description: "ProgressiveTuningDraft: feedback items, goal, note, representative run ids, turn corrections." }
+        body: { $ref: "#/components/schemas/TuningDraftBody" }
+
+    TuningDraftBody:
+      type: object
+      description: "C# ProgressiveTuningDraft as the browser keeps it. Unknown fields round-trip. D12 maps legacy drafts to these fields."
+      additionalProperties: true
+      properties:
+        goal: { type: [string, "null"], description: "TuningRecommendRequest.goal value." }
+        general_note: { type: string, maxLength: 4000 }
+        representative_run_ids: { type: array, maxItems: 3, items: { type: string, maxLength: 80 }, description: "run_number values as decimal text." }
+        open_target_analysis_id: { type: [string, "null"] }
+        feedback: { type: array, maxItems: 100, items: { type: object, additionalProperties: true, description: "TuningFeedbackItem fields; a draft may hold incomplete items." } }
 
     TuningDraft:
       allOf:
@@ -1852,7 +1877,12 @@ components:
       type: object
       required: [body]
       properties:
-        body: { type: object, additionalProperties: true }
+        body:
+          type: object
+          description: "Turn-name corrections for one track configuration and map identity. Unknown fields round-trip."
+          additionalProperties: true
+          properties:
+            corners: { type: array, maxItems: 100, items: { type: object, additionalProperties: true, description: "TuningMapCorner fields (corner_id, label, start_pct, apex_pct, end_pct)." } }
 
     TurnAnnotations:
       allOf:
@@ -2021,7 +2051,7 @@ components:
         row_span: { type: integer, minimum: 1, maximum: 8 }
         column_span: { type: integer, minimum: 1, maximum: 8 }
         style: { $ref: "#/components/schemas/LiveTileStyle" }
-        unit: { type: [string, "null"] }
+        unit: { type: [string, "null"], description: "A live-channels.json tiles[].units id (C, F, m/s2, lap, mph, ...), never a display label (°C). Null or an id the tile does not list selects the tile's default unit. D12 maps legacy labels (°C, °F, m/s², laps) to ids." }
         precision: { type: [integer, "null"], minimum: 0, maximum: 3 }
         trend_window: { type: [string, "null"], enum: [s15, s30, s60, one_lap, three_laps, null] }
         accent: { type: [string, "null"], enum: [default, blue, green, amber, coral, violet, null] }
@@ -2209,10 +2239,33 @@ components:
               track_config_key: { type: string }
               map_identity: { type: string }
               body: { type: object, additionalProperties: true }
-        tuning_experiments:
+        legacy_analyses:
           type: array
-          description: "Rows of the legacy history.sqlite3 tuning_experiments table plus their experiment files, imported into the driver's worker archive by a light job."
-          items: { type: object, additionalProperties: true }
+          maxItems: 5000
+          description: "Stable identity of every legacy analysis that legacy notes or tuning experiments reference. The server resolves each to the matching session's current analysis (null when unresolved) and passes the map to import_legacy_tuning_experiments."
+          items:
+            type: object
+            required: [legacy_analysis_id]
+            properties:
+              legacy_analysis_id: { type: string, maxLength: 128 }
+              recording_sha256: { type: array, items: { type: string } }
+              subsession_id: { type: [integer, "null"] }
+              sim_session_num: { type: [integer, "null"] }
+        legacy_archive:
+          type: [object, "null"]
+          description: "The legacy worker archive's history.sqlite3 and tuning/ files, copied byte for byte. The server writes them under the import job root's legacy/ and runs import_legacy_tuning_experiments (worker-interface.md section 4) on them; nothing else reads them."
+          required: [files]
+          properties:
+            files:
+              type: array
+              maxItems: 5000
+              items:
+                type: object
+                required: [relative_path, sha256, content_base64]
+                properties:
+                  relative_path: { type: string, maxLength: 1024, description: "history.sqlite3 or tuning/..., forward slashes, no .. segments." }
+                  sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+                  content_base64: { type: string }
         legacy_items:
           type: array
           description: "Parked features' data preserved verbatim (saved Tests, plans, trials, activity)."
