@@ -7,7 +7,8 @@
 #   ha.csv        unix_time,time_total_s,http_code              (1 per second)
 #   frigate.jsonl {"t": unix_time, "stats": <api/stats>}        (1 per second)
 #   memory.csv    unix_time,memory.current,memory.peak          (4 per second)
-#   worker.csv    unix_time,pid,vm_hwm_kib,vm_rss_kib,cmdline   (4 per second, worker processes only)
+#   worker.csv    unix_time,pid,vm_hwm_kib,vm_rss_kib,cmdline   (4 per second, worker processes and
+#                 their coach-analysis children: decode, merge, kernels)
 #   abort         written once when the P1 abort rule fires (the orchestrator cancels the run)
 set -u
 out=$1
@@ -25,10 +26,10 @@ fast() {
     for pid in $(cat "$cg/cgroup.procs" 2>/dev/null); do
       cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || continue
       case "$cmd" in
-        *mcp_server.py*)
+        *mcp_server.py*|*worker_trace.py*|*coach-analysis\ *)
           hwm=$(awk '/^VmHWM:/ {print $2}' "/proc/$pid/status" 2>/dev/null)
           rss=$(awk '/^VmRSS:/ {print $2}' "/proc/$pid/status" 2>/dev/null)
-          [ -n "$hwm" ] && printf '%s,%s,%s,%s,%s\n' "$now" "$pid" "$hwm" "$rss" "${cmd%% -X*}" >> "$out/worker.csv"
+          [ -n "$hwm" ] && printf '%s,%s,%s,%s,%s\n' "$now" "$pid" "$hwm" "$rss" "$(printf '%s' "${cmd%% -X*}" | tr ',' ' ')" >> "$out/worker.csv"
           ;;
       esac
     done
