@@ -92,3 +92,10 @@ Reason: the contract change requests the wave-1 follow-up agents raised (`review
 - `api.openapi.yaml`: `ImportBundle.tuning_drafts` items gain optional `legacy_analysis_id`; the server re-keys each draft to the resolved analysis's `draft_identity_key` or parks it as `legacy_items` (kind `tuning_draft`); `legacy_archive` states that the worker's `tuning/drafts/` files are carried and preserved, not converted (W9).
 - Scaffold: `tools/wsl/check.sh` defaults to scope `all` (W6, wave-1 follow-up, entry missing until now); `tools/check.ps1 -LinuxScope` defaults to `all` to match it (W6).
 - Proof: `api.openapi.yaml` parses (js-yaml), validates as OpenAPI 3.1 (`@apidevtools/swagger-parser`), all 113 component schemas compile under JSON Schema 2020-12 (ajv), all 260 `$ref`s resolve, all 18 `x-source` objects carry `x-consumed-fields`; `pnpm gen:wire` and `pnpm gen:theme` regenerated with no drift on a second check; `cargo check --workspace` passes.
+
+### 2026-10-03, wave 3: analysis re-queue wording (integration lead; additive clarification, no review needed)
+
+Reason: W9's G1 finding (`acceptance/g1-analysis.md`, Findings for owners): `POST /api/v1/sessions/{id}/analysis` also returns an existing succeeded job with the same key and queues nothing, which the summary did not say.
+
+- `api.openapi.yaml`: the operation gains `x-idempotency`, stating what `server/src/jobs.rs` (`enqueue_tx`, `queue_analysis_tx`) does: queued, running or succeeded jobs with the analysis key are returned unchanged; failed, cancelled or interrupted ones are re-queued under the same `job_id`; a deferred one stays deferred while over the admission ceiling. The summary is unchanged, so no generated file changes.
+- Proof: `node tools/wire/gen-wire.mjs --check` reports no drift; on the dev-PC server a second `POST /api/v1/sessions/1/analysis` after a succeeded analysis answered `202 {"job_id":5,"kind":"analyze","state":"succeeded"}` (`acceptance/e2e-dev-pc.md`).

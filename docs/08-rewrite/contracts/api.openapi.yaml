@@ -159,6 +159,12 @@ paths:
     post:
       tags: [library]
       summary: Queue (re)analysis. Idempotent while one is queued or running for the same profile.
+      x-idempotency: >-
+        Keyed by the analysis key (`jobs.idempotency_key`: session, membership digest, analyzer bundle
+        digest, profile). A job with that key that is queued, running or succeeded is returned as it is
+        and nothing is queued, so an analysis whose recordings, analyzer and profile are unchanged is never
+        re-run; a failed, cancelled or interrupted one goes back to queued under the same job_id, and a
+        deferred one stays deferred while it exceeds the admission ceiling.
       responses:
         "202": { $ref: "#/components/responses/Accepted" }
         "404": { $ref: "#/components/responses/NotFound" }

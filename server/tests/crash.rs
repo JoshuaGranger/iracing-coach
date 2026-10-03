@@ -243,6 +243,11 @@ async fn a_killed_server_never_loses_the_spool_copy_or_half_archives_at_each_arc
             );
         }
 
+        // the manifest waits for discovery (jobs.rs ARCHIVE_WAITS_FOR_DISCOVERY)
+        while coach_server::jobs::run_next(&env.app, "light")
+            .await
+            .unwrap()
+        {}
         while coach_server::jobs::run_next(&env.app, "io").await.unwrap() {}
         assert_eq!(std::fs::read(&data).unwrap(), bytes, "{point}: NAS copy");
         assert!(manifest.exists(), "{point}");

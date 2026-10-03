@@ -696,7 +696,7 @@ async fn archive(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
                     }
                     if let Some(info_sha) = info_sha {
                         let types: Vec<String> = conn
-                            .prepare("SELECT DISTINCT s.session_type FROM session_recordings sr JOIN sessions s ON s.session_id = sr.session_id WHERE sr.recording_sha256 = ?1 AND s.session_type IS NOT NULL")?
+                            .prepare("SELECT DISTINCT s.session_type FROM session_recordings sr JOIN sessions s ON s.session_id = sr.session_id WHERE sr.recording_sha256 = ?1 AND s.session_type IS NOT NULL ORDER BY s.session_type")?
                             .query_map([&sha3], |r| r.get(0))?
                             .collect::<rusqlite::Result<_>>()?;
                         manifest["recording"] = json!({

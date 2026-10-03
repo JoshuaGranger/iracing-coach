@@ -295,6 +295,11 @@ async fn rebuild_index_recovers_blobs_and_recordings_from_manifests() {
         100,
     )
     .await;
+    // the recordings' manifests wait for their discovery
+    while coach_server::jobs::run_next(&env.app, "light")
+        .await
+        .unwrap()
+    {}
     while coach_server::jobs::run_next(&env.app, "io").await.unwrap() {}
     assert_eq!(
         count(

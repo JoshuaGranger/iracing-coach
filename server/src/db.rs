@@ -244,6 +244,31 @@ pub fn user_data_generation(conn: &Connection) -> rusqlite::Result<i64> {
     )
 }
 
+/// The iRating a recording carries as a rating, else `None`. iRacing writes 1 into sessions
+/// without a subsession (Offline Testing, `SubSessionID` 0), which is a placeholder, not a rating.
+pub fn recorded_irating(irating: Option<i64>, subsession_id: Option<i64>) -> Option<i64> {
+    irating.filter(|_| subsession_id.is_some_and(|s| s > 0))
+}
+
+/// Whether a parsed recording of `customer` with a real subsession starts after `start_time_utc`,
+/// so that its rating (not this recording's) is the driver's latest.
+pub fn newer_rated_recording(
+    conn: &Connection,
+    customer_id: i64,
+    sha256: &str,
+    start_time_utc: Option<&str>,
+) -> rusqlite::Result<bool> {
+    let Some(start) = start_time_utc else {
+        return Ok(false);
+    };
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM recordings WHERE customer_id = ?1 AND sha256 != ?2
+           AND ingest_state IN ('parsed', 'discovered') AND subsession_id > 0 AND start_time_utc > ?3)",
+        rusqlite::params![customer_id, sha256, start],
+        |r| r.get(0),
+    )
+}
+
 /// Upserts a driver row; the display name only changes when `name` is given.
 pub fn upsert_driver(
     conn: &Connection,

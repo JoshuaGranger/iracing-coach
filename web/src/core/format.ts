@@ -80,6 +80,22 @@ export function sessionTypeLabel(t: string | null | undefined): string {
   return humanize(t);
 }
 
+export type EventPhase = { session_id: number; session_type?: string | null };
+
+const PHASE_ORDER = ["Practice", "Qualifying", "Race"];
+
+/** The event's phases in running order. `event_sessions` holds only the other phases, so the open session joins them. */
+export function eventPhases(current: EventPhase, others: readonly EventPhase[]): EventPhase[] {
+  const rank = (p: EventPhase) => {
+    const i = PHASE_ORDER.indexOf(sessionTypeLabel(p.session_type));
+    return i < 0 ? PHASE_ORDER.length : i;
+  };
+  return [...others.filter((o) => o.session_id !== current.session_id), current]
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => rank(a.p) - rank(b.p) || a.i - b.i)
+    .map(({ p }) => p);
+}
+
 export function trackLabel(track: string | null | undefined, config: string | null | undefined): string {
   if (!track) return "Track unknown";
   return config && config.trim() ? `${track} - ${config}` : track;

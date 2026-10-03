@@ -27,7 +27,7 @@ Requests are made by `load.ts` only: the overview (race, runs, investigation, tr
 | `geometry/` | chart geometry as pure functions: `budget.ts` (catalog budgets), `trace-model.ts` (columns, ranges, smoothing, paths, laps), `map-model.ts` (map projection, ribbons, plausibility rules) |
 | `cursor/` | `telemetry-cursor.ts` (chart and map cursor), `track-map.ts`, `race-inspection.ts` (object input), `trace-layout-editor.ts`, `context-splitter.ts`, `cursor-core.ts` and `cursor-config.ts` (pure parts) |
 | `layout-model.ts` | trace layout rules (`AnalysisTraceLayouts.cs`) |
-| `ui/` | Preact components and `investigation.css` (tokens from `gen/theme.css`) |
+| `ui/` | Preact components and `investigation.css` (tokens from `gen/theme.css`); `fit.ts` bounds the workspace to the window (`--ri-fit`), because the shell's `main` and `page` do not |
 | `fixtures/`, `harness/` | deterministic synthetic analysis, its router, the G2 page |
 
 Trace signal ids are the catalog's. The cursor and charts use these catalog source keys when present: `lap_pct` (bin x), `session_time_s` (time delta), `latitude` and `longitude` (laps on the map). A signal whose catalog unit is `rad` and whose id is `steering` or `steering-wheel-angle` is shown in degrees.

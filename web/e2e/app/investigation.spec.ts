@@ -27,7 +27,10 @@ for (const device of DEVICES) {
     test("the one session picker moves between the phases of the event on the same view", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/s/103/traces`));
       await expect(page.getByRole("tab", { name: "Traces" })).toBeVisible();
-      await page.getByLabel("Session", { exact: true }).selectOption({ label: "Qualifying" });
+      const picker = page.getByLabel("Session", { exact: true });
+      await expect(picker.locator("option")).toHaveText(["Practice", "Qualifying", "Race"]);
+      await expect(picker.locator("option:checked")).toHaveText("Race");
+      await picker.selectOption({ label: "Qualifying" });
       await expect(page).toHaveURL(new RegExp(`#/d/${DRIVER}/s/102/traces$`));
     });
 

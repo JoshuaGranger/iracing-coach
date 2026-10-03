@@ -113,6 +113,8 @@ struct Inner {
     collectors: HashMap<String, CollectorConn>,
     viewers: HashMap<i64, Vec<Arc<Viewer>>>,
     backlog: HashMap<i64, (VecDeque<Bytes>, u64)>,
+    /// The presence each collector last had published to browsers, without `last_seen_at`.
+    published: HashMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -484,6 +486,25 @@ impl Hub {
             .collectors
             .get(collector_id)
             .map(|c| (c.frames_relayed, c.frames_invalid, c.newer_than_server))
+    }
+
+    /// Whether `presence` differs from what browsers last received for its collector in anything
+    /// but `last_seen_at` (`collector-protocol.md` section 5); it is remembered as published. A
+    /// collector's status arrives every 5 s, and an unchanged one must not reach the SSE stream.
+    pub fn presence_changed(&self, presence: &Value) -> bool {
+        let Some(id) = presence["collector_id"].as_str() else {
+            return true;
+        };
+        let mut comparable = presence.clone();
+        if let Some(map) = comparable.as_object_mut() {
+            map.remove("last_seen_at");
+        }
+        let mut inner = self.inner.lock().unwrap();
+        if inner.published.get(id) == Some(&comparable) {
+            return false;
+        }
+        inner.published.insert(id.to_string(), comparable);
+        true
     }
 
     pub fn presence_list(&self) -> Vec<Value> {

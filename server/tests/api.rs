@@ -1272,3 +1272,107 @@ async fn a_fixed_setup_analysis_lists_compatible_open_targets_and_requires_one()
         .await;
     assert_eq!(unknown.status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn a_recording_names_its_setup_when_the_server_holds_no_such_file() {
+    let env = Env::new().await;
+    // an unmodified load names the file whose values it has, held or not
+    ingest(&env, race_meta(9810, 0, "named")).await;
+    // a modified load names a file its values no longer match
+    let mut edited = race_meta(9811, 0, "edited");
+    edited["car_path"] = json!("other car");
+    edited["setup"]["name"] = json!("Edited.sto");
+    edited["setup"]["is_modified"] = json!(true);
+    ingest(&env, edited).await;
+    // a load with no modified flag proves nothing
+    let mut unknown = race_meta(9812, 0, "unknown");
+    unknown["car_path"] = json!("third car");
+    unknown["setup"]["name"] = json!("Unknown.sto");
+    unknown["setup"]["is_modified"] = Value::Null;
+    ingest(&env, unknown).await;
+
+    let library = env.get("/api/v1/drivers/1001/setups").await.json();
+    let names_of = |car: &str| -> Value {
+        library["setups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["car_path"] == car)
+            .unwrap_or_else(|| panic!("a setup for {car}"))["names"]
+            .clone()
+    };
+    assert_eq!(names_of("stockcars chevyss2020"), json!(["baseline.sto"]));
+    assert_eq!(names_of("other car"), json!([]));
+    assert_eq!(names_of("third car"), json!([]));
+    let named = library["setups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["car_path"] == "stockcars chevyss2020")
+        .unwrap();
+    assert_eq!(named["sto_files"], json!([]), "no file is claimed");
+    let found = env
+        .get("/api/v1/drivers/1001/setups?q=BASELINE")
+        .await
+        .json();
+    assert_eq!(
+        found["setups"].as_array().unwrap().len(),
+        1,
+        "search finds the name"
+    );
+
+    // the held file of the same name (any letter case) adds no second entry
+    env.upload(
+        b"sto bytes",
+        "sto",
+        "Baseline.sto",
+        Some("stockcars chevyss2020/Baseline.sto"),
+        4096,
+    )
+    .await;
+    let library = env.get("/api/v1/drivers/1001/setups").await.json();
+    let named = library["setups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["car_path"] == "stockcars chevyss2020")
+        .unwrap();
+    assert_eq!(named["names"].as_array().unwrap().len(), 1, "{named}");
+    assert_eq!(named["sto_files"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn queueing_the_analysis_of_a_session_without_recordings_is_refused() {
+    let env = Env::new().await;
+    ingest(&env, race_meta(9820, 0, "driver row")).await;
+    env.app
+        .store
+        .write_blocking(|c| {
+            c.execute(
+                "INSERT INTO sessions(customer_id, subsession_id, sim_session_num, group_key, session_type, track,
+                   car_path, start_time_utc, discovered_at)
+                 VALUES (1001, 9821, 0, 'subsession:9821:0', 'Race', 'Stub Speedway', 'stockcars chevyss2020',
+                         '2026-08-01T12:00:00Z', '2026-08-01T13:00:00Z')",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let session_id: i64 = scalar(
+        &env,
+        "SELECT session_id FROM sessions WHERE subsession_id = 9821",
+    );
+    let r = env
+        .post(
+            &format!("/api/v1/sessions/{session_id}/analysis"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(r.json()["error"], "no_recordings");
+    assert_eq!(
+        scalar::<i64>(&env, "SELECT COUNT(*) FROM jobs WHERE kind = 'analyze'"),
+        0,
+        "nothing was queued"
+    );
+}

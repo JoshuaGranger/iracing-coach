@@ -1,10 +1,11 @@
 // Renders Race, Runs, Sections and Traces from the committed g2 fixture (or `--fixture synthetic`) at desktop, tablet and phone sizes
 // and checks structure, console errors, horizontal scroll and the 44 px phone targets. Screenshots go to
-// <repo>/target/W8/shots. Not part of the G2 gate: `node perf/views.mjs`.
+// <repo>/target/W8/shots. It then drives the real app (shell included) at desktop and tablet sizes and checks that each view
+// is bound to the window. Not part of the G2 gate: `node perf/views.mjs`.
 import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { buildHarness, outRoot, pageUrl, serve, VIEWPORTS } from "./harness-lib.mjs";
+import { buildHarness, buildShell, outRoot, pageUrl, serve, serveShell, shellUrl, VIEWPORTS } from "./harness-lib.mjs";
 
 const fixtureName = process.argv.includes("--fixture") ? process.argv[process.argv.indexOf("--fixture") + 1] : "g2";
 const { distDir, fixture } = await buildHarness(fixtureName);
@@ -78,7 +79,47 @@ for (const [sizeName, viewport] of Object.entries(VIEWPORTS)) {
     await context.close();
   }
 }
+
+// The workspace inside the real shell (top bar, main padding, page wrapper): no page scroll, and the panels a view is
+// for are inside the window, not below the fold.
+const shellServer = await serveShell(await buildShell(), fixture);
+const inside = (box, viewport) => box !== null && box.x >= -1 && box.y >= -1 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1;
+for (const sizeName of ["desktop", "tablet"]) {
+  const viewport = VIEWPORTS[sizeName];
+  for (const view of ["race", "runs", "sections", "traces"]) {
+    const context = await browser.newContext({ viewport });
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(String(error)));
+    page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+    await page.goto(shellUrl(shellServer.origin, view));
+    const ready = { race: ".ri-dot", runs: ".ri-dot", sections: "[data-ri-chart]", traces: "[data-analysis-trace-path]" }[view];
+    await page.waitForSelector(ready, { timeout: 30_000 });
+    await page.waitForTimeout(400);
+    const label = `shell ${sizeName}/${view}`;
+    const height = () => page.evaluate(() => ({ document: document.documentElement.scrollHeight, window: window.innerHeight }));
+    const measured = await height();
+    check(`${label} renders without console errors`, errors.length === 0, errors.join(" | ").slice(0, 200));
+    check(`${label} fits the viewport height`, measured.document <= measured.window + 1, `${measured.document} vs ${measured.window}`);
+    const box = async (selector) => page.locator(selector).first().boundingBox();
+    check(`${label} workspace is inside the window`, inside(await box(".ri-workspace"), viewport));
+    if (view === "sections") check(`${label} shows the six channels inside the window`, (await Promise.all([0, 1, 2, 3, 4, 5].map((index) => page.locator("[data-ri-chart]").nth(index).boundingBox()))).every((item) => inside(item, viewport)));
+    if (view === "traces") {
+      check(`${label} track map is inside the window`, inside(await box(".ri-track-map"), viewport));
+      const rows = await Promise.all([0, 1, 2, 3, 4, 5].map((index) => page.locator("[data-analysis-render-row]").nth(index).boundingBox()));
+      check(`${label} six critical rows are inside the window`, rows.every((item) => inside(item, viewport)), rows.map((item) => item && Math.round(item.height)).join(","));
+    }
+    // A shorter window re-fits without a reload.
+    await page.setViewportSize({ width: viewport.width, height: 600 });
+    await page.waitForTimeout(250);
+    const shorter = await height();
+    check(`${label} re-fits a 600 px window`, shorter.document <= 601, `${shorter.document}`);
+    await page.screenshot({ path: path.join(shots, `shell-${sizeName}-${view}.png`) });
+    await context.close();
+  }
+}
 await browser.close();
 server.close();
+shellServer.server.close();
 console.log(failures === 0 ? "all view checks passed" : `${failures} view checks failed`);
 process.exitCode = failures === 0 ? 0 : 1;

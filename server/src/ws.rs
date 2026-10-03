@@ -210,8 +210,15 @@ async fn collector_session(app: AppState, mut socket: WebSocket) {
         }
     }
     if let Some(presence) = app.hub.disconnect(&collector_id, conn_id) {
+        publish_presence_value(&app, None, presence);
+    }
+}
+
+/// Sends a presence event unless it repeats what browsers already have.
+fn publish_presence_value(app: &AppState, customer: Option<i64>, presence: Value) {
+    if app.hub.presence_changed(&presence) {
         app.events
-            .publish("presence", None, json!({"collector": presence}));
+            .publish("presence", customer, json!({"collector": presence}));
     }
 }
 
@@ -223,8 +230,7 @@ fn publish_presence(app: &AppState, collector_id: &str) {
         .find(|p| p["collector_id"] == collector_id)
     {
         let customer = presence["status"]["driver"]["customer_id"].as_i64();
-        app.events
-            .publish("presence", customer, json!({"collector": presence}));
+        publish_presence_value(app, customer, presence);
     }
 }
 
@@ -338,11 +344,7 @@ async fn handle_status(
             })
             .await;
     }
-    app.events.publish(
-        "presence",
-        update.driver,
-        json!({"collector": update.presence}),
-    );
+    publish_presence_value(app, update.driver, update.presence);
     let mut replies = Vec::new();
     if update.driver_changed {
         if let Some(driver) = update.driver

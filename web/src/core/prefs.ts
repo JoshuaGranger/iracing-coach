@@ -13,17 +13,17 @@ export type LastInvestigation = Schemas["LastInvestigation"];
  * outbox with the version last read. The last investigation is also kept in localStorage so "resume" works
  * before the server answers and when it is down.
  */
-export function usePrefs(customerId: number) {
-  const key = paths.prefs(customerId);
+export function usePrefs(customerId: number | null) {
+  const key = customerId === null ? null : paths.prefs(customerId);
   const res = useResource<DriverPrefs>(key);
   useEffect(() => {
-    if (res.data) outbox.observe(key, res.data.version);
+    if (key && res.data) outbox.observe(key, res.data.version);
   }, [key, res.data]);
   return {
     prefs: res.data,
     loading: res.loading,
     error: res.error,
-    save: (patch: DriverPrefsWrite) => savePrefs(customerId, patch),
+    save: (patch: DriverPrefsWrite) => (customerId === null ? Promise.resolve() : savePrefs(customerId, patch)),
   };
 }
 

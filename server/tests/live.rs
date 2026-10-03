@@ -797,3 +797,78 @@ async fn a_browser_that_cannot_keep_up_is_closed_and_stops_counting_as_a_viewer(
     .await
     .unwrap();
 }
+
+fn presence_events(
+    events: &mut tokio::sync::broadcast::Receiver<coach_server::events::Event>,
+) -> Vec<Value> {
+    let mut list = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        if event.kind == "presence" {
+            list.push(event.payload["collector"].clone());
+        }
+    }
+    list
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unchanged_status_is_not_forwarded_as_presence() {
+    let env = Env::new().await;
+    let mut events = env.app.events.subscribe();
+    let addr = serve(&env).await;
+    let seen = tokio::task::spawn_blocking(move || {
+        let mut c = Client::collector(addr);
+        c.hello(COLLECTOR);
+        c.status(false);
+        // the same status again, in a later second: only last_seen_at differs
+        std::thread::sleep(Duration::from_millis(1_200));
+        c.status(false);
+        c.status(false);
+        std::thread::sleep(Duration::from_millis(300));
+        // a change in the streaming flag is forwarded
+        c.status(true);
+        std::thread::sleep(Duration::from_millis(300));
+        // a change in the queue is forwarded
+        c.send(json!({"type": "status", "sim": "in_session", "connected": true, "on_track": true, "in_garage": false,
+                      "on_pit_road": false, "streaming": true,
+                      "driver": {"customer_id": CUSTOMER, "name": "Joshua Granger"},
+                      "session": {"session_epoch": 1, "subsession_id": 9900, "session_num": 0},
+                      "queue": {"uploads_pending": 2, "bytes_pending": 4096}}));
+        std::thread::sleep(Duration::from_millis(300));
+        // the sim leaving the session is forwarded
+        c.send(json!({"type": "status", "sim": "not_running", "connected": false, "on_track": false, "in_garage": false,
+                      "on_pit_road": false, "streaming": false,
+                      "driver": {"customer_id": CUSTOMER, "name": "Joshua Granger"}, "session": null,
+                      "queue": {"uploads_pending": 2, "bytes_pending": 4096}}));
+        std::thread::sleep(Duration::from_millis(300));
+        // closing the socket marks the collector offline, which is forwarded
+        drop(c);
+    })
+    .await;
+    seen.unwrap();
+    // let the server notice the close
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let list = presence_events(&mut events);
+    let summary: Vec<(bool, Value, Value, Value)> = list
+        .iter()
+        .map(|p| {
+            (
+                p["online"].as_bool().unwrap(),
+                p["status"]["sim"].clone(),
+                p["status"]["streaming"].clone(),
+                p["status"]["queue"]["uploads_pending"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            (true, Value::Null, Value::Null, Value::Null), // hello
+            (true, json!("in_session"), json!(false), json!(0)),
+            (true, json!("in_session"), json!(true), json!(0)),
+            (true, json!("in_session"), json!(true), json!(2)),
+            (true, json!("not_running"), json!(false), json!(2)),
+            (false, json!("not_running"), json!(false), json!(2)),
+        ],
+        "presence follows changes only: {list:?}"
+    );
+}

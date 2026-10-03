@@ -972,7 +972,7 @@ class RaceFoundationTests(unittest.TestCase):
         workflow = (SCRIPTS / "workflow.py").read_text(encoding="utf-8")
         # With IRACING_COACH_RAW_ARCHIVE=external the copy is skipped; when it runs, it runs first.
         archive_call = workflow.index("else store.archive_raw_telemetry(source_fingerprints)")
-        cache_lookup = workflow.index("if analysis_cache_path.is_file()")
+        cache_lookup = workflow.index("_read_json_cache(analysis_cache_path")
         analysis_call = workflow.index("analysis = analyze_telemetry(")
 
         self.assertLess(archive_call, cache_lookup)

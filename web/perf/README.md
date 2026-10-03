@@ -15,7 +15,7 @@ Pass: Traces first interactive <= 3 s, cursor >= 55 fps under continuous pointer
 
 Throttling is emulation on desktop Chromium, not a phone.
 
-`node perf/views.mjs` renders Race, Runs, Sections and Traces at desktop, tablet and phone sizes, checks structure, console errors, horizontal scroll and 44 px phone targets, and writes screenshots to `target/W8/shots`. It is not part of the gate.
+`node perf/views.mjs` renders Race, Runs, Sections and Traces at desktop, tablet and phone sizes, checks structure, console errors, horizontal scroll and 44 px phone targets, and writes screenshots to `target/W8/shots`. It then builds the real app and drives it at 1280x720 and 1024x768 with the shell around the workspace (`shell-api.mjs` answers the shell's own reads from the fixture): no page scroll, the track map, the six trace rows and the six section channels inside the window, a 600 px window re-fits. It is not part of the gate.
 
 ## Cursor loop
 

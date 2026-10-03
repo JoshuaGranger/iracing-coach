@@ -67,7 +67,7 @@ try:  # Support package imports and direct execution from the scripts folder.
     from .race_card import build_race_card, render_race_card
     from .reporting import render_report, render_visuals
     from .secure_store import SecureStoreError, credential_exists, credential_storage
-    from .storage import ArchiveStore, safe_slug, session_phase, stable_hash, utc_now
+    from .storage import ArchiveStore, _extended_path, safe_slug, session_phase, stable_hash, utc_now
 except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading.
     from analysis_engine import (
         ANALYSIS_PROFILE_VERSION,
@@ -106,7 +106,7 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
     from race_card import build_race_card, render_race_card
     from reporting import render_report, render_visuals
     from secure_store import SecureStoreError, credential_exists, credential_storage
-    from storage import ArchiveStore, safe_slug, session_phase, stable_hash, utc_now
+    from storage import ArchiveStore, _extended_path, safe_slug, session_phase, stable_hash, utc_now
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -2029,14 +2029,26 @@ def _raw_archive_summary(raw_archive: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _write_json_cache(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    # Archive I/O uses the extended-length spelling, as storage does, so a deep
+    # archive root on Windows (MAX_PATH, LongPathsEnabled=0) still works.
+    target = Path(_extended_path(path))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
     temporary.write_text(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str, allow_nan=False)
         + "\n",
         encoding="utf-8",
     )
-    os.replace(temporary, path)
+    os.replace(temporary, target)
+
+
+def _read_json_cache(path: Path, **options: Any) -> Any:
+    """Parsed cache file, or None when it is absent; read errors propagate."""
+
+    target = Path(_extended_path(path))
+    if not target.is_file():
+        return None
+    return json.loads(target.read_text(encoding="utf-8"), **options)
 
 
 def _elapsed_ms(start: float, end: float) -> float:
@@ -2136,12 +2148,10 @@ def _analyze_race_workflow(
         selection,
     )
     analysis_cache_path = store.root / "analysis-cache" / f"{analysis_cache_key}.json"
-    cached_payload: Any = None
-    if analysis_cache_path.is_file():
-        try:
-            cached_payload = json.loads(analysis_cache_path.read_text(encoding="utf-8"), parse_constant=_reject_nonfinite_json)
-        except (OSError, ValueError):
-            cached_payload = None
+    try:
+        cached_payload = _read_json_cache(analysis_cache_path, parse_constant=_reject_nonfinite_json)
+    except (OSError, ValueError):
+        cached_payload = None
     cached_analysis = (
         cached_payload.get("analysis")
         if isinstance(cached_payload, Mapping)
@@ -2617,12 +2627,9 @@ def telemetry_query_workflow(
                 start_record=record_start,
                 end_record=record_end,
             )
-            if cache_path.is_file():
-                try:
-                    profile = json.loads(cache_path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    profile = None
-            else:
+            try:
+                profile = _read_json_cache(cache_path)
+            except (OSError, json.JSONDecodeError):
                 profile = None
             cache_hit = isinstance(profile, Mapping)
             if not cache_hit:
@@ -2859,12 +2866,10 @@ def native_event_search_workflow(
             / str(fingerprint["sha256"])
             / f"{cache_key}.json"
         )
-        cached: Any = None
-        if cache_path.is_file():
-            try:
-                cached = json.loads(cache_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                cached = None
+        try:
+            cached = _read_json_cache(cache_path)
+        except (OSError, json.JSONDecodeError):
+            cached = None
         result = (
             cached.get("result")
             if isinstance(cached, Mapping)

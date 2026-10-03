@@ -1,8 +1,9 @@
 import { useEffect } from "preact/hooks";
-import { api, paths, reachable } from "./core/api";
+import { type Schemas, api, paths, reachable } from "./core/api";
 import { outbox } from "./core/outbox";
 import { usePrefs, useReducedMotion } from "./core/prefs";
-import { invalidate, useResource } from "./core/resource";
+import { createPresenceWatch } from "./core/presence";
+import { cachedValue, invalidate, invalidateKey, useResource } from "./core/resource";
 import { type ParsedRoute, href, navigate, useRoute } from "./core/router";
 import { events } from "./core/sse";
 import { readJson, useStore, writeJson } from "./core/store";
@@ -26,16 +27,18 @@ function useShellEvents(): void {
   useEffect(() => {
     events.start();
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
-    const soon = (prefix: string) => {
+    const soon = (prefix: string, exact = false) => {
       if (timers.has(prefix)) return;
       timers.set(
         prefix,
         setTimeout(() => {
           timers.delete(prefix);
-          invalidate(prefix);
+          if (exact) invalidateKey(prefix);
+          else invalidate(prefix);
         }, 400),
       );
     };
+    const presenceChanged = createPresenceWatch();
     const offs = [
       events.on("library_changed", (e) => {
         const base = `/api/v1/drivers/${e.customer_id}`;
@@ -58,7 +61,10 @@ function useShellEvents(): void {
       events.on("recording_state", (e) => {
         if (e.customer_id != null) soon(`/api/v1/drivers/${e.customer_id}/sessions`);
       }),
-      events.on("presence", () => soon(paths.drivers)),
+      // The drivers path is a prefix of every driver resource; only the list itself depends on presence.
+      events.on("presence", (e) => {
+        if (presenceChanged(e.collector, cachedValue<Schemas["DriverList"]>(paths.drivers)?.drivers)) soon(paths.drivers, true);
+      }),
       events.onReopen(() => {
         invalidate("/api/v1/");
         void outbox.drain();
@@ -145,7 +151,7 @@ function Banner() {
 
 function ThemeBinding({ route }: { route: ParsedRoute }) {
   const id = driverIdFor(route);
-  const { prefs } = usePrefs(id ?? 0);
+  const { prefs } = usePrefs(id);
   const reduced = useReducedMotion(id ? prefs : null);
   useEffect(() => {
     document.documentElement.dataset.motion = reduced ? "reduced" : "full";

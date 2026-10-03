@@ -404,6 +404,17 @@ fn summarize(
             sto_files.push(file_entry(f, Some(setup.setup_id)));
         }
     }
+    // An unmodified load of a named file has that file's values, so its name is a known name
+    // even when the server holds no such file (`collector-protocol.md` section 8).
+    for o in &mine {
+        if matches!(o.source.as_str(), "recording" | "garage_commit")
+            && o.modified == Some(0)
+            && let Some(name) = o.name.as_deref().map(str::trim).filter(|n| !n.is_empty())
+            && !names.iter().any(|n| n.eq_ignore_ascii_case(name))
+        {
+            names.insert(name.to_string());
+        }
+    }
     let raced = mine.iter().any(|o| {
         o.source == "recording"
             && o.session_type

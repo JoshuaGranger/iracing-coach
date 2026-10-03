@@ -1137,7 +1137,20 @@ pub async fn ingest_recording(app: &AppState, sha: &str) -> Result<()> {
         .write(move |conn| {
             let tx = conn.transaction()?;
             let now = iso_now();
-            crate::db::upsert_driver(&tx, customer, parsed.user_name.as_deref(), parsed.irating)?;
+            // An offline session's placeholder rating, or one older than a parsed race of the
+            // driver, must not replace the latest real rating (`drivers.latest_irating`).
+            let mut irating = crate::db::recorded_irating(parsed.irating, parsed.subsession_id);
+            if irating.is_some()
+                && crate::db::newer_rated_recording(
+                    &tx,
+                    customer,
+                    &sha_owned,
+                    parsed.start_time_utc.as_deref(),
+                )?
+            {
+                irating = None;
+            }
+            crate::db::upsert_driver(&tx, customer, parsed.user_name.as_deref(), irating)?;
             tx.execute(
                 "UPDATE recordings SET customer_id = ?2, ingest_state = 'parsed', ingest_error = NULL,
                    record_count = ?3, tick_rate = ?4, session_info_sha256 = ?5, subsession_id = ?6,

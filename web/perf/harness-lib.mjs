@@ -7,6 +7,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "vite";
+import { routeShell, SHELL_DRIVER, SHELL_SESSION } from "./shell-api.mjs";
 
 export const perfDir = path.dirname(fileURLToPath(import.meta.url));
 export const webRoot = path.resolve(perfDir, "..");
@@ -112,4 +113,53 @@ export async function serve(distDir, fixture) {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return { server, origin: `http://127.0.0.1:${server.address().port}` };
+}
+
+/** The real app (`src/main.tsx`, shell and all) built for the shell checks in views.mjs. */
+export async function buildShell() {
+  const distDir = path.join(outRoot, "shell-dist");
+  await build({
+    root: webRoot,
+    configFile: false,
+    logLevel: "warn",
+    plugins: [preact()],
+    build: { outDir: distDir, emptyOutDir: true, target: "es2022", sourcemap: false },
+  });
+  return distDir;
+}
+
+/** Serves the built app: the shell's own reads (shell-api.mjs) and the analysis views from the fixture. */
+export async function serveShell(distDir, fixture) {
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    try {
+      if (url.pathname === "/api/v1/events") {
+        response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+        response.write(": open\n\n");
+        return;
+      }
+      if (url.pathname.startsWith("/api/")) {
+        const routed = url.pathname.startsWith("/api/v1/analyses/") ? fixture.route(`${url.pathname}${url.search}`) : routeShell(fixture, url.pathname);
+        response.writeHead(routed.status, { "content-type": routed.contentType, "cache-control": "no-store" });
+        response.end(typeof routed.body === "string" ? routed.body : Buffer.from(routed.body));
+        return;
+      }
+      const relative = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
+      const file = path.join(distDir, path.normalize(relative));
+      if (!file.startsWith(distDir)) throw new Error("outside dist");
+      const body = await readFile(file);
+      response.writeHead(200, { "content-type": TYPES[path.extname(file)] ?? "application/octet-stream", "cache-control": "no-store" });
+      response.end(body);
+    } catch {
+      response.writeHead(404, { "content-type": "text/plain" });
+      response.end("not found");
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return { server, origin: `http://127.0.0.1:${server.address().port}` };
+}
+
+/** The app URL of one investigation view inside the shell. */
+export function shellUrl(origin, view) {
+  return `${origin}/#/d/${SHELL_DRIVER}/s/${SHELL_SESSION}/${view}`;
 }

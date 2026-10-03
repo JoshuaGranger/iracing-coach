@@ -434,6 +434,15 @@ pub fn analysis_estimate(sizes: &[u64]) -> u64 {
     (if sizes.len() >= 2 { base * 1.5 } else { base }) as u64
 }
 
+/// A queued `archive` job whose recording still has a `discover` job queued or running is not
+/// startable: the manifest it writes is immutable (`nas-layout.md` section 2) and carries the
+/// recording's session types, which only discovery's commit provides. A discovery that ended
+/// (succeeded, failed or cancelled) opens the gate, so an unreadable recording still reaches the
+/// NAS. `interrupted` is not a waiting state: it is requeued at start-up or stays interrupted.
+const ARCHIVE_WAITS_FOR_DISCOVERY: &str = "NOT (j.kind = 'archive' AND EXISTS (
+    SELECT 1 FROM jobs d WHERE d.kind = 'discover' AND d.state IN ('queued', 'running')
+    AND d.idempotency_key = 'discover:' || json_extract(j.subject_json, '$.sha256')))";
+
 /// Picks and runs the head of one lane. Returns false when nothing could start.
 pub async fn run_next(app: &AppState, lane: &'static str) -> Result<bool> {
     if lane == "light"
@@ -449,8 +458,11 @@ pub async fn run_next(app: &AppState, lane: &'static str) -> Result<bool> {
         .read(move |conn| {
             Ok(conn
                 .query_row(
-                    "SELECT job_id, kind, lane, customer_id, subject_json, attempts FROM jobs
-                     WHERE state = 'queued' AND lane = ?1 ORDER BY priority DESC, job_id ASC LIMIT 1",
+                    &format!(
+                        "SELECT j.job_id, j.kind, j.lane, j.customer_id, j.subject_json, j.attempts FROM jobs j
+                         WHERE j.state = 'queued' AND j.lane = ?1 AND {ARCHIVE_WAITS_FOR_DISCOVERY}
+                         ORDER BY j.priority DESC, j.job_id ASC LIMIT 1"
+                    ),
                     [lane],
                     |r| {
                         let subject: String = r.get(4)?;

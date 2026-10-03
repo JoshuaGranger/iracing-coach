@@ -1,7 +1,7 @@
 import type { ComponentChildren, ComponentType } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { type Schemas, api, paths } from "../core/api";
-import { sessionTypeLabel } from "../core/format";
+import { type EventPhase, eventPhases, sessionTypeLabel } from "../core/format";
 import { outbox } from "../core/outbox";
 import { rememberInvestigation, savePrefs, usePrefs, useReducedMotion } from "../core/prefs";
 import { invalidate, useResource } from "../core/resource";
@@ -59,7 +59,7 @@ let loaderInstance: unknown = null;
 
 type LayoutList = { layouts: Schemas["TraceLayout"][] };
 
-function SessionPicker({ customerId, sessionId, view, sessions }: { customerId: number; sessionId: number; view: InvestigationView; sessions: { session_id: number; session_type?: string | null }[] }) {
+function SessionPicker({ customerId, sessionId, view, sessions }: { customerId: number; sessionId: number; view: InvestigationView; sessions: EventPhase[] }) {
   if (sessions.length < 2) return null;
   return (
     <label class="select-field inline">
@@ -128,7 +128,7 @@ function Host({ mod, customerId, sessionId, view, query }: InvestigationProps & 
       traceLayoutName={active?.name}
       onTraceLayoutChange={onTraceLayoutChange}
       reducedMotion={reduced}
-      sessionPicker={<SessionPicker customerId={customerId} sessionId={sessionId} view={view} sessions={detail.data.event_sessions ?? []} />}
+      sessionPicker={<SessionPicker customerId={customerId} sessionId={sessionId} view={view} sessions={eventPhases(detail.data.session, detail.data.event_sessions ?? [])} />}
     />
   );
 }

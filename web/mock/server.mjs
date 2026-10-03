@@ -93,7 +93,7 @@ function sessionDetail(s) {
     analyses,
     setup_ids: [1],
     notes_count: state.notes.filter((n) => n.subject_kind === "session" && n.subject_id === String(s.session_id)).length,
-    event_sessions: Object.values(state.sessions).flat().filter((x) => x.event_key === s.event_key).map((x) => ({ session_id: x.session_id, session_type: x.session_type })),
+    event_sessions: Object.values(state.sessions).flat().filter((x) => x.customer_id === s.customer_id && x.event_key === s.event_key && x.session_id !== s.session_id).map((x) => ({ session_id: x.session_id, session_type: x.session_type })),
   };
 }
 

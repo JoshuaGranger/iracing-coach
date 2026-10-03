@@ -24,7 +24,7 @@ python3.12 tools/parity/analysis_parity.py capture-worker --case reconnect --out
 python3.12 tools/parity/analysis_parity.py compare --raw --cross-platform cap/win cap/linux
 ```
 
-Keep capture and scratch paths short on Windows: report paths under a long root pass `MAX_PATH`.
+Keep capture and scratch paths short on Windows: the archive handles paths beyond `MAX_PATH`, but the harness's own staging and the recordings it reads from a job root do not.
 
 ## Windows against Linux
 

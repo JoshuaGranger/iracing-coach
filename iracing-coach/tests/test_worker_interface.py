@@ -201,6 +201,62 @@ class RawArchiveSwitchTests(unittest.TestCase):
             self.assertFalse((Path(folder) / "bad" / "archive" / "reports").exists())
 
 
+def _extended(path: Path) -> str:
+    text = os.path.abspath(str(path))
+    return text if os.name != "nt" else "\\\\?\\" + text
+
+
+class DeepArchiveRootTests(unittest.TestCase):
+    """`coach-server --dev` puts the worker archive at `<COACH_DATA_DIR>/py/<customer_id>/archive`.
+
+    Under a data root about 150 characters deep the analysis cache's temporary
+    (`analysis-cache/.<sha256>.json.<pid>.tmp`) passed MAX_PATH on Windows with
+    LongPathsEnabled=0, and analysis failed with FileNotFoundError.
+    """
+
+    def test_cache_files_round_trip_and_an_absent_cache_reads_as_none(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "analysis-cache" / "key.json"
+            self.assertIsNone(workflow._read_json_cache(path))
+            workflow._write_json_cache(path, {"cache_key": "key", "value": [1, 2]})
+            self.assertEqual(workflow._read_json_cache(path), {"cache_key": "key", "value": [1, 2]})
+            self.assertEqual([item.name for item in path.parent.iterdir()], ["key.json"])
+
+    @unittest.skipUnless(os.name == "nt", "MAX_PATH applies to Win32 paths only")
+    def test_analysis_under_an_archive_root_beyond_max_path_writes_and_reuses_its_cache(self) -> None:
+        base = Path(tempfile.mkdtemp(prefix="deep-archive-"))
+        self.addCleanup(shutil.rmtree, _extended(base), True)
+        root = base / "iracing"
+        telemetry = root / "telemetry"
+        telemetry.mkdir(parents=True)
+        recording = telemetry / SYNTHETIC_RACE.name
+        shutil.copy2(SYNTHETIC_RACE, recording)
+        os.utime(recording, (1_780_000_000, 1_780_000_000))
+        padding = 200 - len(str(base / "py" / "1507810" / "archive")) - 1
+        if padding < 1:
+            self.skipTest("temporary directory is already too long")
+        archive = base / ("d" * padding) / "py" / "1507810" / "archive"
+        self.assertEqual(len(str(archive)), 200)
+
+        results = []
+        caches = []
+        with mock.patch.dict(os.environ, {"IRACING_COACH_RAW_ARCHIVE": "external"}):
+            for _ in range(2):
+                result = workflow.analyze_race_workflow(
+                    selector=str(recording), iracing_root=str(root), archive_root=str(archive)
+                )
+                with open(_extended(Path(result["analysis_path"])), encoding="utf-8") as handle:
+                    caches.append(json.load(handle)["source"]["analysis_cache"])
+                results.append(result)
+        self.assertEqual([cache["hit"] for cache in caches], [False, True])
+        self.assertEqual(results[0]["analysis_id"], results[1]["analysis_id"])
+        cache_path = caches[0]["path"]
+        self.assertGreaterEqual(len(cache_path), 260)
+        self.assertEqual(cache_path, str(archive / "analysis-cache" / f"{caches[0]['key']}.json"))
+        self.assertTrue(os.path.isfile(_extended(Path(cache_path))))
+        self.assertEqual(os.listdir(_extended(archive / "analysis-cache")), [f"{caches[0]['key']}.json"])
+
+
 class CompatibilityContractTests(unittest.TestCase):
     """`contracts/compatibility.json` describes the rewrite, not the retired desktop app."""
 

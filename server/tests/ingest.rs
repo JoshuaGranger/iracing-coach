@@ -585,7 +585,12 @@ fn job_row(env: &Env, key: &str) -> JobRow {
     })
 }
 
+/// Archiving waits for discovery (the manifest carries the session types), so the light lane runs first.
 async fn run_io_lane(env: &Env) {
+    while coach_server::jobs::run_next(&env.app, "light")
+        .await
+        .unwrap()
+    {}
     while coach_server::jobs::run_next(&env.app, "io").await.unwrap() {}
 }
 
@@ -687,16 +692,16 @@ async fn archived_recording_releases_its_spool_copy_once_no_job_needs_it() {
     coach_server::ingest::ingest_pending(&env.app)
         .await
         .unwrap();
-    // the queued discovery still needs the spool copy
+    // the queued analysis still needs the spool copy
     run_io_lane(&env).await;
     assert!(env.data().join("spool/ready").join(&sha).exists());
     assert_eq!(count(&env, "SELECT spool_present FROM blobs"), 1);
-    // once discovery is no longer pending, releasing frees the spool but keeps the NAS copy
+    // once the analysis is no longer pending, releasing frees the spool but keeps the NAS copy
     env.app
         .store
         .write_blocking(|c| {
             c.execute(
-                "UPDATE jobs SET state = 'cancelled' WHERE kind = 'discover'",
+                "UPDATE jobs SET state = 'cancelled' WHERE kind IN ('discover', 'analyze') AND state = 'queued'",
                 [],
             )?;
             Ok(())
@@ -1338,7 +1343,7 @@ async fn archived_only(env: &Env, subsession: i64) -> (String, Vec<u8>) {
         .store
         .write_blocking(|c| {
             c.execute(
-                "UPDATE jobs SET state = 'cancelled' WHERE kind = 'discover'",
+                "UPDATE jobs SET state = 'cancelled' WHERE kind IN ('discover', 'analyze') AND state = 'queued'",
                 [],
             )?;
             Ok(())
@@ -1471,5 +1476,187 @@ async fn a_restaged_recording_is_analysed_at_once() {
     assert_eq!(
         state, "succeeded",
         "the restaged copy passes the worker quiet rule: {message:?}"
+    );
+}
+
+// ------------------------------------------------- manifest after discovery
+
+fn manifest_json(env: &Env, sha: &str) -> Value {
+    serde_json::from_slice(&std::fs::read(nas_object(env, sha).1).unwrap()).unwrap()
+}
+
+fn set_discovery(env: &Env, sha: &str, state: &'static str) {
+    let key = format!("discover:{sha}");
+    env.app
+        .store
+        .write_blocking(move |c| {
+            c.execute(
+                "UPDATE jobs SET state = ?2 WHERE idempotency_key = ?1",
+                params![key, state],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn archive_waits_while_its_discovery_is_queued_or_running() {
+    let env = Env::new().await;
+    let bytes = recording(8210, "waits", 4_000);
+    let sha = sha256_hex(&bytes);
+    env.upload(&bytes, "ibt", "w.ibt", None, 4000).await;
+    coach_server::ingest::ingest_pending(&env.app)
+        .await
+        .unwrap();
+    let archive_state = || {
+        count(
+            &env,
+            &format!(
+                "SELECT COUNT(*) FROM jobs WHERE idempotency_key = 'archive:{sha}' AND state = 'queued'"
+            ),
+        )
+    };
+    // the old ordering archived here, with the session types still empty
+    for state in ["queued", "running"] {
+        set_discovery(&env, &sha, state);
+        assert!(
+            !coach_server::jobs::run_next(&env.app, "io").await.unwrap(),
+            "discovery {state}: the archive must not start"
+        );
+        assert_eq!(archive_state(), 1, "discovery {state}");
+        assert!(!nas_object(&env, &sha).1.exists(), "discovery {state}");
+        assert!(!nas_object(&env, &sha).0.exists(), "discovery {state}");
+    }
+    // a discovery that ended without committing (failed, cancelled) must not hold the
+    // recording off the NAS: the manifest then lists no session types
+    set_discovery(&env, &sha, "failed");
+    assert!(coach_server::jobs::run_next(&env.app, "io").await.unwrap());
+    let manifest = manifest_json(&env, &sha);
+    manifest_valid(&manifest);
+    assert_eq!(manifest["recording"]["session_types"], json!([]));
+}
+
+#[tokio::test]
+async fn manifest_lists_the_session_types_discovery_committed() {
+    let env = Env::new().await;
+    let bytes = recording(8211, "committed", 4_000);
+    let sha = sha256_hex(&bytes);
+    env.upload(&bytes, "ibt", "c.ibt", None, 4000).await;
+    coach_server::ingest::ingest_pending(&env.app)
+        .await
+        .unwrap();
+    // discovery's commit, then the end of its job (what `apply_discovery` and the runner do)
+    let owned = sha.clone();
+    env.app
+        .store
+        .write_blocking(move |c| {
+            c.execute(
+                "INSERT INTO sessions(customer_id, subsession_id, sim_session_num, group_key, session_type, track,
+                   car_path, start_time_utc, discovered_at)
+                 VALUES (1001, 8211, 0, 'subsession:8211:0', 'Race', 'Stub Speedway', 'stockcars chevyss2020',
+                         '2026-08-01T12:00:00Z', '2026-08-01T13:00:00Z')",
+                [],
+            )?;
+            c.execute(
+                "INSERT INTO session_recordings(session_id, recording_sha256) VALUES (last_insert_rowid(), ?1)",
+                [&owned],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    set_discovery(&env, &sha, "succeeded");
+    run_io_lane(&env).await;
+    let manifest = manifest_json(&env, &sha);
+    manifest_valid(&manifest);
+    assert_eq!(manifest["recording"]["session_types"], json!(["Race"]));
+}
+
+/// Through the real discovery job: the io lane is offered the archive first, as the lane loops
+/// do when both lanes wake together, and must leave it until discovery has committed.
+#[tokio::test]
+async fn archive_offered_before_discovery_still_writes_the_discovered_session_types() {
+    let env = Env::new().await;
+    if env.python.is_none() {
+        eprintln!("skipped: no Python 3 on PATH (set COACH_TEST_PYTHON)");
+        return;
+    }
+    let bytes = recording(8212, "ordering", 4_000);
+    let sha = sha256_hex(&bytes);
+    env.upload(&bytes, "ibt", "o.ibt", None, 4000).await;
+    coach_server::ingest::ingest_pending(&env.app)
+        .await
+        .unwrap();
+    assert!(!coach_server::jobs::run_next(&env.app, "io").await.unwrap());
+    assert!(!nas_object(&env, &sha).1.exists());
+    assert!(
+        coach_server::jobs::run_next(&env.app, "light")
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        count(
+            &env,
+            "SELECT COUNT(*) FROM sessions WHERE session_type = 'Race'"
+        ),
+        1
+    );
+    assert!(coach_server::jobs::run_next(&env.app, "io").await.unwrap());
+    let manifest = manifest_json(&env, &sha);
+    manifest_valid(&manifest);
+    assert_eq!(manifest["recording"]["session_types"], json!(["Race"]));
+}
+
+// ---------------------------------------------------------------- driver iRating
+
+fn latest_irating(env: &Env) -> Option<i64> {
+    env.query(|c| {
+        c.query_row(
+            "SELECT latest_irating FROM drivers WHERE customer_id = 1001",
+            [],
+            |r| r.get(0),
+        )
+    })
+}
+
+async fn ingest_rated(env: &Env, subsession: i64, irating: i64, start: &str, name: &str) {
+    let mut meta = race_meta(subsession, 0, name);
+    meta["irating"] = json!(irating);
+    meta["start"] = json!(start);
+    let bytes = fake_ibt(meta, 4_000);
+    env.upload(&bytes, "ibt", &format!("{name}.ibt"), None, 4000)
+        .await;
+    coach_server::ingest::ingest_pending(&env.app)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn the_latest_irating_comes_from_the_newest_session_with_a_real_rating() {
+    let env = Env::new().await;
+    ingest_rated(&env, 8301, 1539, "2026-09-10T12:00:00Z", "race").await;
+    assert_eq!(latest_irating(&env), Some(1539));
+    // an offline session (SubSessionID 0) carries the placeholder 1, whenever it was recorded
+    ingest_rated(&env, 0, 1, "2026-09-20T12:00:00Z", "offline").await;
+    assert_eq!(latest_irating(&env), Some(1539), "offline placeholder");
+    // an older race recorded after a newer one does not take the rating back
+    ingest_rated(&env, 8300, 1480, "2026-08-01T12:00:00Z", "older").await;
+    assert_eq!(latest_irating(&env), Some(1539), "older race");
+    // a newer race does
+    ingest_rated(&env, 8302, 1562, "2026-09-12T12:00:00Z", "newer").await;
+    assert_eq!(latest_irating(&env), Some(1562), "newer race");
+}
+
+#[tokio::test]
+async fn an_offline_session_alone_leaves_the_rating_unknown() {
+    let env = Env::new().await;
+    ingest_rated(&env, 0, 1, "2026-09-20T12:00:00Z", "offline").await;
+    assert_eq!(latest_irating(&env), None);
+    assert_eq!(
+        count(
+            &env,
+            "SELECT COUNT(*) FROM drivers WHERE customer_id = 1001"
+        ),
+        1,
+        "the driver is still recorded"
     );
 }

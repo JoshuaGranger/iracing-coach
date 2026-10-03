@@ -7,6 +7,7 @@ import { criticalLayoutBody } from "../layout-model";
 import { HttpError, ProjectionPendingError, type AnalysisLoader } from "../load";
 import { INVESTIGATION_VIEWS, type InvestigationView, type TraceLayoutBody } from "../types";
 import "./investigation.css";
+import { useViewportFit } from "./fit";
 import { useAsync } from "./hooks";
 import { RaceView } from "./RaceView";
 import { RunsView } from "./RunsView";
@@ -65,6 +66,8 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
   const layout = props.traceLayout ?? localLayout;
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  const workspaceRef = useRef<HTMLElement>(null);
+  useViewportFit(workspaceRef);
 
   useEffect(() => { if (props.view) setView(props.view); }, [props.view]);
   useEffect(() => { if (props.comparisonId !== undefined) setComparisonId(props.comparisonId); }, [props.comparisonId]);
@@ -147,7 +150,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
 
   const showComparisons = inv !== null && inv.comparisons.length > 1 && view !== "traces";
   return (
-    <section class="ri-workspace" aria-label="Race investigation" data-view={view}>
+    <section ref={workspaceRef} class="ri-workspace" aria-label="Race investigation" data-view={view}>
       <header class="ri-bar">
         <div class="ri-tabs" role="tablist" aria-label="Investigation views">
           {INVESTIGATION_VIEWS.map((name) => (
