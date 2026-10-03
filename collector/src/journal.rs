@@ -758,7 +758,13 @@ impl Journal {
         }
         // The handle points at the old inode on some platforms: reopen after the rename.
         self.file = None;
-        fs::rename(&tmp, &path)?;
+        if let Err(error) = rename_with_retry(&tmp, &path) {
+            // Compaction did not happen and is reported, not skipped. The old journal is still
+            // whole: take its file back so appends keep working and the next trigger retries.
+            let _ = fs::remove_file(&tmp);
+            let _ = self.attach_file(&path);
+            return Err(error);
+        }
         self.attach_file(&path)?;
         self.lines = live.len();
         // Replay the live records so sequence numbers and the in-memory state match the file,
@@ -797,6 +803,40 @@ impl Journal {
             "visits": self.visits.len(),
             "lines": self.lines,
         })
+    }
+}
+
+/// Attempts at the compaction rename before its error is reported.
+const RENAME_ATTEMPTS: u32 = 20;
+/// The wait after attempt `n` is `n` times this (about 5 s in all).
+const RENAME_STEP: Duration = Duration::from_millis(25);
+
+/// True for the denials Windows gives while another process (a virus scanner, an indexer) still
+/// holds a handle on a freshly written file: access denied, sharing violation, lock violation.
+/// They clear within milliseconds.
+fn is_transient_rename_error(error: &io::Error) -> bool {
+    if error.kind() == io::ErrorKind::PermissionDenied {
+        return true;
+    }
+    cfg!(windows) && matches!(error.raw_os_error(), Some(5 | 32 | 33))
+}
+
+/// `fs::rename` that waits out a transient held-handle denial (bounded). Any other error, and the
+/// last denial once the attempts are used up, is returned as it came.
+fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
+    rename_with_retry_for(from, to, RENAME_ATTEMPTS, RENAME_STEP)
+}
+
+fn rename_with_retry_for(from: &Path, to: &Path, attempts: u32, step: Duration) -> io::Result<()> {
+    let mut attempt: u32 = 0;
+    loop {
+        match fs::rename(from, to) {
+            Err(error) if attempt < attempts && is_transient_rename_error(&error) => {
+                attempt += 1;
+                std::thread::sleep(step * attempt);
+            }
+            result => return result,
+        }
     }
 }
 
@@ -1130,6 +1170,87 @@ mod tests {
         assert_eq!(j.take_unsent(1).len(), 1);
         drop(j);
         assert_eq!(Journal::open(&path).unwrap().garage_pending(), 1);
+        let _ = fs::remove_file(path);
+    }
+
+    /// A handle that denies sharing for delete, as a scanner's does: it blocks a rename over the
+    /// file until it is dropped.
+    #[cfg(windows)]
+    fn hold_without_delete_share(path: &Path) -> File {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+        OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ_WRITE)
+            .open(path)
+            .unwrap()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn compaction_waits_out_a_scanner_holding_the_journal_and_then_commits() {
+        let path = temp();
+        {
+            let mut j = Journal::open(&path).unwrap();
+            j.reject_recording(rejected("keep", 1, 1)).unwrap();
+            for n in 0..40 {
+                j.add_snapshot(snap("v1", n)).unwrap();
+                j.ack_snapshot("v1", n).unwrap();
+            }
+        }
+        assert!(fs::read_to_string(&path).unwrap().lines().count() > 40);
+        let hold = Duration::from_millis(300);
+        let held = hold_without_delete_share(&path);
+        let holder = std::thread::spawn(move || {
+            std::thread::sleep(hold);
+            drop(held);
+        });
+        let started = Instant::now();
+        let j = Journal::open(&path).unwrap();
+        assert!(
+            started.elapsed() >= hold - Duration::from_millis(50),
+            "the rename was blocked until the handle was released"
+        );
+        holder.join().unwrap();
+        assert!(
+            fs::read_to_string(&path).unwrap().lines().count() < 20,
+            "compacted"
+        );
+        assert!(j.is_rejected("keep", 1, 1));
+        let _ = fs::remove_file(path);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_handle_held_past_the_retry_budget_fails_loudly_and_leaves_the_journal_whole() {
+        let path = temp();
+        let tmp = path.with_extension("jsonl.tmp");
+        fs::write(
+            &path, b"old
+",
+        )
+        .unwrap();
+        fs::write(
+            &tmp, b"new
+",
+        )
+        .unwrap();
+        let held = hold_without_delete_share(&path);
+        let error = rename_with_retry_for(&tmp, &path, 2, Duration::from_millis(5)).unwrap_err();
+        assert!(is_transient_rename_error(&error), "{error}");
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"old
+",
+            "target untouched"
+        );
+        drop(held);
+        rename_with_retry_for(&tmp, &path, 2, Duration::from_millis(5)).unwrap();
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"new
+"
+        );
         let _ = fs::remove_file(path);
     }
 }

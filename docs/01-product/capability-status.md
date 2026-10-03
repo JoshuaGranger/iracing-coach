@@ -1,8 +1,29 @@
 # Capability status
 
-This inventory separates intended user-facing capability from current-main development reality. Reality labels are based on current source, focused automated tests, and the named local interaction evidence; they do not imply real SDK, private-library, or product acceptance unless the acceptance boundary explicitly says so. Only Joshua can accept a product scope or artifact.
+This inventory separates intended user-facing capability from development reality. Reality labels are based on source, focused automated tests, and the named interaction evidence; they do not imply real SDK, private-library, or product acceptance unless the acceptance boundary explicitly says so. Only Joshua can accept a product scope or artifact.
 
-| Capability | Intended state | Current reality | Acceptance boundary |
+**The desktop app is retired.** The "Desktop reality" column in the main table describes the 0.18.0 desktop application as it stood when it was retired (`3ff5e87`; source deleted in `f2d35fd`, owner ruling D13). It is a historical record of that app and of the intent each row carries, not the current product. The current product is the rewrite (Rust collector, Rust server with the Python worker, TypeScript web app), described in the [0.19.0 rewrite snapshot](../06-reality/implementation-snapshot-0.19.0-rewrite.md); the next section maps each capability to it.
+
+## Rewrite status (current)
+
+Evidence for every row is in the [rewrite snapshot](../06-reality/implementation-snapshot-0.19.0-rewrite.md). Nothing here is Accepted; "verified" means the named check, in an emulated browser or on the rig, not on a real phone or tablet.
+
+| Capability | Rewrite state | Boundary |
+| --- | --- | --- |
+| Home, Race browser | Implemented as the Sessions library of the web app; one driver opens straight to it. 657 sessions migrated | Verified against the released service (emulated viewports); real devices not checked |
+| Full Race Analysis (Race, Runs, Sections, Traces) | Implemented as the web investigation with the synchronized chart and map cursor; Sections and Traces fit 1280x720 and 1024x768; zero requests during pointer sweeps; gate G2 passes at 6x throttle | Verified as above; Technical data and Race replay are parked |
+| Live Telemetry, Live Monitor | Implemented: the collector's native overlay on the rig, and the web Live page streamed at 60 Hz; today's text Coach cue tile, no new cues, no audio | Real-system verified on the rig by G4 (parked car); the rig's own screen showing the web Live page, and motion-dependent branches, not verified |
+| Raw IBT retention | Re-implemented: the collector uploads each finalized recording, the server writes it to the NAS under its SHA-256 with a manifest; nothing under `Documents\iRacing` is written or removed | Real-system verified (668 recordings archived); NAS-down start not claimed |
+| Setup indexing and Setups page | Implemented: setups from recordings, garage exports and passive garage capture; compare; files with unknown values listed as such | Capture verified by G3 with the limits recorded there; compare on real data not in any acceptance record |
+| Starting Tune, Progressive Tuning | Built in the web app (Find a baseline, Tuning) | No acceptance record exercises them on a real recording |
+| Garage61, AI coaching, Connections | Only the Garage61 token seam exists; AI is a later phase (D10) | Not implemented in v1 |
+| Test day, Race Planning, Race replay, Technical data (Details), saved Tests, Ask, crew-chief calls | Parked by owner decision; their data is preserved by the D12 import | Not in v1 |
+| Tire/capability learning, wet-weather, multiclass | Not part of the v1 rewrite; no new work | Unchanged: not implemented or parked |
+| Installation, upgrade, tray | The collector installs per user (`coach-collector.exe install`), starts from an HKCU Run value, and has a tray (`collector/README.md`); the server releases through the managed stack tool. No installer or portable package; the win-x64 package rule is superseded | Install verified on the sim; autostart at sign-in and the tray are not exercised in any acceptance record |
+
+## Desktop capability inventory (retired app, historical)
+
+| Capability | Intended state | Desktop reality | Acceptance boundary |
 | --- | --- | --- | --- |
 | Home | Compact race desk, recent races, live state, next actions | Folded into **Sessions** in round 1 (no separate Home page); finalized uncached races, and since round 2 test-day stints, enter a quiet sequential background cache queue that yields to connected live telemetry and interactive analysis | Native Sessions acceptance on the sim at 1280x800 (round 2); private-library breadth and combined-load measurement remain conditional |
 | Live Telemetry | Full-screen equal-share named grid, non-shrinking overlay Toolbox, configurable forms, fuel and safe cues | Implemented with SDK source and timestamped display-synchronized tile canvases; missing intervals split retained paths | Source/replay interaction verified; sustained real SDK/display cadence remains open |
@@ -29,9 +50,9 @@ This inventory separates intended user-facing capability from current-main devel
 | Target/reference trace | Evidence-gated aligned comparison | Partial/conditional | Actual recorded multi-lap trace works; validated external target remains limited |
 | Tray behavior | Minimize/close options, monitor controls, popout hide/show, and definitive tray Exit | Implemented in 0.14.0 source with non-activating automatic show, connected-session manual-hide suppression, explicit popout destruction during app exit, and an armed shutdown deadline | Focused automated contract passes; a genuine mouse-driven tray Exit against the exact 0.14.0 package remains pending |
 
-## Capability registry alignment
+## Capability registry alignment (desktop app, historical)
 
-The production `CapabilityRegistry` is the user-visible inventory. Current source keeps setup comparison as an internal conditional capability, removes the unused library surface, and aligns shared live layouts, recorded track zones, and Starting Tune with their real implementations. Registry tests prove the encoded visibility cases; they do not prove that every real recording supplies the prerequisite data.
+The registry described here belonged to the retired desktop app and is no longer in the tree. The production `CapabilityRegistry` is the user-visible inventory. Current source keeps setup comparison as an internal conditional capability, removes the unused library surface, and aligns shared live layouts, recorded track zones, and Starting Tune with their real implementations. Registry tests prove the encoded visibility cases; they do not prove that every real recording supplies the prerequisite data.
 
 Vehicle sideslip retains a separate truth boundary from Yaw Rate and tire slip. The deterministic engine now derives signed sideslip in degrees from paired finite recorded `VelocityX`/`VelocityY` samples under positive-forward-velocity and 5 m/s planar-speed guards; guarded samples remain gaps, while Yaw Rate is untouched. The UI's `Slip Angle` trace is therefore a derived vehicle-sideslip series when those inputs pass, not a native `SlipAngle` field or tire-slip measurement. Focused derivation/mapping checks and one Iowa recording support that scoped path; broad cross-car/session validation remains open.
 

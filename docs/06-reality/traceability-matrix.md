@@ -2,6 +2,27 @@
 
 This matrix maps specification areas to implementation and verification anchors. A path demonstrates where evidence should be inspected; it does not by itself prove conformance.
 
+**The desktop app is retired.** Every table below the rewrite section (and the September 22 and 23 sections) anchors to the 0.18.0 desktop application: its Razor, WPF, C# and JavaScript files and its .NET tests. That source was deleted in `f2d35fd` (last present at `3ff5e87`; owner ruling D13), so those anchors resolve only in Git history, and their statuses record what the retired app did. The Python backend files they name (`analysis_engine.py`, `race_investigation.py`, `storage.py` and the rest under `iracing-coach/`) remain the deterministic backend and the worker of the rewrite. Current reality is the [0.19.0 rewrite snapshot](implementation-snapshot-0.19.0-rewrite.md).
+
+## Rewrite (October 2-3, 2026)
+
+Evidence files are under `docs/08-rewrite/`. Nothing here is Accepted.
+
+| Specification | Implementation anchors | Test/evidence anchors | Status |
+| --- | --- | --- | --- |
+| `HOME-*`, `NAV-*` | `web/src/app.tsx`, `web/src/pages/drivers.tsx`, `sessions.tsx`, `server/src/api.rs` | `acceptance/e2e-dev-pc.md`, `acceptance/v1-candidate.md` (`spa_check.mjs`, `v1_candidate_check.mjs`) | Implemented as the Sessions library; verified against the released service in emulated viewports; real devices not checked |
+| `RA-*`, `UI-*`, `PERF-*` (Race, Runs, Sections, Traces; synchronized chart and map cursor) | `web/src/investigation/`, `crates/coach-views`, `server/src/jobs.rs` | `web/perf/` (gate G2), `acceptance/v1-candidate.md`, `acceptance/migration.md` | Implemented; G2 at 6x throttle in commit `18f57f6`; zero requests during pointer sweeps; Technical data and Race replay parked |
+| `TD-*`, `EV-*` (telemetry math, evidence labels, damage and repair screening) | `iracing-coach/` (unchanged Python backend), `crates/coach-analysis` (native decode, kernels, writer), `crates/coach-numerics` | `port/phase1-decode.md`, `port/phase2-kernels.md`, `port/phase3-writer.md`, `acceptance/g1-analysis.md`, `acceptance/g1-native.md` | Implemented; byte parity against the Python oracle on 52 of 52 recordings per phase; decode and kernels released, writer in source only |
+| `LIVE-*`, `LMG-*` | `crates/coach-live`, `collector/src/` (SDK reader, stream, overlay), `web/src/live/`, `server/src/hub.rs`, `ws.rs` | `acceptance/g4-performance.md`, `acceptance/e2e-mini-pc.md`, `acceptance/collector-install.md` | Implemented; real-system verified on the rig with a parked car; motion-dependent branches and the rig's own screen not verified |
+| `SETUP-*`, `SU-*` (setup indexing, garage capture) | `collector/src/garage.rs`, `crates/coach-ibt`, `server/src/setups.rs`, `web/src/pages/setups.tsx` | `acceptance/g3-garage.md`, `acceptance/library-cleanup.md`, `acceptance/v1-candidate.md` | Implemented; G3 passes with its recorded limits; `.sto` values come only from recordings; compare, Find a baseline and Progressive Tuning not exercised on a real recording |
+| `TUNE-*` | `web/src/pages/tuning.tsx`, `web/src/tuning/`, `server/src/tuning.rs`, `iracing-coach/` tuning modules | `reviews/wave1-results.md` | Built; no acceptance record on real data |
+| `PORT-*`, `SEC-*`, `ARCH-*`, `PROC-*` | `server/src/ingest.rs`, `archiver.rs`, `userdata.rs`, `deploy/mini-pc/`, `docs/08-rewrite/contracts/nas-layout.md` | `acceptance/server-release.md`, `acceptance/migration.md`, `reviews/ingest-review-codex-sol.md` (blocker and 22 majors fixed, `risks.md` R23) | Implemented; 668 recordings archived with manifests; the recovery set is `db` and `snapshots`; NAS-down start and the off-host backup not claimed |
+| `INST-*`, `UPG-*`, `UN-*` | `coach-collector.exe install` and `uninstall`; `deploy/mini-pc/` and the stack release script | `acceptance/collector-install.md`, `acceptance/server-release.md` | The desktop installer lifecycle is retired; the collector installs per user; autostart at sign-in not exercised |
+| `G61-*`, `AI-*`, `PLAN-*`, replay, test day, Ask | none in v1 | `owner-decisions-2026-10-02.md` (parking lot) | Parked; data preserved by the D12 import (`acceptance/migration.md`) |
+| `QA-*`, `REL-*` | `tools/verify-repository.ps1`, `tools/check.ps1`, `tools/rig/` (gates G1, G3, G4), `tools/e2e/`, `tools/parity/` | each gate record under `acceptance/` | Gates G1 to G4 recorded; the repository gate passes with the bundled Python 3.12 |
+
+## Desktop application (retired) traceability
+
 | Specification | Main implementation anchors | Test/evidence anchors | Snapshot status |
 | --- | --- | --- | --- |
 | `HOME-*`, `NAV-*` | `CompanionShell.razor`, `NavRail.razor`, `HomePage.razor`, `CompanionState.QueueMissingHomeRaceAnalysis`, `WaitForHomeAnalysisWindowAsync` | `CoordinatorTests.HomeRefresh_PausesBackgroundAnalysisWhileLiveTelemetryIsConnected`, `HomeRefresh_PausesBackgroundAnalysisWhileInteractiveAnalysisIsLoading`, `FinalProductFixtureTests.cs`, fresh-development-executable walkthrough | Implemented; background queue and foreground priority gate are source/focused-test verified, private-library breadth and combined-load measurement pending |
