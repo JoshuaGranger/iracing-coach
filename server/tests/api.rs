@@ -937,6 +937,26 @@ async fn every_endpoint_answers_as_the_contract_says() {
     let r = env.post("/api/v1/admin/snapshot", json!({})).await;
     assert_eq!(r.status, StatusCode::ACCEPTED);
     check(c, "POST", "/api/v1/admin/snapshot", &r);
+    let r = env
+        .post(
+            "/api/v1/admin/remove",
+            json!({"setup_files": ["baseline.sto"]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    check(c, "POST", "/api/v1/admin/remove", &r);
+    assert_eq!(r.json()["dry_run"], true, "a dry run unless told otherwise");
+    assert_eq!(r.json()["setup_files"][0]["found"], true);
+    assert_eq!(
+        scalar::<i64>(
+            &env,
+            "SELECT COUNT(*) FROM setup_files WHERE relative_path = 'baseline.sto'"
+        ),
+        1
+    );
+    let r = env.post("/api/v1/admin/remove", json!({})).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    check(c, "POST", "/api/v1/admin/remove", &r);
     let bundle = json!({"bundle_version": 1, "customer_id": 1001, "source": {"machine": "DESKTOP-SIM", "root": "C:/legacy"},
         "notes": [{"legacy_id": "n1", "subject_kind": "session", "subject_id": "ignored", "body": "legacy note",
                    "subject_ref": {"subsession_id": 9500, "sim_session_num": 0, "car_path": "stockcars chevyss2020"}},
@@ -1374,5 +1394,37 @@ async fn queueing_the_analysis_of_a_session_without_recordings_is_refused() {
         scalar::<i64>(&env, "SELECT COUNT(*) FROM jobs WHERE kind = 'analyze'"),
         0,
         "nothing was queued"
+    );
+}
+
+#[tokio::test]
+async fn the_analysis_path_is_post_only_and_the_state_is_read_from_the_session() {
+    // G4-9 asked for `GET /sessions/{id}/analysis`: the session carries the same state, so the
+    // contract has no such operation (the rig saw 405).
+    let env = Env::new().await;
+    let Some(_) = env.python.clone() else {
+        eprintln!("skipped: no Python 3 for the stub worker");
+        return;
+    };
+    ingest(&env, race_meta(9600, 0, "state")).await;
+    env.settle().await;
+    let id: i64 = scalar(&env, "SELECT session_id FROM sessions");
+    let detail = env.get(&format!("/api/v1/sessions/{id}")).await.json();
+    assert_eq!(detail["session"]["analysis_state"], "ready");
+    assert!(detail["session"]["analysis_id"].is_string());
+    assert_eq!(detail["analyses"][0]["current"], true);
+    let analysis = detail["session"]["analysis_id"].as_str().unwrap();
+    assert_eq!(
+        env.get(&format!("/api/v1/analyses/{analysis}/race"))
+            .await
+            .status,
+        StatusCode::OK,
+        "ready means the race view answers"
+    );
+    assert_eq!(
+        env.get(&format!("/api/v1/sessions/{id}/analysis"))
+            .await
+            .status,
+        StatusCode::METHOD_NOT_ALLOWED
     );
 }

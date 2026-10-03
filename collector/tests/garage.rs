@@ -180,6 +180,40 @@ fn leaving_without_a_name_change_commits_values_only() {
 }
 
 #[test]
+fn leaving_unmodified_on_the_same_name_commits_that_file_with_its_hash() {
+    // G3 cases 3 and 4 (revert, reload of the file already named): the SDK name cannot change,
+    // but IsModified 0 at the exit means the values are the named file's.
+    let b = MapBuilder::new(60).engine_vars();
+    let (setups, _) = setups_with_sto();
+    let r_bytes = b"the session-start setup".to_vec();
+    let mut h = Harness::new(&p5_fixture_exit(&b, "R.sto", false, 6_000));
+    h.run();
+    let io = GarageIo::new(h.hub.clone(), setups, None);
+    for a in h.garage_actions() {
+        io.journal(a);
+    }
+    assert_eq!(io.resolve_pending(), 0);
+    let out = h.hub.journal().take_unsent(1);
+    let (commit, values) = out
+        .iter()
+        .find_map(|m| match m {
+            GarageOut::Commit { entry, values } => Some((entry.clone(), values.clone())),
+            _ => None,
+        })
+        .expect("a commit after the 5 s window");
+    assert_eq!(commit.setup_name.as_deref(), Some("R.sto"));
+    assert_eq!(commit.sto_sha256, Some(sha256_hex(&r_bytes)));
+    assert_eq!(commit.is_modified, Some(false));
+    assert_eq!(commit.update_count, Some(10));
+    assert_eq!(values["Tires.LeftFront.ColdPressure"], "155 kPa");
+    assert_eq!(
+        h.hub.journal().pending_recordings().len(),
+        1,
+        "the named file is queued for upload like any named commit"
+    );
+}
+
+#[test]
 fn a_name_shared_by_two_files_is_ambiguous_and_an_unknown_name_has_no_hash() {
     let b = MapBuilder::new(60).engine_vars();
     let (setups, _) = setups_with_sto();

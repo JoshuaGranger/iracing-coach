@@ -310,6 +310,147 @@ async fn analysis_over_the_memory_ceiling_is_deferred_with_its_reason() {
 }
 
 #[tokio::test]
+async fn the_deferral_reaches_the_session_detail_and_the_job_list_with_its_reason() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.analysis_ceiling_bytes = 100 << 20),
+        ..Default::default()
+    })
+    .await;
+    ingest(&env, meta(9007, 0, "big", None)).await;
+    env.settle().await;
+    let session_id: i64 = scalar(&env, "SELECT session_id FROM sessions");
+    let detail = env
+        .get(&format!("/api/v1/sessions/{session_id}"))
+        .await
+        .json();
+    assert_eq!(detail["session"]["analysis_state"], "deferred");
+    assert_eq!(
+        detail["session"]["analysis_reason"],
+        "exceeds_memory_budget"
+    );
+    assert_eq!(detail["session"]["analysis_id"], Value::Null);
+    let listed = env.get("/api/v1/jobs?state=deferred").await.json();
+    let job = &listed["jobs"][0];
+    assert_eq!(job["kind"], "analyze");
+    assert_eq!(job["state"], "deferred");
+    assert_eq!(job["error_code"], "exceeds_memory_budget");
+    assert!(job["subject"]["estimate_bytes"].as_u64().unwrap() > 100 << 20);
+    let status = env.get("/api/v1/status").await.json();
+    assert_eq!(status["queue"]["deferred"], 1);
+
+    // asking for the analysis again does not run it: the job stays deferred, the reason stays
+    let again = env
+        .post(
+            &format!("/api/v1/sessions/{session_id}/analysis"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(again.status, StatusCode::ACCEPTED);
+    assert_eq!(again.json()["state"], "deferred");
+    env.settle().await;
+    assert_eq!(scalar::<i64>(&env, "SELECT COUNT(*) FROM analyses"), 0);
+    let detail = env
+        .get(&format!("/api/v1/sessions/{session_id}"))
+        .await
+        .json();
+    assert_eq!(
+        detail["session"]["analysis_reason"],
+        "exceeds_memory_budget"
+    );
+}
+
+#[tokio::test]
+async fn a_ready_session_whose_newer_analysis_is_deferred_still_says_why() {
+    // One recording fits under the ceiling; the same session with a second recording (the
+    // reconnect case: the owner's Bristol races) does not.
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.analysis_ceiling_bytes = 200 << 20),
+        ..Default::default()
+    })
+    .await;
+    require_python!(env);
+    ingest(&env, meta(9008, 0, "first", None)).await;
+    env.settle().await;
+    assert_eq!(
+        scalar::<String>(&env, "SELECT analysis_state FROM sessions"),
+        "ready"
+    );
+    assert_eq!(
+        scalar::<Option<String>>(&env, "SELECT analysis_reason FROM sessions"),
+        None
+    );
+    ingest(&env, meta(9008, 0, "second", None)).await;
+    env.settle().await;
+    assert_eq!(
+        scalar::<i64>(&env, "SELECT COUNT(*) FROM session_recordings"),
+        2
+    );
+    assert_eq!(
+        job_state(&env, "analyze"),
+        vec![
+            ("succeeded".to_string(), None),
+            (
+                "deferred".to_string(),
+                Some("exceeds_memory_budget".to_string())
+            )
+        ]
+    );
+    // the earlier analysis stays usable, and the library says the newer one is waiting
+    let sessions = env.get("/api/v1/drivers/1001/sessions").await.json();
+    let row = &sessions["sessions"][0];
+    assert_eq!(row["analysis_state"], "ready");
+    assert!(row["analysis_id"].is_string());
+    assert_eq!(row["analysis_reason"], "exceeds_memory_budget");
+    let session_id = row["session_id"].as_i64().unwrap();
+    let detail = env
+        .get(&format!("/api/v1/sessions/{session_id}"))
+        .await
+        .json();
+    assert_eq!(
+        detail["session"]["analysis_reason"],
+        "exceeds_memory_budget"
+    );
+
+    // a deferred job of an earlier, smaller membership is not reported once the session has
+    // an analysis of its current recordings (ceiling raised by a restart, here by hand)
+    env.app
+        .store
+        .write_blocking(|c| {
+            c.execute(
+                "UPDATE jobs SET state = 'queued', error_code = NULL WHERE state = 'deferred'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    env.settle().await;
+    assert_eq!(
+        scalar::<String>(&env, "SELECT analysis_state FROM sessions"),
+        "ready"
+    );
+    assert_eq!(
+        scalar::<Option<String>>(&env, "SELECT analysis_reason FROM sessions"),
+        None,
+        "nothing is waiting any more"
+    );
+}
+
+#[test]
+fn the_legacy_bristol_races_estimate_over_the_ceiling_by_the_documented_factors() {
+    // acceptance/migration.md step 4: sessions 105 and 123, 3.6 and 4.2 GB against the 3 GiB ceiling
+    let ceiling = base_config(std::path::Path::new("."), None).analysis_ceiling_bytes;
+    assert_eq!(ceiling, 3 << 30);
+    let one_and_a_stub = jobs::analysis_estimate(&[197_206_664, 253_361]);
+    let pair = jobs::analysis_estimate(&[146_209_324, 81_729_208]);
+    assert_eq!(one_and_a_stub, 3_647_777_341);
+    assert_eq!(pair, 4_173_531_587);
+    assert!(one_and_a_stub > ceiling && pair > ceiling);
+    // each recording alone fits: the session was analysable before it grew
+    assert!(jobs::analysis_estimate(&[197_206_664]) < ceiling);
+    assert!(jobs::analysis_estimate(&[146_209_324]) < ceiling);
+}
+
+#[tokio::test]
 async fn shared_memory_budget_makes_a_job_wait_for_running_work() {
     let env = Env::with(Opts {
         tweak: Box::new(|c| c.memory_budget_bytes = (0.9 * (1u64 << 30) as f64) as u64),

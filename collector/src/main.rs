@@ -49,6 +49,7 @@ fn dispatch(command: Command) -> ExitCode {
                 Err(message) => report(Err(message)),
             }
         }
+        Command::Backfill(options) => report(backfill(&options)),
         Command::RecordSdk { seconds, out } => report(record_sdk(seconds, &out)),
         Command::Install {
             server,
@@ -73,6 +74,11 @@ fn dispatch(command: Command) -> ExitCode {
         }
         Command::Help | Command::Version => ExitCode::SUCCESS,
     }
+}
+
+fn backfill(options: &coach_collector::cli::BackfillOptions) -> Result<(), String> {
+    let source = coach_collector::app::real_source()?;
+    coach_collector::backfill::run_with(options, source, &mut std::io::stdout()).map(|_| ())
 }
 
 #[cfg(windows)]

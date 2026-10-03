@@ -635,3 +635,120 @@ fn a_file_deleted_before_upload_is_dropped_from_the_journal() {
     assert_eq!(env.pending_journal(), 0);
     let _ = env.clock.unix_ms();
 }
+
+/// A recording whose header says 0 records (iRacing died before it wrote the count), padded to a
+/// realistic size: the collector refuses it, correctly, and it can never become uploadable.
+fn headerless_recording(path: &std::path::Path, padding: usize) -> u64 {
+    let builder = MapBuilder::new(60).engine_vars();
+    let mut bytes = builder.ibt_bytes(&SessionSpec::default().yaml(), &[]);
+    bytes.resize(bytes.len() + padding, 0);
+    write_file(path, &bytes);
+    bytes.len() as u64
+}
+
+fn counters(env: &Env) -> (i64, i64, i64, i64) {
+    let u = &env.hub.uploads;
+    (
+        u.uploads_pending.load(Ordering::Relaxed),
+        u.bytes_pending.load(Ordering::Relaxed),
+        u.rejected.load(Ordering::Relaxed),
+        u.rejected_bytes.load(Ordering::Relaxed),
+    )
+}
+
+#[test]
+fn a_recording_with_no_records_ends_in_a_terminal_state_until_the_file_changes() {
+    let env = Env::new();
+    let mock = Mock::start();
+    let good_path = env.paths.telemetry_dir().join("good.ibt");
+    let good = recording(&good_path, 20, 31);
+    let bad_path = env
+        .paths
+        .telemetry_dir()
+        .join("stockcars2 supra2019_vegas oval 2026-09-28 19-49-27.ibt");
+    let bad_size = headerless_recording(&bad_path, 200_000);
+
+    // Written a moment ago it may be a recording in progress: it waits, with its bytes counted.
+    age_file(&bad_path, 30);
+    age_file(&good_path, 30);
+    let mut up = env.uploader(&mock.url(), 1 << 20);
+    env.drain(&mut up, 20);
+    assert!(mock.with(|s| s.uploads[&sha256_hex(&good)].verified));
+    assert_eq!(counters(&env), (1, bad_size as i64, 0, 0), "still pending");
+
+    // Untouched for an hour: no header will ever be written. Terminal, with the reason.
+    age_file(&bad_path, 3_600);
+    env.advance(11_000);
+    env.drain(&mut up, 20);
+    assert_eq!(counters(&env), (0, 0, 1, bad_size as i64));
+    assert_eq!(up.pending(), 0);
+    assert_eq!(
+        env.pending_journal(),
+        0,
+        "not pending in the journal either"
+    );
+    let rejected = env.hub.journal().rejected_recordings();
+    assert_eq!(rejected.len(), 1);
+    assert!(rejected[0].path.ends_with("19-49-27.ibt"));
+    assert_eq!(rejected[0].size, bad_size);
+    assert!(
+        rejected[0].reason.contains("0 records"),
+        "{}",
+        rejected[0].reason
+    );
+    assert_eq!(mock.with(|s| s.creates.len()), 1, "nothing was offered");
+
+    // A rescan, then a restart (the journal is all that survives): never retried, never counted.
+    up.request_rescan();
+    env.drain(&mut up, 20);
+    assert_eq!(counters(&env), (0, 0, 1, bad_size as i64));
+    let env2 = env.restarted();
+    let mut up2 = env2.uploader(&mock.url(), 1 << 20);
+    assert_eq!(
+        counters(&env2),
+        (0, 0, 1, bad_size as i64),
+        "a restart does not queue it or count its bytes"
+    );
+    env2.drain(&mut up2, 20);
+    assert_eq!(counters(&env2), (0, 0, 1, bad_size as i64));
+    assert_eq!(mock.with(|s| s.creates.len()), 1);
+
+    // The file changes (size and mtime): it is looked at again, and now it is a recording.
+    let fixed = recording(&bad_path, 30, 32);
+    age_file(&bad_path, 30);
+    up2.request_rescan();
+    env2.advance(2_100);
+    env2.drain(&mut up2, 60);
+    assert!(mock.with(|s| s.uploads[&sha256_hex(&fixed)].verified));
+    assert_eq!(counters(&env2), (0, 0, 0, 0));
+    assert!(env2.hub.journal().rejected_recordings().is_empty());
+}
+
+#[test]
+fn a_recording_the_server_refuses_for_good_is_terminal_and_survives_a_restart_unretried() {
+    let env = Env::new();
+    let mock = Mock::start();
+    let path = env.paths.telemetry_dir().join("refused.ibt");
+    let bytes = recording(&path, 20, 33);
+    mock.with(|s| s.create_failures.push_back(422));
+    let mut up = env.uploader(&mock.url(), 1 << 20);
+    env.drain(&mut up, 20);
+    assert_eq!(counters(&env), (0, 0, 1, bytes.len() as i64));
+    assert_eq!(env.pending_journal(), 0);
+    assert!(
+        env.hub.journal().rejected_recordings()[0]
+            .reason
+            .contains("422")
+    );
+
+    let env2 = env.restarted();
+    let mut up2 = env2.uploader(&mock.url(), 1 << 20);
+    env2.drain(&mut up2, 20);
+    assert_eq!(counters(&env2), (0, 0, 1, bytes.len() as i64));
+    assert_eq!(
+        mock.with(|s| s.creates.len()),
+        0,
+        "the mock failed once and saw no retry"
+    );
+    assert!(mock.with(|s| s.uploads.is_empty()));
+}

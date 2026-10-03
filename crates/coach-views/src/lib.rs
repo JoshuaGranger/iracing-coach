@@ -219,7 +219,6 @@ const REQUIRED: &[(&str, Kind)] = &[
     ("runs", Kind::Array),
     ("laps", Kind::Array),
     ("lap_traces", Kind::Object),
-    ("track_profile", Kind::Object),
     ("track_geometry", Kind::Object),
     ("race_replay", Kind::Object),
     ("tire_learning", Kind::Object),
@@ -234,8 +233,12 @@ const REQUIRED: &[(&str, Kind)] = &[
     ("data_quality", Kind::Object),
 ];
 
-/// Added to the envelope after its first release: absent or null is fine, another type is not.
+/// Absent or null is fine, another type is not: fields added to the envelope after its first release,
+/// and `track_profile`, which the analyzer leaves null when no sample is usable (a recording spent on
+/// pit road or under caution, as Offline Testing sessions can be); the track and tuning views then
+/// come from `track_geometry` alone.
 const OPTIONAL_OBJECTS: &[&str] = &[
+    "track_profile",
     "race_investigation",
     "strategy_planning",
     "field_pace",

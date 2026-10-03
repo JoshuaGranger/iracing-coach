@@ -1042,3 +1042,77 @@ fn bins_per_lap_follows_the_backend() {
         Err(ProjectError::Json { .. })
     ));
 }
+
+#[test]
+fn a_null_or_absent_track_profile_still_projects_every_view() {
+    // Offline Testing recordings spent on pit road have no usable sample: the analyzer leaves
+    // `track_profile` null, and the projection used to fail with "missing required field".
+    let reference = analysis_doc("profile", &Options::default());
+    let (reference_out, _) = project_doc(&reference);
+    for absent in [false, true] {
+        let mut doc = reference.clone();
+        if absent {
+            doc.as_object_mut().unwrap().remove("track_profile");
+        } else {
+            doc["track_profile"] = Value::Null;
+        }
+        let (out, summary) = project_doc(&doc);
+        for kind in [
+            ViewKind::Race,
+            ViewKind::Runs,
+            ViewKind::TraceCatalog,
+            ViewKind::Traces,
+            ViewKind::Tuning,
+            ViewKind::Track,
+        ] {
+            assert!(kinds(&summary).contains(&kind), "{kind:?} absent={absent}");
+        }
+        // the geometry still draws the track and the tuning map; nothing else read the profile
+        assert_eq!(view(&out, "track.json"), view(&reference_out, "track.json"));
+        let tuning = view(&out, "tuning.json");
+        assert_eq!(
+            tuning["map"]["path"].as_array().map(Vec::len),
+            view(&reference_out, "tuning.json")["map"]["path"]
+                .as_array()
+                .map(Vec::len)
+        );
+        for (file, schema) in [
+            ("race.json", "RaceView"),
+            ("runs.json", "RunsView"),
+            ("traces-catalog.json", "TraceCatalog"),
+            ("track.json", "TrackGeometry"),
+            ("tuning.json", "TuningContextProjection"),
+        ] {
+            assert_valid(schema, &view(&out, file));
+        }
+    }
+}
+
+#[test]
+fn without_a_track_profile_or_a_drawable_path_the_track_is_absent_and_the_tuning_map_empty() {
+    let mut doc = analysis_doc("noprofile", &Options::default());
+    doc["track_profile"] = Value::Null;
+    doc["track_geometry"]["status"] = json!("unavailable");
+    doc["track_geometry"]["main_path"] = json!([]);
+    let (out, summary) = project_doc(&doc);
+    assert!(!kinds(&summary).contains(&ViewKind::Track));
+    assert!(!out.join("track.json").exists());
+    for kind in [ViewKind::Race, ViewKind::Runs, ViewKind::Tuning] {
+        assert!(kinds(&summary).contains(&kind), "{kind:?}");
+    }
+    let tuning = view(&out, "tuning.json");
+    assert!(tuning["map"].is_null() || tuning["map"]["path"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn a_track_profile_of_another_type_is_still_rejected() {
+    let mut doc = analysis_doc("profiletype", &Options::default());
+    doc["track_profile"] = json!([1, 2]);
+    let dir = scratch("profiletype");
+    let input = write_doc(&dir, &doc);
+    let err = project(&input, &dir.join("views").join("p1")).unwrap_err();
+    assert!(
+        matches!(err, ProjectError::Json { ref path, .. } if path == "track_profile"),
+        "{err:?}"
+    );
+}

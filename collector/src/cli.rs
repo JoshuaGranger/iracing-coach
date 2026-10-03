@@ -12,6 +12,9 @@ USAGE
   coach-collector uninstall            stop it and remove the Run value and its own files
   coach-collector record-sdk <seconds> <out.sdkfix>
                                        record the shared-memory map into a replay fixture
+  coach-collector backfill [options] [FOLDER...]
+                                       upload every recording found below each FOLDER and in the
+                                       raw archive, read-only, off track only, once
   coach-collector --version
 
 RUN OPTIONS
@@ -25,6 +28,17 @@ RUN OPTIONS
   --drain-secs N       longest wait for that drain (default 30)
   --iracing-root DIR   iRacing's Documents folder (default: Documents\\iRacing)
   --state-dir DIR      collector state folder (default: %LOCALAPPDATA%\\iRacingCoach)
+
+BACKFILL OPTIONS (D12 step 3; each FOLDER is searched at any depth for .ibt files)
+  --archive DIR        the legacy raw archive (default: Documents\\iRacing Coach\\data\\
+                       telemetry-traces\\raw); it and Documents\\iRacing\\telemetry are searched
+                       as well as the FOLDERs
+  --no-archive         search only the FOLDERs
+  --dry-run            list what would be queued, with sizes and what is already held or
+                       refused; no hashing, no network, nothing written
+  --server URL, --iracing-root DIR, --state-dir DIR    as for run
+  The server skips what it already holds, so nothing is sent twice. Progress is kept in
+  backfill-journal.jsonl in the state folder: an interrupted backfill resumes.
 ";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,9 +70,24 @@ impl Default for RunOptions {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BackfillOptions {
+    pub server: Option<String>,
+    pub state_dir: Option<PathBuf>,
+    pub iracing_root: Option<PathBuf>,
+    /// Searched at any depth, besides the raw archive and the telemetry folder.
+    pub folders: Vec<PathBuf>,
+    /// Replaces the default raw archive folder.
+    pub archive: Option<PathBuf>,
+    /// Neither the raw archive nor the telemetry folder, only `folders`.
+    pub no_archive: bool,
+    pub dry_run: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Run(RunOptions),
+    Backfill(BackfillOptions),
     Install {
         server: Option<String>,
         state_dir: Option<PathBuf>,
@@ -78,7 +107,7 @@ pub enum Command {
 pub fn parse(args: &[String]) -> Result<Command, String> {
     let mut it = args.iter().peekable();
     let sub = match it.peek().map(|s| s.as_str()) {
-        Some("run" | "install" | "uninstall" | "record-sdk") => it.next().cloned(),
+        Some("run" | "install" | "uninstall" | "record-sdk" | "backfill") => it.next().cloned(),
         _ => None,
     };
     match sub.as_deref() {
@@ -107,6 +136,28 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
                 }
             }
             Ok(Command::Uninstall { state_dir })
+        }
+        Some("backfill") => {
+            let mut o = BackfillOptions::default();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--server" => o.server = Some(value(&mut it, a)?),
+                    "--state-dir" => o.state_dir = Some(PathBuf::from(value(&mut it, a)?)),
+                    "--iracing-root" => o.iracing_root = Some(PathBuf::from(value(&mut it, a)?)),
+                    "--archive" => o.archive = Some(PathBuf::from(value(&mut it, a)?)),
+                    "--no-archive" => o.no_archive = true,
+                    "--dry-run" => o.dry_run = true,
+                    flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
+                    folder => o.folders.push(PathBuf::from(folder)),
+                }
+            }
+            if o.no_archive && o.archive.is_some() {
+                return Err("--no-archive and --archive exclude each other".into());
+            }
+            if o.no_archive && o.folders.is_empty() {
+                return Err("--no-archive needs a FOLDER".into());
+            }
+            Ok(Command::Backfill(o))
         }
         Some("record-sdk") => {
             let seconds: f64 = it
@@ -221,6 +272,36 @@ mod tests {
             })
         );
         assert_eq!(p(&["--version"]), Ok(Command::Version));
+    }
+
+    #[test]
+    fn backfill_takes_folders_and_options() {
+        let Ok(Command::Backfill(o)) = p(&[
+            "backfill",
+            "--dry-run",
+            "D:/old recordings",
+            "--archive",
+            "E:/raw",
+            "--server",
+            "10.0.0.2:8210",
+            "F:/more",
+        ]) else {
+            panic!("parse failed");
+        };
+        assert!(o.dry_run && !o.no_archive);
+        assert_eq!(
+            o.folders,
+            [PathBuf::from("D:/old recordings"), PathBuf::from("F:/more")]
+        );
+        assert_eq!(o.archive, Some(PathBuf::from("E:/raw")));
+        assert_eq!(o.server.as_deref(), Some("10.0.0.2:8210"));
+        assert_eq!(
+            p(&["backfill"]),
+            Ok(Command::Backfill(BackfillOptions::default()))
+        );
+        assert!(p(&["backfill", "--bogus"]).is_err());
+        assert!(p(&["backfill", "--no-archive"]).is_err());
+        assert!(p(&["backfill", "--no-archive", "--archive", "x", "y"]).is_err());
     }
 
     #[test]

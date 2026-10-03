@@ -119,3 +119,30 @@ Reason: `acceptance/v1-candidate.md` and `e2e-mini-pc.md` found setup (`.sto`) b
 
 - `nas-layout.md` section 7: the spool row and a note state that only `ibt` blobs are released after archiving; setup blobs stay because job roots hard-link them (`worker-interface.md` section 3) and no setup restage exists. No server behaviour changes; the behaviour is judged correct for v1.
 
+### 2026-10-03, port phase 1: native decode hand-off (port-decode; review: Codex Sol 6.1 pending, D15)
+
+Reason: port phase 1 (`workstreams.md` wave 5, D2) needs the decode stage's hand-off fixed before any server or image change depends on it; section 7 named a PyO3 module and left the column format open.
+
+- `worker-interface.md` section 6: the orphan rule also covers `coach-decode-*` directories under the driver's `TMPDIR`.
+- `worker-interface.md` section 2: `IRACING_COACH_NATIVE_BIN` (path of `coach-analysis`, read only when native stages are listed); the `IRACING_COACH_NATIVE_STAGES` row points at section 7.
+- `worker-interface.md` section 7: phase 1 runs as the executable `coach-analysis decode` (crate `crates/coach-analysis`) and hands over a coach column store, format version 1, specified there (request, layout, header, per-type column interface, rejection and versioning rules); the call site is `workflow._load_analysis_telemetry` through the new `native_stages.py`; an unknown or unprovided stage fails the job. PyO3 (`coach_native`) moves to phase 2, which reads the same store. `TelemetryTable` buffer reads move to phase 2 (analyzer bundle).
+- `worker-interface.md` section 8: `--native-bin` and the one-command `corpus` gate.
+- Proof: `cargo test -p coach-analysis`; `analysis_parity.py corpus` identical on the fixtures, the four worker cases and the private corpus (`docs/08-rewrite/port/phase1-decode.md`).
+
+### 2026-10-03, G3 follow-up: garage re-entry join and unmodified exit name (W3; review: Codex Sol 6.1 pending, D15)
+
+Reason: the G3 rig run (`acceptance/g3-garage.md`) found that iRacing drops `IsInGarage` for 40 to 83 ms before every load and Apply (the collector fix joins those dips, which section 8 contradicted), and that a visit which reloads the file already named, or ends after Revert, commits values only because the SDK name cannot change, so "every committed visit carries the last-loaded file's name" could not hold.
+
+- `collector-protocol.md` section 8: new edge rule, re-entry join: `IsInGarage` back at 1 within 1.5 s of its fall continues the visit (one visit, one commit); the old rule ("re-entering inside the 5 s window closes the open visit first") now applies from 1.5 s. New commit rule: when the name did not change and the exit state has `DriverSetupIsModified` 0, the commit carries the exit name and the hash of that file (`is_modified: false`, `load_type` set, `.sto` queued), since unmodified means the values are that file's; modified or unknown exit stays values only. The exit state is read when the 5 s window closes, not at the exit tick; a visit with no snapshot still sends no commit. The `Modified setups` paragraph notes that such a commit links like any unmodified commit.
+- No wire change: `GarageCommit` fields are unchanged. Server code needs no change (it already links an unmodified commit by `sto_sha256`); the `setup_name` description in `api.openapi.yaml` ("null when it did not change within 5 s") is now stale and is left for the contracts owner.
+- Proof: `cargo test -p coach-collector` (`garage::tests::*`, `tests/garage.rs::leaving_unmodified_on_the_same_name_commits_that_file_with_its_hash`, `tests/rig_g3.rs`: the reload visit of the real capture now carries its file's name and hash, the discard and revert visits stay values only).
+
+### 2026-10-03, W4: library cleanup operation (server; additive, no review needed)
+
+Reason: the end-to-end runs left test entries in the owner's live library (`acceptance/migration.md` "Not converted or not clean" item 5: `e2e baseline.sto`, `e2e garage capture.sto`, four garage setups, and the synthetic or test recordings and sessions those runs uploaded). The server had no way to remove anything, and a removal by hand in SQLite would miss derived rows and view files.
+
+- `api.openapi.yaml`: new admin operation `POST /api/v1/admin/remove` with `AdminRemoveRequest`, `AdminRemoveReport` (and its parts). Removes named setup file entries and recordings by hash together with their derived rows and view files; `dry_run` defaults to true and lists exactly what a real call would remove. Idempotent, one transaction, logged (server log and `$COACH_DATA_DIR/run/admin-removals.jsonl`). Never touches the NAS, the collector's journal, the worker's archive or user-authored rows; a target with a note, a running job or no NAS copy is `blocked` and left whole. A session that keeps other recordings gets its analysis made current again over the rest (or queued). Additive: no existing operation or schema changes.
+- No `GET /api/v1/sessions/{id}/analysis` is added: `GET /api/v1/sessions/{id}` already carries `session.analysis_state`, `analysis_id` and the analyses list, so a second read of the same state would be a second source. `workstreams.md` G4-9 should name the session read (`analysis_state` `ready` and the race view answering 200), which is what the rig did.
+- `SessionSummary.analysis_reason` (no schema change): besides `failed` and `deferred`, a `ready` session reports the reason when a newer analysis of its current recordings (or of a newer profile) is deferred, for example `exceeds_memory_budget`; null otherwise.
+- Regenerated: `node tools/wire/gen-wire.mjs` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+- Proof: `cargo test -p coach-server` (`tests/admin.rs`, the contract-coverage test in `tests/api.rs`, `tests/jobs.rs`); `node tools/wire/gen-wire.mjs --check` reports no drift.

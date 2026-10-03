@@ -73,12 +73,12 @@ fn background_mode() {
 fn background_mode() {}
 
 #[cfg(windows)]
-fn real_source() -> Result<Box<dyn MapSource>, String> {
+pub fn real_source() -> Result<Box<dyn MapSource>, String> {
     Ok(Box::new(crate::win::map::Win32MapSource))
 }
 
 #[cfg(not(windows))]
-fn real_source() -> Result<Box<dyn MapSource>, String> {
+pub fn real_source() -> Result<Box<dyn MapSource>, String> {
     Err("reading iRacing needs Windows; use --replay with a fixture".into())
 }
 

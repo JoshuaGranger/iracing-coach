@@ -775,6 +775,16 @@ pub fn tick_steps(
 /// still R), Apply and Close (IsInGarage drops, then count 10 and the new name arrive), then
 /// `after_ms` of quiet time off track.
 pub fn p5_fixture(b: &MapBuilder, exit_name: &str, after_ms: u32) -> Vec<u8> {
+    p5_fixture_exit(b, exit_name, true, after_ms)
+}
+
+/// `p5_fixture` with the exit state's `DriverSetupIsModified` chosen.
+pub fn p5_fixture_exit(
+    b: &MapBuilder,
+    exit_name: &str,
+    exit_modified: bool,
+    after_ms: u32,
+) -> Vec<u8> {
     let mut steps = vec![Step::Static {
         status: 1,
         update: 1,
@@ -804,7 +814,7 @@ pub fn p5_fixture(b: &MapBuilder, exit_name: &str, after_ms: u32) -> Vec<u8> {
     steps.push(Step::Static {
         status: 1,
         update: 10,
-        session_info: session(10, exit_name, true, "155 kPa"),
+        session_info: session(10, exit_name, exit_modified, "155 kPa"),
     });
     let quiet = (after_ms / 100) as usize;
     steps.extend(tick_steps(b, t, tick, quiet, false, false));

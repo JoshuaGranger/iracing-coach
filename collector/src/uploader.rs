@@ -6,9 +6,10 @@
 //! waited on, so an in-flight chunk or scan is abandoned within the 100 ms allowance when the
 //! evidence lapses. Work interrupted that way is kept and resumed.
 
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -19,8 +20,10 @@ use crate::config::{Paths, server_authority};
 use crate::gate::TrackGate;
 use crate::http::{Body, HttpClient, HttpError};
 use crate::hub::Hub;
-use crate::journal::{RecordingEntry, SeenEntry};
-use crate::scan::{Candidate, Kind, scan_recordings, scan_setups};
+use crate::journal::{Journal, RecordingEntry, RejectedEntry, SeenEntry};
+use crate::scan::{
+    Candidate, Kind, archived_name, scan_recordings, scan_recordings_below, scan_setups,
+};
 use crate::util::{Clock, iso_utc};
 
 pub const CHUNK_BYTES: usize = 4 * 1024 * 1024;
@@ -35,6 +38,10 @@ pub struct UploaderSettings {
     pub server_backoff_ms: Vec<u64>,
     /// Delay before a file that is not final yet (recording in progress) is checked again.
     pub not_ready_retry_ms: u64,
+    /// A recording the collector cannot read as one (no records, a size that does not match its
+    /// header, a header that does not parse) is given up on once it has not been written for this
+    /// long; before that it may still be a recording in progress.
+    pub reject_settle_ms: u64,
 }
 
 impl UploaderSettings {
@@ -45,6 +52,7 @@ impl UploaderSettings {
             scan_interval_ms: 60_000,
             server_backoff_ms: vec![1_000, 2_000, 4_000, 8_000, 16_000, 30_000],
             not_ready_retry_ms: 5_000,
+            reject_settle_ms: 10 * 60 * 1_000,
         }
     }
 }
@@ -62,7 +70,6 @@ pub enum Step {
 struct Item {
     cand: Candidate,
     next_try_ms: u64,
-    failed: bool,
 }
 
 #[derive(Debug)]
@@ -75,8 +82,9 @@ enum Outcome {
     Later(u64),
     /// The server could not be reached or refused for now.
     ServerTrouble { retry_after_ms: Option<u64> },
-    /// Never retry this file as it is (it changes the item's size/mtime to be reconsidered).
-    Failed(String),
+    /// Give up on this file as it is: unreadable, or refused by the server for good. It is tried
+    /// again only when its size or mtime changes.
+    Rejected(String),
     /// The server's hash differs: forget the remembered hash and start over.
     Rehash,
 }
@@ -95,6 +103,13 @@ pub struct Uploader {
     /// The journal's pending entries are matched with files on the first gate-open step (the
     /// stat calls are file work and wait for off-track evidence like everything else).
     journal_loaded: bool,
+    /// Backfill: the folders searched, at any depth, for recordings (instead of the telemetry and
+    /// setups folders), and the original name of each archived recording found there.
+    roots: Option<Vec<PathBuf>>,
+    names: BTreeMap<String, String>,
+    /// Backfill: the running collector's own journal as it was at start, read only; what it knows
+    /// the server holds is not hashed again.
+    known: Option<Journal>,
     server_trouble: u32,
     server_retry_at_ms: u64,
     last_customer_id: Option<i64>,
@@ -112,6 +127,9 @@ impl Uploader {
             scanned_at_ms: None,
             rescan_requested: true,
             journal_loaded: false,
+            roots: None,
+            names: BTreeMap::new(),
+            known: None,
             server_trouble: 0,
             server_retry_at_ms: 0,
             last_customer_id: None,
@@ -129,7 +147,24 @@ impl Uploader {
             .uploads
             .bytes_pending
             .store(bytes as i64, std::sync::atomic::Ordering::Relaxed);
+        uploader.publish_rejected();
         uploader
+    }
+
+    /// Backfill (`coach-collector backfill`): upload the recordings found at any depth below
+    /// `roots` instead of the telemetry and setups folders, once, through the same gate, hash,
+    /// create and chunk path. `known` is the running collector's journal, read only.
+    pub fn for_backfill(mut self, roots: Vec<PathBuf>, known: Journal) -> Uploader {
+        self.roots = Some(roots);
+        self.known = Some(known);
+        self.settings.scan_interval_ms = u64::MAX;
+        self
+    }
+
+    /// Backfill: the listing was made and every file in it is uploaded, held by the server, or
+    /// given up on.
+    pub fn backfill_done(&self) -> bool {
+        self.scanned_at_ms.is_some() && !self.rescan_requested && self.items.is_empty()
     }
 
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Uploader {
@@ -142,7 +177,7 @@ impl Uploader {
     }
 
     pub fn pending(&self) -> usize {
-        self.items.iter().filter(|i| !i.failed).count()
+        self.items.len()
     }
 
     /// Thread body.
@@ -200,21 +235,18 @@ impl Uploader {
                 if item.cand.size != cand.size || item.cand.mtime_ms != cand.mtime_ms {
                     item.cand = cand;
                     item.next_try_ms = 0;
-                    item.failed = false;
                 }
             }
             None => self.items.push(Item {
                 cand,
                 next_try_ms: 0,
-                failed: false,
             }),
         }
     }
 
     fn publish_stats(&self) {
-        let live = self.items.iter().filter(|i| !i.failed);
-        let count = live.clone().count() as i64;
-        let bytes: u64 = live.map(|i| i.cand.size).sum();
+        let count = self.items.len() as i64;
+        let bytes: u64 = self.items.iter().map(|i| i.cand.size).sum();
         self.hub
             .uploads
             .uploads_pending
@@ -223,29 +255,54 @@ impl Uploader {
             .uploads
             .bytes_pending
             .store(bytes as i64, std::sync::atomic::Ordering::Relaxed);
+        self.publish_rejected();
+    }
+
+    fn publish_rejected(&self) {
+        let rejected = self.hub.journal().rejected_recordings();
+        let bytes: u64 = rejected.iter().map(|e| e.size).sum();
+        let stats = &self.hub.uploads;
+        stats
+            .rejected
+            .store(rejected.len() as i64, std::sync::atomic::Ordering::Relaxed);
+        stats
+            .rejected_bytes
+            .store(bytes as i64, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Lists both folders and reconciles the queue with them. False when the gate closed part way:
     /// the scan stays due, nothing is dropped from the queue or the journal on a partial listing.
     fn scan(&mut self, proceed: &dyn Fn() -> bool) -> bool {
         let now_unix = self.hub.clock.unix_ms();
-        let found = scan_recordings(&self.paths.telemetry_dir(), proceed).and_then(|mut found| {
-            found.extend(scan_setups(&self.paths.setups_dir(), proceed)?);
-            Ok(found)
-        });
+        let found = match &self.roots {
+            Some(roots) => scan_recordings_below(roots, proceed),
+            None => scan_recordings(&self.paths.telemetry_dir(), proceed).and_then(|mut found| {
+                found.extend(scan_setups(&self.paths.setups_dir(), proceed)?);
+                Ok(found)
+            }),
+        };
         let Ok(found) = found else {
             return false;
         };
+        if self.roots.is_some() {
+            for cand in &found {
+                if !proceed() {
+                    return false;
+                }
+                if let Some(name) = archived_name(&cand.path) {
+                    self.names.insert(cand.key(), name);
+                }
+            }
+        }
         for cand in found {
-            // Skip what the server is already known to hold (same path, size, mtime).
+            // Skip what the server is already known to hold (same path, size, mtime), and what
+            // was given up on and has not changed.
+            let held = self.held_hash(&cand, now_unix).is_some();
             let mut journal = self.hub.journal();
-            if journal
-                .seen_hash(&cand.key(), cand.size, cand.mtime_ms, now_unix)
-                .is_some()
-            {
+            if held {
                 // A pending entry for it (queued by a garage commit) is already satisfied.
                 let _ = journal.recording_done(&cand.key());
-            } else {
+            } else if !journal.is_rejected(&cand.key(), cand.size, cand.mtime_ms) {
                 drop(journal);
                 self.upsert(cand);
             }
@@ -273,6 +330,16 @@ impl Uploader {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.publish_stats();
         true
+    }
+
+    /// The hash of a file the server is known to hold: this process's journal, or in a backfill
+    /// the running collector's.
+    fn held_hash(&self, cand: &Candidate, now_unix: u64) -> Option<String> {
+        let (key, size, mtime) = (cand.key(), cand.size, cand.mtime_ms);
+        self.hub
+            .journal()
+            .seen_hash(&key, size, mtime, now_unix)
+            .or_else(|| self.known.as_ref()?.seen_hash(&key, size, mtime, now_unix))
     }
 
     /// One unit of work: a scan if due, else one file driven as far as it goes.
@@ -321,14 +388,13 @@ impl Uploader {
             .items
             .iter()
             .enumerate()
-            .filter(|(_, i)| !i.failed && i.next_try_ms <= now)
+            .filter(|(_, i)| i.next_try_ms <= now)
             .min_by_key(|(_, i)| (i.cand.kind != Kind::Ibt, std::cmp::Reverse(i.cand.mtime_ms)))
             .map(|(idx, _)| idx);
         let Some(idx) = next else {
             let wake = self
                 .items
                 .iter()
-                .filter(|i| !i.failed)
                 .map(|i| i.next_try_ms.saturating_sub(now))
                 .min()
                 .unwrap_or(1_000)
@@ -365,9 +431,20 @@ impl Uploader {
                 self.server_trouble = self.server_trouble.saturating_add(1);
                 self.server_retry_at_ms = now + retry_after_ms.unwrap_or(step);
             }
-            Outcome::Failed(why) => {
+            Outcome::Rejected(why) => {
                 crate::error!("giving up on {}: {why}", cand.path.display());
-                self.items[idx].failed = true;
+                let entry = RejectedEntry {
+                    path: cand.key(),
+                    size: cand.size,
+                    mtime_ms: cand.mtime_ms,
+                    kind: cand.kind.as_str().to_string(),
+                    reason: why,
+                    at_ms: self.hub.clock.unix_ms(),
+                };
+                if let Err(e) = self.hub.journal().reject_recording(entry) {
+                    crate::error!("journal append failed: {e}");
+                }
+                self.items.remove(idx);
             }
         }
         self.publish_stats();
@@ -377,13 +454,9 @@ impl Uploader {
     fn process(&mut self, cand: &Candidate) -> Outcome {
         let now_unix = self.hub.clock.unix_ms();
         // 1. Known to the server already (same path, size, mtime).
-        if self
-            .hub
-            .journal()
-            .seen_hash(&cand.key(), cand.size, cand.mtime_ms, now_unix)
-            .is_some()
-        {
+        if self.held_hash(cand, now_unix).is_some() {
             let _ = self.hub.journal().recording_done(&cand.key());
+            self.count(|s| &s.files_held);
             return Outcome::Done;
         }
         // 2. Finalization gate for recordings.
@@ -397,7 +470,10 @@ impl Uploader {
                         .map_or(cand.mtime_ms, |d| d.as_millis() as u64);
                 }
                 Finalization::NotReady(reason) => {
-                    return Outcome::Later(not_ready_delay(&reason, &self.settings));
+                    return match unreadable(&reason) {
+                        Some(why) if self.settled(&cand) => Outcome::Rejected(why),
+                        _ => Outcome::Later(not_ready_delay(&reason, &self.settings)),
+                    };
                 }
             }
         }
@@ -433,6 +509,22 @@ impl Uploader {
         };
         // 5. Create, then chunks.
         self.send(&cand, &sha)
+    }
+
+    /// The file has not been written to for `reject_settle_ms` (asked of the open file, whose
+    /// mtime is current even while a writer holds it).
+    fn settled(&self, cand: &Candidate) -> bool {
+        let written = File::open(&cand.path)
+            .and_then(|f| f.metadata())
+            .and_then(|m| m.modified());
+        written
+            .ok()
+            .and_then(|t| SystemTime::now().duration_since(t).ok())
+            .is_some_and(|age| age.as_millis() as u64 >= self.settings.reject_settle_ms)
+    }
+
+    fn count(&self, field: impl Fn(&crate::hub::UploadStats) -> &std::sync::atomic::AtomicU64) {
+        field(&self.hub.uploads).fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn hash(&mut self, cand: &Candidate) -> Result<String, Outcome> {
@@ -472,7 +564,11 @@ impl Uploader {
             "sha256": sha,
             "size": cand.size,
             "kind": cand.kind.as_str(),
-            "file_name": cand.file_name(),
+            "file_name": self
+                .names
+                .get(&cand.key())
+                .cloned()
+                .unwrap_or_else(|| cand.file_name()),
             "relative_path": cand.relative_path,
             "source_mtime": iso_utc(cand.mtime_ms),
             "collector_id": self.settings.collector_id,
@@ -481,7 +577,10 @@ impl Uploader {
         .to_string();
         let mut offset = match self.create(&create) {
             Ok(Created::Open(offset)) => offset,
-            Ok(Created::Held) => return self.finish(cand, sha),
+            Ok(Created::Held) => {
+                self.count(|s| &s.files_held);
+                return self.finish(cand, sha);
+            }
             Err(outcome) => return outcome,
         };
 
@@ -544,7 +643,10 @@ impl Uploader {
                                     .and_then(|o| o.as_u64())
                                     .unwrap_or(offset + len);
                             }
-                            Some(_) => return self.finish(cand, sha),
+                            Some(_) => {
+                                self.count(|s| &s.files_uploaded);
+                                return self.finish(cand, sha);
+                            }
                             None => {
                                 return Outcome::ServerTrouble {
                                     retry_after_ms: None,
@@ -615,10 +717,10 @@ impl Uploader {
             503 => Err(Outcome::ServerTrouble {
                 retry_after_ms: retry_after(&resp),
             }),
-            413 => Err(Outcome::Failed(
+            413 => Err(Outcome::Rejected(
                 "the server refuses files of this size".into(),
             )),
-            400 | 422 => Err(Outcome::Failed(format!(
+            400 | 422 => Err(Outcome::Rejected(format!(
                 "the server rejected the upload ({})",
                 resp.status
             ))),
@@ -656,6 +758,25 @@ fn retry_after(resp: &crate::http::Response) -> Option<u64> {
     resp.header("retry-after")
         .and_then(|v| v.trim().parse::<u64>().ok())
         .map(|s| s.clamp(1, 600) * 1000)
+}
+
+/// Why a recording that is not ready can never become ready as it is, or None while it may still
+/// be a recording in progress (too recent, held by a writer) or the failure may pass (an I/O
+/// error such as a sharing violation).
+fn unreadable(reason: &NotReadyReason) -> Option<String> {
+    match reason {
+        NotReadyReason::NoRecords => Some("the header says it holds 0 records".into()),
+        NotReadyReason::SizeMismatch { expected, actual } => Some(format!(
+            "its size is {actual} bytes, the header describes {expected}"
+        )),
+        // `IbtError::Io` is displayed with this prefix; anything else is the file's own content.
+        NotReadyReason::Unreadable(why) if !why.starts_with("I/O:") => {
+            Some(format!("not a readable recording: {why}"))
+        }
+        NotReadyReason::Unreadable(_)
+        | NotReadyReason::TooRecent { .. }
+        | NotReadyReason::InUse => None,
+    }
 }
 
 fn not_ready_delay(reason: &NotReadyReason, settings: &UploaderSettings) -> u64 {
@@ -778,7 +899,6 @@ mod tests {
         env.up.items.push(Item {
             cand: ghost.clone(),
             next_try_ms: 0,
-            failed: false,
         });
         env.hub
             .journal()

@@ -81,8 +81,10 @@ fn the_sanitized_rig_capture_replays_into_the_garage_events_the_rig_saw() {
         "five visits; count 9 arrived at the session screen, outside any visit"
     );
 
-    // One commit per visit, in order: the two that loaded a file are named and hashed, the three
-    // that ended on the same name (discard, revert, reload of the file already loaded) are not.
+    // One commit per visit, in order: the two that loaded a file are named and hashed. Of the
+    // three that ended on the same name, discard and revert end modified (values only); the
+    // reload of the file already loaded ends with IsModified 0, so it carries that file's name
+    // and hash (D9: unmodified means the values are the file's).
     let commits = of("garage.commit");
     assert_eq!(commits.len(), 5);
     let ids: Vec<&str> = commits
@@ -95,7 +97,7 @@ fn the_sanitized_rig_capture_replays_into_the_garage_events_the_rig_saw() {
         .iter()
         .map(|c| c["commit"]["setup_name"].as_str())
         .collect();
-    assert_eq!(names, [Some(BASE), Some(EDITED), None, None, None]);
+    assert_eq!(names, [Some(BASE), Some(EDITED), None, None, Some(EDITED)]);
     assert_eq!(commits[0]["commit"]["sto_sha256"], sha256_hex(&base_bytes));
     assert_eq!(
         commits[1]["commit"]["sto_sha256"],
@@ -104,12 +106,19 @@ fn the_sanitized_rig_capture_replays_into_the_garage_events_the_rig_saw() {
     assert_eq!(commits[1]["commit"]["is_modified"], true);
     assert_eq!(commits[1]["commit"]["update_count"], 8);
     assert!(
-        commits[2..]
+        commits[2..4]
             .iter()
             .all(|c| c["commit"]["sto_sha256"].is_null()
                 && c["commit"]["update_count"].is_i64()
                 && !c["values"].is_null())
     );
+    assert_eq!(
+        commits[4]["commit"]["sto_sha256"],
+        sha256_hex(&edited_bytes)
+    );
+    assert_eq!(commits[4]["commit"]["is_modified"], false);
+    assert_eq!(commits[4]["commit"]["update_count"], 21);
+    assert!(!commits[4]["values"].is_null());
     // The named commit's values are the last snapshot of its visit, and the earlier loads of that
     // visit are snapshots only: nothing in them names a file.
     let last_of_visit = of("garage.snapshot")

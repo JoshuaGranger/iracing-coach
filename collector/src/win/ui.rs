@@ -423,6 +423,17 @@ impl App {
         } else {
             "Server unreachable".to_string()
         };
+        // Recordings the collector gave up on (unreadable or refused for good) are not pending
+        // and would otherwise go unmentioned; the log and journal carry the reasons.
+        let rejected = self.hub.uploads.rejected.load(Ordering::Relaxed);
+        let server = if rejected > 0 {
+            format!(
+                "{server} · {rejected} recording{} not uploaded",
+                if rejected == 1 { "" } else { "s" }
+            )
+        } else {
+            server
+        };
         (sim, server)
     }
 

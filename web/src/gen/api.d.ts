@@ -2046,6 +2046,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove named setup file entries and recordings (by hash) from the library, with their derived rows and views. Lists what would go unless `dry_run` is false.
+         * @description Library cleanup (test or mistaken uploads). Synchronous, one transaction, answers 200 with the report (nothing is queued). `dry_run` defaults to true: the report lists exactly what a real call would remove and changes nothing; a real call needs `"dry_run": false`.
+         *     A **setup file entry** is every `setup_files` row whose file name equals `name` (case-insensitive; a name with a `/` is matched against `<car folder>/<path>`; one driver with `customer_id`). It goes together with the garage visits whose committed name is that file name, the setup observations of those visits and of the removed `.htm` blobs, and any setup left with no observation. A **recording** goes together with its setup observations, the sessions that held only that recording (and their analyses, view files, jobs and the driver's `last_investigation` pointer when it names them), the analyses of sessions that hold other recordings too (those sessions get a new analysis queued, over the remaining recordings), and every occurrence, upload and job row of its hash. Removed blobs lose their spool copy.
+         *     Never touched: the NAS (raw files, manifests and every other NAS path), the collector's journal and the worker's per-driver archive (analysis JSON, `history.sqlite3`); user-authored rows are never deleted (a target with a note attached is `blocked` as `has_notes`). A blob whose NAS copy is not `archived` is kept (`blobs_kept`; a recording is `blocked` as `not_archived`), since the spool copy is then the only one. A target whose work is running is `blocked` as `job_running`; nothing of a blocked target is changed. Idempotent: a target already gone reports `found: false` and changes nothing. Each real call is logged (server log and the append-only `$COACH_DATA_DIR/run/admin-removals.jsonl`, one line holding the request and the report). `rebuild-index` reads the NAS manifests, so a removed hash returns if the index is rebuilt from the NAS.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdminRemoveRequest"];
+                };
+            };
+            responses: {
+                /** @description The report (a plan when `dry_run` is true) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminRemoveReport"];
+                    };
+                };
+                /** @description `invalid_request`: neither `setup_files` nor `recordings` is given, or a field is malformed */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2948,6 +3002,69 @@ export interface components {
             state: components["schemas"]["UploadStateName"];
             offset: number;
             size: number;
+        };
+        AdminRemoveRequest: {
+            /** @description Limits `setup_files` matching to one driver; recordings are matched by hash alone. */
+            customer_id?: number | null;
+            /** @description File names as the library lists them, for example `e2e baseline.sto`. */
+            setup_files?: string[];
+            recordings?: string[];
+            /** @default true */
+            dry_run: boolean;
+        };
+        /** @enum {string} */
+        AdminRemoveBlocked: "job_running" | "not_archived" | "has_notes" | "not_a_recording";
+        AdminRemoveSetupFile: {
+            name: string;
+            /** @description Any file entry or garage visit carries the name. */
+            found: boolean;
+            /** @description The changes listed here were made (false for a dry run, a blocked or an absent target). */
+            applied: boolean;
+            blocked: components["schemas"]["AdminRemoveBlocked"][];
+            files: {
+                customer_id: number;
+                car_folder: string;
+                relative_path: string;
+                sha256: string;
+                present: boolean;
+            }[];
+            /** @description Visit ids. */
+            garage_visits: string[];
+            setup_observations: number;
+            /** @description Setups left without an observation. */
+            setups: number[];
+            blobs_removed: string[];
+            /** @description Blobs still referenced elsewhere or not yet on the NAS. */
+            blobs_kept: string[];
+        };
+        AdminRemoveRecording: {
+            sha256: string;
+            found: boolean;
+            applied: boolean;
+            blocked: components["schemas"]["AdminRemoveBlocked"][];
+            file_name?: string | null;
+            size?: number | null;
+            nas_state?: string | null;
+            sessions_removed: {
+                session_id: number;
+                track?: string | null;
+                session_type?: string | null;
+            }[];
+            /** @description Sessions that keep other recordings; their analysis is queued again. */
+            sessions_requeued: number[];
+            analyses: string[];
+            setup_observations: number;
+            setups: number[];
+            jobs: number;
+        };
+        AdminRemoveReport: {
+            dry_run: boolean;
+            setup_files: components["schemas"]["AdminRemoveSetupFile"][];
+            recordings: components["schemas"]["AdminRemoveRecording"][];
+            /** @description What a removal never touches. */
+            kept: string[];
+            /** @description Path of the removal log written by a real call; null for a dry run. */
+            log: string | null;
         };
         /** @description Built by tools/migrate from a copy of the legacy data root (D12). Converted once. */
         ImportBundle: {

@@ -152,6 +152,13 @@ pub struct UploadStats {
     pub waiting_for_off_track: AtomicBool,
     /// Folder scans completed since start.
     pub scans_done: AtomicU64,
+    /// Files given up on (unreadable, or refused by the server for good): not pending, not in
+    /// `bytes_pending`, tried again only when the file changes. The journal holds the reasons.
+    pub rejected: AtomicI64,
+    pub rejected_bytes: AtomicI64,
+    /// Files the server took from this process, and files it already held, since start.
+    pub files_uploaded: AtomicU64,
+    pub files_held: AtomicU64,
 }
 
 /// A live layout as the server last sent it.

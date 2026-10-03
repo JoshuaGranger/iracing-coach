@@ -128,6 +128,22 @@ impl Paths {
     pub fn journal_path(&self) -> PathBuf {
         self.state_dir.join("journal.jsonl")
     }
+    /// The backfill's own journal: it never shares `journal.jsonl` with a running collector.
+    pub fn backfill_journal_path(&self) -> PathBuf {
+        self.state_dir.join("backfill-journal.jsonl")
+    }
+    pub fn backfill_lock_path(&self) -> PathBuf {
+        self.state_dir.join("backfill.lock")
+    }
+    /// The legacy desktop app's raw recording archive, one folder per recording hash.
+    pub fn legacy_archive_dir(&self) -> PathBuf {
+        let documents = self.iracing_root.parent().unwrap_or(&self.iracing_root);
+        documents
+            .join("iRacing Coach")
+            .join("data")
+            .join("telemetry-traces")
+            .join("raw")
+    }
     pub fn logs_dir(&self) -> PathBuf {
         self.state_dir.join("logs")
     }

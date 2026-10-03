@@ -700,6 +700,30 @@ async fn refresh_for_job(app: &AppState, job: &JobRow) -> Result<()> {
         .await
 }
 
+/// The reason a deferred analysis of the session's current recordings (or of a newer profile) is
+/// waiting, while an older analysis is still current: the `analysis_reason` of a `ready` session.
+/// A deferred job of an earlier membership (a session that has grown since) does not count.
+fn newer_analysis_deferral(
+    conn: &Connection,
+    session_id: i64,
+    current_analysis: &str,
+) -> rusqlite::Result<Option<String>> {
+    let (digest, _) = membership_digest(conn, session_id)?;
+    Ok(conn
+        .query_row(
+            "SELECT j.error_code FROM jobs j, analyses a
+             WHERE a.analysis_id = ?2 AND j.kind = 'analyze' AND j.state = 'deferred'
+               AND json_extract(j.subject_json, '$.session_id') = ?1
+               AND json_extract(j.subject_json, '$.membership_sha256') = ?3
+               AND (a.membership_sha256 <> ?3 OR j.created_at > a.created_at)
+             ORDER BY j.job_id DESC LIMIT 1",
+            params![session_id, current_analysis, digest],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten())
+}
+
 /// Derives `analysis_state` from the session's jobs and current analysis.
 pub fn refresh_session_state(conn: &Connection, session_id: i64) -> rusqlite::Result<()> {
     let count = |states: &str| -> rusqlite::Result<i64> {
@@ -733,8 +757,9 @@ pub fn refresh_session_state(conn: &Connection, session_id: i64) -> rusqlite::Re
         ("queued", None)
     } else if project_pending > 0 {
         ("running", None)
-    } else if current.is_some() && projection.as_deref() == Some("ready") {
-        ("ready", None)
+    } else if let (Some(current), Some("ready")) = (current.as_deref(), projection.as_deref()) {
+        // A ready session whose newer analysis is over the memory ceiling still shows why.
+        ("ready", newer_analysis_deferral(conn, session_id, current)?)
     } else if count("'deferred'")? > 0 {
         let reason: Option<String> = conn
             .query_row(

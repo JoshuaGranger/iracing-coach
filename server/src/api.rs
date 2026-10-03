@@ -142,6 +142,7 @@ pub fn router(app: AppState) -> Router {
         .route("/admin/import", post(admin_import).layer(big_limit))
         .route("/admin/reanalyze", post(admin_reanalyze))
         .route("/admin/snapshot", post(admin_snapshot))
+        .route("/admin/remove", post(admin_remove))
         .fallback(api_not_found)
         .layer(middleware::from_fn_with_state(app.clone(), idempotency));
 
@@ -1474,4 +1475,8 @@ async fn admin_reanalyze(State(app): State<AppState>, body: Bytes) -> Resp {
 
 async fn admin_snapshot(State(app): State<AppState>) -> Resp {
     accepted(crate::scheduler::enqueue_snapshot(&app).await?)
+}
+
+async fn admin_remove(State(app): State<AppState>, body: Bytes) -> Resp {
+    ok(crate::admin::remove(&app, &body).await?)
 }

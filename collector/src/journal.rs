@@ -29,6 +29,21 @@ pub struct RecordingEntry {
     pub sha256: Option<String>,
 }
 
+/// A file that will not be uploaded as it is: the collector cannot read it as a recording, or the
+/// server refused it for good. It leaves the pending queue (and the queued bytes) for this
+/// terminal state and is tried again only when its size or mtime changes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RejectedEntry {
+    pub path: String,
+    pub size: u64,
+    pub mtime_ms: u64,
+    pub kind: String,
+    /// Why, in words for the log and the tray.
+    pub reason: String,
+    /// Wall clock when it was given up on.
+    pub at_ms: u64,
+}
+
 /// A file the server is known to hold, remembered so a restart does not hash or post it again.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SeenEntry {
@@ -78,6 +93,7 @@ enum Record {
         path: String,
     },
     Seen(SeenEntry),
+    Rejected(RejectedEntry),
     Snapshot(SnapshotEntry),
     SnapshotAck {
         visit_id: String,
@@ -140,6 +156,7 @@ pub struct Journal {
     last_attach: Option<Instant>,
     recordings: BTreeMap<String, RecordingEntry>,
     seen: BTreeMap<String, SeenEntry>,
+    rejected: BTreeMap<String, RejectedEntry>,
     visits: BTreeMap<String, Visit>,
     seq: u64,
     lines: usize,
@@ -154,6 +171,8 @@ const REATTACH_EVERY: Duration = Duration::from_millis(if cfg!(test) { 0 } else 
 /// Seen entries older than this are ignored, so a server that lost its data is refilled within a week.
 pub const SEEN_TTL_MS: u64 = 7 * 24 * 3600 * 1000;
 const KEEP_SEEN: usize = 4096;
+/// Rejected files kept at compaction (the newest).
+const KEEP_REJECTED: usize = 1024;
 
 /// Abandoned visits (no commit, everything acknowledged) kept at compaction.
 const KEEP_ABANDONED_VISITS: usize = 8;
@@ -168,6 +187,7 @@ impl Journal {
             last_attach: None,
             recordings: BTreeMap::new(),
             seen: BTreeMap::new(),
+            rejected: BTreeMap::new(),
             visits: BTreeMap::new(),
             seq: 0,
             lines: 0,
@@ -202,16 +222,7 @@ impl Journal {
         let mut journal = Journal::blank(Some(path.to_path_buf()));
         if path.exists() {
             let bytes = fs::read(path)?;
-            let complete = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-            for line in bytes[..complete].split(|b| *b == b'\n') {
-                if line.iter().all(u8::is_ascii_whitespace) {
-                    continue;
-                }
-                if let Ok(record) = serde_json::from_slice::<Record>(line) {
-                    journal.apply(record);
-                }
-                journal.lines += 1;
-            }
+            let complete = journal.replay(&bytes);
             if complete < bytes.len() {
                 let file = OpenOptions::new().write(true).open(path)?;
                 file.set_len(complete as u64)?;
@@ -221,6 +232,32 @@ impl Journal {
         journal.compact_if_needed()?;
         journal.attach_file(path)?;
         Ok(journal)
+    }
+
+    /// Applies the complete lines of `bytes`; returns how many bytes they take (a torn tail does
+    /// not count).
+    fn replay(&mut self, bytes: &[u8]) -> usize {
+        let complete = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+        for line in bytes[..complete].split(|b| *b == b'\n') {
+            if line.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+            if let Ok(record) = serde_json::from_slice::<Record>(line) {
+                self.apply(record);
+            }
+            self.lines += 1;
+        }
+        complete
+    }
+
+    /// The journal at `path` as it is now, for reading only: nothing is repaired, compacted or
+    /// written, and it can be read while another process appends to it. Missing: empty.
+    pub fn read_only(path: &Path) -> Journal {
+        let mut journal = Journal::blank(None);
+        if let Ok(bytes) = fs::read(path) {
+            journal.replay(&bytes);
+        }
+        journal
     }
 
     fn attach_file(&mut self, path: &Path) -> io::Result<()> {
@@ -275,6 +312,14 @@ impl Journal {
         let seq = self.seq;
         match record {
             Record::Recording(entry) => {
+                // A changed file is a new file: the verdict on the old one no longer applies.
+                if self
+                    .rejected
+                    .get(&entry.path)
+                    .is_some_and(|r| (r.size, r.mtime_ms) != (entry.size, entry.mtime_ms))
+                {
+                    self.rejected.remove(&entry.path);
+                }
                 self.recordings.insert(entry.path.clone(), entry);
             }
             Record::RecordingDone { path } => {
@@ -282,6 +327,10 @@ impl Journal {
             }
             Record::Seen(entry) => {
                 self.seen.insert(entry.path.clone(), entry);
+            }
+            Record::Rejected(entry) => {
+                self.recordings.remove(&entry.path);
+                self.rejected.insert(entry.path.clone(), entry);
             }
             Record::Snapshot(entry) => {
                 let visit = self.visits.entry(entry.visit_id.clone()).or_default();
@@ -393,7 +442,9 @@ impl Journal {
 
     /// Adds or replaces the pending entry for `entry.path`.
     pub fn add_recording(&mut self, entry: RecordingEntry) -> io::Result<()> {
-        if self.recordings.get(&entry.path) == Some(&entry) {
+        if self.recordings.get(&entry.path) == Some(&entry)
+            || self.is_rejected(&entry.path, entry.size, entry.mtime_ms)
+        {
             return Ok(());
         }
         self.append(Record::Recording(entry))
@@ -426,6 +477,34 @@ impl Journal {
         self.append(Record::RecordingDone {
             path: path.to_string(),
         })
+    }
+
+    /// Gives up on this file as it is (`RejectedEntry`): it leaves the pending entries and is
+    /// kept, with the reason, until its size or mtime changes.
+    pub fn reject_recording(&mut self, entry: RejectedEntry) -> io::Result<()> {
+        if self.rejected.get(&entry.path).is_some_and(|r| {
+            (r.size, r.mtime_ms, &r.reason) == (entry.size, entry.mtime_ms, &entry.reason)
+        }) {
+            return Ok(());
+        }
+        self.append(Record::Rejected(entry))
+    }
+
+    /// True while the file at `path` is the one that was given up on (same size and mtime).
+    pub fn is_rejected(&self, path: &str, size: u64, mtime_ms: u64) -> bool {
+        self.rejection(path, size, mtime_ms).is_some()
+    }
+
+    /// The verdict on the file at `path` while it is unchanged.
+    pub fn rejection(&self, path: &str, size: u64, mtime_ms: u64) -> Option<&RejectedEntry> {
+        self.rejected
+            .get(path)
+            .filter(|r| r.size == size && r.mtime_ms == mtime_ms)
+    }
+
+    /// Files given up on, in path order.
+    pub fn rejected_recordings(&self) -> Vec<RejectedEntry> {
+        self.rejected.values().cloned().collect()
     }
 
     /// Remembers that the server holds this file.
@@ -616,6 +695,11 @@ impl Journal {
         for entry in seen.into_iter().take(KEEP_SEEN) {
             add(0, Record::Seen(entry.clone()));
         }
+        let mut rejected: Vec<&RejectedEntry> = self.rejected.values().collect();
+        rejected.sort_by_key(|e| std::cmp::Reverse(e.at_ms));
+        for entry in rejected.into_iter().take(KEEP_REJECTED) {
+            add(0, Record::Rejected(entry.clone()));
+        }
         let mut abandoned: Vec<&String> = self
             .visits
             .iter()
@@ -682,6 +766,7 @@ impl Journal {
         let old_visits = std::mem::take(&mut self.visits);
         self.recordings.clear();
         self.seen.clear();
+        self.rejected.clear();
         self.seq = 0;
         for record in live {
             self.apply(record);
@@ -707,6 +792,7 @@ impl Journal {
         json!({
             "recordings": self.recordings.len(),
             "seen": self.seen.len(),
+            "rejected": self.rejected.len(),
             "garage_pending": self.garage_pending(),
             "visits": self.visits.len(),
             "lines": self.lines,
@@ -781,6 +867,88 @@ mod tests {
                 .pending_recordings()
                 .is_empty()
         );
+        let _ = fs::remove_file(path);
+    }
+
+    fn rejected(path: &str, size: u64, mtime_ms: u64) -> RejectedEntry {
+        RejectedEntry {
+            path: path.into(),
+            size,
+            mtime_ms,
+            kind: "ibt".into(),
+            reason: "the header says it holds 0 records".into(),
+            at_ms: 7,
+        }
+    }
+
+    fn pending(path: &str, size: u64, mtime_ms: u64) -> RecordingEntry {
+        RecordingEntry {
+            path: path.into(),
+            size,
+            mtime_ms,
+            kind: "ibt".into(),
+            relative_path: None,
+            sha256: None,
+        }
+    }
+
+    #[test]
+    fn a_rejected_file_leaves_the_pending_entries_and_stays_out_until_it_changes() {
+        let path = temp();
+        let mut j = Journal::open(&path).unwrap();
+        j.add_recording(pending("p", 10, 5)).unwrap();
+        j.reject_recording(rejected("p", 10, 5)).unwrap();
+        assert!(j.pending_recordings().is_empty(), "no longer pending");
+        assert!(j.is_rejected("p", 10, 5));
+        assert!(!j.is_rejected("p", 11, 5), "another size is another file");
+        assert!(!j.is_rejected("p", 10, 6), "so is another mtime");
+        assert_eq!(j.rejection("p", 10, 5).unwrap().at_ms, 7);
+        // Queuing the same file again (a garage commit does that for a setup) changes nothing.
+        j.add_recording(pending("p", 10, 5)).unwrap();
+        assert!(j.pending_recordings().is_empty());
+        drop(j);
+
+        // The verdict survives a restart; a read-only look sees it too and writes nothing.
+        let before = fs::read(&path).unwrap();
+        let ro = Journal::read_only(&path);
+        assert!(ro.is_rejected("p", 10, 5));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert!(Journal::read_only(&temp()).rejected_recordings().is_empty());
+        let mut j = Journal::open(&path).unwrap();
+        assert_eq!(j.rejected_recordings().len(), 1);
+        assert!(j.pending_recordings().is_empty());
+
+        // The file changed: queued again, and the old verdict is gone for good.
+        j.add_recording(pending("p", 12, 9)).unwrap();
+        assert_eq!(j.pending_recordings().len(), 1);
+        assert!(j.rejected_recordings().is_empty());
+        drop(j);
+        assert!(
+            Journal::open(&path)
+                .unwrap()
+                .rejected_recordings()
+                .is_empty()
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejected_files_survive_compaction() {
+        let path = temp();
+        {
+            let mut j = Journal::open(&path).unwrap();
+            j.reject_recording(rejected("keep", 1, 1)).unwrap();
+            for n in 0..40 {
+                j.add_snapshot(snap("v1", n)).unwrap();
+                j.ack_snapshot("v1", n).unwrap();
+            }
+        }
+        let j = Journal::open(&path).unwrap();
+        assert!(
+            fs::read_to_string(&path).unwrap().lines().count() < 20,
+            "compacted"
+        );
+        assert!(j.is_rejected("keep", 1, 1));
         let _ = fs::remove_file(path);
     }
 

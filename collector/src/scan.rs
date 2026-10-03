@@ -119,6 +119,77 @@ pub fn scan_recordings(
     Ok(newest_first(out))
 }
 
+/// Every `.ibt` at any depth below each of `roots` (backfill: the legacy raw archive keeps one
+/// folder per recording hash), newest first, each file once however many roots reach it.
+pub fn scan_recordings_below(
+    roots: &[PathBuf],
+    proceed: &dyn Fn() -> bool,
+) -> Result<Vec<Candidate>, Interrupted> {
+    let mut found = Vec::new();
+    for root in roots {
+        walk_recordings(root, 0, proceed, &mut found)?;
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    found.retain(|c| seen.insert(c.key().to_lowercase()));
+    Ok(newest_first(found))
+}
+
+fn walk_recordings(
+    dir: &Path,
+    depth: usize,
+    proceed: &dyn Fn() -> bool,
+    out: &mut Vec<Candidate>,
+) -> Result<(), Interrupted> {
+    if depth > 8 {
+        return Ok(());
+    }
+    if !proceed() {
+        return Err(Interrupted);
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        if !proceed() {
+            return Err(Interrupted);
+        }
+        let path = entry.path();
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_dir() {
+            walk_recordings(&path, depth + 1, proceed, out)?;
+        } else if Kind::of_path(&path) == Some(Kind::Ibt)
+            && let Some(c) = candidate(path, Kind::Ibt, None)
+        {
+            out.push(c);
+        }
+    }
+    Ok(())
+}
+
+/// The name the recording had where iRacing wrote it, from the `manifest.json` that the legacy
+/// raw archive keeps beside it (`original_path`, else a `source_discoveries[].source_path`, as a
+/// `.ibt` leaf); None when there is no manifest or it names no recording.
+pub fn archived_name(recording: &Path) -> Option<String> {
+    let text = fs::read_to_string(recording.parent()?.join("manifest.json")).ok()?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    let sources = manifest.get("original_path").into_iter().chain(
+        manifest
+            .get("source_discoveries")
+            .and_then(|d| d.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|d| d.get("source_path")),
+    );
+    sources
+        .filter_map(|v| v.as_str())
+        .filter_map(|p| p.rsplit(['/', '\\']).next())
+        .find(|leaf| leaf.to_ascii_lowercase().ends_with(".ibt"))
+        .map(str::to_string)
+}
+
 /// Newest first, ties by path. A map instead of `sort_by`: sorting a Vec of these entries costs
 /// far more code than the function (the executable is held to 3 MB).
 fn newest_first(list: Vec<Candidate>) -> Vec<Candidate> {

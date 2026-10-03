@@ -6,6 +6,7 @@
 //! directory watcher, install).
 
 pub mod app;
+pub mod backfill;
 pub mod cli;
 pub mod config;
 pub mod dry;

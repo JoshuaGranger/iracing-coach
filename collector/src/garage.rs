@@ -192,6 +192,10 @@ impl GarageCapture {
                 visit.last_snapshot = Some(count);
             }
         }
+        // The SDK name did not change, so the garage loaded no other file than the one it already
+        // named, or Reverted, or the same file again. When the setup is then unmodified its values
+        // are that file's (D9): the commit carries the exit name, and the hash resolved from it.
+        let name = name.or_else(|| unmodified_exit_name(tick.setup));
         let named = name.is_some();
         out.push(GarageAction::Commit(CommitEntry {
             visit_id: visit.id.clone(),
@@ -253,6 +257,16 @@ fn snapshot_if_changed(visit: &mut Visit, tick: &GarageTick<'_>, out: &mut Vec<G
     visit.last_count = Some(count);
     visit.last_snapshot = Some(count);
     out.push(GarageAction::Snapshot(snapshot_entry(visit, count, tick)));
+}
+
+/// `DriverSetupName` at the exit when `DriverSetupIsModified` is 0 there: the setup is exactly
+/// that file. Unknown or modified, it is not a claim the collector can make.
+fn unmodified_exit_name(setup: &SetupView) -> Option<String> {
+    if setup.is_modified == Some(false) {
+        setup.name.clone().filter(|n| !n.is_empty())
+    } else {
+        None
+    }
 }
 
 /// The new `DriverSetupName` when it differs from the one at garage entry.
@@ -402,25 +416,60 @@ mod tests {
         assert!(!g.in_visit());
     }
 
-    #[test]
-    fn leaving_without_a_name_change_commits_values_only_after_five_seconds() {
+    /// One visit that changes a value and leaves with the name unchanged (`R.sto`), the exit state
+    /// reporting `modified`; the commit that results after the five second window.
+    fn unchanged_name_commit(modified: Option<bool>) -> CommitEntry {
         let mut g = GarageCapture::new();
         step(&mut g, 0, false, &view(2, "R.sto", Some(false)));
         step(&mut g, 100, true, &view(2, "R.sto", Some(false)));
         let out = step(&mut g, 200, true, &view(3, "R.sto", Some(false)));
         assert!(matches!(&out[..], [GarageAction::Snapshot(_)]));
-        assert!(step(&mut g, 300, false, &view(3, "R.sto", Some(false))).is_empty());
-        assert!(step(&mut g, 4_000, false, &view(3, "R.sto", Some(false))).is_empty());
-        let out = step(&mut g, 5_400, false, &view(3, "R.sto", Some(false)));
-        match &out[..] {
-            [GarageAction::Commit(c)] => {
-                assert_eq!(c.setup_name, None, "the session-start name is not attached");
-                assert_eq!(c.update_count, Some(3));
-                assert!(!c.hash_pending);
-                assert_eq!(c.is_modified, None);
-            }
+        assert!(step(&mut g, 300, false, &view(3, "R.sto", modified)).is_empty());
+        assert!(step(&mut g, 4_000, false, &view(3, "R.sto", modified)).is_empty());
+        match &step(&mut g, 5_400, false, &view(3, "R.sto", modified))[..] {
+            [GarageAction::Commit(c)] => c.clone(),
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn leaving_without_a_name_change_commits_after_five_seconds_with_the_exit_name_when_unmodified()
+    {
+        // The SDK name cannot change when the file already named is loaded again or after a
+        // Revert, but unmodified means the values are that file's: name and hash go with them.
+        let c = unchanged_name_commit(Some(false));
+        assert_eq!(c.setup_name.as_deref(), Some("R.sto"));
+        assert_eq!(c.update_count, Some(3));
+        assert_eq!(c.is_modified, Some(false));
+        assert_eq!(c.load_type.as_deref(), Some("user"));
+        assert!(c.hash_pending, "the hash is resolved from the name");
+    }
+
+    #[test]
+    fn leaving_without_a_name_change_commits_values_only_when_modified_or_unknown() {
+        for modified in [Some(true), None] {
+            let c = unchanged_name_commit(modified);
+            assert_eq!(c.setup_name, None, "{modified:?}: no file can be claimed");
+            assert_eq!(c.update_count, Some(3));
+            assert!(!c.hash_pending);
+            assert_eq!(c.is_modified, None);
+        }
+    }
+
+    #[test]
+    fn the_exit_state_is_read_when_the_window_closes_not_at_the_exit_tick() {
+        // iRacing publishes the new name and flag after the exit tick (50 to 270 ms later): a
+        // stale `modified` at the exit tick must not decide the commit.
+        let mut g = GarageCapture::new();
+        step(&mut g, 0, false, &view(2, "R.sto", Some(false)));
+        step(&mut g, 100, true, &view(2, "R.sto", Some(false)));
+        step(&mut g, 200, true, &view(3, "R.sto", Some(true)));
+        assert!(step(&mut g, 300, false, &view(3, "R.sto", Some(true))).is_empty());
+        assert!(step(&mut g, 400, false, &view(3, "R.sto", Some(false))).is_empty());
+        let out = step(&mut g, 5_400, false, &view(3, "R.sto", Some(false)));
+        assert!(
+            matches!(&out[..], [GarageAction::Commit(c)] if c.setup_name.as_deref() == Some("R.sto"))
+        );
     }
 
     #[test]
@@ -450,7 +499,7 @@ mod tests {
         step(&mut g, 0, true, &view(2, "R.sto", Some(false)));
         step(&mut g, 100, true, &view(3, "R.sto", Some(false)));
         step(&mut g, 200, false, &view(3, "R.sto", Some(false)));
-        let out = step(&mut g, 2_000, true, &view(3, "R.sto", Some(false)));
+        let out = step(&mut g, 2_000, true, &view(3, "R.sto", Some(true)));
         assert!(matches!(&out[..], [GarageAction::Commit(c)] if c.setup_name.is_none()));
         assert!(g.in_visit(), "a new visit is open");
     }
@@ -464,9 +513,9 @@ mod tests {
             [GarageAction::Snapshot(s)] => s.visit_id.clone(),
             other => panic!("unexpected {other:?}"),
         };
-        step(&mut g, 200, false, &view(3, "R.sto", Some(false)));
+        step(&mut g, 200, false, &view(3, "R.sto", Some(true)));
         // Back inside the window with count 4: that value is the new visit's, not the old one's.
-        let out = step(&mut g, 2_000, true, &view(4, "R.sto", Some(false)));
+        let out = step(&mut g, 2_000, true, &view(4, "R.sto", Some(true)));
         match &out[..] {
             [GarageAction::Commit(c), GarageAction::Snapshot(s)] => {
                 assert_eq!(c.visit_id, old_id);
@@ -537,14 +586,37 @@ mod tests {
         let mut g = GarageCapture::new();
         step(&mut g, 0, true, &view(2, "R.sto", Some(false)));
         step(&mut g, 100, true, &view(3, "R.sto", Some(false)));
-        step(&mut g, 200, false, &view(3, "R.sto", Some(false)));
+        step(&mut g, 200, false, &view(3, "R.sto", Some(true)));
         let out = step(
             &mut g,
             200 + REENTRY_JOIN_MS + 1,
             true,
-            &view(3, "R.sto", Some(false)),
+            &view(3, "R.sto", Some(true)),
         );
         assert!(matches!(&out[..], [GarageAction::Commit(c)] if c.setup_name.is_none()));
+    }
+
+    #[test]
+    fn a_visit_that_reloads_the_named_file_and_leaves_unmodified_carries_that_name() {
+        // G3 case 4: the file already named is loaded again, the name cannot change.
+        let mut g = GarageCapture::new();
+        step(&mut g, 0, false, &view(18, "R.sto", Some(true)));
+        step(&mut g, 100, true, &view(18, "R.sto", Some(true)));
+        step(&mut g, 200, false, &view(18, "R.sto", Some(true)));
+        let out = step(&mut g, 700, true, &view(19, "R.sto", Some(true)));
+        assert!(matches!(&out[..], [GarageAction::Snapshot(s)] if s.update_count == 19));
+        let out = step(&mut g, 5_000, false, &view(21, "R.sto", Some(false)));
+        assert!(matches!(&out[..], [GarageAction::Snapshot(s)] if s.update_count == 21));
+        let out = step(&mut g, 10_100, false, &view(21, "R.sto", Some(false)));
+        match &out[..] {
+            [GarageAction::Commit(c)] => {
+                assert_eq!(c.update_count, Some(21));
+                assert_eq!(c.setup_name.as_deref(), Some("R.sto"));
+                assert_eq!(c.is_modified, Some(false));
+                assert!(c.hash_pending);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

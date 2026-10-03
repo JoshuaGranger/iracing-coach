@@ -7,6 +7,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod adapters;
+pub mod admin;
 pub mod api;
 pub mod app;
 pub mod archiver;
