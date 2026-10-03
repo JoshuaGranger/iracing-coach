@@ -110,3 +110,36 @@ iracing-coach-app-1   Up 2 seconds (healthy)   iracing-coach:dccfadf1f40c9654b8d
 `curl -s http://192.168.1.81:8210/health`: `{"schema_version":1,"server_version":"0.19.0","status":"ok"}`. `/api/v1/status` at 20:13:41Z: `nas.state ok` (`last_ok_at` 20:13:35Z, `pending_archive 0`), `queue {analysis 0, deferred 4, light 0}`, `python_version 3.12.15`, `worker_profile_version post-race-foundations-v23`, the sim collector online. In the container: `COACH_PYTHON=/app/deploy/python3.12-native` in the server's environment, `memory.peak` 17.7 MB after start, `oom_kill 0`. Still `nas.state ok` at 20:25:35Z after the gate and the deferred runs; `deferred 8` after the deferred analyses were re-requested (`g1-native.md`).
 
 Exercised on this release: gate G1 with the native stages (PASS: 8.50 and 8.40 s, worker 0.25 GiB, tree 0.78 GiB, container peak 1.30 GiB, byte parity, 17 kernel calls count for count) and the three deferred analyses that fit (all complete, 5.9 to 15.0 s), `g1-native.md`. The server's own analysis path will first run natively on the next recording it has not analysed: every session's analysis is current and the worker's cache answers a re-run. That the server uses the shim is shown by its environment and by `python_version`, which it gets by running the shim.
+
+## Release of `7d38242`: the server's native stages, no shim, `mem_limit` 3g (2026-10-03)
+
+Released under D14 from branch `w9/deploy` after a fast-forward merge of local `main` (`f2d35fd` to `ef98f0a`: port phase 3, the `companion-app/` deletion, W4's `COACH_NATIVE_STAGES` setting, native admission, native-scratch sweep and one deferred row per session). Nothing was pushed to GitHub. One commit on top of `main`:
+
+- `7d38242` "Drop the interpreter shim: the server's native stages drive the worker": `COACH_PYTHON=/usr/local/bin/python3.12` (the plain interpreter); `deploy/mini-pc/python3.12-native` deleted and no longer copied; the build asserts Python 3.12 through `$COACH_PYTHON` and runs `coach-analysis --version`. The image sets neither `COACH_NATIVE_STAGES` nor `COACH_NATIVE_BIN`, so the server's default applies: `decode,kernels,writer` with `/usr/local/bin/coach-analysis`, passed to every worker, and the native admission model (5.0 x bytes, 2.0 GiB ceiling, 2.7 GiB budget). Compose `mem_limit`/`memswap_limit` 4g to **3g** (`worker-interface.md` section 6). `architecture.md` section 10 updated; G1 rig: the cold runner resolves the stages as the server does, `g1.py calls` applies the writer rule.
+
+| Item | Value |
+|---|---|
+| Command | `bash ~/.claude/skills/mini-pc/release.sh iracing-coach .` (Git bash, in `C:\Users\joshu\source\worktrees\iracing-coach-w9`, background), exit 0 |
+| Started, finished | 22:44:48Z, 22:47:31Z (2 min 43 s) |
+| Build on the N100 | 126 s (`g-house-app ... built in 126s`): `cargo build --release --locked -p coach-server -p coach-analysis` 2 min 01 s with 2 jobs at `nice 10` (the workspace crates recompiled, dependencies from the build cache) |
+| Image | `iracing-coach:7d38242bb24b623a01b353c9405b14d680418950`, 147 MB (manifest `sha256:e2ed0aad...`, config `sha256:d818049a...`, the running container's image ID) |
+| Previous image | `iracing-coach:dccfadf1f40c9654b8d8de41feb2ef260a96c518`, kept on the host |
+| Stack | revision `5b0e5ac51ce08983` (Compose file changed: `mem_limit`); `deploys.log`: start 22:46:57Z, recovery point 22:46:57Z (`sqlite ok .../db/coach.sqlite3 7270400`, `/srv/g-house/recovery/iracing-coach/iracing-coach-20261003T224657Z.tar`), healthy 22:47:30Z; container started 22:47:28Z, 0 restarts, `OOMKilled false` |
+| Limits in effect | `HostConfig.Memory` 3,221,225,472, `MemorySwap` 3,221,225,472; cgroup `memory.max` 3221225472; `memory.peak` 20.0 MB after start |
+| Environment | `COACH_PYTHON=/usr/local/bin/python3.12`; no `COACH_NATIVE_*` variable (the default); `/app/deploy` holds `nas_probe.py` only |
+
+`ssh g-house-pc "sudo -n g-house-stack status iracing-coach"` (from the release):
+
+```
+stack=iracing-coach project=iracing-coach compose=/etc/g-house/stacks/iracing-coach/docker-compose.yml revision=5b0e5ac51ce08983
+recorded=5b0e5ac51ce08983
+iracing-coach-app-1   Up 2 seconds (healthy)   iracing-coach:7d38242bb24b623a01b353c9405b14d680418950
+```
+
+`curl -s http://192.168.1.81:8210/health`: `{"schema_version":1,"server_version":"0.19.0","status":"ok"}`. `/api/v1/status` right after the release (collector `last_seen_at` 22:47:34Z): `nas.state ok` (`last_ok_at` 22:47:28Z, `pending_archive 0`), `queue {analysis 0, deferred 8, light 0}`, **`python_version 3.12.15`** (the plain interpreter, run with `-V`), `worker_profile_version post-race-foundations-v23`, the sim collector online. After the work below (22:54:17Z): `nas.state ok` (`last_ok_at` 22:53:28Z), `queue {analysis 0, deferred 1, light 0}`, `oom_kill 0`, `memory.peak` 2.373 GiB, no error or warning line in the server log since start.
+
+**Native stages in effect.** Neither `/api/v1/status` nor the server log shows them: the status has no such field and the start-up log line carries only bind, version and dev (W4 follow-up in `g1-native.md`). They are shown by the workers themselves: `/proc/<pid>/environ` of each of the three server-run analysis workers (pids 554, 620, 864, read inside the container while the jobs ran) held `IRACING_COACH_NATIVE_STAGES=decode,kernels,writer` and `IRACING_COACH_NATIVE_BIN=/usr/local/bin/coach-analysis`, and the sampler saw their `coach-analysis decode`, `merge`, `kernels` and `write` children. The admission model is shown by the jobs' `estimate_bytes` (5.0 x bytes + 0.15 GiB, x 1.5 for groups) and by sessions 18, 105 and 123 now being admitted.
+
+Exercised on this release (`g1-native.md`): gate G1, writer-stage run, PASS (7.23 and 7.15 s, worker 0.28 GiB, tree 0.75 GiB, container peak 1.17 GiB, byte parity 12 of 12 and `analysis.json` strict, 17 kernel calls count for count, 3 native writes per analysis, 0 writer fallbacks); sessions 18, 105 and 123 re-requested through the API and analysed by the server (jobs 3540 to 3542 succeeded in 8, 11 and 16 s, worker plus largest child 0.744, 1.320 and 1.614 GiB against estimates of 1.410, 1.604 and 1.817 GiB); session 152 (Kansas, 2,093,549,028 B) still `deferred` with `exceeds_memory_budget` (estimate 9.899 GiB). Repository verification (`tools/verify-repository.ps1 -PythonPath <bundled 3.12.14>`) before and after the change: exit 0, 1,434 tests, 1,416 passed, 18 skipped.
+
+Backups unchanged: the recovery points stay on the mini PC; the off-host backup of `/srv/g-house/apps/iracing-coach` is as `first-release.md` states.
