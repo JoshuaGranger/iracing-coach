@@ -7,10 +7,11 @@ scripts folder as ``sys.path[0]``, exactly as ``python mcp_server.py`` would;
 the only additions are a wrapper on ``native_stages.load_telemetry`` that
 appends one JSON line per call to the trace (the recording's file name and the
 exception type, null on success) and the kernel-call counters
-(``native_stages.install_call_counters``), written as one
-``{"kernel_calls": ...}`` line when a process that counted a call ends. The seam has no Python
-fallback, so a successful call is a native decode and a counted kernel call
-ran in ``coach-analysis kernels``.
+(``native_stages.install_call_counters``: kernel calls, and the writer's site
+calls, native writes and fallbacks), written as one ``{"kernel_calls": ...}``
+line when a process that counted a call ends. The seam has no Python fallback
+for decode and kernels, so a successful call is a native decode and a counted
+kernel call ran in ``coach-analysis kernels``; a writer fallback is counted.
 
 ``analysis_parity.py capture-worker`` starts every worker call through this
 shim on both sides; the corpus gate then requires no native call on the oracle
@@ -60,7 +61,7 @@ def main() -> None:
     try:
         runpy.run_path(str(server), run_name="__main__")
     finally:
-        if counts["native"] or counts["oracle"]:  # a process that analysed nothing adds nothing
+        if any(counts.values()):  # a process that analysed nothing adds nothing
             with trace.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"kernel_calls": counts}) + "\n")
 

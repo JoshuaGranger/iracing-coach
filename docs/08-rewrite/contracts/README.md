@@ -161,3 +161,12 @@ Reason: `port/phase2-plan.md` sections 4.2 to 4.7. Boundary B was PyO3 in proces
 - `worker-interface.md` section 6: the orphan rule also covers `coach-merge-*`.
 - `worker-interface.md` section 8: the kernel-call count rule.
 - Integration (p2-integrate): the child serves `_setup_channel_series` as the handle the contract names (`dispatch::HANDOFF`; the vectors' replay entry still returns the dict); the boundary-B cost sentence now cites the measured race hand-off (`port/phase2-kernels.md`). Proof: `crates/coach-analysis/tests/kernels_handoff.rs`, the `decode,kernels` corpus gate on Windows and WSL.
+
+### 2026-10-03, port phase 3: the writer stage and the mapped store (p3; review: Codex Sol 6.1 pending, D15)
+
+Reason: `port/phase2-kernels.md` section 5 (boundary D, child memory). Boundary D named `storage._json_text` and `workflow._write_json_cache` and stage `json_writer`, with no protocol; the kernels child read the whole store into memory.
+
+- `worker-interface.md` section 7: the stage is `writer` (`json_writer` is now an unknown name; nothing ever provided it); boundary D is `coach-analysis write`, one run per serialisation of the analysis object at three sites (`analysis.json` bytes, the cache envelope's `analysis_sha256`, every `_write_json_cache` file), a request line plus a protocol-5 pickle, answers `ok`/`raises`/`python_exception`/`fallback`; the counted fallback for values outside the writer's model is the one exception to the no-fallback rule. Other `_json_text` writes stay Python.
+- `worker-interface.md` section 7, column store: optional header field `alignment` (4096: header padded with spaces, data section and every block on a page); format version stays 1; the kernels child and the merge stage map the store.
+- `worker-interface.md` section 8: the writer count rule (site calls equal on both captures, every native-side call written natively, no fallback) and the `analysis_sha256` recomputation (`outputs/analysis-sha256-check.json`); capture format 5.
+- Proof: `crates/coach-analysis/tests/writer.rs` (926 oracle vectors, `tools/emit_writer_vectors.py`), `tests/decode.rs` (page alignment, mapped read), `analysis_parity.py corpus --native-stages decode,kernels,writer` on Windows and WSL (`port/phase3-writer.md`).

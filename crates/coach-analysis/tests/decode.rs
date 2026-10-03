@@ -483,13 +483,33 @@ fn store_round_trips_every_column() {
     let bytes = store::write(&decoded, &out).unwrap();
     assert_eq!(bytes, std::fs::metadata(&out).unwrap().len());
     assert_eq!(bytes % 8, 0);
-    let read = ColumnStore::read(&out).unwrap();
+    // SAFETY: the test's own store; nothing writes it while mapped.
+    let read = unsafe { ColumnStore::map(&out) }.unwrap();
+    // Phase 3: map() maps the store; the data section and every block start on a page.
+    assert!(read.is_mapped());
+    // Review finding 2: read() holds the bytes (a file it does not own may change).
+    assert!(!ColumnStore::read(&out).unwrap().is_mapped());
+    assert_eq!(read.header.alignment, Some(store::BLOCK_ALIGNMENT));
+    let header_len = u32::from_le_bytes(std::fs::read(&out).unwrap()[12..16].try_into().unwrap());
+    assert_eq!((16 + u64::from(header_len)) % store::BLOCK_ALIGNMENT, 0);
+    assert_eq!(
+        read.header.sample_indices.offset % store::BLOCK_ALIGNMENT,
+        0
+    );
     assert_eq!(read.sample_indices(), decoded.sample_indices);
     assert_eq!(read.header.columns.len(), decoded.columns.len());
     for (index, column) in decoded.columns.iter().enumerate() {
-        assert_eq!(read.header.columns[index].data.offset % 8, 0);
+        let header = &read.header.columns[index];
+        assert_eq!(header.data.offset % store::BLOCK_ALIGNMENT, 0);
+        if let Some(offsets) = header.text_offsets {
+            assert_eq!(offsets.offset % store::BLOCK_ALIGNMENT, 0);
+        }
         assert_eq!(&read.column(index).unwrap(), column);
     }
+    // The same bytes parsed from memory read the same.
+    let owned = ColumnStore::parse(std::fs::read(&out).unwrap()).unwrap();
+    assert!(!owned.is_mapped());
+    assert_eq!(owned.column(0), read.column(0));
     assert_eq!(read.header.sampling.sample_rate_hz, 20.0);
     assert_eq!(read.header.sampling.step, 3.0);
     assert_eq!(read.header.channel_mode, "all");
@@ -639,6 +659,73 @@ fn store_rejects_inexact_blocks_and_shapes() {
     descending[second..second + 8].copy_from_slice(&u64::MAX.to_le_bytes());
     let error = ColumnStore::parse(descending).unwrap_err().to_string();
     assert!(error.contains("text offsets must rise"), "{error}");
+}
+
+/// Codex phase-3 review, finding 9: an empty decode store (no sample, no column, an empty
+/// index block at offset 0) whose file ends right after an unaligned header, without the padding
+/// to the data section. The Python reader rejects it (`base + offset + length <= file_size`);
+/// so must this one, mapped or not. With the padding it is valid.
+#[test]
+fn store_rejects_a_data_section_past_the_end() {
+    let path = scratch("empty-store.ibt");
+    build_edge_ibt(&path);
+    let decoded = decode(&path, None, Some(20.0)).unwrap();
+    let out = scratch("empty-store-base.ccs");
+    store::write(&decoded, &out).unwrap();
+    let good = std::fs::read(&out).unwrap();
+    let mut empty = with_header(&good, |h| {
+        h["sampling"]["sample_count"] = 0.into();
+        h["sample_indices"] = serde_json::json!({"offset": 0, "length": 0});
+        h["columns"] = serde_json::json!([]);
+        h.as_object_mut().unwrap().remove("alignment");
+    });
+    let header_len = u32::from_le_bytes(empty[12..16].try_into().unwrap()) as usize;
+    if (16 + header_len).is_multiple_of(8) {
+        // Make the header end unaligned: one more space inside the JSON.
+        let mut text = empty[16..16 + header_len].to_vec();
+        text.push(b' ');
+        empty = [&empty[..12], &(text.len() as u32).to_le_bytes()[..], &text].concat();
+    }
+    let header_end = 16 + u32::from_le_bytes(empty[12..16].try_into().unwrap()) as usize;
+    assert_ne!(header_end % 8, 0);
+    let padded = {
+        let mut bytes = empty[..header_end].to_vec();
+        bytes.resize(header_end.div_ceil(8) * 8, 0);
+        bytes
+    };
+    let truncated = empty[..header_end].to_vec();
+    let parsed = ColumnStore::parse(padded.clone()).unwrap();
+    assert_eq!(parsed.header.sampling.sample_count, 0);
+    assert!(parsed.sample_indices().is_empty());
+    let error = ColumnStore::parse(truncated.clone())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("data section starts past the end"),
+        "{error}"
+    );
+    let file = scratch("empty-store-truncated.ccs");
+    std::fs::write(&file, &truncated).unwrap();
+    assert!(ColumnStore::read(&file).is_err());
+    // SAFETY: the test's own store; nothing writes it while mapped.
+    assert!(unsafe { ColumnStore::map(&file) }.is_err());
+}
+
+/// Codex phase-3 review, finding 10: a header length of `u32::MAX` is a clean error (no
+/// overflowing `16 + H` on a 32-bit build), as is every header length past the file.
+#[test]
+fn store_rejects_header_lengths_past_the_end() {
+    for header_len in [u32::MAX, u32::MAX - 15, 1 << 31, 64] {
+        let mut bytes = store::MAGIC.to_vec();
+        bytes.extend(store::FORMAT_VERSION.to_le_bytes());
+        bytes.extend(header_len.to_le_bytes());
+        bytes.extend(b"{}");
+        let error = ColumnStore::parse(bytes).unwrap_err().to_string();
+        assert!(
+            error.contains("header runs past the end"),
+            "{header_len}: {error}"
+        );
+    }
 }
 
 #[test]

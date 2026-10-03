@@ -42,8 +42,14 @@ checkable (``docs/08-rewrite/contracts/worker-interface.md`` section 8):
     ``kernels`` one ``native_stages.kernel_call`` per oracle call of each
     ported entry point, count for count, and none on the oracle side
     (``native_stages.install_call_counters``; worker-interface.md section 8),
-    and a recording rejected by the oracle is rejected natively with the same
-    exception class and stated facts (never a crash or an unrelated failure).
+    with ``writer`` every serialisation of the analysis object (the three
+    ``native_stages.WRITER_SITES``) written by ``coach-analysis write``, site
+    for site, with no Python fallback, and the analysis-cache envelope's
+    ``analysis_sha256`` equal to Python's ``stable_hash`` of the cached analysis
+    on both sides (``outputs/analysis-sha256-check.json``: the raw allowlist
+    hides that hash, so it is recomputed), and a recording rejected by the
+    oracle is rejected natively with the same exception class and stated facts
+    (never a crash or an unrelated failure).
 
 ``compare``
     Byte-compares two capture directories and prints the differing paths.
@@ -122,11 +128,14 @@ FIXTURES = REPOSITORY / "test-data" / "ibt"
 NATIVE_BIN_ENV = "IRACING_COACH_NATIVE_BIN"
 WORKER_CASES = ("synthetic", "reconnect", "restaged", "local-file")
 NATIVE_DECODE_STAGE = "native_stages.load_telemetry"
+NATIVE_WRITER_STAGE = "native_stages.writer_call"
 WORKER_TRACE = Path(__file__).resolve().parent / "worker_trace.py"
 EXCEPTION_LINE = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Exit|Interrupt)\b.*")
 PINNED_ANALYZER_SHA256 = "0" * 64
-NATIVE_STAGES = ("decode", "kernels", "json_writer")
-CAPTURE_FORMAT = 4  # 3: raw SQLite row dumps, worker native-decode trace; 4: kernel-call counts
+NATIVE_STAGES = ("decode", "kernels", "writer")
+# 3: raw SQLite row dumps, worker native-decode trace; 4: kernel-call counts;
+# 5: writer counts and the analysis_sha256 recomputation
+CAPTURE_FORMAT = 5
 
 TIMESTAMP_KEYS = frozenset(
     {
@@ -444,6 +453,18 @@ def write_archive_capture(
     if len(cache_files) != 1:
         raise SystemExit(f"Expected one analysis-cache entry, found {len(cache_files)}.")
     cached = json.loads(cache_files[0].read_text(encoding="utf-8"))
+    # The raw allowlist substitutes analysis_sha256 (it hashes the timestamped
+    # analysis), so the writer's hash is checked here instead: Python's own
+    # stable_hash of the cached analysis must equal the envelope's on each side.
+    if str(SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS))
+    from storage import stable_hash  # noqa: PLC0415
+
+    (outputs / "analysis-sha256-check.json").write_text(
+        canonical_json({"envelope_equals_stable_hash": cached.get("analysis_sha256") == stable_hash(cached["analysis"], 64)}),
+        encoding="utf-8",
+        newline="\n",
+    )
     analysis = normalise(cached["analysis"], counts, roots=roots)
     (outputs / "analysis.json").write_text(canonical_json(analysis, sort_keys=True), encoding="utf-8", newline="\n")
     if engine_output is not None:
@@ -623,8 +644,10 @@ def run_once(
     # Present in stages_ms only when the native decode ran: the corpus gate
     # checks it, so a native capture can never silently be Python.
     _instrument(native_stages, "load_telemetry", stages, NATIVE_DECODE_STAGE)
+    _instrument(native_stages, "writer_call", stages, NATIVE_WRITER_STAGE)
     # Kernel calls on the native side, entry-point calls on the oracle side:
-    # the corpus gate compares them count for count (kernels stage).
+    # the corpus gate compares them count for count (kernels stage); writer
+    # site calls on both sides, native writes and fallbacks (writer stage).
     kernel_calls, _uninstall = native_stages.install_call_counters()
 
     engine_output: list[str] = []
@@ -973,11 +996,13 @@ def command_capture_worker(args: argparse.Namespace) -> int:
         else []
     )
     native_calls = [item for item in trace if "source" in item]
-    kernel_calls: dict[str, dict[str, int]] = {"native": {}, "oracle": {}}
+    kernel_calls: dict[str, dict[str, int]] = {
+        kind: {} for kind in ("native", "oracle", "writer", "writer_sites", "writer_fallback")
+    }
     for item in trace:  # one record per worker process
         for side, counts in (item.get("kernel_calls") or {}).items():
             for label, count in counts.items():
-                kernel_calls[side][label] = kernel_calls[side].get(label, 0) + count
+                kernel_calls.setdefault(side, {})[label] = kernel_calls.setdefault(side, {}).get(label, 0) + count
     _capture_metadata(
         out,
         "worker",
@@ -1022,6 +1047,28 @@ def command_compare(args: argparse.Namespace) -> int:
     for line in problems[:200]:
         print(line)
     return 0 if not problems else 1
+
+
+SHA256_CHECK = "analysis-sha256-check.json"
+
+
+def sha256_check_problems(side: str, capture: Path, meta: dict[str, Any]) -> list[str]:
+    """A capture of format 5 or later must hold ``outputs/analysis-sha256-check.json`` stating
+    exactly ``true``: equal false values (or two missing files) on both sides are no pass
+    (Codex phase-3 review, finding 8)."""
+
+    if not isinstance(meta.get("capture_format"), int) or meta["capture_format"] < 5:
+        return []
+    path = capture / "outputs" / SHA256_CHECK
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [f"{side} capture has no outputs/{SHA256_CHECK}"]
+    except ValueError:
+        return [f"{side} capture's outputs/{SHA256_CHECK} is not JSON"]
+    if value != {"envelope_equals_stable_hash": True} or value["envelope_equals_stable_hash"] is not True:
+        return [f"{side} capture's outputs/{SHA256_CHECK} is {value!r}: the envelope hash is not Python's stable_hash"]
+    return []
 
 
 def compare_captures(
@@ -1087,6 +1134,9 @@ def compare_captures(
         problems.append(
             f"capture.json analysis_id: {left_meta.get('analysis_id')!r} != {right_meta.get('analysis_id')!r}"
         )
+    if not raw:
+        for side, capture, meta in (("left", left_capture, left_meta), ("right", right_capture, right_meta)):
+            problems.extend(sha256_check_problems(side, capture, meta))
     report["identical"] = not problems
     return report, problems
 
@@ -1266,13 +1316,37 @@ def _analysis_wall_ms(capture: Path, key: str) -> float | None:
     return _output_run(capture).get(key)
 
 
-def _pair_result(left: Path, right: Path, ok: tuple[bool, bool], errors: tuple[str, str]) -> dict[str, Any]:
-    if not all(ok):
-        identical = not any(ok) and errors[0] == errors[1]
-        return {"identical": identical, "oracle_error": errors[0] or None, "native_error": errors[1] or None}
+# Recordings the gate expects both sides to reject (fixtures/name). Every other corpus member
+# and every worker case must be analysed on both sides: a shared failure of a valid recording
+# is a regression, never a pass (Codex phase-3 review, finding 5).
+EXPECTED_REJECTIONS = frozenset({"truncated-race.ibt"})
+
+
+def expects_rejection(kind: str, path: Path) -> bool:
+    """True for a designated invalid fixture (``EXPECTED_REJECTIONS`` in ``test-data/ibt``)."""
+
+    return kind == "fixture" and path.name in EXPECTED_REJECTIONS and path.resolve().parent == FIXTURES.resolve()
+
+
+def _pair_result(
+    left: Path, right: Path, ok: tuple[bool, bool], errors: tuple[str, str], *, expect_rejection: bool = False
+) -> dict[str, Any]:
+    result: dict[str, Any] = {"expected_rejection": expect_rejection}
+    if expect_rejection or not all(ok):
+        identical = expect_rejection and not any(ok) and errors[0] == errors[1]
+        result.update({"identical": identical, "oracle_error": errors[0] or None, "native_error": errors[1] or None})
+        if not identical:
+            result["differences"] = [
+                "a designated invalid recording was not rejected identically by both sides"
+                if expect_rejection
+                else "a valid recording failed to analyse"
+                + (" on both sides (the same error)" if not any(ok) and errors[0] == errors[1] else "")
+            ]
+        return result
     raw_report, raw_problems = compare_captures(left, right, raw=True)
     parsed_report, parsed_problems = compare_captures(left, right, raw=False)
     return {
+        **result,
         "identical": not raw_problems and not parsed_problems,
         "raw_identical": not raw_problems,
         "parsed_identical": not parsed_problems,
@@ -1281,7 +1355,7 @@ def _pair_result(left: Path, right: Path, ok: tuple[bool, bool], errors: tuple[s
     }
 
 
-def _analysis_parity(path: Path, dest: Path, stages: str, raw_archive: str) -> dict[str, Any]:
+def _analysis_parity(path: Path, dest: Path, stages: str, raw_archive: str, *, expect_rejection: bool = False) -> dict[str, Any]:
     sides = {"oracle": "", "native": stages}
     ok: list[bool] = []
     errors: list[str] = []
@@ -1297,9 +1371,11 @@ def _analysis_parity(path: Path, dest: Path, stages: str, raw_archive: str) -> d
         ok.append(success)
         errors.append(error)
         walls[side] = {"capture_s": round(elapsed, 2), "analysis_wall_ms": _analysis_wall_ms(capture, "wall_ms")}
-    result = _pair_result(dest / "oracle", dest / "native", (ok[0], ok[1]), (errors[0], errors[1]))
+    result = _pair_result(
+        dest / "oracle", dest / "native", (ok[0], ok[1]), (errors[0], errors[1]), expect_rejection=expect_rejection
+    )
     result["timing"] = walls
-    if all(ok):
+    if all(ok) and not expect_rejection:
         ran = {side: NATIVE_DECODE_STAGE in (_output_run(dest / side).get("stages_ms") or {}) for side in sides}
         result["native_decode_ran"] = ran
         expected = {"oracle": False, "native": "decode" in stages}
@@ -1308,7 +1384,10 @@ def _analysis_parity(path: Path, dest: Path, stages: str, raw_archive: str) -> d
             result.setdefault("differences", []).append(f"native decode ran {ran}, expected {expected}")
         calls = {side: _output_run(dest / side).get("kernel_calls") for side in sides}
         result["kernel_calls"] = (calls["native"] or {}).get("native")
+        result["writer_calls"] = (calls["native"] or {}).get("writer")
+        result["writer_ms"] = (_output_run(dest / "native").get("stages_ms") or {}).get(NATIVE_WRITER_STAGE)
         problems = _kernel_call_problems(calls["oracle"], calls["native"], stages)
+        problems += _writer_call_problems(calls["oracle"], calls["native"], stages)
         if problems:
             result["identical"] = False
             result.setdefault("differences", []).extend(problems)
@@ -1326,6 +1405,19 @@ def _kernel_call_problems(oracle: Any, native: Any, stages: str) -> list[str]:
 
     kernels = "kernels" in [item.strip() for item in stages.split(",")]
     return native_stages.kernel_call_problems(oracle, native, kernels)
+
+
+def _writer_call_problems(oracle: Any, native: Any, stages: str) -> list[str]:
+    """The section 8 writer rule over two captures' counts."""
+
+    if not isinstance(oracle, dict) or not isinstance(native, dict):
+        return ["a capture has no writer counts (capture format older than 5)"]
+    if str(SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS))
+    import native_stages  # noqa: PLC0415
+
+    writer = "writer" in [item.strip() for item in stages.split(",")]
+    return native_stages.writer_call_problems(oracle, native, writer)
 
 
 def _worker_parity(case: str, dest: Path, stages: str, raw_archive: str) -> dict[str, Any]:
@@ -1353,7 +1445,11 @@ def _worker_parity(case: str, dest: Path, stages: str, raw_archive: str) -> dict
         problems = worker_native_decode_problems(metadata["oracle"], metadata["native"], "decode" in stages)
         if not problems:
             result["kernel_calls"] = (metadata["native"].get("kernel_calls") or {}).get("native")
+            result["writer_calls"] = (metadata["native"].get("kernel_calls") or {}).get("writer")
             problems = _kernel_call_problems(
+                metadata["oracle"].get("kernel_calls"), metadata["native"].get("kernel_calls"), stages
+            )
+            problems += _writer_call_problems(
                 metadata["oracle"].get("kernel_calls"), metadata["native"].get("kernel_calls"), stages
             )
         if problems:
@@ -1407,7 +1503,9 @@ def command_corpus(args: argparse.Namespace) -> int:
         entry: dict[str, Any] = {"kind": kind, "name": path.name, "sha256": sha, "size_bytes": path.stat().st_size}
         dest = out / f"{number:03d}-{sha[:12]}"
         entry["decode_golden"] = _decode_golden_parity(path, rates)
-        entry["analysis"] = _analysis_parity(path, dest, stages, args.raw_archive)
+        entry["analysis"] = _analysis_parity(
+            path, dest, stages, args.raw_archive, expect_rejection=expects_rejection(kind, path)
+        )
         entry["identical"] = entry["analysis"]["identical"] and all(
             item["identical"] for item in entry["decode_golden"].values()
         )
@@ -1420,7 +1518,8 @@ def command_corpus(args: argparse.Namespace) -> int:
             f"{kind} {sha[:12]} {entry['size_bytes'] / 1e6:.1f} MB "
             f"golden {'/'.join(label for label in entry['decode_golden'])} "
             f"analysis oracle {timing['oracle']['analysis_wall_ms']} ms native {timing['native']['analysis_wall_ms']} ms"
-            + ("" if entry["analysis"].get("oracle_error") is None else f" (both: {entry['analysis']['oracle_error'][:100]})"),
+            + ("" if entry["analysis"].get("oracle_error") is None else f" (oracle: {entry['analysis']['oracle_error'][:100]})")
+            + (" [expected rejection]" if entry["analysis"].get("expected_rejection") else ""),
             flush=True,
         )
     workers: list[dict[str, Any]] = []

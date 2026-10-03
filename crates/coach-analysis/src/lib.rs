@@ -10,14 +10,21 @@
 //!
 //! Phase 2: [`kernels`], the per-sample analysis kernels over the store
 //! (`docs/08-rewrite/port/phase2-plan.md`).
-#![forbid(unsafe_code)]
+//!
+//! Phase 3 (`docs/08-rewrite/port/phase3-writer.md`): [`writer`], the `analysis.json` writer
+//! (`json.dumps` of the worker's final analysis object, byte for byte), and the store mapped
+//! instead of read ([`mapped`], the crate's one module with `unsafe` code: two system calls).
+#![deny(unsafe_code)]
 
 pub mod decode;
 pub mod golden;
 pub mod kernels;
+#[allow(unsafe_code)]
+pub mod mapped;
 pub mod request;
 pub mod sampling;
 pub mod store;
+pub mod writer;
 
 pub use decode::{Column, Decoded, Element, SourceLayout, Value, decode, select_variables};
 pub use request::{DecodeRequest, REQUEST_VERSION};

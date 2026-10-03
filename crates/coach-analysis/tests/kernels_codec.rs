@@ -444,8 +444,11 @@ fn fixture_session() -> Session {
     let decoded = coach_analysis::decode(&ibt, None, None).unwrap();
     let out = std::env::temp_dir().join(format!("coach-kernels-i0-{}.ccs", std::process::id()));
     coach_analysis::store::write(&decoded, &out).unwrap();
-    let store = coach_analysis::ColumnStore::read(&out).unwrap();
+    // Phase 3: read() maps the file; the copies below parse its bytes (a mapping is not Clone).
+    let bytes = std::fs::read(&out).unwrap();
     let _ = std::fs::remove_file(&out);
+    let store = coach_analysis::ColumnStore::parse(bytes.clone()).unwrap();
+    let copy = || coach_analysis::ColumnStore::parse(bytes.clone()).unwrap();
     let names: Vec<PyValue> = store
         .header
         .columns
@@ -468,10 +471,10 @@ fn fixture_session() -> Session {
     );
     let mut wrong = TableMeta::from_value(&meta.into()).unwrap();
     wrong.channel_names.reverse();
-    let session = Session::new(store.clone(), table.clone(), PyValue::None).unwrap();
+    let session = Session::new(copy(), table.clone(), PyValue::None).unwrap();
     if names.len() > 1 {
         assert!(
-            Session::new(store.clone(), wrong, PyValue::None).is_err(),
+            Session::new(copy(), wrong, PyValue::None).is_err(),
             "column order"
         );
     }

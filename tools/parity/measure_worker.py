@@ -6,17 +6,24 @@ sections 2 to 4: complete environment, a job root holding the recording, the
 discovered group id as selector, ``target_hz: null``), one cold process per
 run in a fresh archive, alternating baseline and native runs (the baseline is
 pure Python unless ``--baseline-stages`` names stages, such as ``decode`` to
-measure the Python kernels against ``decode,kernels``). Peak memory is the
-worker process's own peak working set (Windows, ``GetProcessMemoryInfo``) or
-``ru_maxrss`` (Linux, ``wait4``). With native stages the worker starts
-``coach-analysis decode`` and ``coach-analysis kernels`` as children, whose
-peaks are not part of the worker's: on Windows each run is a job object, whose
-accounting adds the tree's peak committed memory (every process of the run at
-the same moment) and its process count; the decoder is also measured alone on
-the same request.
+measure the Python kernels against ``decode,kernels``). Peak memory
+(``peak_kind`` in the report): on Windows the worker process's own peak
+working set (``GetProcessMemoryInfo``); on Linux ``wait4``'s ``ru_maxrss``,
+which is the largest peak RSS of the worker *and of every child it waited
+for* (the decode, kernels, merge and write children), not the worker's own
+and not a simultaneous tree peak (Codex phase-3 review, finding 6). With
+native stages the worker starts ``coach-analysis`` children: on Windows each
+run is a job object, whose accounting adds the tree's peak committed memory
+(every process of the run at the same moment) and its process count; the
+decoder is also measured alone on the same request.
 
     python tools/parity/measure_worker.py --source RACE.ibt --native-bin target/release/coach-analysis.exe --runs 3 --base SCRATCH --out report.json
     python tools/parity/measure_worker.py --source RACE.ibt --native-bin ... --baseline-stages decode --native-stages decode,kernels --runs 5 ...
+    python tools/parity/measure_worker.py --source RACE.ibt --native-bin NEW --baseline-bin OLD --baseline-stages decode,kernels --native-stages decode,kernels ...
+
+``--baseline-bin`` gives the baseline side its own executable (default: the
+native side's), so two builds of the same stages can be compared (phase 3:
+the store read whole by the phase-2 kernels child against the mapped store).
 """
 
 from __future__ import annotations
@@ -39,6 +46,14 @@ import analysis_parity as parity  # noqa: E402
 sys.path.insert(0, str(parity.SCRIPTS))
 import ibt_reader  # noqa: E402
 import workflow  # noqa: E402
+
+
+PEAK_KIND = (
+    "worker peak working set (GetProcessMemoryInfo, the worker process only)"
+    if os.name == "nt"
+    else "largest peak RSS of the worker and each child it waited for (wait4 ru_maxrss; not worker-only, not simultaneous)"
+)
+PEAK_LABEL = "worker peak" if os.name == "nt" else "worker-or-child peak RSS"
 
 
 def _peak_after_exit(process: subprocess.Popen[bytes]) -> int:
@@ -207,6 +222,7 @@ def main() -> int:
         default="",
         help="Stages of the comparison side (default empty: pure Python; 'decode' measures the Python kernels).",
     )
+    parser.add_argument("--baseline-bin", default=None, help="Executable of the baseline side (default: --native-bin).")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--base", required=True, help="Harness-owned scratch (wiped).")
     parser.add_argument("--out", required=True)
@@ -214,6 +230,7 @@ def main() -> int:
 
     source = Path(args.source).resolve()
     native_bin = str(Path(args.native_bin).resolve())
+    baseline_bin = str(Path(args.baseline_bin).resolve()) if args.baseline_bin else native_bin
     os.environ[parity.NATIVE_BIN_ENV] = native_bin
     base = Path(args.base).resolve()
     parity._prepare_owned(base, parity.BASE_MARKER)
@@ -247,14 +264,17 @@ def main() -> int:
                 {"selector": selector, "iracing_root": str(root), "archive_root": str(worker.archive), "target_hz": None},
             )
             tree: dict[str, int] | None = {} if os.name == "nt" else None
-            out, err, code, wall, peak = _run(command, worker.environment(root), stdin, tree)
+            environment = worker.environment(root)
+            if stages.strip():
+                environment[parity.NATIVE_BIN_ENV] = baseline_bin if mode == "python" else native_bin
+            out, err, code, wall, peak = _run(command, environment, stdin, tree)
             if code != 0:
                 raise SystemExit(f"{mode} run {index + 1}: exit {code}\n{err.decode('utf-8', 'replace')[-2000:]}")
             payload = _result(out, f"{mode} run {index + 1}")
             runs.append({"mode": mode, "stages": stages, "run": index + 1, "wall_s": round(wall, 3), "peak_bytes": peak,
                          **(tree or {}), "analysis_id": payload.get("analysis_id")})
             print(
-                f"{mode} ({stages or 'python'}) run {index + 1}: wall {wall:.2f} s, worker peak {peak / 2**30:.3f} GiB"
+                f"{mode} ({stages or 'python'}) run {index + 1}: wall {wall:.2f} s, {PEAK_LABEL} {peak / 2**30:.3f} GiB"
                 + (f", tree peak commit {tree['tree_peak_commit_bytes'] / 2**30:.3f} GiB in {tree['processes']} processes" if tree else "")
                 + f", {payload.get('analysis_id')}",
                 flush=True,
@@ -291,6 +311,7 @@ def main() -> int:
             out["tree_peak_commit_gib"] = round(median(mode, "tree_peak_commit_bytes") / 2**30, 3)
             out["tree_peak_commit_gib_range"] = span(mode, "tree_peak_commit_bytes", 2**30)
             out["processes"] = sorted({run["processes"] for run in runs if run["mode"] == mode})
+            out["largest_process_peak_commit_gib"] = round(median(mode, "process_peak_commit_bytes") / 2**30, 3)
         return out
 
     report = {
@@ -299,8 +320,10 @@ def main() -> int:
         "python": parity.platform.python_version(),
         "platform": sys.platform,
         "native_binary": {"path": native_bin, "sha256": parity._sha256_file(Path(native_bin))},
+        "baseline_binary": {"path": baseline_bin, "sha256": parity._sha256_file(Path(baseline_bin))},
         "selector_kind": "path" if selector == str(recording) else "group_id",
         "channels": len(channels),
+        "peak_kind": PEAK_KIND,
         "runs": runs,
         "decoder_alone": decoder,
         "median": {mode: summary(mode) for mode in ("python", "native")},

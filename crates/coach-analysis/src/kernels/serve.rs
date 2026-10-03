@@ -111,7 +111,11 @@ fn start(line: &str) -> Result<Session, KernelError> {
     let store = field("store")?
         .as_str()
         .ok_or_else(|| KernelError::codec("start request: store is not a path"))?;
-    let store = ColumnStore::read(Path::new(store))
+    // SAFETY (`ColumnStore::map`): the seam names its job's private decode or merge store,
+    // written completely by a stage that has exited, and deletes it only after this child
+    // exits; nothing writes it meanwhile (on Windows the mapping also denies write sharing).
+    #[allow(unsafe_code)]
+    let store = unsafe { ColumnStore::map(Path::new(store)) }
         .map_err(|error| KernelError::internal(format!("store {store}: {error}")))?;
     let meta = TableMeta::from_value(field("table")?)?;
     Session::new(store, meta, field("steering_basis")?.clone())

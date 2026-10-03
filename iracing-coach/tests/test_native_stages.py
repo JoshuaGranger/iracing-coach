@@ -10,6 +10,7 @@ and the stage selection are tested without it.
 
 from __future__ import annotations
 
+import io
 import json
 import math
 import os
@@ -35,6 +36,7 @@ if str(TESTS) not in sys.path:
 
 import ibt_reader  # noqa: E402
 import native_stages  # noqa: E402
+import storage  # noqa: E402
 import workflow  # noqa: E402
 from test_ibt_reader import build_ibt  # noqa: E402
 
@@ -121,8 +123,17 @@ class StageSelectionTests(unittest.TestCase):
     def test_unknown_and_unprovided_stages_fail(self) -> None:
         with self.assertRaisesRegex(native_stages.NativeStageError, "unknown stage"):
             native_stages.requested_stages({native_stages.STAGES_ENV: "decode,gpu"})
-        with self.assertRaisesRegex(native_stages.NativeStageError, "does not provide"):
+        # The phase-3 stage is "writer"; the contract's earlier name is not a stage.
+        with self.assertRaisesRegex(native_stages.NativeStageError, "unknown stage"):
             native_stages.requested_stages({native_stages.STAGES_ENV: "decode,json_writer"})
+        with mock.patch.object(native_stages, "AVAILABLE_STAGES", frozenset({"decode", "kernels"})):
+            with self.assertRaisesRegex(native_stages.NativeStageError, "does not provide"):
+                native_stages.requested_stages({native_stages.STAGES_ENV: "decode,writer"})
+
+    def test_writer_stands_alone(self) -> None:
+        self.assertEqual(native_stages.requested_stages({native_stages.STAGES_ENV: "writer"}), frozenset({"writer"}))
+        self.assertTrue(native_stages.writer_requested({native_stages.STAGES_ENV: "decode,kernels,writer"}))
+        self.assertFalse(native_stages.writer_requested({native_stages.STAGES_ENV: "decode,kernels"}))
 
     def test_kernels_requires_decode(self) -> None:
         self.assertEqual(
@@ -1047,6 +1058,289 @@ def _fake_merge(request: dict[str, Any]) -> None:
         "columns": columns,
     }
     native_codec._write_store(Path(request["out"]), header, blocks)
+
+
+# ---------------------------------------------------------------------------
+# Writer (port phase 3)
+# ---------------------------------------------------------------------------
+
+
+def _json_oracle(value: Any, mode: str) -> Any:
+    """What each writer site's own Python code returns for ``value``."""
+
+    if mode == "bytes":
+        return storage._json_text(value).encode("utf-8")
+    if mode == "sha256":
+        return storage.stable_hash(value, 64)
+    raise AssertionError(mode)
+
+
+def _outcome(call: Callable[[], Any]) -> tuple[Any, ...]:
+    try:
+        return ("ok", call())
+    except Exception as exc:  # noqa: BLE001 - compared by class and message
+        return ("raises", type(exc).__name__, str(exc))
+
+
+class _Label(str):
+    pass
+
+
+class _Broken:
+    def __str__(self) -> str:
+        raise RuntimeError("str() refused")
+
+
+def _writer_values() -> list[Any]:
+    cyclic: list[Any] = [1]
+    cyclic.append(cyclic)
+    shared = [0.1, "x"]
+    return [
+        {"b": 1.5, "a": [1, 2.0, -0.0, 1e300, 5e-324, 0.1, 2**63, -(2**70)], "c": None, "d": (True, False)},
+        {"s": "é \x00\x1f\x7f\"\\\t\n😀", "k": {"z": {}, "y": []}, "shared": [shared, shared]},
+        [float("nan")],
+        {"x": float("-inf")},
+        {1: 2, 1.5: 3, True: 4, -7: 5},
+        {1: 2, "a": 3},
+        {None: 1, 2: 3},
+        cyclic,
+        {"label": _Label("sub"), "path": Path("relative") / "x", "bytes": b"it's"},
+        [1, _Broken()],
+        [10**5000],
+        "a" + chr(0xD800) + chr(0xDC00) + "b",
+    ]
+
+
+class WriterSeamTests(unittest.TestCase):
+    """The three sites, the pickler and the count rule, without the executable."""
+
+    def test_sites_use_python_without_the_stage(self) -> None:
+        value = {"b": [1.5, None], "a": "é"}
+        with mock.patch.dict(os.environ, {native_stages.STAGES_ENV: "decode"}), \
+                mock.patch.object(native_stages, "writer_call", side_effect=AssertionError("native")):
+            self.assertEqual(storage._analysis_json_bytes(value), storage._json_text(value).encode("utf-8"))
+            self.assertEqual(workflow._analysis_sha256(value), storage.stable_hash(value, 64))
+            with tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / "cache" / "x.json"
+                workflow._write_json_cache(target, value)
+                self.assertEqual(target.read_text(encoding="utf-8"), storage._json_text(value))
+
+    def test_sites_call_the_writer_with_their_mode(self) -> None:
+        calls: list[tuple[Any, ...]] = []
+
+        def native(site: str, mode: str, value: Any, oracle: Callable[[], Any], *, path: str | None = None) -> Any:
+            calls.append((site, mode, path is not None))
+            return oracle()  # the site's own code, so the results stay checkable
+
+        value = {"b": 1, "a": [2.5]}
+        with mock.patch.dict(os.environ, {native_stages.STAGES_ENV: "writer"}), \
+                mock.patch.object(native_stages, "writer_call", side_effect=native):
+            self.assertEqual(storage._analysis_json_bytes(value), storage._json_text(value).encode("utf-8"))
+            self.assertEqual(workflow._analysis_sha256(value), storage.stable_hash(value, 64))
+            with tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / "x.json"
+                workflow._write_json_cache(target, value)
+                self.assertEqual(target.read_text(encoding="utf-8"), storage._json_text(value))
+        self.assertEqual(
+            calls, [("analysis_json", "bytes", False), ("analysis_sha256", "sha256", False), ("json_cache", "file", True)]
+        )
+
+    def test_plain_values_take_the_pickler_fast_paths(self) -> None:
+        seen: list[Any] = []
+
+        class Watching(native_stages._WriterPickler):
+            def reducer_override(self, obj: Any) -> Any:
+                seen.append(obj)
+                return super().reducer_override(obj)
+
+        plain = {"a": [1, 2.5, None, True, "x", b"y", (1, 2), {"k": -(2**80)}]}
+        Watching(io.BytesIO(), native_stages._writer_options(False, False)).dump(plain)
+        self.assertEqual(seen, [])
+        # Any other object stops the pickle (Codex phase-3 review, finding 1).
+        with self.assertRaises(native_stages._WriterUnsupported):
+            Watching(io.BytesIO(), native_stages._writer_options(False, False)).dump([_Label("q")])
+        self.assertEqual(seen, ["q"])
+        self.assertIs(type(seen[0]), _Label)
+
+    def _fallback_only(self, make: Callable[[], Any], mode: str = "bytes") -> tuple[Any, Any, dict[str, Any]]:
+        """``writer_call`` on a fresh ``make()`` (no executable may start) against the oracle
+        on another fresh ``make()``: (native outcome, oracle outcome, counts)."""
+
+        counts, uninstall = native_stages.install_call_counters()
+        try:
+            with mock.patch.object(native_stages.subprocess, "run", side_effect=AssertionError("the writer started")):
+                value = make()
+                native = _outcome(lambda: native_stages.writer_call(
+                    "analysis_json", mode, value, lambda: _json_oracle(value, mode)
+                ))
+        finally:
+            uninstall()
+        fresh = make()
+        return native, _outcome(lambda: _json_oracle(fresh, mode)), counts
+
+    def test_default_str_runs_once_in_python_order(self) -> None:
+        """Codex phase-3 review, finding 1: ``default=str`` and a subclass's methods are the
+        oracle's to call, once per occurrence, in its sorted traversal order, and no fallback
+        follows an earlier evaluation. Each value is fresh on both sides."""
+
+        class Counting:
+            def __init__(self, box: list[int]) -> None:
+                self.box = box
+
+            def __str__(self) -> str:
+                self.box[0] += 1
+                return str(self.box[0])
+
+        def twice() -> Any:
+            shared = Counting([0])
+            return [shared, shared]
+
+        def sorted_keys() -> Any:
+            box = [0]
+            value = {}
+            value["z"] = Counting(box)
+            value["a"] = Counting(box)
+            return value
+
+        def before_a_set() -> Any:
+            return [Counting([0]), {1}]
+
+        def subclass_items() -> Any:
+            calls = [0]
+
+            class Items(dict):
+                def items(self):  # type: ignore[override]
+                    calls[0] += 1
+                    return [("n", calls[0])]
+
+            return {"b": Items(), "a": Items()}
+
+        # The oracle's bytes, as CPython 3.12 writes them (the review's reproductions).
+        expected = {
+            "twice": b'["1","2"]\n',
+            "sorted_keys": b'{"a":"1","z":"2"}\n',
+            "before_a_set": b'["1","{1}"]\n',
+        }
+        for make in (twice, sorted_keys, before_a_set, subclass_items):
+            for mode in ("bytes", "sha256"):
+                with self.subTest(make.__name__, mode=mode):
+                    native, oracle, counts = self._fallback_only(make, mode)
+                    self.assertEqual(native, oracle)
+                    self.assertEqual(counts["writer"], {"analysis_json": 1})
+                    self.assertEqual(counts["writer_fallback"], {"analysis_json": 1})
+                    if mode == "bytes" and make.__name__ in expected:
+                        self.assertEqual(native, ("ok", expected[make.__name__]))
+
+    def test_container_subclasses_are_counted_fallbacks(self) -> None:
+        """Codex phase-3 review, finding 4: a list or dict subclass (holding a set, or a whole
+        ``lap_traces``) is no Python-written fragment inside a native write: the whole call
+        falls back and is counted, so the gate fails on it."""
+
+        class Seq(list):
+            pass
+
+        class Record(dict):
+            pass
+
+        sites = {"analysis_json": 1, "analysis_sha256": 1, "json_cache": 1}
+        for number, make in enumerate((
+            lambda: {"lap_traces": Seq([{1, 2}])},
+            lambda: {"lap_traces": Seq([{"distance": [0.5, 1.5]}])},
+            lambda: [Record(a=1)],
+            lambda: (Seq(),),
+        )):
+            with self.subTest(number):
+                native, oracle, counts = self._fallback_only(make)
+                self.assertEqual(native, oracle)
+                self.assertEqual(counts["writer_fallback"], {"analysis_json": 1})
+                gate = native_stages.writer_call_problems(
+                    {"writer": {}, "writer_sites": sites, "writer_fallback": {}},
+                    {"writer": sites, "writer_sites": sites, "writer_fallback": counts["writer_fallback"]},
+                    True,
+                )
+                self.assertTrue(any("fell back" in problem for problem in gate), gate)
+
+    def test_an_object_whose_str_raises_raises_from_the_site(self) -> None:
+        native, oracle, counts = self._fallback_only(lambda: [1, _Broken()])
+        self.assertEqual(native, ("raises", "RuntimeError", "str() refused"))
+        self.assertEqual(native, oracle)
+        self.assertEqual(counts["writer_fallback"], {"analysis_json": 1})
+
+    def test_count_rule(self) -> None:
+        sites = {site: 1 for site in native_stages.WRITER_SITES}
+        oracle = {"writer": {}, "writer_sites": dict(sites), "writer_fallback": {}}
+        native = {"writer": dict(sites), "writer_sites": dict(sites), "writer_fallback": {}}
+        self.assertEqual(native_stages.writer_call_problems(oracle, native, True), [])
+        python_side = {"writer": {}, "writer_sites": dict(sites), "writer_fallback": {}}
+        self.assertEqual(native_stages.writer_call_problems(oracle, python_side, False), [])
+        self.assertTrue(native_stages.writer_call_problems(oracle, python_side, True))
+        fell_back = {**native, "writer_fallback": {"analysis_json": 1}}
+        self.assertTrue(native_stages.writer_call_problems(oracle, fell_back, True))
+        fewer = {**native, "writer_sites": {**sites, "json_cache": 2}}
+        self.assertTrue(native_stages.writer_call_problems(oracle, fewer, True))
+        self.assertTrue(native_stages.writer_call_problems({"writer_sites": sites}, native, True))
+        unreached = {"writer": {}, "writer_sites": {"analysis_json": 1}, "writer_fallback": {}}
+        self.assertTrue(native_stages.writer_call_problems(unreached, unreached, False))
+
+
+@unittest.skipUnless(_binary(), "coach-analysis not available (IRACING_COACH_NATIVE_BIN or PATH)")
+class NativeWriterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        patcher = mock.patch.dict(os.environ, {native_stages.BINARY_ENV: _binary() or ""})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_bytes_and_hash_are_the_oracle(self) -> None:
+        for number, value in enumerate(_writer_values()):
+            for mode in ("bytes", "sha256"):
+                expected = _outcome(lambda: _json_oracle(value, mode))
+                got = _outcome(
+                    lambda: native_stages.writer_call("analysis_json", mode, value, lambda: _json_oracle(value, mode))
+                )
+                self.assertEqual(got, expected, (mode, number))
+
+    def test_the_cache_file_is_the_oracle_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for number, value in enumerate(_writer_values()):
+                python_path, native_path = Path(directory) / f"p{number}.json", Path(directory) / f"n{number}.json"
+
+                def oracle() -> None:
+                    python_path.write_text(storage._json_text(value), encoding="utf-8")
+
+                expected = _outcome(oracle)
+                got = _outcome(lambda: native_stages.writer_call(
+                    # The site's own fallback returns None, as the oracle does (not write_text's count).
+                    "json_cache", "file", value, lambda: [native_path.write_text(storage._json_text(value), encoding="utf-8")] and None,
+                    path=str(native_path),
+                ))
+                self.assertEqual(got, expected, number)
+                self.assertEqual(python_path.is_file(), native_path.is_file(), number)
+                if python_path.is_file():
+                    self.assertEqual(python_path.read_bytes(), native_path.read_bytes(), number)
+
+    def test_values_outside_the_model_are_written_by_the_site_and_counted(self) -> None:
+        counts, uninstall = native_stages.install_call_counters()
+        try:
+            deep: Any = 0
+            for _ in range(300):
+                deep = [deep]
+            for value in ([{1, 2}], {(1, 2): 3}, {_Label("k"): 1}, [bytearray(b"x")], deep):
+                self.assertEqual(
+                    _outcome(lambda: native_stages.writer_call(
+                        "analysis_json", "bytes", value, lambda: _json_oracle(value, "bytes")
+                    )),
+                    _outcome(lambda: _json_oracle(value, "bytes")),
+                )
+        finally:
+            uninstall()
+        self.assertEqual(counts["writer"], {"analysis_json": 5})
+        self.assertEqual(counts["writer_fallback"], {"analysis_json": 5})
+
+    def test_a_bad_request_fails_the_job(self) -> None:
+        completed = subprocess.run([_binary(), "write"], input=b"{}\n", capture_output=True, check=False)
+        self.assertEqual(completed.returncode, 1)
+        with self.assertRaisesRegex(native_stages.NativeStageError, "unknown writer site"):
+            native_stages.writer_call("elsewhere", "bytes", {}, lambda: None)
 
 
 if __name__ == "__main__":

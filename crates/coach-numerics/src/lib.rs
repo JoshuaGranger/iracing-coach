@@ -11,6 +11,7 @@ mod decimal;
 mod error;
 mod exact;
 mod format;
+mod intrepr;
 mod num;
 mod order;
 mod parse;
@@ -25,6 +26,7 @@ mod unicode_tables;
 pub use error::{PyError, PyErrorKind, PyResult};
 pub use exact::int_true_div;
 pub use format::{format_float, format_int, format_num};
+pub use intrepr::int_repr_from_le_bytes;
 pub use num::{
     Num, abs, add, cmp_int_float, divmod, float_divmod, float_mod, floordiv, int_from_float,
     int_from_float_low64, modulo, mul, neg, py_cmp, py_eq, py_ge, py_gt, py_le, py_lt, sub,
@@ -40,7 +42,7 @@ pub use pymath::{
     PI, atan2, ceil, ceil_num, cos, degrees, float_pow, floor, floor_num, gcd, hypot, hypot_n,
     isclose, pow_num, radians, sin, sqrt,
 };
-pub use repr::{float_repr, json_float, json_num, num_repr};
+pub use repr::{float_repr, float_repr_into, json_float, json_num, num_repr};
 pub use round::{round_half_even, round_int_ndigits, round_ndigits, round_num, round_to_int};
 pub use stats::{
     fmean, fmean_nums, mean, median, median_floats, pstdev, pvariance, stdev, variance,

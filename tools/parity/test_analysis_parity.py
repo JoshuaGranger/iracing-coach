@@ -185,5 +185,89 @@ class WorkerNativeDecodeTests(unittest.TestCase):
         self.assertFalse(trace.exists())  # initialize decodes nothing
 
 
+class WriterRuleTests(unittest.TestCase):
+    """Phase 3: the gate's writer rule over two captures' counts."""
+
+    @staticmethod
+    def counts(writer: dict[str, int], sites: dict[str, int], fallback: dict[str, int] | None = None) -> dict[str, Any]:
+        return {"native": {}, "oracle": {}, "writer": writer, "writer_sites": sites, "writer_fallback": fallback or {}}
+
+    def test_every_site_native_and_no_fallback(self) -> None:
+        sites = {"analysis_json": 1, "analysis_sha256": 1, "json_cache": 1}
+        oracle, native = self.counts({}, sites), self.counts(dict(sites), sites)
+        self.assertEqual(ap._writer_call_problems(oracle, native, "decode,kernels,writer"), [])
+        self.assertEqual(ap._writer_call_problems(oracle, self.counts({}, sites), "decode,kernels"), [])
+        cases = {
+            "native lost the stage": (oracle, self.counts({}, sites), "decode,kernels,writer"),
+            "a fallback": (oracle, self.counts(dict(sites), sites, {"json_cache": 1}), "writer"),
+            "a site not reached natively": (oracle, self.counts({"analysis_json": 1}, sites), "writer"),
+            "native writes without the stage": (oracle, native, "decode"),
+            "the oracle wrote natively": (native, native, "writer"),
+            "an older capture": ({"native": {}, "oracle": {}}, native, "writer"),
+            "no capture counts": (None, native, "writer"),
+        }
+        for label, (left, right, stages) in cases.items():
+            with self.subTest(label):
+                self.assertTrue(ap._writer_call_problems(left, right, stages))
+
+
+class SharedFailureTests(unittest.TestCase):
+    """Codex phase-3 review, finding 5: only a designated invalid fixture may pass by being
+    rejected identically; a valid recording that fails on both sides fails the gate."""
+
+    def test_only_designated_fixtures_may_be_rejected(self) -> None:
+        truncated = ap.FIXTURES / "truncated-race.ibt"
+        self.assertTrue(ap.expects_rejection("fixture", truncated))
+        self.assertFalse(ap.expects_rejection("fixture", ap.FIXTURES / "synthetic-race.ibt"))
+        self.assertFalse(ap.expects_rejection("private", truncated))
+        self.assertFalse(ap.expects_rejection("private", Path("elsewhere") / "truncated-race.ibt"))
+        left, right = Path("left"), Path("right")
+        error = "KeyError: 'analysis'"
+        shared = ap._pair_result(left, right, (False, False), (error, error))
+        self.assertFalse(shared["identical"])
+        self.assertIn("both sides", shared["differences"][0])
+        designated = ap._pair_result(left, right, (False, False), (error, error), expect_rejection=True)
+        self.assertTrue(designated["identical"])
+        for ok, errors in (((False, False), (error, "other")), ((True, False), ("", error)), ((True, True), ("", ""))):
+            with self.subTest(ok=ok, errors=errors):
+                self.assertFalse(ap._pair_result(left, right, ok, errors, expect_rejection=True)["identical"])
+        self.assertFalse(ap._pair_result(left, right, (True, False), ("", error))["identical"])
+
+
+class Sha256CheckTests(unittest.TestCase):
+    """Codex phase-3 review, finding 8: the hash check is required on both sides and must state
+    true; equal false values or two missing files are not a pass."""
+
+    def capture(self, root: Path, check: Any, capture_format: int = ap.CAPTURE_FORMAT) -> Path:
+        for mode in ("outputs", "raw"):
+            (root / mode).mkdir(parents=True)
+        (root / "capture.json").write_text(json.dumps({"capture_format": capture_format}), encoding="utf-8")
+        (root / "outputs" / "same.json").write_text("{}\n", encoding="utf-8")
+        if check is not None:
+            (root / "outputs" / ap.SHA256_CHECK).write_text(ap.canonical_json(check), encoding="utf-8")
+        return root
+
+    def compare(self, left: Any, right: Any, capture_format: int = ap.CAPTURE_FORMAT) -> list[str]:
+        with tempfile.TemporaryDirectory() as directory:
+            a = self.capture(Path(directory) / "a", left, capture_format)
+            b = self.capture(Path(directory) / "b", right, capture_format)
+            return ap.compare_captures(a, b, raw=False)[1]
+
+    def test_true_on_both_sides_is_required(self) -> None:
+        good = {"envelope_equals_stable_hash": True}
+        self.assertEqual(self.compare(good, good), [])
+        for left, right in (
+            ({"envelope_equals_stable_hash": False}, {"envelope_equals_stable_hash": False}),
+            (None, None),
+            ({"envelope_equals_stable_hash": 1}, {"envelope_equals_stable_hash": 1}),
+            (good, {"envelope_equals_stable_hash": False}),
+            ({}, {}),
+        ):
+            with self.subTest(left=left, right=right):
+                self.assertTrue(self.compare(left, right))
+        # Captures older than format 5 never wrote the file.
+        self.assertEqual(self.compare(None, None, capture_format=4), [])
+
+
 if __name__ == "__main__":
     unittest.main()

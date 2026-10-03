@@ -133,6 +133,109 @@ pub fn shortest(x: f64) -> Digits {
     tie_to_even(x.abs(), &rust).unwrap_or(rust)
 }
 
+/// [`shortest`] without a heap allocation (port phase 3: the `analysis.json` writer formats
+/// about a million floats per race). The digits go to `digits`; returns `(length, decpt)`.
+/// The same digits as [`shortest`] by construction: Rust's digits are taken unchanged unless
+/// [`may_tie`] cannot rule out a tie, and then [`tie_to_even`] itself decides.
+pub(crate) fn shortest_into(x: f64, digits: &mut [u8; 24]) -> (usize, i32) {
+    use std::fmt::Write as _;
+
+    struct Stack {
+        bytes: [u8; 40],
+        len: usize,
+    }
+    impl std::fmt::Write for Stack {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            let end = self.len + text.len();
+            if end > self.bytes.len() {
+                return Err(std::fmt::Error);
+            }
+            self.bytes[self.len..end].copy_from_slice(text.as_bytes());
+            self.len = end;
+            Ok(())
+        }
+    }
+    let x = x.abs();
+    let mut text = Stack {
+        bytes: [0; 40],
+        len: 0,
+    };
+    // At most 17 digits, a point, `e` and a four-character exponent.
+    write!(text, "{x:e}").expect("LowerExp of a finite float fits 40 bytes");
+    let text = &text.bytes[..text.len];
+    let e = text
+        .iter()
+        .position(|&b| b == b'e')
+        .expect("LowerExp has an exponent");
+    let mut len = 0;
+    for &byte in &text[..e] {
+        if byte.is_ascii_digit() {
+            digits[len] = byte;
+            len += 1;
+        }
+    }
+    while len > 1 && digits[len - 1] == b'0' {
+        len -= 1;
+    }
+    let (negative, magnitude) = match text[e + 1] {
+        b'-' => (true, &text[e + 2..]),
+        _ => (false, &text[e + 1..]),
+    };
+    let exponent = magnitude
+        .iter()
+        .fold(0i32, |value, &b| value * 10 + i32::from(b - b'0'));
+    let decpt = if negative { -exponent } else { exponent } + 1;
+    if may_tie(x, len) {
+        let rust = Digits {
+            digits: digits[..len].to_vec(),
+            decpt,
+        };
+        if let Some(even) = tie_to_even(x, &rust) {
+            digits[..even.digits.len()].copy_from_slice(&even.digits);
+            return (even.digits.len(), even.decpt);
+        }
+    }
+    (len, decpt)
+}
+
+/// False only where [`tie_to_even`] returns `None` for a `k`-digit shortest string: the exact
+/// expansion `n` (without trailing zeros) is not `k + 1` digits ending in 5. Decided in `u64`
+/// whenever `n` fits; `n >= 10**18` has more than `k + 1 <= 18` digits. True means "ask
+/// `tie_to_even`", never "a tie".
+fn may_tie(x: f64, k: usize) -> bool {
+    let (_, mut mantissa, mut exponent) = decompose(x);
+    let zeros = mantissa.trailing_zeros();
+    mantissa >>= zeros;
+    exponent += zeros as i32;
+    let mut n = if exponent >= 0 {
+        if exponent >= 64 || mantissa.leading_zeros() < exponent as u32 {
+            return true;
+        }
+        mantissa << exponent
+    } else {
+        // n = mantissa * 5**p with an odd mantissa: no trailing zero, so its length is final.
+        let p = exponent.unsigned_abs();
+        if p > 26 {
+            return false;
+        }
+        let wide = u128::from(mantissa) * 5u128.pow(p);
+        if wide >= 1_000_000_000_000_000_000 {
+            return false;
+        }
+        wide as u64
+    };
+    while n != 0 && n % 10 == 0 {
+        n /= 10;
+    }
+    let mut length = 1;
+    let mut rest = n / 10;
+    while rest != 0 {
+        length += 1;
+        rest /= 10;
+    }
+    n % 10 == 5 && length == k + 1
+}
+
 /// When `x` is exactly halfway between two `k`-digit decimals (`k` the length Rust chose),
 /// the even one if it reads back as `x`. A tie needs an exact expansion of `k + 1 <= 18`
 /// significant digits ending in 5, so only small exact values are examined.

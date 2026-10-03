@@ -2076,12 +2076,28 @@ def _write_json_cache(path: Path, payload: Mapping[str, Any]) -> None:
     target = Path(_extended_path(path))
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str, allow_nan=False)
-        + "\n",
-        encoding="utf-8",
-    )
+
+    def write_text() -> None:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str, allow_nan=False)
+            + "\n",
+            encoding="utf-8",
+        )
+
+    # Port phase 3 (the writer stage): coach-analysis write writes the same bytes.
+    if native_stages.writer_requested():
+        native_stages.writer_call("json_cache", "file", payload, write_text, path=str(temporary))
+    else:
+        write_text()
     os.replace(temporary, target)
+
+
+def _analysis_sha256(analysis: Mapping[str, Any]) -> str:
+    """``stable_hash(analysis, 64)``: the analysis-cache envelope's ``analysis_sha256``."""
+
+    if native_stages.writer_requested():
+        return native_stages.writer_call("analysis_sha256", "sha256", analysis, lambda: stable_hash(analysis, 64))
+    return stable_hash(analysis, 64)
 
 
 def _read_json_cache(path: Path, **options: Any) -> Any:
@@ -2203,7 +2219,7 @@ def _analyze_race_workflow(
     )
     cache_valid = bool(
         cached_analysis is not None
-        and cached_payload.get("analysis_sha256") == stable_hash(cached_analysis, 64)
+        and cached_payload.get("analysis_sha256") == _analysis_sha256(cached_analysis)
     )
     if cache_valid:
         analysis = dict(cached_analysis)
@@ -2214,7 +2230,7 @@ def _analyze_race_workflow(
                     "cache_schema": 4,
                     "cache_key": analysis_cache_key,
                     "created_at": utc_now(),
-                    "analysis_sha256": stable_hash(analysis, 64),
+                    "analysis_sha256": _analysis_sha256(analysis),
                     "analysis": analysis,
                 },
             )
@@ -2268,7 +2284,7 @@ def _analyze_race_workflow(
                 "cache_schema": 4,
                 "cache_key": analysis_cache_key,
                 "created_at": utc_now(),
-                "analysis_sha256": stable_hash(analysis, 64),
+                "analysis_sha256": _analysis_sha256(analysis),
                 "analysis": analysis,
             },
         )

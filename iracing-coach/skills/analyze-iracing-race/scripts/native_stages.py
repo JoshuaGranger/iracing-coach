@@ -22,6 +22,18 @@ ported entry point (:data:`KERNEL_ENTRIES`) rebound to a shim that calls the
 ``coach-analysis kernels`` child process through :func:`kernel_call`. No file
 of the analyzer bundle changes, so ``analysis_id`` is unchanged.
 
+``writer`` (phase 3, independent of the others): the analysis object is
+serialised by ``coach-analysis write`` instead of ``json.dumps`` at the three
+sites that write it (:data:`WRITER_SITES`: ``analysis.json``, the analysis-cache
+file and its ``analysis_sha256``). :func:`writer_call` hands the object over as
+a pickle and receives exactly the bytes, the hash or the written file
+``json.dumps`` would produce, or the exception it would raise. A value outside
+the writer's model (any object but an exact ``dict``, ``list``, ``tuple``,
+``str``, ``bytes``, ``int``, ``float``, ``bool`` or ``None``; a set; a dict key
+of another type; a nesting deeper than 200 containers) is written by the
+site's own Python code, once and from the start, and counted as a fallback;
+the parity gate requires none.
+
 The executable is ``IRACING_COACH_NATIVE_BIN`` or ``coach-analysis`` on
 ``PATH``.
 """
@@ -30,11 +42,14 @@ from __future__ import annotations
 
 import builtins
 import contextlib
+import importlib
+import io
 import itertools
 import json
 import mmap
 import operator
 import os
+import pickle
 import shutil
 import struct
 import subprocess
@@ -57,12 +72,13 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
 STAGES_ENV = "IRACING_COACH_NATIVE_STAGES"
 BINARY_ENV = "IRACING_COACH_NATIVE_BIN"
 BINARY_NAME = "coach-analysis"
-KNOWN_STAGES = ("decode", "kernels", "json_writer")
-AVAILABLE_STAGES = frozenset({"decode", "kernels"})
+KNOWN_STAGES = ("decode", "kernels", "writer")
+AVAILABLE_STAGES = frozenset({"decode", "kernels", "writer"})
 # A stage that only runs on another stage's output.
 REQUIRES = {"kernels": "decode"}
 REQUEST_VERSION = 1
 KERNELS_VERSION = 1
+WRITER_VERSION = 1
 STORE_MAGIC = b"COACHCS\x00"
 STORE_FORMAT = "coach-column-store"
 STORE_VERSION = 1
@@ -988,7 +1004,13 @@ def install_call_counters() -> tuple[dict[str, dict[str, int]], Callable[[], Non
     (a kernel session rebinds the counted entries to shims while it runs).
     """
 
-    counts: dict[str, dict[str, int]] = {"native": {}, "oracle": {}}
+    counts: dict[str, dict[str, int]] = {
+        "native": {},
+        "oracle": {},
+        "writer": {},
+        "writer_sites": {},
+        "writer_fallback": {},
+    }
     depth = [0]
     restore: list[tuple[Any, str, Any]] = []
 
@@ -1020,12 +1042,78 @@ def install_call_counters() -> tuple[dict[str, dict[str, int]], Callable[[], Non
     restore.append((module, "kernel_call", native_call))
     module.kernel_call = counted_call  # type: ignore[attr-defined]
 
+    # Writer (phase 3): calls of each site function on both sides; native writes
+    # and fallbacks by site.
+    def bump(kind: str, site: str) -> None:
+        counts[kind][site] = counts[kind].get(site, 0) + 1
+
+    def counted_site(site: str, original: Callable[..., Any]) -> Callable[..., Any]:
+        def call(*args: Any, **kwargs: Any) -> Any:
+            bump("writer_sites", site)
+            return original(*args, **kwargs)
+
+        call.__wrapped__ = original  # type: ignore[attr-defined]
+        return call
+
+    for site, (owner_name, name) in WRITER_SITES.items():
+        owner = _site_owner(owner_name)
+        original = getattr(owner, name)
+        restore.append((owner, name, original))
+        setattr(owner, name, counted_site(site, original))
+    native_write, fallback = module.writer_call, module.writer_fallback
+
+    def counted_write(site: str, *args: Any, **kwargs: Any) -> Any:
+        bump("writer", site)
+        return native_write(site, *args, **kwargs)
+
+    def counted_fallback(site: str, *args: Any, **kwargs: Any) -> Any:
+        bump("writer_fallback", site)
+        return fallback(site, *args, **kwargs)
+
+    restore.append((module, "writer_call", native_write))
+    restore.append((module, "writer_fallback", fallback))
+    module.writer_call = counted_write  # type: ignore[attr-defined]
+    module.writer_fallback = counted_fallback  # type: ignore[attr-defined]
+
     def uninstall() -> None:
         while restore:
             owner, name, original = restore.pop()
             setattr(owner, name, original)
 
     return counts, uninstall
+
+
+def writer_call_problems(oracle: Mapping[str, Any], native: Mapping[str, Any], writer: bool) -> list[str]:
+    """Why two captures' counts do not show every analysis serialisation written natively.
+
+    Both captures call each site equally often (and the oracle reaches every
+    site); the oracle capture makes no native write; with ``writer`` the native
+    capture writes every site call natively, site for site, with no fallback.
+    """
+
+    problems: list[str] = []
+    for side, counts in (("oracle", oracle), ("native", native)):
+        if not all(isinstance(counts.get(kind), Mapping) for kind in ("writer", "writer_sites", "writer_fallback")):
+            problems.append(f"the {side} capture has no writer counts (capture format older than 5)")
+    if problems:
+        return problems
+    if oracle["writer"] or oracle["writer_fallback"]:
+        problems.append(f"the oracle capture made native writes {dict(oracle['writer'])}")
+    sites, native_sites = dict(oracle["writer_sites"]), dict(native["writer_sites"])
+    missing = [site for site in WRITER_SITES if not sites.get(site)]
+    if missing:
+        problems.append(f"the oracle capture never reached writer site(s) {', '.join(missing)}")
+    if sites != native_sites:
+        problems.append(f"writer site calls differ: oracle {sites}, native {native_sites}")
+    if not writer:
+        if native["writer"] or native["writer_fallback"]:
+            problems.append(f"the native capture made native writes without the writer stage {dict(native['writer'])}")
+        return problems
+    if dict(native["writer"]) != native_sites:
+        problems.append(f"native writes {dict(native['writer'])} are not one per site call {native_sites}")
+    if native["writer_fallback"]:
+        problems.append(f"the native writer fell back to Python {dict(native['writer_fallback'])}")
+    return problems
 
 
 def kernel_call_problems(oracle: Mapping[str, Mapping[str, int]], native: Mapping[str, Mapping[str, int]], kernels: bool) -> list[str]:
@@ -1049,6 +1137,205 @@ def kernel_call_problems(oracle: Mapping[str, Mapping[str, int]], native: Mappin
     return problems
 
 
+# ---------------------------------------------------------------------------
+# Writer: the analysis object serialised by coach-analysis write (phase 3)
+# ---------------------------------------------------------------------------
+
+# The sites that serialise the analysis object (worker-interface.md section 7,
+# boundary D): site -> (module, function). Each site calls writer_call with its
+# own Python code as the fallback; the gate counts calls of these functions on
+# both sides and the native writes by site.
+WRITER_SITES: dict[str, tuple[str, str]] = {
+    "analysis_json": ("storage", "_analysis_json_bytes"),
+    "analysis_sha256": ("workflow", "_analysis_sha256"),
+    "json_cache": ("workflow", "_write_json_cache"),
+}
+# Each site's json.dumps: (ensure_ascii, allow_nan, what writer_call returns).
+WRITER_MODES: dict[str, tuple[bool, bool, str]] = {
+    # storage._json_text(dict(analysis)).encode("utf-8")
+    "bytes": (False, False, "bytes"),
+    # storage.stable_hash(analysis, 64): SHA-256 of json.dumps(sort_keys, compact, default=str)
+    "sha256": (True, True, "sha256"),
+    # workflow._write_json_cache: Path.write_text(json.dumps(...) + "\n", encoding="utf-8")
+    "file": (False, False, "file"),
+}
+_WRITER_TERMINATORS = {"bytes": "\n", "sha256": "", "file": os.linesep}
+
+
+def writer_requested(environ: Mapping[str, str] | None = None) -> bool:
+    """True when ``IRACING_COACH_NATIVE_STAGES`` names ``writer``."""
+
+    return "writer" in requested_stages(environ)
+
+
+def _writer_marker(*args: Any) -> Any:  # pragma: no cover - pickled by reference, never called
+    """The request's marker global (worker-interface.md section 8). The seam pickles no
+    marker since the Codex phase-3 review (finding 1); the reader still accepts one."""
+
+    raise NativeStageError("the writer marker is a pickle reference, never called")
+
+
+class _WriterUnsupported(Exception):
+    """An object outside the writer's model reached the pickler: the call falls back."""
+
+
+class _WriterPickler(pickle.Pickler):
+    """Protocol 5 pickler for the writer.
+
+    Exact ``dict``, ``list``, ``tuple``, ``str``, ``bytes``, ``int``, ``float``,
+    ``bool`` and ``None`` take the C pickler's fast paths, which run no Python
+    code; so do an exact ``set``, ``frozenset`` or ``bytearray``, for which the
+    writer answers ``fallback``. Every other object (a subclass, a class, a
+    function, any object ``default=str`` would stringify) reaches
+    :meth:`reducer_override`, which stops the pickle
+    without calling anything of the object: ``json.dumps`` calls ``default=str`` and a
+    subclass's own methods in its traversal order, once per occurrence, with
+    whatever side effects they have, so only the oracle itself, run once from
+    the start, reproduces them (Codex phase-3 review, findings 1 and 4).
+    """
+
+    def __init__(self, file: Any, options: Mapping[str, Any]) -> None:
+        super().__init__(file, protocol=5)
+        self.options = dict(options)
+
+    def reducer_override(self, obj: Any) -> Any:
+        raise _WriterUnsupported(f"a {type(obj).__module__}.{type(obj).__qualname__} object")
+
+
+def _writer_options(ensure_ascii: bool, allow_nan: bool) -> dict[str, Any]:
+    return {
+        "ensure_ascii": ensure_ascii,
+        "allow_nan": allow_nan,
+        "sort_keys": True,
+        "separators": (",", ":"),
+        "default": str,
+    }
+
+
+def _writer_exception(raised: Any, path: str | None) -> BaseException:
+    if not isinstance(raised, dict):
+        return NativeStageError(f"writer returned a bad exception {raised!r}")
+    name = raised.get("class")
+    if name == "UnicodeEncodeError":
+        # str.encode / TextIOWrapper.write of the text: positions are code points of
+        # the whole text; .object here holds the surrogates at those positions only.
+        start, end, characters = raised.get("start"), raised.get("end"), raised.get("characters")
+        if not (
+            _is_int(start)
+            and _is_int(end)
+            and isinstance(characters, list)
+            and all(_is_int(code) and 0xD800 <= code <= 0xDFFF for code in characters)
+            and len(characters) == end - start > 0
+        ):
+            return NativeStageError(f"writer returned a bad UnicodeEncodeError {raised!r}")
+        if path is not None:
+            # Path.write_text opens (creates, truncates) the file before the encoder fails.
+            open(path, "w", encoding="utf-8").close()
+        text = "\0" * start + "".join(map(chr, characters))
+        return UnicodeEncodeError("utf-8", text, start, end, "surrogates not allowed")
+    if name not in ("ValueError", "TypeError"):
+        return NativeStageError(f"writer raised an unexpected exception class {name!r}")
+    return getattr(builtins, name)(raised.get("message"))
+
+
+def writer_call(site: str, mode: str, value: Any, oracle: Callable[[], Any], *, path: str | None = None) -> Any:
+    """Serialise ``value`` with ``coach-analysis write`` exactly as the site's ``json.dumps``.
+
+    ``mode`` is a :data:`WRITER_MODES` key: ``bytes`` returns the UTF-8 bytes of
+    ``json.dumps(...) + "\\n"`` (``analysis.json``), ``sha256`` the hex SHA-256 of
+    the ``stable_hash`` text, ``file`` writes ``json.dumps(...) + "\\n"`` to
+    ``path`` as ``Path.write_text`` does (``os.linesep`` line ending) and returns
+    None. Any exception ``json.dumps`` or the UTF-8 encoding would raise is
+    raised. When the writer answers ``fallback``, ``oracle()`` (the site's own
+    Python code) runs instead and its result is returned (:func:`writer_fallback`).
+    The parity gate counts calls of this function and of the fallback by site.
+    """
+
+    if site not in WRITER_SITES or mode not in WRITER_MODES:
+        raise NativeStageError(f"unknown writer site {site!r} or mode {mode!r}")
+    ensure_ascii, allow_nan, output = WRITER_MODES[mode]
+    if (output == "file") != (path is not None):
+        raise NativeStageError("the writer's file mode needs a path, and only it")
+    buffer = io.BytesIO()
+    pickler = _WriterPickler(buffer, _writer_options(ensure_ascii, allow_nan))
+    try:
+        pickler.dump(value)
+    except _WriterUnsupported as exc:
+        return writer_fallback(site, str(exc), oracle)
+    except RecursionError:
+        return writer_fallback(site, "the pickler reached the recursion limit", oracle)
+    request: dict[str, Any] = {
+        "version": WRITER_VERSION,
+        "ensure_ascii": ensure_ascii,
+        "allow_nan": allow_nan,
+        "sort_keys": True,
+        "separators": [",", ":"],
+        "indent": None,
+        "terminator": _WRITER_TERMINATORS[mode],
+        "output": output,
+        "marker": [_writer_marker.__module__, _writer_marker.__qualname__],
+        "max_str_digits": sys.get_int_max_str_digits(),
+    }
+    if path is not None:
+        request["path"] = str(path)
+    payload = json.dumps(request).encode("utf-8") + b"\n" + buffer.getbuffer()
+    del buffer
+    try:
+        completed = subprocess.run([native_binary(), "write"], input=payload, capture_output=True, check=False)
+    except OSError as exc:
+        raise NativeStageError(f"cannot start coach-analysis write: {exc}") from exc
+    del payload
+    if completed.returncode != 0:
+        message = completed.stderr.decode("utf-8", "replace").strip() or f"exit status {completed.returncode}"
+        raise NativeStageError(f"native write ({site}) failed: {message}")
+    out = completed.stdout
+    newline = out.find(b"\n")
+    try:
+        answer = json.loads(out[:newline], parse_constant=_reject_constant) if newline >= 0 else None
+    except ValueError:
+        answer = None
+    if not isinstance(answer, dict) or len(answer.keys() & {"ok", "raises", "python_exception", "fallback"}) != 1:
+        raise NativeStageError(f"native write ({site}) gave an unreadable answer")
+    if "fallback" in answer:
+        return writer_fallback(site, str(answer["fallback"]), oracle)
+    if "python_exception" in answer:
+        # The seam sends no marker, so no exception was recorded for the writer to name.
+        raise NativeStageError(f"native write ({site}) named a recorded exception: {answer['python_exception']!r}")
+    if "raises" in answer:
+        raise _writer_exception(answer["raises"], path)
+    length = answer.get("length")
+    if answer.get("ok") is not True or not _is_int(length):
+        raise NativeStageError(f"native write ({site}) answered {answer!r}")
+    data = out[newline + 1 :]
+    if output == "bytes":
+        if len(data) != length:
+            raise NativeStageError(f"native write ({site}) sent {len(data)} bytes for {length}")
+        return data
+    if data:
+        raise NativeStageError(f"native write ({site}) sent bytes after a {output} answer")
+    if output == "sha256":
+        digest = answer.get("sha256")
+        if not (isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)):
+            raise NativeStageError(f"native write ({site}) returned a bad sha256 {digest!r}")
+        return digest
+    return None
+
+
+def writer_fallback(site: str, reason: str, oracle: Callable[[], Any]) -> Any:
+    """A value outside the native writer's model: the site's own Python code writes it.
+
+    The result is Python's by construction; the parity gate counts these calls
+    and fails on any (worker-interface.md section 8).
+    """
+
+    return oracle()
+
+
+def _site_owner(module: str) -> Any:
+    package = __package__ or ""
+    return importlib.import_module(f"{package}.{module}" if package else module)
+
+
 __all__ = [
     "AVAILABLE_STAGES",
     "BINARY_ENV",
@@ -1062,6 +1349,8 @@ __all__ = [
     "StoreFile",
     "StoreSamples",
     "StoreTable",
+    "WRITER_MODES",
+    "WRITER_SITES",
     "entry_label",
     "install_call_counters",
     "kernel_call",
@@ -1073,4 +1362,8 @@ __all__ = [
     "read_store",
     "release",
     "requested_stages",
+    "writer_call",
+    "writer_call_problems",
+    "writer_fallback",
+    "writer_requested",
 ]

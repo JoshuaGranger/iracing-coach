@@ -47,7 +47,9 @@ All functions are free functions re-exported at the crate root. `PyResult<T> = R
 | `round(x)` for a float | `round_to_int(f64) -> PyResult<i64>`; `round_half_even(f64) -> f64` (the integral float) |
 | `round(i, n)` for an int; `round(v, n)` any | `round_int_ndigits(i64, i64)`, `round_num(Num, Option<i64>) -> PyResult<Num>` |
 | `repr(x)`, `str(x)`, `f"{x}"` | `float_repr(f64) -> String`, `num_repr(Num)` |
-| `json.dumps` token of a number | `json_float(f64, allow_nan) -> PyResult<String>`, `json_num(Num, allow_nan)` |
+| `json.dumps` token of a number | `json_float(f64, allow_nan) -> PyResult<String>`, `json_num(Num, allow_nan)` (the `ValueError` message omits the `": <repr>"` CPython 3.12 appends; the phase-3 writer builds its own) |
+| `repr(x)` of a finite float appended to a buffer (phase 3) | `float_repr_into(f64, &mut Vec<u8>)`: `float_repr`'s bytes without a heap allocation (`tests/float_repr_into.rs`) |
+| `repr(int)` of any size (phase 3) | `int_repr_from_le_bytes(&[u8], max_digits) -> Option<String>`: little-endian two's complement, `None` beyond `sys.get_int_max_str_digits()` |
 | `format(x, spec)`, `f"{x:spec}"` | `format_float(f64, &str)`, `format_int(i64, &str)`, `format_num(Num, &str)`: `PyResult<String>` |
 | `a + b`, `-`, `*`, `/`, `//`, `%`, `divmod`, `-a`, `abs` | `add`, `sub`, `mul`, `truediv` (`-> PyResult<f64>`), `floordiv`, `modulo`, `divmod`, `neg`, `abs`; float-only `float_divmod`, `float_mod`; `int_true_div(i64, i64)` |
 | `a < b` etc. | `py_lt`, `py_le`, `py_gt`, `py_ge`, `py_eq`, `py_cmp -> Option<Ordering>`, `cmp_int_float` |
@@ -95,7 +97,7 @@ Sources are CPython 3.12 (`Python/bltinmodule.c`, `Modules/mathmodule.c`, `Lib/s
 - NaN payloads and NaN signs are not compared: Python prints every NaN as `nan`/`NaN`, and the compiler may commute IEEE additions, which changes which payload survives.
 - No complex numbers: a finite negative base to a fractional float power is `ComplexResult` (Python returns a complex, or raises `OverflowError` from complex power).
 - Format types `n` (locale) and `c` (character) are `Unsupported`.
-- `parse_float`/`parse_int` reject non-ASCII digits as `Unsupported` (Python accepts, for example, `'١'`).
+- Non-ASCII digits are supported (port phase 2 review, finding 3): `parse_float`/`parse_int` apply CPython's `_PyUnicode_TransformDecimalAndSpaceToASCII` (every Unicode `Nd` digit to its ASCII digit, every `str.isspace` character to a space, from tables generated from the interpreter by `tools/gen_unicode.py`), so `float('١٢')` is `12.0` as in Python and a non-decimal numeric character such as `'²'` or `'½'` is Python's `ValueError`; no `Unsupported` remains in parsing (vector family `common/parse_unicode.json`, 999 cases).
 - Not implemented because the analysis does not call them: `statistics` `mu`/`xbar` arguments, `fmean` weights, `bool` as a distinct type, `round` and `format` of `Fraction`/`Decimal`.
 
 ## 6. Vectors
@@ -163,3 +165,7 @@ Specs in use: `.1f` (77), `.2f` (52), `.3f` (50), `.0f` (48), `g` (23), `.0%` (1
 - `_round(value, digits)` is `round_ndigits`; `int(round(x))` is `round_to_int`; `_variance**0.5` and `(value - mean_x) ** 2` are `float_pow`, which is a C library call and therefore platform-specific (section 4).
 - `max(key=abs)` and signed-zero `max`/`min` keep the first of equals: `max_index_by` / `min_index_by`.
 - Performance was not measured. `fsum` allocates a partials vector per call; `round_ndigits` takes the integer fast path for the digit counts the analysis uses; `float_repr` is Rust's shortest formatter plus an integer tie check.
+
+## 9. Phase 3 additions
+
+Additive (no existing function changed): `float_repr_into` and `int_repr_from_le_bytes` (section 2 table), and `BigUint::from_le_bytes`. `float_repr` costs about 280 ns per float (an allocated `format!`, a `u128` tie check with two `to_string` calls); the writer formats a million floats per race, so `float_repr_into` writes Rust's shortest digits from a stack buffer and calls the same `tie_to_even` only when a `u64` test cannot rule a tie out (the exact expansion, stripped of trailing zeros, is `k + 1` digits ending in 5; any expansion of `10**18` or more cannot be): about 90 ns per float. `tests/float_repr_into.rs` compares it with `float_repr` on every float of `common/repr.json` and 360,000 random values (bit patterns, float32 values widened to double, rounded decimals, dyadic ties, integers, powers of ten and their neighbours); a mutation that skips the tie check fails it. Port phase 3: `phase3-writer.md`.

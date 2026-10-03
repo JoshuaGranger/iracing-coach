@@ -10,6 +10,13 @@
 //! ..  blocks; every block offset is relative to the data section and a multiple of 8
 //! ```
 //!
+//! Page-aligned layout (port phase 3, `docs/08-rewrite/port/phase3-writer.md` section 3): this
+//! writer pads the header JSON with spaces so the data section starts on a 4096-byte boundary of
+//! the file, and starts every block on such a boundary (`alignment: 4096` in the header, an
+//! optional field). A mapped reader then touches a column's pages and no neighbour's. Readers
+//! still accept any multiple of 8, so stores written before phase 3 (and the vector stores the
+//! Python tools write) read unchanged; the format version stays 1.
+//!
 //! Specified in `docs/08-rewrite/contracts/worker-interface.md` section 7. A reader rejects
 //! another magic, version or stage, a column whose element is not its type's, and any block
 //! outside the data section, unaligned, or not exactly the length the header implies; unknown
@@ -33,11 +40,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::DecodeError;
 use crate::decode::{Column, Decoded, Element, SourceLayout};
+use crate::mapped::Mapping;
 
 pub const MAGIC: [u8; 8] = *b"COACHCS\0";
 pub const FORMAT_VERSION: u32 = 1;
 pub const FORMAT_NAME: &str = "coach-column-store";
 const ALIGN: u64 = 8;
+/// Where this writer starts the data section and every block (a page on every target).
+pub const BLOCK_ALIGNMENT: u64 = 4096;
 
 /// A byte range of the data section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,10 +114,18 @@ pub struct StoreHeader {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Provenance>,
     pub columns: Vec<ColumnHeader>,
+    /// Phase 3: the data section and every block start on a multiple of this many bytes of the
+    /// file (4096). Optional; absent in stores written before phase 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<u64>,
 }
 
 fn align(value: u64) -> u64 {
     value.div_ceil(ALIGN) * ALIGN
+}
+
+fn align_block(value: u64) -> u64 {
+    value.div_ceil(BLOCK_ALIGNMENT) * BLOCK_ALIGNMENT
 }
 
 /// Blocks of the data section in file order, with their offsets.
@@ -122,7 +140,7 @@ impl<'a> Blocks<'a> {
             offset: self.cursor,
             length: bytes.len() as u64,
         };
-        self.cursor = align(self.cursor + block.length);
+        self.cursor = align_block(self.cursor + block.length);
         self.blocks.push((block.offset, bytes));
         block
     }
@@ -190,6 +208,7 @@ fn layout(decoded: &Decoded) -> (StoreHeader, Vec<PlacedBlock<'_>>) {
         sample_indices,
         provenance: None,
         columns,
+        alignment: Some(BLOCK_ALIGNMENT),
     };
     (header, blocks.blocks)
 }
@@ -265,6 +284,7 @@ pub fn write_merged(merged: &Merged, path: &Path) -> Result<u64, DecodeError> {
         sample_indices,
         provenance: Some(Provenance { file_index }),
         columns,
+        alignment: Some(BLOCK_ALIGNMENT),
     };
     write_blocks(&header, &blocks.blocks, path)
 }
@@ -274,18 +294,24 @@ fn write_blocks(
     blocks: &[PlacedBlock<'_>],
     path: &Path,
 ) -> Result<u64, DecodeError> {
-    let header_json = serde_json::to_vec(header)
+    let mut header_json = serde_json::to_vec(header)
         .map_err(|error| DecodeError::Store(format!("header: {error}")))?;
+    // Trailing spaces (JSON whitespace) end the header where a page starts, so the data section
+    // (align(16 + H)) is page aligned and every block offset is a multiple of a page.
+    let padded = align_block(16 + header_json.len() as u64) - 16;
+    header_json.resize(padded as usize, b' ');
     let header_len = u32::try_from(header_json.len())
         .map_err(|_| DecodeError::Store("header longer than 4 GiB".to_owned()))?;
     let data_start = align(16 + u64::from(header_len));
+    debug_assert_eq!(data_start % BLOCK_ALIGNMENT, 0);
     let mut out = BufWriter::with_capacity(1 << 20, File::create(path)?);
     out.write_all(&MAGIC)?;
     out.write_all(&FORMAT_VERSION.to_le_bytes())?;
     out.write_all(&header_len.to_le_bytes())?;
     out.write_all(&header_json)?;
     let mut position = 16 + u64::from(header_len);
-    let zeros = [0u8; ALIGN as usize];
+    // A gap is at most one page less a byte (blocks start on page boundaries).
+    let zeros = [0u8; BLOCK_ALIGNMENT as usize];
     let pad_to = |target: u64, position: &mut u64, out: &mut BufWriter<File>| {
         let gap = (target - *position) as usize;
         *position = target;
@@ -302,19 +328,72 @@ fn write_blocks(
     Ok(position)
 }
 
-/// A store read back into memory (tests, `coach-analysis inspect`, later native stages).
-#[derive(Debug, Clone)]
+/// The bytes of a store: mapped from its file ([`ColumnStore::map`]) or owned
+/// ([`ColumnStore::read`], [`ColumnStore::parse`]).
+#[derive(Debug)]
+enum Backing {
+    Owned(Vec<u8>),
+    Mapped(Mapping),
+}
+
+impl Backing {
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Backing::Owned(bytes) => bytes,
+            Backing::Mapped(mapping) => mapping.as_slice(),
+        }
+    }
+}
+
+/// A validated store, read by the kernels child, the merge stage, `coach-analysis inspect` and
+/// the tests. The kernels child and the merge stage map their job's private store read-only
+/// ([`ColumnStore::map`], phase 3): no column is copied, so memory grows with the pages a reader
+/// touches, not with the store. Any other reader holds the bytes ([`ColumnStore::read`]).
+#[derive(Debug)]
 pub struct ColumnStore {
     pub header: StoreHeader,
-    data: Vec<u8>,
+    backing: Backing,
+    data_start: usize,
 }
 
 impl ColumnStore {
+    /// Reads the store at `path` into memory and validates it: for a file this process does not
+    /// own (`coach-analysis inspect`, the tests), which may change while it is read.
     pub fn read(path: &Path) -> Result<ColumnStore, DecodeError> {
         ColumnStore::parse(std::fs::read(path)?)
     }
 
+    /// Maps the store at `path` read-only and validates it in place.
+    ///
+    /// # Safety
+    ///
+    /// [`Mapping::open`]'s: nothing writes or truncates the file while the store lives (the
+    /// worker's private `coach-decode-*`/`coach-merge-*` store, written completely by a stage
+    /// that has exited; Codex phase-3 review, finding 2).
+    #[allow(unsafe_code)]
+    pub unsafe fn map(path: &Path) -> Result<ColumnStore, DecodeError> {
+        // SAFETY: the caller keeps `Mapping::open`'s precondition (above).
+        let mapping = unsafe { Mapping::open(path)? };
+        ColumnStore::from_backing(Backing::Mapped(mapping))
+    }
+
+    /// Validates a store held in memory.
     pub fn parse(bytes: Vec<u8>) -> Result<ColumnStore, DecodeError> {
+        ColumnStore::from_backing(Backing::Owned(bytes))
+    }
+
+    /// True when the store's bytes are a file mapping rather than a heap copy.
+    pub fn is_mapped(&self) -> bool {
+        matches!(self.backing, Backing::Mapped(_))
+    }
+
+    fn data(&self) -> &[u8] {
+        // `from_backing` checked `data_start <= len`.
+        &self.backing.bytes()[self.data_start..]
+    }
+
+    fn from_backing(backing: Backing) -> Result<ColumnStore, DecodeError> {
+        let bytes = backing.bytes();
         let bad = |message: &str| DecodeError::Store(message.to_owned());
         if bytes.len() < 16 || bytes[..8] != MAGIC {
             return Err(bad("not a coach column store (magic)"));
@@ -325,10 +404,15 @@ impl ColumnStore {
                 "coach column store version {version} is not supported (expected {FORMAT_VERSION})"
             )));
         }
-        let header_len = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
-        let header_bytes = bytes
-            .get(16..16 + header_len)
-            .ok_or_else(|| bad("header runs past the end of the file"))?;
+        // Review finding 10: no unchecked arithmetic on the header length (a 32-bit build).
+        let header_end = usize::try_from(u32::from_le_bytes([
+            bytes[12], bytes[13], bytes[14], bytes[15],
+        ]))
+        .ok()
+        .and_then(|header_len| header_len.checked_add(16))
+        .filter(|&end| end <= bytes.len())
+        .ok_or_else(|| bad("header runs past the end of the file"))?;
+        let header_bytes = &bytes[16..header_end];
         let header: StoreHeader = serde_json::from_slice(header_bytes)
             .map_err(|error| DecodeError::Store(format!("header: {error}")))?;
         if header.format != FORMAT_NAME || header.version != FORMAT_VERSION {
@@ -340,9 +424,17 @@ impl ColumnStore {
                 header.stage
             )));
         }
-        let data_start = align(16 + header_len as u64) as usize;
-        let data = bytes.get(data_start..).unwrap_or_default().to_vec();
-        let store = ColumnStore { header, data };
+        // Review finding 9: the data section starts inside the file (at most at its end), as the
+        // Python reader's `base + offset + length <= file_size` requires even of an empty block.
+        let data_start = usize::try_from(align(header_end as u64))
+            .ok()
+            .filter(|&start| start <= bytes.len())
+            .ok_or_else(|| bad("data section starts past the end of the file"))?;
+        let store = ColumnStore {
+            header,
+            backing,
+            data_start,
+        };
         store.validate()?;
         Ok(store)
     }
@@ -478,7 +570,7 @@ impl ColumnStore {
     pub fn block(&self, block: Block) -> Option<&[u8]> {
         let start = usize::try_from(block.offset).ok()?;
         let end = start.checked_add(usize::try_from(block.length).ok()?)?;
-        self.data.get(start..end)
+        self.data().get(start..end)
     }
 
     /// The sample indices; [`ColumnStore::parse`] checked the block holds exactly

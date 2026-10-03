@@ -176,6 +176,58 @@ pub fn float_repr(x: f64) -> String {
     )
 }
 
+/// [`float_repr`] appended to `out` without a heap allocation for a finite nonzero `x` (port
+/// phase 3, the `analysis.json` writer). The same bytes as [`float_repr`]; zero and non-finite
+/// values take [`float_repr`] itself.
+pub fn float_repr_into(x: f64, out: &mut Vec<u8>) {
+    if x == 0.0 || !x.is_finite() {
+        out.extend_from_slice(float_repr(x).as_bytes());
+        return;
+    }
+    let mut digits = [0u8; 24];
+    let (len, mut decpt) = decimal::shortest_into(x, &mut digits);
+    let digits = &digits[..len];
+    if x.is_sign_negative() {
+        out.push(b'-');
+    }
+    // `layout` for Code::Repr with add_dot_0_if_integer, case by case.
+    if decpt <= -4 || decpt > 16 {
+        let exp = decpt - 1;
+        out.push(digits[0]);
+        if len > 1 {
+            out.push(b'.');
+            out.extend_from_slice(&digits[1..]);
+        }
+        out.push(b'e');
+        out.push(if exp < 0 { b'-' } else { b'+' });
+        let magnitude = exp.unsigned_abs();
+        if magnitude < 10 {
+            out.push(b'0');
+        }
+        out.extend_from_slice(magnitude.to_string().as_bytes());
+        return;
+    }
+    if decpt <= 0 {
+        out.extend_from_slice(b"0.");
+        while decpt < 0 {
+            out.push(b'0');
+            decpt += 1;
+        }
+        out.extend_from_slice(digits);
+        return;
+    }
+    let decpt = decpt as usize;
+    if decpt < len {
+        out.extend_from_slice(&digits[..decpt]);
+        out.push(b'.');
+        out.extend_from_slice(&digits[decpt..]);
+    } else {
+        out.extend_from_slice(digits);
+        out.resize(out.len() + (decpt - len), b'0');
+        out.extend_from_slice(b".0");
+    }
+}
+
 /// `repr(value)` for an int or a float.
 pub fn num_repr(value: Num) -> String {
     match value {

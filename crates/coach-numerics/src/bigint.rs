@@ -341,6 +341,22 @@ impl BigUint {
         }
     }
 
+    /// The magnitude of little-endian bytes (unsigned).
+    pub fn from_le_bytes(bytes: &[u8]) -> Self {
+        let mut out = Self {
+            limbs: bytes
+                .chunks(4)
+                .map(|chunk| {
+                    let mut word = [0u8; 4];
+                    word[..chunk.len()].copy_from_slice(chunk);
+                    u32::from_le_bytes(word)
+                })
+                .collect(),
+        };
+        out.normalize();
+        out
+    }
+
     /// Decimal digits, most significant first; `"0"` for zero.
     pub fn to_decimal(&self) -> String {
         if self.is_zero() {

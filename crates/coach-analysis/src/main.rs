@@ -9,6 +9,8 @@
 //!                                                     stdout until end of input (kernels/serve.rs)
 //! coach-analysis merge                                merge request JSON on stdin: a group's decode
 //!                                                     stores into one merge store, one JSON line out
+//! coach-analysis write                                the analysis.json writer: request line and
+//!                                                     pickle on stdin, answer (and bytes) on stdout
 //! coach-analysis --version
 //! ```
 //!
@@ -28,12 +30,15 @@ use coach_ibt::IbtFile;
 #[path = "kernels/serve.rs"]
 mod serve;
 
-const USAGE: &str = "usage: coach-analysis decode < request.json\n       coach-analysis golden <ibt> [--target-hz <float>]\n       coach-analysis inspect <store>\n       coach-analysis kernels\n       coach-analysis merge < request.json\n       coach-analysis --version";
+const USAGE: &str = "usage: coach-analysis decode < request.json\n       coach-analysis golden <ibt> [--target-hz <float>]\n       coach-analysis inspect <store>\n       coach-analysis kernels\n       coach-analysis merge < request.json\n       coach-analysis write < request-line-and-pickle\n       coach-analysis --version";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("kernels") {
         return run_kernels(&args);
+    }
+    if args.first().map(String::as_str) == Some("write") {
+        return run_write(&args);
     }
     let result = match args.first().map(String::as_str) {
         Some("decode") if args.len() == 1 => run_decode(),
@@ -71,6 +76,22 @@ fn run_kernels(args: &[String]) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("coach-analysis kernels: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// `coach-analysis write` (boundary D, phase 3): request line and pickle on stdin, answer line
+/// (and the bytes) on stdout (`coach_analysis::writer`).
+fn run_write(args: &[String]) -> ExitCode {
+    if args.len() != 1 {
+        return usage();
+    }
+    let output = BufWriter::with_capacity(1 << 20, std::io::stdout().lock());
+    match coach_analysis::writer::serve(std::io::stdin().lock(), output) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("coach-analysis write: {error}");
             ExitCode::from(1)
         }
     }
@@ -119,10 +140,13 @@ fn run_merge() -> Result<(), DecodeError> {
             coach_analysis::REQUEST_VERSION
         )));
     }
+    // SAFETY (`ColumnStore::map`): the inputs are the job's private decode stores, written
+    // completely by decode stages that have exited; nothing writes them while they are merged.
+    #[allow(unsafe_code)]
     let stores = request
         .inputs
         .iter()
-        .map(|path| ColumnStore::read(Path::new(path)))
+        .map(|path| unsafe { ColumnStore::map(Path::new(path)) })
         .collect::<Result<Vec<_>, _>>()?;
     let inputs: Vec<&ColumnStore> = stores.iter().collect();
     let merged = coach_analysis::kernels::table::merge::merge(&inputs, &request.channels)

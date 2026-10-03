@@ -1106,6 +1106,36 @@ def _json_text(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True, ensure_ascii=False, default=str, allow_nan=False) + "\n"
 
 
+def _analysis_json_bytes(analysis: Mapping[str, Any]) -> bytes:
+    """The bytes of ``analysis.json``: ``_json_text(dict(analysis))`` as UTF-8.
+
+    With the writer stage (port phase 3) ``coach-analysis write`` produces the
+    same bytes from the object (``native_stages.writer_call``).
+    """
+
+    value = dict(analysis)
+    native_stages = _native_stages()
+    if native_stages is not None and native_stages.writer_requested():
+        return native_stages.writer_call(
+            "analysis_json", "bytes", value, lambda: _json_text(value).encode("utf-8")
+        )
+    return _json_text(value).encode("utf-8")
+
+
+def _native_stages() -> Any:
+    """The native-stage seam when IRACING_COACH_NATIVE_STAGES names any stage, else None."""
+
+    # Imported on use: native_stages imports the analysis engine, which storage
+    # must not load just to be imported or when no native stage is configured.
+    if not os.environ.get("IRACING_COACH_NATIVE_STAGES", "").strip():
+        return None
+    try:
+        from . import native_stages
+    except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
+        import native_stages
+    return native_stages
+
+
 def _validated_context(context: Mapping[str, str]) -> dict[str, str]:
     result: dict[str, str] = {}
     for field in _REQUIRED_CONTEXT_FIELDS:
@@ -1890,7 +1920,7 @@ class ArchiveStore:
         self.initialize()
         report_dir = self.report_directory(analysis)
         payloads: list[tuple[str, Path, bytes]] = [
-            ("analysis", Path("analysis.json"), _json_text(dict(analysis)).encode("utf-8")),
+            ("analysis", Path("analysis.json"), _analysis_json_bytes(analysis)),
             ("report", Path("report.md"), (report_markdown.rstrip() + "\n").encode("utf-8")),
         ]
         for relative, payload in (extra_files or {}).items():
