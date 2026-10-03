@@ -1,6 +1,6 @@
 # Crate API (v1)
 
-Public Rust types and signatures of the shared library crates. A workstream transcribes its crate's section into code; a consumer reads only this file. Anything not listed here is private to its crate. Source facts: `spikes/live-stack.md`, `spikes/ui-data.md`, `iracing-coach/skills/analyze-iracing-race/scripts/ibt_reader.py`, `companion-app/src/iRacingCoach.Coordinator/{IRacingSdkTelemetrySource,LiveTelemetry,LiveSteering,LiveTruthPolicy,RuntimeMapper}.cs`.
+Public Rust types and signatures of the shared library crates. A workstream transcribes its crate's section into code; a consumer reads only this file. Anything not listed here is private to its crate. Source facts: `spikes/live-stack.md`, `spikes/ui-data.md`, `iracing-coach/skills/analyze-iracing-race/scripts/ibt_reader.py`, `companion-app/src/iRacingCoach.Coordinator/{IRacingSdkTelemetrySource,LiveTelemetry,LiveSteering,LiveTruthPolicy,RuntimeMapper}.cs` (deleted in wave 4; in Git history, last present at `3ff5e87`).
 
 ## 1. Crates, owners, dependencies
 

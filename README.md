@@ -2,22 +2,21 @@
 
 [![CI](https://github.com/JoshuaGranger/iracing-coach/actions/workflows/ci.yml/badge.svg)](https://github.com/JoshuaGranger/iracing-coach/actions/workflows/ci.yml)
 
-iRacing Coach is a local-first Windows race-engineering and driver-coaching application. The desktop app presents telemetry, race analysis, planning, setup workflows, and progressive tuning. The deterministic Python backend remains the source of truth for calculations, archives, evidence labels, setup safeguards, and credential handling.
+iRacing Coach is a race-engineering and driver-coaching system: a Rust collector and live overlay on the sim PC, a Rust service with the Python analysis worker in a Docker container on the mini PC, raw recordings on the NAS, and a TypeScript web UI for desktop, rig screen, tablet and phone. The deterministic Python backend remains the source of truth for calculations, evidence labels, setup safeguards, and credential handling.
 
 ## Current baseline
 
-- Latest accepted packaged release: `0.14.2`
-- Current source: `0.17.7` development
-- Desktop: C#/.NET 10, WPF host, Blazor Hybrid UI
-- Backend: standard-library Python 3.10+, exposed through bounded MCP/CLI contracts
-
-The exact implementation and remaining limits are recorded in [the current development snapshot](docs/06-reality/implementation-snapshot-0.17.7-development.md). Stable `0.14.2` package evidence remains immutable in [its release snapshot](docs/06-reality/implementation-snapshot-0.14.2.md).
+- Rewrite decided 2026-10-02: [owner decisions](docs/08-rewrite/owner-decisions-2026-10-02.md), [architecture](docs/08-rewrite/architecture.md), [workstreams](docs/08-rewrite/workstreams.md)
+- Workspace version `0.19.0`
+- The retired Windows desktop app (C#/.NET, `companion-app/`) was deleted in rewrite wave 4; its source lives in Git history (last present at `3ff5e87`). Its last accepted packaged release, `0.14.2`, is recorded in [its release snapshot](docs/06-reality/implementation-snapshot-0.14.2.md).
 
 ## Repository layout
 
-- [`companion-app/`](companion-app/) - Windows application, coordinator, tests, and packaging tools.
+- [`collector/`](collector/), [`crates/`](crates/), [`server/`](server/) - Rust collector, shared crates, and mini-PC service.
+- [`web/`](web/) - TypeScript web UI.
 - [`iracing-coach/`](iracing-coach/) - authoritative deterministic telemetry and coaching backend.
-- [`contracts/`](contracts/) - checked-in API and data-contract snapshots used by the app and tests.
+- [`deploy/`](deploy/) - mini-PC image and Compose files.
+- [`contracts/`](contracts/) - checked-in API and data-contract snapshots of the Python backend.
 - [`config/`](config/) - shared repository configuration and generated-UI inputs.
 - [`test-data/`](test-data/) - sanitized deterministic fixtures; never private race data.
 - [`tools/`](tools/) - repository verification and fixture/contract generation scripts.
@@ -30,14 +29,10 @@ Start with [the documentation index](docs/README.md) and [the contributor instru
 From the repository root on Windows:
 
 ```powershell
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\tools\verify-repository.ps1
-
-dotnet test .\companion-app\iRacingCoach.sln -c Release
-dotnet build .\companion-app\iRacingCoach.sln -c Release --no-restore
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\tools\check.ps1
 ```
 
-Regenerate checked-in backend contracts or sanitized fixtures with `tools/export_contracts.py` and `tools/generate-fixtures.ps1`. CI fails when generated contracts drift from backend code.
+`tools\check.ps1` runs `tools\verify-repository.ps1`, Rust format, lints and tests, wire and theme drift, and the web typecheck, tests and build; `-Linux` runs the WSL Ubuntu gate. Regenerate checked-in backend contracts or sanitized fixtures with `tools/export_contracts.py` and `tools/generate-fixtures.ps1`. CI fails when generated contracts drift from backend code.
 
 ## Private data boundary
 

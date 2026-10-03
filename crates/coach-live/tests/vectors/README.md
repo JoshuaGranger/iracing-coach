@@ -4,14 +4,14 @@
 
 ## How it was made
 
-`tools/csharp-oracle/` (a throwaway .NET 10 harness, kept for provenance; it builds only while `companion-app/` exists) does this per scenario:
+The committed `engine.json` is the record; it cannot be regenerated from the current tree. The C# desktop app was deleted in rewrite wave 4, and with it the throwaway .NET 10 harness that built against it (`tools/csharp-oracle/`). Both are in Git history: the last commit containing them is `3ff5e87`. `origin` paths name files in that commit. The harness did this per scenario:
 
 1. Writes a synthetic iRacing SDK shared-memory map under `Local\IRSDKMemMapFileName`: header, variable table, session-info YAML, three sample buffers.
 2. Reads each tick through the real `IRacingSdkTelemetrySource` (the reader normalisations: `Positive`, `NonNegative`, `Percentage`, lap offset, sentinel laps, float `SameLapGap`, the unfiltered class-position behind search, session types and steering ratio from the YAML).
 3. Feeds the sample, with a scripted timestamp, to the real `LiveTelemetryService` (private `Poll` through reflection), which applies `ObserveSessionBoundary`, resets the engine, runs `LiveTelemetryEngine` and keeps the history.
 4. Records the snapshot, the cue message, the epoch, and, on some steps, `LiveTelemetryCatalog.Read` for every tile in every unit with its trend values and display range.
 
-Regenerate (byte-identical output is expected):
+To regenerate from history (byte-identical output was expected), check out `3ff5e87` in a separate worktree and run there:
 
 ```powershell
 dotnet build crates\coach-live\tools\csharp-oracle\Oracle.csproj -c Release --artifacts-path <scratch>

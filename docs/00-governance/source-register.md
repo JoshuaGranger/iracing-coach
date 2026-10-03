@@ -20,12 +20,10 @@ This register records the material used to normalize the product specification. 
 
 ## Executable reality sources
 
-- `companion-app/src/` — desktop source.
-- `companion-app/tests/iRacingCoach.Tests/` — desktop contract and coordinator tests.
 - `iracing-coach/skills/analyze-iracing-race/scripts/` — deterministic backend.
 - `iracing-coach/tests/` — backend behavioral tests.
 - `contracts/` — compatibility and MCP snapshots.
-- `companion-app/artifacts/qa/v0.9.3/` — local fixture walkthrough evidence; intentionally ignored by Git.
+- Retired desktop source and tests (`companion-app/src/`, `companion-app/tests/iRacingCoach.Tests/`) — deleted in rewrite wave 4; in Git history, last present at `3ff5e87`. Its ignored local QA evidence (`companion-app/artifacts/`) was never in Git.
 
 ## Provenance limitation
 

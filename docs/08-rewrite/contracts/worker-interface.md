@@ -80,7 +80,7 @@ Status (wave 1): all six landed in the wave-1 commit (`dd0ce49`), with regressio
 2. `secure_store`: honour `IRACING_COACH_GARAGE61_TOKEN_FILE` before the Windows check (about 20 lines).
 3. `ibt_reader.py`: read `DriverSetupIsModified` (P5); keep `DriverSetupModified` only as the fixture fallback. Session info is always parsed by the built-in subset parser, never PyYAML (an installed PyYAML read `SteeringRatio: 12:1` as 721), so the image rule "no PyYAML" is also enforced in code.
 4. Deterministic tie-break in `key=str.lower` sorts: sort by `(key, name)` (`ibt_reader.py:1797`, `setup_catalog.py:1391`).
-5. Tests: Windows-literal path tests skip on POSIX; tests that read `companion-app/` C# sources are removed or rewritten before `companion-app/` is deleted.
+5. Tests: Windows-literal path tests skip on POSIX; tests that read `companion-app/` C# sources are removed or rewritten before `companion-app/` is deleted. Done: none remained when `companion-app/` was deleted in wave 4 (2026-10-03).
 6. Each change that alters output bumps the analyzer bundle (existing rules in `test_analysis_pipeline_identity.py`).
 
 ## 6. Timeouts, cancellation, memory

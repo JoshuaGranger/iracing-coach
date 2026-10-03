@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$RepositoryRoot,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-fA-F]{40}$')][string]$SourceSha,
-    [Parameter(Mandatory = $true)][ValidateSet('dotnet', 'backend', 'devtools', 'javascript')][string]$Family,
+    [Parameter(Mandatory = $true)][ValidateSet('dotnet', 'backend', 'devtools')][string]$Family,
     [Parameter(Mandatory = $true)][string]$InputPath,
     [string]$RegistryPath,
     [Parameter(Mandatory = $true)][ValidateSet('local-diagnostic', 'ci-source-gate')][string]$Authority,
@@ -18,10 +18,6 @@ Set-StrictMode -Version Latest
 $tiers = @('SourceContract', 'Fixture', 'Behavioral', 'Rendered', 'Package')
 $techniques = @('none', 'fault', 'barrier', 'mutation')
 $classificationLimitation = 'Tier assignments are author-asserted; independent review is sampling-based rather than exhaustive. Until the immutable family review is accepted, this report is review-pending.'
-$javascriptLimitations = @(
-    'JavaScript syntax-only.',
-    'Does not prove behavior, DOM, geometry, timing, rendering, host, or package behavior.'
-)
 $normalizedSha = $SourceSha.ToLowerInvariant()
 
 function Get-PropertyValue {
@@ -115,7 +111,6 @@ function Get-Toolchain {
 }
 
 function Read-Registry {
-    if ($Family -eq 'javascript') { return @{} }
     if ([string]::IsNullOrWhiteSpace($RegistryPath)) { throw 'missing-registry' }
     $registry = ConvertFrom-JsonFile -Path $RegistryPath
     Assert-ExactProperties -Object $registry -Required @('schemaVersion', 'declarations')
@@ -241,23 +236,6 @@ function Read-TrxRaw {
     return [pscustomobject]@{ State = $(if ([string]::IsNullOrWhiteSpace($Filter)) { 'complete' } else { 'partial' }); Records = $records.ToArray(); Filter = $Filter }
 }
 
-function Read-JavaScriptRaw {
-    $raw = ConvertFrom-JsonFile -Path $InputPath
-    if ([int](Get-PropertyValue -Object $raw -Name 'schemaVersion') -ne 1 -or [string](Get-PropertyValue -Object $raw -Name 'gate') -ne 'javascript-syntax-only') { throw 'javascript-schema' }
-    if ([string](Get-PropertyValue -Object $raw -Name 'mode') -ne 'tracked-source') { throw 'javascript-not-tracked' }
-    if ([string](Get-PropertyValue -Object $raw -Name 'exactSha') -ne $normalizedSha) { throw 'javascript-sha-mismatch' }
-    if (-not [bool](Get-PropertyValue -Object $raw -Name 'discoveryComplete')) { throw 'javascript-discovery-incomplete' }
-    $records = New-Object System.Collections.Generic.List[object]
-    foreach ($item in @(Get-PropertyValue -Object $raw -Name 'results')) {
-        $path = [string](Get-PropertyValue -Object $item -Name 'path')
-        $outcome = [string](Get-PropertyValue -Object $item -Name 'outcome')
-        if (@('passed', 'failed', 'notRun') -cnotcontains $outcome) { throw 'javascript-outcome' }
-        $records.Add([pscustomobject]@{ ParentId = $path; Id = $path; DisplayId = $path; Outcome = $outcome; DurationMs = 0.0 }) | Out-Null
-    }
-    if ($records.Count -eq 0) { throw 'zero-discovery' }
-    return [pscustomobject]@{ State = 'complete'; Records = $records.ToArray(); Filter = $null }
-}
-
 function New-TierTotals {
     $totals = [ordered]@{}
     foreach ($tier in $tiers) {
@@ -272,7 +250,7 @@ function New-InvalidReport {
         schemaVersion = 1; family = $Family; exactSha = $normalizedSha; authority = $Authority
         discoveryComplete = $false; runState = 'invalid'; filter = $(if ([string]::IsNullOrWhiteSpace($Filter)) { $null } else { $Filter })
         toolchain = $Toolchain; results = @()
-        limitations = [string[]]$(if ($Family -eq 'javascript') { $javascriptLimitations } else { @($classificationLimitation) })
+        limitations = [string[]]@($classificationLimitation)
     }
 }
 
@@ -292,8 +270,7 @@ try {
     $toolchain = Get-Toolchain
     $declarations = Read-Registry
 
-    if ($Family -eq 'javascript') { $rawRun = Read-JavaScriptRaw }
-    elseif ($Family -eq 'dotnet') { $rawRun = Read-TrxRaw -Path $InputPath }
+    if ($Family -eq 'dotnet') { $rawRun = Read-TrxRaw -Path $InputPath }
     else { $rawRun = Read-PythonRaw -Path $InputPath }
 
     $catalogParents = @{}
@@ -306,16 +283,13 @@ try {
     }
     else { foreach ($item in @($rawRun.Records)) { $catalogParents[[string]$item.ParentId] = $true } }
 
-    if ($Family -ne 'javascript') {
-        foreach ($identity in @($catalogParents.Keys)) { if (-not $declarations.ContainsKey($identity)) { throw 'missing-declaration' } }
-        foreach ($identity in @($declarations.Keys)) { if (-not $catalogParents.ContainsKey($identity)) { throw 'stale-declaration' } }
-    }
+    foreach ($identity in @($catalogParents.Keys)) { if (-not $declarations.ContainsKey($identity)) { throw 'missing-declaration' } }
+    foreach ($identity in @($declarations.Keys)) { if (-not $catalogParents.ContainsKey($identity)) { throw 'stale-declaration' } }
 
     $normalizedResults = New-Object System.Collections.Generic.List[object]
     $totals = New-TierTotals
     foreach ($item in @($rawRun.Records | Sort-Object -Property @{Expression = 'Id'; Ascending = $true}, @{Expression = 'DisplayId'; Ascending = $true})) {
-        if ($Family -eq 'javascript') { $tier = 'SourceContract'; $technique = 'none' }
-        else { $tier = [string]$declarations[[string]$item.ParentId].Tier; $technique = [string]$declarations[[string]$item.ParentId].Technique }
+        $tier = [string]$declarations[[string]$item.ParentId].Tier; $technique = [string]$declarations[[string]$item.ParentId].Technique
         $outcome = [string]$item.Outcome
         $normalizedResults.Add([ordered]@{
             id = [string]$item.Id; displayId = [string]$item.DisplayId; tier = $tier; technique = $technique
@@ -331,7 +305,7 @@ try {
         schemaVersion = 1; family = $Family; exactSha = $normalizedSha; authority = $Authority
         discoveryComplete = $true; runState = [string]$rawRun.State; filter = $rawRun.Filter
         toolchain = $toolchain; results = $normalizedResults.ToArray(); totals = $totals
-        limitations = [string[]]$(if ($Family -eq 'javascript') { $javascriptLimitations } else { @($classificationLimitation) })
+        limitations = [string[]]@($classificationLimitation)
     }
 }
 catch {

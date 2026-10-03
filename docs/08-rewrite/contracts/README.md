@@ -1,4 +1,4 @@
-# Rewrite contracts
+﻿# Rewrite contracts
 
 These files are the only interfaces between workstreams. Code follows them; a workstream that needs a change edits only the contract (one commit touching `docs/08-rewrite/contracts/` and the regenerated files), states the reason in the commit message, and the change is reviewed (Codex Sol 6.1 for protocol and ingest changes, D15) before dependent code lands. Additive optional fields need no review.
 
@@ -70,7 +70,7 @@ Reason: the review found defects in the step-0a interfaces; each was checked aga
 
 Reason: the wave-1 contract change requests (`reviews/wave1-results.md`, W1 to W9) and the behaviour-defining findings of the rerun ingest review (`reviews/ingest-review-codex-sol.md`). Dispositions, with the code each follow-up needs, are in `reviews/wave1-followups.md`. `db-schema.sql` and `manifest.schema.json` are unchanged: setup-file links are derived, not stored, so migration 0001 stays equal to the schema.
 
-- `live-channels.json`: every cue but 14 carries its C# basis (W2, checked against `LiveTelemetry.cs`); new `unit_labels` (`C` to `°C`, `F` to `°F`, `m/s2` to `m/s²`, `lap` to `laps`); layouts store unit ids. Table version unchanged (no channel appended). Generator output for `unit_labels` is a follow-up.
+- `live-channels.json`: every cue but 14 carries its C# basis (W2, checked against `LiveTelemetry.cs`); new `unit_labels` (`C` to `Â°C`, `F` to `Â°F`, `m/s2` to `m/sÂ²`, `lap` to `laps`); layouts store unit ids. Table version unchanged (no channel appended). Generator output for `unit_labels` is a follow-up.
 - `live-frame.md`: presence bit order (bit `i % 8` of byte `i / 8`, least significant first); absent `session_time` written as quiet NaN `0x7FF8000000000000`, any NaN read as absent; text rules referenced to `crate-api.md` 4.7.
 - `vectors/live-frame/` (W2, wave 1): golden frames from an independent Python encoder; this entry records their addition.
 - `crate-api.md`: `coach_ibt` drops `regex` (collector exe budget; W3) in favour of hand-written token matchers and a setup-key pattern subset; `parse_live` bounds; `_as_int` overflow is None; `driver()` versus `summary()` when `DriverCarIdx` is missing; `- Key:` list items become empty maps; literal-subset errors and i64 overflow; `TooRecent { age: 0 }` for a future mtime (W1). generated `coach_wire::live_channels::unit_label`; `LiveState::channel_values`; `tow_active` and `on_pit_road` presence; `first_of_epoch` on the incrementing state; the C# disconnect-epoch difference; `format_tile` unit and label rule and the .NET text-rule table (W2). Projector input shapes, envelope `schema_version` 1, `profile_version` "" for null, field pruning in the shrink ladder, 128-signal catalog cap with `omitted_signals`, `X-Coach-Trace-Laps` (W5).
@@ -188,3 +188,11 @@ Reason: the server forced `IRACING_COACH_NATIVE_STAGES` empty, so the image enab
 - `worker-interface.md` section 2: `IRACING_COACH_NATIVE_STAGES` and `IRACING_COACH_NATIVE_BIN` come from that setting. Section 6: orphan rule states when and where the server removes `coach-decode-*` and `coach-merge-*` (kill with the driver idle, driver going idle, server start); admission is 5.0 x bytes + 0.15 GiB (x1.5 for a group, ceiling 2.0 GiB, shared budget 2.7 GiB, container `mem_limit` 3 GiB) with native `decode` and `kernels`, 11.5 x, 3.0 GiB, 3.7 GiB and 4 GiB otherwise, with the N100 measurements; a deferred analysis is one row per session.
 - `api.openapi.yaml` is unchanged: `x-idempotency` already says a deferred analysis stays deferred while over the ceiling; the `job_id` it answers is the session's one deferred row.
 - Proof: `cargo test -p coach-server` (`config::tests`, `tests/jobs.rs`: the native formula against the N100 peaks and the Bristol estimates, the Python formula kept, the worker environment and a worker that reads it, the scratch sweep after a kill, at idle and at start, one deferred row per session).
+
+### 2026-10-03, wave 4: `companion-app/` deleted, its CI removed (W9; scaffold change; no protocol change, no review needed)
+
+Reason: `workstreams.md` wave 4 ("W9 deletes `companion-app/` and its CI"); the owner retired the desktop app. It is in Git history, last present at `3ff5e87`.
+
+- Scaffold `.github/workflows/ci.yml`: the first-party JavaScript syntax step, its evidence upload and the `javascript` evidence normalizer are removed (the gate scanned only `companion-app/` JavaScript). `tools/check.ps1` and `tools/verify-repository.ps1` never referenced the app and are unchanged.
+- `crate-api.md` (source facts) and `worker-interface.md` section 5 item 5: wording only; the C# sources are named as Git history, and the C#-reading-tests precondition is recorded as met.
+- Outside the contracts, in the same commit: `tools/Invoke-JavaScriptSyntaxGate.ps1` and its tests, the `javascript` family of `tools/New-EvidenceReport.ps1`, the 278 `dotnet` declarations of `tools/evidence/evidence-declarations.json` (their fixture paths pointed into the deleted tree) and `crates/coach-live/tools/csharp-oracle/` (built only against the deleted sources; the committed `engine.json` is the record). Proof: `tools/dev/tests/test_desktop_app_retired.py`.

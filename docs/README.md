@@ -1,6 +1,6 @@
 # iRacing Coach specification and reality documentation
 
-> **Rewrite in progress (decided 2026-10-02).** iRacing Coach is being rebuilt as a Rust collector on the sim PC, a Rust service with a Python analysis worker in a container on the mini PC, raw recordings on the NAS, and a TypeScript web UI. The decisions in [`08-rewrite/owner-decisions-2026-10-02.md`](08-rewrite/owner-decisions-2026-10-02.md), as refined by [`08-rewrite/prove/verdicts.md`](08-rewrite/prove/verdicts.md), **supersede the desktop baseline** described below wherever they conflict (one-PC install, WPF/Blazor desktop, no local service, UNC rejection, win-x64 package rule). The desktop app is retired; the sections below remain the product intent for behaviour the rewrite keeps (evidence and truthfulness, investigation design, setups and tuning) and the historical record for the rest.
+> **Rewrite in progress (decided 2026-10-02).** iRacing Coach is being rebuilt as a Rust collector on the sim PC, a Rust service with a Python analysis worker in a container on the mini PC, raw recordings on the NAS, and a TypeScript web UI. The decisions in [`08-rewrite/owner-decisions-2026-10-02.md`](08-rewrite/owner-decisions-2026-10-02.md), as refined by [`08-rewrite/prove/verdicts.md`](08-rewrite/prove/verdicts.md), **supersede the desktop baseline** described below wherever they conflict (one-PC install, WPF/Blazor desktop, no local service, UNC rejection, win-x64 package rule). The desktop app is retired, and its source (`companion-app/`) was deleted in rewrite wave 4; it lives in Git history (last present at `3ff5e87`). The sections below remain the product intent for behaviour the rewrite keeps (evidence and truthfulness, investigation design, setups and tuning) and the historical record for the rest.
 
 This tree is the reviewable product contract for iRacing Coach. Its primary purpose is to let a human or an agent compare three different things without conflating them:
 
@@ -119,7 +119,9 @@ Normative requirements use stable identifiers such as `RA-012` or `SEC-004`. An 
 - **Real-system verified:** directly observed with the named executable, hardware, simulator/source, scenario, and date.
 - **Accepted:** explicitly accepted by Joshua for the named scope or release artifact.
 
-## Current baseline
+## Desktop baseline at retirement (historical)
+
+The desktop source this section describes was deleted in rewrite wave 4 and lives in Git history; the paths and builds it names do not exist in the current tree.
 
 - Stable packaged version: `0.14.2`; its immutable package hashes and evidence remain in the 0.14.2 snapshot
 - Current source version: `0.18.0` development round 2, analysis profile `post-race-foundations-v23`, race investigation schema 2, projection `sections-trials-v7`. Since round 2, steering everywhere is the steering applied at the front wheels (steering-wheel angle ÷ the recording's own steering ratio), never guessed when the ratio is unknown; see [`TD-037`](03-data/telemetry-session-and-analysis.md). Round 2 adds the Test day review, saved-test reachability, setup values and links from recordings with car-keyed Compare, and fixes for the defects native acceptance on DESKTOP-SIM found; see the [current snapshot](06-reality/implementation-snapshot-0.18.0-development-round-2.md). The round-1 investigation, saved tests, Sessions library, race-linked planning and consolidated Settings are described in the [round-1 snapshot](06-reality/implementation-snapshot-0.18.0-development-round-1.md). Development implementation remains pending Joshua's acceptance.
