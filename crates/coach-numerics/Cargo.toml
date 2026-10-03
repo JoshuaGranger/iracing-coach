@@ -1,0 +1,15 @@
+[package]
+name = "coach-numerics"
+description = "Python 3.12 numeric semantics, bit for bit: sum, fsum, statistics, round, repr, format, math, ordering"
+version = "0.19.0"
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"

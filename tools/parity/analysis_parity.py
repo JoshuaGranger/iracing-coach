@@ -24,6 +24,23 @@ checkable (``docs/08-rewrite/contracts/worker-interface.md`` section 8):
     and ``restaged``: the synthetic race copied, not linked, into the job
     root with its original mtime) or from ``--source`` recordings, which form
     one group. The analyzer digest is never pinned here (production identity).
+    Every worker process runs through ``worker_trace.py``, which records each
+    ``native_stages.load_telemetry`` call; ``capture.json`` keeps the record.
+
+``corpus``
+    The port gate in one command (``docs/08-rewrite/port/phase1-decode.md``):
+    for every recording of the fixtures (``test-data/ibt``) and, when
+    ``COACH_PRIVATE_CORPUS`` names directories or files (``os.pathsep``
+    separated), every ``.ibt`` under them (deduplicated by SHA-256), it
+    compares the decoded-matrix golden of ``emit_ibt_golden.py`` with
+    ``coach-analysis golden``, captures the oracle (no native stage) and the
+    ``--native-stages`` path, and compares them in raw mode (the gate) and
+    parsed mode; for the fixtures it also runs the four worker-interface
+    cases both ways. Exit status 0 only when every comparison is identical,
+    the native decode demonstrably ran on the native side only (in-process
+    stage timings; one successful traced call per worker recording), and a
+    recording rejected by the oracle is rejected natively with the same
+    exception class and stated facts (never a crash or an unrelated failure).
 
 ``compare``
     Byte-compares two capture directories and prints the differing paths.
@@ -53,13 +70,17 @@ Raw mode keeps the persisted bytes and substitutes only this allowlist: ISO
 instants in ``*_at`` values, the report-directory timestamp slug (in contents
 and file names), ``*_ms`` / ``elapsed_seconds`` values, the
 timestamp-derived ``analysis_sha256``, and the two root prefixes. SQLite files
-appear in raw mode only as ``<name>: sqlite`` in the index (their rows are
-compared in parsed mode); other binaries by SHA-256.
+appear in raw mode as row dumps (``raw/<name>.dump.json``) with only that
+allowlist applied to each value: an ISO instant in a ``*_at`` column, a
+``*_ms`` / ``elapsed_seconds`` number, an ``analysis_sha256`` hash, and the
+allowlist's text rules inside every other string. Other binaries by SHA-256.
 
 Every capture applies ``IRACING_COACH_RAW_ARCHIVE=external`` (the production
 setting) unless ``--raw-archive copy`` is given, and passes
 ``--native-stages`` to the worker as ``IRACING_COACH_NATIVE_STAGES``; a
-non-empty list requires the ``coach_native`` module.
+non-empty list requires the ``coach-analysis`` executable (``--native-bin``,
+else ``IRACING_COACH_NATIVE_BIN``, else ``PATH``), passed on as
+``IRACING_COACH_NATIVE_BIN``.
 
 Examples::
 
@@ -68,6 +89,7 @@ Examples::
     python tools/parity/analysis_parity.py compare --raw before/nh after/nh
     python tools/parity/analysis_parity.py capture-worker --case reconnect --out win/reconnect
     python tools/parity/analysis_parity.py compare --raw --cross-platform win/reconnect linux/reconnect
+    python tools/parity/analysis_parity.py corpus --native-stages decode --native-bin target/release/coach-analysis.exe --out gate
 """
 
 from __future__ import annotations
@@ -75,7 +97,6 @@ from __future__ import annotations
 import argparse
 import functools
 import hashlib
-import importlib.util
 import json
 import os
 import platform
@@ -93,9 +114,16 @@ REPOSITORY = Path(__file__).resolve().parents[2]
 SCRIPTS = REPOSITORY / "iracing-coach" / "skills" / "analyze-iracing-race" / "scripts"
 ARCHIVE_MARKER = ".analysis-parity-archive"
 BASE_MARKER = ".analysis-parity-worker-base"
+CORPUS_MARKER = ".analysis-parity-corpus"
+FIXTURES = REPOSITORY / "test-data" / "ibt"
+NATIVE_BIN_ENV = "IRACING_COACH_NATIVE_BIN"
+WORKER_CASES = ("synthetic", "reconnect", "restaged", "local-file")
+NATIVE_DECODE_STAGE = "native_stages.load_telemetry"
+WORKER_TRACE = Path(__file__).resolve().parent / "worker_trace.py"
+EXCEPTION_LINE = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Exit|Interrupt)\b.*")
 PINNED_ANALYZER_SHA256 = "0" * 64
 NATIVE_STAGES = ("decode", "kernels", "json_writer")
-CAPTURE_FORMAT = 2
+CAPTURE_FORMAT = 3  # 3: raw SQLite row dumps, worker native-decode trace
 
 TIMESTAMP_KEYS = frozenset(
     {
@@ -132,6 +160,9 @@ RAW_ELAPSED_VALUE = re.compile(
     r'("(?:[^"\\]*_)?(?:ms|elapsed_seconds)"\s*:\s*)-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?'
 )
 RAW_ANALYSIS_SHA256 = re.compile(r'("analysis_sha256"\s*:\s*")[0-9a-f]{64}(")')
+# The same allowlist for a SQLite column holding the whole value.
+RAW_ELAPSED_COLUMN = re.compile(r"(?:.*_)?(?:ms|elapsed_seconds)")
+SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 RAW_RULES = {
     "at_values": "ISO-8601 instants in *_at values",
     "timestamp_slug": TIMESTAMP_SLUG.pattern,
@@ -332,8 +363,32 @@ def text_differences(left: str, right: str, limit: int = 6) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-def _sqlite_dump(path: Path) -> dict[str, Any]:
-    """Every table's schema and rows, in a stable order, opened read-only."""
+def _blob_or_value(column: str, value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"blob-sha256:{hashlib.sha256(value).hexdigest()}"
+    return value
+
+
+def raw_sqlite_value(column: str, value: Any, counts: dict[str, int], roots: Roots) -> Any:
+    """One SQLite value with the raw-mode allowlist applied and nothing else."""
+
+    def counted(rule: str, token: str) -> str:
+        counts[rule] = counts.get(rule, 0) + 1
+        return token
+
+    if isinstance(value, str):
+        if column.endswith("_at") and ISO_INSTANT.fullmatch(value):
+            return counted("at_values", "<timestamp>")
+        if column == "analysis_sha256" and SHA256_HEX.fullmatch(value):
+            return counted("analysis_sha256", "<hash-of-timestamped-payload>")
+        return raw_substitute(value, counts, roots, json_like=True)
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and RAW_ELAPSED_COLUMN.fullmatch(column):
+        return counted("elapsed_values", "<elapsed-ms>")
+    return _blob_or_value(column, value)
+
+
+def _sqlite_dump(path: Path, value: Callable[[str, Any], Any] = _blob_or_value) -> dict[str, Any]:
+    """Every table's schema and rows (each value through ``value``), in a stable order, read-only."""
 
     import sqlite3  # noqa: PLC0415
 
@@ -346,17 +401,7 @@ def _sqlite_dump(path: Path) -> dict[str, Any]:
         for name, sql in tables:
             cursor = connection.execute(f'SELECT * FROM "{name}"')
             columns = [item[0] for item in cursor.description]
-            rows = [
-                {
-                    column: (
-                        f"blob-sha256:{hashlib.sha256(value).hexdigest()}"
-                        if isinstance(value, (bytes, bytearray, memoryview))
-                        else value
-                    )
-                    for column, value in zip(columns, row)
-                }
-                for row in cursor.fetchall()
-            ]
+            rows = [{column: value(column, item) for column, item in zip(columns, row)} for row in cursor.fetchall()]
             rows.sort(key=lambda row: json.dumps(row, sort_keys=True, default=str))
             dump[name] = {"schema": sql, "rows": rows}
         return dump
@@ -445,7 +490,17 @@ def write_archive_capture(
                 newline="\n",
             )
             files[relative] = "normalised-sqlite-dump"
-            raw_files[relative] = "sqlite"
+            raw_target = raw / f"{relative}.dump.json"
+            raw_target.parent.mkdir(parents=True, exist_ok=True)
+            raw_target.write_text(
+                canonical_json(
+                    _sqlite_dump(path, lambda column, item: raw_sqlite_value(column, item, raw_counts, roots)),
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+                newline="\n",
+            )
+            raw_files[relative] = "raw-allowlist-row-dump"
         else:
             files[relative] = raw_files[relative] = f"sha256:{_sha256_file(path)}"
     (outputs / "binary-and-file-index.json").write_text(canonical_json(files, sort_keys=True), encoding="utf-8", newline="\n")
@@ -508,16 +563,35 @@ def _prepare_owned(directory: Path, marker: str) -> None:
     (directory / marker).write_text("analysis_parity harness scratch\n", encoding="utf-8")
 
 
-def _require_native(stages: str) -> None:
+def _require_native(stages: str, native_bin: str | None = None) -> None:
+    """Fail unless every named stage is provided; export the executable for child processes."""
+
     names = [item.strip() for item in stages.split(",") if item.strip()]
     unknown = sorted(set(names) - set(NATIVE_STAGES))
     if unknown:
         raise SystemExit(f"Unknown native stage(s) {', '.join(unknown)}; expected {', '.join(NATIVE_STAGES)}.")
-    if names and importlib.util.find_spec("coach_native") is None:
-        raise SystemExit(
-            "IRACING_COACH_NATIVE_STAGES names native stages but coach_native is not installed; "
-            "a capture without them would compare Python with Python."
-        )
+    if not names:
+        return
+    if native_bin:
+        os.environ[NATIVE_BIN_ENV] = str(Path(native_bin).resolve())
+    if str(SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS))
+    import native_stages  # noqa: PLC0415
+
+    try:
+        native_stages.requested_stages({native_stages.STAGES_ENV: stages})
+        os.environ[NATIVE_BIN_ENV] = native_stages.native_binary()
+    except native_stages.NativeStageError as exc:
+        raise SystemExit(f"{exc} A capture without them would compare Python with Python.") from exc
+
+
+def _native_identity(stages: str) -> dict[str, Any] | None:
+    """The executable a native capture used, by path and SHA-256."""
+
+    binary = os.environ.get(NATIVE_BIN_ENV) if stages.strip() else None
+    if not binary:
+        return None
+    return {"path": binary, "sha256": _sha256_file(Path(binary))}
 
 
 def run_once(
@@ -541,6 +615,11 @@ def run_once(
         _instrument(analysis_engine, name, stages, name)
     for name in WORKFLOW_STAGES:
         _instrument(workflow, name, stages, f"workflow.{name}")
+    import native_stages  # noqa: PLC0415
+
+    # Present in stages_ms only when the native decode ran: the corpus gate
+    # checks it, so a native capture can never silently be Python.
+    _instrument(native_stages, "load_telemetry", stages, NATIVE_DECODE_STAGE)
 
     engine_output: list[str] = []
     roots = Roots((("<archive_root>", archive.resolve()), ("<iracing_root>", iracing_root.resolve())))
@@ -610,6 +689,7 @@ def _worker_environment(stages: str, raw_archive: str) -> dict[str, str]:
 
 
 def command_capture(args: argparse.Namespace) -> int:
+    _require_native(args.native_stages, args.native_bin)
     source = Path(args.source).resolve()
     if not source.is_file():
         raise SystemExit(f"Recording not found: {source}")
@@ -684,6 +764,7 @@ def command_capture(args: argparse.Namespace) -> int:
         source_sha256=_sha256_file(source),
         analyzer_digest="unpinned" if args.unpinned_identity else PINNED_ANALYZER_SHA256,
         native_stages=args.native_stages,
+        native_binary=_native_identity(args.native_stages),
         raw_archive=args.raw_archive,
         roots={"<archive_root>": str(archive), "<iracing_root>": str(iracing_root)},
     )
@@ -713,6 +794,8 @@ class WorkerJob:
         self.tmp = base / "py" / "1" / "tmp"
         self.stages = stages
         self.raw_archive = raw_archive
+        # One line per native_stages.load_telemetry call in any worker process.
+        self.trace = base / "native-decode-trace.jsonl"
 
     def environment(self, job_root: Path) -> dict[str, str]:
         environment = {
@@ -728,6 +811,8 @@ class WorkerJob:
         }
         if self.raw_archive == "external":
             environment["IRACING_COACH_RAW_ARCHIVE"] = "external"
+        if self.stages.strip() and os.environ.get(NATIVE_BIN_ENV):
+            environment[NATIVE_BIN_ENV] = os.environ[NATIVE_BIN_ENV]
         if os.name == "nt":  # Windows needs these to start an interpreter and to name a home
             environment.update({key: os.environ[key] for key in ("SYSTEMROOT", "TEMP", "TMP") if key in os.environ})
             environment["USERPROFILE"] = str(self.tmp)
@@ -742,7 +827,7 @@ class WorkerJob:
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": tool, "arguments": arguments}},
         ]
         completed = subprocess.run(
-            [_python(), "-X", "utf8", "-u", str(SCRIPTS / "mcp_server.py")],
+            [_python(), "-X", "utf8", "-u", str(WORKER_TRACE), str(self.trace)],
             input="".join(json.dumps(item) + "\n" for item in requests).encode("utf-8"),
             capture_output=True,
             env=self.environment(job_root),
@@ -806,7 +891,7 @@ def _server_group(group: dict[str, Any], sha256: str) -> dict[str, Any]:
 
 
 def command_capture_worker(args: argparse.Namespace) -> int:
-    _require_native(args.native_stages)
+    _require_native(args.native_stages, args.native_bin)
     out = Path(args.out).resolve()
     base = Path(args.base).resolve() if args.base else _scratch("worker")
     _prepare_owned(base, BASE_MARKER)
@@ -875,15 +960,22 @@ def command_capture_worker(args: argparse.Namespace) -> int:
     )
     (out / "timings").mkdir(exist_ok=True)
     (out / "timings" / "output-run.json").write_text(json.dumps({"analyze_wall_ms": round(wall_ms, 1)}, indent=2), encoding="utf-8")
+    native_calls = (
+        [json.loads(line) for line in job.trace.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if job.trace.is_file()
+        else []
+    )
     _capture_metadata(
         out,
         "worker",
         case=case,
         recordings=[{"name": name, "sha256": spooled.name} for name, spooled in members],
         server_group_key=server_key,
+        native_decode_calls=native_calls,
         analysis_id=result.get("analysis_id"),
         analyzer_digest="unpinned",
         native_stages=args.native_stages,
+        native_binary=_native_identity(args.native_stages),
         raw_archive=args.raw_archive,
         roots={"<archive_root>": str(job.archive), "<iracing_root>": str(analysis_root)},
     )
@@ -907,8 +999,29 @@ def _load_metadata(root: Path) -> dict[str, Any]:
 
 
 def command_compare(args: argparse.Namespace) -> int:
-    left_capture, right_capture = Path(args.left).resolve(), Path(args.right).resolve()
-    mode = "raw" if args.raw else "outputs"
+    report, problems = compare_captures(
+        Path(args.left), Path(args.right),
+        raw=args.raw, cross_platform=args.cross_platform,
+        ignore_normalisation_counts=args.ignore_normalisation_counts,
+    )
+    print(json.dumps(report, indent=2))
+    for line in problems[:200]:
+        print(line)
+    return 0 if not problems else 1
+
+
+def compare_captures(
+    left: Path,
+    right: Path,
+    *,
+    raw: bool,
+    cross_platform: bool = False,
+    ignore_normalisation_counts: bool = False,
+) -> tuple[dict[str, Any], list[str]]:
+    """Compare two captures: the report and the differences (none means identical)."""
+
+    left_capture, right_capture = left.resolve(), right.resolve()
+    mode = "raw" if raw else "outputs"
     left_root, right_root = left_capture / mode, right_capture / mode
     for root in (left_root, right_root):
         if not root.is_dir():
@@ -920,14 +1033,14 @@ def command_compare(args: argparse.Namespace) -> int:
             problems.append(f"capture.json {key}: {left_meta.get(key)!r} != {right_meta.get(key)!r} (not comparable)")
     left_files = {p.relative_to(left_root).as_posix() for p in left_root.rglob("*") if p.is_file()}
     right_files = {p.relative_to(right_root).as_posix() for p in right_root.rglob("*") if p.is_file()}
-    ignored = {"normalisation.json", "substitutions.json"} if args.ignore_normalisation_counts else set()
+    ignored = {"normalisation.json", "substitutions.json"} if ignore_normalisation_counts else set()
     for name in sorted(left_files ^ right_files):
         problems.append(f"{name}: present only in {'left' if name in left_files else 'right'}")
     identical = 0
     for name in sorted((left_files & right_files) - ignored):
         a = (left_root / name).read_bytes()
         b = (right_root / name).read_bytes()
-        if args.cross_platform:
+        if cross_platform:
             json_like = name.endswith((".json", ".jsonl"))
             a = _cross_platform_text(a.decode("utf-8"), json_like).encode("utf-8")
             b = _cross_platform_text(b.decode("utf-8"), json_like).encode("utf-8")
@@ -935,7 +1048,7 @@ def command_compare(args: argparse.Namespace) -> int:
             identical += 1
             continue
         problems.append(f"{name}: bytes differ")
-        if name.endswith(".json") and not args.raw:
+        if name.endswith(".json") and not raw:
             for line in json_differences(json.loads(a), json.loads(b))[:20]:
                 problems.append(f"    {line}")
         else:
@@ -943,7 +1056,7 @@ def command_compare(args: argparse.Namespace) -> int:
                 problems.append(f"    {line}")
     report = {
         "mode": mode,
-        "cross_platform": bool(args.cross_platform),
+        "cross_platform": bool(cross_platform),
         "left": str(left_root),
         "right": str(right_root),
         "left_platform": left_meta.get("platform"),
@@ -956,10 +1069,354 @@ def command_compare(args: argparse.Namespace) -> int:
             if meta.get("analysis_id")
         },
     }
-    print(json.dumps(report, indent=2))
-    for line in problems[:200]:
-        print(line)
-    return 0 if not problems else 1
+    if left_meta.get("analysis_id") != right_meta.get("analysis_id"):
+        problems.append(
+            f"capture.json analysis_id: {left_meta.get('analysis_id')!r} != {right_meta.get('analysis_id')!r}"
+        )
+    report["identical"] = not problems
+    return report, problems
+
+
+# --------------------------------------------------------------------------
+# Corpus gate (oracle against native stages, every recording)
+# --------------------------------------------------------------------------
+
+
+def _corpus_recordings(include_private: bool) -> tuple[list[tuple[str, Path, str]], int]:
+    """(kind, path, sha256) for the fixtures and COACH_PRIVATE_CORPUS, first path per hash."""
+
+    candidates = [("fixture", path) for path in sorted(FIXTURES.glob("*.ibt"))]
+    private = os.environ.get("COACH_PRIVATE_CORPUS", "") if include_private else ""
+    for entry in (item for item in private.split(os.pathsep) if item.strip()):
+        root = Path(entry).resolve()
+        if root.is_file():
+            candidates.append(("private", root))
+        elif root.is_dir():
+            candidates.extend(("private", path) for path in sorted(root.rglob("*.ibt")) if path.is_file())
+        else:
+            raise SystemExit(f"COACH_PRIVATE_CORPUS entry not found: {root}")
+    seen: set[str] = set()
+    recordings: list[tuple[str, Path, str]] = []
+    duplicates = 0
+    for kind, path in candidates:
+        sha = _sha256_file(path)
+        if sha in seen:
+            duplicates += 1
+            continue
+        seen.add(sha)
+        recordings.append((kind, path, sha))
+    return recordings, duplicates
+
+
+# Python's IbtTruncatedError text; coach_ibt words it differently but states the same facts.
+TRUNCATION_TEXT = re.compile(
+    r"(?P<region>[^:]+) requires bytes \[(?P<start>\d+), (?P<end>\d+)\), but the file contains only (?P<available>\d+) bytes$"
+)
+# Oracle exceptions whose message coach-analysis reproduces character for character.
+EXACT_MESSAGE_CLASSES = frozenset({"IbtChannelError", "ValueError", "OverflowError"})
+
+
+def native_rejection(completed: subprocess.CompletedProcess[bytes]) -> dict[str, Any] | None:
+    """The rejection ``coach-analysis golden`` recorded, or None (a crash or any other failure)."""
+
+    if completed.returncode != 1:
+        return None
+    try:
+        record = json.loads(completed.stdout)["error"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    return record if isinstance(record, dict) and isinstance(record.get("message"), str) else None
+
+
+def rejection_differences(oracle: BaseException, native: dict[str, Any] | None) -> list[str]:
+    """Why a native rejection is not the oracle's: by exception class, then by stated facts.
+
+    The class must be the oracle's (coach-ibt's mapping: an IbtYamlError also stands for the
+    TypeError or RecursionError that escapes literal_eval, OSError for any OSError subclass).
+    Messages coach-analysis writes itself must be identical; a truncation must name the same
+    region and byte range; coach-ibt's other messages are its own wording and compare by class
+    (as in ``crates/coach-ibt/tests/parity.rs``).
+    """
+
+    if native is None:
+        return ["native did not record a rejection (a crash or an unrelated failure)"]
+    oracle_class, native_class = type(oracle).__name__, native.get("class")
+    same_class = (
+        native_class == oracle_class
+        or (native_class == "IbtYamlError" and oracle_class in ("TypeError", "RecursionError"))
+        or (native_class == "OSError" and isinstance(oracle, OSError))
+    )
+    if not same_class:
+        return [f"class {oracle_class} != {native_class!r} ({oracle} / {native.get('message')})"]
+    if oracle_class in EXACT_MESSAGE_CLASSES and str(oracle) != native["message"]:
+        return [f"{oracle_class} message {str(oracle)!r} != {native['message']!r}"]
+    if oracle_class == "IbtTruncatedError":
+        match = TRUNCATION_TEXT.search(str(oracle))
+        stated = native.get("truncated")
+        expected = None if match is None else {
+            "region": match["region"].strip(),
+            **{key: int(match[key]) for key in ("start", "end", "available")},
+        }
+        if expected is None or stated != expected:
+            return [f"truncation {expected} != {stated}"]
+    return []
+
+
+def _golden_rate_label(rate: float | None) -> str:
+    return "native" if rate is None else f"{rate:g}hz"
+
+
+def _decode_golden_parity(path: Path, rates: list[float | None]) -> dict[str, Any]:
+    """emit_ibt_golden.py (the oracle) against ``coach-analysis golden``, all channels."""
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    if str(SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS))
+    import emit_ibt_golden  # noqa: PLC0415
+
+    results: dict[str, Any] = {}
+    for rate in rates:
+        label = _golden_rate_label(rate)
+        oracle_exception: BaseException | None = None
+        try:
+            oracle = emit_ibt_golden.emit(str(path), rate)
+            oracle.pop("spot_values", None)
+        except Exception as exc:  # noqa: BLE001 - the oracle's rejection is a result
+            oracle, oracle_exception = None, exc
+        command = [os.environ[NATIVE_BIN_ENV], "golden", str(path)]
+        if rate is not None:
+            command += ["--target-hz", repr(float(rate))]
+        completed = subprocess.run(command, capture_output=True, check=False)
+        native = json.loads(completed.stdout) if completed.returncode == 0 else None
+        native_error = (
+            f"exit {completed.returncode}: {completed.stderr.decode('utf-8', 'replace').strip()}"
+            if completed.returncode
+            else None
+        )
+        if oracle is None or native is None:
+            differences = (
+                rejection_differences(oracle_exception, native_rejection(completed))
+                if oracle_exception is not None and native is None
+                else [f"only {'the oracle' if oracle is None else 'native'} rejected the recording"]
+            )
+            results[label] = {
+                "identical": not differences,
+                "rejected_by_oracle": (
+                    None if oracle_exception is None else f"{type(oracle_exception).__name__}: {oracle_exception}"
+                ),
+                "rejected_by_native": native_error,
+                "rejection_differences": differences,
+            }
+            continue
+        differing = sorted(
+            key for key in oracle.keys() | native.keys()
+            if key != "target_hz"
+            and (oracle.get(key) != native.get(key) or type(oracle.get(key)) is not type(native.get(key)))
+        )
+        results[label] = {
+            "identical": not differing,
+            "differing_fields": differing,
+            "matrix_sha256": oracle["matrix_sha256"],
+            "sample_count": oracle["sample_count"],
+            "variables": len(oracle["variables"]),
+        }
+    return results
+
+
+def _final_error_line(stderr: bytes, roots: dict[str, Path]) -> str:
+    """The last exception line of a failed capture (its own exit message follows it)."""
+
+    lines = [line for line in stderr.decode("utf-8", "replace").splitlines() if line.strip()]
+    exceptions = [line for line in lines if EXCEPTION_LINE.match(line)]
+    text = exceptions[-1] if exceptions else (lines[-1] if lines else "")
+    for token, root in roots.items():
+        text = text.replace(str(root), token)
+    return text
+
+
+def _capture_side(command: list[str], roots: dict[str, Path]) -> tuple[bool, str, float]:
+    started = time.perf_counter()
+    completed = subprocess.run(command, capture_output=True, check=False)
+    elapsed = time.perf_counter() - started
+    if completed.returncode == 0:
+        return True, "", elapsed
+    return False, _final_error_line(completed.stderr, roots), elapsed
+
+
+def _output_run(capture: Path) -> dict[str, Any]:
+    path = capture / "timings" / "output-run.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def _analysis_wall_ms(capture: Path, key: str) -> float | None:
+    return _output_run(capture).get(key)
+
+
+def _pair_result(left: Path, right: Path, ok: tuple[bool, bool], errors: tuple[str, str]) -> dict[str, Any]:
+    if not all(ok):
+        identical = not any(ok) and errors[0] == errors[1]
+        return {"identical": identical, "oracle_error": errors[0] or None, "native_error": errors[1] or None}
+    raw_report, raw_problems = compare_captures(left, right, raw=True)
+    parsed_report, parsed_problems = compare_captures(left, right, raw=False)
+    return {
+        "identical": not raw_problems and not parsed_problems,
+        "raw_identical": not raw_problems,
+        "parsed_identical": not parsed_problems,
+        "files_compared": raw_report["files_compared"] + parsed_report["files_compared"],
+        "differences": (raw_problems + parsed_problems)[:40],
+    }
+
+
+def _analysis_parity(path: Path, dest: Path, stages: str, raw_archive: str) -> dict[str, Any]:
+    sides = {"oracle": "", "native": stages}
+    ok: list[bool] = []
+    errors: list[str] = []
+    walls: dict[str, Any] = {}
+    for side, side_stages in sides.items():
+        capture, archive = dest / side, dest / f"{side}-archive"
+        command = [
+            _python(), "-X", "utf8", str(Path(__file__).resolve()), "capture",
+            "--source", str(path), "--out", str(capture), "--archive", str(archive),
+            "--runs", "0", "--native-stages", side_stages, "--raw-archive", raw_archive,
+        ]
+        success, error, elapsed = _capture_side(command, {"<archive_root>": archive, "<source>": path})
+        ok.append(success)
+        errors.append(error)
+        walls[side] = {"capture_s": round(elapsed, 2), "analysis_wall_ms": _analysis_wall_ms(capture, "wall_ms")}
+    result = _pair_result(dest / "oracle", dest / "native", (ok[0], ok[1]), (errors[0], errors[1]))
+    result["timing"] = walls
+    if all(ok):
+        ran = {side: NATIVE_DECODE_STAGE in (_output_run(dest / side).get("stages_ms") or {}) for side in sides}
+        result["native_decode_ran"] = ran
+        expected = {"oracle": False, "native": "decode" in stages}
+        if ran != expected:
+            result["identical"] = False
+            result.setdefault("differences", []).append(f"native decode ran {ran}, expected {expected}")
+    return result
+
+
+def _worker_parity(case: str, dest: Path, stages: str, raw_archive: str) -> dict[str, Any]:
+    sides = {"oracle": "", "native": stages}
+    ok: list[bool] = []
+    errors: list[str] = []
+    walls: dict[str, Any] = {}
+    for side, side_stages in sides.items():
+        capture, base = dest / side, dest / f"{side}-base"
+        command = [
+            _python(), "-X", "utf8", str(Path(__file__).resolve()), "capture-worker",
+            "--case", case, "--out", str(capture), "--base", str(base),
+            "--native-stages", side_stages, "--raw-archive", raw_archive,
+        ]
+        success, error, elapsed = _capture_side(command, {"<base>": base})
+        ok.append(success)
+        errors.append(error)
+        walls[side] = {"capture_s": round(elapsed, 2), "analyze_wall_ms": _analysis_wall_ms(capture, "analyze_wall_ms")}
+    result = _pair_result(dest / "oracle", dest / "native", (ok[0], ok[1]), (errors[0], errors[1]))
+    result["timing"] = walls
+    if all(ok):
+        metadata = {side: _load_metadata(dest / side) for side in sides}
+        result["analysis_id"] = metadata["native"].get("analysis_id")
+        result["native_decode_calls"] = {side: len(meta.get("native_decode_calls") or []) for side, meta in metadata.items()}
+        problems = worker_native_decode_problems(metadata["oracle"], metadata["native"], "decode" in stages)
+        if problems:
+            result["identical"] = False
+            result.setdefault("differences", []).extend(problems)
+    return result
+
+
+def worker_native_decode_problems(oracle: dict[str, Any], native: dict[str, Any], decode: bool) -> list[str]:
+    """The worker captures' trace must show the native decode on the native side only.
+
+    The oracle side makes no ``native_stages.load_telemetry`` call; with ``decode``
+    the native side makes exactly one successful call per recording of the case.
+    """
+
+    problems: list[str] = []
+    for side, meta in (("oracle", oracle), ("native", native)):
+        if meta.get("capture_format") != CAPTURE_FORMAT or not isinstance(meta.get("native_decode_calls"), list):
+            problems.append(f"{side} capture has no native-decode trace (capture format {meta.get('capture_format')})")
+    if problems:
+        return problems
+    if oracle["native_decode_calls"]:
+        problems.append(f"oracle worker made {len(oracle['native_decode_calls'])} native decode call(s)")
+    if decode:
+        expected = sorted(item["name"] for item in native.get("recordings") or [])
+        calls = native["native_decode_calls"]
+        failed = [call for call in calls if call.get("error") is not None]
+        if failed:
+            problems.append(f"native decode call(s) failed: {failed}")
+        if sorted(call.get("source") for call in calls) != expected:
+            problems.append(
+                f"native worker decoded {sorted(call.get('source') for call in calls)}, expected one call for each of {expected}"
+            )
+    elif native["native_decode_calls"]:
+        problems.append("native side made native decode calls without the decode stage")
+    return problems
+
+
+def command_corpus(args: argparse.Namespace) -> int:
+    stages = args.native_stages
+    if not stages.strip():
+        raise SystemExit("corpus compares the oracle with native stages: pass --native-stages.")
+    _require_native(stages, args.native_bin)
+    out = Path(args.out).resolve()
+    _prepare_owned(out, CORPUS_MARKER)
+    rates: list[float | None] = [None if item == "native" else float(item) for item in args.golden_rates.split(",") if item]
+    recordings, duplicates = _corpus_recordings(not args.fixtures_only)
+    print(f"{len(recordings)} recordings ({duplicates} duplicates skipped); native {os.environ[NATIVE_BIN_ENV]}", flush=True)
+    results: list[dict[str, Any]] = []
+    for number, (kind, path, sha) in enumerate(recordings, start=1):
+        entry: dict[str, Any] = {"kind": kind, "name": path.name, "sha256": sha, "size_bytes": path.stat().st_size}
+        dest = out / f"{number:03d}-{sha[:12]}"
+        entry["decode_golden"] = _decode_golden_parity(path, rates)
+        entry["analysis"] = _analysis_parity(path, dest, stages, args.raw_archive)
+        entry["identical"] = entry["analysis"]["identical"] and all(
+            item["identical"] for item in entry["decode_golden"].values()
+        )
+        if entry["identical"] and not args.keep:
+            shutil.rmtree(dest, ignore_errors=True)
+        results.append(entry)
+        timing = entry["analysis"]["timing"]
+        print(
+            f"[{number}/{len(recordings)}] {'IDENTICAL' if entry['identical'] else 'DIFFERENT'} "
+            f"{kind} {sha[:12]} {entry['size_bytes'] / 1e6:.1f} MB "
+            f"golden {'/'.join(label for label in entry['decode_golden'])} "
+            f"analysis oracle {timing['oracle']['analysis_wall_ms']} ms native {timing['native']['analysis_wall_ms']} ms"
+            + ("" if entry["analysis"].get("oracle_error") is None else f" (both: {entry['analysis']['oracle_error'][:100]})"),
+            flush=True,
+        )
+    workers: list[dict[str, Any]] = []
+    for case in () if args.no_worker_cases else WORKER_CASES:
+        dest = out / f"worker-{case}"
+        entry = {"case": case, **_worker_parity(case, dest, stages, args.raw_archive)}
+        if entry["identical"] and not args.keep:
+            shutil.rmtree(dest, ignore_errors=True)
+        workers.append(entry)
+        print(f"[worker {case}] {'IDENTICAL' if entry['identical'] else 'DIFFERENT'} analysis_id {entry.get('analysis_id')}", flush=True)
+    identical = all(item["identical"] for item in results + workers)
+    report = {
+        "identical": identical,
+        "native_stages": stages,
+        "native_binary": _native_identity(stages),
+        "python": platform.python_version(),
+        "platform": sys.platform,
+        "raw_archive": args.raw_archive,
+        "golden_rates": [_golden_rate_label(rate) for rate in rates],
+        "private_corpus": bool(os.environ.get("COACH_PRIVATE_CORPUS")) and not args.fixtures_only,
+        "recordings": results,
+        "duplicates_skipped": duplicates,
+        "worker_cases": workers,
+    }
+    (out / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
+    failed = [item.get("name") or item.get("case") for item in results + workers if not item["identical"]]
+    print(
+        f"{'PASS' if identical else 'FAIL'}: {len(results) - len([r for r in results if not r['identical']])}/{len(results)} recordings and "
+        f"{len(workers) - len([w for w in workers if not w['identical']])}/{len(workers)} worker cases identical"
+        + (f"; different: {', '.join(failed)}" if failed else "")
+        + f"; report {out / 'report.json'}",
+        flush=True,
+    )
+    return 0 if identical else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -977,6 +1434,10 @@ def main(argv: list[str] | None = None) -> int:
             choices=("external", "copy"),
             default="external",
             help="external (default, production): IRACING_COACH_RAW_ARCHIVE=external; copy: the legacy raw copy.",
+        )
+        command.add_argument(
+            "--native-bin",
+            help=f"coach-analysis executable for native stages (default {NATIVE_BIN_ENV}, else PATH).",
         )
 
     capture = commands.add_parser("capture", help="Capture outputs and timings for one recording.")
@@ -1017,6 +1478,19 @@ def main(argv: list[str] | None = None) -> int:
     worker.add_argument("--keep-base", action="store_true", help="Leave the scratch in place for inspection.")
     worker_options(worker)
     worker.set_defaults(handler=command_capture_worker)
+
+    corpus = commands.add_parser("corpus", help="Oracle against native stages on the fixtures and the private corpus.")
+    corpus.add_argument("--out", required=True, help="Harness-owned scratch for captures and report.json.")
+    corpus.add_argument(
+        "--golden-rates",
+        default="native,20",
+        help="Comma list of decode-golden rates: native or a target Hz (default native,20).",
+    )
+    corpus.add_argument("--fixtures-only", action="store_true", help="Ignore COACH_PRIVATE_CORPUS.")
+    corpus.add_argument("--no-worker-cases", action="store_true", help="Skip the four worker-interface cases.")
+    corpus.add_argument("--keep", action="store_true", help="Keep identical captures (differing ones are always kept).")
+    worker_options(corpus)
+    corpus.set_defaults(handler=command_corpus)
 
     compare = commands.add_parser("compare", help="Byte-compare two capture directories.")
     compare.add_argument("left")

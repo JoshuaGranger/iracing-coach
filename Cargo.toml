@@ -5,6 +5,8 @@ members = [
     "crates/coach-ibt",
     "crates/coach-live",
     "crates/coach-views",
+    "crates/coach-analysis",
+    "crates/coach-numerics",
     "collector",
     "server",
 ]

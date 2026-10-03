@@ -3280,7 +3280,7 @@ export interface components {
             car_path?: string | null;
             driver?: components["schemas"]["DriverRef"] | null;
             session?: components["schemas"]["LiveSessionRef"] | null;
-            /** @description DriverSetupName after exit; null when it did not change within 5 s. */
+            /** @description DriverSetupName after exit. Set when the name changed within 5 s of exit, or when the exit state has DriverSetupIsModified 0 (the values are that file's); null only for a values-only commit of a modified setup. */
             setup_name?: string | null;
             sto_sha256?: string | null;
             /** @default false */

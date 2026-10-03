@@ -58,6 +58,7 @@ try:  # Support package imports and direct execution from the scripts folder.
         profile_telemetry,
         scan_ibt,
     )
+    from . import native_stages
     from .native_events import (
         SUPPORTED_EVENT_SELECTION_MODES,
         SUPPORTED_EVENT_TYPES,
@@ -97,6 +98,7 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
         profile_telemetry,
         scan_ibt,
     )
+    import native_stages
     from native_events import (
         SUPPORTED_EVENT_SELECTION_MODES,
         SUPPORTED_EVENT_TYPES,
@@ -1380,6 +1382,13 @@ def _load_analysis_telemetry(
 
     if not source_paths:
         raise SessionSelectionError("The selected session contains no IBT files.")
+    # Port phase 1 (worker-interface.md section 7): the native decode stage
+    # returns the same table; IRACING_COACH_NATIVE_STAGES is read once per job.
+    decode = (
+        native_stages.load_telemetry
+        if "decode" in native_stages.requested_stages()
+        else load_telemetry
+    )
     loaded: list[dict[str, Any]] = []
     for raw_path in source_paths:
         before = _file_signature(raw_path)
@@ -1391,7 +1400,7 @@ def _load_analysis_telemetry(
             if available
             else None
         )
-        table = load_telemetry(raw_path, channels=requested, target_hz=target_hz)
+        table = decode(raw_path, channels=requested, target_hz=target_hz)
         after = _file_signature(raw_path)
         if after != before:
             raise WorkflowError(

@@ -5,6 +5,9 @@ A native decoder (the Rust decode stage, port phase 1) must reproduce this file
 exactly. Python is the authoritative oracle: this captures the variable
 catalogue, the sampling plan, and a content hash of the decoded value matrix
 so a native reader can be proven byte-identical, not merely close.
+``coach-analysis golden <ibt> [--target-hz N]`` prints the same fields (no
+``spot_values``) from the native decode; ``analysis_parity.py corpus``
+compares the two on every recording.
 """
 from __future__ import annotations
 
@@ -31,11 +34,9 @@ _PACK = {
 }
 
 
-def _matrix_hash(result: dict) -> str:
-    digest = hashlib.sha256()
-    variables = result["variables"]
+def _hash_columns(digest, result: dict) -> None:
     samples = result["samples"]
-    for var in variables:
+    for var in result["variables"]:
         name = var["name"]
         type_code = var["type_code"]
         count = var["count"]
@@ -53,7 +54,32 @@ def _matrix_hash(result: dict) -> str:
             elements = value if isinstance(value, list) else [value]
             for element in elements:
                 digest.update(packer(element))
+
+
+def _matrix_hash(result: dict) -> str:
+    digest = hashlib.sha256()
+    _hash_columns(digest, result)
     return digest.hexdigest()
+
+
+# Elements per sample decoded at once. The digest runs over the variables in
+# order, so hashing consecutive batches gives the digest of the whole matrix
+# while a large recording's array channels (64 cars each) never sit in memory
+# together as Python lists.
+BATCH_ELEMENTS = 256
+
+
+def _batches(variables: list) -> list:
+    batches, current, size = [], [], 0
+    for var in variables:
+        if current and size + var["count"] > BATCH_ELEMENTS:
+            batches.append(current)
+            current, size = [], 0
+        current.append(var["name"])
+        size += var["count"]
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _spot(column: list, type_code: int) -> list:
@@ -71,22 +97,33 @@ def _spot(column: list, type_code: int) -> list:
 
 
 def emit(path: str, target_hz) -> dict:
-    result = ibt_reader.load_telemetry(path, channels=None, target_hz=target_hz)
-    variables = result["variables"]
-    samples = result["samples"]
-    spot = {v["name"]: _spot(samples[v["name"]], v["type_code"]) for v in variables[:12]}
+    catalogue = ibt_reader.scan_ibt(path)["variables"]
+    digest = hashlib.sha256()
+    first = None
+    variables: list = []
+    spot: dict = {}
+    for names in _batches(catalogue) or [[]]:
+        # load_telemetry(channels=None) in batches: the same columns, in catalogue order.
+        result = ibt_reader.load_telemetry(path, channels=names if names else None, target_hz=target_hz)
+        first = first or result
+        _hash_columns(digest, result)
+        for v in result["variables"]:
+            if len(variables) < 12:
+                spot[v["name"]] = _spot(result["samples"][v["name"]], v["type_code"])
+            variables.append(v)
+        del result
     return {
         "target_hz": target_hz,
-        "native_tick_rate_hz": result["native_tick_rate_hz"],
-        "sample_rate_hz": result["sample_rate_hz"],
-        "source_record_count": result["source_record_count"],
-        "sample_count": result["sample_count"],
-        "sample_indices": result["sample_indices"],
+        "native_tick_rate_hz": first["native_tick_rate_hz"],
+        "sample_rate_hz": first["sample_rate_hz"],
+        "source_record_count": first["source_record_count"],
+        "sample_count": first["sample_count"],
+        "sample_indices": first["sample_indices"],
         "variables": [
             {"name": v["name"], "type_code": v["type_code"], "count": v["count"], "offset": v["offset"], "unit": v.get("unit", "")}
             for v in variables
         ],
-        "matrix_sha256": _matrix_hash(result),
+        "matrix_sha256": digest.hexdigest(),
         "spot_values": spot,
     }
 
@@ -101,7 +138,7 @@ def main() -> int:
         "full_rate": emit(args.ibt, None),
         "downsampled_20hz": emit(args.ibt, 20),
     }
-    Path(args.out).write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    Path(args.out).write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {args.out}: full={doc['full_rate']['sample_count']} samples, 20hz={doc['downsampled_20hz']['sample_count']}")
     return 0
 

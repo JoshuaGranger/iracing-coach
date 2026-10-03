@@ -4840,7 +4840,7 @@
             "string",
             "null"
           ],
-          "description": "DriverSetupName after exit; null when it did not change within 5 s."
+          "description": "DriverSetupName after exit. Set when the name changed within 5 s of exit, or when the exit state has DriverSetupIsModified 0 (the values are that file's); null only for a values-only commit of a modified setup."
         },
         "sto_sha256": {
           "type": [

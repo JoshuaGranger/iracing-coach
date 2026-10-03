@@ -1,0 +1,5186 @@
+{
+ "python": "3.12.14",
+ "source": "ibt_reader._sampling_plan, _iter_sample_indices",
+ "cases": [
+  {
+   "tick_rate": 1,
+   "target_hz": null,
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": null,
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": null,
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": null,
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": null,
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": null,
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "3.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "3.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "3.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "3.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "3.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "3.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "7.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "7.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "7.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "7.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "7.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "7.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "13.3",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "13.3",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "13.3",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "13.3",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "13.3",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "13.3",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "20.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "20.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "20.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "20.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "20.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "20.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "29.97",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "29.97",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "29.97",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "29.97",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "29.97",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "29.97",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "30.000000000000004",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "30.000000000000004",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "30.000000000000004",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "30.000000000000004",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "30.000000000000004",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "30.000000000000004",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "45.5",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "45.5",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "45.5",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "45.5",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "45.5",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "45.5",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.94",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.94",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.94",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.94",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.94",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.94",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.99999999999999",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.99999999999999",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.99999999999999",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.99999999999999",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.99999999999999",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "59.99999999999999",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "60.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "60.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "60.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "60.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "60.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "60.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.1",
+   "record_count": 0,
+   "step": "10.0",
+   "output_rate": "0.1",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.1",
+   "record_count": 1,
+   "step": "10.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.1",
+   "record_count": 2,
+   "step": "10.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.1",
+   "record_count": 100,
+   "step": "10.0",
+   "output_rate": "0.1",
+   "sample_count": 10,
+   "indices_sha256": "c38083bf9a280a95ed76f688f6b7d2d74ec88db3e94f206f494ede81c7e1c8a8"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.1",
+   "record_count": 12345,
+   "step": "10.0",
+   "output_rate": "0.1",
+   "sample_count": 1235,
+   "indices_sha256": "9ad3d03827d7f9bba336cb93398ee98aadc18c85184bdc5b7091254a973704f0"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.1",
+   "record_count": 216001,
+   "step": "10.0",
+   "output_rate": "0.1",
+   "sample_count": 21601,
+   "indices_sha256": "2601f88b657bf92123c679986a78a6216bdfd28ea3a603f297a607e42740ff8e"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-05",
+   "record_count": 0,
+   "step": "99999.99999999999",
+   "output_rate": "1e-05",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-05",
+   "record_count": 1,
+   "step": "99999.99999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-05",
+   "record_count": 2,
+   "step": "99999.99999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-05",
+   "record_count": 100,
+   "step": "99999.99999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-05",
+   "record_count": 12345,
+   "step": "99999.99999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-05",
+   "record_count": 216001,
+   "step": "99999.99999999999",
+   "output_rate": "1e-05",
+   "sample_count": 3,
+   "indices_sha256": "1212210934fcbcb5c89befa379c098b11d4b201707efddc2f507288b036889cf"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "123.456",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "123.456",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "123.456",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "123.456",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "123.456",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "123.456",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "1.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "0.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "-5.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "-5.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "-5.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "-5.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "-5.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "-5.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-300",
+   "record_count": 0,
+   "step": "9.999999999999999e+299",
+   "output_rate": "1e-300",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-300",
+   "record_count": 1,
+   "step": "9.999999999999999e+299",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-300",
+   "record_count": 2,
+   "step": "9.999999999999999e+299",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-300",
+   "record_count": 100,
+   "step": "9.999999999999999e+299",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-300",
+   "record_count": 12345,
+   "step": "9.999999999999999e+299",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-300",
+   "record_count": 216001,
+   "step": "9.999999999999999e+299",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-307",
+   "record_count": 0,
+   "step": "1.0000000000000001e+307",
+   "output_rate": "1e-307",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-307",
+   "record_count": 1,
+   "step": "1.0000000000000001e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-307",
+   "record_count": 2,
+   "step": "1.0000000000000001e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-307",
+   "record_count": 100,
+   "step": "1.0000000000000001e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-307",
+   "record_count": 12345,
+   "step": "1.0000000000000001e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "1e-307",
+   "record_count": 216001,
+   "step": "1.0000000000000001e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "5e-324",
+   "record_count": 0,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "5e-324",
+   "record_count": 1,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "5e-324",
+   "record_count": 2,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "5e-324",
+   "record_count": 100,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "5e-324",
+   "record_count": 12345,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 1,
+   "target_hz": "5e-324",
+   "record_count": 216001,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": null,
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": null,
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": null,
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": null,
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": null,
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": null,
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1.0",
+   "record_count": 0,
+   "step": "7.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1.0",
+   "record_count": 1,
+   "step": "7.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1.0",
+   "record_count": 2,
+   "step": "7.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1.0",
+   "record_count": 100,
+   "step": "7.0",
+   "output_rate": "1.0",
+   "sample_count": 15,
+   "indices_sha256": "f5e2a60d49d99ef707cf6c1010fb4b71a5ea46284ad210f38e6e1b54207d342e"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1.0",
+   "record_count": 12345,
+   "step": "7.0",
+   "output_rate": "1.0",
+   "sample_count": 1764,
+   "indices_sha256": "96f6fa6bfd09ea284b8b497797ea3fe5329a6d2131680d69165c5751dfb6a5d2"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1.0",
+   "record_count": 216001,
+   "step": "7.0",
+   "output_rate": "1.0",
+   "sample_count": 30858,
+   "indices_sha256": "03479f733943c8e05e00bf889d1a77e0cec519d79d5686a38922ff205ba1c671"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "3.0",
+   "record_count": 0,
+   "step": "2.3333333333333335",
+   "output_rate": "3.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "3.0",
+   "record_count": 1,
+   "step": "2.3333333333333335",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "3.0",
+   "record_count": 2,
+   "step": "2.3333333333333335",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "3.0",
+   "record_count": 100,
+   "step": "2.3333333333333335",
+   "output_rate": "3.0",
+   "sample_count": 43,
+   "indices_sha256": "afb4309c31f62ecbe68bde7d796aef8e2613d39db782966dc8c3e39e2a7b1072"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "3.0",
+   "record_count": 12345,
+   "step": "2.3333333333333335",
+   "output_rate": "3.0",
+   "sample_count": 5291,
+   "indices_sha256": "e59c1873e7bbdfeb614812543d936e800c9e8cd7ef821922f851bb72689ed8dc"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "3.0",
+   "record_count": 216001,
+   "step": "2.3333333333333335",
+   "output_rate": "3.0",
+   "sample_count": 92572,
+   "indices_sha256": "06c569e1b4b114ce63902a483374824b67d90693816afacf028640cce4a926d8"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "7.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "7.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "7.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "7.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "7.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "7.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "13.3",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "13.3",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "13.3",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "13.3",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "13.3",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "13.3",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "20.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "20.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "20.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "20.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "20.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "20.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "29.97",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "29.97",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "29.97",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "29.97",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "29.97",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "29.97",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "30.000000000000004",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "30.000000000000004",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "30.000000000000004",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "30.000000000000004",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "30.000000000000004",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "30.000000000000004",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "45.5",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "45.5",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "45.5",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "45.5",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "45.5",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "45.5",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.94",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.94",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.94",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.94",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.94",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.94",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.99999999999999",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.99999999999999",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.99999999999999",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.99999999999999",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.99999999999999",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "59.99999999999999",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "60.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "60.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "60.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "60.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "60.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "60.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.1",
+   "record_count": 0,
+   "step": "70.0",
+   "output_rate": "0.1",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.1",
+   "record_count": 1,
+   "step": "70.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.1",
+   "record_count": 2,
+   "step": "70.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.1",
+   "record_count": 100,
+   "step": "70.0",
+   "output_rate": "0.1",
+   "sample_count": 2,
+   "indices_sha256": "acdf6a3e7c38c74e484995f976924015ebbfb01b1cd9a44bec5a7b9211eb414c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.1",
+   "record_count": 12345,
+   "step": "70.0",
+   "output_rate": "0.1",
+   "sample_count": 177,
+   "indices_sha256": "01cd20d801b39fb78967c2a045179f94593dfec39198b5c11fba56a9294e0487"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.1",
+   "record_count": 216001,
+   "step": "70.0",
+   "output_rate": "0.1",
+   "sample_count": 3086,
+   "indices_sha256": "0f6be8a173025208bb190e1b52f40c46741cd86029d665e6a5941958f4acb5c4"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-05",
+   "record_count": 0,
+   "step": "700000.0",
+   "output_rate": "1e-05",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-05",
+   "record_count": 1,
+   "step": "700000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-05",
+   "record_count": 2,
+   "step": "700000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-05",
+   "record_count": 100,
+   "step": "700000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-05",
+   "record_count": 12345,
+   "step": "700000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-05",
+   "record_count": 216001,
+   "step": "700000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "123.456",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "123.456",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "123.456",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "123.456",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "123.456",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "123.456",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "7.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "0.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "-5.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "-5.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "-5.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "-5.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "-5.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "-5.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-300",
+   "record_count": 0,
+   "step": "7e+300",
+   "output_rate": "1e-300",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-300",
+   "record_count": 1,
+   "step": "7e+300",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-300",
+   "record_count": 2,
+   "step": "7e+300",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-300",
+   "record_count": 100,
+   "step": "7e+300",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-300",
+   "record_count": 12345,
+   "step": "7e+300",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-300",
+   "record_count": 216001,
+   "step": "7e+300",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-307",
+   "record_count": 0,
+   "step": "7e+307",
+   "output_rate": "1e-307",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-307",
+   "record_count": 1,
+   "step": "7e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-307",
+   "record_count": 2,
+   "step": "7e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-307",
+   "record_count": 100,
+   "step": "7e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-307",
+   "record_count": 12345,
+   "step": "7e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "1e-307",
+   "record_count": 216001,
+   "step": "7e+307",
+   "output_rate": "1e-307",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "5e-324",
+   "record_count": 0,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "5e-324",
+   "record_count": 1,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "5e-324",
+   "record_count": 2,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "5e-324",
+   "record_count": 100,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "5e-324",
+   "record_count": 12345,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 7,
+   "target_hz": "5e-324",
+   "record_count": 216001,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": null,
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": null,
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": null,
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": null,
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": null,
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": null,
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1.0",
+   "record_count": 0,
+   "step": "60.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1.0",
+   "record_count": 1,
+   "step": "60.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1.0",
+   "record_count": 2,
+   "step": "60.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1.0",
+   "record_count": 100,
+   "step": "60.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "0cfc0a680c1194908447c803e1882c0ba4038d25db80a0a2d23f03e301368837"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1.0",
+   "record_count": 12345,
+   "step": "60.0",
+   "output_rate": "1.0",
+   "sample_count": 206,
+   "indices_sha256": "ba35ed255d060946f5b1fbdb642ffd0313f6a2e3dd0b0816856144023ae547bd"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1.0",
+   "record_count": 216001,
+   "step": "60.0",
+   "output_rate": "1.0",
+   "sample_count": 3601,
+   "indices_sha256": "6cff98202e8fb998eacba586dd18460c491a37bcd67362515a4e578a5384c07d"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "3.0",
+   "record_count": 0,
+   "step": "20.0",
+   "output_rate": "3.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "3.0",
+   "record_count": 1,
+   "step": "20.0",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "3.0",
+   "record_count": 2,
+   "step": "20.0",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "3.0",
+   "record_count": 100,
+   "step": "20.0",
+   "output_rate": "3.0",
+   "sample_count": 5,
+   "indices_sha256": "f875922038564e32ec210d006dc2f1f21a5a7fb11613637b6d66cce3c02ed1a7"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "3.0",
+   "record_count": 12345,
+   "step": "20.0",
+   "output_rate": "3.0",
+   "sample_count": 618,
+   "indices_sha256": "62079a734572c457762fce87d73df1275dceecd75a7f2b6ba87b71ec4e27e934"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "3.0",
+   "record_count": 216001,
+   "step": "20.0",
+   "output_rate": "3.0",
+   "sample_count": 10801,
+   "indices_sha256": "e1a9bd067efa3f484f9d3077828c516a879c518d7d21d9f9f91d1f3169caceaa"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "7.0",
+   "record_count": 0,
+   "step": "8.571428571428571",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "7.0",
+   "record_count": 1,
+   "step": "8.571428571428571",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "7.0",
+   "record_count": 2,
+   "step": "8.571428571428571",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "7.0",
+   "record_count": 100,
+   "step": "8.571428571428571",
+   "output_rate": "7.0",
+   "sample_count": 12,
+   "indices_sha256": "a5909eadf65346a3076475e30cb61a63423cdd570007287dd666ea4698417c51"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "7.0",
+   "record_count": 12345,
+   "step": "8.571428571428571",
+   "output_rate": "7.0",
+   "sample_count": 1441,
+   "indices_sha256": "da3ba9c3b201dbb0e1e1f57c75fea18141c6a9a487bc1c24d0128c74b60024d1"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "7.0",
+   "record_count": 216001,
+   "step": "8.571428571428571",
+   "output_rate": "7.0",
+   "sample_count": 25201,
+   "indices_sha256": "149645415a07aee7fe56f90086ca4dba280e2c943cfa44343fcc352c5633aeb1"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "13.3",
+   "record_count": 0,
+   "step": "4.511278195488722",
+   "output_rate": "13.3",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "13.3",
+   "record_count": 1,
+   "step": "4.511278195488722",
+   "output_rate": "13.3",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "13.3",
+   "record_count": 2,
+   "step": "4.511278195488722",
+   "output_rate": "13.3",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "13.3",
+   "record_count": 100,
+   "step": "4.511278195488722",
+   "output_rate": "13.3",
+   "sample_count": 23,
+   "indices_sha256": "3ed8c5805d54f77634b2c00c32bdbf79bc7687a59abba73dbbacc564326a0244"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "13.3",
+   "record_count": 12345,
+   "step": "4.511278195488722",
+   "output_rate": "13.3",
+   "sample_count": 2737,
+   "indices_sha256": "812e52b358951b37ed1a1c2f550501693e31c47a5dedd77cf222a0a1b92aa598"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "13.3",
+   "record_count": 216001,
+   "step": "4.511278195488722",
+   "output_rate": "13.3",
+   "sample_count": 47881,
+   "indices_sha256": "53e99d711a6045aeccb13c9dfc60336480260a0009e245adef76498fd2d60b61"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "20.0",
+   "record_count": 0,
+   "step": "3.0",
+   "output_rate": "20.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "20.0",
+   "record_count": 1,
+   "step": "3.0",
+   "output_rate": "20.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "20.0",
+   "record_count": 2,
+   "step": "3.0",
+   "output_rate": "20.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "20.0",
+   "record_count": 100,
+   "step": "3.0",
+   "output_rate": "20.0",
+   "sample_count": 34,
+   "indices_sha256": "306454324f9d29daf51f4b7edf46f68c0249a6a292a35445728e3287da805eb9"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "20.0",
+   "record_count": 12345,
+   "step": "3.0",
+   "output_rate": "20.0",
+   "sample_count": 4115,
+   "indices_sha256": "d2538a660231593a359100f6c8ad733e9ef12cbe6f3ff96e8d19563d0e0b1490"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "20.0",
+   "record_count": 216001,
+   "step": "3.0",
+   "output_rate": "20.0",
+   "sample_count": 72001,
+   "indices_sha256": "cf25420d1530bb8d2e3cc720a4b1dd3fe944cf4df8842d005529d05c98314fbc"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "29.97",
+   "record_count": 0,
+   "step": "2.002002002002002",
+   "output_rate": "29.97",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "29.97",
+   "record_count": 1,
+   "step": "2.002002002002002",
+   "output_rate": "29.97",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "29.97",
+   "record_count": 2,
+   "step": "2.002002002002002",
+   "output_rate": "29.97",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "29.97",
+   "record_count": 100,
+   "step": "2.002002002002002",
+   "output_rate": "29.97",
+   "sample_count": 50,
+   "indices_sha256": "67d0e04862fcb53a739aa5b70cbfb29e89c0327c23726544c07f7612811027b8"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "29.97",
+   "record_count": 12345,
+   "step": "2.002002002002002",
+   "output_rate": "29.97",
+   "sample_count": 6167,
+   "indices_sha256": "a02dbdbd0ac50cb3d8175ea96866b53204475104d4a45ab4559026defbb727a1"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "29.97",
+   "record_count": 216001,
+   "step": "2.002002002002002",
+   "output_rate": "29.97",
+   "sample_count": 107893,
+   "indices_sha256": "6af4ccac68a52fa8701e6f7ea8d6f104d52061a12c7d0bfe3eb7d5571ca85725"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "30.000000000000004",
+   "record_count": 0,
+   "step": "1.9999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "30.000000000000004",
+   "record_count": 1,
+   "step": "1.9999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "30.000000000000004",
+   "record_count": 2,
+   "step": "1.9999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "30.000000000000004",
+   "record_count": 100,
+   "step": "1.9999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 51,
+   "indices_sha256": "43149744c77ae795c0db09e0847a60df4a555c9742f9592d9c50b1f4f5c57360"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "30.000000000000004",
+   "record_count": 12345,
+   "step": "1.9999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 6173,
+   "indices_sha256": "470bdd7628a681c67bc6caa60d763a0de368722f419e0d1fa1c6e5726750692e"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "30.000000000000004",
+   "record_count": 216001,
+   "step": "1.9999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 108001,
+   "indices_sha256": "8582886a2cb41339dce25eb98c494ebe1074ba9f5d6475becbbc3aca56ca4ca5"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "45.5",
+   "record_count": 0,
+   "step": "1.3186813186813187",
+   "output_rate": "45.5",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "45.5",
+   "record_count": 1,
+   "step": "1.3186813186813187",
+   "output_rate": "45.5",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "45.5",
+   "record_count": 2,
+   "step": "1.3186813186813187",
+   "output_rate": "45.5",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "45.5",
+   "record_count": 100,
+   "step": "1.3186813186813187",
+   "output_rate": "45.5",
+   "sample_count": 76,
+   "indices_sha256": "6b3c7e157c676adb7229afdd0cc21b40fb9fb8a85b7f0fb35590b19c4d2174b5"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "45.5",
+   "record_count": 12345,
+   "step": "1.3186813186813187",
+   "output_rate": "45.5",
+   "sample_count": 9362,
+   "indices_sha256": "205cc6349894f5baf8767324bddffa2bc15209f20dfd6e162aa7f0ac7504a3d5"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "45.5",
+   "record_count": 216001,
+   "step": "1.3186813186813187",
+   "output_rate": "45.5",
+   "sample_count": 163801,
+   "indices_sha256": "47c7e7b671886a817a5489a4326edc38a008cc391cf6367f32e3e2062247ebbb"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.94",
+   "record_count": 0,
+   "step": "1.001001001001001",
+   "output_rate": "59.94",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.94",
+   "record_count": 1,
+   "step": "1.001001001001001",
+   "output_rate": "59.94",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.94",
+   "record_count": 2,
+   "step": "1.001001001001001",
+   "output_rate": "59.94",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.94",
+   "record_count": 100,
+   "step": "1.001001001001001",
+   "output_rate": "59.94",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.94",
+   "record_count": 12345,
+   "step": "1.001001001001001",
+   "output_rate": "59.94",
+   "sample_count": 12333,
+   "indices_sha256": "32aaf347dd57ca8f6d82726bb4f0a5ea144ee095d0813d91ecd59341e05479e1"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.94",
+   "record_count": 216001,
+   "step": "1.001001001001001",
+   "output_rate": "59.94",
+   "sample_count": 215785,
+   "indices_sha256": "623cca44a9fdb51516e33a61b15eafdfbe48e65d506911f2b12a2fd26a795cda"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.99999999999999",
+   "record_count": 0,
+   "step": "1.0000000000000002",
+   "output_rate": "59.99999999999999",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.99999999999999",
+   "record_count": 1,
+   "step": "1.0000000000000002",
+   "output_rate": "59.99999999999999",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.99999999999999",
+   "record_count": 2,
+   "step": "1.0000000000000002",
+   "output_rate": "59.99999999999999",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.99999999999999",
+   "record_count": 100,
+   "step": "1.0000000000000002",
+   "output_rate": "59.99999999999999",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.99999999999999",
+   "record_count": 12345,
+   "step": "1.0000000000000002",
+   "output_rate": "59.99999999999999",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "59.99999999999999",
+   "record_count": 216001,
+   "step": "1.0000000000000002",
+   "output_rate": "59.99999999999999",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "60.0",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "60.0",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "60.0",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "60.0",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "60.0",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "60.0",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.1",
+   "record_count": 0,
+   "step": "600.0",
+   "output_rate": "0.1",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.1",
+   "record_count": 1,
+   "step": "600.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.1",
+   "record_count": 2,
+   "step": "600.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.1",
+   "record_count": 100,
+   "step": "600.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.1",
+   "record_count": 12345,
+   "step": "600.0",
+   "output_rate": "0.1",
+   "sample_count": 21,
+   "indices_sha256": "13925f7c3fbf1c53ec20ee9cafa8aa3183db24eacb53f13b547ae23bacb8aa97"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.1",
+   "record_count": 216001,
+   "step": "600.0",
+   "output_rate": "0.1",
+   "sample_count": 361,
+   "indices_sha256": "08dfe106a2c077d0f815d1f350e5447950898efd002fa33206e068ffe4ed1789"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-05",
+   "record_count": 0,
+   "step": "5999999.999999999",
+   "output_rate": "1e-05",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-05",
+   "record_count": 1,
+   "step": "5999999.999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-05",
+   "record_count": 2,
+   "step": "5999999.999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-05",
+   "record_count": 100,
+   "step": "5999999.999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-05",
+   "record_count": 12345,
+   "step": "5999999.999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-05",
+   "record_count": 216001,
+   "step": "5999999.999999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "123.456",
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "123.456",
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "123.456",
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "123.456",
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "123.456",
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "123.456",
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "60.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "0.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "-5.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "-5.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "-5.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "-5.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "-5.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "-5.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-300",
+   "record_count": 0,
+   "step": "6e+301",
+   "output_rate": "1e-300",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-300",
+   "record_count": 1,
+   "step": "6e+301",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-300",
+   "record_count": 2,
+   "step": "6e+301",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-300",
+   "record_count": 100,
+   "step": "6e+301",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-300",
+   "record_count": 12345,
+   "step": "6e+301",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-300",
+   "record_count": 216001,
+   "step": "6e+301",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-307",
+   "record_count": 0,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-307",
+   "record_count": 1,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-307",
+   "record_count": 2,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-307",
+   "record_count": 100,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-307",
+   "record_count": 12345,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "1e-307",
+   "record_count": 216001,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "5e-324",
+   "record_count": 0,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "5e-324",
+   "record_count": 1,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "5e-324",
+   "record_count": 2,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "5e-324",
+   "record_count": 100,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "5e-324",
+   "record_count": 12345,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 60,
+   "target_hz": "5e-324",
+   "record_count": 216001,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": null,
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "360.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": null,
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "360.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": null,
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "360.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": null,
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "360.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": null,
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "360.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": null,
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "360.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1.0",
+   "record_count": 0,
+   "step": "360.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1.0",
+   "record_count": 1,
+   "step": "360.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1.0",
+   "record_count": 2,
+   "step": "360.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1.0",
+   "record_count": 100,
+   "step": "360.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1.0",
+   "record_count": 12345,
+   "step": "360.0",
+   "output_rate": "1.0",
+   "sample_count": 35,
+   "indices_sha256": "2860ed10c62241c7c2b388fbc47e703236cabe44673108f64a9309e282796b56"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1.0",
+   "record_count": 216001,
+   "step": "360.0",
+   "output_rate": "1.0",
+   "sample_count": 601,
+   "indices_sha256": "8c3cd373881def30da4bae3a9a0704d3e017b3958436293df643cd2f49c15fc7"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "3.0",
+   "record_count": 0,
+   "step": "120.0",
+   "output_rate": "3.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "3.0",
+   "record_count": 1,
+   "step": "120.0",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "3.0",
+   "record_count": 2,
+   "step": "120.0",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "3.0",
+   "record_count": 100,
+   "step": "120.0",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "3.0",
+   "record_count": 12345,
+   "step": "120.0",
+   "output_rate": "3.0",
+   "sample_count": 103,
+   "indices_sha256": "0344d03aca28ae3c1543a02e48c57abc6c8409db21d362caa5ba60cf132c63c4"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "3.0",
+   "record_count": 216001,
+   "step": "120.0",
+   "output_rate": "3.0",
+   "sample_count": 1801,
+   "indices_sha256": "e5d0fbc2d2968d2c73d805beda5e1a650a63af17de56d49a78a32d51fdaa075b"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "7.0",
+   "record_count": 0,
+   "step": "51.42857142857143",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "7.0",
+   "record_count": 1,
+   "step": "51.42857142857143",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "7.0",
+   "record_count": 2,
+   "step": "51.42857142857143",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "7.0",
+   "record_count": 100,
+   "step": "51.42857142857143",
+   "output_rate": "7.0",
+   "sample_count": 2,
+   "indices_sha256": "e0c548097843fbc3c25009e4f6050cf5024ee72f8d3d90fd9a6ea275ad50996e"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "7.0",
+   "record_count": 12345,
+   "step": "51.42857142857143",
+   "output_rate": "7.0",
+   "sample_count": 241,
+   "indices_sha256": "41d2d79275f103345d0bcb90de68822b3c979da36a510458796f39d86cb23dc0"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "7.0",
+   "record_count": 216001,
+   "step": "51.42857142857143",
+   "output_rate": "7.0",
+   "sample_count": 4201,
+   "indices_sha256": "03c4d4fa85946ac56f401e2447795a176f3a84092319407c1d8eea7faa82fd93"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "13.3",
+   "record_count": 0,
+   "step": "27.06766917293233",
+   "output_rate": "13.3",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "13.3",
+   "record_count": 1,
+   "step": "27.06766917293233",
+   "output_rate": "13.3",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "13.3",
+   "record_count": 2,
+   "step": "27.06766917293233",
+   "output_rate": "13.3",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "13.3",
+   "record_count": 100,
+   "step": "27.06766917293233",
+   "output_rate": "13.3",
+   "sample_count": 4,
+   "indices_sha256": "d6c0ce050138093ded493a915d77c538d6965f0a480bf3ef851a4e4cef4e2177"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "13.3",
+   "record_count": 12345,
+   "step": "27.06766917293233",
+   "output_rate": "13.3",
+   "sample_count": 457,
+   "indices_sha256": "684626ce12e038866478bc31c9c2e48355b74cb4bc05d624779270a026dcc3e8"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "13.3",
+   "record_count": 216001,
+   "step": "27.06766917293233",
+   "output_rate": "13.3",
+   "sample_count": 7981,
+   "indices_sha256": "6edf6058791a80c21d855c1e7e7fcbca18312d81810ae3fec90a1d12a8027cf7"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "20.0",
+   "record_count": 0,
+   "step": "18.0",
+   "output_rate": "20.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "20.0",
+   "record_count": 1,
+   "step": "18.0",
+   "output_rate": "20.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "20.0",
+   "record_count": 2,
+   "step": "18.0",
+   "output_rate": "20.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "20.0",
+   "record_count": 100,
+   "step": "18.0",
+   "output_rate": "20.0",
+   "sample_count": 6,
+   "indices_sha256": "f3f4c40dc0bf99663aa994d9b8d610afe577af32df73711cde01871516067aad"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "20.0",
+   "record_count": 12345,
+   "step": "18.0",
+   "output_rate": "20.0",
+   "sample_count": 686,
+   "indices_sha256": "837882bdf0212b67fd4ee5f750e2556b90da7033925eaf9507db12a58107c85e"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "20.0",
+   "record_count": 216001,
+   "step": "18.0",
+   "output_rate": "20.0",
+   "sample_count": 12001,
+   "indices_sha256": "47db3baaf31729507314ab545a898617677b15bed7237abe6eef4ad9fa2bc0a4"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "29.97",
+   "record_count": 0,
+   "step": "12.012012012012013",
+   "output_rate": "29.97",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "29.97",
+   "record_count": 1,
+   "step": "12.012012012012013",
+   "output_rate": "29.97",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "29.97",
+   "record_count": 2,
+   "step": "12.012012012012013",
+   "output_rate": "29.97",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "29.97",
+   "record_count": 100,
+   "step": "12.012012012012013",
+   "output_rate": "29.97",
+   "sample_count": 9,
+   "indices_sha256": "d6b35edba29c518385443ce86ee2239dc2b0b4b78192800fe5028b7d8f32381d"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "29.97",
+   "record_count": 12345,
+   "step": "12.012012012012013",
+   "output_rate": "29.97",
+   "sample_count": 1028,
+   "indices_sha256": "238490db7051d9ad36d850ef18a9ec1bdbd2e0090f7c75885831e26804400f6e"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "29.97",
+   "record_count": 216001,
+   "step": "12.012012012012013",
+   "output_rate": "29.97",
+   "sample_count": 17983,
+   "indices_sha256": "b73591a8a86ea2ee2b593309510ffe8b6d22c7698c6c92180e41dc4cee4cafa7"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "30.000000000000004",
+   "record_count": 0,
+   "step": "11.999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "30.000000000000004",
+   "record_count": 1,
+   "step": "11.999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "30.000000000000004",
+   "record_count": 2,
+   "step": "11.999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "30.000000000000004",
+   "record_count": 100,
+   "step": "11.999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 9,
+   "indices_sha256": "d3f5d01306322801b2f22488a7862f2867c3fcd9fa367f23f6003b47d13d8caa"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "30.000000000000004",
+   "record_count": 12345,
+   "step": "11.999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 1029,
+   "indices_sha256": "924839d5138ca44aadfa9b089423823a048e60f6be59535e416a8a80cb196326"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "30.000000000000004",
+   "record_count": 216001,
+   "step": "11.999999999999998",
+   "output_rate": "30.000000000000004",
+   "sample_count": 18001,
+   "indices_sha256": "bff138b85a30c27b8827abe5ce51e859e0aba525e38a6928638c05b0d78a312b"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "45.5",
+   "record_count": 0,
+   "step": "7.912087912087912",
+   "output_rate": "45.5",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "45.5",
+   "record_count": 1,
+   "step": "7.912087912087912",
+   "output_rate": "45.5",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "45.5",
+   "record_count": 2,
+   "step": "7.912087912087912",
+   "output_rate": "45.5",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "45.5",
+   "record_count": 100,
+   "step": "7.912087912087912",
+   "output_rate": "45.5",
+   "sample_count": 13,
+   "indices_sha256": "9bc9da9fdc96855e5e76bc18a29c7b8b9691dd10af916142a510780f0f95017b"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "45.5",
+   "record_count": 12345,
+   "step": "7.912087912087912",
+   "output_rate": "45.5",
+   "sample_count": 1561,
+   "indices_sha256": "e7fc3679bf9b302d885655c744641b50e2ea3db36a2570538de5b750d69d8fc3"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "45.5",
+   "record_count": 216001,
+   "step": "7.912087912087912",
+   "output_rate": "45.5",
+   "sample_count": 27301,
+   "indices_sha256": "ca881ea29e9265286f6cb57eb339ec27aba7e3d9f4756c1d31ad0e0eecbffd41"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.94",
+   "record_count": 0,
+   "step": "6.0060060060060065",
+   "output_rate": "59.94",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.94",
+   "record_count": 1,
+   "step": "6.0060060060060065",
+   "output_rate": "59.94",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.94",
+   "record_count": 2,
+   "step": "6.0060060060060065",
+   "output_rate": "59.94",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.94",
+   "record_count": 100,
+   "step": "6.0060060060060065",
+   "output_rate": "59.94",
+   "sample_count": 17,
+   "indices_sha256": "7e068383393d2382363eab294fc2da974edca419d9801fb6f4e63b25b94a5bff"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.94",
+   "record_count": 12345,
+   "step": "6.0060060060060065",
+   "output_rate": "59.94",
+   "sample_count": 2056,
+   "indices_sha256": "2b35b56d1bd00a03748a92280ad6f30ef2c30c8e90ae20698e457a1e7fd39e82"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.94",
+   "record_count": 216001,
+   "step": "6.0060060060060065",
+   "output_rate": "59.94",
+   "sample_count": 35965,
+   "indices_sha256": "ac74bf7d41ec0a2644da8b8563f3c68555e42564492c39835c00c046a9a53166"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.99999999999999",
+   "record_count": 0,
+   "step": "6.000000000000001",
+   "output_rate": "59.99999999999999",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.99999999999999",
+   "record_count": 1,
+   "step": "6.000000000000001",
+   "output_rate": "59.99999999999999",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.99999999999999",
+   "record_count": 2,
+   "step": "6.000000000000001",
+   "output_rate": "59.99999999999999",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.99999999999999",
+   "record_count": 100,
+   "step": "6.000000000000001",
+   "output_rate": "59.99999999999999",
+   "sample_count": 17,
+   "indices_sha256": "7e068383393d2382363eab294fc2da974edca419d9801fb6f4e63b25b94a5bff"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.99999999999999",
+   "record_count": 12345,
+   "step": "6.000000000000001",
+   "output_rate": "59.99999999999999",
+   "sample_count": 2058,
+   "indices_sha256": "b5c6884d8daff987de0cfa123423ca44358caedfb646f88d4e12dc536945677d"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "59.99999999999999",
+   "record_count": 216001,
+   "step": "6.000000000000001",
+   "output_rate": "59.99999999999999",
+   "sample_count": 36001,
+   "indices_sha256": "710c2cf96345ccc3de0804bf09bdaff2f7c8a47af92a4fcc7ef64311100293a2"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "60.0",
+   "record_count": 0,
+   "step": "6.0",
+   "output_rate": "60.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "60.0",
+   "record_count": 1,
+   "step": "6.0",
+   "output_rate": "60.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "60.0",
+   "record_count": 2,
+   "step": "6.0",
+   "output_rate": "60.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "60.0",
+   "record_count": 100,
+   "step": "6.0",
+   "output_rate": "60.0",
+   "sample_count": 17,
+   "indices_sha256": "7e068383393d2382363eab294fc2da974edca419d9801fb6f4e63b25b94a5bff"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "60.0",
+   "record_count": 12345,
+   "step": "6.0",
+   "output_rate": "60.0",
+   "sample_count": 2058,
+   "indices_sha256": "b5c6884d8daff987de0cfa123423ca44358caedfb646f88d4e12dc536945677d"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "60.0",
+   "record_count": 216001,
+   "step": "6.0",
+   "output_rate": "60.0",
+   "sample_count": 36001,
+   "indices_sha256": "710c2cf96345ccc3de0804bf09bdaff2f7c8a47af92a4fcc7ef64311100293a2"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.1",
+   "record_count": 0,
+   "step": "3600.0",
+   "output_rate": "0.1",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.1",
+   "record_count": 1,
+   "step": "3600.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.1",
+   "record_count": 2,
+   "step": "3600.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.1",
+   "record_count": 100,
+   "step": "3600.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.1",
+   "record_count": 12345,
+   "step": "3600.0",
+   "output_rate": "0.1",
+   "sample_count": 4,
+   "indices_sha256": "9483b7a7ccc68f8ae16a30845a6083a562b91c5e5101c22460a1dc97da2b428f"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.1",
+   "record_count": 216001,
+   "step": "3600.0",
+   "output_rate": "0.1",
+   "sample_count": 61,
+   "indices_sha256": "a8f83f42a1e562a7b8f6da08a1eb4100927051e8a867369d2df2bb44196efa98"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-05",
+   "record_count": 0,
+   "step": "36000000.0",
+   "output_rate": "1e-05",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-05",
+   "record_count": 1,
+   "step": "36000000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-05",
+   "record_count": 2,
+   "step": "36000000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-05",
+   "record_count": 100,
+   "step": "36000000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-05",
+   "record_count": 12345,
+   "step": "36000000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-05",
+   "record_count": 216001,
+   "step": "36000000.0",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "123.456",
+   "record_count": 0,
+   "step": "2.91601866251944",
+   "output_rate": "123.456",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "123.456",
+   "record_count": 1,
+   "step": "2.91601866251944",
+   "output_rate": "123.456",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "123.456",
+   "record_count": 2,
+   "step": "2.91601866251944",
+   "output_rate": "123.456",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "123.456",
+   "record_count": 100,
+   "step": "2.91601866251944",
+   "output_rate": "123.456",
+   "sample_count": 35,
+   "indices_sha256": "b6ebb032252ff01def19bfd3bd17e1e8ab3484be3f5ea21cbc9bc408c8bfe172"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "123.456",
+   "record_count": 12345,
+   "step": "2.91601866251944",
+   "output_rate": "123.456",
+   "sample_count": 4234,
+   "indices_sha256": "3a1e5860765dc6c6090e63bc5bcf8221fd164985569551c4f23707a9ac0cff27"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "123.456",
+   "record_count": 216001,
+   "step": "2.91601866251944",
+   "output_rate": "123.456",
+   "sample_count": 74074,
+   "indices_sha256": "adc52b6267bc972970334a0ddd056d92553114a37bf62000f3a703bd84b0737b"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "0.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "-5.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "-5.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "-5.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "-5.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "-5.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "-5.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-300",
+   "record_count": 0,
+   "step": "3.6e+302",
+   "output_rate": "1e-300",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-300",
+   "record_count": 1,
+   "step": "3.6e+302",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-300",
+   "record_count": 2,
+   "step": "3.6e+302",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-300",
+   "record_count": 100,
+   "step": "3.6e+302",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-300",
+   "record_count": 12345,
+   "step": "3.6e+302",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-300",
+   "record_count": 216001,
+   "step": "3.6e+302",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-307",
+   "record_count": 0,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-307",
+   "record_count": 1,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-307",
+   "record_count": 2,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-307",
+   "record_count": 100,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-307",
+   "record_count": 12345,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "1e-307",
+   "record_count": 216001,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "5e-324",
+   "record_count": 0,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "5e-324",
+   "record_count": 1,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "5e-324",
+   "record_count": 2,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "5e-324",
+   "record_count": 100,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "5e-324",
+   "record_count": 12345,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 360,
+   "target_hz": "5e-324",
+   "record_count": 216001,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": null,
+   "record_count": 0,
+   "step": "1.0",
+   "output_rate": "10000.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": null,
+   "record_count": 1,
+   "step": "1.0",
+   "output_rate": "10000.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": null,
+   "record_count": 2,
+   "step": "1.0",
+   "output_rate": "10000.0",
+   "sample_count": 2,
+   "indices_sha256": "01acecb507abfe1a354aa8064f4af5d3f1acd019e37db3c11c97523b71c76e9d"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": null,
+   "record_count": 100,
+   "step": "1.0",
+   "output_rate": "10000.0",
+   "sample_count": 100,
+   "indices_sha256": "077897d1b034053b87f9dcf857eddf68e4eab2d68a726c2865ff8800599dd95c"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": null,
+   "record_count": 12345,
+   "step": "1.0",
+   "output_rate": "10000.0",
+   "sample_count": 12345,
+   "indices_sha256": "8a25200d856275cbdbf0050db271f20dcd0b94c74c543910c1f481feedbffbf1"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": null,
+   "record_count": 216001,
+   "step": "1.0",
+   "output_rate": "10000.0",
+   "sample_count": 216001,
+   "indices_sha256": "977a5ad6adb70e094ede2a4a95598666fa87b049e9dbf08ec748f87bf0cfeb21"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1.0",
+   "record_count": 0,
+   "step": "10000.0",
+   "output_rate": "1.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1.0",
+   "record_count": 1,
+   "step": "10000.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1.0",
+   "record_count": 2,
+   "step": "10000.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1.0",
+   "record_count": 100,
+   "step": "10000.0",
+   "output_rate": "1.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1.0",
+   "record_count": 12345,
+   "step": "10000.0",
+   "output_rate": "1.0",
+   "sample_count": 2,
+   "indices_sha256": "fd33f303303e8f12616e7c286edbb50677afb4430e3180ffb33bd1a5a327e3c2"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1.0",
+   "record_count": 216001,
+   "step": "10000.0",
+   "output_rate": "1.0",
+   "sample_count": 22,
+   "indices_sha256": "bc5ff1b21f09a2cf6a275ce720b8e19865156894b1667564cdc9eed486b46979"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "3.0",
+   "record_count": 0,
+   "step": "3333.3333333333335",
+   "output_rate": "3.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "3.0",
+   "record_count": 1,
+   "step": "3333.3333333333335",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "3.0",
+   "record_count": 2,
+   "step": "3333.3333333333335",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "3.0",
+   "record_count": 100,
+   "step": "3333.3333333333335",
+   "output_rate": "3.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "3.0",
+   "record_count": 12345,
+   "step": "3333.3333333333335",
+   "output_rate": "3.0",
+   "sample_count": 4,
+   "indices_sha256": "34e8f57c57f23eeabc2f35107151a0cd926c635c1490c25cf00b31a22b8f02e0"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "3.0",
+   "record_count": 216001,
+   "step": "3333.3333333333335",
+   "output_rate": "3.0",
+   "sample_count": 65,
+   "indices_sha256": "d4e11a67c27c45b89265c1d819ff34dde617541a839c0a4eeb88334145f81762"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "7.0",
+   "record_count": 0,
+   "step": "1428.5714285714287",
+   "output_rate": "7.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "7.0",
+   "record_count": 1,
+   "step": "1428.5714285714287",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "7.0",
+   "record_count": 2,
+   "step": "1428.5714285714287",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "7.0",
+   "record_count": 100,
+   "step": "1428.5714285714287",
+   "output_rate": "7.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "7.0",
+   "record_count": 12345,
+   "step": "1428.5714285714287",
+   "output_rate": "7.0",
+   "sample_count": 9,
+   "indices_sha256": "8a2d60d93c1d8511a497247177d2516722da1c7875661e431feea441431f9ca3"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "7.0",
+   "record_count": 216001,
+   "step": "1428.5714285714287",
+   "output_rate": "7.0",
+   "sample_count": 152,
+   "indices_sha256": "6d9fd726f7f3532fe02e3b31f9f2042641a2431d261c2c411528a26952f222dd"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "13.3",
+   "record_count": 0,
+   "step": "751.8796992481202",
+   "output_rate": "13.3",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "13.3",
+   "record_count": 1,
+   "step": "751.8796992481202",
+   "output_rate": "13.3",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "13.3",
+   "record_count": 2,
+   "step": "751.8796992481202",
+   "output_rate": "13.3",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "13.3",
+   "record_count": 100,
+   "step": "751.8796992481202",
+   "output_rate": "13.3",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "13.3",
+   "record_count": 12345,
+   "step": "751.8796992481202",
+   "output_rate": "13.3",
+   "sample_count": 17,
+   "indices_sha256": "e76f1e7a6cb449e947da449af2566a27294f644a2e2292f7298a44268ae77943"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "13.3",
+   "record_count": 216001,
+   "step": "751.8796992481202",
+   "output_rate": "13.3",
+   "sample_count": 288,
+   "indices_sha256": "89487892b2a63c0ec5487279f35a67e9cb4632539e88f6aa5b0de3df6497bdbe"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "20.0",
+   "record_count": 0,
+   "step": "500.0",
+   "output_rate": "20.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "20.0",
+   "record_count": 1,
+   "step": "500.0",
+   "output_rate": "20.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "20.0",
+   "record_count": 2,
+   "step": "500.0",
+   "output_rate": "20.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "20.0",
+   "record_count": 100,
+   "step": "500.0",
+   "output_rate": "20.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "20.0",
+   "record_count": 12345,
+   "step": "500.0",
+   "output_rate": "20.0",
+   "sample_count": 25,
+   "indices_sha256": "dc689efc3f051311fbcc3860fe74f4134adfa3a43550a78af5db0dab3f6426a8"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "20.0",
+   "record_count": 216001,
+   "step": "500.0",
+   "output_rate": "20.0",
+   "sample_count": 433,
+   "indices_sha256": "d9a75822c58ace0de6506815cc6e4152b66f8bc45ac7dc73755751ee31e7e103"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "29.97",
+   "record_count": 0,
+   "step": "333.66700033366703",
+   "output_rate": "29.97",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "29.97",
+   "record_count": 1,
+   "step": "333.66700033366703",
+   "output_rate": "29.97",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "29.97",
+   "record_count": 2,
+   "step": "333.66700033366703",
+   "output_rate": "29.97",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "29.97",
+   "record_count": 100,
+   "step": "333.66700033366703",
+   "output_rate": "29.97",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "29.97",
+   "record_count": 12345,
+   "step": "333.66700033366703",
+   "output_rate": "29.97",
+   "sample_count": 37,
+   "indices_sha256": "24bc790f1b3a09b2e04e452b28e779316d1e2354518f317919215aa7eceac998"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "29.97",
+   "record_count": 216001,
+   "step": "333.66700033366703",
+   "output_rate": "29.97",
+   "sample_count": 648,
+   "indices_sha256": "10f883d02a2b573c415886967df501c2083e1f9adefcf5ff534e7b986e720369"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "30.000000000000004",
+   "record_count": 0,
+   "step": "333.3333333333333",
+   "output_rate": "30.000000000000004",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "30.000000000000004",
+   "record_count": 1,
+   "step": "333.3333333333333",
+   "output_rate": "30.000000000000004",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "30.000000000000004",
+   "record_count": 2,
+   "step": "333.3333333333333",
+   "output_rate": "30.000000000000004",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "30.000000000000004",
+   "record_count": 100,
+   "step": "333.3333333333333",
+   "output_rate": "30.000000000000004",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "30.000000000000004",
+   "record_count": 12345,
+   "step": "333.3333333333333",
+   "output_rate": "30.000000000000004",
+   "sample_count": 38,
+   "indices_sha256": "57ae3910dac12d981652499279a47b0a8ebab02a50d2fa2b3909d47b9e5e2424"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "30.000000000000004",
+   "record_count": 216001,
+   "step": "333.3333333333333",
+   "output_rate": "30.000000000000004",
+   "sample_count": 649,
+   "indices_sha256": "950bf85a941c0e05beb3e7bebfb3cc56f10db457ccd53f8e39053b5d29cdb486"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "45.5",
+   "record_count": 0,
+   "step": "219.78021978021977",
+   "output_rate": "45.5",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "45.5",
+   "record_count": 1,
+   "step": "219.78021978021977",
+   "output_rate": "45.5",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "45.5",
+   "record_count": 2,
+   "step": "219.78021978021977",
+   "output_rate": "45.5",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "45.5",
+   "record_count": 100,
+   "step": "219.78021978021977",
+   "output_rate": "45.5",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "45.5",
+   "record_count": 12345,
+   "step": "219.78021978021977",
+   "output_rate": "45.5",
+   "sample_count": 57,
+   "indices_sha256": "a39f4e36c45f9de33b5f9c45978c4e54378a85ab23d0257509aeea2b3b85f4a6"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "45.5",
+   "record_count": 216001,
+   "step": "219.78021978021977",
+   "output_rate": "45.5",
+   "sample_count": 983,
+   "indices_sha256": "5d68c685b192a584044867e37ac0366660963f14740413612d9ee75486ad82b7"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.94",
+   "record_count": 0,
+   "step": "166.83350016683352",
+   "output_rate": "59.94",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.94",
+   "record_count": 1,
+   "step": "166.83350016683352",
+   "output_rate": "59.94",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.94",
+   "record_count": 2,
+   "step": "166.83350016683352",
+   "output_rate": "59.94",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.94",
+   "record_count": 100,
+   "step": "166.83350016683352",
+   "output_rate": "59.94",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.94",
+   "record_count": 12345,
+   "step": "166.83350016683352",
+   "output_rate": "59.94",
+   "sample_count": 74,
+   "indices_sha256": "a5033d682eb04f968d7c16f5c196e5f72545a01cc6ce874b63d021574d2fa9f0"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.94",
+   "record_count": 216001,
+   "step": "166.83350016683352",
+   "output_rate": "59.94",
+   "sample_count": 1295,
+   "indices_sha256": "cf6a53d2c2bdf30a8840d91d9449dcfd707918abedef4f8c05522ae9b88ae465"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.99999999999999",
+   "record_count": 0,
+   "step": "166.66666666666669",
+   "output_rate": "59.99999999999999",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.99999999999999",
+   "record_count": 1,
+   "step": "166.66666666666669",
+   "output_rate": "59.99999999999999",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.99999999999999",
+   "record_count": 2,
+   "step": "166.66666666666669",
+   "output_rate": "59.99999999999999",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.99999999999999",
+   "record_count": 100,
+   "step": "166.66666666666669",
+   "output_rate": "59.99999999999999",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.99999999999999",
+   "record_count": 12345,
+   "step": "166.66666666666669",
+   "output_rate": "59.99999999999999",
+   "sample_count": 75,
+   "indices_sha256": "99cd05374ef441e74ed02a7dae3f83a1813b191015cbccc49c712f5effc9ad43"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "59.99999999999999",
+   "record_count": 216001,
+   "step": "166.66666666666669",
+   "output_rate": "59.99999999999999",
+   "sample_count": 1297,
+   "indices_sha256": "cb46bf2b7795b214f80da9eab82a240bc8ef261969d08cacc5d4757d9c88b4a6"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "60.0",
+   "record_count": 0,
+   "step": "166.66666666666666",
+   "output_rate": "60.0",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "60.0",
+   "record_count": 1,
+   "step": "166.66666666666666",
+   "output_rate": "60.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "60.0",
+   "record_count": 2,
+   "step": "166.66666666666666",
+   "output_rate": "60.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "60.0",
+   "record_count": 100,
+   "step": "166.66666666666666",
+   "output_rate": "60.0",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "60.0",
+   "record_count": 12345,
+   "step": "166.66666666666666",
+   "output_rate": "60.0",
+   "sample_count": 75,
+   "indices_sha256": "c2b86ef36b4eefd81e22ff91c6f029661093446c300b1b6947760c8f1d2f3bc9"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "60.0",
+   "record_count": 216001,
+   "step": "166.66666666666666",
+   "output_rate": "60.0",
+   "sample_count": 1297,
+   "indices_sha256": "4b31df700c657f26b239cc9fa362b42f2e7387ef2591826ef9e031eec32bf8a9"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.1",
+   "record_count": 0,
+   "step": "100000.0",
+   "output_rate": "0.1",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.1",
+   "record_count": 1,
+   "step": "100000.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.1",
+   "record_count": 2,
+   "step": "100000.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.1",
+   "record_count": 100,
+   "step": "100000.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.1",
+   "record_count": 12345,
+   "step": "100000.0",
+   "output_rate": "0.1",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.1",
+   "record_count": 216001,
+   "step": "100000.0",
+   "output_rate": "0.1",
+   "sample_count": 3,
+   "indices_sha256": "5883c41f36e1d952c436070d62cc2de21c49fe0d8d0b0b9959a0ec31880099c0"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-05",
+   "record_count": 0,
+   "step": "999999999.9999999",
+   "output_rate": "1e-05",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-05",
+   "record_count": 1,
+   "step": "999999999.9999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-05",
+   "record_count": 2,
+   "step": "999999999.9999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-05",
+   "record_count": 100,
+   "step": "999999999.9999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-05",
+   "record_count": 12345,
+   "step": "999999999.9999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-05",
+   "record_count": 216001,
+   "step": "999999999.9999999",
+   "output_rate": "1e-05",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "123.456",
+   "record_count": 0,
+   "step": "81.00051840331778",
+   "output_rate": "123.456",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "123.456",
+   "record_count": 1,
+   "step": "81.00051840331778",
+   "output_rate": "123.456",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "123.456",
+   "record_count": 2,
+   "step": "81.00051840331778",
+   "output_rate": "123.456",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "123.456",
+   "record_count": 100,
+   "step": "81.00051840331778",
+   "output_rate": "123.456",
+   "sample_count": 2,
+   "indices_sha256": "28da116cf46b4ba320baed24245f2ac99948c02a6af8ffca121a1785944cd1cf"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "123.456",
+   "record_count": 12345,
+   "step": "81.00051840331778",
+   "output_rate": "123.456",
+   "sample_count": 153,
+   "indices_sha256": "69647ed867092c6ce847e4c293c4483d32ea46fbeed53ceeed977d9a7e165dd0"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "123.456",
+   "record_count": 216001,
+   "step": "81.00051840331778",
+   "output_rate": "123.456",
+   "sample_count": 2667,
+   "indices_sha256": "46b81c62f977587c3f33aff5398da9ff78db0ff9837e9b16f527ca6a4eeebd03"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "0.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "-5.0",
+   "record_count": 0,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "-5.0",
+   "record_count": 1,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "-5.0",
+   "record_count": 2,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "-5.0",
+   "record_count": 100,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "-5.0",
+   "record_count": 12345,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "-5.0",
+   "record_count": 216001,
+   "step": null
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-300",
+   "record_count": 0,
+   "step": "1e+304",
+   "output_rate": "1e-300",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-300",
+   "record_count": 1,
+   "step": "1e+304",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-300",
+   "record_count": 2,
+   "step": "1e+304",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-300",
+   "record_count": 100,
+   "step": "1e+304",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-300",
+   "record_count": 12345,
+   "step": "1e+304",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-300",
+   "record_count": 216001,
+   "step": "1e+304",
+   "output_rate": "1e-300",
+   "sample_count": 1,
+   "indices_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-307",
+   "record_count": 0,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-307",
+   "record_count": 1,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-307",
+   "record_count": 2,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-307",
+   "record_count": 100,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-307",
+   "record_count": 12345,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "1e-307",
+   "record_count": 216001,
+   "step": "inf",
+   "output_rate": "1e-307",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "5e-324",
+   "record_count": 0,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "sample_count": 0,
+   "indices_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "5e-324",
+   "record_count": 1,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "5e-324",
+   "record_count": 2,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "5e-324",
+   "record_count": 100,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "5e-324",
+   "record_count": 12345,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  },
+  {
+   "tick_rate": 10000,
+   "target_hz": "5e-324",
+   "record_count": 216001,
+   "step": "inf",
+   "output_rate": "5e-324",
+   "error": "OverflowError: cannot convert float infinity to integer"
+  }
+ ]
+}
