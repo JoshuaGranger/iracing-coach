@@ -2,6 +2,9 @@
 
     wait     poll /api/v1/jobs until every job after a given id is terminal; cancel on abort
     capture  turn a container archive (pulled read-only) into a tools/parity capture
+    calls    the in-container trace of a native run against the oracle capture's entry-point calls
+             (worker-interface.md section 8: one native decode per recording, one kernel call per
+             oracle call, count for count, and no Python entry point on the native side)
     strict   compare two analysis.json files with only roots, separators and newlines folded;
              differing `*_at` run instants are listed apart from every other difference
     report   per-window statistics from the sampler files and the gate verdict
@@ -104,12 +107,45 @@ def command_capture(args: argparse.Namespace) -> int:
         case="g1-container",
         analysis_id=args.analysis_id,
         analyzer_digest="unpinned",
-        native_stages="",
+        native_stages=args.native_stages,
         raw_archive="external",
         roots={"<archive_root>": args.archive_root, "<iracing_root>": args.iracing_root},
         platform_note="linux container, pulled read-only",
     )
     return 0
+
+
+# ---------------------------------------------------------------- calls
+
+
+def command_calls(args: argparse.Namespace) -> int:
+    sys.path.insert(0, str(REPO / "iracing-coach" / "skills" / "analyze-iracing-race" / "scripts"))
+    import native_stages  # noqa: PLC0415
+
+    oracle = json.loads((Path(args.oracle) / "capture.json").read_text(encoding="utf-8"))
+    run = json.loads(Path(args.run).read_text(encoding="utf-8"))
+    trace = run.get("trace") or {}
+    decodes = trace.get("native_decode_calls") or []
+    native = trace.get("kernel_calls") or {"native": {}, "oracle": {}}
+    problems = list(native_stages.kernel_call_problems(oracle.get("kernel_calls") or {}, native, True))
+    expected = sorted(item["name"] for item in oracle.get("recordings") or [])
+    if sorted(call.get("source") for call in decodes) != expected or any(call.get("error") for call in decodes):
+        problems.append(f"native decode calls {decodes}, expected one successful call for each of {expected}")
+    kinds = sorted({p["kind"] for p in run.get("processes") or []})
+    if "coach-analysis kernels" not in kinds:
+        problems.append(f"no coach-analysis kernels process was sampled (processes: {kinds})")
+    report = {
+        "native_decode_calls": decodes,
+        "kernel_calls_native": native.get("native"),
+        "entry_point_calls_native_side": native.get("oracle"),
+        "oracle_entry_point_calls": (oracle.get("kernel_calls") or {}).get("oracle"),
+        "kernel_call_total": sum((native.get("native") or {}).values()),
+        "processes": kinds,
+        "problems": problems,
+        "pass": not problems,
+    }
+    print(json.dumps(report, indent=2))
+    return 0 if not problems else 1
 
 
 # ---------------------------------------------------------------- strict
@@ -188,6 +224,13 @@ def _markers(path: Path) -> dict[str, float]:
 
 
 def _windows(marks: dict[str, float]) -> dict[str, tuple[float, float]]:
+    if "run1_start" not in marks:  # g1-deferred.sh: one window per `<label>_start`/`<label>_end` pair
+        starts = sorted((t, k[: -len("_start")]) for k, t in marks.items() if k.endswith("_start") and k != "sampler_start")
+        windows = {"baseline": (starts[0][0] - 60.0, starts[0][0])} if starts else {}
+        for t, label in starts:
+            if f"{label}_end" in marks:
+                windows[label] = (t, marks[f"{label}_end"])
+        return windows
     windows = {"baseline": (marks["run1_start"] - 60.0, marks["run1_start"])}
     windows["run1"] = (marks["run1_start"], marks["run1_end"])
     if "run2_start" in marks:
@@ -241,7 +284,9 @@ def command_report(args: argparse.Namespace) -> int:
         if len(parts) < 4:
             continue
         t, pid, hwm, rss = float(parts[0]), parts[1], int(parts[2]), int(parts[3])
-        entry = workers.setdefault(pid, {"pid": pid, "first": t, "last": t, "vm_hwm_kib": 0, "vm_rss_max_kib": 0})
+        cmd = parts[4].strip() if len(parts) > 4 else ""
+        kind = "coach-analysis " + cmd.split()[1] if "coach-analysis" in cmd and len(cmd.split()) > 1 else "worker"
+        entry = workers.setdefault(pid, {"pid": pid, "kind": kind, "first": t, "last": t, "vm_hwm_kib": 0, "vm_rss_max_kib": 0})
         entry["last"] = t
         entry["vm_hwm_kib"] = max(entry["vm_hwm_kib"], hwm)
         entry["vm_rss_max_kib"] = max(entry["vm_rss_max_kib"], rss)
@@ -318,6 +363,11 @@ def main(argv: list[str] | None = None) -> int:
     capture.add_argument("--iracing-root", required=True, help="The job root's path inside the container.")
     capture.add_argument("--analysis-id")
     capture.add_argument("--result", help="JSON file with the worker or job result.")
+    capture.add_argument("--native-stages", default="", help="The stages the container's worker ran.")
+
+    calls = commands.add_parser("calls")
+    calls.add_argument("--oracle", required=True, help="The oracle capture directory (capture-worker).")
+    calls.add_argument("--run", required=True, help="g1_cold_run.py's run output, traced.")
 
     strict = commands.add_parser("strict")
     for side in ("left", "right"):
@@ -332,7 +382,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "wait":
         args.need = set(args.need)
-    return {"wait": command_wait, "capture": command_capture, "strict": command_strict, "report": command_report}[args.command](args)
+    return {"wait": command_wait, "capture": command_capture, "calls": command_calls, "strict": command_strict,
+            "report": command_report}[args.command](args)
 
 
 if __name__ == "__main__":
