@@ -5,19 +5,20 @@ then `u8 kind, u32 length, payload` records (1 static, 2 tick, 3 status). The ma
 variables of `MapBuilder::engine_vars` with the same natural alignment, three buffers, and a 16 KiB
 session-info region.
 
-Timeline at 60 Hz (seconds of replay time):
-  0 to 1     in session, in the pit stall, off track
-  1 to 91    on track, three laps of about 30 s (live tiles, on-track upload gate)
-  91 to 94   pit road, then off track
-  94 to 110  garage visit: CarSetup.UpdateCount bumps every 3 s
-  110        garage exit; 0.5 s later DriverSetupName changes (P5 two-moment rule)
-  110 to END off track in the stall (uploads allowed)
-  END        the sim quits (status 0)
+Timeline at 60 Hz (seconds of replay time; TRACK = --track-s, default 90):
+  0 to 1               in session, in the pit stall, off track
+  1 to 1+TRACK         on track, laps of about 30 s (live tiles, on-track upload gate)
+  +3 s                 pit road, then off track
+  +2 s to +16 s        garage visit: CarSetup.UpdateCount bumps every 3 s
+  garage exit          0.5 s later DriverSetupName changes (P5 two-moment rule)
+  exit to END          off track in the stall (uploads allowed); END = --end-s, default exit + 60
+  END                  the sim quits (status 0)
+With the defaults: on track 1 to 91, garage 96 to 110, END 170.
 
 The driver's customer id and name are arguments so no identity is stored in the repository.
 
 Usage: python make_sdkfix.py OUT.sdkfix --customer-id N --name "First Last"
-       [--start-setup NAME.sto] [--exit-setup NAME.sto] [--end-s 170]
+       [--start-setup NAME.sto] [--exit-setup NAME.sto] [--track-s 90] [--end-s SECONDS]
 """
 
 from __future__ import annotations
@@ -224,7 +225,8 @@ def main() -> None:
     ap.add_argument("--name", required=True)
     ap.add_argument("--start-setup", default="e2e baseline.sto")
     ap.add_argument("--exit-setup", default="e2e garage capture.sto")
-    ap.add_argument("--end-s", type=float, default=170.0)
+    ap.add_argument("--track-s", type=float, default=90.0, help="seconds on track (default 90)")
+    ap.add_argument("--end-s", type=float, default=None, help="sim exit (default garage exit + 60 s)")
     a = ap.parse_args()
 
     m = Map()
@@ -233,8 +235,14 @@ def main() -> None:
     info = session_yaml(a.customer_id, a.name, a.start_setup, False, 2, 152)
     w.static(m, 1, update, info)
 
-    track_start, pit_in, off_track, garage_in, garage_out = 1.0, 91.0, 94.0, 96.0, 110.0
-    bumps = [99.0, 102.0, 105.0, 108.0]  # UpdateCount 3..6 while in the garage
+    track_start = 1.0
+    pit_in = track_start + a.track_s
+    off_track, garage_in, garage_out = pit_in + 3.0, pit_in + 5.0, pit_in + 19.0
+    bumps = [pit_in + 8.0, pit_in + 11.0, pit_in + 14.0, pit_in + 17.0]  # UpdateCount 3..6 in the garage
+    if a.end_s is None:
+        a.end_s = garage_out + 60.0
+    if a.end_s <= garage_out + 1.0:
+        ap.error("--end-s must leave at least 1 s after the garage exit")
     exit_static = garage_out + 0.5         # count 7 and the new name arrive after the exit
     count = 2
     pressure = 152

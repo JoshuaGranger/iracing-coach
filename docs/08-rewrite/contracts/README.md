@@ -99,3 +99,16 @@ Reason: W9's G1 finding (`acceptance/g1-analysis.md`, Findings for owners): `POS
 
 - `api.openapi.yaml`: the operation gains `x-idempotency`, stating what `server/src/jobs.rs` (`enqueue_tx`, `queue_analysis_tx`) does: queued, running or succeeded jobs with the analysis key are returned unchanged; failed, cancelled or interrupted ones are re-queued under the same `job_id`; a deferred one stays deferred while over the admission ceiling. The summary is unchanged, so no generated file changes.
 - Proof: `node tools/wire/gen-wire.mjs --check` reports no drift; on the dev-PC server a second `POST /api/v1/sessions/1/analysis` after a succeeded analysis answered `202 {"job_id":5,"kind":"analyze","state":"succeeded"}` (`acceptance/e2e-dev-pc.md`).
+
+### 2026-10-03, wave 3b: `no_recordings` response (integration, e2e2; additive clarification, no review needed)
+
+Reason: W4's wave-3 report and `acceptance/e2e-dev-pc.md` (W4 minor): `POST /api/v1/sessions/{session_id}/analysis` answers `422 no_recordings` for a session that has no recordings (`server/src/api.rs` `queue_analysis`), and the operation listed only 202 and 404.
+
+- `api.openapi.yaml`: the operation lists `"422"` with the `Error` body, code `no_recordings`, nothing queued. No behaviour changes.
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts` gains the 422 response; `wire.schema.json` unchanged, as responses are not component schemas).
+
+### 2026-10-03, wave 3b: Windows path length for `--dev` (integration, e2e2; additive clarification, no review needed)
+
+Reason: W6's wave-3 report and `acceptance/e2e-dev-pc.md` (W6 minor): under a data root about 150 characters deep the dev worker could not create its `analysis-cache` temporary file (290 characters). W6 fixed the archive side (extended-length paths); the recordings the worker opens from the job root stay bound by `MAX_PATH`, which no contract said.
+
+- `worker-interface.md` section 2: a paragraph on the Windows `MAX_PATH` bound for `--dev`: the job-root recording path `<COACH_DATA_DIR>\py\<customer_id>\jobs\<job_id>\telemetry\<original name>` must stay under 260 characters without `LongPathsEnabled`; a longer one comes back from discovery as a per-file `FileNotFoundError` record, and the server fails the discovery `no_session_found`; the archive root is not bound. Linux and the image are unaffected.

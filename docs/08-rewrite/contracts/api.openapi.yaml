@@ -168,6 +168,11 @@ paths:
       responses:
         "202": { $ref: "#/components/responses/Accepted" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422":
+          description: "`no_recordings`: the session has no recordings, so there is nothing to analyse; nothing is queued"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/v1/analyses/{analysis_id}/race:
     parameters: [{ $ref: "#/components/parameters/AnalysisId" }]

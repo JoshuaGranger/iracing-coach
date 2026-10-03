@@ -348,6 +348,15 @@ export interface paths {
             responses: {
                 202: components["responses"]["Accepted"];
                 404: components["responses"]["NotFound"];
+                /** @description `no_recordings`: the session has no recordings, so there is nothing to analyse; nothing is queued */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;

@@ -27,6 +27,8 @@ Spawned with `tokio::process`, its own process group, `oom_score_adj` set to 100
 
 Windows development (`coach-server --dev` on the dev PC) adds `USERPROFILE` set to the same directory as `HOME` (Python's home lookup reads it there, not `HOME`), and passes through only `SystemRoot`, `SYSTEMROOT`, `PATH`, `PATHEXT`, `TEMP` and `TMP`, which the interpreter needs to start.
 
+Windows path length (`--dev` only; Linux has no such limit). The worker opens each recording at `<COACH_DATA_DIR>\py\<customer_id>\jobs\<job_id>\telemetry\<original name>` (section 3) with ordinary Win32 calls, so on a Windows without `LongPathsEnabled` that full path must stay under 260 characters (`MAX_PATH`). A longer one is not an analysis failure in the worker: discovery reports it as a per-file record (`kind: "error"`, `error_type: "FileNotFoundError"`) and returns no group for the recording, so the server fails the discovery job `no_session_found` and marks the recording `ingest_state = failed`. The segments after the data root add about 35 characters plus the file name, and iRacing's names (car, track, timestamp) run to about 90, so keep `COACH_DATA_DIR` well under 130 characters (for example `%TEMP%\e2e-w3\data`). The worker's archive root (`IRACING_COACH_DATA`) is not bound by this: archive and analysis-cache writes use extended-length (`\\?\`) paths (wave 3, `workflow._write_json_cache`, `iracing-coach/tests/test_worker_interface.py` `DeepArchiveRootTests`).
+
 `IRACING_COACH_INSTALL_ROOT` is unset. The container network stays enabled for the server; v1 runs no networked tool.
 
 ## 3. Roots the server prepares
