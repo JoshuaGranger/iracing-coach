@@ -1,0 +1,18 @@
+{
+  "name": "iracing-coach",
+  "version": "0.19.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "gen:wire": "node tools/wire/gen-wire.mjs",
+    "gen:theme": "node tools/theme/gen-theme.mjs",
+    "gen": "pnpm gen:wire && pnpm gen:theme"
+  },
+  "devDependencies": {
+    "js-yaml": "5.4.2",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

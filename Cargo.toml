@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/coach-wire",
+    "crates/coach-ibt",
+    "crates/coach-live",
+    "crates/coach-views",
+    "collector",
+    "server",
+]
+
+[workspace.package]
+version = "0.19.0"
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+coach-wire = { path = "crates/coach-wire" }
+coach-ibt = { path = "crates/coach-ibt" }
+coach-live = { path = "crates/coach-live" }
+coach-views = { path = "crates/coach-views" }
+
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+thiserror = "2.0.21"
+regex = "1.13.1"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "signal", "time", "sync", "fs", "io-util"] }
+axum = { version = "0.8.9", features = ["ws"] }
+tower-http = { version = "0.7.1", features = ["fs", "compression-gzip", "trace"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tungstenite = "0.30.0"
+ureq = { version = "3.4.2", default-features = false, features = ["rustls", "json"] }
+windows = "0.62.2"
+typify = "0.8.0"
+# build-time and generated-code support for typify
+schemars = "0.8.22"
+regress = "0.12.0"
+prettyplease = "0.3.0"
+syn = { version = "3.0.6", features = ["full"] }
+jsonschema = { version = "0.58.5", default-features = false }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

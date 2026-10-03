@@ -23,6 +23,12 @@ info:
     - `x-max-bytes` on a response is a hard server-side bound; exceeding it is a server defect.
     - Readers ignore and preserve unknown optional fields. Objects marked `x-source` pass a backend
       subtree through unchanged; its shape is owned by the named Python contract or module.
+    - `x-consumed-fields` on an `x-source` object lists every backend field the web workstreams
+      (W7, W8) read from it, as paths relative to the object: `a.b` nested key, `a[]` each array
+      element, `a[][]` nested arrays, `*` any key. The projector (W5) copies the whole subtree; when
+      a view must shrink to its `x-max-bytes`, only subtrees and fields outside these lists may be
+      dropped. An empty list means no v1 screen reads the subtree. The browser reads nothing else
+      from an `x-source` object; reading a new field is an additive contract change.
 servers:
   - url: http://192.168.1.81:8210
   - url: http://minipc.tail4e6ca6.ts.net:8210
@@ -111,7 +117,7 @@ paths:
       summary: Sessions library, newest first. Filtering is server-side; grouping into events uses `event_key`.
       parameters:
         - { name: type, in: query, schema: { type: string, enum: [all, race, qualify, practice, test] } }
-        - { name: q, in: query, schema: { type: string, maxLength: 120 }, description: Text over track, layout, car, series. }
+        - { name: q, in: query, schema: { type: string, maxLength: 120 }, description: "Text over track, layout, car, series." }
         - { $ref: "#/components/parameters/Cursor" }
         - { $ref: "#/components/parameters/Limit" }
       responses:
@@ -263,7 +269,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
     get:
       tags: [views]
-      summary: Track geometry projected to local metres (map and cursor).
+      summary: Track geometry in the backend's normalized_local_vector space, copied without reprojection (map and cursor).
       responses:
         "200":
           description: Track geometry
@@ -736,7 +742,7 @@ paths:
           description: Table
           content:
             application/json:
-              schema: { type: object, additionalProperties: true, x-source: docs/08-rewrite/contracts/live-channels.json }
+              schema: { type: object, additionalProperties: true, x-source: docs/08-rewrite/contracts/live-channels.json, x-consumed-fields: [table_version] }
 
   /ws/live/{customer_id}:
     parameters:
@@ -1035,12 +1041,45 @@ components:
       type: object
       description: One recorded lap (backend `laps[]` projected; unknown backend fields preserved).
       additionalProperties: true
-      required: [lap]
+      x-consumed-fields:
+        # backend keys passed through beside the named fields (comparison-exclusion rule,
+        # RuntimeMapper.LapComparisonExclusionReasons; pit and position timeline)
+        - lap
+        - lap_time_s
+        - complete
+        - flag_state
+        - green_fraction
+        - caution_fraction
+        - pit_time_s
+        - position.start
+        - position.end
+        - racing_state_fraction
+        - clean_context.on_track_fraction
+        - clean_context.traffic_proximity_fraction
+        - damage_repair_context.automatic_coaching_reference_eligible
+        - damage_repair_context.exclusion_reason_codes
+      required: [lap, comparison_eligible, exclusion_reasons]
       properties:
         lap: { type: integer }
         lap_time_s: { type: [number, "null"] }
-        clean: { type: [boolean, "null"] }
-        green: { type: [boolean, "null"] }
+        comparison_eligible:
+          type: boolean
+          description: "Projector-computed: exclusion_reasons is empty (C# AnalysisLap not Confounded)."
+        exclusion_reasons:
+          type: array
+          items: { type: string }
+          description: |
+            Projector-computed codes, RuntimeMapper.LapComparisonExclusionReasons (RuntimeMapper.cs:2525-2547) over the
+            backend laps[] in ascending `lap` order (stable), previous flag = the preceding lap's flag_state trimmed and
+            lowercased. flag = this lap's flag_state trimmed, lowercased, missing as "". In order: "partial" when complete
+            is not true; "caution_or_mixed" when flag != "green"; "pit" when pit_time_s >= 1; "not_racing_state" when
+            racing_state_fraction < 0.98; "off_track" when clean_context.on_track_fraction < 0.98; "close_traffic" when
+            clean_context.traffic_proximity_fraction >= 0.10; "restart" when the previous flag is "caution" and flag is
+            "green"; then damage_repair_context.exclusion_reason_codes (a string, or an array's non-null items, blanks
+            dropped; any other non-null value is one code, its JSON text), or
+            "damage_repair_context" when there are none and automatic_coaching_reference_eligible is false. A missing
+            or non-finite number skips its test. Duplicates removed case-insensitively, first kept. The browser
+            humanizes codes for display.
         caution: { type: [boolean, "null"] }
         pit_in: { type: [boolean, "null"] }
         pit_out: { type: [boolean, "null"] }
@@ -1054,15 +1093,86 @@ components:
         - type: object
           required: [identity, race_summary, laps]
           properties:
-            identity: { type: object, additionalProperties: true, x-source: "analysis_view.identity" }
-            race_summary: { type: object, additionalProperties: true, x-source: "analysis_view.race_summary" }
-            race_grades: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.race_grades" }
+            identity:
+              type: object
+              additionalProperties: true
+              x-source: "analysis_view.identity"
+              x-consumed-fields: [track_name, track_path, track_config, car_name, car_path, is_fixed_setup, event_type, setup_fingerprint, series_name, season_name, session_start, driver_name, customer_id]
+            race_summary:
+              type: object
+              additionalProperties: true
+              x-source: "analysis_view.race_summary"
+              x-consumed-fields: [recorded_laps, scheduled_laps, scheduled_minutes, pit_stops_detected, starting_position, final_recorded_position, green_laps_estimated, caution_laps_estimated, fuel_used_gal]
+            race_grades:
+              type: [object, "null"]
+              additionalProperties: true
+              x-source: "analysis_view.race_grades"
+              x-consumed-fields:
+                - overall_grade
+                - rubric_version
+                - rubric.version
+                - categories[].key
+                - categories[].label
+                - categories[].grade
+                - categories[].score
+                - categories[].evidence_type
+                - categories[].explanation
+                - categories[].improvement
+                - categories[].limitations
+                - categories[].weight_percent
+                - categories[].effective_weight
+                - unavailable_categories[].key
+                - unavailable_categories[].label
+                - unavailable_categories[].reason
+                - unavailable_categories[].weight_percent
             laps: { type: array, maxItems: 2000, items: { $ref: "#/components/schemas/Lap" } }
-            strategy: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.strategy (pit stops, timeline)" }
-            damage_repair: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.damage_repair (contracts/damage-repair-v1.schema.json)" }
-            field_pace: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.field_pace" }
-            conditions: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.conditions" }
-            data_quality: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.data_quality" }
+            strategy:
+              type: [object, "null"]
+              additionalProperties: true
+              x-source: "analysis_view.strategy (pit stops, timeline)"
+              x-consumed-fields:
+                - confidence
+                - measured_green_fuel_gal_per_lap
+                - measured_caution_fuel_gal_per_lap
+                - forecast.status
+                - forecast.scheduled_laps
+                - forecast.all_green_range_laps
+                - forecast.race_plan_decision   # whole object, contracts/race-plan-decision-v1.schema.json
+                - pit_assessments[].run_number
+                - pit_assessments[].post_stop_all_green_range_laps
+                - pit_assessments[].pit_cycle_position_change
+                - pit_assessments[].scheduled_race_laps_remaining_after_stop
+            damage_repair:
+              type: [object, "null"]
+              additionalProperties: true
+              x-source: "analysis_view.damage_repair (contracts/damage-repair-v1.schema.json)"
+              x-consumed-fields:
+                - status
+                - limitations
+                - summary.pit_road_episodes
+                - summary.tow_episodes
+                - summary.recorded_repair_episodes
+                - summary.confirmed_fast_repair_uses
+                - summary.total_pit_road_time_s
+                - summary.total_repair_work_completed_s
+                - incident_points.events[].candidate_lap
+                - incident_points.events[].points_added
+                - incident_points.events[].session_time_s
+                - incident_points.events[].count_before
+                - incident_points.events[].count_after
+                - incident_points.events[].source_channel
+                - incident_points.events[].event_type
+                - incident_points.events[].contact_target
+                - incident_points.events[].track_location
+                - incident_points.events[].on_pit_road
+                - incident_points.events[].speed_mph
+                - incident_points.events[].yaw_rate_deg_s
+                - incident_points.events[].slip_angle_deg
+                - episodes[].run_context.overlapping_run_numbers
+                - episodes[].timing.repair_work_completed_s
+            field_pace: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.field_pace", x-consumed-fields: [] }
+            conditions: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.conditions", x-consumed-fields: [] }
+            data_quality: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.data_quality", x-consumed-fields: [confidence] }
 
     RunsView:
       allOf:
@@ -1074,9 +1184,47 @@ components:
               type: array
               maxItems: 200
               description: "Observed trend segments and screened fit stay distinct (AGENTS.md)."
-              items: { type: object, additionalProperties: true, x-source: "analysis_view.runs[]" }
-            corner_tire_age: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.corner_tire_age" }
-            tire_learning: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.tire_learning" }
+              items: { $ref: "#/components/schemas/BackendRun" }
+            corner_tire_age: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.corner_tire_age", x-consumed-fields: [] }
+            tire_learning: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.tire_learning", x-consumed-fields: [] }
+
+    BackendRun:
+      type: object
+      description: "One backend run, passed through. Read by Runs, Traces (tire wear row) and Progressive Tuning."
+      additionalProperties: true
+      x-source: "analysis_view.runs[]"
+      x-consumed-fields:
+        - run_number
+        - lap_numbers
+        - green_laps
+        - caution_laps
+        - ended_with_pit_stop
+        - ended_under_caution
+        - coaching_reference_lap_numbers
+        - tire_measurement_status
+        - fuel.used_gal
+        - pace.green_lap_time_slope_s_per_lap
+        - pace.early_average_lap_s
+        - pace.late_average_lap_s
+        - pace.early_to_late_delta_s
+        - damage_repair_context.automatic_coaching_reference_eligible
+        - damage_repair_context.exclusion_reason_codes
+        - damage_repair_context.reason_codes
+        - driving_load.early_brake_vs_late_percent
+        - driving_load.early_steer_vs_late_percent
+        - tire_observation.lowest_remaining_percent
+        - tire_observation.lowest_remaining_tire
+        - tire_observation.tires.*.average_remaining_percent
+        - tire_observation.tires.*.remaining_percent.*
+        - tire_observation.tires.*.carcass_temperature_f.*
+        - tire_observation.tires.*.surface_temperature_f.*
+        - tire_observation.tires.*.pressure.psi
+        - tire_observation.tires.*.pressure.kind
+        - pit_service.start_time
+        - pit_service.end_time
+        - pit_service.fuel_added_l
+        - pit_service.tires_changed_observed
+        - pit_service.penalty_served_s
 
     InvestigationView:
       allOf:
@@ -1088,11 +1236,179 @@ components:
               type: object
               additionalProperties: true
               x-source: "analysis_view.race_investigation (race_investigation.py schema 2, projection sections-trials-v7; test-data/race-investigation.json)"
+              x-consumed-fields:
+                # RaceInvestigationMapper.cs; trial fields (actions[].trial, actions[].early_run_version) are parked (D8)
+                - schema_version
+                - projection_version
+                - status
+                - summary
+                - default_comparison_id
+                - limitations
+                - comparisons[].id
+                - comparisons[].kind
+                - comparisons[].title
+                - comparisons[].summary
+                - comparisons[].delta_s
+                - comparisons[].eligibility
+                - comparisons[].pace_comparable
+                - comparisons[].pace_unusable_reasons
+                - comparisons[].baseline.label
+                - comparisons[].baseline.run_number
+                - comparisons[].baseline.lap_numbers
+                - comparisons[].baseline.lap_count
+                - comparisons[].baseline.eligible_lap_numbers
+                - comparisons[].baseline.excluded_laps[].lap
+                - comparisons[].baseline.excluded_laps[].reasons
+                - comparisons[].baseline.median_lap_s
+                - comparisons[].baseline.green_age_start
+                - comparisons[].baseline.green_age_end
+                - comparisons[].baseline.fuel_start_gal
+                - comparisons[].baseline.track_temp_f
+                - comparisons[].baseline.representative_lap
+                - comparisons[].compared.*      # same keys as baseline
+                - comparisons[].metrics[].key
+                - comparisons[].metrics[].label
+                - comparisons[].metrics[].unit
+                - comparisons[].metrics[].baseline
+                - comparisons[].metrics[].compared
+                - comparisons[].metrics[].delta
+                - comparisons[].metrics[].evidence
+                - comparisons[].metrics[].detail
+                - comparisons[].corners[].id
+                - comparisons[].corners[].label
+                - comparisons[].corners[].short_label
+                - comparisons[].corners[].start_pct
+                - comparisons[].corners[].end_pct
+                - comparisons[].corners[].delta_s
+                - comparisons[].corners[].boundary_status
+                - comparisons[].corners[].baseline_count
+                - comparisons[].corners[].compared_count
+                - comparisons[].corners[].metrics[].*   # same keys as comparisons[].metrics[]
+                - comparisons[].hypotheses[].key
+                - comparisons[].hypotheses[].label
+                - comparisons[].hypotheses[].status
+                - comparisons[].hypotheses[].supporting
+                - comparisons[].hypotheses[].contradicting
+                - comparisons[].hypotheses[].unknown
+                - comparisons[].hypotheses[].general_context
+                - comparisons[].hypotheses[].references[].title
+                - comparisons[].hypotheses[].references[].url
+                - comparisons[].actions[].priority
+                - comparisons[].actions[].title
+                - comparisons[].actions[].instruction
+                - comparisons[].actions[].evidence
+                - comparisons[].actions[].limitation
+                - comparisons[].actions[].lap_numbers
+                - comparisons[].actions[].start_pct
+                - comparisons[].actions[].end_pct
+                - comparisons[].actions[].signal_keys
+                - comparisons[].actions[].section_id
+                - comparisons[].inspection.mode
+                - comparisons[].inspection.pool_laps
+                - comparisons[].inspection.pool_exposure
+                - comparisons[].inspection.sections.*.section_id
+                - comparisons[].inspection.sections.*.start_pct
+                - comparisons[].inspection.sections.*.end_pct
+                - comparisons[].inspection.sections.*.context_start_pct
+                - comparisons[].inspection.sections.*.context_label
+                - comparisons[].inspection.sections.*.timing_complete
+                - comparisons[].inspection.sections.*.candidate_count
+                - comparisons[].inspection.sections.*.section_delta_s
+                - comparisons[].inspection.sections.*.entry_gap_s
+                - comparisons[].inspection.sections.*.exit_gap_s
+                - comparisons[].inspection.sections.*.entry_speed_difference_mph
+                - comparisons[].inspection.sections.*.a.lap
+                - comparisons[].inspection.sections.*.a.role
+                - comparisons[].inspection.sections.*.a.section_s
+                - comparisons[].inspection.sections.*.a.run_number
+                - comparisons[].inspection.sections.*.a.green_exposure
+                - comparisons[].inspection.sections.*.a.eligible
+                - comparisons[].inspection.sections.*.a.exclusion_reasons
+                - comparisons[].inspection.sections.*.a.fuel_start_gal
+                - comparisons[].inspection.sections.*.a.track_temp_f
+                - comparisons[].inspection.sections.*.b.*     # same keys as a
+                - comparisons[].inspection.sections.*.slip.a.coverage
+                - comparisons[].inspection.sections.*.slip.a.median_abs
+                - comparisons[].inspection.sections.*.slip.a.peak_abs
+                - comparisons[].inspection.sections.*.slip.b.*  # same keys as slip.a
+                - comparisons[].inspection.sections.*.rows[].x
+                - comparisons[].inspection.sections.*.rows[].gap
+                - comparisons[].inspection.sections.*.rows[].a.speed
+                - comparisons[].inspection.sections.*.rows[].a.throttle
+                - comparisons[].inspection.sections.*.rows[].a.brake
+                - comparisons[].inspection.sections.*.rows[].a.steering
+                - comparisons[].inspection.sections.*.rows[].a.slip
+                - comparisons[].inspection.sections.*.rows[].b.*  # same keys as rows[].a
+                - comparisons[].inspection.sections.*.steering.comparable
+                - comparisons[].inspection.sections.*.steering.reason
+                - comparisons[].inspection.sections.*.steering.basis
+                - comparisons[].inspection.sections.*.steering.label
+                - laps[].lap
+                - laps[].lap_time_s
+                - laps[].position
+                - laps[].flag_state
+                - laps[].eligible
+                - laps[].exclusion_reasons
+                - laps[].run_number
+                - laps[].plot_pace
+                - laps[].green_exposure
+                - timeline[].lap
+                - timeline[].kind
+                - timeline[].label
+                - timeline[].detail
+                - timeline[].value
+                - timeline[].unit
+                - track_evolution.status
+                - track_evolution.provenance
+                - track_evolution.starting_usage
+                - track_evolution.summary
+                - track_evolution.points[].lap
+                - track_evolution.points[].track_temp_f
+                - track_evolution.points[].usage_value
+                - track_evolution.usage_unit
+                - track_evolution.usage_source
+                - track_evolution.limitations
+                - runs[].run_number
+                - runs[].plotted_lap_count
+                - runs[].first_lap
+                - runs[].last_lap
+                - runs[].fit_unavailable_reason
+                - runs[].trend.method
+                - runs[].trend.includes_reference_exclusions
+                - runs[].trend.covered_lap_count
+                - runs[].trend.segments[][].lap
+                - runs[].trend.segments[][].x
+                - runs[].trend.segments[][].y
+                - runs[].trend.segments[][].sample_laps
+                - runs[].trend.gaps[].after_lap
+                - runs[].trend.gaps[].before_lap
+                - runs[].trend.gaps[].reason
+                - runs[].fit.method
+                - runs[].fit.eligible_count
+                - runs[].fit.laps
+                - runs[].fit.slope_s_per_green_lap
+                - runs[].fit.domain
+                - runs[].fit.points[].x
+                - runs[].fit.points[].y
+                - sections.configuration_key
+                - sections.source
+                - sections.version
+                - sections.provenance
+                - sections.unavailable_reason
+                - sections.sections[].id
+                - sections.sections[].label
+                - sections.sections[].start_pct
+                - sections.sections[].end_pct
+                - sections.sections[].boundary_status
+                - sections.sections[].provenance
+                - steering.*    # same keys as SteeringBasis x-consumed-fields
 
     SteeringBasis:
       type: object
-      description: "TD-037: road-wheel steering when the ratio is known; never guessed."
+      description: "TD-037: road-wheel steering when the ratio is known; never guessed. A declaration that is not basis road_wheel with steering_ratio > 0 is read as steering-wheel angle (SteeringBasisMapper.cs)."
       additionalProperties: true
+      x-source: "analysis_view.lap_traces.steering (steering_basis.py)"
+      x-consumed-fields: [basis, status, label, steering_ratio, steering_ratio_text, ratio_source, setup_steering_offset, reason, definition]
       required: [basis]
       properties:
         basis: { type: string, enum: [road_wheel, steering_wheel, unknown] }
@@ -1117,17 +1433,28 @@ components:
 
     TraceLap:
       type: object
-      required: [lap]
+      required: [lap, comparison_eligible, exclusion_reasons]
       additionalProperties: true
+      description: "One lap_traces.traces[] entry without its points (the points are in the CCOL body)."
+      x-consumed-fields: [lap, lap_time_s, complete, flag_state, flag_states, green_fraction, caution_fraction, pit_time_s, pit_entry, pit_exit, fuel_used_gal]
       properties:
         lap: { type: integer }
         lap_time_s: { type: [number, "null"] }
-        clean: { type: [boolean, "null"] }
-        green: { type: [boolean, "null"] }
+        comparison_eligible:
+          type: boolean
+          description: "Joined from Lap by lap number (the first Lap with that number, C# lapsByNumber): its comparison_eligible; false when no Lap has this number (RuntimeMapper.cs:542-582)."
+        exclusion_reasons:
+          type: array
+          items: { type: string }
+          description: "The joined Lap's exclusion_reasons; [\"eligibility_not_recorded\"] when no Lap has this number."
         run_number: { type: [integer, "null"] }
         run_age_laps: { type: [number, "null"] }
         fastest: { type: boolean }
-        conditions: { type: [object, "null"], additionalProperties: true }
+        conditions:
+          type: [object, "null"]
+          additionalProperties: true
+          x-source: "analysis_view.lap_traces.traces[].conditions"
+          x-consumed-fields: [sky, track_temperature_f, air_temperature_f, wind_speed_mph, wind_direction_degrees, relative_humidity_percent, fog_percent, air_pressure_inhg, air_density_lb_ft3, precipitation_percent, track_wetness_state, track_usage_percent, track_usage, weather_declared_wet]
 
     TraceCatalog:
       allOf:
@@ -1138,6 +1465,7 @@ components:
             bins_per_lap: { type: integer, description: "160 today (about 0.6 % of a lap)." }
             laps: { type: array, maxItems: 2000, items: { $ref: "#/components/schemas/TraceLap" } }
             signals: { type: array, maxItems: 64, items: { $ref: "#/components/schemas/TraceSignal" } }
+            sector_start_pcts: { type: array, maxItems: 64, items: { type: number }, description: "lap_traces.sector_start_pcts, ascending lap fractions in [0, 1) (Traces sector bands)." }
             steering_basis: { $ref: "#/components/schemas/SteeringBasis" }
             budgets:
               type: object
@@ -1175,24 +1503,67 @@ components:
     PathSeries:
       type: object
       required: [pct, x, y]
+      description: "Parallel arrays of one backend path's points (x, y, lap_pct)."
       properties:
-        pct: { type: array, items: { type: number } }
+        pct: { type: array, items: { type: [number, "null"] } }
         x: { type: array, items: { type: number } }
         y: { type: array, items: { type: number } }
 
+    TrackPoint:
+      type: object
+      required: [x, y]
+      properties:
+        x: { type: number }
+        y: { type: number }
+        lap_pct: { type: [number, "null"] }
+
+    TrackLine:
+      type: object
+      required: [a, b]
+      properties:
+        a: { $ref: "#/components/schemas/TrackPoint" }
+        b: { $ref: "#/components/schemas/TrackPoint" }
+
+    GeometryTransform:
+      type: object
+      description: "Maps recorded GPS into the geometry's space: x = (longitude - source_bounds.minimum_x) / normalization_scale, y = (source_bounds.maximum_y - latitude) / normalization_scale (race_foundations.py:226-247; C# AnalysisGeometryTransform.TryNormalize)."
+      required: [source_bounds, normalization_scale]
+      properties:
+        source_bounds:
+          type: object
+          required: [minimum_x, maximum_x, minimum_y, maximum_y]
+          properties:
+            minimum_x: { type: number }
+            maximum_x: { type: number }
+            minimum_y: { type: number }
+            maximum_y: { type: number }
+        normalization_scale: { type: number, exclusiveMinimum: 0 }
+
     TrackGeometry:
+      description: "Backend track_geometry copied in its own coordinate space (no reprojection). Served only when the backend geometry has a main path; otherwise 404 and the browser uses the lap-distance strip."
       allOf:
         - { $ref: "#/components/schemas/ViewEnvelope" }
         - type: object
-          required: [coordinate_space, main_path, provenance]
+          required: [coordinate_space, status, main_path, provenance]
           properties:
-            coordinate_space: { const: local_m }
+            coordinate_space: { const: normalized_local_vector, description: "track_geometry.coordinate_system; unit square, y down." }
+            status: { type: string, description: "track_geometry.status (usable, partial, unavailable, ...)." }
+            track_configuration_key: { type: [string, "null"] }
+            geometry_hash: { type: [string, "null"] }
             main_path: { $ref: "#/components/schemas/PathSeries" }
             pit_lane: { oneOf: [{ $ref: "#/components/schemas/PathSeries" }, { type: "null" }] }
-            pit_entry: { oneOf: [{ $ref: "#/components/schemas/PathSeries" }, { type: "null" }] }
-            pit_exit: { oneOf: [{ $ref: "#/components/schemas/PathSeries" }, { type: "null" }] }
-            start_finish: { type: [object, "null"], additionalProperties: true }
-            provenance: { type: object, additionalProperties: true, x-source: "analysis_view.track_geometry.provenance" }
+            pit_entry: { oneOf: [{ $ref: "#/components/schemas/PathSeries" }, { type: "null" }], description: "track_geometry.pit_entry_path" }
+            pit_exit: { oneOf: [{ $ref: "#/components/schemas/PathSeries" }, { type: "null" }], description: "track_geometry.pit_exit_path" }
+            start_finish: { oneOf: [{ $ref: "#/components/schemas/TrackLine" }, { type: "null" }], description: "track_geometry.start_finish_line" }
+            pit_commitment_line: { oneOf: [{ $ref: "#/components/schemas/TrackLine" }, { type: "null" }] }
+            pit_merge_line: { oneOf: [{ $ref: "#/components/schemas/TrackLine" }, { type: "null" }] }
+            transform: { oneOf: [{ $ref: "#/components/schemas/GeometryTransform" }, { type: "null" }], description: "track_geometry.transform, else geometry_provenance.normalization_transform; null for legacy geometry." }
+            quality:
+              type: [object, "null"]
+              additionalProperties: true
+              x-source: "analysis_view.track_geometry.quality"
+              x-consumed-fields: [main_loop_complete, lap_percent_coverage, maximum_lap_percent_gap, closure_distance]
+            provenance: { type: object, additionalProperties: true, x-source: "analysis_view.track_geometry.geometry_provenance", x-consumed-fields: [] }
 
     CarTrackOptions:
       type: object
@@ -1304,7 +1675,11 @@ components:
       properties:
         rows: { type: array, maxItems: 4096, items: { $ref: "#/components/schemas/SetupCompareRow" } }
         identical_count: { type: integer }
-        backend: { type: object, additionalProperties: true, x-source: "compare_iracing_setups result" }
+        backend:
+          type: object
+          additionalProperties: true
+          x-source: "compare_iracing_setups result (schema_version 1)"
+          x-consumed-fields: [schema_version, counts.changed, counts.unknown, counts.identical, counts.readouts_changed, equality_rule, readout_rule]
 
     BaselineRequest:
       type: object
@@ -1316,18 +1691,146 @@ components:
         analysis_id: { type: [string, "null"] }
         track_characteristics: { type: [string, "null"], maxLength: 4000 }
 
-    TuningContext:
+    TuningSessionIdentity:
       type: object
-      required: [analysis_id, eligible, reasons, identity, map, draft_identity_key]
+      description: |
+        Exact analysis identity, field for field from C# TuningSessionIdentity as filled by
+        RuntimeMapper.MapTuningIdentity (RuntimeMapper.cs:1735-1783). Sources are analysis_view
+        keys. C# RaceId, EventKey and Selector are server-bound (TuningSessionBinding); C#
+        AnalysisPath is server-internal and replaced by analysis_id. Null = not recorded.
+      additionalProperties: true
+      required: [analysis_id, setup_type, embedded_setup_available, source_sha256]
+      properties:
+        analysis_id: { type: string, description: "analysis.json analysis_id." }
+        iracing_session_id: { type: [string, "null"], description: "C# SessionId: identity.session_id (WeekendInfo.SessionID), else source.selection.sim_session_num; decimal text." }
+        session_unique_id: { type: [integer, "null"], description: "identity.session_unique_id" }
+        subsession_id: { type: [integer, "null"], description: "identity.subsession_id, else source.selection.subsession_id" }
+        session_type: { type: [string, "null"], description: "source.selection.sim_session_type, else identity.event_type" }
+        track_configuration_key: { type: [string, "null"], description: "track_geometry.track_configuration_key, else identity.track_configuration_key" }
+        track_id: { type: [integer, "null"], description: "identity.track_id" }
+        track: { type: [string, "null"], description: "Display name: RuntimeMapper.DisplayTrack(identity.track_name, else identity.track_path)." }
+        layout: { type: [string, "null"], description: "RuntimeMapper.DisplayLayout(identity.track_config)." }
+        car_id: { type: [integer, "null"], description: "identity.car_id" }
+        car_path: { type: [string, "null"], description: "identity.car_path" }
+        car: { type: [string, "null"], description: "RuntimeMapper.DisplayCar(identity.car_name, else identity.car_path)." }
+        setup_type: { type: string, description: "Open when identity.is_fixed_setup is false, Fixed when true, else Humanize(identity.setup_type), else Unknown." }
+        setup_fingerprint: { type: [string, "null"], description: "identity.setup_fingerprint" }
+        embedded_setup_available: { type: boolean, description: "identity.embedded_setup_available, or identity.setup_parameter_count > 0, or a non-empty identity.setup object." }
+        source_sha256:
+          type: array
+          description: "Union of track_geometry.contributing_source_sha256 (else source_sha256), track_geometry.observed_source_sha256 (else source_sha256) and source.fingerprints[].sha256; 64-hex values only, lowercase, unique, ascending."
+          items: { type: string, pattern: "^[0-9a-f]{64}$" }
+
+    TuningSessionBinding:
+      type: object
+      description: "Library binding filled by the server at request time (C# RaceId, EventKey, Selector)."
+      required: [session_id, event_key, group_key]
+      properties:
+        session_id: { type: integer }
+        event_key: { type: string }
+        group_key: { type: string, description: "Worker selector (sessions.group_key)." }
+
+    TuningMapPoint:
+      type: object
+      required: [lap_pct, x, y]
+      properties:
+        lap_pct: { type: number }
+        x: { type: number }
+        y: { type: number }
+
+    TuningTurn:
+      type: object
+      description: "C# TuningTurn. Detected sections are never official turns (AGENTS.md)."
+      additionalProperties: true
+      required: [corner_id, label, start_pct, apex_pct, end_pct, is_official, confidence, user_verified, verification_source]
+      properties:
+        corner_id: { type: string, description: "tuning_map turn corner_id (else id, else turn-<n>); detected segments use detected-<segment>." }
+        label: { type: string }
+        start_pct: { type: number }
+        apex_pct: { type: number, description: "Supplied apex_pct, else the forward-arc midpoint of start and end (RuntimeMapper.MidpointPercent)." }
+        end_pct: { type: number }
+        is_official: { type: boolean }
+        confidence: { type: string, description: "Supplied confidence, else Unknown; Detected for detected segments." }
+        correction_hint: { type: [string, "null"] }
+        user_verified: { type: boolean, description: "Always false in the projection; set by the browser from TurnAnnotations." }
+        verification_source: { type: string, description: "Empty in the projection." }
+
+    TuningMapView:
+      type: object
+      description: |
+        C# TuningMapView from RuntimeMapper.MapTuningMap (RuntimeMapper.cs:1785-1846): the
+        backend tuning_map when it has at least two finite points, else track_geometry.main_path
+        (lap_pct, else index / (n - 1)), else track_profile.shape. Turns from tuning_map turns or
+        corners, else track_profile.detected_corner_segments.
+      additionalProperties: true
+      required: [map_identity, source_type, source_label, confidence, is_verified, path, turns]
+      properties:
+        map_identity: { type: string, description: "tuning_map.map_identity, else map_id, else the track configuration key, else analysis:<analysis_id>." }
+        source_type: { type: string, description: "tuning_map.source_type, else telemetry-derived." }
+        source_label: { type: string, description: "tuning_map.source_label, else Verified track map (supplied map) or Recorded racing geometry." }
+        source_url: { type: [string, "null"] }
+        confidence: { type: string, description: "tuning_map.confidence, else Recorded (path has 2+ points) or Unavailable." }
+        verification_message: { type: [string, "null"] }
+        is_verified: { type: boolean }
+        path: { type: array, maxItems: 20000, items: { $ref: "#/components/schemas/TuningMapPoint" } }
+        turns: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/TuningTurn" } }
+        geometry_hash: { type: [string, "null"], description: "tuning_map.geometry_hash, else track_geometry.geometry_hash." }
+
+    TuningContextProjection:
+      type: object
+      description: |
+        Written by the projector as tuning.json (crate-api.md section 5). Eligibility ports
+        ProgressiveTuningCoordinator.Candidate for an analysed recording (finalized and exact by
+        construction).
+      required: [analysis_id, eligible, can_use_as_evidence, reasons, identity, map, representative_runs]
       properties:
         analysis_id: { type: string }
-        eligible: { type: boolean }
-        reasons: { type: array, items: { type: string } }
-        identity: { type: object, additionalProperties: true, description: "Exact session identity (TuningSessionIdentity, includes source sha256)." }
-        map: { type: object, additionalProperties: true, description: "Turn map (TuningMapView) with official-turn provenance." }
-        representative_runs: { type: array, items: { type: object, additionalProperties: true } }
-        open_targets: { type: array, items: { type: object, additionalProperties: true }, description: "Compatible open-setup target analyses." }
-        draft_identity_key: { type: string }
+        eligible: { type: boolean, description: "Can receive a garage recommendation: setup_type Open, embedded setup, setup fingerprint, and analysis_id plus a track configuration key or layout." }
+        can_use_as_evidence: { type: boolean, description: "Always true for an analysed recording; a fixed-setup race supplies driving evidence for an open target." }
+        reasons: { type: array, items: { type: string }, description: "C# MissingRequired texts, then Blockers texts, in that order." }
+        identity: { $ref: "#/components/schemas/TuningSessionIdentity" }
+        map: { $ref: "#/components/schemas/TuningMapView" }
+        representative_runs:
+          type: array
+          maxItems: 200
+          description: "analysis_view.runs[] entries a driver may pick (TuningPage.EligibleRuns): damage_repair_context eligible (no automatic_coaching_reference_eligible false, no exclusion or reason codes) and at least 6 non-negative coaching_reference_lap_numbers; ascending run_number. The driver picks at most 3."
+          items: { $ref: "#/components/schemas/BackendRun" }
+
+    TuningOpenTarget:
+      type: object
+      description: |
+        Another analysis of the same driver that can receive the recommendation. Included when its
+        TuningContextProjection.eligible is true (ProgressiveTuningCoordinator.OpenTarget) and
+        CompatibleOpenTarget(evidence = this context's identity, target = its identity) holds
+        (ProgressiveTuningCoordinator.cs:68-82), in this order: target setup_type is "Open"
+        (case-insensitive); target embedded_setup_available; target setup_fingerprint non-blank; both
+        track_configuration_key non-blank and equal (ordinal, case-sensitive); then the car: when both
+        car_id are present they must be equal; otherwise both car_path must be non-blank and equal
+        case-insensitively; otherwise no match. A missing or blank key never matches; layout is not
+        a fallback.
+      required: [analysis_id, binding, identity]
+      properties:
+        analysis_id: { type: string }
+        binding: { $ref: "#/components/schemas/TuningSessionBinding" }
+        start_time_utc: { type: [string, "null"], format: date-time }
+        identity: { $ref: "#/components/schemas/TuningSessionIdentity" }
+
+    TuningContext:
+      description: |
+        tuning.json plus the server-bound fields. draft_identity_key = lowercase hex SHA-256 of the
+        UTF-8 text of these values joined by "|", each trimmed and lowercased, null as "",
+        integers in decimal (ProgressiveTuningCoordinator.TuningIdentityKey order): analysis_id,
+        session_unique_id, subsession_id, session_type, track_configuration_key, car_id, car_path,
+        setup_fingerprint, source_sha256 joined by ",", binding.session_id, binding.event_key,
+        binding.group_key.
+      allOf:
+        - { $ref: "#/components/schemas/TuningContextProjection" }
+        - type: object
+          required: [binding, open_targets, draft_identity_key]
+          properties:
+            binding: { $ref: "#/components/schemas/TuningSessionBinding" }
+            open_targets: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/TuningOpenTarget" }, description: "Newest first; empty when identity.setup_type is Open (TuningPage.NeedsOpenTarget)." }
+            draft_identity_key: { type: string, pattern: "^[0-9a-f]{64}$" }
 
     TuningDraftWrite:
       type: object
@@ -1362,16 +1865,75 @@ components:
             version: { type: integer }
             updated_at: { type: string, format: date-time }
 
+    TuningFeedbackItem:
+      type: object
+      description: "C# ProgressiveTuningFeedback; closed because the worker's input schema is closed (mcp_server.py:714-737). Omit a pct rather than send null."
+      additionalProperties: false
+      required: [corner_id, run_phase, corner_phases, symptom_id]
+      properties:
+        feedback_id: { type: string, maxLength: 160 }
+        corner_id: { type: string, minLength: 1, maxLength: 160 }
+        corner_label: { type: string, maxLength: 160 }
+        start_pct: { type: number, minimum: 0, exclusiveMaximum: 1 }
+        apex_pct: { type: number, minimum: 0, exclusiveMaximum: 1 }
+        end_pct: { type: number, minimum: 0, exclusiveMaximum: 1 }
+        run_phase: { type: string, enum: [early, middle, late] }
+        corner_phases: { type: array, minItems: 1, maxItems: 4, uniqueItems: true, items: { type: string, enum: [entry, center, exit, whole] } }
+        symptom_id: { type: string, maxLength: 80 }
+        severity: { type: integer, minimum: 1, maximum: 5, default: 3 }
+        driver_confidence: { type: integer, minimum: 1, maximum: 5, default: 3 }
+        priority: { type: integer, minimum: 1, maximum: 5, default: 3 }
+        note: { type: string, maxLength: 2000 }
+
+    TuningMapCorner:
+      type: object
+      description: "C# TuningMapCornerIdentity: a turn as the driver verified it (start, apex, end form a forward arc, tuning_engine._normalized_corner)."
+      additionalProperties: false
+      required: [corner_id, label, start_pct, apex_pct, end_pct, is_official, user_verified]
+      properties:
+        corner_id: { type: string, minLength: 1, maxLength: 160 }
+        label: { type: string, minLength: 1, maxLength: 160 }
+        start_pct: { type: number, minimum: 0, exclusiveMaximum: 1 }
+        apex_pct: { type: number, minimum: 0, exclusiveMaximum: 1 }
+        end_pct: { type: number, minimum: 0, exclusiveMaximum: 1 }
+        is_official: { type: boolean }
+        user_verified: { type: boolean }
+
+    TuningMapSubmission:
+      type: object
+      description: |
+        C# TuningMapSubmissionIdentity without its two hashes. The server adds geometry_hash (the
+        analysis's TuningMapView.geometry_hash; 422 when it is not 64 hex) and annotation_hash
+        (tuning_engine.map_annotation_hash: corners normalized and sorted by start, apex, end,
+        corner_id, pcts rounded to 6 places, source_type canonicalized, hashed as Python
+        json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False), floats in Python
+        repr) before calling the worker, so the browser never formats hash input. Closed because
+        the worker's input schema is closed (mcp_server.py:739-754).
+      additionalProperties: false
+      required: [track_configuration_key, source_type, verified, corners]
+      properties:
+        map_identity: { type: string, maxLength: 160 }
+        track_configuration_key: { type: string, minLength: 1, maxLength: 200, description: "identity.track_configuration_key of the driving analysis." }
+        source_type:
+          type: string
+          description: "Canonical (worker enum) or a C#/worker alias: official-iracing, iracing-game, official-nascar, official-track, user-confirmed."
+          enum: [iracing-official, iracing-hud-capture, nascar-official, venue-official, verified-manual, telemetry-derived, official-iracing, iracing-game, official-nascar, official-track, user-confirmed]
+        source_label: { type: string, maxLength: 200 }
+        source_url: { type: string, maxLength: 2000 }
+        verified: { type: boolean }
+        corners: { type: array, minItems: 1, maxItems: 100, items: { $ref: "#/components/schemas/TuningMapCorner" } }
+
     TuningRecommendRequest:
       type: object
+      description: "Server forwards to recommend_structured_open_setup_tuning with analysis paths resolved from the ids; ai_response is never sent in v1."
       required: [feedback, map_identity]
       properties:
-        open_target_analysis_id: { type: [string, "null"] }
-        feedback: { type: array, maxItems: 100, items: { type: object, additionalProperties: true } }
-        representative_run_ids: { type: array, maxItems: 32, items: { type: string } }
-        map_identity: { type: object, additionalProperties: true }
-        ruleset_id: { type: [string, "null"] }
-        goal: { type: [string, "null"], maxLength: 2000 }
+        open_target_analysis_id: { type: [string, "null"], description: "Required when the driving analysis's setup_type is not Open." }
+        feedback: { type: array, minItems: 1, maxItems: 100, items: { $ref: "#/components/schemas/TuningFeedbackItem" } }
+        representative_run_ids: { type: array, maxItems: 3, uniqueItems: true, items: { type: string, maxLength: 80 }, description: "run_number values as decimal text." }
+        map_identity: { $ref: "#/components/schemas/TuningMapSubmission" }
+        ruleset_id: { type: [string, "null"], enum: [nascar-oreilly-xfinity-2026s3-v1, null] }
+        goal: { type: [string, "null"], enum: [long-run-pace, tire-life, restart-pace, stability, null] }
         generic_note: { type: [string, "null"], maxLength: 4000 }
         maximum_changes: { const: 1 }
 

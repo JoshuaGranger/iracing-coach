@@ -1,0 +1,16 @@
+[package]
+name = "coach-live"
+description = "Live engine, cues, tile formatting and live frame codec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+coach-wire.workspace = true
+coach-ibt.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

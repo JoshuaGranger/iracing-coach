@@ -22,11 +22,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          global-json-file: companion-app/global.json
-
       # Validates the runtimes the setup actions above actually provisioned,
       # through the same resolver the local entry points use. Static agreement
       # between this file and the toolchain contract is not runtime provenance.
@@ -36,10 +31,9 @@ jobs:
           . .\tools\Resolve-Toolchain.ps1
           $python = Resolve-CoachPython -Required
           $node = Resolve-CoachNode -Required
-          $dotnet = Resolve-CoachDotnet -GlobalJsonDirectory (Join-Path $PWD 'companion-app') -Required
-          $provenance = Get-CoachToolchainProvenance -Python $python -Node $node -Dotnet $dotnet `
-            -Required @('python', 'node', 'dotnet') -Authority 'ci-source-gate'
-          Assert-CoachToolchain -Provenance $provenance -Required @('python', 'node', 'dotnet')
+          $provenance = Get-CoachToolchainProvenance -Python $python -Node $node `
+            -Required @('python', 'node') -Authority 'ci-source-gate'
+          Assert-CoachToolchain -Provenance $provenance -Required @('python', 'node')
           Write-CoachToolchainProvenance -Provenance $provenance
 
       - name: Verify repository, contracts, fixtures, and backend
@@ -87,10 +81,9 @@ jobs:
           . .\tools\Resolve-Toolchain.ps1
           $python = Resolve-CoachPython -Required
           $node = Resolve-CoachNode -Required
-          $dotnet = Resolve-CoachDotnet -GlobalJsonDirectory (Join-Path $PWD 'companion-app') -Required
-          $provenance = Get-CoachToolchainProvenance -Python $python -Node $node -Dotnet $dotnet `
-            -Required @('python', 'node', 'dotnet') -Authority 'ci-source-gate'
-          Assert-CoachToolchain -Provenance $provenance -Required @('python', 'node', 'dotnet')
+          $provenance = Get-CoachToolchainProvenance -Python $python -Node $node `
+            -Required @('python', 'node') -Authority 'ci-source-gate'
+          Assert-CoachToolchain -Provenance $provenance -Required @('python', 'node')
 
           $registryPath = Join-Path $PWD 'tools\evidence\evidence-declarations.json'
           $registry = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
@@ -107,15 +100,8 @@ jobs:
             --family devtools --start-dir .\tools\dev\tests --pattern 'test_*.py' --out $devtoolsRaw
           if ($LASTEXITCODE -ne 0) { $failures.Add("devtools-producer:$LASTEXITCODE") | Out-Null }
 
-          & $dotnet.Resolved.Path restore .\companion-app\iRacingCoach.sln --nologo
-          if ($LASTEXITCODE -ne 0) { $failures.Add("dotnet-restore:$LASTEXITCODE") | Out-Null }
-          $trx = Join-Path $resolvedRoot 'dotnet.trx'
-          & $dotnet.Resolved.Path test .\companion-app\iRacingCoach.sln --configuration Release --no-restore `
-            --logger "trx;LogFileName=dotnet.trx" --results-directory $resolvedRoot -m:1
-          if ($LASTEXITCODE -ne 0) { $failures.Add("dotnet-producer:$LASTEXITCODE") | Out-Null }
-
-          $inputs = [ordered]@{ backend = $backendRaw; devtools = $devtoolsRaw; dotnet = $trx }
-          foreach ($family in @('backend', 'devtools', 'dotnet')) {
+          $inputs = [ordered]@{ backend = $backendRaw; devtools = $devtoolsRaw }
+          foreach ($family in @('backend', 'devtools')) {
             if ($activeFamilies -notcontains $family) {
               Write-Host "$family evidence is Open pending a reviewed declaration family."
               continue
@@ -146,7 +132,6 @@ jobs:
           path: |
             ${{ env.EVIDENCE_ROOT }}\normalized-devtools.json
             ${{ env.EVIDENCE_ROOT }}\normalized-backend.json
-            ${{ env.EVIDENCE_ROOT }}\normalized-dotnet.json
             ${{ env.EVIDENCE_ROOT }}\normalized-javascript.json
           if-no-files-found: error
 
@@ -161,6 +146,73 @@ jobs:
             Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
           }
 
-      - name: Build application
-        shell: pwsh
-        run: dotnet build .\companion-app\iRacingCoach.sln --configuration Release --no-restore
+  rust:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      # rust-toolchain.toml pins 1.99 with rustfmt, clippy and both targets.
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup show
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Wire and theme drift
+        run: |
+          node tools/wire/gen-wire.mjs --check
+          node tools/theme/gen-theme.mjs --check
+
+      - name: Typecheck
+        run: pnpm -C web typecheck
+
+      - name: Test
+        run: pnpm -C web test
+
+      - name: Build
+        run: pnpm -C web build

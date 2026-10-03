@@ -1,0 +1,9 @@
+@import "./gen/theme.css";
+
+html,
+body {
+  margin: 0;
+  background: var(--color-app);
+  color: var(--color-text-primary);
+  font: var(--weight-regular) var(--text-body) / var(--leading-body) var(--font-ui);
+}

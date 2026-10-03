@@ -42,3 +42,10 @@ companion-app/tools/installer-payload.zip
 *.ibt
 !test-data/ibt/synthetic-race.ibt
 !test-data/ibt/truncated-race.ibt
+
+# Rewrite: Rust and web build output
+/target/
+node_modules/
+/web/dist/
+/web/playwright-report/
+/web/test-results/

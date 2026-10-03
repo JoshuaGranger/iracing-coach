@@ -11,7 +11,7 @@ These files are the only interfaces between workstreams. Code follows them; a wo
 | `db-schema.sql` | Server SQLite schema v1 | server |
 | `worker-interface.md` | How the server runs the Python worker; how Rust stages substitute; parity | server, Python worker, port |
 | `setup-keys.json` | `CarSetup` keys excluded from setup identity (P5 derived values) | server, collector |
-| `crate-api.md` (written in step 0a, `workstreams.md`) | Public Rust types and signatures of `coach-ibt`, `coach-live`, `coach-views` | collector, server, the crates' owners |
+| `crate-api.md` | Public Rust types, signatures and error enums of `coach-ibt`, `coach-live`, `coach-views`, the generated `coach-wire` items they use, crate ownership and dependencies | collector, server, the crates' owners, scaffold (step 0b) |
 | `vectors/live-frame/` (added by W2) | Golden encoded frames with decoded values | collector, server, web |
 
 ## Single source of truth for wire types
@@ -29,3 +29,38 @@ These files are the only interfaces between workstreams. Code follows them; a wo
 Command: `pnpm gen:wire` at the repository root. Schemas use only constructs both generators handle: objects, arrays, enums, `type: [T, "null"]` for nullable, `oneOf` with a `kind` discriminator. Unknown optional fields are preserved by readers (`additionalProperties: true` where a backend subtree passes through).
 
 The Python MCP contracts in the top-level `contracts/` remain the oracle's own; the server validates worker results against them where they exist (`analyze-result-v1`, `setup-package-v1`, `tuning-recommendation-v1`).
+
+## Change log
+
+Each contract change adds one entry here in the same commit; review per the rule at the top.
+
+### 2026-10-02, step 0a: shared interfaces (architect; review: Codex Sol 6.1 with the plan, D15)
+
+Reason: workstreams that never read each other's code need field-level types, not function names (`workstreams.md` step 0a).
+
+- `crate-api.md` added: `coach_ibt` (SdkHeader, VarTable and readers, IbtFile, RecordingSummary, SessionInfo with WeekendInfo, SessionEntry, PlayerDriver, DriverSetup, CarSetup, setup fingerprint, finalization gate, streaming hash, IbtError), `coach_live` (SessionContext, Sample with every SDK variable the engine reads, Engine, LiveState mirroring live-channels table 1, frame codec, tile formatting, FrameError), `coach_views` (project, ProjectionSummary, view files, select_traces, ProjectError, SelectError), the generated `coach_wire` item names, crate owners and dependencies. Reader-side normalisations of the C# SDK source move into the engine so vectors cover them. Scaffold adds `regex` to workspace dependencies.
+- `api.openapi.yaml`:
+  - `TuningContext.identity` and `.map` typed as `TuningSessionIdentity` and `TuningMapView` (field by field from C#). C# `RaceId`, `EventKey`, `Selector` become the server-bound `TuningSessionBinding`; `AnalysisPath` is dropped (server-internal). `TuningContext` = projector-written `TuningContextProjection` + `binding`, typed `open_targets` (`TuningOpenTarget`), `draft_identity_key` (formula stated); `can_use_as_evidence` added; `representative_runs` typed as `BackendRun` with the C# eligibility rule.
+  - `TuningRecommendRequest.map_identity` typed as `TuningMapSubmission` without its hashes: the server adds `geometry_hash` and `annotation_hash` (Python float formatting stays server-side). `feedback` typed (`TuningFeedbackItem`), `representative_run_ids` max 3, `goal` and `ruleset_id` enums, all to match the worker's closed input schema (`mcp_server.py:700-769`); these request objects are therefore closed (`additionalProperties: false`), an intended exception to round-tripping.
+  - `x-consumed-fields` on every `x-source` object (convention in `info.description`), plus `Lap`, `TraceLap`, `SteeringBasis` (now `x-source`), and the new shared `BackendRun`. `field_pace`, `conditions`, `corner_tire_age`, `tire_learning` and geometry provenance are read by no v1 screen (empty lists).
+  - `TrackGeometry` corrected: the backend geometry is `normalized_local_vector` (`race_foundations.py:528`), not metres; it is copied without reprojection and gains `status`, `track_configuration_key`, `geometry_hash`, `transform` (GPS to geometry space, needed to draw recorded laps on the map), `quality`, typed `start_finish`, `pit_commitment_line`, `pit_merge_line`. `PathSeries.pct` items may be null.
+  - `TraceCatalog.sector_start_pcts` added (Traces sector bands).
+  - Fixed a YAML defect: the `q` parameter description on `/api/v1/drivers/{customer_id}/sessions` was unquoted and split into stray keys.
+- Proof: the file parses (js-yaml), validates as OpenAPI 3.1 (`@apidevtools/swagger-parser`), every component schema compiles under JSON Schema 2020-12 (ajv), every `$ref` resolves, and every `x-source` object carries `x-consumed-fields`.
+
+### 2026-10-02, step 0a review resolution (architect; review: Codex Sol 6.1, `reviews/crate-api-review-codex-sol.md`, all 15 findings accepted)
+
+Reason: the review found defects in the step-0a interfaces; each was checked against the C# or Python source before it was accepted (disposition table in the review file).
+
+- `crate-api.md`:
+  - `coach_ibt` depends on `serde` (derive); `coach_live` public types derive no serde traits.
+  - Readers keep present non-finite values raw (`VarTable` scalar and array readers, `edge_scalar`, `Sample`); outputs never carry them. C# `??` fallbacks select by presence (`SessionLapsRemainEx`, `TrackTempCrew`, `BrakeABSactive`), and Python's edge read returns the last record's NaN.
+  - IBT header text follows Python `_decode_c_string`; live header text follows C# `Encoding.ASCII`.
+  - `RecordingSummary.start_time_utc` and `end_time_utc` are `Option<String>` (`_safe_iso`).
+  - Quoted and flow YAML values are evaluated as Python `ast.literal_eval` over a stated subset; `YamlNode::Literal` added; other literal kinds are a YAML error.
+  - Frame codec: `FrameError::TooManyChannels`; `BadCue` carries its reason (truncated, k > 4, unknown id, priority or evidence); the collector carries the epoch marker to the next sent frame.
+  - `TileText.min` and `max`, `display_range` (C# `ApplyRange`), and the per-tile missing texts (Waiting, Insufficient evidence, Ratio not recorded, Not measured).
+  - Projection shrink empties unconsumed `x-source` subtrees to null or `{}` by schema.
+- `api.openapi.yaml`: `Lap` and `TraceLap` replace the undefined `clean` with required `comparison_eligible` and `exclusion_reasons` (C# rule, order, join and unmatched case stated); `TuningOpenTarget` states the full `CompatibleOpenTarget` order and presence rules; the track endpoint summary names `normalized_local_vector`.
+- `live-frame.md`: bit4 is a hint (receivers compare `session_epoch`); `channel_count` above the decoder's table is rejected; cue `k <= 4` and discriminant checks.
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
