@@ -6,7 +6,7 @@ mod support;
 
 use coach_collector::app;
 use coach_collector::cli::RunOptions;
-use coach_collector::fixture::MapBuilder;
+use coach_collector::fixture::{MapBuilder, Step};
 use coach_collector::garage_io::GarageIo;
 use coach_collector::gate::Evidence;
 use coach_collector::journal::GarageOut;
@@ -294,4 +294,113 @@ fn dry_run_writes_the_captures_and_a_frame_summary_without_a_server() {
         "a dry run keeps no journal"
     );
     let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn the_load_placeholder_is_not_a_setup_name() {
+    // G3 (rig, 2026-10-03): while a session loads iRacing publishes DriverSetupName
+    // `INVALID_LOADTYPE`. It names no file; a visit that ends on it commits values only.
+    let b = MapBuilder::new(60).engine_vars();
+    let (setups, _) = setups_with_sto();
+    let mut h = Harness::new(&p5_fixture(&b, "INVALID_LOADTYPE", 6_000));
+    h.run();
+    let io = GarageIo::new(h.hub.clone(), setups, None);
+    for a in h.garage_actions() {
+        io.journal(a);
+    }
+    assert_eq!(io.resolve_pending(), 0);
+    let commit = h
+        .hub
+        .journal()
+        .take_unsent(1)
+        .into_iter()
+        .find_map(|m| match m {
+            GarageOut::Commit { entry, .. } => Some(entry),
+            _ => None,
+        })
+        .expect("a values-only commit after the 5 s window");
+    assert_eq!(commit.setup_name, None);
+    assert!(!commit.hash_pending);
+}
+
+/// The P5 visit as the rig delivered it: `IsInGarage` falls to 0 for one tick just before every
+/// load or apply publishes its new `UpdateCount`, and only the real exit is followed by the name.
+fn dipping_fixture(b: &MapBuilder) -> Vec<u8> {
+    let mut steps = vec![Step::Static {
+        status: 1,
+        update: 1,
+        session_info: session(2, "R.sto", false, "152 kPa"),
+    }];
+    steps.extend(tick_steps(b, 0, 100, 5, false, false));
+    steps.extend(tick_steps(b, 1_000, 200, 3, true, false));
+    let mut t = 1_300;
+    let mut tick = 203;
+    for count in 3..=9 {
+        steps.extend(tick_steps(b, t, tick, 1, false, false)); // the dip
+        steps.extend(tick_steps(b, t + 100, tick + 1, 2, true, false));
+        steps.push(Step::Static {
+            status: 1,
+            update: count as i32,
+            session_info: session(count, "R.sto", false, &format!("{} kPa", 150 + count)),
+        });
+        steps.extend(tick_steps(b, t + 300, tick + 3, 8, true, false));
+        t += 1_100;
+        tick += 11;
+    }
+    steps.extend(tick_steps(b, t, tick, 2, false, false));
+    t += 200;
+    tick += 2;
+    steps.push(Step::Static {
+        status: 1,
+        update: 10,
+        session_info: session(10, STO_NAME, true, "155 kPa"),
+    });
+    steps.extend(tick_steps(b, t, tick, 20, false, false));
+    b.write_steps(Vec::new(), &steps).unwrap()
+}
+
+#[test]
+fn a_dip_in_in_garage_before_every_apply_keeps_one_visit_with_one_named_commit() {
+    // G3 (rig, 2026-10-03): the dips split a visit in eight and none of the pieces could carry
+    // the name the exit publishes.
+    let b = MapBuilder::new(60).engine_vars();
+    let (setups, sto_bytes) = setups_with_sto();
+    let mut h = Harness::new(&dipping_fixture(&b));
+    h.run();
+    let io = GarageIo::new(h.hub.clone(), setups, None);
+    for a in h.garage_actions() {
+        io.journal(a);
+    }
+    assert_eq!(io.resolve_pending(), 0);
+    let out = h.hub.journal().take_unsent(1);
+    let ids: std::collections::BTreeSet<&str> = out
+        .iter()
+        .map(|m| match m {
+            GarageOut::Snapshot(s) => s.visit_id.as_str(),
+            GarageOut::Commit { entry, .. } => entry.visit_id.as_str(),
+        })
+        .collect();
+    assert_eq!(ids.len(), 1, "one visit: {ids:?}");
+    let counts: Vec<i64> = out
+        .iter()
+        .filter_map(|m| match m {
+            GarageOut::Snapshot(s) => Some(s.update_count),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(counts, [3, 4, 5, 6, 7, 8, 9, 10]);
+    let commits: Vec<_> = out
+        .iter()
+        .filter_map(|m| match m {
+            GarageOut::Commit { entry, .. } => Some(entry.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(commits.len(), 1);
+    assert_eq!(commits[0].setup_name.as_deref(), Some(STO_NAME));
+    assert_eq!(
+        commits[0].sto_sha256.as_deref(),
+        Some(sha256_hex(&sto_bytes).as_str())
+    );
+    assert_eq!(commits[0].update_count, Some(10));
 }

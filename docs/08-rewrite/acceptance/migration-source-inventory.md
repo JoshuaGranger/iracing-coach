@@ -1,106 +1,112 @@
 # D12 migration source inventory (sim PC copy, step 1)
 
-Run of 2026-10-02, about 22:15 to 22:37 CDT (03:15 to 03:37Z on 10-03). Companion to `migration-inventory.md`; it replaces that file's UNKNOWN rows for saved Tests, plans and notes.
+Run of 2026-10-03, about 08:47 to 09:10 CDT (13:47 to 14:10Z). Companion to `migration-inventory.md`; it replaces that file's UNKNOWN rows for saved Tests, plans and notes. It supersedes the blocked run of 2026-10-02 (agent down, nothing copied); the code-derived map in section 4 is kept from that run and annotated with what the copy showed.
 
 ## 1. Result
 
-**Blocked. Nothing was copied from the sim PC.** The Remote Engineer agent on DESKTOP-SIM was not running, so no file, job or copy call could be made. Consequently:
+**Step 1 done.** The simulator was free: `remote_job processes` on DESKTOP-SIM showed `iRacingService64` (service, session 0) but no `iRacingSim64DX11`. No lease was taken. Everything below was read through `remote_job` (read-only PowerShell 5.1, `-NoProfile`, `PSModulePath` reset) and one `remote_copy`.
 
-- `iRacingSim64DX11` could not be checked: **UNKNOWN** whether the simulator is running. (Last known: not running when proofs P3 and P5 ended, about 18:21 CDT.)
-- Step 1 (copy), the manifest of hashes, `raw-inventory.csv` and `setups-inventory.csv` do not exist. `C:\Users\joshu\source\coach-migration\sim-2026-10-02\` holds only a `manifest.json` with status `blocked-nothing-copied` and `files: []`.
-- Nothing on the sim was changed by this run: no job, file, copy or lease request was made. The only calls were status checks that failed, plus one hidden RDP session that was opened (this signs joshu in on the sim) and then disconnected from the main PC.
+Copy location (outside the repository): `C:\Users\joshu\source\coach-migration\sim-2026-10-03\`
 
-What this document still provides, without the sim: the code-derived map of every legacy store and how it references other objects (section 4), a format check against the dev PC's own Coach root, labelled as a proxy (section 5), the sim's known state from the spike (section 3), gaps found in the wave-1 export and inventory scripts (section 6), and the procedure to finish steps 1 to 3 (section 8).
-
-## 2. Why the sim was unreachable (evidence)
-
-| Time (CDT) | Observation |
+| File | Content |
 |---|---|
-| about 22:13 to 22:14:15 | A shutdown task on DESKTOP-SIM force-stopped `RemoteEngineer.exe` PIDs 23060 and 7816 (`...\remote-engineer\versions\2.0.4\`); its receipt, written 22:14:15, shows the process list empty 3 s and 65 s after the stop, and the managed task `RemoteEngineerHome-<sid>` still Enabled and Ready. The same operation stopped 14 controller processes (`SabineRemote.exe`, `RemoteEngineer.exe`) on DESKTOP-JOSHUA, finishing 22:14:29. Source: `C:\Users\joshu\source\bitloom-runs\centralized-simulation-20261001\owner-remote-process-stop-20261003\shutdown-final.json`, another project's run, labelled "owner-remote-process-stop" (whether Joshua directed it is taken from that label, not verified here); it completed about a minute before this run began. |
-| about 22:15 | `remote_status` failed (`connection_failed`, `HttpRequestException`); `remote_session status`: `not-running`. TCP from the dev PC to 192.168.1.21: 3389 connects in 2 ms; 47653, 135, 445, 5985, 8888 and 4455 get no answer (silently dropped); ping gets no reply. |
-| about 22:21 | `remote_session connect` (Windows CredSSP, saved credentials): connecting, authenticating, connected within about 30 s, `requiresUserAction=false`. No sign-in request to the owner was needed or made. |
-| 22:22 to 22:35 | All four `remote_status` calls after the sign-in failed (six in total); a 10-minute loop probed TCP 47653 every 15 s: 40 of 40 unanswered. The Ready startup task did not bring the agent back after the RDP sign-in (reason UNKNOWN: either the sign-in reattached an existing session, so no logon event fired, or the task has no reconnect trigger). |
-| about 22:36 | `remote_session disconnect`: `disconnected`, `hostRunning=false`; host process gone. No lease was ever taken. |
+| `copy\` | 117 files, 10,291,016 bytes, same relative layout as `Documents\iRacing Coach` |
+| `manifest.json` | sim path, relative path, size, mtime (UTC), SHA-256 of every copied file (117); all 117 re-hashed on the dev PC after transfer: 0 mismatches |
+| `raw-inventory.csv` | 662 `.ibt` rows: name, size, mtime, folder hash |
+| `setups-inventory.csv` | 193 car folders: `.sto`, `.htm`, other counts, bytes |
+| `raw-archive-sources.txt` | 35 lines `folder-sha256|original file name` read from `data\telemetry-traces\raw\*\manifest.json` `source_discoveries[].source_path` |
+| `sim-copy.zip` | the transport archive (989,059 bytes, SHA-256 `c15ca1a93079ad76947116658c58d4f2d8c9459153b472825a53a9210e79ec8a`), kept for provenance |
+| `work\history-work.sqlite3` | second copy of `history.sqlite3`; all queries ran on this, never on `copy\` |
 
-`owner-decisions-2026-10-02.md` records the pause as lifted. Lifting the pause does not restart the agent: that needs `Start-Target.ps1` (the action of the Ready task, per the identity check in the stop script) run in joshu's interactive session on the sim, or a fresh logon that fires the task. Both need console or desktop access, which this run was not allowed to use ("file and job tools only", no lease), and the agent was stopped deliberately by the run above. Whether and how to bring it back is a decision for the parent.
+Method: one PowerShell job on the sim read the source files (shared read, no writes beside the archive), SHA-256 hashed each, and wrote a zip to the sim's `%TEMP%` (`coach-copy-20261003.zip`); one `remote_copy` (copyId `c0a10000-0000-4000-8000-000000000006`, verified, staging closed) brought it over; a job then deleted the temp zip. That temporary file on the sim is the only write the run made there. It avoided the 8-transfer staging cap that made per-file `remote_copy` unusable.
 
-## 3. What exists on the sim (spike facts, not re-verified)
+`data\auth` and `%LOCALAPPDATA%\iRacingCoach\credentials` were never read. `settings.json` has no credential-like key names (searched for token, password, secret, apikey, credential: 0 hits); `settings.json.before-schema-5.backup.json` was not copied.
 
-From `spikes/sim.md` (read through `remote_job` at 15:57 CDT). Since then proofs P3 and P5 ran real sessions: at least one new recording exists (`stockcars2 supra2019_vegas oval 2026-10-02 18-18-02.ibt`, 2,960,161 bytes, per `prove/P5`), so the counts below are lower bounds for telemetry. Exact current counts: UNKNOWN.
+## 2. What was copied (sim counts, bytes)
 
-| Item | Count / size at the spike |
-|---|---|
-| `Documents\iRacing\telemetry\*.ibt` (flat, no subfolders) | 617 files, 14.37 GB; largest 1,996.6 MB (Kansas); mean about 23 MB |
-| `Documents\iRacing Coach\data\telemetry-traces\raw\<sha256>\` | 35 `.ibt` plus 35 `.json`, 4,071.2 MB |
-| `Documents\iRacing\setups` | 193 car folders, 1,229 files: `.sto` 1,204, `.htm` 16 (all in `stockcars2 supra2019`, purchased shop exports), no extension 9 (`-Current-`) |
-| Coach root | 9,276 files, 12.99 GB; `data\` 3,531 files, 11.95 GB; `settings.json` 15 KB; `data\history.sqlite3` 708,608 bytes, written 2026-09-20 22:54, no `-wal` or `-shm` |
-| Small stores | `portable-settings` 1 file; `data\tuning` 7 files (1.3 MB); `data\activity-history` 43; `data\test-artifacts` 29 (7.0 MB); `data\strategy-history` 5 (0.3 MB) |
-| Empty or absent | `data\setup-history`, `target-laps`, `driver-models`, `garage61`, `race-index`, `ai-coaching`, `tuning-experiments`, root `user-library`, `backups`, `setups`; no `data\trials`, no `data\event-plans` in the spike's folder list |
-| Large, outside the copy list | `reports` 6,528.6 MB; `analysis-cache` 1,194.8 MB; `ui-analysis-cache` 123.4 MB; root `exports` 84 files 559.7 MB; root `research` 13 files 0.3 MB |
-| Never copy | `data\auth` (1 file), anything under `%LOCALAPPDATA%\iRacingCoach\credentials` |
+| Source (under `Documents\iRacing Coach`) | Files | Bytes |
+|---|---|---|
+| `settings.json` | 1 | 15,055 |
+| `portable-settings\` | 1 | 2,410 |
+| `data\history.sqlite3` (no `-wal`, no `-shm`; written 2026-09-20 22:54) | 1 | 708,608 |
+| `data\tuning\` | 7 | 1,326,914 |
+| `data\activity-history\` | 43 | 8,199 |
+| `data\test-artifacts\` | 29 | 7,381,420 |
+| `data\strategy-history\` | 5 | 313,869 |
+| `data\telemetry-events\` | 10 | 130,382 |
+| `data\telemetry-profiles\` | 4 | 31,223 |
+| `data\archive\` | 1 | 7,345 |
+| `research\` | 13 | 356,422 |
+| `portable-state.json`, `archive-manifest.json` | 2 | 9,169 |
+| **Total** | **117** | **10,291,016** (about 9.8 MiB) |
 
-## 4. Where each legacy user-authored object lives
+Present but empty on the sim (nothing to copy): `data\trials`, `data\event-plans`, `data\ai-coaching`, `data\race-index`, `data\setup-history`, `data\target-laps`, `data\driver-models`, `data\garage61`, `data\tuning-experiments`, root `backups`, `setups`, `user-library`. Not copied by rule (size or derived): `data\reports` 909 files 6,845,767,757 B; `data\analysis-cache` 63 files 1,252,861,712 B; `data\ui-analysis-cache` 9 files 129,353,545 B; `data\telemetry-traces` 2,406 files 4,584,040,195 B (its `raw\` holds 35 `.ibt` + 35 `.json`; `live-replay\` 2,336 files); `data\season-cache` 18 files 3,582,189 B (not user-authored, left on the sim); `data\tire-models` 15 files; `data\track-geometry` 10 files; root `exports` 84 files 586,862,468 B; `track-map-*` asset folders; `iracing-coach`, `companion-app-handoff`, `.validation-deps`, `logs`. Note that `data\trials` and `data\event-plans` exist as empty folders, so D12's "saved Tests and plans" are, on this sim, an empty set.
 
-Paths are under `Documents\iRacing Coach`. "Bundle slot" is the `ImportBundle` field in `contracts/api.openapi.yaml` (kind values from `db-schema.sql` `legacy_items`). The sim column repeats spike counts only; contents are UNKNOWN until a copy is read.
+## 3. Raw and setup inventories (counts)
 
-| Object | Location and name | Writer (code) | Format and key fields | References to other objects | Bundle slot | Sim |
-|---|---|---|---|---|---|---|
-| Settings, trace layouts, live-monitor layout, last-investigation bookmark, Ask thread ids | `settings.json`; `settings.json.before-schema-5.backup.json` beside it after a migration (may hold a legacy credential: never copy) | `SettingsStore.cs:19,144-173` (schema 5); model `Models.cs:852-928`, bookmark `:930-939` | camelCase JSON, `settingsSchemaVersion` 5, unknown keys kept; `raceAnalysisTraceLayouts`, `raceAnalysisTraces`, `liveMonitor`, `lastInvestigation`, `coachThreadIds` | `lastInvestigation.sessionId`, `.analysisId`, `.comparisonId`, `.sectionId`; `coachThreadIds` maps a workflow key (`race:<sessionId>`, `progressive-tuning:<digest>`, `CompanionState.cs:2838`, `ProgressiveTuningCoordinator.cs:167-172`) to a Codex thread id | `trace_layouts`, `live_layouts`, `prefs`; bookmark and thread ids as `legacy_items` kind `setting` | 15 KB, key names only seen |
-| Tuning drafts, free-text notes (C#, Progressive Tuning) | `portable-settings\tuning-drafts\<64-hex>.json` | `PortableTuningDraftStore`, `ProgressiveTuningCoordinator.cs:427-489`; file name from `TuningIdentityKey`, `:147-165`; model `ProgressiveTuningModels.cs:126-157` | `schemaVersion` 2: `draftId`, `representativeSession`, `openSetupTarget.baseline`, `representativeRunIds[]`, `mapIdentity`, `rulesetId`, `goal`, `generalNote`, `feedback[]` (cornerId, cornerLabel, start/apex/endPct, runPhase, symptomId, severity, driverConfidence, `note`, priority), `turnCorrections[]`, `updatedUtc` | In `representativeSession` and `baseline` (`TuningSessionIdentity`, `ProgressiveTuningModels.cs:77-99`): `analysisId`, `analysisPath`, `sourceSha256[]` (recording hashes), `subsessionId`, `sessionId`, `sessionUniqueId`, `sessionType`, `trackConfigurationKey`, `trackId`, `carId`, `carPath`, `setupFingerprint`, `raceId`, `eventKey`, `selector`; plus `mapIdentity` | `tuning_drafts` (`identity_key` is the file stem); the notes (`generalNote`, `feedback[].note`) as `notes` with `subject_ref` from `sourceSha256`, `subsessionId`, `carPath`, `setupFingerprint`, `analysisId` | `portable-settings` holds 1 file in total; which store: UNKNOWN |
-| Turn annotations (driver corrections with notes) | `portable-settings\tuning-turn-annotations\<64-hex>.json`; the name is the SHA-256 of `trackConfigurationKey`, a vertical bar, then `mapIdentity` | `PortableTuningTurnAnnotationStore`, `ProgressiveTuningCoordinator.cs:491-558`; applied by `Merge`, `:560-601`; model `ProgressiveTuningModels.cs:23-43` | `schemaVersion` 1: `trackConfigurationKey`, `mapIdentity`, `corrections[]` (cornerId, label, start/apex/endPct, `note`, `geometryHash`, `mapIdentity`, `verifiedAt`), `updatedUtc` | `trackConfigurationKey` and `mapIdentity` (the key), and per correction a `geometryHash`: a correction applies only when it equals the current analysis geometry hash, so a re-analysis that changes geometry leaves it unapplied | `turn_annotations` (`track_config_key`, `map_identity`, `body`) | not in the spike list; at most the 1 `portable-settings` file |
-| Tuning drafts (Python, structured tuning) | `data\tuning\drafts\<slug>-<hash12>.json` | `storage.py:2830-2860`, called at `tuning_workflow.py:1171-1186` | snake_case, `schema_version` 2: `draft_id`, `driving_analysis_path`, `open_target_analysis_path`, `representative_run_ids`, `map_identity`, `ruleset_id`, `generic_note`, `goal`, `feedback[]`, `latest_evidence_hash`, `latest_status`, `created_at`, `updated_at` | analysis paths of the form `reports\season-<id>\subsession-<id>-<n>\<timestamp>\analysis.json`, run ids, map identity | not named in the contract: `tuning_drafts` or `legacy_items` kind `other` (decision for W6 and W9) | spike lists no `drafts` folder; expected absent, UNKNOWN |
-| Tuning experiments | SQLite table `tuning_experiments` in `data\history.sqlite3`; record file `data\tuning\experiments\<season>\<car>\<track>\<experiment_id>.json`; older home `data\tuning-experiments\` (declared `DurableArchive.cs:136`) | table `storage.py:1309-1329`; writer `:2649-2723`; feedback `:2725-2768`; import `legacy_import.py` (W6) | row columns: experiment_id, created_at, updated_at, analysis_id, package_id, season_key, car_key, track_key, setup_type, setup_fingerprint, symptoms_json, recommendation_json, feedback_json, outcome, experiment_path | row: `analysis_id`, `package_id`, `setup_fingerprint`, season/car/track keys; file: `analysis_path`, `open_target_analysis_id` and `_path`, `feedback.result_analysis_id` and `_path` (`legacy_import.py:42-47`) | `tuning_experiments`, imported by `legacy_import.py`, which rewrites analysis references through the old-to-new map | `tuning-experiments` empty; table rows UNKNOWN (never opened) |
-| Saved Tests (driving trials) | `data\trials\trial-<20-hex>.json` | `driving_trials.py:46-66` (path), `:102-146` (create), `:299-300` (atomic write), `:322-335` (save); C# `CompanionState.Investigation.cs:110` (`save_driving_trial`), list `:140` | `schema_version` 1: `trial_id`, `created_at`, `kind`, `title`, `instruction`, `evidence[]`, `source`, `comparison`, `section`, `annotation`, `metric`, `baseline`, `reference`, `exposure_window`, `reachability`, `conditions`, `success`, `baseline_pass` (with `points[]`), `evaluations[]` (at most 50) | `source`: `analysis_id`, `analysis_path`, `recorded_at`, `track`, `layout`, `configuration_key`, `car_id`, `car_path`, `setup_name`, `setup_fingerprint`, `subsession_id`, `session_id`, `session_type`; `comparison.baseline_laps[]` and `compared_laps[]` are lap numbers inside that analysis; each evaluation names its own `analysis_id` and `analysis_path`. No recording hash: it comes through `sessions` (section 4.1) | `legacy_items` kind `saved_test`, verbatim (parked) | no `trials` folder in the spike list; probably none, UNKNOWN |
-| Plans | `data\event-plans\plan-<yyyyMMdd-HHmmss>.json` | `CompanionState.cs:1342`, through `PersistPortableArtifact`, `:4498-4532` | `schemaVersion` 1: `car`, `track`, `setup` (labels), `distance`, `distanceMode`, `referenceRaceId`, `result` (output of `plan_iracing_race`) | `referenceRaceId` (legacy race id such as `subsession-<id>-<n>`); an analysis path inside `result`: not checked (no sample exists) | `legacy_items` kind `plan` | no `event-plans` folder in the spike list; UNKNOWN |
-| Strategy history | `data\strategy-history\strategy-<raceId>.json` | legacy only: `PersistPortableArtifact("strategy-history", ...)` at commit `4edf203`, `CompanionState.cs:579`, removed in `616a3b3`; folder still counted at `DurableArchive.cs:403` | `schemaVersion` 1: `raceId`, `createdUtc`, `result[]` (recorded runs: `analysis_id`, session ids, `report_path`, `source_path`, metrics) | `raceId`; each row's `analysis_id`, `subsession_id`, `session_id`, `source_path` | `legacy_items` kind `plan` or `other`: derived rows, not authored | 5 files, 0.3 MB |
-| Ask threads | `data\ai-coaching\coach-<guid>.json` and `settings.json` `coachThreadIds` | `CompanionState.cs:2853` (race), `:1998-2011` (tuning) | `schemaVersion` 1: `createdUtc`, `workflowKey`, `threadId`, `question`, `evidence`, `structuredResponse` | `workflowKey` (`race:<sessionId>`) | `legacy_items` kind `other` (Ask is parked) | empty |
-| Activity history | `data\activity-history\<yyyyMMdd-HHmmssfff>-<guid>.json` | `CompanionState.cs:4514-4525` | `schemaVersion` 1: `createdUtc`, `action`, `artifactId` (audit of portable writes) | `artifactId` is the stem of a file under `data\<action>\` | `legacy_items` kind `activity` | 43 files |
-| Located recordings | `data\race-index\source-locations\source-<sha16>.json` | `CompanionState.cs:3224-3251` | `schemaVersion` 1: `stableId`, `fileName`, `sha256`, `bytes`, `lastWriteUtc`, `currentPath`, `mappedUtc` | the recording hash and the path the owner pointed to | not needed after re-ingest (the hash is the key): drop or `legacy_items` kind `other` | `race-index` empty |
-| Tuning packages, catalog, track inputs | `data\tuning\packages\<season>\<car>\<track>\setup-<hash20>.json`; `data\tuning\catalog\index.json`; `data\tuning\inputs\<track>-<season>.json` | packages and catalog `storage.py:2519-2592`, `tuning_workflow.py:292,540,645`; **`inputs` has no writer in the source or git history** | packages: parsed purchased `.htm` baselines; catalog: scan index of the setups folder; inputs: free-form track traits, hand- or agent-written (dev-PC example keys: `layout`, `corner_duty`, `banking`) | packages: season, car, track keys, `source_fingerprint`; inputs: file name only | packages and catalog are re-derived; `inputs` is the one hand-authored item: `notes` or `legacy_items` kind `other` (decision) | 7 files in `tuning` (catalog 1.26 MB, `inputs`, `packages\2026s3\...`); split UNKNOWN |
-| Test artifacts | `data\test-artifacts\<name>\` (own `history.sqlite3` plus `reports`) | no writer in source: manual test or handoff output (spike saw `corner-tire-age`, `handoff-analyze`) | not an app format | none | not user-authored; classify after inspection | 29 files, 7.0 MB |
+- `Documents\iRacing\telemetry`: 628 `.ibt`, 16,154,878,825 bytes (15.05 GiB), file names dated 2026-09-25 to 2026-10-02 only, 628 distinct names; 624 `stockcars2` (Supra) and 4 `stockcars`. The spike counted 617 files; 11 were added since (the P3 and P5 recordings and later).
+- `data\telemetry-traces\raw\<sha256>\`: 35 `.ibt`, 4,268,967,692 bytes, mtimes 2026-08-08 to 2026-10-02. These are the archived copies of recordings dated 2026-07-31 to 2026-09-29 (names in `raw-archive-sources.txt`); they are the only copy of those recordings on the sim, because the live telemetry folder holds nothing dated before 2026-09-25 (why is not established here).
+- Setups: 193 car folders; 1,204 `.sto`, 16 `.htm` (all in `stockcars2 supra2019`), 9 other (the `-Current-` files); 148 of the 193 folders contain no `.sto`. Names only, nothing copied.
 
-Not user-authored, re-derived or out of scope: `data\reports`, `analysis-cache`, `ui-analysis-cache`, `race-index` (cache entries and an unreadable-report ledger, `ArchivedRaceCatalog.cs:126,234`), `track-geometry`, `tire-models`, `telemetry-events`, `telemetry-profiles`, `archive`, `season-cache`. `season-cache` holds AI and web research bundles (`facts.json`, `sources.json`, `knowledge.md`, `storage.py:1807-1825`): not user-authored, but not re-derivable offline, so keep the sim copy as it is. Outside `data\`: `research\` (13 files, no writer in source, may hold free-text notes: UNKNOWN) and `exports\` (no writer in source) are not in the copy list; list `research\` names on the next run. `portable-state.json` and `archive-manifest.json` are the app's own bookkeeping (`DurableArchive.cs:119-218`).
+## 4. Where each legacy user-authored object lives (verified against the copy)
 
-### 4.1 Reference chain the import tool can use
+Paths are under `Documents\iRacing Coach`. "Bundle slot" is the `ImportBundle` field in `contracts/api.openapi.yaml` (kind values from `db-schema.sql` `legacy_items`). Source file and line references are from the code reading of 2026-10-02.
 
-Legacy objects name analyses, not recordings, except drafts (`sourceSha256[]`). The chain to a recording hash:
+| Object | Location and format | Verified content on the sim | References to other objects | Bundle slot |
+|---|---|---|---|---|
+| Settings | `settings.json`, camelCase, `settingsSchemaVersion` 5 (`SettingsStore.cs:19,144-173`) | 15,055 bytes. Keys: `coachHome`, `iRacingRoot`, `iRacingInstallRoot`, `firstRunComplete`=true, `settingsSchemaVersion`=5, `coachThreadIds` (0 entries), `launchAtSignIn`=false, `useReducedMotion`=false, `themeColor`, `customThemeColor`, `diagnosticIncludeConfounded`=false, `liveMonitor` (9 keys), `raceAnalysisTraces` (1 key, `rows`), `raceAnalysisTraceLayouts` (`activeLayoutId`=factory-default, `userLayouts` 0, `legacyLayoutImportCompleted`=true). No `lastInvestigation`. | none (no thread ids, no bookmark) | `trace_layouts` (nothing user-made), `live_layouts`, `prefs` |
+| Tuning drafts and notes (C#) | `portable-settings\tuning-drafts\<64-hex>.json`, schema 2 (`ProgressiveTuningCoordinator.cs:427-489`) | **1 draft** (`9bbc6e8f...600f9`), `updatedUtc` 2026-08-11T02:06:39Z, subsession 87648500 (New Hampshire, Supra), goal `long-run-pace`, ruleset `nascar-oreilly-xfinity-2026s3-v1`, `generalNote` empty, `feedback` 0, `turnCorrections` 0, `representativeRunIds` ["2"]. Contains no free-text note. | `analysisId` f34c4831... resolves to 1 row in `sessions`; run 2 exists in `runs` (2 rows for that analysis); `sourceSha256` 447f6f61... equals the folder name of `data\telemetry-traces\raw\447f6f61...` whose original file is `stockcars2 supra2019_newhampshire oval 2026-08-01 21-09-00.ibt` | `tuning_drafts` (+ `notes`: none to import) |
+| Turn annotations | `portable-settings\tuning-turn-annotations\` | **Absent** (the single `portable-settings` file is the draft above) | n/a | `turn_annotations`: empty set |
+| Tuning drafts (Python) | `data\tuning\drafts\` | **Absent** (`data\tuning` holds `catalog`, `inputs`, `packages` only) | n/a | empty set |
+| Tuning experiments | table `tuning_experiments`; folders `data\tuning\experiments`, `data\tuning-experiments` | table **0 rows**; `data\tuning-experiments` empty; no `experiments` folder | n/a | empty set |
+| Saved Tests | `data\trials\` | folder empty | n/a | empty set |
+| Plans | `data\event-plans\` | folder empty | n/a | empty set |
+| Ask threads | `data\ai-coaching\` and `coachThreadIds` | folder empty; `coachThreadIds` has 0 entries | n/a | empty set |
+| Activity history | `data\activity-history\*.json` | 43 files, 2026-08-03 to 2026-09-21; actions: `ui-analysis-cache` 36, `strategy-history` 7. Audit only. | `artifactId` stems | `legacy_items` kind `activity` (optional) |
+| Strategy history | `data\strategy-history\strategy-subsession-<id>-<n>.json` | 5 files (subsessions 87648500, 87675901, 87871648, 87987759, 88012152, all session 2), created 2026-08-03 to 2026-08-18, 14/3/1/3/3 result rows. Derived rows, not authored. Of their analysis ids only 1 (in the 87648500 file) is still in `sessions`. | `analysis_id`, `source_path` | not imported (derived) |
+| Tuning inputs (hand-authored) | `data\tuning\inputs\iowa-2026s3.json` | 1 file, keys `layout`, `corner_duty`, `banking` (all strings) | file name `<track>-<season>` | `notes` or `legacy_items` kind `other` |
+| Tuning packages and catalog | `data\tuning\packages\2026s3\<car>\<track>\setup-<hash20>.json` (5), `catalog\index.json` | 5 packages: supra2019 iowa, supra2019 portland-full, streetstock3 richmond, toyota-tundra-trd-pro richmond, toyotacamry richmond; catalog is a scan index (keys incl. `entries`, `source_file_count`). Re-derivable from the purchased setups. | `tuning_packages` rows (same 5) | re-derived |
+| Test artifacts | `data\test-artifacts\<name>\` | 6 folders (`corner-tire-age`, `handoff-analyze`, `handoff-dashboard`, `installed-plugin-pycache-20260801`, `run-number-regression`, `workflow-smoke`), 29 files, 5 own `history.sqlite3` (1 session each, `handoff-dashboard` 0), dated 2026-08-01 to 08-02. Test output, not user-authored. | none | not imported |
+| Located recordings | `data\race-index\source-locations` | empty | n/a | none |
+| Research | `research\` | 13 files: `sto-writer` (schema, research notes) and `stream-deck-xl` (audit and spec documents). Project documentation, not racing notes. | none | not imported |
+| Bookkeeping | `portable-state.json`, `archive-manifest.json` | `safeToCopy` false at 2026-10-02T14:37Z ("Coach folder is active"), `credentialsIncluded` false, `connectionsRequiredOnNewPc` ChatGPT and Garage61 | none | not imported |
 
-1. `history.sqlite3` `sessions` (primary key `analysis_id`, 24-character text; `subsession_id`, `session_id`, `sim_session_num`, `sim_session_type`, `session_phase`, `session_group_id`, `season_key`, `car_key`, `track_key`, `setup_type`, `source_path`, `report_path`; DDL `storage.py:1242-1262`). `runs` are keyed by `(analysis_id, run_number)`.
-2. `sessions.source_path` (absolute path of the original `.ibt`) matches `data\telemetry-traces\raw\<sha256>\manifest.json` `source_discoveries[].source_path` (schema 2, `storage.py:3036-3123`; folder name equals `sha256`). This gives the recording hash for archived recordings only.
-3. For recordings that were never archived (the sim archived 35 of 617), match by file name to `Documents\iRacing\telemetry\<name>.ibt`; the names carry car, track and a timestamp and are unique, and the new system hashes every file on re-ingest.
+### 4.1 `history.sqlite3` (the copy's work file; counts verified)
 
-Proxy check (section 5): 14 of 15 sessions resolved through step 2, 1 had no archive, and all 15 source files still existed. Risk: the sim's `history.sqlite3` is 708 KB and was last written 2026-09-20, while 156 report files exist; an analysis that a draft, trial or experiment names but that is missing from `sessions` can only be resolved from its `analysis.json` (`reports\`, 6.5 GB, not in the copy list). Whether the database covers every referenced analysis: UNKNOWN.
+- Integrity `ok`, journal mode wal, `user_version` 0. Tables and rows: `sessions` 31, `runs` 75, `knowledge_bundles` 2 (2026-08-02T00:41:24 to 00:41:26Z), `tuning_packages` 5, `tuning_experiments` 0.
+- `sessions`: all 31 are `Race` (`sim_session_type`), 31 distinct subsessions, 5 distinct car keys, 10 distinct track keys, `analyzed_at` 2026-08-02T00:34:29Z to 2026-09-21T03:54:20Z, `session_start` 2026-07-28T01:09:55Z (the 2026-07-27 20:09 local New Hampshire race) to 2026-09-21T02:47:26Z; `setup_type` fixed 21, open 10; no empty `source_path`. `runs` are numbered 1 to 5 and every run belongs to a session.
+- Primary key `analysis_id` (24 hex characters); see section 4.2 for the recording link.
+- The database was last written 2026-09-20 22:54 and does not cover later sessions; `data\reports` holds 909 files (the spike's 156 report files was a different count; not re-examined here).
 
-## 5. Format check on the dev PC's own Coach root (proxy, NOT the sim)
+### 4.2 Reference chain to recordings (checked against the inventory)
 
-`C:\Users\joshu\Documents\iRacing Coach` on DESKTOP-JOSHUA, read with `inspect_legacy.py` (session scratch; the database was copied to a work file before opening; `data\auth` never touched; structure and counts only, no values). It confirms the code reading above; it says nothing about the sim's contents.
+1. Every `sessions.source_path` has the form `C:\Users\joshu\Documents\iRacing\telemetry\<name>.ibt` (31 of 31, all in that one folder).
+2. **0 of 31** of those names exist in the sim's current `Documents\iRacing\telemetry` folder (it holds only 2026-09-25 and later files).
+3. **28 of 31** names match the original name of an archived recording in `data\telemetry-traces\raw\<sha256>\` (`raw-archive-sources.txt`), giving the recording hash. **3 of 31** (the New Hampshire races of 2026-07-27 20-09-55, 2026-07-27 22-09-39 and 2026-07-28 21-09-03) have no recording anywhere on the sim; they can be migrated as analysis-only history rows or from the main PC's files, not from the sim.
+4. The one draft's `sourceSha256` is among the 35 archive folder names (resolved).
 
-- `settings.json`: schema 5; top-level keys `coachHome`, `coachThreadIds` (0 entries), `customThemeColor`, `diagnosticIncludeConfounded`, `firstRunComplete`, `iRacingInstallRoot`, `iRacingRoot`, `launchAtSignIn`, `liveMonitor`, `raceAnalysisTraceLayouts`, `raceAnalysisTraces`, `settingsSchemaVersion`, `themeColor`, `useReducedMotion`; no credential-like key names; no `lastInvestigation`.
-- `portable-settings\tuning-drafts\`: 3 files, `schemaVersion` 2, keys as in section 4; no `tuning-turn-annotations`.
-- `history.sqlite3` (journal mode wal, integrity ok, `user_version` 0): `sessions` 15 rows (analyzed 2026-08-07 to 2026-09-20), `runs` 41, `knowledge_bundles` 2, `tuning_packages` 2, `tuning_experiments` 0.
-- `data\tuning`: `catalog\index.json` (empty entries), `inputs\iowa-2026s3.json` (3 qualitative keys), 2 packages. `data\activity-history`: 152 files (`ui-analysis-cache` 145, `strategy-history` 7). `data\strategy-history`: 1 file, `strategy-subsession-<id>-<n>.json`. `data\trials`, `data\event-plans`, `data\test-artifacts`: absent. `ai-coaching`, `tuning-experiments`, `setup-history`, `target-laps`, `user-library`: empty.
+This replaces the 2026-10-02 plan, which assumed the sim's telemetry folder would hold the unarchived recordings: it does not.
 
-## 6. Gaps in the wave-1 tools (found by this inventory; not edited here)
+## 5. Format check on the dev PC's own Coach root (proxy, from the 2026-10-02 run)
 
-- `tools/rig/Export-LegacyCoachData.ps1` (`$Items`) and `tools/migrate/inventory_legacy.py` (`USER_AUTHORED`) omit `data\trials` (saved Tests), `data\event-plans` (Plans), `data\ai-coaching` (listed as re-derived, but it holds the Ask threads that D12 preserves), `data\race-index\source-locations` and `research\`. D12 says saved Tests and plans are preserved, so these folders must be added; the instruction for this run ("any other folder under `data`") already covers them.
-- The export script stages a copy on the sim before hashing, which writes to the sim; this run's rule was strictly read-only, so it was not used.
-- `migration-inventory.md` says notes outside drafts do not exist and saved Tests have no known location. Notes are the `note` fields in drafts (`generalNote`, `feedback[].note`, `generic_note`) and in turn annotations (`corrections[].note`), plus the hand-authored `data\tuning\inputs\*.json`; saved Tests are `data\trials\`.
+Unchanged from the earlier run and not repeated by this one (the dev PC's Coach root: settings schema 5, 3 tuning drafts, `history.sqlite3` with 15 sessions, 41 runs, 0 experiments). It confirms the code reading; it says nothing about the sim.
 
-## 7. UNKNOWN (could not be determined)
+## 6. Gaps in the wave-1 tools (still open; not edited here)
 
-1. Whether `iRacingSim64DX11` is running now.
-2. Whether the sim has `data\trials`, `data\event-plans`, `data\tuning\drafts`, `data\tuning\experiments`, `portable-settings\tuning-turn-annotations`; what the 1 `portable-settings` file and the 7 `tuning` files are.
-3. Row counts and date ranges of the sim's `history.sqlite3`; whether it covers every analysis the other stores name.
-4. Current counts of `.ibt` (at least 618), `.sto` and `.htm`, and per-car setup counts; recording hashes (never computed).
-5. `settings.json` values (`launchAtSignIn` and others) and whether the before-schema-5 backup exists.
-6. Contents of `research\` and `test-artifacts\`; whether `trials` or plans exist at all.
-7. Why the Ready startup task did not restart the agent after the RDP sign-in.
+- `tools/rig/Export-LegacyCoachData.ps1` (`$Items`) and `tools/migrate/inventory_legacy.py` (`USER_AUTHORED`) omit `data\trials`, `data\event-plans`, `data\ai-coaching`, `data\race-index\source-locations` and `research\`. They are empty on this sim, but the lists should still name them so another machine's copy is complete.
+- The export script stages a copy on the sim before hashing, which writes to the sim; this run used one temp zip (deleted) for the same purpose.
+- `migration-inventory.md` says notes outside drafts do not exist and saved Tests have no known location. Verified result: on the sim there are no saved Tests, no plans, no turn annotations, no Ask threads, no experiments and no free-text notes at all; the only authored items are 1 empty-note tuning draft, 1 hand-written track-traits file (`iowa-2026s3.json`) and the settings. The `live-replay` folder (2,336 files under `telemetry-traces`) is not described by any earlier document and was not opened.
 
-## 8. To finish steps 1 to 3 once an agent runs on the sim
+## 7. UNKNOWN (remaining)
 
-1. `remote_status`, then `remote_job processes`; stop if `iRacingSim64DX11` is present. No lease.
-2. One listing job (PowerShell 5.1, `-NoProfile`, `PSModulePath` reset to `C:\Windows\system32\WindowsPowerShell\v1.0\Modules`, explicit working directory, bounded): sizes and counts per folder under `Documents\iRacing Coach\data`, names only for `portable-settings`, `tuning`, `trials`, `event-plans`, `research`.
-3. Copy only what the instruction lists plus `trials`, `event-plans`, `ai-coaching`, `race-index\source-locations`, under 200 MB per folder; never `data\auth`. `remote_copy` is nearly unusable for many files: the parent holds 7 staged transfers (`parent-files\transfers`) against a cap of 8. Options: the NAS drop route used in earlier rounds (on the sim `J:` is `\\192.168.1.82\Joshua`; a read-only job copies from the sim to `J:\iRacing Temp\claude-drops\...`, the dev PC reads it from the share, SHA-256 is checked against hashes computed on the sim, then the drop is removed; this writes to the owner's NAS, so get the parent's approval); or `remote_file` base64 reads, which pass through the model and suit only files under about 100 KB.
-4. `manifest.json`: sim path, size, mtime, SHA-256 of source and copy for every file. Check `settings.json` key names on the copy for any credential key before keeping it; delete the copy and say so if one exists.
-5. Name, size and mtime only (no hashing) for every `.ibt` under `Documents\iRacing\telemetry` and `data\telemetry-traces\raw` (plus the SHA-256 folder name for archives) into `raw-inventory.csv`; per car folder `.sto` and `.htm` names into `setups-inventory.csv`.
-6. On the dev PC, on the copies only: `python tools/migrate/inventory_legacy.py <copied root> --out <outside the repository>` (after adding the folders in section 6), or the scratch `inspect_legacy.py`; the database is copied to a work file before sqlite3 opens it.
+1. Whether the 3 unarchived July sessions' recordings exist on the main PC or elsewhere.
+2. Contents of `data\reports` against `sessions` (whether any analysis a store names exists only as a report, not in the database).
+3. Why the live telemetry folder holds nothing before 2026-09-25 (only the archive keeps the older recordings).
+4. Whether the unchanged `data\tuning\inputs\iowa-2026s3.json` is the only hand-authored input: yes for the sim as copied; other PCs unknown.
+5. Recording SHA-256 of the 628 live-folder files (never computed; names, sizes and mtimes only).
+
+## 8. Step 2 and 3 (next)
+
+1. Run `tools/migrate/inventory_legacy.py` on `coach-migration\sim-2026-10-03\copy` (after adding the folders in section 6), output outside the repository; the database is already duplicated at `work\history-work.sqlite3`.
+2. Import bundle: 1 draft, 31 sessions and 75 runs as history, 5 tuning packages (re-derive), settings prefs, `iowa-2026s3.json` as a note; link the 28 resolvable sessions to archive recordings by hash and flag the 3 July sessions as having no recording.
+3. Re-ingest the 628 live recordings and 35 archived recordings by hash under the new system's own SHA-256; the live folder's files are the 2026-09-25 to 2026-10-02 set.

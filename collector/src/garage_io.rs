@@ -136,8 +136,21 @@ impl GarageIo {
                 );
                 break;
             }
-            if let (Some(dry), Some(GarageAction::Snapshot(s))) = (&self.dry, queue.pop_front()) {
-                dry.write(&json!({"kind": "garage.snapshot", "snapshot": s}));
+            let done = queue.pop_front();
+            if let Some(dry) = &self.dry {
+                match done {
+                    Some(GarageAction::Snapshot(s)) => {
+                        dry.write(&json!({"kind": "garage.snapshot", "snapshot": s}));
+                    }
+                    // A commit that names no file has nothing to hash and never reaches
+                    // `resolve_one`: it is logged here, with its values, so a rig session shows
+                    // every visit and not only the named ones (gate G3).
+                    Some(GarageAction::Commit(c)) if !c.hash_pending => {
+                        let values = self.hub.journal().commit_values(&c.visit_id);
+                        dry.write(&json!({"kind": "garage.commit", "commit": c, "values": values}));
+                    }
+                    _ => {}
+                }
             }
         }
         queue.len()
@@ -361,6 +374,47 @@ mod tests {
         let pending = hub.journal().pending_recordings();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].size, 3);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_commit_without_a_name_is_written_to_the_dry_log_with_its_values() {
+        // Found on the rig (G3): a visit that ends with the SDK name unchanged commits values
+        // only, needs no hash, and was never logged, so the dry-run showed snapshots with no
+        // visit around them.
+        let dir = temp_dir();
+        let log_path = dir.join("dry-run.jsonl");
+        let clock = Arc::new(ManualClock::new(0));
+        let hub = Hub::new(clock, Journal::in_memory(), false);
+        let dry = Arc::new(DryLog::create(&log_path).unwrap());
+        let io = GarageIo::new(hub.clone(), dir.join("setups"), Some(dry));
+        io.journal(snapshot("v1", 7));
+        io.journal(GarageAction::Commit(CommitEntry {
+            visit_id: "v1".into(),
+            update_count: Some(7),
+            entered_at: "2026-10-02T00:00:00.000Z".into(),
+            exited_at: "2026-10-02T00:00:09.000Z".into(),
+            car_path: Some("car".into()),
+            driver: None,
+            session: None,
+            setup_name: None,
+            sto_sha256: None,
+            ambiguous: false,
+            is_modified: None,
+            load_type: None,
+            hash_pending: false,
+        }));
+        let text = fs::read_to_string(&log_path).unwrap();
+        let lines: Vec<serde_json::Value> = text
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(lines.len(), 2, "{text}");
+        assert_eq!(lines[0]["kind"], "garage.snapshot");
+        assert_eq!(lines[1]["kind"], "garage.commit");
+        assert_eq!(lines[1]["commit"]["visit_id"], "v1");
+        assert!(lines[1]["commit"]["setup_name"].is_null());
+        assert_eq!(lines[1]["values"]["A.B"], "7");
         let _ = fs::remove_dir_all(dir);
     }
 

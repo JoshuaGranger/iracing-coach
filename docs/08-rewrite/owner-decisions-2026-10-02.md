@@ -50,6 +50,12 @@ Five proofs with thresholds fixed in advance ran before any design (`prove/P1` t
 - **D5 implementation confirmed (P3):** on the real sim, both prototypes left frame rate, foreground CPU and GPU within noise while streaming 60 frames/s; C# with WPF needs 276 MB, Rust 8.6 MB. The collector is Rust with no WebView and no .NET. Re-prove on track with the live engine in the agreed solo sessions.
 - **D9 narrowed (P5):** iRacing publishes `CarSetup` on every garage load and apply (`UpdateCount` increments) but `DriverSetupName` and `DriverSetupIsModified` change only at garage exit, for the last file loaded. Passive capture records values on every `UpdateCount` change while `IsInGarage` is 1 and commits the record, linked to the `.sto` by name and file hash, when `DriverSetupName` changes at exit; earlier loads in a visit are values without a name. Derived keys (corner weights, ride heights, preloads, last temperatures and pressures, tread) are excluded or matched with a 1 N / 1 mm / 0.2 Nm tolerance. Defect to fix in the Python oracle: `ibt_reader.py` reads `DriverSetupModified`; real recordings carry `DriverSetupIsModified`.
 
+## Rulings of 2026-10-03 (morning)
+
+- **Start the port now.** After seeing the v1 candidate: "I would say just do the port. I was never satisfied with the app. There will be criticisms and changes. Just get it up and going." v1 acceptance is not a gate for wave 5; criticisms arrive as fix lists.
+- **iRacing-utility is a separate repository** (`C:\Users\joshu\source\repos\iRacing-utility`): "the windows-side auxiliary functions (driving a track to find limits, driving to test tire wear and tuning, etc.) ... a tool to help gather data and setups and stuff. It will not be a function of iRacing coach itself, rather a companion extension arm to get data for first app population and for data gathering experiments." It absorbs the vJoy test driver, the IRP bot study backlog and the parked `.sto` harvest and decryption work, and feeds Coach only through the public upload API and the collector's backfill. Coach never depends on it.
+- The review link for him is `http://100.70.45.32:8210/` (the ts.net name is forced to HTTPS by browsers); an "iRacing Coach" entry is being added to the G House menu in Home Assistant.
+
 ## Parking lot (not in this product now)
 
 - Bulk `.sto` harvest (an agent loads every `.sto` in a test session) and `.sto` decryption. Joshua: these "are utility functions that need to join the test driving stuff on a separate app or something."

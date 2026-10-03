@@ -18,6 +18,9 @@ use crate::util::{iso_utc, uuid_v4};
 
 /// How long after leaving the garage a changed `DriverSetupName` still counts for the visit.
 pub const EXIT_WINDOW_MS: u64 = 5_000;
+/// `IsInGarage` back at 1 within this long of falling to 0, with the name unchanged, is a dip in
+/// the same visit, not a new one (a person cannot leave and re-enter the garage this fast).
+pub const REENTRY_JOIN_MS: u64 = 1_500;
 
 /// Everything the machine reads from the session info (`CarSetup` and `DriverInfo`).
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -132,6 +135,15 @@ impl GarageCapture {
                     exited_ms,
                 } => {
                     if in_garage {
+                        if tick.now_ms.saturating_sub(exited_ms) <= REENTRY_JOIN_MS {
+                            // A dip, not an exit: iRacing drops `IsInGarage` for a moment while
+                            // it applies a setup (seen on the rig, G3), and the SDK name has not
+                            // changed. The visit carries on, so its snapshots and its one
+                            // commit stay together.
+                            snapshot_if_changed(&mut visit, tick, &mut out);
+                            self.state = State::InGarage(visit);
+                            break;
+                        }
                         // Back in the garage before the window closed. Close the old visit
                         // first, as if the window had ended, from its own last snapshot: this
                         // tick's count and values belong to the new visit. The new visit's
@@ -438,7 +450,7 @@ mod tests {
         step(&mut g, 0, true, &view(2, "R.sto", Some(false)));
         step(&mut g, 100, true, &view(3, "R.sto", Some(false)));
         step(&mut g, 200, false, &view(3, "R.sto", Some(false)));
-        let out = step(&mut g, 1_000, true, &view(3, "R.sto", Some(false)));
+        let out = step(&mut g, 2_000, true, &view(3, "R.sto", Some(false)));
         assert!(matches!(&out[..], [GarageAction::Commit(c)] if c.setup_name.is_none()));
         assert!(g.in_visit(), "a new visit is open");
     }
@@ -454,7 +466,7 @@ mod tests {
         };
         step(&mut g, 200, false, &view(3, "R.sto", Some(false)));
         // Back inside the window with count 4: that value is the new visit's, not the old one's.
-        let out = step(&mut g, 1_000, true, &view(4, "R.sto", Some(false)));
+        let out = step(&mut g, 2_000, true, &view(4, "R.sto", Some(false)));
         match &out[..] {
             [GarageAction::Commit(c), GarageAction::Snapshot(s)] => {
                 assert_eq!(c.visit_id, old_id);
@@ -471,8 +483,8 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         }
         // The new visit carries on from there: its commit names count 4, never the old visit.
-        step(&mut g, 1_100, false, &view(4, "R.sto", Some(false)));
-        let out = step(&mut g, 1_300, false, &view(4, "Q.sto", Some(true)));
+        step(&mut g, 2_100, false, &view(4, "R.sto", Some(false)));
+        let out = step(&mut g, 2_300, false, &view(4, "Q.sto", Some(true)));
         match &out[..] {
             [GarageAction::Commit(c)] => {
                 assert_ne!(c.visit_id, old_id);
@@ -481,6 +493,58 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_dip_of_in_garage_while_a_setup_is_applied_does_not_split_the_visit() {
+        // Found on the rig (G3, 2026-10-03): every Apply or load dropped IsInGarage for a moment,
+        // so each UpdateCount change opened a visit of its own and none could carry the name.
+        let mut g = GarageCapture::new();
+        step(&mut g, 0, false, &view(2, "R.sto", Some(false)));
+        step(&mut g, 100, true, &view(2, "R.sto", Some(false)));
+        let mut ids = std::collections::BTreeSet::new();
+        let mut t = 200;
+        for count in 3..=6 {
+            // The count changes during the dip: 300 ms with IsInGarage at 0.
+            step(&mut g, t, false, &view(count - 1, "R.sto", Some(false)));
+            let out = step(&mut g, t + 300, true, &view(count, "R.sto", Some(false)));
+            match &out[..] {
+                [GarageAction::Snapshot(s)] => {
+                    assert_eq!(s.update_count, count);
+                    ids.insert(s.visit_id.clone());
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+            t += 1_000;
+        }
+        assert_eq!(ids.len(), 1, "one visit across every dip");
+        // The real exit: IsInGarage falls, the name follows 270 ms later.
+        assert!(step(&mut g, t, false, &view(6, "R.sto", Some(false))).is_empty());
+        let out = step(&mut g, t + 270, false, &view(7, "Q.sto", Some(true)));
+        match &out[..] {
+            [GarageAction::Snapshot(s), GarageAction::Commit(c)] => {
+                assert_eq!(s.update_count, 7);
+                assert_eq!(c.visit_id, s.visit_id);
+                assert_eq!(&s.visit_id, ids.iter().next().unwrap());
+                assert_eq!(c.setup_name.as_deref(), Some("Q.sto"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_dip_that_lasts_longer_than_the_join_window_is_an_exit_and_a_new_visit() {
+        let mut g = GarageCapture::new();
+        step(&mut g, 0, true, &view(2, "R.sto", Some(false)));
+        step(&mut g, 100, true, &view(3, "R.sto", Some(false)));
+        step(&mut g, 200, false, &view(3, "R.sto", Some(false)));
+        let out = step(
+            &mut g,
+            200 + REENTRY_JOIN_MS + 1,
+            true,
+            &view(3, "R.sto", Some(false)),
+        );
+        assert!(matches!(&out[..], [GarageAction::Commit(c)] if c.setup_name.is_none()));
     }
 
     #[test]

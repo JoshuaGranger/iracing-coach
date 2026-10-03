@@ -419,7 +419,11 @@ impl SdkReader {
         self.setup = SetupView {
             update_count: car.as_ref().and_then(|c| c.update_count),
             values: car.map(|c| c.values).unwrap_or_default(),
-            name: setup.name,
+            // While a session loads iRacing publishes the placeholder `INVALID_LOADTYPE` (load
+            // type `invalid`, seen on the rig, G3): it names no file.
+            name: setup
+                .name
+                .filter(|n| !n.eq_ignore_ascii_case("INVALID_LOADTYPE")),
             is_modified: setup.is_modified,
             load_type: setup.load_type_name,
             car_path: driver
