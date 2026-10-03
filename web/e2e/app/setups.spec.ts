@@ -9,12 +9,28 @@ for (const device of DEVICES) {
       await page.goto(hash(`/d/${DRIVER}/setups`));
       await expect(page.getByRole("heading", { name: "Setups" })).toBeVisible();
       const list = page.getByRole("list", { name: "Setups" });
-      await expect(list.getByRole("link")).toHaveCount(3);
-      await expect(list.getByText("Bristol race v3.sto")).toBeVisible();
+      await expect(list.getByRole("link")).toHaveCount(4);
+      await expect(list.getByText("Bristol race v3.sto")).toHaveCount(2);
       await expect(list.getByText("Unnamed NASCAR Xfinity Toyota Supra setup")).toBeVisible();
       const unknown = page.getByRole("region", { name: "Setup files with values unknown" });
       await expect(unknown.getByText("Imported 1.sto")).toBeVisible();
       await expect(unknown.getByText("Values unknown").first()).toBeVisible();
+      await expectNoHorizontalScroll(page);
+      if (phone) await expectTouchTargets(page);
+    });
+
+    test("rows that share a file name say so and show when each was seen", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      const list = page.getByRole("list", { name: "Setups" });
+      const twins = list.getByRole("link").filter({ hasText: "Bristol race v3.sto" });
+      await expect(twins).toHaveCount(2);
+      for (const row of await twins.all()) {
+        await expect(row).toContainText("Same file name, different values (1 other)");
+        await expect(row).toContainText(/Sep \d+, 2026/);
+        await expect(row).not.toContainText("last ");
+      }
+      await expect(twins.filter({ hasText: "Raced" })).toHaveCount(1);
+      await expect(list.getByRole("link").filter({ hasText: "Bristol race v2.sto" })).not.toContainText("Same file name");
       await expectNoHorizontalScroll(page);
       if (phone) await expectTouchTargets(page);
     });
@@ -35,6 +51,14 @@ for (const device of DEVICES) {
       await expect(values.getByText("Readouts, not setup values")).toBeVisible();
       await expect(values.getByRole("region", { name: "Chassis · Left front" }).nth(1)).toContainText("Corner weight");
       await expect(values.getByRole("region", { name: "Chassis · Left front" }).first()).not.toContainText("Corner weight");
+
+      const why = page.getByTestId("same-name");
+      await expect(why).toContainText("Another setup carries the file name Bristol race v3.sto");
+      await expect(why).toContainText("the file was changed between sessions");
+      await expect(why).toContainText("1 recording and 1 garage visit");
+      await expect(page.getByLabel("With").locator("option").filter({ hasText: "Bristol race v3.sto" })).toContainText(/Sep \d+, 2026/);
+      await expect(page.getByRole("region", { name: "Sightings" }).getByText("Unmodified").first()).toBeVisible();
+      await expect(page.getByRole("region", { name: "Sightings" }).getByRole("link", { name: "Session 103" })).toBeVisible();
 
       await page.getByLabel("With").selectOption("2");
       const summary = page.getByTestId("compare-summary");

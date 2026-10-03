@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Schemas } from "../core/api";
-import { classifyCompare, compareLabel, currentSeason, groupSetupValues, isReadout, setupTitle, tuneTarget, words } from "./model";
+import { classifyCompare, compareLabel, currentSeason, groupSetupValues, isReadout, sameNameAs, seenSpan, setupTitle, tuneTarget, words } from "./model";
 
 describe("setup values", () => {
   it("splits camel case into words", () => {
@@ -93,5 +93,22 @@ describe("Tune this setup", () => {
     expect(tuneTarget([obs({ source: "garage_commit", visit_id: "v1" })])).toEqual({ blocked: "No recording used this setup yet." });
     expect(tuneTarget([obs({ session_id: 2 })])).toEqual({ blocked: "The recording that used this setup is not analyzed yet." });
     expect(tuneTarget([])).toEqual({ blocked: "No recording used this setup yet." });
+  });
+});
+
+describe("setups that share a file name", () => {
+  const mk = (id: number, names: string[], first = "2026-09-20T10:00:00Z", last = "2026-09-20T12:00:00Z") => ({ setup_id: id, names, first_seen_at: first, last_seen_at: last });
+
+  it("lists the other setups with a shared name, and none for unnamed or unique ones", () => {
+    const all = [mk(1, ["R.sto"]), mk(2, ["R.sto", "R copy.sto"]), mk(3, ["Other.sto"]), mk(4, [])];
+    expect(sameNameAs(all[0]!, all).map((s) => s.setup_id)).toEqual([2]);
+    expect(sameNameAs(all[1]!, all).map((s) => s.setup_id)).toEqual([1]);
+    expect(sameNameAs(all[2]!, all)).toEqual([]);
+    expect(sameNameAs(all[3]!, all)).toEqual([]);
+  });
+
+  it("shows one date when first and last sighting share a day, else the span", () => {
+    expect(seenSpan(mk(1, []))).toBe("Sep 20, 2026");
+    expect(seenSpan(mk(1, [], "2026-09-20T10:00:00Z", "2026-09-27T09:00:00Z"))).toBe("Sep 20, 2026 to Sep 27, 2026");
   });
 });

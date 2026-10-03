@@ -1,4 +1,5 @@
 import type { Schemas } from "../core/api";
+import { formatDate } from "../core/format";
 import { EXCLUDED_LEAF_PATTERNS } from "../gen/setup-keys";
 
 export interface ValueItem {
@@ -102,6 +103,22 @@ export const SOURCE_LABEL: Record<Schemas["SetupSource"], string> = {
 export function setupTitle(s: Pick<Schemas["SetupSummary"], "names" | "car_name" | "car_path" | "setup_id">): string {
   if (s.names.length > 0) return s.names[0]!;
   return `Unnamed ${s.car_name ?? s.car_path} setup`;
+}
+
+type NameKey = Pick<Schemas["SetupSummary"], "setup_id" | "names">;
+
+/** The other setups that carry one of this setup's file names. Setups differ by values, so a shared name means the file was edited between sessions. */
+export function sameNameAs<T extends NameKey>(s: NameKey, all: readonly T[]): T[] {
+  if (s.names.length === 0) return [];
+  const names = new Set(s.names);
+  return all.filter((o) => o.setup_id !== s.setup_id && o.names.some((n) => names.has(n)));
+}
+
+/** When this set of values was seen: one date, or first to last. */
+export function seenSpan(s: Pick<Schemas["SetupSummary"], "first_seen_at" | "last_seen_at">): string {
+  const a = formatDate(s.first_seen_at);
+  const b = formatDate(s.last_seen_at);
+  return a === b ? a : `${a} to ${b}`;
 }
 
 export function uniqueSources(sources: readonly Schemas["SetupSource"][]): string[] {

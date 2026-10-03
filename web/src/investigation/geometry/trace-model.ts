@@ -417,15 +417,40 @@ function byTime(a: TraceLapData, b: TraceLapData): number {
   return (a.lap_time_s as number) - (b.lap_time_s as number) || a.lap - b.lap;
 }
 
-/** "Best three": the three fastest clean laps, else the three fastest laps with a time. */
+/**
+ * Default-selection rule. The backend decides comparability (comparison_eligible, empty exclusion_reasons); a lap that is
+ * comparable and complete is offered by default. Other laps stay selectable by hand and are marked in the lap list.
+ */
+export function isComparable(meta: TraceLapData): boolean {
+  return meta.comparison_eligible !== false && meta.complete !== false && !(Array.isArray(meta.exclusion_reasons) && meta.exclusion_reasons.length > 0);
+}
+
+function timedLaps(data: TraceData): TraceLapData[] {
+  return data.laps.map((lap) => data.lapMeta.get(lap)).filter((meta): meta is TraceLapData => hasUsableLapTime(meta));
+}
+
+/**
+ * Default candidates: comparable laps. A partial (incomplete) lap is never a candidate. When the backend marks no complete
+ * lap comparable (a caution-heavy race), the complete laps stand in so Traces still opens with a lap to read; the lap list
+ * marks them.
+ */
+function defaultCandidates(data: TraceData, context: SelectionContext): TraceLapData[] {
+  const timed = timedLaps(data);
+  const comparable = timed.filter(isComparable);
+  if (comparable.length) {
+    const clean = comparable.filter((meta) => isCleanLap(meta, context.incidentPoints.get(meta.lap) ?? 0));
+    return (clean.length ? clean : comparable).sort(byTime);
+  }
+  const complete = timed.filter((meta) => meta.complete !== false);
+  const green = complete.filter((meta) => isGreenLap(meta) && (context.incidentPoints.get(meta.lap) ?? 0) === 0);
+  return (green.length ? green : complete).sort(byTime);
+}
+
+/** "Best three": the three fastest default candidates (clean comparable laps first). */
 export function bestThree(data: TraceData, context: SelectionContext): number[] {
-  const timed = data.laps.map((lap) => data.lapMeta.get(lap)).filter((meta): meta is TraceLapData => hasUsableLapTime(meta));
-  const clean = timed.filter((meta) => isCleanLap(meta, context.incidentPoints.get(meta.lap) ?? 0)).sort(byTime).slice(0, 3);
-  return (clean.length ? clean : timed.sort(byTime).slice(0, 3)).map((meta) => meta.lap);
+  return defaultCandidates(data, context).slice(0, 3).map((meta) => meta.lap);
 }
 
 export function fastestLap(data: TraceData, context: SelectionContext): number | null {
-  const timed = data.laps.map((lap) => data.lapMeta.get(lap)).filter((meta): meta is TraceLapData => hasUsableLapTime(meta));
-  const clean = timed.filter((meta) => isCleanLap(meta, context.incidentPoints.get(meta.lap) ?? 0)).sort(byTime);
-  return (clean[0] ?? timed.sort(byTime)[0])?.lap ?? null;
+  return defaultCandidates(data, context)[0]?.lap ?? null;
 }

@@ -46,6 +46,17 @@ const check = (viewport, name, ok, detail = "") => {
 };
 
 const browser = await chromium.launch();
+// Warm-up: the first page load in a freshly launched browser costs several seconds of browser start-up
+// (about 7.5 s measured against a service that answers in 0.2 s). Load the app once, unmeasured, so the
+// library time limit below measures the service and the SPA, not the harness.
+{
+  const warm = await browser.newContext();
+  const warmPage = await warm.newPage();
+  const w0 = Date.now();
+  await warmPage.goto(`${base}/`, { waitUntil: "load", timeout: 60_000 }).catch(() => {});
+  console.log(`warm-up load ${Date.now() - w0} ms (not checked)`);
+  await warm.close();
+}
 for (const [vp, size] of Object.entries(VIEWPORTS)) {
   const context = await browser.newContext({ viewport: { width: size.width, height: size.height }, hasTouch: size.touch });
   const page = await context.newPage();

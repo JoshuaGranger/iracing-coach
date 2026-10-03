@@ -1237,6 +1237,7 @@ tr.group-head th {
     width: 44px;
   }
   .brand,
+  .row-static a,
   .crumbs a {
     display: inline-flex;
     align-items: center;

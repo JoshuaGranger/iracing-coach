@@ -1,6 +1,6 @@
 import { useMemo } from "preact/hooks";
 import { lapTime, signedText } from "../format";
-import { isCleanLap, isGreenLap, lapColor, type TraceData } from "../geometry/trace-model";
+import { isCleanLap, isComparable, isGreenLap, lapColor, type TraceData } from "../geometry/trace-model";
 import type { TraceLapData } from "../types";
 
 export interface LapRailProps {
@@ -32,6 +32,14 @@ function conditionsTitle(meta: TraceLapData): string {
   if (typeof c.wind_speed_mph === "number") parts.push(`${c.wind_speed_mph.toFixed(0)} mph wind`);
   if (typeof c.relative_humidity_percent === "number") parts.push(`${c.relative_humidity_percent.toFixed(0)}% humidity`);
   return parts.length ? parts.join(" · ") : "Lap time";
+}
+
+/** Why the backend does not offer a lap by default; null when it is comparable. */
+export function exclusionLabel(meta: TraceLapData): { text: string; title: string } | null {
+  if (isComparable(meta)) return null;
+  const reasons = Array.isArray(meta.exclusion_reasons) ? meta.exclusion_reasons : [];
+  const partial = meta.complete === false || reasons.includes("partial");
+  return { text: partial ? "Partial" : "Excl", title: `Not comparable${reasons.length ? `: ${reasons.join(", ").replace(/_/g, " ")}` : ""}. Select by hand to view.` };
 }
 
 export function LapRail(props: LapRailProps) {
@@ -73,10 +81,11 @@ export function LapRail(props: LapRailProps) {
                 const incidents = incidentPoints.get(meta.lap) ?? 0;
                 const pit = typeof meta.pit_time_s === "number" && meta.pit_time_s > 0;
                 const caution = !isGreenLap(meta);
+                const excluded = exclusionLabel(meta);
                 const fuel = typeof meta.fuel_used_gal === "number" ? meta.fuel_used_gal.toFixed(2) : "—";
                 return (
                   <button
-                    type="button" key={meta.lap} class={`ri-lap-row${isSelected ? " selected" : ""}${pit ? " pit-lap" : ""}`} style={`--lap-color:${lapColor(data, meta.lap)}`}
+                    type="button" key={meta.lap} class={`ri-lap-row${isSelected ? " selected" : ""}${pit ? " pit-lap" : ""}${excluded ? " excluded" : ""}`} style={`--lap-color:${lapColor(data, meta.lap)}`}
                     aria-pressed={isSelected} aria-label={`Lap ${meta.lap}, ${lapTime(meta.lap_time_s)}`} data-lap={meta.lap} onClick={() => props.onToggle(meta.lap)}
                   >
                     <span class="ri-lap-id"><b>{meta.lap}</b><i class="ri-lap-swatch" aria-hidden="true" /></span>
@@ -86,6 +95,7 @@ export function LapRail(props: LapRailProps) {
                     </span>
                     <span class="ri-lap-fuel" title="Fuel used (gal)">{fuel}</span>
                     <span class="ri-lap-flags">
+                      {excluded && <em class="flag excluded" title={excluded.title}>{excluded.text}</em>}
                       {caution && <em class="flag caution" title="Caution or yellow flag">C</em>}
                       {pit && <em class="flag pit" title="Pit lap">Pit</em>}
                       {incidents > 0 && <em class="flag incident" title={`${incidents} incident point${incidents === 1 ? "" : "s"}`}>x{incidents}</em>}

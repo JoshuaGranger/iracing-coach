@@ -20,4 +20,6 @@ node tools\e2e\live_soak.mjs --base http://192.168.1.81:8210 --out <scratch>\soa
 & $py tools\e2e\time_to_visible.py --server http://192.168.1.81:8210 --file <copy of a recording>
 ```
 
+`spa_check.mjs` warms the browser first: it loads the app once in a throwaway context and prints `warm-up load N ms` without checking it, because the first load in a freshly launched Chromium took about 7.5 s while the service answered in 0.2 s. The "library loaded in under 5 s" limit is measured on each viewport's own page load after that, so it measures the service and the SPA, not browser start-up.
+
 Keep server data roots short on Windows (for example `%TEMP%\e2e-w3`): the Python worker writes `analysis-cache` temporary files whose full path exceeds `MAX_PATH` under a deep scratch folder.

@@ -99,7 +99,7 @@ pub(crate) fn write_all(out_dir: &Path, built: &Built) -> Result<Vec<ViewFile>, 
     if let Ok(dir) = File::open(&tmp) {
         let _ = dir.sync_all();
     }
-    if let Err(error) = fs::rename(&tmp, out_dir) {
+    if let Err(error) = rename_with_retry(&tmp, out_dir) {
         let _ = fs::remove_dir_all(&tmp);
         return Err(if out_dir.exists() {
             ProjectError::OutputExists(out_dir.to_path_buf())
@@ -108,6 +108,21 @@ pub(crate) fn write_all(out_dir: &Path, built: &Built) -> Result<Vec<ViewFile>, 
         });
     }
     Ok(files)
+}
+
+/// Windows denies a directory rename while a scanner or indexer still holds a handle on a file
+/// inside it; the denial clears within milliseconds, so retry briefly before giving up.
+fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
+    let mut attempt: u64 = 0;
+    loop {
+        match fs::rename(from, to) {
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied && attempt < 20 => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(25 * attempt));
+            }
+            result => return result,
+        }
+    }
 }
 
 fn write_into(dir: &Path, built: &Built) -> io::Result<Vec<ViewFile>> {

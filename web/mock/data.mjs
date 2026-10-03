@@ -129,6 +129,8 @@ function buildSetups(customerId) {
     mk(1, ["Bristol race v3.sto"], SETUP_VALUES_A, 103, true, ["recording", "garage_commit"]),
     mk(2, ["Bristol race v2.sto"], SETUP_VALUES_B, 106, true, ["recording"]),
     mk(3, [], SETUP_VALUES_B, 109, false, ["garage_snapshot"]),
+    // The same .sto name as setup 1 with other values: the file was edited between sessions.
+    mk(4, ["Bristol race v3.sto"], { ...SETUP_VALUES_A, "Chassis.LeftFront.Camber": "-3.4 deg" }, 112, false, ["recording"]),
   ];
 }
 

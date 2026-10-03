@@ -7,7 +7,7 @@ import { uuid4 } from "../core/uuid";
 import { href, navigate } from "../core/router";
 import { Chip, ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
 import { NotesPanel } from "../ui/notes";
-import { SOURCE_LABEL, classifyCompare, groupSetupValues, setupTitle, tuneTarget, uniqueSources } from "../setups/model";
+import { SOURCE_LABEL, classifyCompare, groupSetupValues, sameNameAs, seenSpan, setupTitle, tuneTarget, uniqueSources } from "../setups/model";
 
 type Result = Schemas["SetupCompareResult"];
 
@@ -92,6 +92,9 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
   const s = detail.setup;
   const { settings, readouts, settingCount } = groupSetupValues(detail.values, detail.identity_excluded_keys);
   const others = (siblings.data?.setups ?? []).filter((x) => x.setup_id !== setupId);
+  const twins = sameNameAs(s, others);
+  const recordings = new Set(detail.observations.filter((o) => o.session_id != null).map((o) => o.session_id)).size;
+  const visits = new Set(detail.observations.filter((o) => o.visit_id).map((o) => o.visit_id)).size;
   const other = others.find((x) => x.setup_id === otherId);
 
   function pick(id: number | null) {
@@ -131,6 +134,13 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
         ))}
       </p>
 
+      {twins.length > 0 ? (
+        <p class="sub" data-testid="same-name">
+          {twins.length === 1 ? "Another setup carries" : `${twins.length} other setups carry`} the file name {s.names.find((n) => twins.some((t) => t.names.includes(n)))}: the file was changed between sessions, so each version has its own values. This one was seen {seenSpan(s)}, in{" "}
+          {[recordings ? plural(recordings, "recording") : "", visits ? plural(visits, "garage visit") : ""].filter(Boolean).join(" and ") || "no recording or garage visit"}. Compare with the others below.
+        </p>
+      ) : null}
+
       <section class="panel" aria-label="Compare">
         <h2>Compare</h2>
         {others.length === 0 ? (
@@ -142,7 +152,7 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
               <option value="">No comparison</option>
               {others.map((o) => (
                 <option key={o.setup_id} value={o.setup_id}>
-                  {setupTitle(o)} · {formatDateTime(o.last_seen_at)}
+                  {setupTitle(o)} · {sameNameAs(o, [s, ...others]).length > 0 ? seenSpan(o) : formatDateTime(o.last_seen_at)}
                 </option>
               ))}
             </select>
@@ -179,7 +189,8 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
               <span class="row-main">
                 <Chip>{SOURCE_LABEL[o.source]}</Chip>
                 <span class="row-title">{o.setup_name ?? "Name unknown"}</span>
-                {o.is_modified ? <Chip tone="warn">Modified</Chip> : null}
+                {o.is_modified != null ? <Chip tone={o.is_modified ? "warn" : undefined}>{o.is_modified ? "Modified" : "Unmodified"}</Chip> : null}
+                {o.session_id != null ? <a href={href({ page: "investigation", customerId, sessionId: o.session_id, view: "race" })}>Session {o.session_id}</a> : null}
               </span>
               <span class="row-meta">{formatDateTime(o.observed_at)}</span>
             </li>

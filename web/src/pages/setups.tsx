@@ -4,13 +4,13 @@ import { formatDate, plural } from "../core/format";
 import { useDebounced, useResource } from "../core/resource";
 import { href } from "../core/router";
 import { Chip, Empty, ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
-import { setupTitle, uniqueSources } from "../setups/model";
+import { sameNameAs, seenSpan, setupTitle, uniqueSources } from "../setups/model";
 
 type Setup = Schemas["SetupSummary"];
 const PAGE = 50;
 const FILES_SHOWN = 20;
 
-export function SetupRow({ s, customerId }: { s: Setup; customerId: number }) {
+export function SetupRow({ s, customerId, shared = 0 }: { s: Setup; customerId: number; shared?: number }) {
   return (
     <li>
       <a class="row-link setup-row" href={href({ page: "setup", customerId, setupId: s.setup_id })}>
@@ -22,8 +22,9 @@ export function SetupRow({ s, customerId }: { s: Setup; customerId: number }) {
           ))}
         </span>
         <span class="row-meta">
-          {s.car_name ?? s.car_path} · {plural(s.observation_count, "sighting")} · last {formatDate(s.last_seen_at)}
+          {s.car_name ?? s.car_path} · {plural(s.observation_count, "sighting")} · {shared > 0 ? seenSpan(s) : `last ${formatDate(s.last_seen_at)}`}
           {s.names.length > 1 ? ` · ${s.names.length} file names` : ""}
+          {shared > 0 ? ` · Same file name, different values (${plural(shared, "other")})` : null}
         </span>
       </a>
     </li>
@@ -88,7 +89,7 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
       {setups.length > 0 ? (
         <ul class="rows" aria-label="Setups">
           {setups.map((s) => (
-            <SetupRow key={s.setup_id} s={s} customerId={customerId} />
+            <SetupRow key={s.setup_id} s={s} customerId={customerId} shared={sameNameAs(s, setups).length} />
           ))}
         </ul>
       ) : null}

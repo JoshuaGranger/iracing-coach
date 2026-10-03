@@ -112,3 +112,10 @@ Reason: W4's wave-3 report and `acceptance/e2e-dev-pc.md` (W4 minor): `POST /api
 Reason: W6's wave-3 report and `acceptance/e2e-dev-pc.md` (W6 minor): under a data root about 150 characters deep the dev worker could not create its `analysis-cache` temporary file (290 characters). W6 fixed the archive side (extended-length paths); the recordings the worker opens from the job root stay bound by `MAX_PATH`, which no contract said.
 
 - `worker-interface.md` section 2: a paragraph on the Windows `MAX_PATH` bound for `--dev`: the job-root recording path `<COACH_DATA_DIR>\py\<customer_id>\jobs\<job_id>\telemetry\<original name>` must stay under 260 characters without `LongPathsEnabled`; a longer one comes back from discovery as a per-file `FileNotFoundError` record, and the server fails the discovery `no_session_found`; the archive root is not bound. Linux and the image are unaffected.
+
+### 2026-10-03, polish: setup blobs stay in the spool (polish-docs; additive clarification, no review needed)
+
+Reason: `acceptance/v1-candidate.md` and `e2e-mini-pc.md` found setup (`.sto`) blobs staying in the spool after archiving, which the deletion table did not state.
+
+- `nas-layout.md` section 7: the spool row and a note state that only `ibt` blobs are released after archiving; setup blobs stay because job roots hard-link them (`worker-interface.md` section 3) and no setup restage exists. No server behaviour changes; the behaviour is judged correct for v1.
+

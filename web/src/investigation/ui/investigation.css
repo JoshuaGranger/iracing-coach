@@ -224,6 +224,8 @@
 .ri-lap-fuel { color: var(--color-text-muted); font-family: var(--font-metric); text-align: right; }
 .ri-lap-flags { display: inline-flex; gap: 4px; min-width: 20px; }
 .flag { padding: 0 4px; border-radius: 3px; font-style: normal; font-size: 10px; background: var(--color-surface3); }
+.ri-lap-row.excluded:not(.selected) .ri-lap-time, .ri-lap-row.excluded:not(.selected) .ri-lap-id { opacity: 0.6; }
+.flag.excluded { color: var(--color-text-muted, inherit); }
 .flag.caution { color: var(--telemetry-caution); }
 .flag.pit { color: var(--telemetry-pit-service); }
 .flag.incident { color: var(--color-danger); }

@@ -69,9 +69,11 @@ At start the archiver:
 | Who | May delete | Never deletes |
 |---|---|---|
 | Server, NAS | its own `.tmp/` and `.probe/` files and folders | anything under `raw/`, `setups/`, `backups/`, `quarantine/` |
-| Server, spool (`/data/spool`) | `incoming/*.part` idle 24 h or failing hash verification; `ready/<sha>` once archived and no queued or running job references it | a `ready/` file whose blob is not `archived` |
+| Server, spool (`/data/spool`) | `incoming/*.part` idle 24 h or failing hash verification; `ready/<sha>` once archived and no queued or running job references it | a `ready/` file whose blob is not `archived`; **setup files** (`.sto`, `.htm`: every blob whose kind is not `ibt`) at all in v1, see the note below |
 | Server, Python roots | the job root `py/<id>/jobs/<job_id>/` (hard links only) after the job; after a killed job, its `*.<pid>.tmp` files at once, and `.write-*` / `.copy-*` under that driver's archive only when no worker process for that driver is running (cleanup deferred until both lanes are idle for the driver) | reports, `history.sqlite3`, `tuning/`, `trials/` |
 | Server, snapshots | local generations beyond the newest 48 | the newest complete generation |
 | Collector (sim) | its own journal entries after `verified`, its own rotated logs, its own temp config files | anything under `Documents\iRacing` (telemetry, setups, replays), and the old app's `Documents\iRacing Coach` data root |
+
+Setup-file exception (`server/src/handlers.rs` `release_spool`, which releases only `kind = 'ibt'` blobs). A setup blob stays in `/data/spool/ready/<sha>` after its `nas_state` is `archived`, and `blobs.spool_present` stays 1. Why: `worker-interface.md` section 3 builds each job root's `setups/` tree by hard-linking the spool file of every present setup file (the query requires `spool_present = 1`), and only recordings have a restage path from the NAS (section 4); a released setup blob would silently vanish from every later job root. Cost: a few KB per file, counted in spool bytes. The NAS copy is the durable one; the spool copy is the working copy. A setup spool file may be released only after the server can restage setup blobs from `$NAS/setups/` into a job root on demand (a contract change; not in v1). The `incoming/*.part` rule applies to setup uploads as to recordings. Start-up still clears `spool_present` for a spool file that is missing.
 
 The collector keeps no outbox copies; it uploads from iRacing's file in place.
