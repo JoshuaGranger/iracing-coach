@@ -3,7 +3,7 @@
 Gate G1 needs cold runs. The API re-queues an analysis but the worker then answers from its
 per-driver analysis cache, and no API call clears that cache, so a cold run uses a fresh archive,
 job root and worker home of its own. Same image, interpreter command (``COACH_PYTHON``: since the
-native release the image's ``/app/deploy/worker-python``, which turns on the native stages
+native release the image's ``/app/deploy/python3.12-native``, which turns on the native stages
 exactly as for the server's workers), script, environment (``server/src/worker.rs``
 ``worker_env``), ``nice 10``, ``oom_score_adj 1000`` and the same three JSON-RPC lines. The
 recordings are copied from read-only sources (the spool or the NAS archive) and given the

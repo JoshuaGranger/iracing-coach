@@ -39,13 +39,13 @@ ENV LANG=C.UTF-8 \
     COACH_DATA_DIR=/data \
     COACH_NAS_DIR=/nas/apps/iracing-coach \
     COACH_WEB_DIR=/app/web \
-    COACH_PYTHON=/app/deploy/worker-python \
+    COACH_PYTHON=/app/deploy/python3.12-native \
     COACH_WORKER_SCRIPT=/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py \
     COACH_CONTRACTS_DIR=/app/contracts
 COPY --from=server /out/coach-server /usr/local/bin/coach-server
 COPY --from=server /out/coach-analysis /usr/local/bin/coach-analysis
 # The worker interpreter: python3.12 with the native stages turned on (see the file).
-COPY --chmod=0755 deploy/mini-pc/worker-python /app/deploy/worker-python
+COPY --chmod=0755 deploy/mini-pc/python3.12-native /app/deploy/python3.12-native
 COPY --from=web /src/web/dist /app/web
 COPY iracing-coach /app/iracing-coach
 COPY contracts /app/contracts
@@ -54,7 +54,7 @@ COPY deploy/mini-pc/nas_probe.py /app/deploy/nas_probe.py
 RUN python3.12 -m compileall -q /app/iracing-coach /app/deploy \
     && python3.12 -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version" \
     && /usr/local/bin/coach-analysis --version \
-    && /app/deploy/worker-python -c "import os; assert os.environ['IRACING_COACH_NATIVE_STAGES'] == 'decode,kernels'"
+    && /app/deploy/python3.12-native -c "import os; assert os.environ['IRACING_COACH_NATIVE_STAGES'] == 'decode,kernels'"
 WORKDIR /app
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/coach-server"]

@@ -9,6 +9,9 @@
 # every worker the server starts, and nothing else changes: same interpreter, arguments,
 # process (exec keeps the pid, nice and oom_score_adj), roots and protocol.
 #
+# The file name starts with "python": the server finds the interpreter in its worker command by
+# that prefix and runs it with -V for /api/v1/status python_version (server/src/app.rs).
+#
 # Back to pure Python: release with COACH_PYTHON=/usr/local/bin/python3.12.
 IRACING_COACH_NATIVE_STAGES=decode,kernels
 IRACING_COACH_NATIVE_BIN=/usr/local/bin/coach-analysis
