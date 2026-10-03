@@ -26,7 +26,7 @@ Released 2026-10-03 01:58 UTC (2026-10-02 evening local) under D14 from branch `
 | NAS probe from inside the container: `docker exec iracing-coach-app-1 python3.12 /app/deploy/nas_probe.py` | `state: ok`, exit 0 (below) |
 | Python worker in the image | `mcp_server.py` answers `initialize` (`iracing-coach-local` 0.3.0, protocol 2025-06-18) and `tools/list` (26 tools) with the `worker-interface.md` section 2 variables and roots on the container's `/tmp`, exits 0 |
 
-Run again once W4's server is released: `curl -s http://192.168.1.81:8210/api/v1/status` must show `nas.state = ok`.
+Done in wave 2: after the real-server release (`server-release.md`), `curl -s http://192.168.1.81:8210/api/v1/status` shows `nas.state = ok`.
 
 ## NAS probe (risks R2 and the NFS uid question)
 
@@ -41,15 +41,15 @@ Run again once W4's server is released: `curl -s http://192.168.1.81:8210/api/v1
 
 | Item | Section 10 | Released | Why, and when it changes |
 |---|---|---|---|
-| Healthcheck | `coach-server healthcheck` | `python3.12 -c` GET of `/health` (`start_period 60s`, `start_interval 2s`) | the skeleton has no subcommand; any argument would start a second server. Switch when W4 ships `healthcheck` |
-| `RECOVERY_PATHS` / `RECOVERY_SQLITE` | `db snapshots` / `db/coach.sqlite3` | `.` / empty | `g-house-stack` fails the recovery point when a listed path or SQLite file does not exist (`g-house-stack` lines 88, 103), and the data directory is empty until a server creates them. Switch in the first release after a released server has created `db/coach.sqlite3` and `snapshots/` |
+| Healthcheck | `coach-server healthcheck` | `python3.12 -c` GET of `/health` (`start_period 60s`, `start_interval 2s`) | the skeleton has no subcommand; any argument would start a second server. Switched in wave 1; first released with the real server (`server-release.md`) |
+| `RECOVERY_PATHS` / `RECOVERY_SQLITE` | `db snapshots` / `db/coach.sqlite3` | `.` / empty | `g-house-stack` fails the recovery point when a listed path or SQLite file does not exist (`g-house-stack` lines 88, 103), and the data directory is empty until a server creates them. Switched in the second wave-2 release, `15a53f4` (`server-release.md`) |
 | Toolchain file | in context | excluded by `.dockerignore` | `rust-toolchain.toml` names channel `1.99` and the Windows target, which would make rustup in the image download a second toolchain; the image's 1.99.0 is the same version |
 | Node stage | `node:24-bookworm` | `node:24-bookworm-slim`, pnpm 9.15.4 from npm | smaller download; no corepack dependency |
 | `ca-certificates` | added | already in the Python base image | no apt step needed |
 | Extras | none | `init: true`, `stop_grace_period: 30s`, `/tmp` tmpfs 256 MB, `/etc/localtime` read-only | worker reaping and SIGTERM forwarding, time for the snapshot on SIGTERM, a bounded tmpfs, local time for the 04:00 daily backup |
 | Server paths | not stated | `COACH_BIND`, `COACH_DATA_DIR=/data`, `COACH_NAS_DIR=/nas/apps/iracing-coach`, `COACH_WEB_DIR=/app/web`, `COACH_PYTHON`, `COACH_WORKER_SCRIPT=/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py`, `COACH_CONTRACTS_DIR=/app/contracts` in the image | proposed to W4 as a contract change; only `COACH_BIND` is read today |
 
-## Next release (wave-1 follow-ups, not released yet)
+## Next release (wave-1 follow-ups; released in wave 2, see `server-release.md`)
 
 - Compose runs `/usr/local/bin/coach-server healthcheck` (`contracts/server-config.md`). Checked on the dev PC against the tree's server: exit 1 with no listener, 0 once `coach-server serve --dev` listened on the `COACH_BIND` port, 1 after it stopped. That server created `db/`, `snapshots/`, `spool/`, `py/`, `views/` and `run/` under `COACH_DATA_DIR` at start.
 - `RECOVERY_PATHS=.` stays for the first real-server release: the released skeleton created neither `db/` nor `snapshots/`, and `g-house-stack` refuses a missing path. The release after it sets `RECOVERY_PATHS=db snapshots` and `RECOVERY_SQLITE=db/coach.sqlite3`.
@@ -65,6 +65,6 @@ Run again once W4's server is released: `curl -s http://192.168.1.81:8210/api/v1
 
 | Gate | State |
 |---|---|
-| G1 analysis on the N100 | wave 2 (`tools/rig/g1-analysis.sh`, not written yet) |
+| G1 analysis on the N100 | PASS, `g1-analysis.md` (`tools/rig/g1-analysis.sh`) |
 | G3 garage capture | **[sim: blocked]** |
 | G4 rig performance | **[sim: blocked]** |
