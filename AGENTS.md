@@ -20,7 +20,8 @@ Keep the investigation on one well-planned screen: track location, exact compari
 | `web/` | TypeScript SPA |
 | `deploy/mini-pc/` | Dockerfile, Compose file, `app.env` (mini-pc skill conventions) |
 | `docs/08-rewrite/contracts/` | interfaces between workstreams; change them only by the process in its README |
-| `companion-app/` | retired desktop app: reference only, deleted at the end of the rewrite; do not keep it building |
+
+The retired desktop app (`companion-app/`) was deleted in rewrite wave 4 (2026-10-03); its source lives in Git history (last present at `3ff5e87`).
 
 Work in your workstream's owned paths only (`docs/08-rewrite/workstreams.md`).
 

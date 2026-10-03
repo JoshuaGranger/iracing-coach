@@ -170,3 +170,11 @@ Reason: `port/phase2-kernels.md` section 5 (boundary D, child memory). Boundary 
 - `worker-interface.md` section 7, column store: optional header field `alignment` (4096: header padded with spaces, data section and every block on a page); format version stays 1; the kernels child and the merge stage map the store.
 - `worker-interface.md` section 8: the writer count rule (site calls equal on both captures, every native-side call written natively, no fallback) and the `analysis_sha256` recomputation (`outputs/analysis-sha256-check.json`); capture format 5.
 - Proof: `crates/coach-analysis/tests/writer.rs` (926 oracle vectors, `tools/emit_writer_vectors.py`), `tests/decode.rs` (page alignment, mapped read), `analysis_parity.py corpus --native-stages decode,kernels,writer` on Windows and WSL (`port/phase3-writer.md`).
+
+### 2026-10-03, wave 4: `companion-app/` deleted, its CI removed (W9; scaffold change; no protocol change, no review needed)
+
+Reason: `workstreams.md` wave 4 ("W9 deletes `companion-app/` and its CI"); the owner retired the desktop app. It is in Git history, last present at `3ff5e87`.
+
+- Scaffold `.github/workflows/ci.yml`: the first-party JavaScript syntax step, its evidence upload and the `javascript` evidence normalizer are removed (the gate scanned only `companion-app/` JavaScript). `tools/check.ps1` and `tools/verify-repository.ps1` never referenced the app and are unchanged.
+- `crate-api.md` (source facts) and `worker-interface.md` section 5 item 5: wording only; the C# sources are named as Git history, and the C#-reading-tests precondition is recorded as met.
+- Outside the contracts, in the same commit: `tools/Invoke-JavaScriptSyntaxGate.ps1` and its tests, the `javascript` family of `tools/New-EvidenceReport.ps1`, the 278 `dotnet` declarations of `tools/evidence/evidence-declarations.json` (their fixture paths pointed into the deleted tree) and `crates/coach-live/tools/csharp-oracle/` (built only against the deleted sources; the committed `engine.json` is the record). Proof: `tools/dev/tests/test_desktop_app_retired.py`.

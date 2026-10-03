@@ -40,29 +40,6 @@ jobs:
         shell: pwsh
         run: .\tools\verify-repository.ps1
 
-      - name: Check first-party JavaScript syntax
-        shell: pwsh
-        run: |
-          $sha = (git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0) { throw "Could not resolve the checked-out source SHA." }
-          $evidence = Join-Path $env:RUNNER_TEMP 'iracing-coach-javascript-syntax.json'
-          .\tools\Invoke-JavaScriptSyntaxGate.ps1 `
-            -RepositoryRoot $PWD.Path `
-            -SourceSha $sha `
-            -Authority ci-source-gate `
-            -EventName '${{ github.event_name }}' `
-            -OutputPath $evidence
-          if ($LASTEXITCODE -ne 0) { throw "First-party JavaScript syntax-only gate failed." }
-          Get-Content -LiteralPath $evidence -Raw
-
-      - name: Retain JavaScript syntax-only evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: javascript-syntax-only-${{ github.run_id }}
-          path: ${{ runner.temp }}\iracing-coach-javascript-syntax.json
-          if-no-files-found: error
-
       - name: Emit normalized evidence ladder
         if: always()
         shell: pwsh
@@ -114,14 +91,6 @@ jobs:
             catch { $failures.Add("$family-normalizer") | Out-Null }
           }
 
-          $javascriptRaw = Join-Path $env:RUNNER_TEMP 'iracing-coach-javascript-syntax.json'
-          try {
-            & .\tools\New-EvidenceReport.ps1 -RepositoryRoot $PWD.Path -SourceSha $sha -Family javascript `
-              -InputPath $javascriptRaw -Authority ci-source-gate -ToolchainProvenance $provenance `
-              -OutputPath (Join-Path $resolvedRoot 'normalized-javascript.json')
-          }
-          catch { $failures.Add('javascript-normalizer') | Out-Null }
-
           if ($failures.Count -gt 0) { throw ('Evidence ladder failed: ' + ($failures -join ', ')) }
 
       - name: Retain normalized evidence ladder
@@ -132,7 +101,6 @@ jobs:
           path: |
             ${{ env.EVIDENCE_ROOT }}\normalized-devtools.json
             ${{ env.EVIDENCE_ROOT }}\normalized-backend.json
-            ${{ env.EVIDENCE_ROOT }}\normalized-javascript.json
           if-no-files-found: error
 
       - name: Remove exact evidence root

@@ -1,9 +1,0 @@
-<div class="ri-empty ri-panel" data-legacy-investigation>
-    <strong>Saved before run and section inspection</strong>
-    <span>Refresh this recording's analysis to compare runs and inspect track sections. The recording itself is not changed.</span>
-    @if (OnRefresh.HasDelegate) { <button type="button" class="ri-button" @onclick="() => OnRefresh.InvokeAsync()">Refresh analysis</button> }
-</div>
-
-@code {
-    [Parameter] public EventCallback OnRefresh { get; set; }
-}
