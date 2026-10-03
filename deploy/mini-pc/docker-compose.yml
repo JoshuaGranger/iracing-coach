@@ -9,8 +9,10 @@ services:
     stop_grace_period: 30s
     ports:
       - "8210:8080"
-    mem_limit: 4g
-    memswap_limit: 4g
+    # 3 GiB with the native stages (the server's default with coach-analysis in the image):
+    # the 2.7 GiB shared worker budget plus 0.3 GiB margin; no swap (worker-interface.md section 6).
+    mem_limit: 3g
+    memswap_limit: 3g
     cpus: 2.0
     cpu_shares: 256
     read_only: true

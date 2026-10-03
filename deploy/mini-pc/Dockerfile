@@ -32,6 +32,10 @@ COPY web web
 RUN pnpm -C web build
 
 # Stage 3: runtime. Python 3.12 (stdlib only, no PyYAML) runs the analysis worker.
+# The native stages need no setting here: with /usr/local/bin/coach-analysis present the
+# server's COACH_NATIVE_STAGES default is decode,kernels,writer, which it passes to every worker
+# with the executable's path, and which selects the native admission model
+# (contracts/server-config.md section 3; worker-interface.md sections 6 and 7).
 FROM python:3.12-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3
 ENV LANG=C.UTF-8 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -39,22 +43,19 @@ ENV LANG=C.UTF-8 \
     COACH_DATA_DIR=/data \
     COACH_NAS_DIR=/nas/apps/iracing-coach \
     COACH_WEB_DIR=/app/web \
-    COACH_PYTHON=/app/deploy/python3.12-native \
+    COACH_PYTHON=/usr/local/bin/python3.12 \
     COACH_WORKER_SCRIPT=/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py \
     COACH_CONTRACTS_DIR=/app/contracts
 COPY --from=server /out/coach-server /usr/local/bin/coach-server
 COPY --from=server /out/coach-analysis /usr/local/bin/coach-analysis
-# The worker interpreter: python3.12 with the native stages turned on (see the file).
-COPY --chmod=0755 deploy/mini-pc/python3.12-native /app/deploy/python3.12-native
 COPY --from=web /src/web/dist /app/web
 COPY iracing-coach /app/iracing-coach
 COPY contracts /app/contracts
 COPY deploy/mini-pc/nas_probe.py /app/deploy/nas_probe.py
 # Precompiled once here: the root filesystem is read-only at run time.
 RUN python3.12 -m compileall -q /app/iracing-coach /app/deploy \
-    && python3.12 -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version" \
-    && /usr/local/bin/coach-analysis --version \
-    && /app/deploy/python3.12-native -c "import os; assert os.environ['IRACING_COACH_NATIVE_STAGES'] == 'decode,kernels'"
+    && "$COACH_PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version" \
+    && /usr/local/bin/coach-analysis --version
 WORKDIR /app
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/coach-server"]

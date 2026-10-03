@@ -4,7 +4,9 @@
     capture  turn a container archive (pulled read-only) into a tools/parity capture
     calls    the in-container trace of a native run against the oracle capture's entry-point calls
              (worker-interface.md section 8: one native decode per recording, one kernel call per
-             oracle call, count for count, and no Python entry point on the native side)
+             oracle call, count for count, and no Python entry point on the native side; with the
+             writer stage, the writer sites called as often as in the oracle, each call a native
+             write, no fallback)
     strict   compare two analysis.json files with only roots, separators and newlines folded;
              differing `*_at` run instants are listed apart from every other difference
     report   per-window statistics from the sampler files and the gate verdict
@@ -134,12 +136,23 @@ def command_calls(args: argparse.Namespace) -> int:
     kinds = sorted({p["kind"] for p in run.get("processes") or []})
     if "coach-analysis kernels" not in kinds:
         problems.append(f"no coach-analysis kernels process was sampled (processes: {kinds})")
+    # Writer (phase 3, section 8): only when the run's stages name it (g1_cold_run.py reports them).
+    stages = [s.strip() for s in str(run.get("native_stages") or "").split(",") if s.strip()]
+    writer = "writer" in stages
+    if writer:
+        problems += native_stages.writer_call_problems(oracle.get("kernel_calls") or {}, native, True)
     report = {
+        "native_stages": run.get("native_stages"),
         "native_decode_calls": decodes,
         "kernel_calls_native": native.get("native"),
         "entry_point_calls_native_side": native.get("oracle"),
         "oracle_entry_point_calls": (oracle.get("kernel_calls") or {}).get("oracle"),
         "kernel_call_total": sum((native.get("native") or {}).values()),
+        "writer_site_calls": native.get("writer_sites"),
+        "writer_native_writes": native.get("writer"),
+        "writer_fallbacks": native.get("writer_fallback"),
+        "writer_fallback_total": sum((native.get("writer_fallback") or {}).values()) if writer else None,
+        "oracle_writer_site_calls": (oracle.get("kernel_calls") or {}).get("writer_sites"),
         "processes": kinds,
         "problems": problems,
         "pass": not problems,

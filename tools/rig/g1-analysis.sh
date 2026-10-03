@@ -12,9 +12,11 @@
 # run. Optional OVERLAP_RACE, PAIR_A, PAIR_B add a window in which uploads overlap an analysis
 # and a two-recording reconnect group is analysed.
 #
-# Cold runs use the data volume's transient /data/run/g1-cold (g1_cold_run.py) and are traced:
-# g1.py calls checks one native decode per recording and one kernel call per oracle entry-point
-# call. RUN1=cold (re-measurement once the server already holds the recording: the first G1
+# Cold runs use the data volume's transient /data/run/g1-cold (g1_cold_run.py, with the native
+# stages resolved as the server resolves them) and are traced: g1.py calls checks one native
+# decode per recording, one kernel call per oracle entry-point call and, with the writer stage,
+# one native write per writer-site call and no fallback (the oracle must be a capture of format 5
+# or later). RUN1=cold (re-measurement once the server already holds the recording: the first G1
 # uploaded it, and the server never re-runs a succeeded analysis) makes run 1 a cold run too,
 # read from the server's own spool or NAS copy; the preflight then requires the server to hold it.
 #
@@ -192,9 +194,9 @@ curl -sf "$SERVER/api/v1/status" > "$out/status-after.json" || true
 oracle_archive=$(json "$ORACLE/capture.json" "d['roots']['<archive_root>']")
 oracle_iracing=$(json "$ORACLE/capture.json" "d['roots']['<iracing_root>']")
 oracle_json=$(cygpath -w "$(find "$(cygpath -u "$oracle_archive")/reports" -name analysis.json | head -1)")
-compare() { # label archive_root iracing_root analysis_id
+compare() { # label archive_root iracing_root analysis_id [native_stages]
   "$PY" "$here/g1.py" capture --archive "$out/$1-archive" --out "$out/cap-$1" \
-    --archive-root "$2" --iracing-root "$3" --analysis-id "$4" --native-stages "${NATIVE_STAGES:-decode,kernels}"
+    --archive-root "$2" --iracing-root "$3" --analysis-id "$4" --native-stages "${5:-${NATIVE_STAGES:-decode,kernels,writer}}"
   "$PY" "$repo/tools/parity/analysis_parity.py" compare --raw --cross-platform "$ORACLE" "$out/cap-$1" > "$out/parity-$1.txt" || true
   "$PY" "$here/g1.py" strict "$(find "$out/$1-archive/reports" -name analysis.json | head -1)" \
     --left-archive "$2" --left-iracing "$3" \
@@ -206,7 +208,8 @@ if [ -d "$out/run1-archive" ] && [ "$RUN1" != cold ]; then
 fi
 for label in run1 run2; do
   [ -s "$out/$label-run.json" ] || continue
-  compare $label $COLD_BASE/archive $COLD_BASE/root "$(json "$out/$label-run.json" "d['analysis_id']")"
+  compare $label $COLD_BASE/archive $COLD_BASE/root "$(json "$out/$label-run.json" "d['analysis_id']")" \
+    "$(json "$out/$label-run.json" "d.get('native_stages') or ''")"
   "$PY" "$here/g1.py" calls --oracle "$ORACLE" --run "$out/$label-run.json" > "$out/calls-$label.json" || true
 done
 log "done; aborted='${aborted}'; report $out/report.json"

@@ -2,10 +2,12 @@
 
 Gate G1 needs cold runs. The API re-queues an analysis but the worker then answers from its
 per-driver analysis cache, and no API call clears that cache, so a cold run uses a fresh archive,
-job root and worker home of its own. Same image, interpreter command (``COACH_PYTHON``: since the
-native release the image's ``/app/deploy/python3.12-native``, which turns on the native stages
-exactly as for the server's workers), script, environment (``server/src/worker.rs``
-``worker_env``), ``nice 10``, ``oom_score_adj 1000`` and the same three JSON-RPC lines. The
+job root and worker home of its own. Same image, interpreter (``COACH_PYTHON``), script,
+environment (``server/src/worker.rs`` ``worker_env``), ``nice 10``, ``oom_score_adj 1000`` and
+the same three JSON-RPC lines. The native stages are resolved as the server resolves them
+(``contracts/server-config.md`` section 3: ``COACH_NATIVE_STAGES``, default every stage when
+``coach-analysis`` is present, ``none`` for none; ``COACH_NATIVE_BIN``) and passed as
+``IRACING_COACH_NATIVE_STAGES`` and ``IRACING_COACH_NATIVE_BIN``; ``run`` reports both. The
 recordings are copied from read-only sources (the spool or the NAS archive) and given the
 committed mtime the server gives them.
 
@@ -20,7 +22,8 @@ as memory). ``clean`` removes the base and nothing else.
 
 ``--trace`` starts the worker through the parity harness's trace shim (the logic of
 ``tools/parity/worker_trace.py``, written into the base): one line per native decode and the
-kernel-call counts of ``native_stages.install_call_counters``, returned under ``trace``.
+counts of ``native_stages.install_call_counters`` (kernel calls, writer site calls, native
+writes and writer fallbacks), returned under ``trace``.
 
 ``run`` reports the worker's own peak (``VmHWM``), the peak of every process of the worker's
 tree (decode, merge and kernels children by name), the largest sampled sum of the tree's
@@ -44,8 +47,32 @@ BASE = Path(os.environ.get("G1_BASE", "/data/run/g1-cold"))
 SCRIPT = os.environ.get(
     "COACH_WORKER_SCRIPT", "/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py"
 )
-PYTHON = os.environ.get("COACH_PYTHON", "/usr/local/bin/python3.12")
+PYTHON = os.environ.get("COACH_PYTHON") or "/usr/local/bin/python3.12"
 CGROUP_CURRENT = Path("/sys/fs/cgroup/memory.current")
+NATIVE_STAGE_NAMES = ("decode", "kernels", "writer")
+NATIVE_BIN_IMAGE = "/usr/local/bin/coach-analysis"
+
+
+def native_stages() -> tuple[str, str | None]:
+    """The server's resolution of COACH_NATIVE_STAGES and COACH_NATIVE_BIN (server/src/config.rs
+    ``resolve_native``, production mode): the comma list and the executable, or ("", None)."""
+
+    stages = (os.environ.get("COACH_NATIVE_STAGES") or "").strip()
+    named = os.environ.get("COACH_NATIVE_BIN") or None
+    if stages.lower() == "none":
+        return "", None
+    found = named or (NATIVE_BIN_IMAGE if os.path.isfile(NATIVE_BIN_IMAGE) else shutil.which("coach-analysis"))
+    if not stages:
+        if named and not os.path.isfile(named):
+            raise SystemExit(f"COACH_NATIVE_BIN: {named} is not a file")
+        return (",".join(NATIVE_STAGE_NAMES), found) if found else ("", None)
+    tokens = {token.strip() for token in stages.split(",") if token.strip()}
+    unknown = tokens - set(NATIVE_STAGE_NAMES)
+    if unknown or not tokens or ("kernels" in tokens and "decode" not in tokens):
+        raise SystemExit(f"COACH_NATIVE_STAGES: {stages!r} is not a stage list the server accepts")
+    if not found or not os.path.isfile(found):
+        raise SystemExit("COACH_NATIVE_STAGES names native stages but coach-analysis is not there")
+    return ",".join(name for name in NATIVE_STAGE_NAMES if name in tokens), found
 
 TRACE_SHIM = '''\
 import json, runpy, sys
@@ -73,7 +100,7 @@ counts, _uninstall = native_stages.install_call_counters()
 try:
     runpy.run_path(str(server), run_name="__main__")
 finally:
-    if counts["native"] or counts["oracle"]:
+    if any(counts.values()):
         with trace.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"kernel_calls": counts}) + "\\n")
 '''
@@ -125,11 +152,12 @@ def _kind(pid: int) -> str:
 
 def run(selector: str, trace: bool) -> dict:
     root, archive, home = BASE / "root", BASE / "archive", BASE / "home"
-    environment = {  # worker_env, as the server passes it; COACH_PYTHON sets the native stages
+    stages, native_bin = native_stages()
+    environment = {  # worker_env, as the server passes it, with the server's native stages
         "IRACING_COACH_IRACING_ROOT": str(root),
         "IRACING_COACH_DATA": str(archive),
         "IRACING_COACH_RAW_ARCHIVE": "external",
-        "IRACING_COACH_NATIVE_STAGES": "",
+        "IRACING_COACH_NATIVE_STAGES": stages,
         "PYTHONUTF8": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "LANG": "C.UTF-8",
@@ -137,6 +165,8 @@ def run(selector: str, trace: bool) -> dict:
         "TMPDIR": str(home),
         "PATH": "/usr/local/bin:/usr/bin:/bin",
     }
+    if stages and native_bin:
+        environment["IRACING_COACH_NATIVE_BIN"] = native_bin
     arguments = {"selector": selector, "iracing_root": str(root), "archive_root": str(archive), "target_hz": None}
     requests = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -224,6 +254,8 @@ def run(selector: str, trace: bool) -> dict:
     out = {
         "step": "run",
         "command": command[0],
+        "native_stages": stages,
+        "native_bin": native_bin if stages else None,
         "exit_code": process.returncode,
         "wall_s": round(wall, 3),
         "ru_maxrss_kib": usage.ru_maxrss,

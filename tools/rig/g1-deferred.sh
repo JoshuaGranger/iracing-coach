@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # The analyses the memory ceiling deferred (acceptance/migration.md, step 4), run cold inside the
-# released iracing-coach container with the image's worker command (native stages since the
-# native release; acceptance/g1-native.md). The server cannot run them: its admission estimate
-# (server/src/jobs.rs analysis_estimate, worker-interface.md section 6) still defers them, and
-# the API keeps a deferred job deferred. So each runs as G1's cold runs do (tools/rig/g1_cold_run.py,
+# released iracing-coach container with the image's worker command and the server's native stages
+# (acceptance/g1-native.md). Written when the server's admission still deferred them; since the
+# native admission model (worker-interface.md section 6) the server runs the ones that fit when
+# they are re-requested, and this script remains the cold, traced measurement of a session the
+# server holds. Each runs as G1's cold runs do (tools/rig/g1_cold_run.py,
 # fresh archive, job root and worker home under /data/run/g1-cold; nothing the server owns is
 # written), from the server's own NAS copies with their committed names and mtimes, traced, one
 # after another, with Home Assistant, Frigate and the container's memory sampled
