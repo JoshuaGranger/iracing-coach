@@ -83,3 +83,30 @@ iracing-coach-app-1   Up 22 seconds (healthy)   iracing-coach:ae65a0ae7089fd6b98
 `curl -s http://192.168.1.81:8210/api/v1/status` at 16:18:31Z: `nas.state ok` (`last_ok_at` 16:18:04Z, `pending_archive 0`), `queue {analysis 0, deferred 4, light 0}` (the four analyses over the memory ceiling, `migration.md`), spool 2,170,209 B in 859 files (setup blobs), `python_version 3.12.15`, `worker_profile_version post-race-foundations-v23`, `api_version 1`, `collector_protocol 1`, `live_table_version 1`, `projection_version 1`; the sim collector `fc450983-...` reconnected after the restart (`online true`, `last_seen_at` 16:18:24Z). Still `nas.state ok` at 16:32:39Z (`last_ok_at` 16:32:04Z) after the work below.
 
 Exercised on this release the same day: the re-projection of the 84 failed analyses (`migration.md`, re-projection section), the first real `POST /api/v1/admin/remove` (`library-cleanup.md`), and the collector update on the sim (`collector-install.md`). `node tools/e2e/spa_check.mjs --base http://192.168.1.81:8210 --out <scratch>\w9\r4\shots\spa-s5 --session 5` (the Iowa race) at 16:27Z: 0 failures of 84 results at desktop, tablet and phone (race 107 / 97 / 206 ms, traces 220 / 197 / 233 ms, 0 requests during each 5 s pointer sweep; the library and setup checks compare the first page of 50).
+
+## Release of `dccfadf`: the native analysis stages (2026-10-03)
+
+Released under D14 from branch `w9/deploy` after a fast-forward merge of local `main` (`fda35d0` to `1f6e3ea`, port phases 1 and 2). Nothing was pushed to GitHub. Two commits on top of `main`:
+
+- `fd0a38c` "Ship coach-analysis in the image and run the native stages": the server stage builds `-p coach-server -p coach-analysis` and the runtime installs `/usr/local/bin/coach-analysis`; `COACH_PYTHON` is the image's shim `/app/deploy/worker-python`, which sets `IRACING_COACH_NATIVE_STAGES=decode,kernels` and `IRACING_COACH_NATIVE_BIN=/usr/local/bin/coach-analysis` and execs `python3.12`, because `coach-server` clears the worker environment and pins the stages empty with no setting (W4 follow-up, `g1-native.md`). The image build asserts both (`coach-analysis --version`; the shim's environment). G1 rig changes for the re-measurement. `mem_limit` unchanged (4g); Compose file unchanged.
+- `dccfadf` "Name the worker interpreter shim so the server still finds it": released first as `worker-python`, `fd0a38c` reported `python_version: null` in `/api/v1/status` (the server runs the first worker-command part whose file name starts with `python` with `-V`). Renamed `/app/deploy/python3.12-native`; `python_version` is `3.12.15` again.
+
+| Item | `fd0a38c` | `dccfadf` |
+|---|---|---|
+| Command | `bash ~/.claude/skills/mini-pc/release.sh iracing-coach .` (Git bash, in `C:\Users\joshu\source\worktrees\iracing-coach-w9`), exit 0 | the same, exit 0 |
+| Started, finished | 20:09:49Z, 20:12:30Z (2 min 41 s) | 20:12:59Z, 20:13:38Z (39 s) |
+| Build on the N100 | 125 s: `cargo build --release --locked -p coach-server -p coach-analysis` 1 min 59 s with 2 jobs at `nice 10` (`coach-numerics` and `coach-analysis` compiled for the first time, in parallel with the server crates; dependencies from the build cache); `vite build` 394 ms, same asset names | 3 s (every layer but the shim's cached) |
+| Image | `iracing-coach:fd0a38c0...`, 147 MB | `iracing-coach:dccfadf1f40c9654b8d8de41feb2ef260a96c518`, 147 MB (manifest `sha256:741df388...`, config `sha256:616dd7b6...`, the running container's image ID); `coach-analysis` 1,961,256 B |
+| Stack | revision `fe9f13bca58e8ff2` (Compose file unchanged); recovery point 20:11:56Z (`sqlite ok ... 7270400`), healthy 20:12:30Z | recovery point `/srv/g-house/recovery/iracing-coach/iracing-coach-20261003T201304Z.tar` 20:13:04Z, healthy 20:13:37Z; container started 20:13:35Z, 0 restarts, `OOMKilled false`, memory limit 4,294,967,296 |
+
+`ssh g-house-pc "sudo -n g-house-stack status iracing-coach"`:
+
+```
+stack=iracing-coach project=iracing-coach compose=/etc/g-house/stacks/iracing-coach/docker-compose.yml revision=fe9f13bca58e8ff2
+recorded=fe9f13bca58e8ff2
+iracing-coach-app-1   Up 2 seconds (healthy)   iracing-coach:dccfadf1f40c9654b8d8de41feb2ef260a96c518
+```
+
+`curl -s http://192.168.1.81:8210/health`: `{"schema_version":1,"server_version":"0.19.0","status":"ok"}`. `/api/v1/status` at 20:13:41Z: `nas.state ok` (`last_ok_at` 20:13:35Z, `pending_archive 0`), `queue {analysis 0, deferred 4, light 0}`, `python_version 3.12.15`, `worker_profile_version post-race-foundations-v23`, the sim collector online. In the container: `COACH_PYTHON=/app/deploy/python3.12-native` in the server's environment, `memory.peak` 17.7 MB after start, `oom_kill 0`. Still `nas.state ok` at 20:25:35Z after the gate and the deferred runs; `deferred 8` after the deferred analyses were re-requested (`g1-native.md`).
+
+Exercised on this release: gate G1 with the native stages (PASS: 8.50 and 8.40 s, worker 0.25 GiB, tree 0.78 GiB, container peak 1.30 GiB, byte parity, 17 kernel calls count for count) and the three deferred analyses that fit (all complete, 5.9 to 15.0 s), `g1-native.md`. The server's own analysis path will first run natively on the next recording it has not analysed: every session's analysis is current and the worker's cache answers a re-run. That the server uses the shim is shown by its environment and by `python_version`, which it gets by running the shim.

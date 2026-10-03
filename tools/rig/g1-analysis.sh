@@ -94,7 +94,8 @@ mtime=$("$PY" -c "import os,sys; print(int(os.stat(sys.argv[1]).st_mtime), end='
 curl -sf "$SERVER/api/v1/status" > "$out/status-before.json"
 [ "$(json "$out/status-before.json" "d['nas']['state']")" = ok ] || { log "nas not ok"; exit 2; }
 [ "$(json "$out/status-before.json" "d['queue']['analysis'] + d['queue']['light']")" = 0 ] || { log "queue not empty"; exit 2; }
-head_code=$(curl -s -o /dev/null -w '%{http_code}' -I "$SERVER/api/v1/uploads/$sha")
+# The headers go to a file: with MSYS_NO_PATHCONV the native curl cannot open /dev/null (exit 23).
+head_code=$(curl -s -o "$out/head.txt" -w '%{http_code}' -I "$SERVER/api/v1/uploads/$sha")
 if [ "$RUN1" = cold ]; then
   [ "$head_code" = 200 ] || { log "RUN1=cold reads the server's copy, but HEAD answered $head_code"; exit 2; }
 else
@@ -190,7 +191,7 @@ curl -sf "$SERVER/api/v1/status" > "$out/status-after.json" || true
 # kept archive (capture-worker --keep-base).
 oracle_archive=$(json "$ORACLE/capture.json" "d['roots']['<archive_root>']")
 oracle_iracing=$(json "$ORACLE/capture.json" "d['roots']['<iracing_root>']")
-oracle_json=$(find "$(cygpath -u "$oracle_archive")/reports" -name analysis.json | head -1)
+oracle_json=$(cygpath -w "$(find "$(cygpath -u "$oracle_archive")/reports" -name analysis.json | head -1)")
 compare() { # label archive_root iracing_root analysis_id
   "$PY" "$here/g1.py" capture --archive "$out/$1-archive" --out "$out/cap-$1" \
     --archive-root "$2" --iracing-root "$3" --analysis-id "$4" --native-stages "${NATIVE_STAGES:-decode,kernels}"
