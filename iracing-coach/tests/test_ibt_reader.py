@@ -17,11 +17,31 @@ MODULE_PATH = (
     / "scripts"
     / "ibt_reader.py"
 )
-SPEC = importlib.util.spec_from_file_location("ibt_reader", MODULE_PATH)
-assert SPEC is not None and SPEC.loader is not None
-ibt_reader = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = ibt_reader
-SPEC.loader.exec_module(ibt_reader)
+
+
+def _shared_ibt_reader():
+    """The one ``ibt_reader`` module of the process, loaded here only if nothing has imported it yet.
+
+    Replacing a live ``sys.modules["ibt_reader"]`` would give later importers a second copy whose
+    exception classes differ from those of modules that imported the first one (``native_stages``
+    binds ``scan_ibt`` at import), so ``assertRaises(ibt_reader.IbtTruncatedError)`` failed in the
+    full suite with the native executable set.
+    """
+
+    existing = sys.modules.get("ibt_reader")
+    if existing is not None:
+        loaded_from = getattr(existing, "__file__", None)
+        if loaded_from is not None and Path(loaded_from).resolve() == MODULE_PATH:
+            return existing
+    spec = importlib.util.spec_from_file_location("ibt_reader", MODULE_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+ibt_reader = _shared_ibt_reader()
 
 
 HEADER = struct.Struct("<28i")
@@ -456,6 +476,36 @@ class SessionYamlParserTests(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"yaml": installed}):
             parsed = ibt_reader._parse_session_info(text, Path("supra.ibt"))
         self.assertEqual(parsed["CarSetup"]["Chassis"]["Front"]["SteeringRatio"], "12:1")
+
+
+class SharedModuleTests(unittest.TestCase):
+    """Importing this test module after ``ibt_reader`` must not install a second copy of it."""
+
+    def test_an_earlier_import_is_kept(self) -> None:
+        import subprocess
+
+        scripts = MODULE_PATH.parent
+        tests = Path(__file__).resolve().parent
+        truncated = Path(__file__).resolve().parents[2] / "test-data" / "ibt" / "truncated-race.ibt"
+        probe = (
+            "import sys\n"
+            f"sys.path[:0] = [{str(scripts)!r}, {str(tests)!r}]\n"
+            "import ibt_reader as first\n"
+            "import native_stages\n"  # binds scan_ibt from the first copy at import
+            "import test_ibt_reader\n"
+            "assert sys.modules['ibt_reader'] is first, 'sys.modules entry replaced'\n"
+            "assert test_ibt_reader.ibt_reader is first, 'the test module holds a second copy'\n"
+            "try:\n"
+            f"    native_stages.scan_ibt({str(truncated)!r})\n"
+            "except test_ibt_reader.ibt_reader.IbtTruncatedError:\n"
+            "    print('same class')\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-X", "utf8", "-c", probe],
+            capture_output=True, text=True, encoding="utf-8", timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "same class")
 
 
 if __name__ == "__main__":

@@ -6,7 +6,8 @@ mod support;
 use std::time::Duration;
 
 use axum::http::StatusCode;
-use coach_server::jobs::{self, JobOutcome, JobRow};
+use coach_server::config::{GIB, NativeStages};
+use coach_server::jobs::{self, JobOutcome, JobRow, QueueParams};
 use coach_server::util::sha256_hex;
 use coach_server::worker::{Cancel, WorkerCall, WorkerError, is_oom_exit, run_worker, worker_env};
 use serde_json::{Value, json};
@@ -436,18 +437,324 @@ async fn a_ready_session_whose_newer_analysis_is_deferred_still_says_why() {
 }
 
 #[test]
-fn the_legacy_bristol_races_estimate_over_the_ceiling_by_the_documented_factors() {
+fn the_pure_python_formula_is_kept_and_the_legacy_bristol_races_exceed_its_ceiling() {
     // acceptance/migration.md step 4: sessions 105 and 123, 3.6 and 4.2 GB against the 3 GiB ceiling
-    let ceiling = base_config(std::path::Path::new("."), None).analysis_ceiling_bytes;
+    let config = base_config(std::path::Path::new("."), None);
+    assert!(!config.native_memory_model());
+    let ceiling = config.analysis_ceiling_bytes;
     assert_eq!(ceiling, 3 << 30);
-    let one_and_a_stub = jobs::analysis_estimate(&[197_206_664, 253_361]);
-    let pair = jobs::analysis_estimate(&[146_209_324, 81_729_208]);
+    assert_eq!(config.memory_budget_bytes, (3.7 * GIB as f64) as u64);
+    let one_and_a_stub = jobs::analysis_estimate(&[197_206_664, 253_361], false);
+    let pair = jobs::analysis_estimate(&[146_209_324, 81_729_208], false);
     assert_eq!(one_and_a_stub, 3_647_777_341);
     assert_eq!(pair, 4_173_531_587);
     assert!(one_and_a_stub > ceiling && pair > ceiling);
     // each recording alone fits: the session was analysable before it grew
-    assert!(jobs::analysis_estimate(&[197_206_664]) < ceiling);
-    assert!(jobs::analysis_estimate(&[146_209_324]) < ceiling);
+    assert!(jobs::analysis_estimate(&[197_206_664], false) < ceiling);
+    assert!(jobs::analysis_estimate(&[146_209_324], false) < ceiling);
+}
+
+fn gib(bytes: u64) -> f64 {
+    bytes as f64 / GIB as f64
+}
+
+fn native_config() -> coach_server::Config {
+    let mut config = base_config(std::path::Path::new("."), None);
+    config.set_native(NativeStages {
+        stages: vec!["decode".into(), "kernels".into(), "writer".into()],
+        bin: Some("coach-analysis".into()),
+    });
+    config
+}
+
+#[test]
+fn the_native_formula_admits_the_deferred_analyses_and_covers_the_n100_peaks() {
+    // acceptance/g1-native.md: 5.0 x bytes + 0.15 GiB, x1.5 for a group, ceiling 2.0 GiB, shared
+    // budget 2.7 GiB; the bound is the worker's peak plus its largest child's on the N100.
+    let config = native_config();
+    assert!(config.native_memory_model());
+    assert_eq!(config.analysis_ceiling_bytes, 2 << 30);
+    assert_eq!(config.memory_budget_bytes, (2.7 * GIB as f64) as u64);
+    assert_eq!(config.server_reserve_bytes, (0.3 * GIB as f64) as u64);
+    let ceiling = config.analysis_ceiling_bytes;
+
+    // (recording bytes, the N100 bound in GiB, the documented native estimate, the old estimate)
+    let table: [(&[u64], f64, f64, f64); 4] = [
+        (&[203_200_000], 0.880, 1.096, 2.327),
+        (&[270_486_936], 0.795, 1.410, 3.047),
+        // session 105: the Bristol race of migration.md (197,206,664 + 253,361 bytes)
+        (&[197_206_664, 253_361], 1.296, 1.604, 3.397),
+        // session 123: the Bristol race of migration.md (146,209_324 + 81,729,208 bytes)
+        (&[146_209_324, 81_729_208], 1.587, 1.817, 3.887),
+    ];
+    for (sizes, bound, documented, old) in table {
+        let native = gib(jobs::analysis_estimate(sizes, true));
+        let python = gib(jobs::analysis_estimate(sizes, false));
+        assert!((native - documented).abs() < 0.005, "{sizes:?}: {native}");
+        assert!((python - old).abs() < 0.005, "{sizes:?}: {python}");
+        assert!(
+            native >= bound,
+            "{sizes:?}: estimate {native} under the peak {bound}"
+        );
+        assert!(
+            jobs::analysis_estimate(sizes, true) <= ceiling,
+            "{sizes:?} admitted"
+        );
+        // alone it always fits next to the server's reserve
+        assert!(
+            jobs::analysis_estimate(sizes, true) + config.server_reserve_bytes
+                <= config.memory_budget_bytes
+        );
+    }
+    // the three analyses the old ceiling deferred now fit; the 2 GB Kansas test does not
+    assert!(jobs::analysis_estimate(&[270_486_936], false) > 3 << 30);
+    let kansas = jobs::analysis_estimate(&[2_093_549_028], true);
+    assert!((gib(kansas) - 9.90).abs() < 0.01);
+    assert!(kansas > ceiling);
+
+    // what the ceiling admits: one recording up to 397 MB, a group of two up to 254 MB in total
+    assert!(jobs::analysis_estimate(&[397_000_000], true) <= ceiling);
+    assert!(jobs::analysis_estimate(&[398_000_000], true) > ceiling);
+    assert!(jobs::analysis_estimate(&[127_000_000, 127_000_000], true) <= ceiling);
+    assert!(jobs::analysis_estimate(&[128_000_000, 128_000_000], true) > ceiling);
+}
+
+#[test]
+fn only_decode_with_kernels_selects_the_native_memory_model() {
+    let stages = |names: &[&str]| NativeStages {
+        stages: names.iter().map(|n| n.to_string()).collect(),
+        bin: Some("coach-analysis".into()),
+    };
+    for (names, native) in [
+        (&["decode", "kernels", "writer"][..], true),
+        (&["decode", "kernels"][..], true),
+        (&["decode"][..], false),
+        (&["decode", "writer"][..], false),
+        (&["writer"][..], false),
+        (&[][..], false),
+    ] {
+        let mut config = base_config(std::path::Path::new("."), None);
+        config.set_native(stages(names));
+        assert_eq!(config.native_memory_model(), native, "{names:?}");
+        let (ceiling, budget) = if native { (2.0, 2.7) } else { (3.0, 3.7) };
+        assert_eq!(config.analysis_ceiling_bytes, (ceiling * GIB as f64) as u64);
+        assert_eq!(config.memory_budget_bytes, (budget * GIB as f64) as u64);
+    }
+}
+
+#[tokio::test]
+async fn a_native_server_admits_by_the_native_estimate() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| {
+            c.set_native(NativeStages {
+                stages: vec!["decode".into(), "kernels".into()],
+                bin: Some("coach-analysis".into()),
+            })
+        }),
+        ..Default::default()
+    })
+    .await;
+    ingest(&env, meta(9010, 0, "native", None)).await;
+    require_python!(env);
+    assert!(
+        jobs::run_next(&env.app, "light").await.unwrap(),
+        "discovery queues the analysis"
+    );
+    let (estimate, size): (i64, i64) = env.query(|c| {
+        c.query_row(
+            "SELECT json_extract(j.subject_json, '$.estimate_bytes'), b.size
+             FROM jobs j, blobs b WHERE j.kind = 'analyze'
+             AND b.sha256 = json_extract(j.subject_json, '$.recordings[0].sha256')",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    });
+    assert_eq!(
+        estimate as u64,
+        jobs::analysis_estimate(&[size as u64], true)
+    );
+    assert_ne!(
+        estimate as u64,
+        jobs::analysis_estimate(&[size as u64], false)
+    );
+}
+
+#[tokio::test]
+async fn the_worker_gets_the_native_stages_the_server_is_set_to() {
+    let native = NativeStages {
+        stages: vec!["decode".into(), "kernels".into(), "writer".into()],
+        bin: Some("/opt/coach/coach-analysis".into()),
+    };
+    let env = Env::with(Opts {
+        tweak: {
+            let native = native.clone();
+            Box::new(move |c| c.set_native(native.clone()))
+        },
+        ..Default::default()
+    })
+    .await;
+    let call = call(&env, "x", &env.data().join("root"), Duration::from_secs(1));
+    let vars = worker_env(&env.app.cfg.worker, &call);
+    assert_eq!(vars["IRACING_COACH_NATIVE_STAGES"], "decode,kernels,writer");
+    assert_eq!(
+        vars["IRACING_COACH_NATIVE_BIN"],
+        "/opt/coach/coach-analysis"
+    );
+    // everything else stays as without native stages: nothing is inherited
+    assert_eq!(vars["IRACING_COACH_RAW_ARCHIVE"], "external");
+    assert!(!vars.contains_key("IRACING_COACH_INSTALL_ROOT"));
+
+    // no stage: the executable is not named either
+    let mut worker = env.app.cfg.worker.clone();
+    worker.native.stages.clear();
+    let vars = worker_env(&worker, &call);
+    assert_eq!(vars["IRACING_COACH_NATIVE_STAGES"], "");
+    assert!(!vars.contains_key("IRACING_COACH_NATIVE_BIN"));
+
+    // and the process sees them
+    require_python!(env);
+    let (outcome, _) = run_behavior(&env, "nativeenv", |_| {}).await;
+    assert!(matches!(outcome, JobOutcome::Succeeded(_)), "{outcome:?}");
+    let seen: Value = serde_json::from_slice(
+        &std::fs::read(env.data().join("py/1001/archive/native-env.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(seen["IRACING_COACH_NATIVE_STAGES"], "decode,kernels,writer");
+    assert_eq!(
+        seen["IRACING_COACH_NATIVE_BIN"],
+        "/opt/coach/coach-analysis"
+    );
+}
+
+type AnalysisRow = (i64, String, String, String);
+
+fn analysis_rows(env: &Env) -> Vec<AnalysisRow> {
+    env.query(|c| {
+        let mut stmt = c.prepare(
+            "SELECT job_id, state, idempotency_key, subject_json FROM jobs
+             WHERE kind = 'analyze' ORDER BY job_id",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    })
+}
+
+fn queue_again(env: &Env, queue: QueueParams, session_id: i64) -> (i64, bool) {
+    env.app
+        .store
+        .write_blocking(move |c| {
+            let tx = c.transaction()?;
+            let result = jobs::queue_analysis_tx(&tx, &queue, session_id, true, true)?;
+            tx.commit()?;
+            Ok(result)
+        })
+        .unwrap()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn asking_again_after_the_analyzer_changed_keeps_one_deferred_row_per_session() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.analysis_ceiling_bytes = 100 << 20),
+        ..Default::default()
+    })
+    .await;
+    ingest(&env, meta(9020, 0, "big", None)).await;
+    env.settle().await;
+    let session_id: i64 = scalar(&env, "SELECT session_id FROM sessions");
+    let first: i64 = scalar(&env, "SELECT job_id FROM jobs WHERE kind = 'analyze'");
+    assert_eq!(analysis_rows(&env).len(), 1);
+
+    // the analyzer bundle changed: asking again moves the row to the new key, no second row
+    let mut queue = QueueParams::of(&env.app);
+    queue.bundle_digest = "0123456789abcdef".into();
+    assert_eq!(
+        queue_again(&env, queue.clone(), session_id),
+        (first, true),
+        "the same job, updated"
+    );
+    let listed = analysis_rows(&env);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].1, "deferred");
+    assert!(listed[0].2.contains("0123456789abcdef"), "{}", listed[0].2);
+    let subject: Value = serde_json::from_str(&listed[0].3).unwrap();
+    assert_eq!(subject["session_id"], session_id);
+
+    // the same key again changes nothing
+    assert_eq!(queue_again(&env, queue, session_id), (first, false));
+    let reply = env
+        .post(
+            &format!("/api/v1/sessions/{session_id}/analysis"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED);
+    assert_eq!(reply.json()["state"], "deferred");
+    assert_eq!(analysis_rows(&env).len(), 1);
+    assert_eq!(
+        env.get("/api/v1/status").await.json()["queue"]["deferred"],
+        1
+    );
+
+    // rows an earlier release left (one deferred row per analyzer digest) collapse on the next ask
+    env.app
+        .store
+        .write_blocking(move |c| {
+            c.execute(
+                "INSERT INTO jobs(kind, lane, priority, state, idempotency_key, customer_id, subject_json,
+                                  attempts, created_at, error_code)
+                 SELECT kind, lane, priority, state, idempotency_key || '-old', customer_id, subject_json,
+                        attempts, created_at, error_code FROM jobs WHERE job_id = ?1",
+                [first],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(analysis_rows(&env).len(), 2);
+    let reply = env
+        .post(
+            &format!("/api/v1/sessions/{session_id}/analysis"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED);
+    assert_eq!(reply.json()["job_id"], first);
+    let listed = analysis_rows(&env);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].0, first);
+    assert_eq!(
+        env.get("/api/v1/status").await.json()["queue"]["deferred"],
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_deferred_row_that_now_fits_becomes_the_sessions_queued_analysis() {
+    let env = Env::with(Opts {
+        tweak: Box::new(|c| c.analysis_ceiling_bytes = 100 << 20),
+        ..Default::default()
+    })
+    .await;
+    ingest(&env, meta(9021, 0, "fits", None)).await;
+    env.settle().await;
+    let session_id: i64 = scalar(&env, "SELECT session_id FROM sessions");
+    let first: i64 = scalar(&env, "SELECT job_id FROM jobs WHERE kind = 'analyze'");
+    // a new analyzer digest and an estimate under the ceiling (the admission formula changed)
+    let mut queue = QueueParams::of(&env.app);
+    queue.bundle_digest = "fedcba9876543210".into();
+    queue.ceiling = u64::MAX;
+    assert_eq!(queue_again(&env, queue, session_id), (first, true));
+    assert_eq!(
+        job_state(&env, "analyze"),
+        vec![("queued".to_string(), None)],
+        "one row, queued, reason cleared"
+    );
+    assert_eq!(
+        scalar::<String>(&env, "SELECT analysis_state FROM sessions"),
+        "queued"
+    );
 }
 
 #[tokio::test]
@@ -514,7 +821,7 @@ fn call(env: &Env, tool: &str, root: &std::path::Path, timeout: Duration) -> Wor
 async fn worker_environment_is_complete_and_inherits_nothing() {
     let env = Env::new().await;
     let call = call(&env, "x", &env.data().join("root"), Duration::from_secs(1));
-    let vars = worker_env(&call);
+    let vars = worker_env(&env.app.cfg.worker, &call);
     for key in [
         "IRACING_COACH_IRACING_ROOT",
         "IRACING_COACH_DATA",
@@ -530,7 +837,9 @@ async fn worker_environment_is_complete_and_inherits_nothing() {
         assert!(vars.contains_key(key), "missing {key}");
     }
     assert_eq!(vars["IRACING_COACH_RAW_ARCHIVE"], "external");
+    // no native stage configured: the list is empty and the executable is not named
     assert_eq!(vars["IRACING_COACH_NATIVE_STAGES"], "");
+    assert!(!vars.contains_key("IRACING_COACH_NATIVE_BIN"));
     assert!(!vars.contains_key("IRACING_COACH_GARAGE61_TOKEN_FILE"));
     assert!(!vars.contains_key("IRACING_COACH_INSTALL_ROOT"));
     assert!(is_oom_exit(Some(9), 3, 4));
@@ -618,6 +927,12 @@ async fn worker_timeout_stops_the_process_group_and_cleans_orphans() {
             .any(|n| n.ends_with(".tmp") || n.starts_with(".write-")),
         "{left:?}"
     );
+    // the native stores the worker left under its TMPDIR are gone, a file that is not one stays
+    let scratch: Vec<String> = std::fs::read_dir(env.data().join("py/1001/tmp"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(scratch, vec!["keep.txt".to_string()]);
     #[cfg(unix)]
     {
         let child: i32 = std::fs::read_to_string(archive.join("child.pid"))
@@ -1068,6 +1383,13 @@ async fn deferred_orphan_cleanup_runs_when_the_drivers_lanes_go_idle() {
     std::fs::create_dir_all(&archive).unwrap();
     let stray = archive.join(".write-stray");
     std::fs::write(&stray, b"x").unwrap();
+    let tmp = env.data().join("py/1001/tmp");
+    let stores = [tmp.join("coach-decode-aaaa"), tmp.join("coach-merge-bbbb")];
+    for store in &stores {
+        std::fs::create_dir_all(store).unwrap();
+        std::fs::write(store.join("store.ccs"), b"x").unwrap();
+    }
+    std::fs::write(tmp.join("keep.txt"), b"x").unwrap();
     let cancel = Cancel::default();
     let busy = match env
         .app
@@ -1081,9 +1403,16 @@ async fn deferred_orphan_cleanup_runs_when_the_drivers_lanes_go_idle() {
     env.app.jobs.defer_cleanup(Some(1001));
     assert_eq!(jobs::sweep_deferred_cleanup(&env.app), 0);
     assert!(stray.exists(), "removed while another worker may own it");
+    assert!(stores.iter().all(|s| s.exists()), "so is a native store");
     drop(busy);
-    assert_eq!(jobs::sweep_deferred_cleanup(&env.app), 1);
+    assert_eq!(
+        jobs::sweep_deferred_cleanup(&env.app),
+        3,
+        "the stray and both stores"
+    );
     assert!(!stray.exists());
+    assert!(stores.iter().all(|s| !s.exists()));
+    assert!(tmp.join("keep.txt").exists());
     assert_eq!(jobs::sweep_deferred_cleanup(&env.app), 0, "done once");
 }
 
@@ -1095,10 +1424,46 @@ async fn stray_temp_files_of_killed_workers_are_removed_at_start() {
     std::fs::write(archive.join(".copy-old"), b"x").unwrap();
     std::fs::write(archive.join(".write-old"), b"x").unwrap();
     std::fs::write(archive.join("kept.json"), b"{}").unwrap();
+    let tmp = env.data().join("py/1001/tmp");
+    std::fs::create_dir_all(tmp.join("coach-decode-old")).unwrap();
+    std::fs::create_dir_all(tmp.join("coach-merge-old")).unwrap();
+    std::fs::write(tmp.join("coach-decode-old/decode.ccs"), b"x").unwrap();
+    std::fs::write(tmp.join("other.txt"), b"x").unwrap();
     let env = env.restart().await;
+    let left: Vec<String> = std::fs::read_dir(env.data().join("py/1001/tmp"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        left,
+        vec!["other.txt".to_string()],
+        "native stores are swept at start"
+    );
     let names: Vec<String> = std::fs::read_dir(env.data().join("py/1001/archive/tuning"))
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(names, vec!["kept.json".to_string()]);
+}
+
+#[tokio::test]
+async fn native_scratch_of_a_killed_worker_waits_while_another_worker_of_the_driver_runs() {
+    let env = Env::new().await;
+    let archive = env.data().join("py/1001/archive");
+    let tmp = env.data().join("py/1001/tmp");
+    std::fs::create_dir_all(&archive).unwrap();
+    std::fs::create_dir_all(tmp.join("coach-decode-live")).unwrap();
+    std::fs::write(archive.join("half.4242.tmp"), b"x").unwrap();
+    // another worker of the driver runs: only the killed process's own `*.<pid>.tmp` goes
+    coach_server::worker::cleanup_after_kill(&archive, &tmp, Some(4242), false);
+    assert!(!archive.join("half.4242.tmp").exists());
+    assert!(tmp.join("coach-decode-live").exists());
+    // the driver is idle: the stores go
+    coach_server::worker::cleanup_after_kill(&archive, &tmp, Some(4242), true);
+    assert!(!tmp.join("coach-decode-live").exists());
+    // no scratch directory at all is not an error
+    assert_eq!(
+        coach_server::worker::cleanup_native_scratch(&tmp.join("absent")),
+        0
+    );
 }

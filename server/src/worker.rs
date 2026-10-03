@@ -122,7 +122,10 @@ fn tail(text: &str, max: usize) -> String {
     text[start..].to_string()
 }
 
-pub fn worker_env(call: &WorkerCall) -> BTreeMap<String, String> {
+/// The worker's whole environment. The native stages come from the server's setting
+/// (`COACH_NATIVE_STAGES`): the list and, when it is not empty, the executable; with none the
+/// variable is empty and `IRACING_COACH_NATIVE_BIN` is not set (`worker-interface.md` section 2).
+pub fn worker_env(cfg: &WorkerConfig, call: &WorkerCall) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
     let path = |p: &PathBuf| p.to_string_lossy().into_owned();
     env.insert(
@@ -131,7 +134,15 @@ pub fn worker_env(call: &WorkerCall) -> BTreeMap<String, String> {
     );
     env.insert("IRACING_COACH_DATA".into(), path(&call.archive_root));
     env.insert("IRACING_COACH_RAW_ARCHIVE".into(), "external".into());
-    env.insert("IRACING_COACH_NATIVE_STAGES".into(), String::new());
+    env.insert("IRACING_COACH_NATIVE_STAGES".into(), cfg.native.list());
+    if let Some(bin) = cfg
+        .native
+        .bin
+        .as_ref()
+        .filter(|_| !cfg.native.stages.is_empty())
+    {
+        env.insert("IRACING_COACH_NATIVE_BIN".into(), path(bin));
+    }
     env.insert("PYTHONUTF8".into(), "1".into());
     env.insert("PYTHONDONTWRITEBYTECODE".into(), "1".into());
     env.insert("LANG".into(), "C.UTF-8".into());
@@ -167,7 +178,7 @@ pub async fn run_worker(
     let mut cmd = Command::new(program);
     cmd.args(&cfg.command[1..])
         .env_clear()
-        .envs(worker_env(call))
+        .envs(worker_env(cfg, call))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -352,9 +363,48 @@ fn parse_response(message: &Value) -> Result<Value, WorkerError> {
     Ok(value)
 }
 
-/// After a killed worker: delete its `*.<pid>.tmp` files at once; `.write-*` and `.copy-*` only
-/// when no other worker is running for that driver.
-pub fn cleanup_after_kill(archive_root: &std::path::Path, pid: Option<u32>, driver_idle: bool) {
+/// The scratch the native stages leave under a driver's `TMPDIR` (`worker-interface.md`
+/// section 6): the decode and merge stores, each in a `coach-decode-*` or `coach-merge-*`
+/// directory, and with them everything the kernels child mapped from there. The kernels child's
+/// own diagnostics file is anonymous and goes with its process.
+const NATIVE_SCRATCH_PREFIXES: [&str; 2] = ["coach-decode-", "coach-merge-"];
+
+/// Removes the native scratch under `tmp_root` (a driver's `TMPDIR`); returns the entries
+/// removed. Their names are random, so this is safe only while no worker of the driver runs.
+pub fn cleanup_native_scratch(tmp_root: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(tmp_root) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !NATIVE_SCRATCH_PREFIXES.iter().any(|p| name.starts_with(p)) {
+            continue;
+        }
+        let path = entry.path();
+        // a directory symlink is removed as a link, never followed
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let gone = if is_dir {
+            std::fs::remove_dir_all(&path).is_ok()
+        } else {
+            std::fs::remove_file(&path).is_ok()
+        };
+        if gone {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+/// After a killed worker: delete its `*.<pid>.tmp` files at once; `.write-*` and `.copy-*` under
+/// the archive and the native scratch under `tmp_root` only when no other worker is running for
+/// that driver.
+pub fn cleanup_after_kill(
+    archive_root: &std::path::Path,
+    tmp_root: &std::path::Path,
+    pid: Option<u32>,
+    driver_idle: bool,
+) {
     fn walk(dir: &std::path::Path, pid: Option<u32>, driver_idle: bool) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -374,6 +424,9 @@ pub fn cleanup_after_kill(archive_root: &std::path::Path, pid: Option<u32>, driv
         }
     }
     walk(archive_root, pid, driver_idle);
+    if driver_idle {
+        cleanup_native_scratch(tmp_root);
+    }
 }
 
 /// Removes the `.write-*` and `.copy-*` temp files killed workers left under a driver's archive.

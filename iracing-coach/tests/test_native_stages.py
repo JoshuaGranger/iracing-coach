@@ -1266,6 +1266,21 @@ class WriterSeamTests(unittest.TestCase):
         self.assertEqual(native, oracle)
         self.assertEqual(counts["writer_fallback"], {"analysis_json": 1})
 
+    def test_the_contract_describes_the_counted_fallback(self) -> None:
+        """worker-interface.md boundary D states what the seam does since review finding 1:
+        an object outside the exact types is a counted fallback, never a marker."""
+
+        contract = (WORKSPACE / "docs" / "08-rewrite" / "contracts" / "worker-interface.md").read_text(encoding="utf-8")
+        boundary = contract[contract.index("### Boundary D: `writer`"):contract.index("## 8. Parity check")]
+        self.assertNotIn("becomes the marker function", boundary)
+        self.assertIn("The seam sends no marker.", boundary)
+        self.assertIn("counted fallback (`native_stages.writer_fallback`)", boundary)
+        self.assertIn("runs once, from the start", boundary)
+        # The behaviour the text states: no child starts, and the site's code runs once.
+        native, oracle, counts = self._fallback_only(lambda: {"z": _Label("q")})
+        self.assertEqual(native, oracle)
+        self.assertEqual(counts["writer_fallback"], {"analysis_json": 1})
+
     def test_count_rule(self) -> None:
         sites = {site: 1 for site in native_stages.WRITER_SITES}
         oracle = {"writer": {}, "writer_sites": dict(sites), "writer_fallback": {}}

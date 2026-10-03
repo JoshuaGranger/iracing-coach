@@ -47,7 +47,7 @@
     "IRACING_COACH_GARAGE61_TOKEN_FILE": "optional path of an owner-only file holding the Garage61 token; checked before the Windows DPAPI store",
     "IRACING_COACH_INSTALL_ROOT": "optional read-only iRacing installation root",
     "IRACING_COACH_IRACING_ROOT": "trusted local iRacing Documents root",
-    "IRACING_COACH_NATIVE_STAGES": "empty in v1; comma list of Rust stages (decode, kernels, json_writer) in port phases",
+    "IRACING_COACH_NATIVE_STAGES": "empty in v1; comma list of Rust stages (decode, kernels, writer) in port phases",
     "IRACING_COACH_PYTHON": "packaged Python executable",
     "IRACING_COACH_RAW_ARCHIVE": "unset (copy raw IBTs into the archive) or 'external' (raw recordings are kept by the service; worker-interface.md section 5)",
     "PYTHONUTF8": "1"

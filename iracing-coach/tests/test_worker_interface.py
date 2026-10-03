@@ -291,6 +291,17 @@ class CompatibilityContractTests(unittest.TestCase):
         for retired in ("WPF", "Blazor", ".NET 10", "native_host", "webview_runtime_policy"):
             self.assertNotIn(retired, text)
 
+    def test_the_native_stage_list_names_the_seam_stages(self) -> None:
+        import native_stages
+
+        described = self.compatibility["environment"][native_stages.STAGES_ENV]
+        listed = re.search(r"Rust stages \(([^)]*)\)", described)
+        self.assertIsNotNone(listed, described)
+        self.assertEqual(
+            tuple(name.strip() for name in listed.group(1).split(",")), native_stages.KNOWN_STAGES
+        )
+        self.assertNotIn("json_writer", described)
+
 
 class WorkerProcessTests(unittest.TestCase):
     """mcp_server.py driven exactly as worker-interface.md sections 1-4 drive it."""

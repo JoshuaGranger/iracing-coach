@@ -382,7 +382,11 @@ pub fn sweep_deferred_cleanup(app: &AppState) -> usize {
     app.jobs
         .take_idle_deferred()
         .into_iter()
-        .map(|customer| crate::worker::cleanup_strays(&app.cfg.py_archive(customer.unwrap_or(0))))
+        .map(|customer| {
+            let customer = customer.unwrap_or(0);
+            crate::worker::cleanup_strays(&app.cfg.py_archive(customer))
+                + crate::worker::cleanup_native_scratch(&app.cfg.py_tmp(customer))
+        })
         .sum()
 }
 
@@ -427,10 +431,25 @@ pub fn estimate_bytes(job: &JobRow) -> u64 {
     }
 }
 
-/// Estimated analysis peak: 11.5 x bytes + 0.15 GiB; x1.5 for groups of two or more.
-pub fn analysis_estimate(sizes: &[u64]) -> u64 {
+/// Bytes of memory per recording byte for the pure-Python worker (P1: 2.273 GiB at 203.2 MB).
+pub const PYTHON_ANALYSIS_FACTOR: f64 = 11.5;
+/// The same for the native decode and kernels stages (N100 gate, `acceptance/g1-native.md`: the
+/// worker plus its largest child measured 3.2 to 7.5 x the recording bytes, 5.0 x with the group
+/// factor below covers every measured job).
+pub const NATIVE_ANALYSIS_FACTOR: f64 = 5.0;
+
+/// Estimated analysis peak (`worker-interface.md` section 6): `factor` x the recordings' bytes
+/// plus 0.15 GiB, times 1.5 for a group of two or more recordings (the per-file stores and the
+/// merged store, or every decoded table, are held at once). `native` selects the measured native
+/// factor (5.0) over the pure-Python one (11.5).
+pub fn analysis_estimate(sizes: &[u64], native: bool) -> u64 {
     let total: u64 = sizes.iter().sum();
-    let base = 11.5 * total as f64 + 0.15 * GIB as f64;
+    let factor = if native {
+        NATIVE_ANALYSIS_FACTOR
+    } else {
+        PYTHON_ANALYSIS_FACTOR
+    };
+    let base = factor * total as f64 + 0.15 * GIB as f64;
     (if sizes.len() >= 2 { base * 1.5 } else { base }) as u64
 }
 
@@ -825,6 +844,8 @@ pub struct QueueParams {
     pub bundle_digest: String,
     pub profile: String,
     pub ceiling: u64,
+    /// Admission uses the measured native formula (`Config::native_memory_model`).
+    pub native: bool,
 }
 
 impl QueueParams {
@@ -837,6 +858,7 @@ impl QueueParams {
                 .clone()
                 .unwrap_or_default(),
             ceiling: app.cfg.analysis_ceiling_bytes,
+            native: app.cfg.native_memory_model(),
         }
     }
 }
@@ -860,7 +882,7 @@ pub fn queue_analysis_tx(
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let sizes: Vec<u64> = members.iter().map(|m| m.1).collect();
-    let estimate = analysis_estimate(&sizes);
+    let estimate = analysis_estimate(&sizes, params.native);
     let key = format!(
         "analyze:{session_id}:{digest}:{}:{}",
         params.bundle_digest, params.profile
@@ -882,9 +904,86 @@ pub fn queue_analysis_tx(
         job.state = "deferred";
         job.error_code = Some("exceeds_memory_budget".into());
     }
-    let result = enqueue_tx(conn, &job, requeue)?;
+    let result = match supersede_deferred_tx(conn, session_id, &job)? {
+        Some(id) => (id, true),
+        None => enqueue_tx(conn, &job, requeue)?,
+    };
+    drop_superseded_deferred_tx(conn, session_id, result.0)?;
     refresh_session_state(conn, session_id)?;
     Ok(Some(result))
+}
+
+/// A session has one deferred analysis row. Asking again after the analyzer digest, the profile
+/// or the session's recordings changed gives the job a new idempotency key; instead of adding a
+/// second deferred row beside the superseded one, the newest deferred row of the session takes
+/// the new key, subject, state and reason and keeps its `job_id`. `None` when the key already has
+/// a row or the session has no deferred analysis.
+fn supersede_deferred_tx(
+    conn: &Connection,
+    session_id: i64,
+    job: &NewJob,
+) -> rusqlite::Result<Option<i64>> {
+    let Some(key) = &job.key else {
+        return Ok(None);
+    };
+    let keyed: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM jobs WHERE idempotency_key = ?1",
+        [key],
+        |r| r.get(0),
+    )?;
+    if keyed {
+        return Ok(None);
+    }
+    let Some(id) = newest_deferred_analysis(conn, session_id)? else {
+        return Ok(None);
+    };
+    conn.execute(
+        "UPDATE jobs SET idempotency_key = ?2, subject_json = ?3, state = ?4, priority = ?5,
+           error_code = ?6, error_message = NULL, created_at = ?7, started_at = NULL,
+           finished_at = NULL, result_json = NULL WHERE job_id = ?1",
+        params![
+            id,
+            key,
+            job.subject.to_string(),
+            job.state,
+            job.priority,
+            job.error_code,
+            iso_now()
+        ],
+    )?;
+    Ok(Some(id))
+}
+
+fn newest_deferred_analysis(conn: &Connection, session_id: i64) -> rusqlite::Result<Option<i64>> {
+    conn.query_row(
+        "SELECT job_id FROM jobs WHERE kind = 'analyze' AND state = 'deferred'
+         AND json_extract(subject_json, '$.session_id') = ?1 ORDER BY job_id DESC LIMIT 1",
+        [session_id],
+        |r| r.get(0),
+    )
+    .optional()
+}
+
+/// Removes the other deferred analysis rows of the session once job `keep` is its deferred or
+/// queued analysis (rows an earlier release left beside it, one per analyzer digest).
+fn drop_superseded_deferred_tx(
+    conn: &Connection,
+    session_id: i64,
+    keep: i64,
+) -> rusqlite::Result<()> {
+    let state: Option<String> = conn
+        .query_row("SELECT state FROM jobs WHERE job_id = ?1", [keep], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if matches!(state.as_deref(), Some("deferred") | Some("queued")) {
+        conn.execute(
+            "DELETE FROM jobs WHERE kind = 'analyze' AND state = 'deferred' AND job_id <> ?2
+             AND json_extract(subject_json, '$.session_id') = ?1",
+            params![session_id, keep],
+        )?;
+    }
+    Ok(())
 }
 
 /// Lane loops (background mode). Each lane runs one job at a time.
@@ -966,6 +1065,7 @@ pub async fn recover(app: &AppState) -> Result<()> {
             }
             // no worker runs at start: the temp files killed workers left are safe to remove
             crate::worker::cleanup_strays(&driver.path().join("archive"));
+            crate::worker::cleanup_native_scratch(&driver.path().join("tmp"));
         }
     }
     Ok(())

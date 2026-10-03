@@ -75,7 +75,7 @@ pub(crate) async fn call_worker(
         arguments,
         iracing_root: iracing_root.to_path_buf(),
         archive_root: archive.clone(),
-        home: app.cfg.py_root(customer).join("tmp"),
+        home: app.cfg.py_tmp(customer),
         timeout,
         garage61_token_file: None,
         pid: pid.clone(),
@@ -86,7 +86,12 @@ pub(crate) async fn call_worker(
     {
         let idle = app.jobs.driver_idle_except(job.customer_id, job.job_id);
         let pid = pid.load(Ordering::SeqCst);
-        cleanup_after_kill(&archive, (pid != 0).then_some(pid), idle);
+        cleanup_after_kill(
+            &archive,
+            &app.cfg.py_tmp(customer),
+            (pid != 0).then_some(pid),
+            idle,
+        );
         if !idle {
             // another worker of the driver is running: its temp files go when the driver is idle
             app.jobs.defer_cleanup(job.customer_id);

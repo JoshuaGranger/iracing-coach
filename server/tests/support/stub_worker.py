@@ -142,7 +142,18 @@ def analyze(arguments):
             os.makedirs(archive, exist_ok=True)
             open(os.path.join(archive, ".write-stray"), "w").close()
             open(os.path.join(archive, "partial.%d.tmp" % os.getpid()), "w").close()
+            # native stores a killed worker leaves under its TMPDIR, and a file that is not theirs
+            scratch = os.environ["TMPDIR"]
+            for name in ("coach-decode-stale", "coach-merge-stale"):
+                os.makedirs(os.path.join(scratch, name), exist_ok=True)
+                open(os.path.join(scratch, name, "store.ccs"), "w").close()
+            open(os.path.join(scratch, "keep.txt"), "w").close()
             hang(archive, header)
+        elif behavior == "nativeenv":
+            os.makedirs(archive, exist_ok=True)
+            seen = {k: os.environ.get(k) for k in ("IRACING_COACH_NATIVE_STAGES", "IRACING_COACH_NATIVE_BIN")}
+            with open(os.path.join(archive, "native-env.json"), "w") as handle:
+                json.dump(seen, handle)
         elif behavior == "ignoreterm":
             os.makedirs(archive, exist_ok=True)
             stubborn_child(archive)

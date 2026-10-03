@@ -366,7 +366,7 @@ def exported_values() -> dict[Path, Any]:
             "IRACING_COACH_DATA": "trusted backend-owned archive root",
             "IRACING_COACH_RAW_ARCHIVE": "unset (copy raw IBTs into the archive) or 'external' (raw recordings are kept by the service; worker-interface.md section 5)",
             "IRACING_COACH_GARAGE61_TOKEN_FILE": "optional path of an owner-only file holding the Garage61 token; checked before the Windows DPAPI store",
-            "IRACING_COACH_NATIVE_STAGES": "empty in v1; comma list of Rust stages (decode, kernels, json_writer) in port phases",
+            "IRACING_COACH_NATIVE_STAGES": "empty in v1; comma list of Rust stages (decode, kernels, writer) in port phases",
             "PYTHONUTF8": "1",
         },
         "ai": {
