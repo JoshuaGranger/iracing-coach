@@ -22,3 +22,12 @@ Sessions at 390 and 1440 (dense rows, Fixed/Open chips, filters in the heading w
 - iRacing-utility `3df62fb` (lab windows: `python -m feed lab open|close|list`, the harvest's own window) and `0d8898e` (feed contract excerpt re-recorded at `d827360`), pushed.
 - Not yet on the sim: the collector build with the CPU fix (W3) and the caution gate is in the live engine (W2) — install at the next free sim window (`collector-install.md`), then re-measure G4-3.
 - Wave B (Crew Chief with the field stream, the Driver page) waits for Joshua's look at wave A.
+
+# Round 3 release (2026-10-04, evening)
+
+Commit `d608ad8` (complaints #33–#49, spec in `../web-round-2-plan.md` "Round 3"), released as `iracing-coach:d608ad8…`, healthy. The collector on the sim was updated to the `a256511` build earlier the same day (`collector-install.md`).
+
+- Start: setup identity unchanged (65), offline sessions unchanged (605 recordings, 310 with the lap counter stopped).
+- The projection moved to version 3 (per-lap section times); a stored analysis re-projects on its first request and its overview then carries the round-3 fields (`longest_run_laps`, `longest_run_pace_loss_s`, `timed_lap_1_s`, `timed_lap_2_s`). Every analysis of Joshua's 51 sessions was requested once after the release to re-project them up front; the first request answers `409 projection_pending` and the next one `200`.
+- Seen on the live site by page text: Sessions rows as race / practice (Pos, Best, Run, Fall-off) / qualifying (Pos, Lap 1, Lap 2) blocks; no Library control; filters without Clear.
+- Known: races whose analysis is deferred (`exceeds_memory_budget`, backlog #13) show `—` for best and pace, as before.
