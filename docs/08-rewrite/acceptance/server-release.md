@@ -143,3 +143,81 @@ iracing-coach-app-1   Up 2 seconds (healthy)   iracing-coach:7d38242bb24b623a01b
 Exercised on this release (`g1-native.md`): gate G1, writer-stage run, PASS (7.23 and 7.15 s, worker 0.28 GiB, tree 0.75 GiB, container peak 1.17 GiB, byte parity 12 of 12 and `analysis.json` strict, 17 kernel calls count for count, 3 native writes per analysis, 0 writer fallbacks); sessions 18, 105 and 123 re-requested through the API and analysed by the server (jobs 3540 to 3542 succeeded in 8, 11 and 16 s, worker plus largest child 0.744, 1.320 and 1.614 GiB against estimates of 1.410, 1.604 and 1.817 GiB); session 152 (Kansas, 2,093,549,028 B) still `deferred` with `exceeds_memory_budget` (estimate 9.899 GiB). Repository verification (`tools/verify-repository.ps1 -PythonPath <bundled 3.12.14>`) before and after the change: exit 0, 1,434 tests, 1,416 passed, 18 skipped.
 
 Backups unchanged: the recovery points stay on the mini PC; the off-host backup of `/srv/g-house/apps/iracing-coach` is as `first-release.md` states.
+
+## Release of `4c3c5f0`: the NAS folder is a host automount (evening of 2026-10-03 local)
+
+Released under D14 from branch `w9/deploy` after a fast-forward merge of local `main` (`ae862bf` to `2d0c0cb`, "Raise the type scale and add a per-driver text size"), with Joshua's permission of 2026-10-03 for the host change (backlog 15; `risks.md` R3 and Q1). Nothing was pushed to GitHub. One commit on top of `main`:
+
+- `4c3c5f0` "The Coach container binds the host's NAS automount, so the stack starts while the NAS is down": the Compose volume `nas` (`type: nfs`) is gone and `/nas/apps` is a bind of the host directory `/mnt/nas-iracing-coach` with `propagation: rslave` and `create_host_path: false`; `COACH_NAS_DIR=/nas/apps/iracing-coach` is unchanged. `nas_probe.py` looks inside `/nas/apps/iracing-coach` first (that is what makes the host mount it) and reads the last mount-table entry, because the NFS sits over its autofs trigger.
+
+### The host change
+
+Host mounts are kept in the g-house repository, `ops/host/systemd/`, as bootstrap-only units (a release refreshes only six named units; `mnt-nas-backups` is the precedent). The pair is committed there as `a15e066d` on branch `claude/platform-coach-nas-automount-20261003` (worktree `C:\Users\joshu\source\worktrees\g-house-coach-nas-automount`, cut from `origin/main` `d718d576`; `install-household-host.sh` and `ops/README.md` updated). **Not pushed and not merged.** It was applied to the host by hand with `sudo -n`, the way that README installs `imagebuilder.slice`, at 23:34 CDT (04:34Z): the committed files streamed into `/etc/systemd/system/` (sha256 `42a70708...` and `fc75496d...`, equal to the repository files), `daemon-reload`, `enable --now` of the automount. No reboot and no Docker restart: `docker.service` has run since 2026-09-01 and the host has been up 4 weeks.
+
+| Item | Value |
+|---|---|
+| Parent directory | `/mnt/nas-iracing-coach/` (plain, root 0755): what the stack binds |
+| Mount point | `/mnt/nas-iracing-coach/iracing-coach`, `chattr +i` underneath: a write while no automount is active fails with `EPERM` instead of landing on the NVMe |
+| Mount unit | `mnt-nas\x2diracing\x2dcoach-iracing\x2dcoach.mount`: `192.168.1.82:/volume1/apps/iracing-coach`, `nfs4`, `vers=4.1,soft,timeo=150,retrans=3,noatime,_netdev`; no `[Install]` section, so it cannot be enabled to mount at boot |
+| Automount unit | `...automount`, enabled, `TimeoutIdleSec=120`: twice the server's 60 s probe, so the mount is not remade every minute while the server runs |
+| What the container sees | its own folder only, not the backup sets that `/mnt/nas-apps` (g-house's hard mount of the whole share) carries |
+| Superblocks | Coach `0:207` `soft`; g-house backup `0:182` `hard`: separate, as they must be |
+
+Why not `/mnt/nas-apps`, which g-house installed at 18:52 CDT the same day: it is `hard` on purpose (the backup must not end in a short write), the contract needs `soft`, and it is the whole share. Observed and not changed: its automount unit never started (`Path /mnt/nas-apps is already a mount point, refusing start`), because the mount was started directly at 18:52:38, so it has been a plain permanent mount since. A reboot, or stopping the mount and starting the automount, fixes it; that is the g-house session's to decide.
+
+**Measured on the host before the Compose change**, in throwaway mount namespaces built the way runc builds a container's (`unshare --mount --propagation slave`, a recursive bind, `--make-rslave`):
+
+| Case | Result |
+|---|---|
+| Listing the parent | mounts nothing; shows the mount point (`iracing-coach`, size 0) |
+| Bind the **automount point itself** | the NFS is mounted at bind time (journal: `triggered by ... (mount)`), so a container start would need the NAS |
+| Bind the parent, Docker's default `rprivate` | the first look inside fails with `ELOOP` ("Too many levels of symbolic links") after 40 automount requests; the mount never reaches the namespace |
+| Bind the parent, `rslave`, mount idle | no request at bind time; the first look inside triggers it (`triggered by ... (ls)`), the NFS propagates in and the data reads |
+| `rslave`, no automount yet, then the host starts it | a write into the bare mount point is refused (`Operation not permitted`); the automount appears in the namespace that predates it and the first look triggers the NFS |
+| `rslave`, host mount already present | the autofs trigger and the NFS arrive together and read at once (the case of every later release) |
+
+### The release
+
+| Item | Value |
+|---|---|
+| Command | `bash ~/.claude/skills/mini-pc/release.sh iracing-coach .` (Git bash, in `C:\Users\joshu\source\worktrees\iracing-coach-w9`, background), exit 0 |
+| Started, finished | 04:41:10Z, 04:43:41Z (2 min 31 s) |
+| Build on the N100 | 115 s (`g-house-app ... built in 115s`): the web and server layers rebuilt because `main` had moved; dependencies cached |
+| Image | `iracing-coach:4c3c5f02676203ca9dfe32e8f0648e38bc95822e`, 147 MB (config `sha256:04ac4ca070b4...`) |
+| Previous image | `iracing-coach:7d38242bb24b623a01b353c9405b14d680418950`, kept on the host |
+| Stack | revision `32c416e42e2d722c` (Compose file changed; previous `5b0e5ac51ce08983`); `deploys.log`: start 04:43:06Z, recovery point 04:43:07Z (`sqlite ok .../db/coach.sqlite3 7294976`, `/srv/g-house/recovery/iracing-coach/iracing-coach-20261004T044306Z.tar`), healthy 04:43:40Z; container started 04:43:38Z, 0 restarts, `OOMKilled false`. Start to container start was 32 s (31 s in the previous release, 22:46:57Z to 22:47:28Z) |
+| Docker's record of the mount | `bind /mnt/nas-iracing-coach -> /nas/apps rw=true propagation=rslave` (the other two binds are `rprivate`) |
+
+`ssh g-house-pc "sudo -n g-house-stack status iracing-coach"` (from the release):
+
+```
+stack=iracing-coach project=iracing-coach compose=/etc/g-house/stacks/iracing-coach/docker-compose.yml revision=32c416e42e2d722c
+recorded=32c416e42e2d722c
+iracing-coach-app-1   Up 2 seconds (healthy)   iracing-coach:4c3c5f02676203ca9dfe32e8f0648e38bc95822e
+```
+
+`curl -s http://127.0.0.1:8210/health`: 200 `{"schema_version":1,"server_version":"0.19.0","status":"ok"}`. `/api/v1/status` right after the release, before the server's first scheduled probe: **`nas.state ok`** (`last_ok_at` 04:43:39Z, `pending_archive 0`), `python_version 3.12.15`, `queue {analysis 0, deferred 1, light 0}`. The container log has no error or warning line. About 6 minutes after the start: 28.7 MiB against the 3 GiB limit, CPU 0.10 %.
+
+### The proof: start with the automount idle
+
+Before the release (04:41:02Z, 23:41:02 CDT): the automount `waiting`, no NFS mount at the Coach path (only the autofs trigger), the old container healthy on the Docker NFS volume, `nas.state ok`. The old container did not use the new mount, so it stayed idle through the build and the swap. From then to the end of the release the two units' journal holds **no** automount request until this one:
+
+```
+23:43:38 ... automount: Got automount request for /mnt/nas-iracing-coach/iracing-coach, triggered by 3539332 (archiver)
+23:43:38 ... Mounting ... iRacing Coach's folder on the NAS apps share (NFS, soft, ...)
+23:43:39 ... Mounted ...
+```
+
+The container started at 23:43:38 CDT and the request came from the server's `archiver` thread in the same second. Nothing from Docker or runc touched the NAS while the container was built, created or started, so the start did not depend on it. The container's own mount table (`/proc/3539294/mountinfo`) held the bind (`master:1`), the autofs trigger (`timeout=120`) and the soft `nfs4` mount of `192.168.1.82:/volume1/apps/iracing-coach`, propagated in; `nas.state` was `ok` one second after the start.
+
+In the running container: at 23:44:24 stopping only the mount unit emptied the NFS mount on the host and in the container (0 and 0; the automount `waiting`, the trigger still in the container), and the server's next probe at 23:44:39 triggered it again from inside (`triggered by ... (archiver)`), `last_ok_at` 04:44:39Z. From 23:46:41 to 23:46:45 the automount unit itself was stopped and started with the container running: the container regained it through propagation, and `last_ok_at` was 04:47:39Z at the next probe. `nas_probe.py` in the container at 04:49:49Z: `state: ok`, exit 0, `missing_options []`, mount `192.168.1.82:/volume1/apps/iracing-coach` `nfs4` `soft`, folder root uid 1024 gid 100 mode 0777, a 4 MiB write with fsync in 0.054 s read back with an equal SHA-256, listing `.probe .tmp FORMAT backups quarantine raw setups`. The archive reads through the new mount: 668 recordings (20.29 GB) with 668 manifests, 859 setup files, daily folders under `backups/`.
+
+**`g-house-stack apply` alone does not restart the service.** With the automount idle (mount unit stopped at 23:48:41 CDT) `sudo -n g-house-stack apply iracing-coach` printed `Container iracing-coach-app-1  Running` and `applied, revision 32c416e42e2d722c`: the same container (`ccac5bc07611`, started 04:43:38Z), healthy at 04:48:42Z, no automount request during it (the next one was the server's probe at 23:49:39). `compose up` recreates a service only when its definition or image changed, so the restart under an idle automount is the release above, and another needs a changed definition or image.
+
+### Not proved, and left
+
+- **A real NAS outage.** Nothing on the NAS or the network was changed to simulate one. Not exercised: how long the automount's mount attempt takes to fail against an unreachable NAS (systemd's default mount timeout is 90 s), the server's `unreachable` and `stalled` states through this mount, and the recovery once the NAS answers. The mechanism that lets the container start without it is measured above; the outage behaviour is as `nas-layout.md` section 6 designs it.
+- **A reboot.** The start-order case (Docker before the automount unit) is shown with a throwaway namespace and by restarting the automount under the live container, not by a reboot.
+- **The old Docker volume `iracing-coach_nas`** is still defined, unmounted, and nothing uses it. Removing it is a separate request.
+- **The g-house change is a branch, not on `main`.** `install-household-host.sh` could only be syntax-checked here (`bash -n`); ShellCheck, which CI runs, was not available locally. The g-house deploy-automation tests pass (101, 4 skipped).
+- The folder must exist on the NAS for the mount to succeed (it does). The server no longer creates `$NAS` itself, only the layout beneath it.
