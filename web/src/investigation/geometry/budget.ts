@@ -68,15 +68,3 @@ export function boundedCursorLaps(selected: number[], spotlight: number | null, 
     .sort((a, b) => (spotlight === a ? 0 : 1) - (spotlight === b ? 0 : 1) || a - b)
     .slice(0, budget);
 }
-
-/**
- * Lap identity palette (TelemetryWorkspace.TracePalette less the colours that imitate the caution yellow or the fastest-lap
- * magenta, design README "Theme changes"; the pink and the lilac read as the fastest lap next to it); the fastest lap is always
- * magenta.
- */
-export const TRACE_PALETTE: readonly string[] = [
-  "#63F5D2", "#69A7FF", "#A879FF", "#FF7B72", "#66F06A",
-  "#54D6FF", "#FF9D4D", "#8EF0FF", "#4FE0A4", "#7F8CFF",
-  "#B8F25D", "#FFB56B", "#54ECE5", "#F07B67",
-];
-export const FASTEST_LAP_COLOR = "#F05CDB";

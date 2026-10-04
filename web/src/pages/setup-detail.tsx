@@ -1,15 +1,16 @@
 import { useMemo, useState } from "preact/hooks";
 import { type Schemas, api, paths, request } from "../core/api";
-import { formatDateTime, plural } from "../core/format";
+import { formatDate, formatDateTime, plural } from "../core/format";
 import { useJobRun } from "../core/jobs";
 import { useResource } from "../core/resource";
 import { uuid4 } from "../core/uuid";
 import { href, navigate } from "../core/router";
-import { ErrorLine, Loading, Notice } from "../ui/kit";
+import { Chip, ErrorLine, Loading, Notice } from "../ui/kit";
 import { NotesPanel } from "../ui/notes";
-import { carColors } from "../setups/library";
-import { CheckeredFlag, Chevron } from "../setups/glyphs";
-import { SOURCE_LABEL, type Setup, classifyCompare, comparePicks, groupSetupValues, sameNameAs, seenSpan, setupTitle, tuneTarget, uniqueSources } from "../setups/model";
+import { carColors, racedCountOf } from "../setups/library";
+import { RacedMark } from "../setups/glyphs";
+import { VersionBoard } from "../setups/version-board";
+import { SOURCE_LABEL, type Setup, classifyCompare, comparePicks, groupSetupValues, sameNameAs, seenSpan, setupTitle, tuneTarget } from "../setups/model";
 import "../setups/setups.css";
 
 type Result = Schemas["SetupCompareResult"];
@@ -89,45 +90,11 @@ function CompareTable({ result, left, right }: { result: Result; left: Setup; ri
   );
 }
 
-function Versions({ current, twins, customerId }: { current: Setup; twins: Setup[]; customerId: number }) {
-  const all = [current, ...twins].sort((a, b) => Date.parse(a.first_seen_at) - Date.parse(b.first_seen_at) || a.setup_id - b.setup_id);
-  const numbered = all.map((s, i) => ({ s, number: i + 1, latest: i === all.length - 1 })).reverse();
-  return (
-    <section class="d-card versions-board" aria-label="Versions" data-testid="versions">
-      <h2>
-        Versions <span class="count">{all.length}</span>
-      </h2>
-      <ul class="sight-list">
-        {numbered.map(({ s, number, latest }) => (
-          <li key={s.setup_id} class={`s-grid s-row${s.setup_id === current.setup_id ? " here" : ""}`} data-version={number} aria-current={s.setup_id === current.setup_id ? "true" : undefined}>
-            {s.setup_id === current.setup_id ? (
-              <span class="s-name">
-                <span class="s-title">Version {number}</span>
-                {latest ? <span class="tag">Latest</span> : null}
-                <span class="tag solid">Viewing</span>
-              </span>
-            ) : (
-              <a class="s-name" href={href({ page: "setup", customerId, setupId: s.setup_id })}>
-                <span class="s-title">Version {number}</span>
-                {latest ? <span class="tag">Latest</span> : null}
-              </a>
-            )}
-            {s.raced ? (
-              <span class="raced">
-                <CheckeredFlag />
-                Raced
-              </span>
-            ) : (
-              <span />
-            )}
-            <span class="num">{s.observation_count}×</span>
-            <span class="date">{seenSpan(s)}</span>
-            <span class="go">{s.setup_id === current.setup_id ? null : <Chevron />}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
+/** The file this setup came from, where it identifies the artifact: the stored path, or the name when no path is known. */
+function fileLabels(s: Setup): string[] {
+  const paths = (s.sto_files ?? []).map((f) => f.relative_path);
+  const stems = new Set(paths.map((p) => (p.split(/[\\/]/).pop() ?? p).toLowerCase()));
+  return [...paths, ...s.names.filter((n) => !stems.has(n.toLowerCase()))];
 }
 
 export default function SetupDetailPage({ customerId, setupId }: { customerId: number; setupId: number }) {
@@ -165,6 +132,7 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
   }
 
   const linked = detail.observations.some((o) => o.session_id != null);
+  const files = fileLabels(s);
   const sightings = allSightings ? detail.observations : detail.observations.slice(0, SIGHTINGS_SHOWN);
   const optionLabel = (o: Setup) => `${setupTitle(o)} · ${seenSpan(o)}`;
   return (
@@ -177,26 +145,8 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
           <h1>{setupTitle(s)}</h1>
           <p class="meta">
             <span>{s.car_name ?? s.car_path}</span>
-            {settingCount > 0 || readouts.length > 0 ? <span class="vk">Values known</span> : <span class="vu">Values unknown</span>}
-            {s.raced ? (
-              <span class="raced">
-                <CheckeredFlag />
-                Raced
-              </span>
-            ) : null}
-            <span class="date">First seen {formatDateTime(s.first_seen_at)}</span>
-          </p>
-          <p class="meta" aria-label="Sources">
-            {uniqueSources(s.sources).map((x) => (
-              <span key={x} class="tag">
-                {x}
-              </span>
-            ))}
-            {s.names.map((n) => (
-              <span key={n} class="tag dashed" title="Setup file name">
-                {n}
-              </span>
-            ))}
+            {s.raced ? <RacedMark count={racedCountOf(s)} /> : null}
+            <span class="date">First seen {formatDate(s.first_seen_at)}</span>
           </p>
         </div>
         <button type="button" class="pill primary" disabled={!linked} title={linked ? undefined : "No recording yet"} onClick={tune}>
@@ -205,7 +155,7 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
       </header>
       {tuneError ? <Notice tone="warn">{tuneError}</Notice> : null}
 
-      {twins.length > 0 ? <Versions current={s} twins={twins} customerId={customerId} /> : null}
+      {twins.length > 0 ? <VersionBoard current={s} twins={twins} customerId={customerId} serverVersions={detail.versions} /> : null}
 
       {others.length > 0 ? (
         <section class="d-card" aria-label="Compare">
@@ -235,7 +185,9 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
           </h2>
           {settingCount === 0 ? (
             <p>
-              <span class="vu">Values unknown</span>
+              <Chip variant="constraint" title="The setup's values are not decoded">
+                No values
+              </Chip>
             </p>
           ) : (
             <ValueGroups groups={settings} />
@@ -278,6 +230,20 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
           </button>
         ) : null}
       </section>
+
+      {files.length > 0 ? (
+        <section class="d-card d-file" aria-label="File">
+          <h2>File</h2>
+          <dl>
+            {files.map((f) => (
+              <div key={f}>
+                <dt>File</dt>
+                <dd>{f}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
 
       <NotesPanel customerId={customerId} kind="setup" subjectId={String(setupId)} />
     </div>

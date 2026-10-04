@@ -2,10 +2,64 @@ import type { ComponentChildren } from "preact";
 
 export type Tone = "neutral" | "good" | "warn" | "bad" | "info";
 
-export function Chip({ tone = "neutral", title, children }: { tone?: Tone; title?: string; children: ComponentChildren }) {
+/**
+ * The chip rule (web round 2): a chip marks an exception, a constraint that changes a decision, or an action. There is no
+ * status-normal chip (no "Values known", "Recording", "Analyzed", file name): a normal state draws nothing.
+ *  - `exception`: something is off or missing results (Queued, Failed, Deferred). `level` "fail" is loss red, "wait" is muted.
+ *    An optional `action` adds a Retry segment inside the chip.
+ *  - `constraint`: a fact that changes what the driver can decide (Fixed, Open, Not used in pace fit). Neutral outline.
+ *  - `action`: the chip is the button (a single verb). Pass `onClick`.
+ * A chip is a squared tag, never a pill with a count or a remove cross: that shape belongs to filter controls.
+ */
+export type ChipVariant = "exception" | "constraint" | "action";
+export type ChipLevel = "fail" | "wait";
+
+export interface ChipAction {
+  label: string;
+  onClick(): void;
+  disabled?: boolean;
+}
+
+/** The class list of a chip: one variant class, plus the level for an exception. Exported so the model is testable. */
+export function chipClass(variant: ChipVariant, level?: ChipLevel): string {
+  const parts = ["chip", `chip-${variant}`];
+  if (variant === "exception") parts.push(`chip-${level ?? "fail"}`);
+  return parts.join(" ");
+}
+
+export function Chip({
+  variant,
+  level,
+  title,
+  action,
+  onClick,
+  children,
+}: {
+  variant: ChipVariant;
+  /** Exception only: "fail" (default) or "wait". */
+  level?: ChipLevel;
+  title?: string;
+  /** Exception only: the Retry segment. */
+  action?: ChipAction;
+  /** Action variant only. */
+  onClick?: () => void;
+  children: ComponentChildren;
+}) {
+  if (variant === "action") {
+    return (
+      <button type="button" class={chipClass("action")} title={title} onClick={onClick}>
+        {children}
+      </button>
+    );
+  }
   return (
-    <span class={`chip chip-${tone}`} title={title}>
+    <span class={chipClass(variant, level)} title={title}>
       {children}
+      {variant === "exception" && action ? (
+        <button type="button" class="chip-act" disabled={action.disabled} onClick={action.onClick}>
+          {action.label}
+        </button>
+      ) : null}
     </span>
   );
 }

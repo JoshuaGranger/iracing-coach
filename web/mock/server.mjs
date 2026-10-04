@@ -84,7 +84,26 @@ function startJob(kind, customerId, result, { fail = null, ms = 250 } = {}) {
 
 // ---- helpers ------------------------------------------------------------------
 
-const findSession = (id) => Object.values(state.sessions).flat().find((s) => s.session_id === id);
+const findSession = (id) => [...Object.values(state.sessions).flat(), ...Object.values(state.lab.sessions).flat()].find((s) => s.session_id === id);
+/** `library=lab` selects the lab library; anything else (or nothing) is the driver's own. The contract's default is main. */
+const libraryOf = (url) => (url.searchParams.get("library") === "lab" ? "lab" : "main");
+/** `SetupVersion[]` of the detail: this setup and its car's other setups sharing a name, oldest first; `changed_count` is the settings changed from the previous one (readouts excluded), null for the oldest or when a side has no values. */
+function versionsOfSetup(target) {
+  const pool = [...Object.values(state.setups).flat(), ...Object.values(state.lab.setups).flat()];
+  const same = pool.filter((x) => x.summary.car_path === target.summary.car_path && (x === target || x.summary.names.some((n) => target.summary.names.includes(n))));
+  same.sort((a, b) => Date.parse(a.summary.first_seen_at) - Date.parse(b.summary.first_seen_at) || a.summary.setup_id - b.summary.setup_id);
+  return same.map((x, i) => {
+    const prev = i === 0 ? null : same[i - 1];
+    let changed = null;
+    if (prev && Object.keys(prev.values).length > 0 && Object.keys(x.values).length > 0) {
+      const keys = new Set([...Object.keys(prev.values), ...Object.keys(x.values)]);
+      changed = [...keys].filter((k) => !EXCLUDED_KEYS.includes(k) && prev.values[k] !== undefined && x.values[k] !== undefined && prev.values[k] !== x.values[k]).length;
+    }
+    return { setup_id: x.summary.setup_id, first_seen_at: x.summary.first_seen_at, last_seen_at: x.summary.last_seen_at, previous_setup_id: prev ? prev.summary.setup_id : null, changed_count: changed };
+  });
+}
+const sessionsOf = (url, c) => (libraryOf(url) === "lab" ? state.lab.sessions[c] : state.sessions[c]) ?? [];
+const setupsOf = (url, c) => (libraryOf(url) === "lab" ? state.lab.setups[c] : state.setups[c]) ?? [];
 
 function sessionDetail(s) {
   const analyses = s.analysis_id ? [{ analysis_id: s.analysis_id, created_at: s.start_time_utc, profile_version: "post-race-foundations-v23", lap_count: s.overview.recorded_laps ?? null, projection_version: 1, projection_state: "ready", current: true }] : [];
@@ -168,7 +187,7 @@ async function route(req, res, url) {
     const q = (url.searchParams.get("q") ?? "").toLowerCase();
     const limit = Number(url.searchParams.get("limit") ?? 50);
     const offset = Number(url.searchParams.get("cursor") ?? 0);
-    let list = (state.sessions[c] ?? []).filter(
+    let list = sessionsOf(url, c).filter(
       (s) =>
         (types.length === 0 || types.includes("all") || types.some((t) => (s.session_type ?? "").toLowerCase().startsWith(t))) &&
         (cars.length === 0 || cars.includes(s.car_path)) &&
@@ -243,12 +262,12 @@ async function route(req, res, url) {
     // `raced=true|false` overrides the older `raced_only=true`; raced setups only means no unlinked files.
     const racedParam = url.searchParams.get("raced");
     const raced = racedParam === "true" || racedParam === "false" ? racedParam === "true" : url.searchParams.get("raced_only") === "true" ? true : null;
-    let list = (state.setups[c] ?? []).map((s) => s.summary).filter((s) => (!car || s.car_path === car) && (raced === null || s.raced === raced) && (!q || [...s.names, s.car_name].join(" ").toLowerCase().includes(q)));
-    return json(res, 200, { setups: list, unlinked_files: raced === true ? [] : (state.unlinked[c] ?? []), next_cursor: null });
+    let list = setupsOf(url, c).map((s) => s.summary).filter((s) => (!car || s.car_path === car) && (raced === null || s.raced === raced) && (!q || [...s.names, s.car_name].join(" ").toLowerCase().includes(q)));
+    return json(res, 200, { setups: list, unlinked_files: raced === true || libraryOf(url) === "lab" ? [] : (state.unlinked[c] ?? []), next_cursor: null });
   }
   if ((r = p.match(/^\/api\/v1\/setups\/(\d+)$/))) {
-    const s = Object.values(state.setups).flat().find((x) => x.summary.setup_id === Number(r[1]));
-    return s ? json(res, 200, { setup: s.summary, values: s.values, identity_excluded_keys: EXCLUDED_KEYS, observations: s.observations.map((o) => ({ ...o, analysis_id: o.session_id != null ? (findSession(o.session_id)?.analysis_id ?? null) : null })) }) : err(res, 404, "not_found", "No such setup");
+    const s = [...Object.values(state.setups).flat(), ...Object.values(state.lab.setups).flat()].find((x) => x.summary.setup_id === Number(r[1]));
+    return s ? json(res, 200, { setup: s.summary, values: s.values, identity_excluded_keys: EXCLUDED_KEYS, versions: versionsOfSetup(s), observations: s.observations.map((o) => ({ ...o, analysis_id: o.session_id != null ? (findSession(o.session_id)?.analysis_id ?? null) : null })) }) : err(res, 404, "not_found", "No such setup");
   }
   if (p === "/api/v1/setups/compare" && m === "POST") {
     const body = await readBody(req);

@@ -1,0 +1,26 @@
+{
+  "cpuThrottle": 4,
+  "seconds": 4,
+  "board": {
+    "frames": 242,
+    "meanFrameMs": 16.6,
+    "p95FrameMs": 16.7,
+    "scriptMsPerS": 55,
+    "styleLayoutMsPerS": 36
+  },
+  "editorIdle": {
+    "frames": 241,
+    "meanFrameMs": 16.62,
+    "p95FrameMs": 16.7,
+    "scriptMsPerS": 44,
+    "styleLayoutMsPerS": 45
+  },
+  "editorSelected": {
+    "frames": 241,
+    "meanFrameMs": 16.61,
+    "p95FrameMs": 16.7,
+    "scriptMsPerS": 49,
+    "styleLayoutMsPerS": 39
+  },
+  "rateMessages": []
+}

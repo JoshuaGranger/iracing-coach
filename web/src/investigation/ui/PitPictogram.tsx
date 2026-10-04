@@ -48,6 +48,9 @@ export function durationText(stop: PitStop): string {
   return stop.durationS !== null ? stop.durationS.toFixed(1) : "—";
 }
 
+/** The stop detail's one line about the fields the backend does not extract yet. */
+export const PIT_UNEXTRACTED = "Repairs and penalties: not extracted";
+
 /** The hover card: band `PIT · L41`, the picture, the stop time, the tires and `+12.0 gal`. */
 export function PitCard({ stop, compact = false }: { stop: PitStop; compact?: boolean }) {
   return (
@@ -61,6 +64,8 @@ export function PitCard({ stop, compact = false }: { stop: PitStop; compact?: bo
           {stop.fuelAddedGal !== null && stop.fuelAddedGal > 0.05 && <span class="ri-pit-gal">+{stop.fuelAddedGal.toFixed(1)}<small>gal</small></span>}
         </div>
       </div>
+      {/* Repair and penalty fields are not extracted yet: nothing is drawn for them, and the stop says so once. */}
+      <p class="ri-pit-note" data-pit-unextracted>{PIT_UNEXTRACTED}</p>
     </div>
   );
 }

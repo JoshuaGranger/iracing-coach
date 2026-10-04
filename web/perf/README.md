@@ -2,6 +2,8 @@
 
 `pnpm -C web perf:g2` runs gate G2 (`docs/08-rewrite/workstreams.md`, Gates): Chromium via Playwright, CDP `Emulation.setCPUThrottlingRate` 6, phone 390x844 and tablet 1024x768, the committed 82-lap current-profile fixture, median of 3. Options: `--runs`, `--duration` (ms of pointer movement, default 10000), `--rate`, `--viewports phone,tablet,desktop`, `--select all` (every lap selected), `--fixture g2|synthetic`.
 
+`PERF_OUT=<dir>` moves every harness output (builds, results, screenshots) out of the shared `target/W8`, so two agents running harnesses at once do not rebuild each other's dist.
+
 Pass: Traces first interactive <= 3 s, cursor >= 55 fps under continuous pointer movement, zero requests during pointer movement. Exit code 1 on a miss; `target/W8/g2-result.json` holds every run (`g2-result-synthetic.json` for the fallback fixture, `-all-laps` appended for `--select all`).
 
 ## What is measured

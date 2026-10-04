@@ -1,27 +1,48 @@
 import { useMemo, useRef, useState } from "preact/hooks";
-import { cohortRibbon } from "./runs-model";
-import { n, numberText, PlotScale, reason, runColor, runDash, signedText, ticks } from "../format";
-import { hasPaceResult, paceTone, type Comparison, type Investigation, type InvestigationLap } from "../investigation-model";
-import { ComparisonChips, exposureWord, lapLabel, trendPath } from "./RaceView";
+import { n, PlotScale, reason, runColor, runDash, ticks } from "../format";
+import type { Comparison, Investigation, InvestigationLap } from "../investigation-model";
+import { exposureWord, lapLabel, trendPath } from "./RaceView";
 import { useElementSize } from "./hooks";
+import { fitLabel, fitSegment, runCards, sparkPath, type RunCard } from "./runs-model";
 import { scaleFor, useRemPx } from "./unit";
 
 export interface RunsViewProps {
   inv: Investigation;
   selected: Comparison | null;
   sessionType?: string | null;
+  /** The runs view's runs (BackendRun): fuel at start and end, tire laps. */
+  runs?: readonly unknown[];
 }
 
-export function RunsView({ inv, selected, sessionType }: RunsViewProps) {
+function RunCardView({ card }: { card: RunCard }) {
+  const color = runColor(card.runNumber);
+  const dash = runDash(card.runNumber);
+  return (
+    <article class="ri-run-card" role="listitem" data-run-card={card.runNumber} style={`--run:${color}`}>
+      <header>
+        <svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke={color} stroke-width="3" stroke-dasharray={dash} /></svg>
+        <b>Run {card.runNumber}</b><small>{card.lapsText}</small>
+      </header>
+      <svg class="ri-spark" viewBox="0 0 96 24" preserveAspectRatio="none" aria-hidden="true"><path d={sparkPath(card.trend, 96, 24)} stroke={color} stroke-dasharray={dash} /></svg>
+      <div class="ri-facts">
+        <span class="ri-fact"><span class="ri-fact-label">Fit</span><b class="ri-fact-value" data-run-slope>{card.slope ?? <span title={card.noFitReason ? reason(card.noFitReason) : undefined}>No fit</span>}</b></span>
+        <span class="ri-fact"><span class="ri-fact-label">Used</span><b class="ri-fact-value" data-run-used>{card.used}</b></span>
+        <span class="ri-fact"><span class="ri-fact-label">Screened</span><b class="ri-fact-value" data-run-screened>{card.screened}</b></span>
+        <span class="ri-fact"><span class="ri-fact-label">Fuel</span><b class="ri-fact-value">{card.fuelBand ?? "—"}</b></span>
+        <span class="ri-fact"><span class="ri-fact-label">Tire laps</span><b class="ri-fact-value">{card.tireLaps ?? "—"}</b></span>
+      </div>
+    </article>
+  );
+}
+
+export function RunsView({ inv, sessionType, runs }: RunsViewProps) {
   const word = exposureWord(sessionType);
   const host = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(host);
   const k = scaleFor(useRemPx());
-  const [showFit, setShowFit] = useState(false);
   const [hover, setHover] = useState<InvestigationLap | null>(null);
   const points = useMemo(() => inv.laps.filter((lap) => lap.plotPace && lap.greenExposure !== null && lap.lapTimeS !== null && lap.lapTimeS > 0), [inv]);
-  const chosen = useMemo(() => (selected ? [selected.baseline, selected.compared] : []), [selected]);
-  const isChosen = (point: InvestigationLap): boolean => chosen.some((cohort) => cohort.lapNumbers.includes(point.lap) && (cohort.runNumber === null || cohort.runNumber === point.runNumber));
+  const cards = useMemo(() => runCards(inv, runs ?? []), [inv, runs]);
   const plot = useMemo(() => {
     if (points.length === 0 || width < 80 || height < 80) return null;
     const times = points.map((point) => point.lapTimeS as number);
@@ -37,79 +58,78 @@ export function RunsView({ inv, selected, sessionType }: RunsViewProps) {
   const drop = Math.round(5 * k); // baseline drop that centres a tick label on its line
   const readout = hover ? lapLabel(hover, word) : "";
   return (
-    <div class="ri-card ri-fill ri-runs" data-ri-view="runs" data-ri-runs>
-      {inv.runs.length === 0 && points.length === 0 ? (
-        <div class="ri-empty"><strong>No laps with run exposure</strong></div>
-      ) : (
-        <>
-          <div class="ri-chart-head">
-            <div class="ri-run-legend">
-              {inv.runs.map((run) => (
-                <span class="ri-run-key" key={run.runNumber} data-run={run.runNumber}
-                  title={`Trend ${run.trend.coveredLapCount}/${run.plottedLapCount} laps${run.trend.gaps.length ? ` · breaks ${run.trend.gaps.map((gap) => `L${gap.afterLap}–${gap.beforeLap} ${gap.reason.replace(/_/g, " ")}`).join(", ")}` : ""}`}>
-                  <svg width="20" height="8" aria-hidden="true"><line x1="0" y1="4" x2="20" y2="4" stroke={runColor(run.runNumber)} stroke-width="2.5" stroke-dasharray={runDash(run.runNumber)} /></svg>
-                  <b>Run {run.runNumber}</b><small>L{run.firstLap}–{run.lastLap} · {run.plottedLapCount} laps</small>
-                  {showFit && run.fit && run.fit.slopeSPerGreenLap !== null && <small class="ri-fit-text">fit {signedText(run.fit.slopeSPerGreenLap * 10, 2)} s / 10 {word} · {run.fit.eligibleCount} laps · {numberText(run.fit.domain?.[0], 1)}–{numberText(run.fit.domain?.[1], 1)}</small>}
-                  {showFit && (!run.fit || run.fit.points.length !== 2) && <small class="ri-fit-text" data-fit-missing={run.runNumber}>no fit{run.fitUnavailableReason ? ` · ${reason(run.fitUnavailableReason)}` : ""}</small>}
-                </span>
-              ))}
-            </div>
-            <button type="button" class="ri-pill-toggle" aria-pressed={showFit} title="Least squares · screened laps · their exposure range" onClick={() => setShowFit((value) => !value)}>Screened fit</button>
-            <output class="ri-readout" aria-live="polite">{readout}</output>
-          </div>
-          <div class="ri-plot" ref={host}>
-            {plot && (
-              <svg class="ri-plot-svg" viewBox={`0 0 ${n(width)} ${n(height)}`} role="group" aria-label="Lap time against green laps into run, runs overlaid">
-                {ticks(plot.yMin, plot.yMax, 4).map((tick) => (
-                  <g key={`y${tick}`}>
-                    <line x1={n(plot.left)} x2={n(plot.right)} y1={n(plot.y(tick))} y2={n(plot.y(tick))} class="ri-grid" />
-                    <text x={n(plot.left - 6)} y={n(plot.y(tick) + drop)} text-anchor="end" class="ri-axis">{tick.toFixed(1)}</text>
-                  </g>
-                ))}
-                {ticks(0, plot.xMax, 6).map((tick) => (
-                  <text key={`x${tick}`} x={n(plot.x(tick))} y={n(plot.bottom + 22 * k)} text-anchor="middle" class="ri-axis">{tick.toFixed(0)}</text>
-                ))}
-                <text x={n(plot.left)} y={n(Math.round(15 * k))} class="ri-axis-title">Lap time · s</text>
-                <text x={n(plot.right)} y={n(plot.bottom + 42 * k)} text-anchor="end" class="ri-axis-title">{word === "clean" ? "Clean laps into run" : "Green laps into run"}</text>
-                {selected && cohortRibbon(selected).map((ribbon) => (
-                  <path key={ribbon.key} d={`M${n(plot.x(ribbon.start))},${n(plot.bottom + 3)}V${n(plot.bottom + 7)}H${n(plot.x(ribbon.end))}V${n(plot.bottom + 3)}`} class="ri-bracket" stroke={runColor(ribbon.run)} />
-                ))}
+    <div class="ri-runs-view" data-ri-view="runs">
+      <div class="ri-card ri-fill ri-runs" data-ri-runs>
+        {inv.runs.length === 0 && points.length === 0 ? (
+          <div class="ri-empty"><strong>No laps with run exposure</strong></div>
+        ) : (
+          <>
+            <div class="ri-chart-head">
+              <div class="ri-legend">
                 {inv.runs.map((run) => (
-                  <g key={`r${run.runNumber}`}>
-                    {run.trend.segments.map((segment, index) => (
-                      <path key={index} d={trendPath(plot, segment, (point) => point.x)} class="ri-trend" stroke={runColor(run.runNumber)} stroke-dasharray={runDash(run.runNumber)} />
-                    ))}
-                    {showFit && run.fit && run.fit.points.length === 2 && (
-                      <line x1={n(plot.x(run.fit.points[0]!.x))} y1={n(plot.y(run.fit.points[0]!.y))} x2={n(plot.x(run.fit.points[1]!.x))} y2={n(plot.y(run.fit.points[1]!.y))} class="ri-fit" stroke={runColor(run.runNumber)} />
-                    )}
-                  </g>
+                  <span class="ri-run-key" key={run.runNumber} data-run={run.runNumber}>
+                    <svg width="20" height="8" aria-hidden="true"><line x1="0" y1="4" x2="20" y2="4" stroke={runColor(run.runNumber)} stroke-width="2.5" stroke-dasharray={runDash(run.runNumber)} /></svg>Run {run.runNumber}
+                  </span>
                 ))}
-                {points.map((point) => {
-                  const color = runColor(point.runNumber);
-                  const chosenPoint = isChosen(point);
-                  const x = plot.x(point.greenExposure as number);
-                  const y = plot.y(Math.min(plot.yMax, Math.max(plot.yMin, point.lapTimeS as number)));
-                  return (
-                    <g key={point.lap}>
-                      {chosenPoint && <circle cx={n(x)} cy={n(y)} r="7" class="ri-ring" stroke={color} />}
-                      <circle cx={n(x)} cy={n(y)} r={chosenPoint ? "4" : "2.8"} fill={point.eligible ? color : "var(--ri-card)"} stroke={color}
-                        class={`ri-dot${point.eligible ? "" : " excluded"}`} tabIndex={0} data-lap={point.lap}
-                        onPointerEnter={() => setHover(point)} onFocus={() => setHover(point)} aria-label={lapLabel(point, word)}><title>{lapLabel(point, word)}</title></circle>
-                    </g>
-                  );
-                })}
-              </svg>
-            )}
-          </div>
-          {selected && (
-            <div class="ri-runs-foot">
-              <strong>{selected.title} <b class={paceTone(selected)}>{hasPaceResult(selected) ? `${signedText(selected.deltaS)} s median lap` : "No pace result"}</b></strong>
-              <ComparisonChips cohorts={[{ cohort: selected.baseline, role: "Earlier" }, { cohort: selected.compared, role: "Later" }]} word={word} />
-              <div class="ri-legend"><span><i class="ring" />Compared</span><span><i class="ld hollow" />Excl</span><span><svg width="20" height="8" aria-hidden="true"><line x1="0" y1="4" x2="20" y2="4" stroke="var(--ri-run1)" stroke-width="2.5" /></svg>5-lap median · traffic in</span></div>
+                <span><i class="lt" />Observed · 5-lap median</span>
+                <span><i class="lf" />Screened fit</span>
+                <span><i class="ld hollow" />Not used in pace fit</span>
+              </div>
+              <output class="ri-readout" aria-live="polite">{readout}</output>
             </div>
-          )}
-        </>
-      )}
+            <div class="ri-plot" ref={host}>
+              {plot && (
+                <svg class="ri-plot-svg" viewBox={`0 0 ${n(width)} ${n(height)}`} role="group" aria-label={`Lap time against ${word} laps into run, runs overlaid`}>
+                  {ticks(plot.yMin, plot.yMax, 4).map((tick, index) => (
+                    <g key={`y${index}`}>
+                      <line x1={n(plot.left)} x2={n(plot.right)} y1={n(plot.y(tick))} y2={n(plot.y(tick))} class="ri-grid" />
+                      <text x={n(plot.left - 6)} y={n(plot.y(tick) + drop)} text-anchor="end" class="ri-axis">{tick.toFixed(1)}</text>
+                    </g>
+                  ))}
+                  {ticks(0, plot.xMax, 6).map((tick, index) => (
+                    <text key={`x${index}`} x={n(plot.x(tick))} y={n(plot.bottom + 22 * k)} text-anchor="middle" class="ri-axis">{tick.toFixed(0)}</text>
+                  ))}
+                  <text x={n(plot.left)} y={n(Math.round(15 * k))} class="ri-axis-title">Lap time · s</text>
+                  <text x={n(plot.right)} y={n(plot.bottom + 42 * k)} text-anchor="end" class="ri-axis-title">{word === "clean" ? "Clean laps into run" : "Green laps into run"}</text>
+                  {/* Observed trend: the backend's 5-observation median, the run's colour and line style. */}
+                  {inv.runs.map((run) => run.trend.segments.map((segment, index) => (
+                    <path key={`t${run.runNumber}-${index}`} d={trendPath(plot, segment, (point) => point.x)} class="ri-trend" stroke={runColor(run.runNumber)} stroke-dasharray={runDash(run.runNumber)} data-trend-run={run.runNumber} />
+                  )))}
+                  {points.map((point) => {
+                    const color = runColor(point.runNumber);
+                    return (
+                      <circle key={point.lap} cx={n(plot.x(point.greenExposure as number))} cy={n(plot.y(Math.min(plot.yMax, Math.max(plot.yMin, point.lapTimeS as number))))} r="2.8"
+                        fill={point.eligible ? color : "var(--ri-card)"} stroke={color} class={`ri-dot${point.eligible ? "" : " excluded"}`} tabIndex={0} data-lap={point.lap}
+                        onPointerEnter={() => setHover(point)} onFocus={() => setHover(point)} onClick={() => setHover(point)} aria-label={lapLabel(point, word)}><title>{lapLabel(point, word)}</title></circle>
+                    );
+                  })}
+                  {/* Screened fit: drawn only over the span the backend fitted, labelled with its slope and eligible count. */}
+                  {inv.runs.map((run) => {
+                    const segment = fitSegment(run);
+                    const label = fitLabel(run);
+                    if (!segment) return null;
+                    const x1 = plot.x(segment.x1);
+                    const x2 = plot.x(segment.x2);
+                    const y1 = plot.y(Math.min(plot.yMax, Math.max(plot.yMin, segment.y1)));
+                    const y2 = plot.y(Math.min(plot.yMax, Math.max(plot.yMin, segment.y2)));
+                    const cap = 5 * k;
+                    return (
+                      <g key={`f${run.runNumber}`} class="ri-fit-group" data-fit-run={run.runNumber} data-fit-span={`${segment.x1}-${segment.x2}`} style={`--run:${runColor(run.runNumber)}`}>
+                        <line x1={n(x1)} y1={n(y1)} x2={n(x2)} y2={n(y2)} class="ri-fit-halo" />
+                        <line x1={n(x1)} y1={n(y1)} x2={n(x2)} y2={n(y2)} class="ri-fit" />
+                        <line x1={n(x1)} x2={n(x1)} y1={n(y1 - cap)} y2={n(y1 + cap)} class="ri-fit" />
+                        <line x1={n(x2)} x2={n(x2)} y1={n(y2 - cap)} y2={n(y2 + cap)} class="ri-fit" />
+                        {label && <text x={n(Math.min(x2, plot.right) - 2)} y={n(y2 - cap - 4)} text-anchor="end" class="ri-fit-label" data-fit-label>{label}</text>}
+                      </g>
+                    );
+                  })}
+                </svg>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      {cards.length > 0 && <div class="ri-run-cards" role="list" aria-label="Runs">{cards.map((card) => <RunCardView key={card.runNumber} card={card} />)}</div>}
     </div>
   );
 }

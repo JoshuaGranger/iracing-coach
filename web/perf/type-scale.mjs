@@ -55,16 +55,17 @@ const WANTED = option("pages", Object.keys(PAGES).join(",")).split(",");
 
 /** Selector groups. A group's text size is read from the elements that own text; a control's height is its box. */
 const GROUPS = {
-  body: { min: 16, selector: "body, .row-title, .note-body, .page p, .empty p, .notice, .ri-empty strong, .ri-comparison-title, .ri-card p, .ri-action p, .ri-channel-label, .ri-heading strong, .ri-panel-label strong, dt" },
+  body: { min: 16, selector: "body, .sx-id h2, .row-title, .note-body, .page p, .empty p, .notice, .ri-empty strong, .ri-comparison-title, .ri-card p, .ri-action p, .ri-channel-label, .ri-heading strong, .ri-panel-label strong, dt" },
   secondary: {
     min: 14,
     selector: [
-      ".row-meta, .sub, .event-meta, .chip, .eyebrow, .count, .tile-label, .tile-secondary, .tile-unit, label > span:first-child, .field-error, .inline-error, .note-meta",
+      ".row-meta, .sub, .event-meta, .sx-meta, .sx-car, .sx-l, .sx-p.unit, .sx-error, .chip, .eyebrow, .count, .tile-label, .tile-secondary, .tile-unit, label > span:first-child, .field-error, .inline-error, .note-meta",
       ".ri-muted, .ri-fine, .ri-heading span, .ri-comparison-laps, .ri-legend, .ri-run-legend, .ri-key small, .ri-timing, .ri-foot, .ri-rail-foot, .ri-toolbox-foot, .ri-run-head, .ri-section-head, .ri-section-range, .ri-map-legend",
+      ".ri-fact-label, .ri-pbar-title, .ri-pbar-role, .ri-pbar-scale, .ri-dotrow-name, .ri-dotrow-fig small, .ri-dotrow-axis, .ri-cmp-key, .ri-progress-key, .ri-fit-label, .ri-direction",
       ".ri-axis, .ri-axis-title, .ri-bracket-label, .ri-event-label, .ri-y-axis span, .ri-x-axis span, .ri-zone, .ri-row-unit, .ri-chip, .ri-rail-cols span, .ri-count-chip, .ri-unavailable, .ri-channel-label small, .ri-tabs, .crumbs, .driver-name",
     ].join(", "),
   },
-  numbers: { min: 15, selector: "td, .ri-tm, .ri-dl, .ri-fu, .ri-n, .ri-kv strong, .ri-run-range, .ri-inc-chip, .ri-pit-cell, .ri-readings output, .ri-readout, .ri-cursor-readout, .ri-timing b, .ri-median, .ri-comparison strong, .tile-primary, dd, .stepper output, .ri-section-id, .turn-text, .map-handle text, .ri-map-label text" },
+  numbers: { min: 15, selector: "td, .sx-v, .sx-p:not(.unit), .ri-tm, .ri-dl, .ri-fu, .ri-n, .ri-kv strong, .ri-run-range, .ri-inc-chip, .ri-pit-cell, .ri-readings output, .ri-readout, .ri-cursor-readout, .ri-timing b, .ri-median, .ri-comparison strong, .tile-primary, dd, .stepper output, .ri-section-id, .turn-text, .map-handle text, .ri-map-label text, .ri-fact-value, .ri-pbar-row b, .ri-dotrow-fig b, .ri-delta b" },
   controls: {
     min: 15,
     height: true,

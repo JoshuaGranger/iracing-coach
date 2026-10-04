@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "preact/hooks";
-import { CHANNEL_INDEX, type TileSpec } from "../gen/live-channels";
+import { CHANNEL_INDEX, type TileSpec, unitLabel } from "../gen/live-channels";
 import { FrameFlag, type LiveFrame } from "./frame";
 import { LiveHistory, TREND_WINDOW_SPECS, downsample } from "./history";
 import type { LiveTileCfg } from "./layout";
-import { type TileText, displayRange, formatTile, secondaryLine, tileRange, tileTrend } from "./tiles";
+import { colourChoices, waitingAmount } from "./representation";
+import { TILE_BY_ID, type TileText, displayRange, formatTile, resolveUnit, secondaryLine, tileRange, tileTrend } from "./tiles";
 
 const ACCENT_VAR: Record<string, string> = {
   default: "var(--color-interaction)",
@@ -23,8 +24,16 @@ const METRIC_COLOR: Record<string, string> = {
   fuel: "var(--telemetry-fuel)",
 };
 
+/** The chosen colour, or null for the default and for tiles whose colour is a state (a choice never hides caution or a warning). */
+export function tileAccent(cfg: LiveTileCfg): string | null {
+  if (!cfg.accent || cfg.accent === "default") return null;
+  const spec = TILE_BY_ID.get(cfg.metric);
+  return spec && colourChoices(spec).length > 0 ? (ACCENT_VAR[cfg.accent] ?? null) : null;
+}
+
 export function tileColor(cfg: LiveTileCfg): string {
-  if (cfg.accent && cfg.accent !== "default") return ACCENT_VAR[cfg.accent]!;
+  const accent = tileAccent(cfg);
+  if (accent) return accent;
   return METRIC_COLOR[cfg.metric] ?? ACCENT_VAR.default!;
 }
 
@@ -142,17 +151,26 @@ export function TileView({ cfg, spec, frame, history, tick }: TileViewProps) {
     range = displayRange(spec, text.value, tileRange(spec, frame, cfg), tileTrend(history, spec, cfg, win).v);
   }
   const absHot = cfg.highlight_abs && frame && frame.values[CHANNEL_INDEX.abs_active!] === 1;
+  const accent = tileAccent(cfg);
+  // Waiting keeps the tile's shape: its format in dashes, its unit, its bar, gauge or trend frame.
+  const waiting = text.state === "waiting";
+  const amount = waiting ? waitingAmount(spec, cfg.precision) : text.amount;
+  const unit = waiting ? (spec.units.length > 0 ? unitLabel(resolveUnit(spec, cfg.unit)) : "") : text.unit;
   return (
-    <div class={`tile style-${style} tone-${text.tone} state-${text.state}${absHot ? " abs" : ""}`} style={{ color: style === "gauge" || style === "bar" ? tileColor(cfg) : undefined }} data-metric={cfg.metric}>
+    <div
+      class={`tile style-${style} tone-${text.tone} state-${text.state}${absHot ? " abs" : ""}${accent ? " has-accent" : ""}`}
+      style={{ color: style === "gauge" || style === "bar" ? tileColor(cfg) : undefined, "--tile-accent": accent ?? undefined }}
+      data-metric={cfg.metric}
+    >
       <div class="tile-label">{spec.label}</div>
       {style === "status" ? (
-        <div class="tile-status">{text.primary}</div>
+        <div class={`tile-status${waiting ? " tile-shape" : ""}`}>{waiting ? amount : text.primary}</div>
       ) : (
         <div class="tile-body">
           {style === "gauge" ? <Gauge value={text.value} min={range?.min ?? 0} max={range?.max ?? 1} /> : null}
           <div class="tile-value">
-            <span class="tile-primary">{text.amount}</span>
-            {text.unit ? <span class="tile-unit">{text.unit}</span> : null}
+            <span class={`tile-primary${waiting ? " tile-shape" : ""}`}>{amount}</span>
+            {unit ? <span class="tile-unit">{unit}</span> : null}
           </div>
           {style === "bar" ? (
             <div class="tile-bar" aria-hidden="true">
@@ -162,7 +180,7 @@ export function TileView({ cfg, spec, frame, history, tick }: TileViewProps) {
           {style === "trend" ? <TrendCanvas cfg={cfg} spec={spec} history={history} frame={frame} tick={tick} /> : null}
         </div>
       )}
-      {line ? <div class="tile-secondary">{line}</div> : null}
+      {waiting ? <div class="tile-secondary tile-wait">Waiting</div> : line ? <div class="tile-secondary">{line}</div> : null}
     </div>
   );
 }

@@ -183,7 +183,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
           key={props.analysisId} data={data} map={map} race={ov.race} runs={ov.runs.runs as unknown[]}
           layoutSet={layoutSet} onLayoutChange={editLayout} onLayoutCommand={layoutCommand}
           ensureSignals={(ids) => handle.ensureSignals(ids)} focus={focus} onClearFocus={() => setFocus(null)}
-          analysisKey={props.analysisId} reducedMotion={props.reducedMotion ?? false} onCursor={props.onCursor}
+          analysisKey={props.analysisId} reducedMotion={props.reducedMotion ?? false} onCursor={props.onCursor} comparison={comparison}
         />
       );
     }
@@ -206,7 +206,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
       />
     );
   } else if (view === "runs") {
-    body = <RunsView inv={inv} selected={comparison} sessionType={sessionTypeOf(overview.state.value.race)} />;
+    body = <RunsView inv={inv} selected={comparison} sessionType={sessionTypeOf(overview.state.value.race)} runs={overview.state.value.runs.runs as unknown[]} />;
   } else {
     body = (
       <SectionsView
@@ -216,7 +216,6 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
     );
   }
 
-  const showComparisons = inv !== null && inv.comparisons.length > 1 && view !== "traces";
   return (
     <section ref={workspaceRef} class="ri-workspace" aria-label="Race investigation" data-view={view}>
       <header class="ri-bar">
@@ -225,13 +224,6 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
             <button type="button" role="tab" key={name} class="ri-tab" aria-selected={view === name} data-view-tab={name} onClick={() => select({ view: name })}>{VIEW_LABELS[name]}</button>
           ))}
         </div>
-        {showComparisons && (
-          <label class="ri-pill-select"><span class="ri-pill-label">Compare</span>
-            <select aria-label="Compare" value={comparison?.id ?? ""} onChange={(event) => select({ comparisonId: (event.currentTarget as HTMLSelectElement).value })}>
-              {inv!.comparisons.map((choice) => <option key={choice.id} value={choice.id}>{choice.title}</option>)}
-            </select>
-          </label>
-        )}
         {props.phases && props.phases.length > 1 && props.currentSessionId !== undefined && props.onPhase
           ? <PhaseSelector phases={props.phases} currentSessionId={props.currentSessionId} onSelect={props.onPhase} />
           : props.sessionPicker && <div class="ri-session-picker">{props.sessionPicker}</div>}

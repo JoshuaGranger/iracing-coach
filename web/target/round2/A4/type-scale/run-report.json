@@ -1,0 +1,198 @@
+{
+  "tag": "run",
+  "dist": "dist",
+  "results": [
+    {
+      "viewport": "1920x1080",
+      "page": "live",
+      "shot": "run-1920x1080-live.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 15,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 5,
+          "minPx": 56,
+          "medianPx": 56,
+          "maxPx": 56,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 4,
+          "minPx": 15,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 51,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 14,
+          "examples": [
+            "span \"Layout\"",
+            "span.chip.chip-constraint \"Built in\"",
+            "div.tile-label \"Position\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 2,
+          "examples": [
+            "span.live-status \"Live\"",
+            "button.btn \"Edit layout\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link.active \"Live\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 1,
+          "examples": [
+            "a.brand \"iRacing Coach\""
+          ]
+        },
+        {
+          "px": 28,
+          "count": 1,
+          "examples": [
+            "div.tile-status \"No action: pace and ra\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 1080,
+        "innerHeight": 1080,
+        "scrollWidth": 1920,
+        "innerWidth": 1920
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1536x864",
+      "page": "live",
+      "shot": "run-1536x864-live.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 15,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 5,
+          "minPx": 56,
+          "medianPx": 56,
+          "maxPx": 56,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 4,
+          "minPx": 15,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 51,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 14,
+          "examples": [
+            "span \"Layout\"",
+            "span.chip.chip-constraint \"Built in\"",
+            "div.tile-label \"Position\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 2,
+          "examples": [
+            "span.live-status \"Live\"",
+            "button.btn \"Edit layout\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link.active \"Live\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 1,
+          "examples": [
+            "a.brand \"iRacing Coach\""
+          ]
+        },
+        {
+          "px": 28,
+          "count": 1,
+          "examples": [
+            "div.tile-status \"No action: pace and ra\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 864,
+        "innerHeight": 864,
+        "scrollWidth": 1536,
+        "innerWidth": 1536
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    }
+  ]
+}

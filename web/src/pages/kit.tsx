@@ -1,7 +1,12 @@
 import { useState } from "preact/hooks";
 import { carColor } from "../core/identity";
+import { RUN_COLORS, raceProgressColour, runColour, runDash } from "../core/palette";
+import { useLibraryChoice } from "../core/library";
 import { Chip, Dot, EventHeader, FlagGlyph, IncidentChip, PageHead, PhaseTile, PositionChange, SetupBadge, Stat, StatusChip, Stripe, TrackSilhouette } from "../ui/kit";
 import { PitStopCard, PitStopPictogram } from "../ui/pictograms";
+import { FilterBar, type FilterControl } from "../ui/filter-bar";
+import { LIBRARY_MIN_REM, LibraryControl } from "../ui/library-control";
+import { MultiSelect } from "../ui/multi-select";
 import { Segmented } from "../ui/segmented";
 
 /** The component gallery (`#/__kit`): every shared mark, selector and pictogram, for the screens that use them and for the screenshots that check them. */
@@ -13,9 +18,20 @@ const LOOP: [number, number][] = Array.from({ length: 64 }, (_, i) => {
 export default function KitPage() {
   const [phase, setPhase] = useState<string | null>("r");
   const [view, setView] = useState<string | null>("a");
+  const [retries, setRetries] = useState(0);
+  const [cars, setCars] = useState<string[]>([]);
+  const [library, setLibrary] = useLibraryChoice();
+  const controls: FilterControl[] = [
+    {
+      id: "car",
+      label: "Car",
+      node: <MultiSelect label="Car" noun="cars" options={[{ key: "a", label: "Dallara IR-18" }, { key: "b", label: "Global Mazda MX-5 Cup" }]} selected={cars} onChange={setCars} />,
+    },
+    { id: "library", label: "Library", minRem: LIBRARY_MIN_REM, node: <LibraryControl value={library} onChange={setLibrary} /> },
+  ];
   return (
     <>
-      <PageHead title="Components" />
+      <FilterBar title="Components" controls={controls} activeCount={cars.length + (library === "lab" ? 1 : 0)} onClear={() => (setCars([]), setLibrary("main"))} />
       <section class="panel" aria-label="Marks">
         <h2>Marks</h2>
         <div class="chips" style={{ alignItems: "center" }}>
@@ -38,11 +54,16 @@ export default function KitPage() {
           <IncidentChip points={4} />
           <StatusChip kind="excl" title="caution" />
           <StatusChip kind="partial" />
-          <Chip tone="good">Raced</Chip>
-          <Chip tone="warn">Caution</Chip>
-          <Chip tone="bad">Failed</Chip>
-          <Chip tone="info">Pit</Chip>
-          <Chip>Neutral</Chip>
+          <Chip variant="exception" level="wait">
+            Queued
+          </Chip>
+          <Chip variant="exception" action={{ label: "Retry", onClick: () => setRetries((n) => n + 1) }}>
+            Failed · worker crash
+          </Chip>
+          <Chip variant="constraint">Not used in pace fit</Chip>
+          <Chip variant="action" onClick={() => setRetries((n) => n + 1)}>
+            Retry {retries}
+          </Chip>
         </div>
       </section>
       <section class="panel" aria-label="Selectors and buttons">
@@ -70,6 +91,14 @@ export default function KitPage() {
               { value: "c", label: "Clean" },
             ]}
           />
+          <div role="tablist" aria-label="Plain tabs" class="chips">
+            <button type="button" role="tab" aria-selected="true" class="kit-tab-on">
+              Selected tab
+            </button>
+            <button type="button" role="tab" aria-selected="false" class="kit-tab-off">
+              Other tab
+            </button>
+          </div>
           <button type="button" class="btn btn-accent">
             Analyze
           </button>
@@ -79,6 +108,21 @@ export default function KitPage() {
           <button type="button" class="btn" disabled>
             Disabled
           </button>
+        </div>
+      </section>
+      <section class="panel" aria-label="Run and race colours">
+        <h2>Run and race colours</h2>
+        <div class="chips" style={{ alignItems: "center" }} data-testid="run-palette">
+          {Array.from({ length: RUN_COLORS }, (_, i) => (
+            <svg key={i} width="64" height="14" viewBox="0 0 64 14" role="img" aria-label={`Run ${i + 1}`}>
+              <line x1="2" y1="7" x2="62" y2="7" stroke={runColour(i + 1)} stroke-width="3" stroke-dasharray={runDash(i + 1) || undefined} />
+            </svg>
+          ))}
+        </div>
+        <div class="chips" data-testid="progress-strip" style={{ gap: 2 }}>
+          {Array.from({ length: 40 }, (_, i) => (
+            <i key={i} style={{ width: 10, height: 18, background: raceProgressColour(i, 40) }} />
+          ))}
         </div>
       </section>
       <section class="panel" aria-label="Pit stops">

@@ -41,7 +41,7 @@ function overviewFor(e, phase, state) {
     const start = e === 3 ? 3 : 12;
     const final = e === 3 ? 1 : 4 + e;
     const slope = [0.021, -0.012, 0.004, 0.031, 0.0, 0.012][e] ?? 0.004;
-    return { starting_position: start, final_position: final, recorded_laps: 82 + e, green_laps_estimated: 60 + e * 2, caution_laps_estimated: e % 2 === 0 ? 20 - e : 0, pit_stops_detected: 3, runs_detected: 4, longest_green_run: 41 - e, pace_slope_s_per_lap: slope, best_clean_lap_s: 15.234 + e * 0.1, fuel_used_gal: 21.6 - e };
+    return { starting_position: start, final_position: final, recorded_laps: 82 + e, green_laps_estimated: 60 + e * 2, caution_laps_estimated: e % 2 === 0 ? 20 - e : 0, pit_stops_detected: 3, runs_detected: 4, longest_green_run: 41 - e, pace_slope_s_per_lap: slope, best_clean_lap_s: 15.234 + e * 0.1, green_pace_median_s: 15.612 + e * 0.1, fuel_used_gal: 21.6 - e };
   }
   const qualify = phase === "Qualify";
   return {
@@ -53,6 +53,8 @@ function overviewFor(e, phase, state) {
     longest_green_run: qualify ? 3 : 14 + e,
     pace_slope_s_per_lap: qualify ? null : -0.041 + e * 0.02,
     best_clean_lap_s: qualify ? 15.41 + e * 0.1 - (e === 3 ? 0.4 : 0) : 15.5 + e * 0.1,
+    // Median green-lap time: a field the contract does not carry yet (server gap); the Sessions pace slot reads it when it arrives.
+    green_pace_median_s: qualify ? 15.52 + e * 0.1 : 15.71 + e * 0.1,
     fuel_used_gal: qualify ? 0.9 : 6.1,
   };
 }
@@ -110,6 +112,39 @@ function buildSessions(customerId, count) {
 
 // ---- setups ----------------------------------------------------------------
 
+/**
+ * The lab library (`library=lab`): bot-driven recordings, kept out of the driver's own list. Two Indianapolis Raceway Park practice
+ * sessions with the NASCAR car, as the utility's test days produce them. Ids start at 900 so they never collide with the main list.
+ */
+function buildLabSessions(customerId) {
+  const track = TRACKS[1];
+  return [0, 1].map((n) => {
+    const id = 900 + n;
+    return {
+      session_id: id,
+      customer_id: customerId,
+      group_key: `lab-${n}-0`,
+      event_key: `subsession:lab-${n}`,
+      session_type: "Practice",
+      track: track.track,
+      track_config: track.track_config,
+      car_path: CARS[0].car_path,
+      car_name: CARS[0].car_name,
+      series_name: null,
+      season_name: null,
+      subsession_id: null,
+      sim_session_num: 0,
+      start_time_utc: iso(BASE + (n + 1) * DAY),
+      recording_count: 1,
+      analysis_state: "ready",
+      analysis_reason: null,
+      analysis_id: `an-${id}`,
+      is_fixed_setup: null,
+      overview: { final_position: 1, recorded_laps: 30, green_laps_estimated: 30, caution_laps_estimated: 0, pit_stops_detected: 0, longest_green_run: 30, pace_slope_s_per_lap: null, best_clean_lap_s: 22.434 + n * 0.5, fuel_used_gal: 4.2 },
+    };
+  });
+}
+
 export const SETUP_VALUES_A = {
   "Chassis.FrontBrakes.BrakePressureBias": "54.5%",
   "Chassis.LeftFront.Camber": "-3.2 deg",
@@ -141,7 +176,8 @@ delete SETUP_VALUES_B["Chassis.LeftRear.TrackBarHeight"];
 export const EXCLUDED_KEYS = ["Chassis.LeftFront.CornerWeight", "Chassis.RightFront.CornerWeight", "Chassis.LeftFront.RideHeight", "Chassis.RightFront.RideHeight"];
 
 function buildSetups(customerId) {
-  const mk = (id, names, values, sessionId, raced, sources) => ({
+  // `raced_count` is an optional field of the summary (A2: the contract has only `raced`); a raced setup without it shows no count.
+  const mk = (id, names, values, sessionId, raced, sources, racedCount) => ({
     summary: {
       setup_id: id,
       customer_id: customerId,
@@ -152,6 +188,7 @@ function buildSetups(customerId) {
       sources,
       observation_count: 3,
       raced,
+      ...(racedCount ? { raced_count: racedCount } : {}),
       first_seen_at: iso(BASE - id * DAY),
       last_seen_at: iso(BASE - id * DAY + 3600000),
     },
@@ -162,12 +199,19 @@ function buildSetups(customerId) {
     ],
   });
   return [
-    mk(1, ["Bristol race v3.sto"], SETUP_VALUES_A, 103, true, ["recording", "garage_commit"]),
-    mk(2, ["Bristol race v2.sto"], SETUP_VALUES_B, 106, true, ["recording"]),
+    mk(1, ["Bristol race v3.sto"], SETUP_VALUES_A, 103, true, ["recording", "garage_commit"], 3),
+    mk(2, ["Bristol race v2.sto"], SETUP_VALUES_B, 106, true, ["recording"], 1),
     mk(3, [], SETUP_VALUES_B, 109, false, ["garage_snapshot"]),
     // The same .sto name as setup 1 with other values: the file was edited between sessions.
     mk(4, ["Bristol race v3.sto"], { ...SETUP_VALUES_A, "Chassis.LeftFront.Camber": "-3.4 deg" }, 112, false, ["recording"]),
   ];
+}
+
+/** The lab library's one setup: a bot test-day file. Ids start at 90 so they never collide with the main list. */
+function buildLabSetups(customerId) {
+  const all = buildSetups(customerId);
+  const s = all[0];
+  return [{ ...s, summary: { ...s.summary, setup_id: 90, names: ["bot sweep.sto"], raced: true, sto_files: [] }, observations: [] }];
 }
 
 const UNLINKED_FILES = Array.from({ length: 3 }, (_, i) => ({
@@ -332,6 +376,7 @@ export function createState() {
     config: { drivers: 1, live: true, conflictNext: false, failWrites: false, delayMs: 0, failChannels: [] },
     sessions: { [DRIVER_ID]: buildSessions(DRIVER_ID, 6), [SECOND_DRIVER_ID]: buildSessions(SECOND_DRIVER_ID, 2) },
     setups: { [DRIVER_ID]: buildSetups(DRIVER_ID), [SECOND_DRIVER_ID]: [] },
+    lab: { sessions: { [DRIVER_ID]: buildLabSessions(DRIVER_ID), [SECOND_DRIVER_ID]: [] }, setups: { [DRIVER_ID]: buildLabSetups(DRIVER_ID), [SECOND_DRIVER_ID]: [] } },
     unlinked: { [DRIVER_ID]: UNLINKED_FILES, [SECOND_DRIVER_ID]: [] },
     notes: [],
     nextNote: 1,

@@ -1,15 +1,17 @@
 /** Presentation helpers for the investigation (InvestigationPresentation.cs). Values are formatted, never derived. */
 
-/** Runs are identity, not data: the white family, told apart by dashes (run 1 solid, 2 dashed, 3 dotted). */
-export const RUN_COLORS = ["var(--ri-run1)", "var(--ri-run2)", "var(--ri-run3)"];
-export const RUN_DASHES = ["", "8 5", "2 4", "10 3 2 3", "4 4", "1 2"];
+import { runColour, runDash as paletteDash } from "../core/palette";
 
+/**
+ * Runs are identity: the ordered run palette (`--run-1` … `--run-8`, `identity.runs` in the theme) on run-level marks, with line
+ * style as the second cue (run 1 solid, 2 dashed, 3 dotted).
+ */
 export function runColor(run: number | null | undefined): string {
-  return run !== null && run !== undefined && run > 0 ? RUN_COLORS[(run - 1) % RUN_COLORS.length]! : "var(--ri-t3)";
+  return runColour(run ?? null);
 }
 
 export function runDash(run: number | null | undefined): string {
-  return run !== null && run !== undefined && run > 0 ? RUN_DASHES[(run - 1) % RUN_DASHES.length]! : "";
+  return paletteDash(run ?? null);
 }
 
 const isNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
@@ -70,6 +72,8 @@ const REASONS: Record<string, string> = {
   partial: "partial",
   restart: "restart",
   pit_tow_or_repair_episode_overlap: "tow/repair",
+  all_laps_excluded: "every lap screened",
+  insufficient_timed_clean_laps: "too few clean laps",
 };
 
 export function reason(code: string): string {

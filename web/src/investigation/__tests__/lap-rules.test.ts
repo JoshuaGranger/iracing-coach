@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { raceProgressColour } from "../../core/palette";
 import { decodeCcol } from "../ccol";
 import { buildSyntheticAnalysis } from "../fixtures/synthetic";
 import { routeStatic, type StaticAnalysisFiles } from "../fixtures/static-api";
@@ -116,12 +117,13 @@ describe("one clean rule for Best three, Fastest, the Clean filter and the faste
     expect(kept).not.toContain(83);
   });
 
-  it("colours the fastest clean lap magenta and offers it first", () => {
+  it("offers the fastest clean lap first; lap colour is race progress, not the fastest lap (round 2)", () => {
     expect(data.fastestLap).toBe(6);
-    expect(data.colors.get(6)).toBe("#F05CDB");
     expect(fastestLap(data)).toBe(6);
     expect(bestThree(data)[0]).toBe(6);
-    expect([...data.colors.values()].filter((color) => color === "#F05CDB").length).toBe(1);
+    expect(data.colors.get(1)).toBe(raceProgressColour(0, 2));
+    expect(data.colors.get(83)).toBe(raceProgressColour(1, 2));
+    expect([...data.colors.values()]).not.toContain("#F05CDB");
   });
 
   it("drops an off-track lap from clean", () => {

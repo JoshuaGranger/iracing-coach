@@ -192,8 +192,9 @@ button,
   color: var(--color-text-primary);
   white-space: nowrap;
 }
-button:hover:not(:disabled),
-.btn:hover {
+/* Selection has one state: hover changes only unselected items. SELECTED in ui/selectable.ts lists the same markers. */
+button:hover:not(:disabled):not(:where(.on, .selected, [aria-pressed="true"], [aria-selected="true"], [aria-current]:not([aria-current="false"]))),
+.btn:hover:not(:where(.on, .selected, [aria-pressed="true"], [aria-selected="true"], [aria-current]:not([aria-current="false"]))) {
   background: var(--color-surface-hover);
   text-decoration: none;
 }
@@ -326,7 +327,7 @@ label.check > span:first-child {
   min-height: var(--control-height);
   padding: 0 var(--space-3);
 }
-.seg button:hover:not(:disabled):not(.on) {
+.seg button:hover:not(:disabled):not(:where(.on, [aria-pressed="true"], [aria-selected="true"])) {
   background: var(--color-surface-hover);
   color: var(--color-text-primary);
 }
@@ -525,10 +526,25 @@ label.check > span:first-child {
   min-height: var(--control-height);
 }
 
+/*
+ * The pending-writes bar is an overlay at the bottom edge, never in the document flow: a write in flight must not move the page.
+ * It takes pointer events only inside its own box.
+ */
 .outbox {
-  background: var(--color-surface2);
-  border-bottom: 1px solid var(--color-border-subtle);
-  padding: var(--space-2) var(--space-8);
+  position: fixed;
+  z-index: 70;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  left: var(--space-4);
+  width: min(32rem, calc(100vw - 2 * var(--space-4)));
+  max-height: 50dvh;
+  margin-left: auto;
+  overflow: auto;
+  background: var(--color-surface3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.45);
+  padding: var(--space-2) var(--space-4);
 }
 .outbox-head {
   display: flex;
@@ -619,37 +635,58 @@ label.check > span:first-child {
   border-color: var(--color-danger);
   box-shadow: inset 3px 0 0 var(--color-danger);
 }
+/* Chips (ui/kit.tsx, the chip rule): a squared tag for an exception, a constraint or an action. Never a pill: pills are filters. */
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   min-height: 1.625rem;
   padding: 0 var(--space-2);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   border: 1px solid var(--color-border-strong);
   font: var(--weight-semibold) var(--text-compact) / 1 var(--font-display);
   font-stretch: condensed;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
-  background: var(--color-surface2);
+  background: transparent;
   white-space: nowrap;
 }
-.chip-good {
-  border-color: var(--race-green);
-  color: var(--race-green);
-}
-.chip-warn {
-  border-color: var(--race-caution);
-  color: var(--race-caution);
-}
-.chip-bad {
+.chip-fail {
   border-color: var(--race-loss);
   color: var(--race-loss);
 }
-.chip-info {
-  border-color: var(--race-pit);
-  color: var(--race-pit);
+.chip-wait {
+  border-style: dashed;
+  color: var(--color-text-muted);
+}
+.chip-constraint {
+  color: var(--color-text-primary);
+}
+button.chip-action {
+  min-height: 1.625rem;
+  padding: 0 var(--space-2);
+  letter-spacing: 0.07em;
+  background: transparent;
+  color: var(--color-interaction);
+  border-color: var(--color-interaction);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.chip-act {
+  min-height: 1.625rem;
+  margin: 0 calc(var(--space-2) * -1) 0 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-left: 1px solid currentColor;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: transparent;
+  color: var(--color-interaction);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 .chips {
   display: flex;
@@ -819,8 +856,15 @@ label.check > span:first-child {
   font-size: var(--text-body);
   cursor: pointer;
 }
-.ms-opt.hl {
+/* Hover and the keyboard cursor mark an unselected option; a selected option keeps its one look and shows the keyboard cursor as a ring. */
+.ms-opt[aria-selected="true"] {
+  background: color-mix(in srgb, var(--color-interaction) 8%, transparent);
+}
+.ms-opt.hl:not([aria-selected="true"]) {
   background: var(--color-surface3);
+}
+.ms-opt.hl.kb {
+  box-shadow: inset 0 0 0 2px var(--color-interaction);
 }
 .ms-opt-label {
   overflow: hidden;
@@ -916,6 +960,155 @@ label.check > span:first-child {
     left: 0;
     right: 0;
     width: auto;
+  }
+}
+
+/* ---- filter bar (ui/filter-bar.tsx): the heading with its filters ------------------------------------ */
+.fb-row {
+  flex-wrap: nowrap;
+  align-items: flex-end;
+}
+.fb-title {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  white-space: nowrap;
+}
+.fb-controls {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.fb-ctl {
+  display: inline-flex;
+  align-items: center;
+}
+.fb-anchor {
+  position: relative;
+  margin-left: auto;
+}
+.fb-trigger {
+  gap: var(--space-2);
+}
+.fb-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface2);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: 0 1.125rem 2.375rem rgba(0, 0, 0, 0.5), inset 0 1px 0 var(--lit);
+}
+.fb-surface:focus {
+  outline: none;
+}
+.fb-pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: min(34rem, calc(100dvh - 8rem));
+  overflow-y: auto;
+  border-radius: 0.75rem;
+}
+.fb-sheet {
+  position: fixed;
+  z-index: 60;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 85dvh;
+  overflow-y: auto;
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  border-radius: 1rem 1rem 0 0;
+  border-bottom: 0;
+}
+.fb-backdrop {
+  position: fixed;
+  z-index: 55;
+  inset: 0;
+  background: rgb(5 9 12 / 0.6);
+}
+.fb-grip {
+  align-self: center;
+  width: 2.5rem;
+  height: 0.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
+}
+.fb-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.fb-field-label {
+  margin: 0;
+  font: var(--weight-semibold) var(--text-compact) / 1 var(--font-display);
+  font-stretch: condensed;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.fb-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
+}
+/* A multi-select inside the surface opens in the flow, full width, so the surface scrolls instead of clipping it. */
+.fb-surface .ms {
+  position: static;
+  display: block;
+}
+.fb-surface .ms-pill {
+  width: 100%;
+  justify-content: space-between;
+}
+.fb-surface .ms-panel {
+  position: static;
+  width: auto;
+  margin-top: var(--space-2);
+  box-shadow: none;
+}
+.fb-surface .lib-ctl {
+  justify-content: flex-start;
+}
+/* The field heading already says Library. */
+.fb-surface .lib-label {
+  display: none;
+}
+.fb-chips {
+  margin-top: var(--space-2);
+}
+.lib-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.lib-label {
+  font: var(--weight-semibold) var(--text-compact) / 1 var(--font-display);
+  font-stretch: condensed;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.lib-label::after {
+  content: ":";
+}
+@media (max-width: 700px) {
+  .fb-row {
+    min-height: 0;
+  }
+  .fb-title h1 {
+    font-size: 1.625rem;
   }
 }
 
@@ -1081,10 +1274,6 @@ tr.group-head th {
   display: grid;
   gap: var(--space-4);
 }
-.live-work.editing {
-  grid-template-columns: minmax(0, 1fr) minmax(17.5rem, 22.5rem);
-  align-items: start;
-}
 .live-grid {
   display: grid;
   gap: var(--space-3);
@@ -1098,13 +1287,6 @@ tr.group-head th {
   min-height: 0;
   position: relative;
   container-type: inline-size;
-}
-.live-grid.editing .tile-cell {
-  cursor: grab;
-  touch-action: none;
-  outline: 1px dashed var(--color-border-strong);
-  outline-offset: -1px;
-  border-radius: var(--radius-tile);
 }
 .tile-cell.selected {
   outline: 2px solid var(--color-interaction) !important;
@@ -1247,39 +1429,6 @@ tr.group-head th {
 .style-trend .tile-body {
   justify-content: flex-start;
 }
-.editor > * + * {
-  margin-top: var(--space-3);
-}
-.editor-row {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  align-items: flex-end;
-}
-.editor-row .grow {
-  flex: 1;
-  min-width: 8.75rem;
-}
-.editor-row .grow input,
-.editor-row .grow select,
-.tile-settings select {
-  width: 100%;
-}
-.tile-settings {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-tile);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-.tile-settings legend {
-  padding: 0 var(--space-2);
-  color: var(--color-text-secondary);
-}
-.tile-settings .geometry,
-.tile-settings > button {
-  grid-column: 1 / -1;
-}
 .stepper {
   display: inline-flex;
   align-items: center;
@@ -1300,11 +1449,6 @@ tr.group-head th {
   font-family: var(--font-display);
   font-stretch: semi-condensed;
   font-weight: 700;
-}
-.editor-actions {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
 }
 
 
@@ -2018,8 +2162,7 @@ tr.group-head th {
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   }
   .topbar,
-  .banner,
-  .outbox {
+  .banner {
     padding-left: var(--space-4);
     padding-right: var(--space-4);
   }
@@ -2092,15 +2235,6 @@ tr.group-head th {
   }
   h1 {
     font-size: 1.625rem;
-  }
-  .live-work.editing {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .live-grid.editing {
-    height: 20rem;
-  }
-  .tile-settings {
-    grid-template-columns: minmax(0, 1fr);
   }
   .bounds label,
   .ratings label {

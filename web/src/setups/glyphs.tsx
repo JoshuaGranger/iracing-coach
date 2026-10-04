@@ -20,3 +20,13 @@ export function Chevron({ down = false }: { down?: boolean }) {
     </svg>
   );
 }
+
+/** `⚑ Raced 3×`: the checkered flag and the count. A raced setup whose count the server did not report shows `Raced` alone (unknown is not 0). */
+export function RacedMark({ count }: { count: number | null }) {
+  return (
+    <span class="raced" data-raced={count ?? "unknown"}>
+      <CheckeredFlag />
+      Raced{count !== null ? ` ${count}×` : ""}
+    </span>
+  );
+}

@@ -21,6 +21,9 @@ for (const [k, v] of Object.entries(theme.telemetry)) add(`--telemetry-${kebab(k
 for (const [k, v] of Object.entries(theme.race ?? {})) add(`--race-${kebab(k)}`, v);
 for (const [k, v] of Object.entries(theme.phase ?? {})) add(`--phase-${kebab(k)}`, v);
 (theme.identity?.cars ?? []).forEach((c, i) => add(`--car-${i + 1}`, c));
+// Run identity (run-level marks) and race progress (lap-level marks, start to finish).
+(theme.identity?.runs ?? []).forEach((c, i) => add(`--run-${i + 1}`, c));
+(theme.identity?.progress ?? []).forEach((c, i) => add(`--progress-${i + 1}`, c));
 
 const t = theme.typography;
 const family = (names) => names.map((n) => (/[\s]/.test(n) ? `"${n}"` : n)).join(", ");
@@ -53,6 +56,8 @@ add("--motion-hover", `${m.hover}ms`);
 add("--motion-structure", `${m.structure}ms`);
 add("--motion-max-translate", `${m.maximumTranslationPx}px`);
 add("--motion-easing", m.easing);
+// Sticky offset: a row that sticks under a page toolbar sets `top: var(--toolbar-height)`, so pixel 0 of scrolling moves nothing.
+if (theme.layout) add("--toolbar-height", rem(theme.layout.toolbarPx));
 add("--nav-expanded", `${theme.window.expandedNavigationPx}px`);
 add("--nav-collapsed", `${theme.window.collapsedNavigationPx}px`);
 

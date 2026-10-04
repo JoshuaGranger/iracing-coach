@@ -43,6 +43,7 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [keyboard, setKeyboard] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -71,6 +72,7 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
     onChange(selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key]);
   }
   function onKey(e: KeyboardEvent) {
+    setKeyboard(true);
     const last = shown.length - 1;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -146,8 +148,11 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
                   id={`${id}-o${i}`}
                   role="option"
                   aria-selected={on}
-                  class={i === active ? "ms-opt hl" : "ms-opt"}
-                  onPointerMove={() => i !== active && setActive(i)}
+                  class={i === active ? (keyboard ? "ms-opt hl kb" : "ms-opt hl") : "ms-opt"}
+                  onPointerMove={() => {
+                    setKeyboard(false);
+                    if (i !== active) setActive(i);
+                  }}
                   onClick={() => {
                     toggle(o.key);
                     search.current?.focus();

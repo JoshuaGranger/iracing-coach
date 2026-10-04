@@ -55,6 +55,14 @@ export async function savePrefs(customerId: number, patch: DriverPrefsPatch): Pr
   if (current) setCached(key, { ...current, ...patch });
   return outbox
     .enqueue({ method: "PUT", path: key, body, label: "Preferences", coalesceKey: `prefs:${customerId}` })
+    .then((applied) => {
+      // The cached copy carries the version the write replaced. A page that mounts later re-observes it, so the next write would
+      // send a stale If-Match and open a conflict against the driver's own save.
+      const version = (applied.body as { version?: unknown } | undefined)?.version;
+      const cached = cachedValue<DriverPrefs>(key);
+      if (typeof version === "number" && cached && cached.version < version) setCached(key, { ...cached, version });
+      return applied;
+    })
     .catch(() => undefined);
 }
 

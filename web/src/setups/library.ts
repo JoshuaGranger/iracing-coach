@@ -22,6 +22,27 @@ export function carColors(order: readonly string[], seen: readonly string[]): Ma
   return out;
 }
 
+/**
+ * How many races used this setup (`SetupSummary.raced_count`). A null, missing or inconsistent count is unknown (null), never 0.
+ */
+export function racedCountOf(s: Setup): number | null {
+  const n: unknown = s.raced_count;
+  return s.raced && typeof n === "number" && Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** The count over several setups: known only when every raced setup reports one; null when nothing raced or any count is unknown. */
+export function racedCountOver(setups: readonly Setup[]): number | null {
+  const raced = setups.filter((s) => s.raced);
+  if (raced.length === 0) return null;
+  let total = 0;
+  for (const s of raced) {
+    const n = racedCountOf(s);
+    if (n === null) return null;
+    total += n;
+  }
+  return total;
+}
+
 export interface Version {
   setup: Setup;
   /** 1 for the oldest version of a name. */
@@ -38,6 +59,8 @@ export type Entry =
       versions: Version[];
       seen: number;
       raced: boolean;
+      /** Races over all versions; null when unknown (a raced setup the server gave no count for). */
+      racedCount: number | null;
       last: string;
     }
   | {
@@ -47,6 +70,7 @@ export type Entry =
       setups: Setup[];
       seen: number;
       raced: boolean;
+      racedCount: number | null;
       last: string;
     }
   | { kind: "file"; key: string; name: string; file: SetupFile };
@@ -122,6 +146,7 @@ function entryFor(group: Setup[]): Extract<Entry, { kind: "setup" }> {
     versions,
     seen: group.reduce((n, s) => n + s.observation_count, 0),
     raced: group.some((s) => s.raced),
+    racedCount: racedCountOver(group),
     last: group.map((s) => s.last_seen_at).sort((a, b) => time(b) - time(a))[0]!,
   };
 }
@@ -169,6 +194,7 @@ export function groupLibrary(setups: readonly Setup[], files: readonly SetupFile
         setups: unnamed,
         seen: unnamed.reduce((n, s) => n + s.observation_count, 0),
         raced: unnamed.some((s) => s.raced),
+        racedCount: racedCountOver(unnamed),
         last: unnamed[0]!.last_seen_at,
       });
     }

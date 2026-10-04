@@ -1,4 +1,10 @@
 import type { ComponentChildren } from "preact";
+import { selectableClass } from "./selectable";
+
+/** The class list of one segment: `on` when it is the value, its band colour for the phase variant. Hover adds nothing. */
+export function segmentClass(selected: boolean, band?: "p" | "q" | "r"): string | undefined {
+  return selectableClass(selected, band ? `seg-${band}` : null);
+}
 
 export interface SegmentOption<T extends string | number = string> {
   value: T;
@@ -13,6 +19,7 @@ export interface SegmentOption<T extends string | number = string> {
 
 /**
  * The segmented selector: one segment per choice, the current one lit in the interaction colour (`aria-pressed`).
+ * The selected segment has one state and ignores hover (`selectable.ts`).
  * Tab reaches the group; Left, Right, Home and End move between the enabled segments, Enter and Space choose.
  * Variant `phase` is the P . Q . R selector: segments of 50 px, each carrying its band colour, the current one filled with it.
  */
@@ -47,7 +54,7 @@ export function Segmented<T extends string | number = string>({
         <button
           key={String(o.value)}
           type="button"
-          class={`${o.value === value ? "on " : ""}${o.band ? `seg-${o.band}` : ""}`.trim() || undefined}
+          class={segmentClass(o.value === value, o.band)}
           aria-pressed={o.value === value}
           aria-label={o.ariaLabel}
           disabled={o.disabled}

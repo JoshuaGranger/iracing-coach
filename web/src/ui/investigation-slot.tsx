@@ -1,11 +1,44 @@
 import type { ComponentType } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Schemas, api, paths } from "../core/api";
 import { outbox } from "../core/outbox";
-import { rememberInvestigation, savePrefs, usePrefs, useReducedMotion } from "../core/prefs";
+import { type LastInvestigation, rememberInvestigation, savePrefs, usePrefs, useReducedMotion } from "../core/prefs";
 import { invalidate, useResource } from "../core/resource";
 import { type InvestigationView, formatRoute, navigate } from "../core/router";
+import { writeJson } from "../core/store";
 import { Empty, ErrorLine, Loading, Notice } from "./kit";
+
+/** The device copy `getLastInvestigation` reads (core/prefs.ts, `coach.last-investigation.<driver>`). */
+const lastKey = (customerId: number) => `coach.last-investigation.${customerId}`;
+
+/**
+ * The last investigation, remembered silently (web round 2, Sections). A selection is written to this device at once; the driver's
+ * prefs are written once, when the investigation is left (unmount, page hide), because every prefs write shows the outbox bar above
+ * the workspace while it is pending, and that shift re-fitted the workspace and redrew every chart on each section or comparison
+ * click (the "glitch" of backlog #28g).
+ */
+export function useRememberedInvestigation(customerId: number) {
+  const pending = useRef<LastInvestigation | null>(null);
+  useEffect(() => {
+    const flush = (): void => {
+      const last = pending.current;
+      pending.current = null;
+      if (last) rememberInvestigation(customerId, last);
+    };
+    const onHide = (): void => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onHide);
+      flush();
+    };
+  }, [customerId]);
+  return (last: LastInvestigation): void => {
+    writeJson(lastKey(customerId), last);
+    pending.current = last;
+  };
+}
 
 /**
  * Mounts the investigation workspace (W8, `web/src/investigation/`). The shell resolves the session to its current
@@ -144,6 +177,7 @@ function Host({ mod, customerId, sessionId, view, query }: InvestigationProps & 
   const reduced = useReducedMotion(prefs);
   const loader = useMemo(() => (loaderInstance ??= mod.createAnalysisLoader()), [mod]);
   const traceLayouts = useTraceLayouts(customerId, prefs?.active_trace_layout_id);
+  const remember = useRememberedInvestigation(customerId);
 
   if (!detail.data) return detail.error ? <ErrorLine error={detail.error} /> : <Loading what="session" />;
   const analyses = detail.data.analyses;
@@ -153,7 +187,7 @@ function Host({ mod, customerId, sessionId, view, query }: InvestigationProps & 
   const onSelectionChange = (s: Selection) => {
     const q = { comparison: s.comparisonId, section: s.sectionId, analysis: query.analysis ?? null };
     navigate(formatRoute({ page: "investigation", customerId, sessionId, view: s.view }, q), { replace: s.view === view });
-    rememberInvestigation(customerId, { session_id: sessionId, analysis_id: analysis.analysis_id, view: s.view, comparison_id: s.comparisonId, section_id: s.sectionId });
+    remember({ session_id: sessionId, analysis_id: analysis.analysis_id, view: s.view, comparison_id: s.comparisonId, section_id: s.sectionId });
   };
 
   const Workspace = mod.InvestigationWorkspace;

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import { theme } from "../../gen/theme";
-import { createRaceInspection, type InspectionMapPoint } from "../cursor/race-inspection";
+import { createRaceInspection, nearestRow, type InspectionMapPoint } from "../cursor/race-inspection";
 import { n, numberText, passRole, percentText, PlotScale, reasonsText, seconds, signedText } from "../format";
 import type { MapGeometry, MapPoint } from "../geometry/map-model";
 import type { Comparison, Investigation, PairSteering, PassPair, Pass, PassRow, Section } from "../investigation-model";
 import { ROAD_WHEEL_LABEL, STEERING_WHEEL_LABEL } from "../signals";
+import { comparisonName, sectionTone } from "./comparison-model";
 import { useElementSize } from "./hooks";
 import { scaleFor, useRemPx } from "./unit";
 
@@ -81,6 +82,35 @@ function line(pair: PassPair, plot: PlotScale, read: (row: PassRow) => number | 
   return parts.join(" ");
 }
 
+interface LabelBox {
+  getBoundingClientRect(): { left: number; right: number };
+  setAttribute(name: string, value: string): void;
+  removeAttribute(name: string): void;
+}
+
+/**
+ * Label pairs that share a line in the section channels; when the first would overprint the second, the first is hidden
+ * (`data-crowded`). The section boundary label and its axis value stay: the approach start is in the footer, the range in the heading.
+ */
+const CROWDING: readonly [hide: string, keep: string][] = [
+  [".ri-zone.approach", ".ri-zone.section"],
+  [".ri-x-axis .start", ".ri-x-axis .middle"],
+  [".ri-x-axis .end", ".ri-x-axis .middle"],
+];
+
+export function declutterLabels(host: { querySelector(selector: string): LabelBox | null }, gap = 6): void {
+  for (const [hide, keep] of CROWDING) {
+    const a = host.querySelector(hide);
+    const b = host.querySelector(keep);
+    if (!a) continue;
+    a.removeAttribute("data-crowded");
+    if (!b) continue;
+    const ra = a.getBoundingClientRect();
+    const rb = b.getBoundingClientRect();
+    if (ra.left < rb.right + gap && rb.left < ra.right + gap) a.setAttribute("data-crowded", "");
+  }
+}
+
 function PassKey({ pass, side }: { pass: Pass; side: "a" | "b" }) {
   return (
     <span class={`ri-key ${side}`} data-pass={pass.lap}>
@@ -146,12 +176,40 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
     return placed;
   }, [map, placedPoints, sections, span, labelRadius]);
 
+  // The cursor survives a section change: it keeps its place across the charts (the fraction of the plotted span) and only starts
+  // at the section start the first time.
+  const cursorAt = useRef<number | null>(null);
   useEffect(() => {
     if (!root.current || !pair) return undefined;
-    const initial = Math.max(0, pair.rows.findIndex((row) => Math.abs(row.x - pair.startPct) < 1e-9));
+    const span = Math.max(1e-9, pair.endPct - pair.contextStartPct);
+    const initial = cursorAt.current !== null
+      ? Math.max(0, nearestRow(pair.rows, pair.contextStartPct + cursorAt.current * span))
+      : Math.max(0, pair.rows.findIndex((row) => Math.abs(row.x - pair.startPct) < 1e-9));
     const inspection = createRaceInspection(root.current, { rows: pair.rows, start: pair.contextStartPct, end: pair.endPct, initialIndex: initial, mapPoints: inspectionPoints });
-    return () => inspection.dispose();
+    return () => {
+      const row = pair.rows[inspection.index];
+      if (row) cursorAt.current = (row.x - pair.contextStartPct) / span;
+      inspection.dispose();
+    };
   }, [pair, inspectionPoints]);
+
+  // A narrow plot (phone) with a short approach: the zone and axis labels that would overprint are hidden after layout (no state).
+  const telemetry = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const host = telemetry.current;
+    if (!host) return undefined;
+    let live = true;
+    const fit = (): void => { if (live) declutterLabels(host); };
+    fit();
+    // Web fonts change the label widths after the first layout.
+    void document.fonts?.ready.then(fit);
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
+    observer?.observe(host);
+    return () => {
+      live = false;
+      observer?.disconnect();
+    };
+  }, [pair, section?.id]);
 
   if (sections.length === 0 || !comparison?.inspection) {
     return (
@@ -168,7 +226,7 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
     <div class="ri-sections" ref={root} data-ri-view="sections" data-ri-root>
       <aside class="ri-side">
         <div class="ri-map-panel">
-          <div class="ri-card-label"><span class="ri-card-title">Track</span>{!map && <span>not recorded</span>}</div>
+          <div class="ri-card-label"><span class="ri-card-title">Track</span><span data-section-comparison>{comparisonName(comparison)}</span>{!map && <span>not recorded</span>}</div>
           {map && mapPoints.length > 2 ? (
             <svg ref={mapRef} class="ri-map" data-ri-map tabIndex={0} role="group" viewBox={map.viewBox} aria-label="Track map · section and approach">
               <path d={mapPath(mapPoints)} class="ri-map-track" />
@@ -183,8 +241,9 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
               {map.startFinish && <line x1={n(map.startFinish.x1)} y1={n(map.startFinish.y1)} x2={n(map.startFinish.x2)} y2={n(map.startFinish.y2)} class="ri-map-start" />}
               {labels.map((label) => {
                 const selected = label.id === section?.id;
+                const tone = sectionTone(comparison, comparison.corners.find((c) => c.id === label.id));
                 return (
-                  <g key={label.id} class={`ri-map-label${selected ? " selected" : ""}`} role="button" tabIndex={0} aria-label={`Section ${label.text}`} aria-pressed={selected}
+                  <g key={label.id} class={`ri-map-label ${tone}${selected ? " selected" : ""}`} data-tone={tone} role="button" tabIndex={0} aria-label={`Section ${label.text}`} aria-pressed={selected}
                     onClick={() => onSelectSection(label.id)} onKeyDown={(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") onSelectSection(label.id); }}>
                     {label.leader && <line x1={n(label.ax)} y1={n(label.ay)} x2={n(label.x)} y2={n(label.y)} class="ri-map-leader" />}
                     <circle cx={n(label.x)} cy={n(label.y)} r={n(labelRadius)} />
@@ -204,6 +263,7 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
           {sections.map((s) => {
             const corner = comparison.corners.find((c) => c.id === s.id);
             const delta = corner?.deltaS ?? null;
+            const tone = sectionTone(comparison, corner);
             const selected = s.id === section?.id;
             const width = meterScale <= 0 || delta === null ? 0 : (Math.abs(delta) / meterScale) * 48;
             return (
@@ -212,15 +272,15 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
                 onClick={() => onSelectSection(s.id)}>
                 <span class="ri-section-id">{s.label}</span>
                 <span class="ri-section-range">{percentText(s.startPct)}–{percentText(s.endPct)}%{s.boundaryStatus === "driver_confirmed_grouping" && <em>grouped</em>}
-                  <span class="ri-meter" aria-hidden="true">{delta !== null && <i class={delta < 0 ? "gain" : undefined} style={delta < 0 ? `width:${n(width)}%;left:${n(50 - width)}%` : `width:${n(width)}%;left:50%`} />}</span>
+                  <span class="ri-meter" aria-hidden="true">{delta !== null && <i class={tone} style={delta < 0 ? `width:${n(width)}%;left:${n(50 - width)}%` : `width:${n(width)}%;left:50%`} />}</span>
                 </span>
-                <strong class={delta !== null && delta < 0 ? "gain" : undefined}>{signedText(delta)}</strong>
+                <strong class={tone} data-tone={tone}>{signedText(delta)}</strong>
               </button>
             );
           })}
         </div>
       </aside>
-      <section class="ri-telemetry" aria-label="Section telemetry">
+      <section class="ri-telemetry" ref={telemetry} aria-label="Section telemetry">
         {!pair ? (
           <div class="ri-empty"><strong>No comparable passes</strong></div>
         ) : (
@@ -267,14 +327,14 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
                       <div class="ri-plot-area">
                         {index === 0 && (
                           <>
-                            <span class="ri-zone" style="left:0">Approach</span>
-                            <span class="ri-zone" style={`left:${n(fraction(pair.startPct) * 100)}%`}>Section {section?.label}</span>
+                            <span class="ri-zone approach" style="left:0">Approach</span>
+                            <span class="ri-zone section" style={`left:${n(fraction(pair.startPct) * 100)}%`}>Section {section?.label}</span>
                           </>
                         )}
                         {!has && <span class="ri-zone missing" title={channel.title}>{channel.key === "steering" && !pair.steering.comparable ? "Not compared" : "Not recorded"}</span>}
                         <svg class="ri-chart" data-ri-chart tabIndex={0} role="group" viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} preserveAspectRatio="none"
                           data-view-width={VIEW_WIDTH} data-left="0" data-width={VIEW_WIDTH} aria-label={`${channel.label} · arrow keys move the cursor`}>
-                          {[plot.yMin, (plot.yMin + plot.yMax) / 2, plot.yMax].map((tick) => <line key={tick} x1="0" x2={VIEW_WIDTH} y1={n(plot.y(tick))} y2={n(plot.y(tick))} class="ri-grid" />)}
+                          {[plot.yMin, (plot.yMin + plot.yMax) / 2, plot.yMax].map((tick, tickIndex) => <line key={tickIndex} x1="0" x2={VIEW_WIDTH} y1={n(plot.y(tick))} y2={n(plot.y(tick))} class="ri-grid" />)}
                           <line x1={n(plot.x(pair.startPct))} x2={n(plot.x(pair.startPct))} y1="0" y2={VIEW_HEIGHT} class="ri-boundary" />
                           {channel.key === "gap" ? (
                             <path d={line(pair, plot, (row) => row.gap)} class="ri-line gap" />
@@ -305,7 +365,7 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
               <output data-ri-position>{percentText(pair.startPct)}% lap</output>
             </footer>
             <div class="ri-action-slot">
-              {lead ? <span class="ri-muted"><b>{lead.title}.</b> {lead.instruction}</span> : <span />}
+              {lead ? <span class="ri-muted" title={lead.instruction || undefined}><b>{lead.title}</b></span> : <span />}
               <button type="button" class="ri-pill-button primary" onClick={() => onOpenTraces({ laps: [pair.a.lap, pair.b.lap], startPct: pair.contextStartPct, endPct: pair.endPct, signalKeys: ["speed", "throttle", "brake", "steering"] })}>Open in Traces</button>
             </div>
           </>

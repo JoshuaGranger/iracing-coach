@@ -6,6 +6,7 @@ import { TABLE_VERSION } from "../gen/live-channels";
 import { FrameError, FrameFlag, type LiveFrame, decodeFrame } from "./frame";
 import { LiveHistory } from "./history";
 import { RateGovernor } from "./rate";
+import { fuelCapacityKnown } from "./representation";
 
 export type LiveRate = 1 | 10 | 30 | 60;
 /** Every device asks for the full stream rate. A device that cannot keep up is decimated by `live/rate.ts` from its measured frame time, never by a setting. */
@@ -254,19 +255,26 @@ export interface LiveHealth {
   hadFrames: boolean;
   /** The sim reports ABS activation (a value has arrived for it). */
   absRecorded: boolean;
+  /** Fuel and its fraction of a full tank have arrived on this socket, so the capacity is known (the fuel gauge's full scale). */
+  fuelCapacityKnown: boolean;
 }
 
 /** What the headline and the layout editor need to know about the stream, checked four times a second. */
 export function useLiveHealth(conn: LiveConnection): LiveHealth {
-  const read = (): LiveHealth => {
+  const read = (prev?: LiveHealth): LiveHealth => {
     const frame = conn.current();
-    return { fresh: frame !== null && (frame.flags & FrameFlag.SimConnected) !== 0, hadFrames: conn.hadFrames, absRecorded: conn.history.hasChannel("abs_active") };
+    return {
+      fresh: frame !== null && (frame.flags & FrameFlag.SimConnected) !== 0,
+      hadFrames: conn.hadFrames,
+      absRecorded: conn.history.hasChannel("abs_active"),
+      fuelCapacityKnown: (prev?.fuelCapacityKnown ?? false) || fuelCapacityKnown(frame),
+    };
   };
-  const [health, setHealth] = useState<LiveHealth>(read);
+  const [health, setHealth] = useState<LiveHealth>(() => read());
   useEffect(() => {
     const check = () => setHealth((prev) => {
-      const next = read();
-      return prev.fresh === next.fresh && prev.hadFrames === next.hadFrames && prev.absRecorded === next.absRecorded ? prev : next;
+      const next = read(prev);
+      return prev.fresh === next.fresh && prev.hadFrames === next.hadFrames && prev.absRecorded === next.absRecorded && prev.fuelCapacityKnown === next.fuelCapacityKnown ? prev : next;
     });
     check();
     const id = setInterval(check, 250);

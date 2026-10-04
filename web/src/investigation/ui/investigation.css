@@ -24,9 +24,8 @@
   --ri-t2: var(--color-text-secondary);
   --ri-t3: var(--color-text-muted);
   --ri-t4: var(--color-text-disabled);
-  --ri-run1: var(--ri-ice);
-  --ri-run2: var(--color-text-secondary);
-  --ri-run3: var(--color-text-muted);
+  --ri-run1: var(--run-1, #B7A1FF);
+  --ri-neutral-dot: var(--color-text-secondary);
   --ri-lit: rgb(255 255 255 / 0.08);
   --ri-gap: var(--space-3);
   display: grid;
@@ -111,7 +110,7 @@
 .ri-select select, .ri-search input { min-height: var(--control-height); border: 1px solid var(--ri-line); border-radius: 1.1875rem; padding: 0 var(--space-3); background: var(--ri-card2); color: var(--ri-t1); font: inherit; font-size: var(--text-body); }
 .ri-select.compact select { font-size: var(--text-control); }
 @media (hover: hover) {
-  .ri-tab:hover:not([aria-selected="true"]), .ri-pill-button:hover:not(:disabled):not(.primary), .ri-pill-toggle:hover, .ri-icon-pill:hover:not(:disabled), .ri-button:hover:not(:disabled) { background: var(--color-surface-hover); }
+  .ri-tab:hover:not([aria-selected="true"]), .ri-pill-button:hover:not(:disabled):not(.primary), .ri-pill-toggle:hover:not([aria-pressed="true"]), .ri-icon-pill:hover:not(:disabled):not(.on), .ri-button:hover:not(:disabled) { background: var(--color-surface-hover); }
   .ri-pqr-seg:hover:not(.on):not(:disabled) { background: var(--color-surface-hover); }
 }
 
@@ -138,10 +137,12 @@
 .ri-chart-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-4); padding: var(--space-2) var(--space-4); }
 .ri-legend, .ri-run-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-4); color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.06em; text-transform: uppercase; }
 .ri-legend span { display: inline-flex; align-items: center; gap: 0.4375rem; }
-.ri-legend .ld, .ri-legend .ring { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--ri-run1); }
-.ri-legend .ld.hollow { background: transparent; border: 1.5px solid var(--ri-run1); }
+.ri-legend .ld, .ri-legend .ring { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--ri-neutral-dot); }
+.ri-legend .ld.hollow { background: transparent; border: 1.5px solid var(--ri-neutral-dot); }
+.ri-legend .lt { display: inline-block; width: 1.25rem; height: 3px; border-radius: 2px; background: var(--ri-neutral-dot); opacity: 0.7; }
+.ri-legend .lf { position: relative; display: inline-block; width: 1.25rem; height: 0.625rem; border-left: 1.5px solid var(--ri-t1); border-right: 1.5px solid var(--ri-t1); }
+.ri-legend .lf::after { content: ""; position: absolute; left: 0; right: 0; top: calc(50% - 0.75px); height: 1.5px; background: var(--ri-t1); }
 .ri-legend .ld.best { background: var(--ri-best); box-shadow: 0 0 0.375rem var(--ri-best); }
-.ri-legend .ring { background: transparent; border: 1.5px solid var(--ri-run1); width: 0.875rem; height: 0.875rem; }
 .ri-legend .lb { display: inline-block; width: 1rem; height: 0.4375rem; border-radius: 2px; background: var(--ri-caution); }
 .ri-legend .lg { display: inline-block; width: 0.625rem; height: 3px; border-radius: 2px; }
 .ri-legend .lg.gain { background: var(--ri-green); }
@@ -157,8 +158,10 @@
 .ri-grid.soft { opacity: 0.35; }
 .ri-axis { fill: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: semi-condensed; }
 .ri-axis-title { fill: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; }
-.ri-caution { fill: var(--ri-caution); }
 .ri-caution-shade { fill: var(--ri-caution); opacity: 0.09; }
+/* Caution laps: their actual lap times as subdued dots inside the band; off the scale they sit on the top edge. */
+.ri-dot.caution { fill: color-mix(in srgb, var(--ri-caution) 30%, var(--ri-card)); stroke: color-mix(in srgb, var(--ri-caution) 70%, transparent); stroke-width: 1.25; }
+.ri-dot.caution.off { stroke-dasharray: 2 1.5; }
 .ri-event { stroke-width: 1.5; stroke-dasharray: 4 3; }
 .ri-event.service { stroke: var(--ri-pit); stroke-width: 2; }
 .ri-event.incident { stroke: var(--ri-loss); opacity: 0.85; }
@@ -171,19 +174,22 @@
 .ri-inc-tag.solid { fill: var(--ri-loss); }
 .ri-inc-tag-text { fill: color-mix(in srgb, var(--ri-loss) 55%, white); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: 700; font-stretch: semi-condensed; }
 .ri-inc-tag-text.solid { fill: var(--color-app); }
-.ri-bracket { fill: none; stroke-width: 2; }
-.ri-bracket-label { fill: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: semi-condensed; }
-.ri-trend { fill: none; stroke-width: 2.5; stroke-linejoin: round; opacity: 0.7; }
-.ri-fit { stroke-width: 1.5; stroke-dasharray: 5 3; }
-.ri-ring { fill: none; stroke-width: 1.5; }
+/* The selected comparison's groups: brackets in the group's run colour, split around omitted laps, labelled once. */
+.ri-bracket { fill: none; stroke: var(--grp, var(--ri-t2)); stroke-width: 2; stroke-linejoin: round; }
+.ri-bracket-label { fill: var(--grp, var(--ri-t2)); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: semi-condensed; letter-spacing: 0.02em; }
+/* Observed trend (the backend's 5-observation median) and the screened fit are drawn apart: a soft wide line, a crisp capped line. */
+.ri-trend { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; opacity: 0.55; }
+.ri-fit { stroke: var(--run); stroke-width: 1.75; stroke-linecap: round; }
+.ri-fit-halo { stroke: var(--color-app); stroke-width: 4.5; stroke-linecap: round; }
+.ri-fit-label { fill: var(--run); paint-order: stroke; stroke: var(--color-app); stroke-width: 3px; font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: 700; font-stretch: semi-condensed; }
 .ri-dot { stroke-width: 1.5; cursor: pointer; outline: none; }
 .ri-dot.fastest { filter: drop-shadow(0 0 0.25rem var(--ri-best)); }
 .ri-dot:focus-visible { stroke: var(--ri-ice); stroke-width: 2.5; }
 .ri-position-seg { stroke-width: 2.5; stroke-linecap: round; }
 .ri-position-seg.gain { stroke: var(--ri-green); }
 .ri-position-seg.loss { stroke: var(--ri-loss); }
-.ri-position-seg.hold { stroke: var(--ri-run1); opacity: 0.75; }
-.ri-pos-dot { fill: var(--ri-run1); stroke: var(--color-app); stroke-width: 1; }
+.ri-position-seg.hold { stroke: var(--ri-neutral-dot); opacity: 0.75; }
+.ri-pos-dot { fill: var(--ri-neutral-dot); stroke: var(--color-app); stroke-width: 1; }
 .ri-pos-dot.on { fill: var(--ri-ice); stroke: var(--ri-ice); stroke-width: 3; }
 .ri-hit { fill: transparent; cursor: crosshair; }
 .ri-race-bottom { display: grid; grid-template-columns: minmax(16rem, 26rem) minmax(0, 1fr); gap: var(--ri-gap); max-height: 42vh; min-height: 0; }
@@ -198,28 +204,80 @@
 .gain { color: var(--ri-green); }
 .loss { color: var(--ri-loss); }
 .neutral { color: var(--ri-t3); }
-.ri-detail { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); overflow: auto; }
-.ri-detail header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
-.ri-detail h2 { margin: 0; font-family: var(--ri-disp); font-size: 1.125rem; font-weight: 700; font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; }
-.ri-detail header strong { font-family: var(--ri-disp); font-size: 2rem; font-weight: 700; font-stretch: semi-condensed; }
-.ri-detail header strong small { margin-left: 0.25rem; color: var(--ri-t3); font-size: var(--text-data); font-stretch: condensed; }
-.ri-unusable { margin: 0; color: var(--ri-t2); }
-.ri-cohorts { display: grid; gap: var(--space-1); }
-.ri-cohort { display: grid; grid-template-columns: 6.5rem 4rem 7rem 7.5rem 5rem 4.5rem 1fr; align-items: center; gap: var(--space-2); min-height: 2.125rem; color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; }
-.ri-role { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--ri-t1); font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; }
-.ri-fuel-text { color: var(--ri-fuel); }
-.ri-median { justify-self: end; color: var(--ri-t1); font-size: 1.25rem; }
-.ri-excluded { grid-column: 1 / -1; color: var(--ri-t3); }
-.ri-changes, .ri-explanations { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.ri-changes span, .ri-hypothesis { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.125rem; padding: 0 0.875rem; border-radius: 1.0625rem; background: var(--ri-raise); color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.06em; text-transform: uppercase; }
-.ri-changes b { color: var(--ri-t1); font-size: var(--text-data); font-stretch: semi-condensed; letter-spacing: 0; text-transform: none; }
-.ri-hypothesis small { color: var(--ri-t2); text-transform: none; letter-spacing: 0; }
-.ri-hypothesis.supported { box-shadow: inset 0 0 0 1px var(--evidence-derived); }
-.ri-evolution { margin: 0; }
-.ri-action { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--ri-line); }
-.ri-action p { margin: 0.125rem 0; color: var(--ri-t2); }
-.ri-runs-foot { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-4); border-top: 1px solid var(--ri-line); }
-.ri-runs-foot strong { font-size: var(--text-body); }
+/* The comparison drawn: Earlier and Later lap dots on one lap-time scale with the backend's median marks, the signed difference
+   large with its direction, and paired bars (each its own scale from zero). No sentence; no pace result is one line. */
+.ri-detail { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-4) var(--space-3); overflow: auto; }
+.ri-detail header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-3); }
+.ri-detail h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); margin: 0; font-family: var(--ri-disp); font-size: 1.125rem; font-weight: 700; font-stretch: semi-condensed; letter-spacing: 0.02em; }
+.ri-detail h2 small { color: var(--ri-t3); font-weight: var(--weight-semibold); }
+.ri-delta { display: inline-flex; align-items: baseline; gap: 0.25rem; font-family: var(--ri-disp); font-stretch: semi-condensed; white-space: nowrap; }
+.ri-delta b { font-size: 2.25rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.ri-delta small { color: var(--ri-t3); font-size: var(--text-data); }
+.ri-direction { margin-left: 0.375rem; font-size: var(--text-data); font-weight: var(--weight-semibold); letter-spacing: 0.04em; text-transform: uppercase; font-stretch: condensed; }
+.ri-delta.neutral b { color: var(--ri-t3); }
+.ri-delta.compact b { font-size: 1.5rem; }
+.ri-noresult { margin: 0; color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-body); font-weight: var(--weight-semibold); font-stretch: semi-condensed; }
+.ri-picture { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; gap: var(--space-3) var(--space-5, 1.5rem); }
+.ri-dotrows { display: grid; gap: 0.125rem; }
+.ri-dotrow { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) 6.5rem; align-items: center; gap: var(--space-2); min-height: 2.25rem; }
+.ri-dotrow-name { display: flex; flex-direction: column; line-height: 1.1; font-family: var(--ri-disp); font-stretch: semi-condensed; }
+.ri-dotrow-name b { color: var(--grp); font-size: var(--text-data); font-weight: 700; font-stretch: condensed; letter-spacing: 0.06em; text-transform: uppercase; }
+.ri-dotrow-name small { color: var(--ri-t2); font-size: var(--text-compact); }
+.ri-dotrow-track { display: block; width: 100%; height: 1.5rem; overflow: visible; }
+.ri-dotrow-rule { stroke: var(--ri-line); stroke-width: 1; }
+.ri-gdot { fill: var(--grp); stroke: var(--grp); stroke-width: 1.5; fill-opacity: 0.85; }
+.ri-gdot.hollow { fill: var(--ri-card); }
+.ri-median-mark { stroke: var(--ri-t1); stroke-width: 2.5; stroke-linecap: round; }
+.ri-dotrow-fig { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; font-family: var(--ri-disp); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
+.ri-dotrow-fig b { font-size: 1.125rem; }
+.ri-dotrow-fig small { color: var(--ri-t3); font-size: var(--text-compact); }
+.ri-dotrow-axis { position: relative; height: 1.25rem; margin: 0 6.5rem 0 5.5rem; padding: 0 var(--space-2); color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: semi-condensed; }
+.ri-dotrow-axis span { position: absolute; top: 0; white-space: nowrap; }
+.ri-dotrow-axis .mid { transform: translateX(-50%); }
+.ri-dotrow-axis .end { transform: translateX(-100%); }
+.ri-pbars { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: var(--space-3); }
+.ri-pbar { display: grid; gap: 0.1875rem; min-width: 0; }
+.ri-pbar-title { display: flex; align-items: baseline; gap: 0.3125rem; color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.07em; text-transform: uppercase; white-space: nowrap; }
+.ri-pbar-title small { color: var(--ri-t3); text-transform: none; letter-spacing: 0; }
+.ri-pbar-row { display: grid; grid-template-columns: 0.875rem minmax(0, 1fr) 2.75rem; align-items: center; gap: 0.375rem; }
+.ri-pbar-role { color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-style: normal; font-weight: 700; }
+.ri-pbar-track { position: relative; display: block; height: 0.625rem; border-left: 1.5px solid var(--ri-t3); background: color-mix(in srgb, var(--ri-raise) 60%, transparent); }
+.ri-pbar-track i { position: absolute; left: 0; top: 0; bottom: 0; display: block; background: var(--ri-t2); }
+.ri-pbar-row.later .ri-pbar-track i { background: var(--ri-t1); }
+.ri-pbar.fuel .ri-pbar-track i { background: color-mix(in srgb, var(--ri-fuel) 60%, var(--ri-card)); }
+.ri-pbar.fuel .ri-pbar-row.later .ri-pbar-track i { background: var(--ri-fuel); }
+.ri-pbar-row b { justify-self: end; font-family: var(--ri-disp); font-size: var(--text-data); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
+.ri-pbar-scale { display: flex; justify-content: space-between; margin: 0 3.125rem 0 1.25rem; color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: semi-condensed; }
+.ri-action { display: flex; justify-content: flex-end; gap: var(--space-3); }
+/* The comparison context in Traces: one strip between the map and the traces. */
+.ri-cmp-strip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); padding: var(--space-1) var(--space-4); }
+.ri-cmp-name { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.ri-cmp-name b { font-family: var(--ri-disp); font-size: var(--text-data); font-weight: 700; font-stretch: semi-condensed; white-space: nowrap; }
+.ri-cmp-key { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: condensed; letter-spacing: 0.06em; text-transform: uppercase; }
+.ri-cmp-key i { display: inline-block; width: 0.25rem; height: 0.875rem; border-radius: 2px; }
+.ri-cmp-key i.earlier { background: var(--grp); }
+.ri-cmp-key i.later { border: 1.5px solid var(--grp); }
+.ri-cmp-key i + * { margin-right: 0.25rem; }
+.ri-cmp-bars { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+.ri-pbar.compact { grid-template-columns: auto 5rem; align-items: center; column-gap: 0.5rem; gap: 0 0.5rem; }
+.ri-pbar.compact .ri-pbar-title { grid-row: 1 / span 2; flex-direction: column; gap: 0; line-height: 1.1; }
+.ri-pbar.compact .ri-pbar-row { grid-column: 2; grid-template-columns: 0.75rem minmax(0, 1fr) 2rem; gap: 0.25rem; }
+.ri-pbar.compact .ri-pbar-track { height: 0.4375rem; }
+
+/* Runs: the chart, then one card per run (sparkline, fit slope, laps used and screened, fuel band, tire laps). */
+.ri-runs-view { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--ri-gap); height: 100%; min-height: 0; }
+.ri-run-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--ri-gap); max-height: 36vh; overflow: auto; }
+.ri-run-card { display: grid; grid-template-columns: minmax(0, 1fr) 6rem; grid-template-areas: "head spark" "facts facts"; align-items: center; gap: var(--space-1) var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--ri-line); border-radius: 0.75rem; background: var(--ri-card); box-shadow: inset 3px 0 0 var(--run); }
+.ri-run-card header { grid-area: head; display: flex; align-items: center; gap: 0.5rem; }
+.ri-run-card header b { color: var(--run); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: 700; font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; }
+.ri-run-card header small { color: var(--ri-t3); font-family: var(--ri-disp); font-stretch: semi-condensed; }
+.ri-spark { grid-area: spark; width: 6rem; height: 1.5rem; }
+.ri-spark path { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.ri-facts { grid-area: facts; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-1) var(--space-3); }
+.ri-fact { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.ri-fact-label { color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: condensed; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.ri-fact-value { overflow: hidden; color: var(--ri-t1); font-weight: var(--weight-semibold); font-family: var(--ri-disp); font-size: var(--text-data); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.ri-fact-value span { color: var(--ri-t3); }
 
 /* Pit stop picture */
 .ri-pit-glyph { display: block; flex: none; overflow: visible; }
@@ -242,6 +300,7 @@
 .ri-pit-duration small, .ri-pit-gal small { margin-left: 0.1875rem; color: var(--ri-t3); font-size: var(--text-data); font-stretch: condensed; text-transform: uppercase; }
 .ri-pit-tires { color: var(--ri-green); font-size: 1.125rem; font-weight: 700; letter-spacing: 0.04em; }
 .ri-pit-gal { color: var(--ri-fuel); font-size: 1.25rem; font-weight: 700; }
+.ri-pit-note { margin: 0; padding: 0.375rem 1rem 0.5rem; border-top: 1px solid var(--ri-line); color: var(--ri-t3); font-size: var(--text-compact); }
 
 /* Sections */
 .ri-sections { display: grid; grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr); gap: var(--ri-gap); height: 100%; min-height: 0; }
@@ -254,7 +313,9 @@
 .ri-map-start { stroke: var(--ri-t1); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .ri-map-label circle { fill: var(--ri-card2); stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; cursor: pointer; }
 .ri-map-label text { fill: var(--ri-t1); font-family: var(--ri-disp); font-weight: 700; pointer-events: none; }
-.ri-map-label.selected circle { fill: var(--ri-ice); stroke: var(--ri-ice); }
+.ri-map-label.gain circle { stroke: var(--ri-green); stroke-width: 2px; }
+.ri-map-label.loss circle { stroke: var(--ri-loss); stroke-width: 2px; }
+.ri-map-label.selected circle { fill: var(--ri-ice); }
 .ri-map-label.selected text { fill: var(--ri-on-ice); }
 .ri-map-leader { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .ri-map-cursor { fill: var(--ri-ice); stroke: var(--color-app); stroke-width: 1px; vector-effect: non-scaling-stroke; }
@@ -272,8 +333,10 @@
 .ri-section-range { display: flex; flex-direction: column; color: var(--ri-t3); font-size: var(--text-compact); }
 .ri-section-range em { color: var(--ri-t2); font-style: normal; }
 .ri-meter { position: relative; display: block; height: 4px; background: var(--ri-raise); border-radius: 2px; }
-.ri-meter i { position: absolute; top: 0; bottom: 0; background: var(--ri-loss); border-radius: 2px; }
+.ri-meter i { position: absolute; top: 0; bottom: 0; background: var(--ri-t3); border-radius: 2px; }
 .ri-meter i.gain { background: var(--ri-green); }
+.ri-meter i.loss { background: var(--ri-loss); }
+.ri-section strong.neutral { color: var(--ri-t2); }
 .ri-telemetry { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--ri-line); border-radius: 0.875rem; background: linear-gradient(180deg, var(--ri-card), color-mix(in srgb, var(--ri-card) 82%, var(--color-app))); box-shadow: 0 0.625rem 1.75rem rgb(0 0 0 / 0.35), inset 0 1px 0 var(--ri-lit); }
 .ri-pass-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); }
 .ri-pass-head h2 { margin: 0; font-family: var(--ri-disp); font-size: 1.125rem; font-weight: 700; font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -299,6 +362,8 @@
 .ri-plot-area { position: relative; min-height: 0; }
 .ri-zone { position: absolute; top: 0; z-index: 1; padding: 0 4px; color: var(--ri-t3); font-size: var(--text-compact); pointer-events: none; }
 .ri-zone.missing { left: 50%; top: 40%; transform: translateX(-50%); }
+/* A zone or axis label that would overprint its neighbour on a narrow plot (SectionsView `declutterLabels`). */
+.ri-zone[data-crowded], .ri-x-axis [data-crowded] { visibility: hidden; }
 .ri-chart { display: block; width: 100%; height: 100%; touch-action: pan-y; cursor: crosshair; }
 .ri-line { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .ri-line.a { stroke: var(--ri-ice); }
@@ -317,6 +382,7 @@
 /* Traces: the full-height lap rail on the left, the map strip and the traces on the right. The rail is 1.75x its first width. */
 .ri-traces { display: grid; grid-template-columns: minmax(0, min(37rem, 48%)) minmax(0, 1fr); gap: var(--ri-gap); height: 100%; min-height: 0; }
 .ri-traces-right { container: strip / inline-size; display: grid; grid-template-rows: clamp(6.5rem, 25%, 12.5rem) minmax(0, 1fr); gap: var(--ri-gap); min-width: 0; min-height: 0; }
+.ri-traces-right.with-comparison { grid-template-rows: clamp(6.5rem, 22%, 11.5rem) auto minmax(0, 1fr); }
 
 /* Lap rail */
 .ri-lap-rail { container: rail / inline-size; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -328,19 +394,25 @@
 .ri-lgrid {
   --ri-secs-w: calc(var(--ri-sector-count, 3) * 1.25rem + (var(--ri-sector-count, 3) - 1) * 0.25rem);
   display: grid;
-  grid-template-columns: 1.25rem 2rem 1.25rem 5rem 3.75rem var(--ri-secs-w) 3.25rem 3.5rem 2.25rem minmax(4.25rem, 1fr);
-  grid-template-areas: "sw n fl tm dl secs fu st inc pt";
+  grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 3.75rem var(--ri-secs-w) 3.25rem 2.25rem minmax(4.25rem, 1fr);
   column-gap: 0.25rem;
   align-items: center;
   padding: 0 var(--space-3);
 }
-.ri-rail-cols { flex: none; height: 1.75rem; border-top: 1px solid var(--ri-line); border-bottom: 1px solid var(--ri-line); background: color-mix(in srgb, var(--color-app) 50%, transparent); color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
+.ri-rail-bar { position: sticky; top: 0; z-index: 3; display: flex; flex-direction: column; justify-content: flex-end; height: var(--toolbar-height, 3rem); margin: 0; border-top: 1px solid var(--ri-line); border-bottom: 1px solid var(--ri-line); background: var(--ri-card); }
+.ri-progress-key { display: flex; align-items: center; gap: 0.375rem; height: 1.25rem; padding: 0 var(--space-3); color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: semi-condensed; }
+.ri-progress-key > span { display: inline-flex; align-items: center; gap: 0.25rem; }
+.ri-progress-bar { flex: 1; max-width: 12rem; height: 0.3125rem; border-radius: 3px; background: linear-gradient(90deg, var(--progress-1), var(--progress-2), var(--progress-3), var(--progress-4), var(--progress-5), var(--progress-6)); }
+.ri-progress-key .ri-swl { width: 0.75rem; height: 0.3125rem; box-shadow: none; }
+.ri-rail-cols { flex: none; height: 1.625rem; color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .ri-rail-cols > span { overflow: hidden; }
 .ri-rail-cols .r { text-align: right; }
 .ri-rail-cols .c { text-align: center; }
-.ri-lap-scroll { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: var(--space-1) 0; }
-.ri-lap-group { content-visibility: auto; contain-intrinsic-size: auto 43.75rem; }
-.ri-run-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--space-3); min-height: 2.25rem; margin: var(--space-1) var(--space-2) 2px; padding: 0 0.625rem; border-radius: 0.5rem; background: var(--ri-raise); box-shadow: 0 0.25rem 0.5rem rgb(0 0 0 / 0.25); }
+.ri-lap-scroll { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 0; }
+.ri-lap-group { content-visibility: auto; contain-intrinsic-size: auto 43.75rem; padding-bottom: var(--space-1); }
+.ri-run-head { position: sticky; top: var(--toolbar-height, 3rem); z-index: 2; display: flex; align-items: center; gap: var(--space-3); min-height: 2.25rem; margin: 0 var(--space-2) 2px; padding: 0 0.625rem; border-radius: 0 0 0.5rem 0.5rem; background: var(--ri-raise); box-shadow: inset 3px 0 0 var(--run, transparent), 0 0.25rem 0.5rem rgb(0 0 0 / 0.25); }
+.ri-run-head b { color: var(--run, var(--ri-t1)); }
+.ri-run-swatch { flex: none; }
 .ri-run-head b { font-family: var(--ri-disp); font-size: var(--text-data); font-weight: 700; font-stretch: condensed; letter-spacing: 0.1em; text-transform: uppercase; }
 .ri-run-range { color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; }
 .ri-run-comp { display: flex; flex: 1; max-width: 9.375rem; height: 0.5rem; margin-left: auto; overflow: hidden; border-radius: 0.25rem; background: var(--color-app); }
@@ -356,7 +428,13 @@
 .ri-lap-row + .ri-lap-row { border-top: 1px solid color-mix(in srgb, var(--ri-line) 55%, transparent); }
 .ri-lap-row > span { min-width: 0; overflow: hidden; }
 .ri-sw { width: 1.125rem; height: 0.25rem; border: 1px solid #4E5F6B; border-radius: 2px; }
-.ri-n { display: grid; place-items: center; height: 1.625rem; border-radius: 0.375rem; color: var(--ri-t2); font-size: 1.0625rem; font-weight: 700; }
+.ri-n { display: grid; place-items: center; height: 1.625rem; border: 1.5px solid transparent; border-radius: 0.375rem; color: var(--ri-t2); font-size: 1.0625rem; font-weight: 700; }
+.ri-n.screened { border-color: var(--ri-t3); }
+.ri-n.partial { border-color: var(--ri-t3); border-style: dashed; }
+/* The selected comparison's groups: a bar at the row's right edge in the group's run colour, solid for Earlier, outlined for Later. */
+.ri-grp-mark { position: absolute; right: 0.125rem; top: 0.375rem; bottom: 0.375rem; width: 0.25rem; border-radius: 2px; }
+.ri-grp-mark.earlier { background: var(--grp); }
+.ri-grp-mark.later { border: 1.5px solid var(--grp); }
 .ri-fl { display: flex; justify-content: center; }
 .ri-tm { text-align: right; color: var(--ri-t1); font-size: 1.1875rem; }
 .ri-lap-row.unclean .ri-tm { color: var(--ri-t3); }
@@ -369,7 +447,7 @@
 .ri-blk.n { background: #3A4954; }
 .ri-blk.nc { background: #222E37; }
 .ri-blk.na { border: 1.5px dashed var(--color-border-strong); }
-.ri-st, .ri-inc { display: flex; }
+.ri-inc { display: flex; }
 .ri-lap-row > .ri-pt { display: flex; align-items: center; overflow: visible; }
 .ri-pit-cell { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--ri-pit); }
 .ri-pit-road-mark { display: inline-flex; align-items: center; height: 1.375rem; padding: 0 0.375rem; border: 1px dashed color-mix(in srgb, var(--ri-pit) 70%, transparent); border-radius: 0.6875rem; color: var(--ri-pit); font-size: var(--text-compact); }
@@ -388,17 +466,13 @@
 .ri-lap-rail[data-pointer] .ri-lap-row:focus-visible { outline: none; }
 .ri-rail-foot { display: flex; flex: none; align-items: center; gap: var(--space-2); min-height: 3.25rem; padding: 0 var(--space-3); border-top: 1px solid var(--ri-line); }
 /* A narrower rail drops fuel, then the sector blocks, then the status chip; header and rows drop the same column, so they stay aligned. */
-@container rail (max-width: 36.4rem) {
-  .ri-lgrid { grid-template-columns: 1.25rem 2rem 1.25rem 5rem 3.75rem var(--ri-secs-w) 3.5rem 2.25rem minmax(4.25rem, 1fr); }
+@container rail (max-width: 33rem) {
+  .ri-lgrid { grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 3.75rem var(--ri-secs-w) 2.25rem minmax(4.25rem, 1fr); }
   .ri-lgrid > :nth-child(7) { display: none; }
 }
-@container rail (max-width: 32.4rem) {
-  .ri-lgrid { grid-template-columns: 1.25rem 2rem 1.25rem 5rem 3.75rem 3.5rem 2.25rem minmax(4.25rem, 1fr); }
+@container rail (max-width: 29rem) {
+  .ri-lgrid { grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 3.75rem 2.25rem minmax(4.25rem, 1fr); }
   .ri-lgrid > :nth-child(6), .ri-lgrid > :nth-child(7) { display: none; }
-}
-@container rail (max-width: 26.4rem) {
-  .ri-lgrid { grid-template-columns: 1.25rem 2rem 1.25rem 5rem 3.75rem 2.25rem minmax(3.5rem, 1fr); }
-  .ri-lgrid > :nth-child(6), .ri-lgrid > :nth-child(7), .ri-lgrid > :nth-child(8) { display: none; }
 }
 
 /* Map strip */
@@ -436,12 +510,13 @@
 .ri-kv strong { font-family: var(--ri-disp); font-size: 1.75rem; font-weight: 700; line-height: 1.05; font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
 .ri-kv small { margin-left: 0.1875rem; color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: condensed; }
 
-/* A narrower strip puts the four readouts in two rows. */
+/* A narrower strip puts the four readouts in two rows; label, figure and unit stay whole (`SPEED 151.3 mph`, `Δ L1 −1.234 s`). */
 @container strip (max-width: 50rem) {
-  .ri-track-panel { grid-template-columns: minmax(0, 0.85fr) minmax(13rem, 1.15fr); }
-  .ri-kv strong { font-size: 1.25rem; }
-  .ri-kvs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1) var(--space-3); }
-  .ri-kv { display: flex; align-items: baseline; gap: 0.375rem; padding: 0 0 0 var(--space-2); border-top: 0; border-left: 3px solid var(--color-border-strong); }
+  .ri-track-panel { grid-template-columns: minmax(0, 0.8fr) minmax(13rem, 1.2fr); }
+  .ri-kv strong { font-size: 1.125rem; }
+  .ri-kvs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1) var(--space-2); }
+  .ri-kv { display: flex; align-items: baseline; gap: 0.25rem; padding: 0 0 0 var(--space-2); border-top: 0; border-left: 3px solid var(--color-border-strong); }
+  .ri-kv small { margin-left: 0; }
   .ri-kv span { display: inline; }
   .ri-cursor-readout { gap: var(--space-1); }
 }
@@ -473,6 +548,8 @@
 .ri-row-copy strong { display: flex; flex-direction: column; font-family: var(--ri-disp); font-size: var(--text-data); font-weight: 700; font-stretch: condensed; letter-spacing: 0.08em; line-height: 1.15; text-transform: uppercase; }
 .ri-row-signal { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ri-row-unit { overflow: hidden; color: var(--ri-t3); font-size: var(--text-compact); line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+/* A row tall enough for two name lines and the unit wraps a long name (`Road-wheel / steering`) instead of cutting it (TraceChart `rowNameWraps`). */
+.trace-row-label-shell[data-name-wraps] .ri-row-signal { white-space: normal; }
 .ri-grip { color: var(--ri-t3); cursor: grab; }
 .ri-row-remove { margin-left: auto; border: 0; background: transparent; color: var(--ri-t3); cursor: pointer; }
 .ri-row-tooltip { position: absolute; left: 100%; top: 0; z-index: 5; display: none; width: max-content; max-width: 16.25rem; padding: var(--space-2); border: 1px solid var(--color-border-strong); border-radius: 0.5rem; background: var(--ri-raise); font-size: var(--text-compact); white-space: pre-line; }
@@ -530,12 +607,25 @@
   .ri-row-signal { white-space: normal; }
   .ri-tab { padding: 0 var(--space-2); }
   .ri-pqr { margin-left: 0; }
-  .ri-cohort { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ri-picture { grid-template-columns: minmax(0, 1fr); }
+  .ri-runs-view { height: auto; }
+  .ri-rail-head, .ri-rail-foot { flex-wrap: wrap; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+  .ri-toggles { margin-left: 0; }
+  .ri-run-cards { max-height: none; }
+  .ri-traces-right.with-comparison { grid-template-rows: auto auto auto; }
   /* The lap-time chart keeps room for its axes and the position band once the panels stack and the page scrolls. */
   .ri-plot { min-height: 22rem; }
   .ri-channels { min-height: 30rem; }
   .ri-workspace { height: auto; min-height: 100%; }
   .ri-body { overflow: visible; }
+}
+/* Phone: the section channels give the plot the width (label and axis columns narrow). */
+@media (max-width: 600px) {
+  .ri-channel { grid-template-columns: 6.75rem minmax(0, 1fr); }
+  .ri-chart-wrap { grid-template-columns: 2.5rem minmax(0, 1fr); }
+  .ri-x-axis { margin-left: 2.5rem; }
+  .ri-dotrow { grid-template-columns: 4.75rem minmax(0, 1fr) 5.25rem; }
+  .ri-dotrow-axis { margin: 0 5.25rem 0 4.75rem; }
 }
 @media (max-width: 900px), (pointer: coarse) {
   .ri-tab, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-pqr-seg, .ri-select select, .ri-pill-select, .ri-pill-select select { min-height: var(--touch-target); }

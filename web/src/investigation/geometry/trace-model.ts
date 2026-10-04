@@ -1,7 +1,8 @@
 import { channelAsFloat, type CcolChannel, type TraceTable } from "../ccol";
 import { resolveSignal, steeringDeclaration, type ResolvedSignal, type SteeringDeclaration } from "../signals";
 import { DEFAULT_BUDGETS, type RenderBudgets, type TraceCatalogData, type TraceLapData, type TraceSignalData } from "../types";
-import { FASTEST_LAP_COLOR, pointBudgetPerTrace, representativeIndices, TRACE_PALETTE } from "./budget";
+import { raceProgressColour } from "../../core/palette";
+import { pointBudgetPerTrace, representativeIndices } from "./budget";
 
 /**
  * Chart data model over one analysis's CCOL traces: signal columns in display units, per-lap colours,
@@ -93,7 +94,7 @@ export function createTraceData(catalog: TraceCatalogData, table: TraceTable): T
 }
 
 export function lapColor(data: TraceData, lap: number): string {
-  return data.colors.get(lap) ?? TRACE_PALETTE[0]!;
+  return data.colors.get(lap) ?? raceProgressColour(0, 1);
 }
 
 export function resolve(data: TraceData, id: string): ResolvedSignal | null {
@@ -504,11 +505,30 @@ export function applyFastest(data: TraceData): void {
   const time = fastest !== null ? data.lapMeta.get(fastest)?.lap_time_s : undefined;
   data.fastestLap = fastest;
   data.fastestLapTime = typeof time === "number" ? time : Number.POSITIVE_INFINITY;
-  const sortedLaps = data.laps.slice().sort((a, b) => a - b);
-  const colors = new Map<number, string>();
-  let paletteIndex = 0;
-  for (const lap of sortedLaps) colors.set(lap, lap === fastest ? FASTEST_LAP_COLOR : TRACE_PALETTE[paletteIndex++ % TRACE_PALETTE.length]!);
-  data.colors = colors;
+  data.colors = progressColors(data.laps, data.budgets.max_color_groups);
+}
+
+/**
+ * Lap colour is race progress (web round 2): a start-to-finish gradient through the theme's `identity.progress` stops over every lap
+ * of the phase, so no filter or selection ever recolours a lap. The gradient is cut into at most `bands` steps (the catalog's
+ * `max_color_groups`) so the chart's paths stay bounded by colour groups, not by lap count; neighbouring laps may share a step.
+ */
+export function progressColors(laps: readonly number[], bands = Number.POSITIVE_INFINITY): Map<number, string> {
+  const sorted = [...new Set(laps)].sort((a, b) => a - b);
+  const steps = Math.max(1, Math.min(sorted.length, Math.floor(bands)));
+  return new Map(sorted.map((lap, index) => {
+    const step = sorted.length <= 1 ? 0 : Math.round((index * (steps - 1)) / (sorted.length - 1));
+    return [lap, raceProgressColour(step, steps)] as const;
+  }));
+}
+
+/** The first and last lap of the phase with their progress colours, for the rail's key. Null without laps. */
+export function lapProgressEnds(data: TraceData): { first: { lap: number; color: string }; last: { lap: number; color: string } } | null {
+  const sorted = data.laps.slice().sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const first = sorted[0]!;
+  const last = sorted[sorted.length - 1]!;
+  return { first: { lap: first, color: lapColor(data, first) }, last: { lap: last, color: lapColor(data, last) } };
 }
 
 /** Sector boundaries: the catalog's start fractions inside [0, 1), distinct and ascending (SectorStarts). */

@@ -23,6 +23,10 @@ import {
   setupTypeOf,
   toggleOption,
   hasFigures,
+  colouredFigures,
+  phaseColumns,
+  phaseLayout,
+  phaseSlots,
 } from "./model";
 
 beforeEach(() => resetCarOrder());
@@ -246,5 +250,83 @@ describe("local dates (audit S1)", () => {
     expect(localDay("2025-09-27T18:00:00Z", now, "UTC")).toBe("Sat Sep 27 2025");
     expect(localDay(null, now)).toBeNull();
     expect(localTime("not a date")).toBeNull();
+  });
+});
+
+describe("phase cell slots (web round 2)", () => {
+  const race = session({
+    session_type: "Race",
+    overview: { starting_position: 12, final_position: 4, recorded_laps: 82, green_laps_estimated: 60, caution_laps_estimated: 20, pit_stops_detected: 3, longest_green_run: 41, pace_slope_s_per_lap: 0.021, best_clean_lap_s: 15.234, fuel_used_gal: 21.6 },
+  });
+  const text = (s: ReturnType<typeof phaseSlots>[number]) => s.parts.map((p) => p.text).join(" ");
+
+  it("has seven slots in the plan's order with the figures printed as the cell shows them", () => {
+    const slots = phaseSlots(race, 15.234);
+    expect(slots.map((s) => s.key)).toEqual(["pos", "laps", "best", "pace", "stops", "fuel", "run"]);
+    expect(slots.map(text)).toEqual(["P4 ▲8", "60 · 20", "15.234", "+0.021", "3", "21.6 gal", "41"]);
+    expect(slots[0]!.label).toBe("Finish");
+    expect(slots.every((s) => !s.missing)).toBe(true);
+  });
+
+  it("labels a practice position `Pos` and shows no change for it", () => {
+    const practice = session({ session_type: "Practice", overview: { starting_position: 9, final_position: 5 } });
+    const [pos] = phaseSlots(practice, null);
+    expect(pos!.label).toBe("Pos");
+    expect(text(pos!)).toBe("P5");
+  });
+
+  it("shows a dash in every slot the backend did not report, never a guess", () => {
+    const slots = phaseSlots(session({ overview: { recorded_laps: 20 } }), null);
+    expect(slots).toHaveLength(7);
+    expect(slots.every((s) => s.missing && text(s) === "—")).toBe(true);
+    // A zero is a value, not a gap.
+    const zero = phaseSlots(session({ overview: { pit_stops_detected: 0, caution_laps_estimated: 0, green_laps_estimated: 0 } }), null);
+    expect(text(zero.find((s) => s.key === "stops")!)).toBe("0");
+    expect(zero.find((s) => s.key === "stops")!.missing).toBe(false);
+    expect(text(zero.find((s) => s.key === "laps")!)).toBe("0 · 0");
+  });
+
+  it("spends the colour budget on a supported position change and a caution count above zero, and nothing else", () => {
+    const tones = (s: ReturnType<typeof phaseSlots>) => s.flatMap((x) => x.parts).filter((p) => p.tone === "gain" || p.tone === "loss" || p.tone === "caution").map((p) => `${p.tone}:${p.text}`);
+    expect(tones(phaseSlots(race, 15.234))).toEqual(["gain:▲8", "caution:20"]);
+    const lost = session({ overview: { ...race.overview, starting_position: 7, final_position: 9, caution_laps_estimated: 0 } });
+    expect(tones(phaseSlots(lost, null))).toEqual(["loss:▼2"]);
+    // Unchanged position, no cautions: no colour at all. A win is a plain number.
+    const win = session({ overview: { ...race.overview, starting_position: 1, final_position: 1, caution_laps_estimated: 0 } });
+    expect(tones(phaseSlots(win, null))).toEqual([]);
+    expect(text(phaseSlots(win, null)[0]!)).toBe("P1");
+    expect(colouredFigures(phaseSlots(race, 15.234))).toBe(2);
+    // Pace trend, best and fuel never carry a colour whatever their value.
+    const hot = session({ overview: { ...race.overview, pace_slope_s_per_lap: 0.2, best_clean_lap_s: 14.9 } });
+    expect(phaseSlots(hot, 14.9).filter((s) => ["best", "pace", "stops", "fuel", "run"].includes(s.key)).flatMap((s) => s.parts).every((p) => !p.tone || p.tone === "unit")).toBe(true);
+  });
+
+  it("marks the event's fastest lap without colour, and reads a green pace the server may add", () => {
+    expect(phaseSlots(race, 15.234).find((s) => s.key === "best")!.eventBest).toBe(true);
+    expect(phaseSlots(race, 15.0).find((s) => s.key === "best")!.eventBest).toBeUndefined();
+    const withPace = session({ overview: { ...race.overview, green_pace_median_s: 76.204 } });
+    expect(text(phaseSlots(withPace, null).find((s) => s.key === "pace")!)).toBe("1:16.204 +0.021");
+  });
+});
+
+describe("phase columns", () => {
+  const p = session({ session_type: "Practice" });
+  const q = session({ session_type: "Qualify" });
+  const r = session({ session_type: "Race" });
+  it("keeps practice, qualifying and race in the same column in every event", () => {
+    const layout = phaseLayout([p, q, r]);
+    expect(layout).toEqual(["P", "Q", "R"]);
+    expect(phaseColumns([p, r], layout)).toEqual({ columns: [0, 2], count: 3 });
+    expect(phaseColumns([r], layout)).toEqual({ columns: [2], count: 3 });
+  });
+  it("leaves one column when a filter shows only races", () => {
+    const layout = phaseLayout([r]);
+    expect(layout).toEqual(["R"]);
+    expect(phaseColumns([r], layout)).toEqual({ columns: [0], count: 1 });
+  });
+  it("puts a test in practice's column and follows running order when an event repeats a phase", () => {
+    expect(phaseLayout([session({ session_type: "Offline Testing" }), r])).toEqual(["P", "R"]);
+    const p2 = session({ session_type: "Practice" });
+    expect(phaseColumns([p, p2, r], ["P", "R"])).toEqual({ columns: [0, 1, 2], count: 3 });
   });
 });

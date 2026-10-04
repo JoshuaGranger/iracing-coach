@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Schemas } from "../core/api";
 import { resetCarOrder } from "../core/identity";
-import { CAR_COLORS, carColors, groupLibrary } from "./library";
+import { CAR_COLORS, carColors, groupLibrary, racedCountOf, racedCountOver } from "./library";
 
 type Setup = Schemas["SetupSummary"];
 type File = Schemas["SetupFileEntry"];
@@ -86,5 +86,31 @@ describe("library by car", () => {
       ["mx5", CAR_COLORS[1]],
       ["supra", CAR_COLORS[0]],
     ]);
+  });
+});
+
+describe("raced count", () => {
+  it("is the server count for a raced setup, and unknown (null, not 0) when the server gave none", () => {
+    expect(racedCountOf(setup(1, ["A.sto"], { raced: true, raced_count: 3 } as Partial<Setup>))).toBe(3);
+    expect(racedCountOf(setup(1, ["A.sto"], { raced: true }))).toBeNull();
+    expect(racedCountOf(setup(1, ["A.sto"], { raced: false, raced_count: 3 } as Partial<Setup>))).toBeNull();
+    expect(racedCountOf(setup(1, ["A.sto"], { raced: true, raced_count: 0 } as Partial<Setup>))).toBeNull();
+    expect(racedCountOf(setup(1, ["A.sto"], { raced: true, raced_count: "3" } as unknown as Partial<Setup>))).toBeNull();
+  });
+
+  it("adds over versions only when every raced version reports one", () => {
+    const r = (id: number, n?: number) => setup(id, ["A.sto"], { raced: true, ...(n ? { raced_count: n } : {}) } as Partial<Setup>);
+    expect(racedCountOver([r(1, 2), r(2, 3), setup(3, ["A.sto"])])).toBe(5);
+    expect(racedCountOver([r(1, 2), r(2)])).toBeNull();
+    expect(racedCountOver([setup(1, ["A.sto"])])).toBeNull();
+  });
+
+  it("reaches the library entry: a count for a named setup, none for a raced setup without one", () => {
+    const g = groupLibrary([setup(1, ["A.sto"], { raced: true, raced_count: 4 } as Partial<Setup>), setup(2, ["B.sto"], { raced: true })], [], colors);
+    const entry = (n: string) => g[0]!.entries.find((e) => e.kind === "setup" && e.name === n)!;
+    const a = entry("A.sto");
+    const b = entry("B.sto");
+    expect(a.kind === "setup" && a.racedCount).toBe(4);
+    expect(b.kind === "setup" && [b.raced, b.racedCount]).toEqual([true, null]);
   });
 });

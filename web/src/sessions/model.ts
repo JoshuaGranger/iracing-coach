@@ -406,3 +406,152 @@ export function eventPhaseOptions(sessionId: number, sessions: readonly Session[
     .sort(comparePhases)
     .map((s) => ({ sessionId: s.session_id, sessionType: s.session_type ?? null, state: s.analysis_state, reason: s.analysis_reason ?? null }));
 }
+
+/* ---- the compact phase cell (web round 2, Sessions) -------------------------------- */
+
+/** The seven labelled slots of a phase cell, in reading order. */
+export type SlotKey = "pos" | "laps" | "best" | "pace" | "stops" | "fuel" | "run";
+
+/**
+ * Colour budget of the cell: gain or loss on a supported position change, caution on a caution count above zero, nothing else.
+ * `unit` and `sep` are muted text, not colour carriers.
+ */
+export type PartTone = "gain" | "loss" | "caution" | "unit" | "sep";
+export interface SlotPart {
+  text: string;
+  tone?: PartTone;
+}
+export interface Slot {
+  key: SlotKey;
+  label: string;
+  /** Full words for the tooltip and the accessible name. */
+  title: string;
+  parts: SlotPart[];
+  /** The backend reported nothing: the slot shows `—`. */
+  missing: boolean;
+  /** The event's fastest lap among its phases: marked by weight, never by colour. */
+  eventBest?: boolean;
+}
+
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const count = (v: number | null | undefined): number | null => (finite(v) ? v : null);
+
+/** The median green-lap time of the phase (`SessionOverview.green_pace_median_s`, the backend's own screen). Null reads as absent: the slot shows `—`. */
+export function greenPace(s: Session): number | null {
+  const v: unknown = s.overview.green_pace_median_s;
+  return finite(v) && v > 0 ? v : null;
+}
+
+function missingSlot(key: SlotKey, label: string, title: string): Slot {
+  return { key, label, title, parts: [{ text: NONE }], missing: true };
+}
+
+/** `Pos` for practice and qualifying, `Finish` for a race. */
+export function positionLabel(s: Session): string {
+  return phaseOf(s.session_type).code === "R" ? "Finish" : "Pos";
+}
+
+/** Lap time as the cell prints it: `15.234`, `1:16.204`. */
+function lapText(seconds: number): string {
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    return `${m}:${(seconds - m * 60).toFixed(3).padStart(6, "0")}`;
+  }
+  return seconds.toFixed(3);
+}
+
+/**
+ * The seven slots of one phase, every one present so a missing value reads `—` in its place. The finish is a plain figure (no win
+ * flag); a supported position change (race only) is the one gain or loss colour; cautions above zero are the one caution colour;
+ * best, pace, stops, fuel and run carry no colour.
+ */
+export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
+  const o = s.overview;
+  const label = positionLabel(s);
+  const out: Slot[] = [];
+
+  const final = o.final_position;
+  if (final == null) out.push(missingSlot("pos", label, label === "Finish" ? "Finish position" : "Classification"));
+  else {
+    const parts: SlotPart[] = [{ text: formatPosition(final) }];
+    const change = positionChange(s);
+    if (change && change.gained !== 0) parts.push({ text: `${change.gained > 0 ? "▲" : "▼"}${Math.abs(change.gained)}`, tone: change.gained > 0 ? "gain" : "loss" });
+    out.push({ key: "pos", label, title: change ? `Finished P${final}, started P${change.from}` : `Classified P${final}`, parts, missing: false });
+  }
+
+  const green = count(o.green_laps_estimated);
+  const caution = count(o.caution_laps_estimated);
+  if (green === null && caution === null) out.push(missingSlot("laps", "Grn · Cau", "Green · caution laps"));
+  else
+    out.push({
+      key: "laps",
+      label: "Grn · Cau",
+      title: "Green · caution laps",
+      parts: [{ text: green === null ? NONE : String(green) }, { text: "·", tone: "sep" }, caution === null ? { text: NONE } : { text: String(caution), tone: caution > 0 ? "caution" : undefined }],
+      missing: false,
+    });
+
+  const best = bestLap(s);
+  if (best === null) out.push(missingSlot("best", "Best", "Best clean lap"));
+  else {
+    const isEventBest = eventBest !== null && best === eventBest;
+    out.push({ key: "best", label: "Best", title: isEventBest ? "Best clean lap, fastest of the event" : "Best clean lap", parts: [{ text: lapText(best) }], missing: false, eventBest: isEventBest || undefined });
+  }
+
+  const median = greenPace(s);
+  const slope = o.pace_slope_s_per_lap;
+  const trend = finite(slope);
+  if (median === null && !trend) out.push(missingSlot("pace", "Pace", "Green pace and its trend, s per lap"));
+  else {
+    const parts: SlotPart[] = [];
+    if (median !== null) parts.push({ text: lapText(median) });
+    if (trend) parts.push({ text: formatPace(slope), tone: median !== null ? "unit" : undefined });
+    out.push({ key: "pace", label: "Pace", title: "Green pace and its trend, s per lap", parts, missing: false });
+  }
+
+  const stops = count(o.pit_stops_detected);
+  out.push(stops === null ? missingSlot("stops", "Stops", "Pit stops") : { key: "stops", label: "Stops", title: "Pit stops", parts: [{ text: String(stops) }], missing: false });
+
+  const fuel = o.fuel_used_gal;
+  out.push(
+    finite(fuel)
+      ? { key: "fuel", label: "Fuel", title: "Fuel used, gallons", parts: [{ text: fuel.toFixed(1) }, { text: "gal", tone: "unit" }], missing: false }
+      : missingSlot("fuel", "Fuel", "Fuel used, gallons"),
+  );
+
+  const run = count(o.longest_green_run);
+  out.push(run === null ? missingSlot("run", "Run", "Longest green run, laps") : { key: "run", label: "Run", title: "Longest green run, laps", parts: [{ text: String(run) }], missing: false });
+  return out;
+}
+
+/** Coloured figures in one cell: the budget is at most two (one position change, one caution count). */
+export function colouredFigures(slots: readonly Slot[]): number {
+  return slots.reduce((n, s) => n + s.parts.filter((p) => p.tone === "gain" || p.tone === "loss" || p.tone === "caution").length, 0);
+}
+
+/** The column a phase takes: a test shares practice's. */
+const COLUMN_ORDER = ["P", "Q", "W", "R"] as const;
+export type ColumnCode = (typeof COLUMN_ORDER)[number];
+const columnCode = (s: Session): ColumnCode => {
+  const code = phaseOf(s.session_type).code;
+  return code === "T" ? "P" : code;
+};
+
+/**
+ * The phase columns the list uses: the phases present in what is shown, in running order. Two events line up for comparison because
+ * a phase keeps its column in every row; a filter that leaves only races leaves one column.
+ */
+export function phaseLayout(sessions: readonly Session[]): ColumnCode[] {
+  const present = new Set(sessions.map(columnCode));
+  return COLUMN_ORDER.filter((c) => present.has(c));
+}
+
+/**
+ * The grid column of each phase of one event under `layout`. An event whose phases are not distinct (two practices) follows running
+ * order instead. Returns the columns and how many the row has.
+ */
+export function phaseColumns(sessions: readonly Session[], layout: readonly ColumnCode[]): { columns: number[]; count: number } {
+  const codes = sessions.map(columnCode);
+  if (new Set(codes).size === codes.length && codes.every((c) => layout.includes(c))) return { columns: codes.map((c) => layout.indexOf(c)), count: Math.max(1, layout.length) };
+  return { columns: sessions.map((_, i) => i), count: Math.max(layout.length, sessions.length, 1) };
+}

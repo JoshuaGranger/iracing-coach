@@ -1,76 +1,45 @@
 /*
- * Sessions page. Direction B "Broadcast" for the cards, direction A's fixed-column discipline for
- * the figures. Every colour that carries racing data comes from a race token (docs/08-rewrite/design/README.md); the fallbacks are
- * those tokens' values until the generated theme defines them. Interaction is light, never a hue. Sizes are rem.
+ * Sessions page, web round 2 (docs/08-rewrite/web-round-2-plan.md, "Sessions"): one compact row per event. Identity at the left,
+ * the phases as equal cells with seven labelled slots each (a stacked row per phase on a phone). Colour is data and nothing else:
+ * gain or loss on a supported position change, caution on a count above zero, the phase's one unsaturated hue on its edge, the
+ * car's stripe. No saturated fills, no glow. Interaction is light, never a hue. Sizes are rem.
  */
-.sx {
-  --sx-green: var(--race-green, #3ddc84);
-  --sx-caution: var(--race-caution, #ffd43b);
-  --sx-pit: var(--race-pit, #4da3ff);
-  --sx-best: var(--race-best, #f05cdb);
-  --sx-loss: var(--race-loss, #ff5a6e);
-  --sx-fuel: var(--race-fuel, #ff9f43);
-  --sx-ice: var(--color-interaction, #eaf2f6);
-  --sx-car-0: var(--car-1, #a98bff);
-  --sx-car-1: var(--car-2, #2ccfc1);
-  --sx-car-2: var(--car-3, #d9b27c);
-  --sx-phase-p: var(--phase-p, #5f748b);
-  --sx-phase-q: var(--phase-q, #afbcc8);
-  --sx-phase-r: var(--phase-r, #f2f5f7);
-  --sx-disp: var(--font-display, "Bahnschrift", "DIN Alternate", "Barlow Semi Condensed", "Segoe UI Variable Text", "Segoe UI", sans-serif);
-  --sx-card: linear-gradient(180deg, var(--color-surface1), color-mix(in srgb, var(--color-surface1) 78%, var(--color-app)));
-  --sx-lit: rgba(255, 255, 255, 0.08);
-  --sx-line: color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
-  --sx-dim: var(--color-text-muted);
-  --sx-ctl-h: var(--control-height);
-}
-@media (max-width: 700px), (pointer: coarse) {
-  .sx {
-    --sx-ctl-h: var(--touch-target);
-  }
-}
 .sx [data-car="0"],
 .sx-event[data-car="0"] {
-  --car: var(--sx-car-0);
+  --car: var(--car-1);
 }
 .sx [data-car="1"],
 .sx-event[data-car="1"] {
-  --car: var(--sx-car-1);
+  --car: var(--car-2);
 }
 .sx [data-car="2"],
 .sx-event[data-car="2"] {
-  --car: var(--sx-car-2);
+  --car: var(--car-3);
 }
 .sx [data-phase="P"],
 .sx [data-phase="W"],
 .sx [data-phase="T"] {
-  --b: var(--sx-phase-p);
+  --b: var(--phase-p);
   --b-ink: var(--color-text-primary);
 }
 .sx [data-phase="Q"] {
-  --b: var(--sx-phase-q);
+  --b: var(--phase-q);
   --b-ink: #0b1218;
 }
 .sx [data-phase="R"] {
-  --b: var(--sx-phase-r);
+  --b: var(--phase-r);
   --b-ink: #0b1218;
 }
 
-/* The cards want more than the shell's reading width. */
+/* The row wants more than the shell's reading width. */
 .main:has(.sx) {
   max-width: 96rem;
 }
 
-.sx-cap,
 .sx-act,
-.sx-band,
-.sx-fig-l,
-.sx-state,
-.sx-badge,
-.sx-win,
-.sx-from,
+.sx-l,
 .sx-letter {
-  font-family: var(--sx-disp);
+  font-family: var(--font-display);
   font-stretch: condensed;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -80,459 +49,291 @@
 .sx-stripe {
   display: inline-block;
   flex: none;
-  width: 0.3125rem;
-  height: 1.25rem;
-  border-radius: 0.1875rem;
-  background: var(--car, var(--sx-dim));
-  box-shadow: 0 0 0.5rem color-mix(in srgb, var(--car, transparent) 70%, transparent);
+  width: 0.25rem;
+  height: 0.875rem;
+  border-radius: 0.125rem;
+  background: var(--car, var(--color-text-muted));
 }
+/* A Session-filter option: the phase letter. */
 .sx-letter {
   display: inline-grid;
   place-items: center;
   width: 1.5rem;
   height: 1.5rem;
-  border-radius: 0.375rem;
+  border-radius: var(--radius-control);
   background: var(--b);
   color: var(--b-ink);
   font-size: var(--text-compact);
   font-weight: 700;
   letter-spacing: 0;
 }
-.sx-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  min-height: 1.625rem;
-  padding: 0 0.625rem;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-compact);
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  white-space: nowrap;
-}
-.sx-badge.fixed {
-  background: #e9eef1;
-  color: #0b1218;
-}
-.sx-badge.open {
-  border: 1.5px dashed var(--color-text-secondary);
-  color: var(--color-text-primary);
-}
-
-/* ---- event cards ------------------------------------------------------------------ */
+/* ---- the list: one row per event ---------------------------------------------------- */
 .sx-events {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
   margin-top: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface1);
+  overflow: hidden;
+}
+.sx-events:empty {
+  display: none;
 }
 .sx-event {
+  container-type: inline-size;
+  border-top: 1px solid var(--color-border-subtle);
+}
+.sx-event:first-child {
+  border-top: 0;
+}
+.sx-row {
   display: grid;
-  grid-template-columns: clamp(17rem, 26%, 23.25rem) minmax(0, 1fr);
-  overflow: hidden;
-  border: 1px solid var(--sx-line);
-  border-radius: 0.875rem;
-  background: var(--sx-card);
-  box-shadow: 0 0.625rem 1.75rem rgba(0, 0, 0, 0.35), inset 0 1px 0 var(--sx-lit);
+  grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr);
+  min-height: 5.5rem;
 }
 .sx-id {
-  position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: var(--space-3);
+  justify-content: center;
+  gap: 0.125rem;
   min-width: 0;
-  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-6);
-  background: linear-gradient(120deg, color-mix(in srgb, var(--car) 22%, var(--color-surface1)) 0%, var(--color-surface1) 70%);
-  border-right: 1px solid var(--sx-line);
+  padding: var(--space-2) var(--space-4);
 }
-.sx-id::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0.3125rem;
-  background: var(--car);
-  box-shadow: 0 0 0.875rem color-mix(in srgb, var(--car) 70%, transparent);
-}
-.sx-id-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+.sx-id-title {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
+  min-width: 0;
 }
 .sx-id h2 {
-  font-family: var(--sx-disp);
-  font-stretch: semi-condensed;
-  font-size: clamp(1.25rem, 1.7vw, 1.625rem);
-  font-weight: 700;
-  line-height: 1.08;
-  overflow-wrap: anywhere;
-}
-.sx-meta {
-  margin-top: 0.375rem;
-  color: var(--sx-dim);
-  font-family: var(--sx-disp);
-  font-stretch: condensed;
-  font-size: var(--text-control);
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
 }
 .sx-sil {
   flex: none;
-  filter: drop-shadow(0 0 0.625rem color-mix(in srgb, var(--sx-ice) 25%, transparent));
+  width: auto;
+  height: 1.5rem;
+  max-width: 2.25rem;
 }
 .sx-sil-line {
-  stroke: var(--sx-ice);
-  stroke-width: 2.6;
+  stroke: var(--color-text-secondary);
+  stroke-width: 3;
 }
 .sx-sil-tick {
-  stroke: #10161b;
+  stroke: var(--color-surface1);
   stroke-width: 4;
 }
 .sx-sil-tick-dash {
-  stroke: #f4f6f8;
+  stroke: var(--color-text-primary);
   stroke-dasharray: 2 2;
 }
-.sx-id-bot {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.sx-car,
-.sx-ser {
+.sx-meta,
+.sx-car {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 0.125rem var(--space-2);
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-compact);
+  line-height: 1.125rem;
 }
 .sx-car {
-  font-weight: var(--weight-medium);
-}
-.sx-ser {
   color: var(--color-text-secondary);
-  font-size: var(--text-control);
 }
 
-.sx-tiles {
+/* ---- phase cells ------------------------------------------------------------------- */
+.sx-cells {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-content: start;
-  gap: var(--space-3);
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
   min-width: 0;
-  padding: var(--space-3);
+  list-style: none;
 }
-.sx-tile {
+.sx-cell {
+  grid-column: var(--col, auto);
+  grid-row: 1;
   display: flex;
   min-width: 0;
-  container-type: inline-size;
-  border: 1px solid var(--sx-line);
-  border-radius: 0.625rem;
-  overflow: hidden;
-  background: var(--color-surface2);
-  box-shadow: inset 0 1px 0 var(--sx-lit);
+  border-left: 1px solid var(--color-border-subtle);
 }
-.sx-tile-body {
+.sx-cell-body {
   position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   min-width: 0;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
   color: inherit;
+  /* The phase's one categorical hue, a hairline edge (the tokens are already unsaturated). */
+  box-shadow: inset 2px 0 0 var(--b);
 }
-a.sx-tile-body:hover {
-  background: var(--color-surface3);
+a.sx-cell-body:hover {
+  background: var(--color-surface2);
   text-decoration: none;
 }
-a.sx-tile-body:focus-visible {
+a.sx-cell-body:focus-visible {
   outline-offset: -3px;
 }
-.sx-band {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-height: 2rem;
-  padding: 0 var(--space-3);
-  background: var(--b);
-  color: var(--b-ink);
-  font-size: var(--text-control);
-  font-weight: 700;
-  letter-spacing: 0.11em;
+/* header slot and the seven figures: four columns by two rows, so every phase reads in the same place */
+.sx-slots {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(0, 1fr));
+  gap: 0 var(--space-2);
+  max-width: 28rem;
 }
-.sx-band > span {
-  display: inline-flex;
-  text-transform: none;
-  align-items: center;
-  gap: var(--space-2);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
+.sx-slots[data-figures="false"] {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
 }
-.sx-band .sx-badge {
-  min-height: 1.25rem;
-  padding: 0 0.4375rem;
-  background: transparent;
-  border: 1.5px solid currentColor;
-  color: inherit;
-}
-.sx-band .sx-badge.open {
-  border-style: dashed;
-}
-.sx-rb {
-  position: absolute;
-  left: 0;
-  top: 2rem;
-  bottom: 0;
-  width: 0.375rem;
-}
-.sx-rb.win {
-  background: repeating-conic-gradient(#f2f5f7 0 25%, #0b1218 0 50%) 0 0 / 0.375rem 0.375rem;
-}
-.sx-rb.gain {
-  background: var(--sx-green);
-  box-shadow: 0 0 0.625rem var(--sx-green);
-}
-.sx-rb.loss {
-  background: var(--sx-loss);
-  box-shadow: 0 0 0.625rem var(--sx-loss);
-}
-.sx-hero {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  min-height: 3.875rem;
-  padding: var(--space-2) var(--space-3) 0 var(--space-4);
-}
-.sx-big {
-  font-family: var(--sx-disp);
-  font-stretch: semi-condensed;
-  font-size: 2.75rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.01em;
-}
-.sx-big.dim {
-  color: var(--color-text-secondary);
-}
-.sx-big.sx-laps {
-  font-size: 1.875rem;
-}
-.sx-sub {
+.sx-slot {
   display: flex;
   flex-direction: column;
-  gap: 0.1875rem;
+  min-width: 0;
 }
-.sx-from {
-  color: var(--sx-dim);
-  font-size: var(--text-control);
+.sx-l {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--text-compact);
+  font-weight: var(--weight-semibold);
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sx-v {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-stretch: semi-condensed;
+  font-size: var(--text-data);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+.sx-slot.none .sx-v {
+  color: var(--color-text-disabled);
+}
+.sx-phase {
+  align-items: center;
+  font-family: var(--font-ui);
+  font-stretch: normal;
   font-weight: var(--weight-semibold);
 }
-.sx-chg {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  width: max-content;
-  min-height: 1.5rem;
-  padding: 0 0.5rem;
-  border-radius: var(--radius-pill);
-  font-family: var(--sx-disp);
-  font-stretch: semi-condensed;
-  font-size: 1.0625rem;
+/* The event's fastest lap is marked by weight, never by colour. */
+.sx-v.event-best {
   font-weight: 700;
 }
-.sx-chg.gain {
-  background: var(--sx-green);
-  color: #04170c;
-  box-shadow: 0 0 0.75rem color-mix(in srgb, var(--sx-green) 55%, transparent);
+.sx-p.gain {
+  color: var(--race-green);
 }
-.sx-chg.loss {
-  background: var(--sx-loss);
-  color: #25060b;
-  box-shadow: 0 0 0.75rem color-mix(in srgb, var(--sx-loss) 55%, transparent);
+.sx-p.loss {
+  color: var(--race-loss);
 }
-.sx-tri {
+.sx-p.caution {
+  color: var(--race-caution);
+}
+.sx-p.sep,
+.sx-p.unit {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-regular);
+}
+.sx-p.unit {
+  font-family: var(--font-ui);
   font-size: var(--text-compact);
 }
-.sx-win {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
-  font-size: var(--text-body);
-  font-weight: 700;
-  letter-spacing: 0.1em;
+.sx-slot[data-slot="laps"] .sx-v {
+  gap: 0.25rem;
 }
-.sx-flag {
-  display: inline-block;
-  width: 1.375rem;
-  height: 1.125rem;
-  border: 1px solid #0b1015;
-  background: repeating-conic-gradient(#f4f6f8 0 25%, #10161b 0 50%) 0 0 / 0.5625rem 0.5625rem;
-}
+
+/* exceptions: only while they explain missing results */
 .sx-state-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) 0 var(--space-4);
+  padding-top: 0.25rem;
 }
-.sx-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4375rem;
-  min-height: 1.875rem;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-pill);
-  color: var(--color-text-secondary);
+/* The verb inside the chip is a control: the app's control size (15 px, 36 px; 44 px on touch). */
+.sx-state-row .chip-act {
+  min-height: var(--control-height);
   font-size: var(--text-control);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.08em;
 }
-.sx-state.failed {
-  border-color: var(--sx-loss);
-  color: color-mix(in srgb, var(--sx-loss) 55%, var(--color-text-primary));
-}
-.sx-spin {
-  animation: sx-spin 1s linear infinite;
-}
-@keyframes sx-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.sx-error {
+  color: var(--color-danger);
+  font-size: var(--text-compact);
 }
 .sx-act {
-  min-height: var(--sx-ctl-h);
+  min-height: var(--control-height);
   padding: 0 var(--space-4);
-  border-radius: var(--radius-pill);
-  border-color: var(--sx-ice);
-  background: var(--sx-ice);
+  border-radius: var(--radius-control);
+  border-color: var(--color-interaction);
+  background: var(--color-interaction);
   color: #081017;
   font-size: var(--text-control);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 .sx-act:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--sx-ice) 82%, #ffffff);
+  background: color-mix(in srgb, var(--color-interaction) 82%, #ffffff);
   text-decoration: none;
 }
-.sx-act:disabled {
-  background: var(--color-surface1);
-  border-color: var(--color-border-strong);
-}
-.sx-error {
-  color: var(--color-danger);
-  font-size: var(--text-compact);
-}
 
-/* the eight figures: a fixed 4 x 2 grid, every tile reads in the same place */
-.sx-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.375rem var(--space-2);
-  padding: 0.375rem var(--space-3) var(--space-3) var(--space-4);
-}
-.sx-fig {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.sx-fig-l {
-  color: var(--sx-dim);
-  font-size: var(--text-compact);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-.sx-fig-v {
-  display: flex;
-  align-items: baseline;
-  gap: 0.375rem;
-  font-family: var(--sx-disp);
-  font-stretch: semi-condensed;
-  font-size: 1.1875rem;
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.sx-fig-v small {
-  color: var(--sx-dim);
-  font-family: var(--font-ui);
-  font-size: var(--text-compact);
-  font-weight: var(--weight-medium);
-}
-.sx-fig-v.none {
-  color: var(--color-text-disabled);
-}
-.sx-fig-v.best {
-  color: var(--sx-best);
-  text-shadow: 0 0 0.75rem color-mix(in srgb, var(--sx-best) 60%, transparent);
-}
-.sx-fig-v.pace-loss {
-  color: var(--sx-loss);
-}
-.sx-fig-v.pace-gain {
-  color: var(--sx-green);
-}
-.sx-fig-v.pit {
-  color: var(--sx-pit);
-}
-.sx-fig-v .fuel {
-  color: var(--sx-fuel);
-}
-.sx-dot {
-  align-self: center;
-  flex: none;
-  width: 0.625rem;
-  height: 0.625rem;
-  border-radius: 50%;
-}
-.sx-dot.g {
-  background: var(--sx-green);
-  box-shadow: 0 0 0.5rem color-mix(in srgb, var(--sx-green) 75%, transparent);
-}
-.sx-dot.y {
-  background: var(--sx-caution);
-  box-shadow: 0 0 0.5625rem color-mix(in srgb, var(--sx-caution) 80%, transparent);
-}
-.sx-dot.zero {
-  border: 1.5px solid var(--color-border-strong);
-}
-@container (max-width: 17.5rem) {
-  .sx-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* ---- tablet and phone ------------------------------------------------------------- */
-@media (max-width: 1100px) {
-  .sx-event {
+/* ---- tablet: identity on its own line, the phases still inline ---------------------- */
+@container (max-width: 62rem) {
+  .sx-row {
     grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
   }
   .sx-id {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    border-right: 0;
-    border-bottom: 1px solid var(--sx-line);
+    justify-content: flex-start;
+    gap: 0.125rem var(--space-4);
+    padding-bottom: var(--space-1);
   }
-  .sx-id-top {
-    flex: 1 1 18rem;
-  }
-  .sx-id-bot {
+  .sx-id-title {
     flex: 0 1 auto;
-    align-items: flex-start;
+  }
+  .sx-cells {
+    border-top: 1px solid var(--color-border-subtle);
+  }
+  .sx-cell:first-child {
+    border-left: 0;
   }
 }
-@media (max-width: 700px) {
-  .sx-tiles {
+
+/* ---- phone: one stacked row per phase ------------------------------------------------ */
+@container (max-width: 40rem) {
+  .sx-cells {
     grid-template-columns: minmax(0, 1fr);
   }
+  .sx-cell {
+    grid-column: 1;
+    grid-row: auto;
+    border-left: 0;
+    border-top: 1px solid var(--color-border-subtle);
+  }
+  .sx-cell:first-child {
+    border-top: 0;
+  }
   .sx-id {
-    padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+    padding: var(--space-2) var(--space-3);
+  }
+  .sx-cell-body {
+    padding-left: var(--space-3);
+  }
+}
+
+/* Touch: the action inside a chip is a real target. */
+@media (max-width: 700px), (pointer: coarse) {
+  .sx-state-row .chip-act {
+    min-height: var(--touch-target);
   }
 }

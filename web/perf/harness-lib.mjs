@@ -1,5 +1,5 @@
 // Shared by g2.mjs and views.mjs: builds the harness page and the synthetic API with Vite, and serves both.
-// Output goes to <repo>/target/W8 only.
+// Output goes to <repo>/target/W8 only, or to PERF_OUT when set (a private folder, so concurrent runs do not rebuild each other's dist).
 import preact from "@preact/preset-vite";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
@@ -12,7 +12,7 @@ import { routeShell, SHELL_DRIVER, SHELL_SESSION } from "./shell-api.mjs";
 export const perfDir = path.dirname(fileURLToPath(import.meta.url));
 export const webRoot = path.resolve(perfDir, "..");
 export const repoRoot = path.resolve(webRoot, "..");
-export const outRoot = path.join(repoRoot, "target", "W8");
+export const outRoot = process.env.PERF_OUT ? path.resolve(process.env.PERF_OUT) : path.join(repoRoot, "target", "W8");
 export const g2FixtureDir = path.join(repoRoot, "test-data", "g2");
 
 /** `g2` is the committed current-profile 82-lap race; `synthetic` is the generated fallback. */

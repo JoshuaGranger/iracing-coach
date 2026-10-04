@@ -15,6 +15,11 @@ import { useElementSize } from "./hooks";
 import type { TrackRefs } from "./TrackPanel";
 import { scaleFor, useRemPx } from "./unit";
 
+/** A row tall enough for two name lines and the unit (3.5 rem) wraps a long name (`Road-wheel / steering`) instead of cutting it. */
+export function rowNameWraps(plotHeightPx: number, remPx: number): boolean {
+  return plotHeightPx >= 3.5 * remPx;
+}
+
 export interface TraceChartProps {
   data: TraceData;
   rows: readonly TraceRowSpec[];
@@ -154,7 +159,7 @@ export function TraceChart(props: TraceChartProps) {
           const helpId = `ri-row-help-${row.row_id}`;
           return (
             <div
-              class="trace-row-label-shell" key={row.row_id} style={`top:${n(frame.top)}px;height:${n(frame.plotHeight)}px`}
+              class="trace-row-label-shell" key={row.row_id} style={`top:${n(frame.top)}px;height:${n(frame.plotHeight)}px`} data-name-wraps={rowNameWraps(frame.plotHeight, unit) ? "" : undefined}
               data-analysis-row-target="label" data-row-id={row.row_id} data-row-index={index} data-row-name={name}
               data-primary-name={resolve(data, row.signals[0]!)?.name ?? ""} data-secondary-name={row.signals[1] ? resolve(data, row.signals[1])?.name ?? "" : ""}
             >

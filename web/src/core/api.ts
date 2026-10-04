@@ -129,18 +129,28 @@ export const qs = (params: Record<string, QueryValue | readonly QueryValue[]>): 
 
 const enc = encodeURIComponent;
 
+/**
+ * A recording belongs to a library: `main` is the driver's own (the default everywhere), `lab` holds the bot-driven and
+ * harvest recordings. Lab never enters the driver's counts; asking for it is explicit.
+ */
+export type Library = "main" | "lab";
+
+/** The query value for a library: only `lab` is sent, so `main` keeps the plain URL (and its cache key) it always had. */
+export const libraryQuery = (library: Library | null | undefined): "lab" | undefined => (library === "lab" ? "lab" : undefined);
+
 type SessionsQuery = NonNullable<paths_["/api/v1/drivers/{customer_id}/sessions"]["get"]["parameters"]["query"]>;
 
 /** Paths, so the outbox and the cache agree on keys. */
 export const paths = {
   drivers: "/api/v1/drivers",
   status: "/api/v1/status",
-  sessions: (c: number, q: Omit<SessionsQuery, "cursor"> & { cursor?: string | null } = {}) => `/api/v1/drivers/${c}/sessions${qs(q)}`,
+  sessions: (c: number, { library, ...q }: Omit<SessionsQuery, "cursor" | "library"> & { cursor?: string | null; library?: Library } = {}) =>
+    `/api/v1/drivers/${c}/sessions${qs({ ...q, library: libraryQuery(library) })}`,
   session: (id: number) => `/api/v1/sessions/${id}`,
   sessionAnalysis: (id: number) => `/api/v1/sessions/${id}/analysis`,
   carsAndTracks: (c: number) => `/api/v1/drivers/${c}/cars-and-tracks`,
-  setups: (c: number, q: { car_path?: string; q?: string; raced?: boolean; cursor?: string | null; limit?: number } = {}) =>
-    `/api/v1/drivers/${c}/setups${qs(q)}`,
+  setups: (c: number, { library, ...q }: { car_path?: string; q?: string; raced?: boolean; cursor?: string | null; limit?: number; library?: Library } = {}) =>
+    `/api/v1/drivers/${c}/setups${qs({ ...q, library: libraryQuery(library) })}`,
   setup: (id: number) => `/api/v1/setups/${id}`,
   setupCompare: "/api/v1/setups/compare",
   baseline: (c: number) => `/api/v1/drivers/${c}/baseline`,

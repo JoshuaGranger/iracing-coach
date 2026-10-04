@@ -4,8 +4,11 @@ import { api, paths } from "../core/api";
 import { useResource } from "../core/resource";
 import { href } from "../core/router";
 import { readJson, writeJson } from "../core/store";
-import { Empty, ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
-import { EventCard, SetupBadge } from "../sessions/event-card";
+import { useLibraryChoice } from "../core/library";
+import { FilterBar, type FilterControl } from "../ui/filter-bar";
+import { LIBRARY_MIN_REM, LibraryControl } from "../ui/library-control";
+import { Empty, ErrorLine, Loading, Notice } from "../ui/kit";
+import { EventRow, SetupBadge } from "../sessions/event-row";
 import { useLibrary } from "../sessions/library";
 import {
   FILTER_IDS,
@@ -18,12 +21,14 @@ import {
   fromSessionFilters,
   groupEvents,
   isEmptySelection,
+  selectionCount,
   parseSelection,
+  phaseLayout,
   phaseOf,
   toSessionFilters,
   toggleOption,
 } from "../sessions/model";
-import { FilterChip, FilterChips, MultiSelect, type Option } from "../ui/multi-select";
+import { FilterChip, MultiSelect, type Option } from "../ui/multi-select";
 import { watchTabs } from "../sessions/tab-memory";
 import "../sessions/sessions.css";
 
@@ -78,12 +83,13 @@ function CarStripe({ index }: { index: number }) {
 }
 
 export function SessionsPage({ customerId }: { customerId: number }) {
-  const lib = useLibrary(customerId);
+  const [library, setLibrary] = useLibraryChoice();
+  const lib = useLibrary(customerId, library);
   const all = lib.data;
   const sessions = all ?? [];
   const [sel, setSel] = useSelection(customerId);
   const [shown, setShown] = useState(BATCH);
-  useEffect(() => setShown(BATCH), [customerId, sel]);
+  useEffect(() => setShown(BATCH), [customerId, sel, library]);
 
   const colors = useMemo(() => carColorIndex(sessions), [all]);
   const facets = useMemo(() => {
@@ -92,6 +98,7 @@ export function SessionsPage({ customerId }: { customerId: number }) {
     return out;
   }, [all, colors]);
   const events = useMemo(() => groupEvents(sessions, sel), [all, sel]);
+  const layout = useMemo(() => phaseLayout(events.flatMap((e) => e.sessions)), [events]);
   const now = useMemo(() => new Date(), [all]);
 
   const drivers = useResource(paths.drivers, () => api.drivers());
@@ -115,8 +122,13 @@ export function SessionsPage({ customerId }: { customerId: number }) {
     }));
 
   /** Filters the library has nothing for are not offered (no Setup filter until a session carries its setup type). */
-  const filterIds = FILTER_IDS.filter((id) => facets[id].length > 0 || sel[id].length > 0);
-  const chips = filterIds.flatMap((id) =>
+  const loadedIds = FILTER_IDS.filter((id) => facets[id].length > 0 || sel[id].length > 0);
+  // A filter once offered stays for the visit: switching library (or loading it) never reflows the heading or closes an open surface.
+  const seen = useRef<{ customer: number; ids: Set<FilterId> | null }>({ customer: customerId, ids: null });
+  if (seen.current.customer !== customerId) seen.current = { customer: customerId, ids: null };
+  if (all) seen.current.ids = new Set([...(seen.current.ids ?? []), ...loadedIds]);
+  const filterIds = seen.current.ids ? FILTER_IDS.filter((id) => seen.current.ids!.has(id)) : FILTER_IDS.filter((id) => id !== "setup");
+  const chips = loadedIds.flatMap((id) =>
     sel[id].map((key) => {
       const o = facets[id].find((f) => f.key === key);
       const label = o?.label ?? (id === "type" ? phaseOf(key).label : key);
@@ -124,25 +136,42 @@ export function SessionsPage({ customerId }: { customerId: number }) {
     }),
   );
 
+  // The library switch sits inside the filter surface with the rest; it is never saved, so a reload is back on Joshua's.
+  const controls: FilterControl[] = [
+    ...filterIds.map((id) => ({
+      id,
+      label: FILTER_LABEL[id],
+      node: <MultiSelect label={FILTER_LABEL[id]} noun={NOUN[id]} options={options(id)} selected={sel[id]} onChange={(next) => setSel({ ...sel, [id]: next })} />,
+    })),
+    { id: "library", label: "Library", minRem: LIBRARY_MIN_REM, node: <LibraryControl value={library} onChange={setLibrary} /> },
+  ];
+  const clearAll = () => {
+    setSel(emptySelection());
+    setLibrary("main");
+  };
+
   const filtered = !isEmptySelection(sel);
   const visible = events.slice(0, shown);
 
   return (
     <div class="sx">
-      <PageHead title="Sessions">
-        {live ? (
-          <a class="btn btn-accent" href={href({ page: "live", customerId })}>
-            Live now
-          </a>
-        ) : null}
-      </PageHead>
-      {all ? (
-        <div class="filter-bar" role="search" aria-label="Filter sessions">
-          {filterIds.map((id) => (
-            <MultiSelect key={id} label={FILTER_LABEL[id]} noun={NOUN[id]} options={options(id)} selected={sel[id]} onChange={(next) => setSel({ ...sel, [id]: next })} />
-          ))}
-          <FilterChips count={chips.length} onClear={() => setSel(emptySelection())}>
-            {chips.map((c) => (
+      <FilterBar
+        title={
+          <>
+            <h1>Sessions</h1>
+            {live ? (
+              <a class="btn btn-accent" href={href({ page: "live", customerId })}>
+                Live now
+              </a>
+            ) : null}
+          </>
+        }
+        controls={controls}
+        activeCount={selectionCount(sel) + (library === "lab" ? 1 : 0)}
+        onClear={clearAll}
+      >
+        {chips.length > 0
+          ? chips.map((c) => (
               <FilterChip
                 key={`${c.id}:${c.key}`}
                 label={c.label}
@@ -150,10 +179,9 @@ export function SessionsPage({ customerId }: { customerId: number }) {
                 mark={c.car !== undefined ? <CarStripe index={c.car} /> : undefined}
                 onRemove={() => setSel(toggleOption(sel, c.id, c.key))}
               />
-            ))}
-          </FilterChips>
-        </div>
-      ) : null}
+            ))
+          : null}
+      </FilterBar>
       {lib.error && !all ? <ErrorLine error={lib.error} /> : null}
       {lib.error && all ? <Notice tone="warn">Could not refresh {"·"} {lib.error.message}</Notice> : null}
       {!all && !lib.error ? <Loading what="sessions" /> : null}
@@ -164,13 +192,15 @@ export function SessionsPage({ customerId }: { customerId: number }) {
               Clear filters
             </button>
           </Empty>
+        ) : library === "lab" ? (
+          <Empty title="No lab sessions" />
         ) : (
           <Empty title="No sessions yet">Drive with the collector running.</Empty>
         )
       ) : null}
       <div class="sx-events">
         {visible.map((ev) => (
-          <EventCard key={ev.key} ev={ev} customerId={customerId} colors={colors} now={now} />
+          <EventRow key={ev.key} ev={ev} customerId={customerId} colors={colors} now={now} layout={layout} />
         ))}
       </div>
       {events.length > visible.length ? (

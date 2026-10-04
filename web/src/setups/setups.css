@@ -194,11 +194,15 @@
 }
 .ds .s-search input {
   min-height: var(--control-height);
-  width: min(100%, 18.75rem);
+  width: 12rem;
   padding: 0 var(--space-4);
   border-radius: var(--radius-pill);
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface2);
+}
+.ds .fb-surface .s-search,
+.ds .fb-surface .s-search input {
+  width: 100%;
 }
 .ds .link-btn {
   color: var(--color-text-secondary);
@@ -208,24 +212,60 @@
 /* ---- car cards and the setup board ------------------------------------------------- */
 .ds .s-cars {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
+  margin-top: var(--space-3);
 }
 .ds .s-car {
   border-radius: 14px;
-  overflow: hidden;
+  /* clip, not hidden: a scroll container would stop the car header sticking to the page */
+  overflow: clip;
   background: var(--ds-card);
   border: 1px solid var(--ds-line);
   box-shadow: 0 10px 28px rgb(0 0 0 / 0.35), inset 0 1px 0 var(--ds-edge);
 }
+/* The car header sticks under the app bar while its section is on screen (--s-top is the bar's height, measured by the page). */
 .ds .s-car-head {
-  position: relative;
+  position: sticky;
+  top: var(--s-top, 3.25rem);
+  z-index: 4;
+  margin: 0;
+  background: linear-gradient(100deg, color-mix(in srgb, var(--car) 24%, var(--color-surface1)), var(--color-surface1) 60%);
+  font: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.ds .s-car-toggle {
+  width: 100%;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
+  gap: var(--space-3);
+  justify-content: flex-start;
   min-height: 3.375rem;
   padding: var(--space-2) var(--space-5) var(--space-2) var(--space-6);
-  background: linear-gradient(100deg, color-mix(in srgb, var(--car) 24%, var(--color-surface1)), var(--color-surface1) 60%);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text-primary);
+  text-align: left;
+}
+.ds .s-car-toggle .chevron {
+  flex: none;
+  margin-left: calc(var(--space-2) * -1);
+  color: var(--color-text-muted);
+}
+.ds .s-car-text {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+  min-width: 0;
+}
+.ds .s-car-name {
+  font-family: var(--ds-disp);
+  font-stretch: semi-condensed;
+  font-size: 1.375rem;
+  font-weight: 700;
 }
 .ds .s-car-head::before {
   content: "";
@@ -234,12 +274,6 @@
   width: 5px;
   background: var(--car);
   box-shadow: 0 0 14px var(--car);
-}
-.ds .s-car-head h2 {
-  font-family: var(--ds-disp);
-  font-stretch: semi-condensed;
-  font-size: 1.375rem;
-  font-weight: 700;
 }
 .ds .s-car-head .n {
   font-family: var(--ds-disp);
@@ -265,7 +299,7 @@
 /* The board: one track per field, the header uses the same template, rows never wrap. */
 .ds .s-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 8.75rem 6.75rem 4rem 7.5rem 7.5rem;
+  grid-template-columns: minmax(0, 1fr) 9rem 7.5rem;
   column-gap: var(--space-3);
   align-items: center;
   padding: 0 var(--space-4) 0 var(--space-6);
@@ -391,9 +425,33 @@
   color: var(--color-text-secondary);
   font-weight: 600;
 }
-.ds .load-more {
-  margin: var(--space-4) auto 0;
+.ds .s-more {
+  margin: var(--space-3) auto var(--space-4);
   display: flex;
+  justify-content: center;
+}
+.ds .s-baseline {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface2);
+  color: var(--color-text-primary);
+  font-family: var(--ds-disp);
+  font-stretch: condensed;
+  font-size: var(--text-control);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.ds .s-baseline:hover {
+  background: var(--color-surface-hover);
+  text-decoration: none;
 }
 .ds .glyph {
   flex: none;
@@ -418,6 +476,9 @@
   .ds .s-grid > .date {
     text-align: left;
   }
+  .ds .s-grid > span:empty {
+    display: none;
+  }
   .ds .s-grid > .go {
     display: none;
   }
@@ -435,6 +496,7 @@
 /* Touch: every control reaches the touch target, on a phone and on a tablet. */
 @media (max-width: 760px), (pointer: coarse) {
   .ds .pill,
+  .ds .s-baseline,
   .ds .seg button,
   .ds button.versions,
   .ds .link-btn,
@@ -518,19 +580,152 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.ds .versions-board .s-grid {
-  grid-template-columns: minmax(0, 1fr) 6.75rem 4rem 12rem 3rem;
-  padding-left: var(--space-4);
+/* Versions: a collapsed section; each version a disclosure row (title, date, changed count) that opens to its changes. */
+.ds .versions-board > h2 {
+  margin: 0;
 }
-.ds .versions-board li {
+.ds .v-toggle {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+}
+.ds .v-toggle .count {
+  margin-left: 0;
+}
+.ds .v-list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ds .v-item {
   border-top: 1px solid color-mix(in srgb, var(--ds-line) 70%, transparent);
 }
-.ds .versions-board li.here {
-  background: color-mix(in srgb, var(--ds-lit) 8%, transparent);
+.ds .v-item.here {
   box-shadow: inset 3px 0 0 var(--ds-lit);
 }
-.ds .versions-board a.s-name {
+.ds .v-head {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) 8rem 7rem;
+  align-items: center;
+  column-gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: var(--color-text-primary);
+  text-align: left;
+}
+.ds .v-head .s-title {
+  font-size: var(--text-body);
+  font-weight: 600;
+  font-stretch: normal;
+}
+.ds .v-head .date,
+.ds .v-head .num {
+  text-align: right;
+  font-size: var(--text-data);
+  color: var(--color-text-secondary);
+}
+.ds .v-item.here .v-head .s-title {
+  color: var(--ds-lit);
+}
+.ds .v-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-4) calc(var(--space-3) + 1rem + var(--space-3));
+}
+.ds .v-none {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+.ds .v-changes {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ds .v-changes th,
+.ds .v-changes td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  text-align: left;
+  vertical-align: baseline;
+  border-bottom: 1px solid color-mix(in srgb, var(--ds-line) 55%, transparent);
+}
+.ds .v-changes thead th {
+  font-family: var(--ds-disp);
+  font-stretch: condensed;
+  font-size: var(--text-compact);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.ds .v-changes tbody th {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+.ds .v-changes td {
+  font-family: var(--ds-disp);
+  font-stretch: semi-condensed;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.ds .v-changes td:last-child {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+.ds .v-runs h3 {
+  margin: 0 0 var(--space-1);
+}
+.ds .v-runs ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ds .v-runs li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--touch-target);
+}
+.ds .v-runs a,
+.ds .v-open {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  color: var(--color-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ds .v-runs .date {
+  color: var(--color-text-secondary);
+}
+.ds .d-file dl {
+  margin: 0;
+}
+.ds .d-file dl > div {
+  display: flex;
+  gap: var(--space-4);
+}
+.ds .d-file dt {
+  min-width: 4rem;
+  color: var(--color-text-muted);
+}
+.ds .d-file dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
 }
 .ds .value-groups {
   grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
@@ -625,9 +820,42 @@
   list-style: none;
 }
 @media (max-width: 760px) {
-  .ds .versions-board .s-grid {
-    display: flex;
-    flex-wrap: wrap;
+  .ds .v-head {
+    grid-template-columns: 1rem minmax(0, 1fr) auto auto;
+    column-gap: var(--space-2);
+    padding: 0 var(--space-1);
+  }
+  .ds .v-body {
+    padding-left: var(--space-3);
+  }
+  .ds .v-changes thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .ds .v-changes tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    column-gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--ds-line) 55%, transparent);
+  }
+  .ds .v-changes th,
+  .ds .v-changes td {
+    padding: 0;
+    border: 0;
+  }
+  .ds .v-changes tbody th {
+    grid-column: 1 / -1;
+  }
+  .ds .v-changes td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: var(--text-compact);
+    font-weight: 400;
+    color: var(--color-text-muted);
   }
   .ds .sight {
     grid-template-columns: 1fr auto;

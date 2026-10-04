@@ -33,7 +33,7 @@ export function DriversPage() {
                 {d.irating != null ? `${d.irating} iR · ` : ""}
                 {plural(d.session_count, "session")} · {formatDate(d.last_session_at)}
               </span>
-              {d.live ? <Chip tone="good">Live</Chip> : null}
+              {d.live ? <Chip variant="constraint">Live</Chip> : null}
             </a>
           </li>
         ))}
