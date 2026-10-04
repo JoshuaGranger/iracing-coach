@@ -32,12 +32,13 @@ Items Joshua has raised or confirmed since the v1 candidate, in the order they a
 | 9 | Plan | server job + web | `PlanningPage.razor`, `race_plan_decision.py`, `strategy_model.py` | Parked by D8. |
 | 10 | Test day review and saved Tests | server job + web | `TestDayView.razor`, `test_day.py`, `driving_trials.py` | Parked by D8. |
 | 11 | Ask | server + API key | `RaceCoachPanel.razor`, `CoachEngine.cs`, `race_coach_packet.py` | Parked by D8/D10; API key like the g-house apps. |
-| 12 | Bulk `.sto` harvest (values for the ~1,100 setup files never driven) | iRacing-utility + sim time | — | Planned in `iRacing-utility/setups/`; drives the garage so the collector captures each file. |
+| 12 | Bulk `.sto` harvest (values for the setup files never driven) | iRacing-utility + sim time | — | Harvester built (`iRacing-utility` d82ce78); pilot captured 1 file. 8 of 37 owned cars hold unknown files: 207 loads cover 464 files; 706 files belong to 27 unowned cars and cannot be harvested. Paused on #16; resumes at Supra file 2. The next Supra session starts on the AtlantaSS setup (fails tech) until the restore step ships. |
+| 16 | **Setup identity counts derived keys** (found by the harvest, 2026-10-03): every garage visit creates two "unnamed" setups because the sim recalculates `Chassis.FrontArb.Preload` and `setup-keys.json` does not exclude that leaf; the migration's `.htm` exports also show as "Unnamed" (rows 53-68). Fix in progress: derived keys out of the fingerprint, a re-fingerprint merge on the server, `.htm` names from the file name. Setups 69 and 70 merge into 71 with that fix. | contract + coach-ibt + server | — | In progress. |
 | 13 | Phase 4 of the port for recordings over ~400 MB (the 2 GB Kansas file) | server | — | Only if wanted; Python remainder is 16 % of wall time. |
 | 14 | Bot test days record under Joshua's account | server + utility | — | Decide whether to flag or separate them. |
-| 15 | Coach container needs the NAS reachable to start (NFS volume) | mini PC host | — | Host automount needs the owner's yes. |
 
 ## Done
 
 - Five rig-test sessions removed from the library (2026-10-03).
 - e2e test setup entries removed (2026-10-03).
+- #15 The Coach container starts while the NAS is unreachable (2026-10-03): the Coach's NAS folder is a soft host automount, bound into the container with `rslave`; measured with the automount idle, not proved against a real outage or a reboot (`acceptance/server-release.md`, `4c3c5f0`; the g-house units are `a15e066d`, unmerged).
